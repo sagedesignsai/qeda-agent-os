@@ -1,0 +1,63 @@
+/**
+ * renderer/routes.tsx
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The application route tree, expressed as nested `RouteObject`s.
+ *
+ * Structure:
+ *   <AppLayout>                     – persistent shell (rail + framed content)
+ *     ├── /                         – redirects to /chat
+ *     ├── /chat                     – Chat index (starts a fresh session)
+ *     │     └── /chat/:sessionId    – a specific conversation
+ *     ├── /workspace                – Workspace index (no page selected)
+ *     │     ├── /workspace/:notebookId
+ *     │     └── /workspace/:notebookId/:pageId
+ *     └── *                         – redirects to /chat
+ *
+ * The route params mirror the selection held in the rail's section submenus
+ * (ChatMenu / WorkspaceMenu), which is what keeps a single sidebar in play.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+import { Navigate, type RouteObject } from 'react-router';
+import { AppLayout } from './components/AppLayout';
+import Chat from './pages/Chat';
+import Workspace from './pages/Workspace';
+import Terminal from './pages/Terminal';
+import Tasks from './pages/Tasks';
+
+export const routes: RouteObject[] = [
+  {
+    element: <AppLayout />,
+    children: [
+      { index: true, element: <Navigate to="/chat" replace /> },
+
+      {
+        path: 'chat',
+        children: [
+          { index: true, element: <Chat /> },
+          { path: ':sessionId', element: <Chat /> },
+        ],
+      },
+
+      {
+        path: 'workspace',
+        children: [
+          { index: true, element: <Workspace /> },
+          { path: ':notebookId', element: <Workspace /> },
+          { path: ':notebookId/:pageId', element: <Workspace /> },
+        ],
+      },
+
+      {
+        path: 'terminal',
+        children: [
+          { index: true, element: <Terminal /> },
+          { path: ':sessionId', element: <Terminal /> },
+        ],
+      },
+
+      { path: 'tasks', element: <Tasks /> },
+
+      { path: '*', element: <Navigate to="/chat" replace /> },
+    ],
+  },
+];
