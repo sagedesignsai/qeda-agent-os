@@ -47,11 +47,35 @@ interface StreamPart {
 /** Loosely-typed view of a UIMessage part, for incremental construction. */
 type DraftPart = { type: string; [key: string]: unknown };
 
+/** Where a turn is invoked and where its stream is pushed back from. */
+export interface AgentTransport {
+  invokeChannel: string;
+  chunkChannel: string;
+  doneChannel: string;
+  errorChannel: string;
+  fallbackChannel: string;
+}
+
+/** The main chat's transport. Other agents pass their own channel names. */
+export const DEFAULT_AGENT_TRANSPORT: AgentTransport = {
+  invokeChannel: 'agent:chat',
+  chunkChannel: 'agent:stream-chunk',
+  doneChannel: 'agent:stream-done',
+  errorChannel: 'agent:stream-error',
+  fallbackChannel: 'agent:stream-fallback',
+};
+
 export interface UseAgentChatOptions {
   sessionId: string;
   initialMessages?: UIMessage[];
   /** Workspace context bound to this chat (page or notebook). */
   context?: { pageId?: string; notebookId?: string };
+  /** Channel names for this agent. Defaults to the main chat's. */
+  transport?: AgentTransport;
+  /** Persist the rebuilt conversation on completion (default true). */
+  persist?: boolean;
+  /** Load any persisted conversation for `sessionId` (default true). */
+  hydrate?: boolean;
 }
 
 export interface RespondToApprovalArgs {
@@ -218,6 +242,9 @@ export function useAgentChat({
   sessionId,
   initialMessages = [],
   context,
+  transport = DEFAULT_AGENT_TRANSPORT,
+  persist = true,
+  hydrate = true,
 }: UseAgentChatOptions): UseAgentChatReturn {
   const [messages, setMessages] = useState<UIMessage[]>(initialMessages);
   const [status, setStatus] = useState<AgentStatus>('ready');
@@ -255,7 +282,7 @@ export function useAgentChat({
 
   // ── Streaming events from the main process ────────────────────────────────
 
-  useIpcEvent('agent:stream-chunk', (raw: unknown) => {
+  useIpcEvent(transport.chunkChannel, (raw: unknown) => {
     const line = String(raw);
     if (!line.trim()) return;
     try {
@@ -267,11 +294,12 @@ export function useAgentChat({
   });
 
   useIpcEvent(
-    'agent:stream-done',
+    transport.doneChannel,
     () => {
       streamingRef.current = false;
       setStatus('ready');
 
+      if (!persist) return;
       // Persist the reconstructed conversation so it survives a restart and
       // shows up on the Sessions page. Upserts are keyed by message id.
       const current = messagesRef.current;
@@ -286,11 +314,11 @@ export function useAgentChat({
           // Persistence is best-effort – never block the UI on it.
         });
     },
-    [],
+    [persist],
   );
 
   useIpcEvent(
-    'agent:stream-error',
+    transport.errorChannel,
     (payload: unknown) => {
       failTurn(
         new Error(
@@ -304,7 +332,7 @@ export function useAgentChat({
   // The main process retried the turn on another provider. No output had been
   // rendered yet, so the turn simply continues – we only explain the swap.
   useIpcEvent(
-    'agent:stream-fallback',
+    transport.fallbackChannel,
     (payload: unknown) => {
       const notice = payload as Partial<FallbackNotice>;
       if (!notice?.toProvider) return;
@@ -321,13 +349,13 @@ export function useAgentChat({
     setStatus('streaming');
     streamingRef.current = true;
     window.electron.ipc
-      .invoke('agent:chat', {
+      .invoke(transport.invokeChannel, {
         sessionId: sessionIdRef.current,
         messages: messagesRef.current,
         context: contextRef.current,
       })
       .catch(failTurn);
-  }, [failTurn]);
+  }, [failTurn, transport.invokeChannel]);
 
   // ── Send a new user message ───────────────────────────────────────────────
 
@@ -392,8 +420,8 @@ export function useAgentChat({
     const token = hydrationTokenRef.current + 1;
     hydrationTokenRef.current = token;
 
-    if (!sessionId) {
-      commitMessages(() => []);
+    if (!hydrate || !sessionId) {
+      if (!hydrate) commitMessages(() => initialMessages);
       return undefined;
     }
 
@@ -411,7 +439,8 @@ export function useAgentChat({
       });
 
     return undefined;
-  }, [sessionId, commitMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, commitMessages, hydrate]);
 
   const dismissFallbackNotice = useCallback(() => setFallbackNotice(undefined), []);
 

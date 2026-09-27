@@ -10,6 +10,8 @@ import {
   parseComposerInput,
   isDirectCommandInput,
   formatDuration,
+  extractLocalhostUrls,
+  isGitDiff,
 } from '../lib/terminal-input';
 
 describe('parseComposerInput', () => {
@@ -137,3 +139,74 @@ describe('formatDuration', () => {
     expect(formatDuration(Number.POSITIVE_INFINITY)).toBe('—');
   });
 });
+
+describe('extractLocalhostUrls', () => {
+  it('extracts Next.js style localhost URL', () => {
+    const output = `
+   ▲ Next.js 15.0.0
+   - Local:        http://localhost:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1845ms
+    `;
+    expect(extractLocalhostUrls(output)).toEqual(['http://localhost:3000']);
+  });
+
+  it('extracts Vite style local and 127.0.0.1 URLs', () => {
+    const output = `
+  VITE v5.4.2  ready in 214 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.1.50:5173/
+  ➜  Loopback: http://127.0.0.1:5173/
+    `;
+    const urls = extractLocalhostUrls(output);
+    expect(urls).toContain('http://localhost:5173/');
+    expect(urls).toContain('http://127.0.0.1:5173/');
+    expect(urls).not.toContain('http://192.168.1.50:5173/');
+  });
+
+  it('cleans trailing punctuation', () => {
+    const output = 'Server running at http://localhost:8080. Check it out (http://127.0.0.1:4000)!';
+    expect(extractLocalhostUrls(output)).toEqual([
+      'http://localhost:8080',
+      'http://127.0.0.1:4000',
+    ]);
+  });
+
+  it('returns empty array when no dev servers are mentioned', () => {
+    expect(extractLocalhostUrls('git commit -m "feat: init"')).toEqual([]);
+    expect(extractLocalhostUrls('')).toEqual([]);
+  });
+});
+
+describe('isGitDiff', () => {
+  it('detects git diff command by name', () => {
+    expect(isGitDiff('git diff', '')).toBe(true);
+    expect(isGitDiff('git diff --staged', '')).toBe(true);
+    expect(isGitDiff('git show HEAD', '')).toBe(true);
+    expect(isGitDiff('git log -p -2', '')).toBe(true);
+  });
+
+  it('detects unified diff headers in output text', () => {
+    const diffOutput = `
+diff --git a/src/index.ts b/src/index.ts
+index 83db48f..bf269f4 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,3 +1,4 @@
++import express from 'express';
+ const app = express();
+-app.listen(3000);
++app.listen(8080);
+    `;
+    expect(isGitDiff('my-script', diffOutput)).toBe(true);
+  });
+
+  it('returns false for standard non-diff output', () => {
+    expect(isGitDiff('git status', 'On branch main\nnothing to commit')).toBe(false);
+    expect(isGitDiff('ls -la', 'total 0\ndrwxr-xr-x .')).toBe(false);
+  });
+});
+

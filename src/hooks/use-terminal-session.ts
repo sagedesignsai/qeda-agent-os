@@ -49,6 +49,7 @@ export interface UseTerminalSessionReturn {
   reject: (blockId: string) => void;
   explain: (blockId: string) => void;
   fix: (blockId: string) => void;
+  stop: (blockId: string) => void;
 }
 
 export function useTerminalSession(
@@ -204,6 +205,30 @@ export function useTerminalSession(
       .finally(() => setIsFixingId(undefined));
   }, []);
 
+  const stop = useCallback((blockId: string) => {
+    void window.electron.ipc.invoke('terminal:stop-command', { blockId });
+  }, []);
+
+  // Global Ctrl+C handler: when terminal has focus and NO text is selected, stop running command
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        const selection = window.getSelection()?.toString();
+        // If the user selected text, let standard clipboard copy proceed unhindered
+        if (selection && selection.length > 0) return;
+
+        const running = blocks.find((b) => b.status === 'running');
+        if (running) {
+          e.preventDefault();
+          stop(running.id);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [blocks, stop]);
+
   return {
     blocks,
     status,
@@ -219,5 +244,6 @@ export function useTerminalSession(
     reject,
     explain,
     fix,
+    stop,
   };
 }

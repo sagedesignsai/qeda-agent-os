@@ -33,6 +33,7 @@ export const CREATE_SESSIONS = `
 CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,
   title      TEXT NOT NULL DEFAULT 'New Chat',
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -213,6 +214,9 @@ CREATE TABLE IF NOT EXISTS terminal_sessions (
   goal       TEXT NOT NULL DEFAULT '',
   status     TEXT NOT NULL DEFAULT 'idle'
              CHECK(status IN ('idle','running','done','error')),
+  cwd        TEXT NOT NULL DEFAULT '',
+  env        TEXT NOT NULL DEFAULT '{}',
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -247,6 +251,43 @@ CREATE TABLE IF NOT EXISTS terminal_blocks (
 CREATE INDEX IF NOT EXISTS idx_terminal_blocks_session ON terminal_blocks(session_id, position);
 `;
 
+// ─── Projects ──────────────────────────────────────────────────────────────────
+
+/**
+ * projects – the spine of the productivity system.
+ *
+ * A project unifies the four things "project" used to mean separately: an
+ * outcome with a deadline, the tasks that achieve it, the code repo the work
+ * happens in, the docs that describe it, and the conversations about it.
+ *
+ * Every other table points at it with a nullable `project_id`, so a project is
+ * an *optional* lens rather than a mandatory container.
+ */
+export const CREATE_PROJECTS = `
+CREATE TABLE IF NOT EXISTS projects (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL DEFAULT 'active'
+              CHECK(status IN ('active','paused','done','archived')),
+  color       TEXT NOT NULL DEFAULT '',
+  icon        TEXT NOT NULL DEFAULT 'folder',
+  deadline    INTEGER,                       -- unix epoch, nullable
+  repo_path   TEXT,                          -- working dir for terminal sessions
+  notebook_id TEXT REFERENCES notebooks(id) ON DELETE SET NULL,
+  sort_order  REAL    NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status, sort_order);
+`;
+
+/**
+ * The default project for unsorted capture. Deterministic id so the data
+ * migration and code can agree without a lookup.
+ */
+export const INBOX_PROJECT_ID = 'inbox';
+
 // ─── ADHD task manager ────────────────────────────────────────────────────────
 
 /**
@@ -264,12 +305,76 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority       INTEGER NOT NULL DEFAULT 2   -- 1=high 2=medium 3=low
                  CHECK(priority IN (1,2,3)),
   due_at         INTEGER,                      -- unix epoch, nullable
+  estimate_mins  INTEGER,                      -- rough time estimate, nullable
+  project_id     TEXT REFERENCES projects(id) ON DELETE SET NULL,
   pomodoro_count INTEGER NOT NULL DEFAULT 0,   -- completed pomodoros
   position       REAL    NOT NULL DEFAULT 0,   -- for manual ordering
   created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at     INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, position);
+`;
+
+// ─── Focus system: steps, time blocks, focus sessions ────────────────────────
+
+/**
+ * task_steps – the checklist produced when a task is broken down.
+ * Steps live *inside* a task rather than on the board, so a big task can be
+ * broken into calm, actionable pieces without flooding the backlog.
+ */
+export const CREATE_TASK_STEPS = `
+CREATE TABLE IF NOT EXISTS task_steps (
+  id         TEXT PRIMARY KEY,
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  done       INTEGER NOT NULL DEFAULT 0,
+  position   INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_task_steps_task ON task_steps(task_id, position);
+`;
+
+/**
+ * task_blocks – a time box on the calendar.
+ *
+ * A block may be attached to a task (`task_id`) or stand alone with its own
+ * `title` (e.g. "Email triage"). status flow: planned → active → done | skipped.
+ */
+export const CREATE_TASK_BLOCKS = `
+CREATE TABLE IF NOT EXISTS task_blocks (
+  id         TEXT PRIMARY KEY,
+  task_id    TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  title      TEXT NOT NULL DEFAULT '',
+  start_at   INTEGER NOT NULL,              -- unix epoch seconds
+  end_at     INTEGER NOT NULL,              -- unix epoch seconds
+  status     TEXT NOT NULL DEFAULT 'planned'
+             CHECK(status IN ('planned','active','done','skipped')),
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_task_blocks_start ON task_blocks(start_at);
+CREATE INDEX IF NOT EXISTS idx_task_blocks_task  ON task_blocks(task_id);
+`;
+
+/**
+ * focus_sessions – one completed (or abandoned) pomodoro/flow phase.
+ * Doubles as the raw material for the focus stats strip.
+ */
+export const CREATE_FOCUS_SESSIONS = `
+CREATE TABLE IF NOT EXISTS focus_sessions (
+  id          TEXT PRIMARY KEY,
+  task_id     TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  kind        TEXT NOT NULL DEFAULT 'work' CHECK(kind IN ('work','break')),
+  planned_sec INTEGER NOT NULL DEFAULT 0,
+  actual_sec  INTEGER NOT NULL DEFAULT 0,
+  completed   INTEGER NOT NULL DEFAULT 0,   -- 1 when the phase ran to the end
+  started_at  INTEGER NOT NULL,
+  ended_at    INTEGER,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_started ON focus_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_focus_sessions_task    ON focus_sessions(task_id);
 `;
 
 // ─── Full-text search ─────────────────────────────────────────────────────────
@@ -306,7 +411,11 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_PAGES_FTS,
   CREATE_TERMINAL_SESSIONS,
   CREATE_TERMINAL_BLOCKS,
+  CREATE_PROJECTS,
   CREATE_TASKS,
+  CREATE_TASK_STEPS,
+  CREATE_TASK_BLOCKS,
+  CREATE_FOCUS_SESSIONS,
 ];
 
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────
@@ -327,12 +436,33 @@ UPDATE chunks
 `;
 
 /**
+ * Create the Inbox project. `INSERT OR IGNORE` makes it a no-op once present.
+ * Deterministic id so tasks can default to it without a lookup.
+ */
+export const MIGRATE_INBOX_PROJECT = `
+INSERT OR IGNORE INTO projects (id, name, description, status, icon, sort_order)
+VALUES ('inbox', 'Inbox', 'Unsorted capture — file these into a project.', 'active', 'inbox', -1);
+`;
+
+/**
+ * Adopt every task that predates projects. Converges: once a task has a
+ * project, the WHERE clause no longer matches it.
+ */
+export const MIGRATE_ASSIGN_ORPHAN_TASKS = `
+UPDATE tasks SET project_id = 'inbox' WHERE project_id IS NULL;
+`;
+
+/**
  * Statements that rewrite existing rows. Kept separate from
  * MIGRATION_STATEMENTS (which is DDL and may be applied by tests against a
  * fresh in-memory database) because these only matter for databases written by
  * a previous build. Like the DDL, every statement must be idempotent.
  */
-export const DATA_MIGRATIONS: readonly string[] = [MIGRATE_RAG_URI_SCHEME];
+export const DATA_MIGRATIONS: readonly string[] = [
+  MIGRATE_RAG_URI_SCHEME,
+  MIGRATE_INBOX_PROJECT,
+  MIGRATE_ASSIGN_ORPHAN_TASKS,
+];
 
 /** Bookkeeping table for future schema versions. */
 export const CREATE_MIGRATIONS = `
@@ -357,19 +487,64 @@ export function applyMigrations(db: {
   for (const statement of MIGRATION_STATEMENTS) {
     db.exec(statement);
   }
-  for (const statement of DATA_MIGRATIONS) {
-    db.exec(statement);
-  }
 
-  // Ensure optional columns exist if migrating an existing database
+  // Ensure optional columns exist on databases written by an earlier build.
+  // This must run BEFORE DATA_MIGRATIONS, because some data migrations (the
+  // orphan-task adoption below) reference those columns.
   if (typeof db.prepare === 'function') {
+    const columnsOf = (table: string): string[] =>
+      db.prepare!(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+
     try {
-      const cols = db.prepare('PRAGMA table_info(terminal_blocks)').all().map((c) => c.name);
-      if (!cols.includes('duration_ms')) {
+      const blockCols = columnsOf('terminal_blocks');
+      if (!blockCols.includes('duration_ms')) {
         db.exec('ALTER TABLE terminal_blocks ADD COLUMN duration_ms INTEGER');
+      }
+
+      const terminalCols = columnsOf('terminal_sessions');
+      if (!terminalCols.includes('cwd')) {
+        db.exec("ALTER TABLE terminal_sessions ADD COLUMN cwd TEXT NOT NULL DEFAULT ''");
+      }
+      if (!terminalCols.includes('env')) {
+        db.exec("ALTER TABLE terminal_sessions ADD COLUMN env TEXT NOT NULL DEFAULT '{}'");
+      }
+      if (!terminalCols.includes('project_id')) {
+        db.exec(
+          'ALTER TABLE terminal_sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
+      }
+
+      const taskCols = columnsOf('tasks');
+      if (!taskCols.includes('estimate_mins')) {
+        db.exec('ALTER TABLE tasks ADD COLUMN estimate_mins INTEGER');
+      }
+      if (!taskCols.includes('project_id')) {
+        db.exec(
+          'ALTER TABLE tasks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
+      }
+
+      const taskBlockCols = columnsOf('task_blocks');
+      if (!taskBlockCols.includes('project_id')) {
+        db.exec(
+          'ALTER TABLE task_blocks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
+      }
+
+      const chatSessionCols = columnsOf('sessions');
+      if (!chatSessionCols.includes('project_id')) {
+        db.exec(
+          'ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
       }
     } catch {
       // Table might not exist yet or running in raw exec mock
     }
+  }
+
+  // Data migrations run last: the Inbox project must exist before orphan tasks
+  // can adopt it, and the columns above must exist before the UPDATE runs.
+  for (const statement of DATA_MIGRATIONS) {
+    db.exec(statement);
   }
 }

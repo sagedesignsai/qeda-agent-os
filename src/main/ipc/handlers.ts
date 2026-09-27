@@ -6,10 +6,12 @@
  */
 
 import { exec } from 'node:child_process';
+import path from 'node:path';
 import {
   ipcMain,
   dialog,
   BrowserWindow,
+  shell,
   type IpcMainInvokeEvent,
 } from 'electron';
 import {
@@ -72,6 +74,7 @@ import { listServiceStatuses } from '../services/keys';
 import { isBlockType } from '../../lib/markdown-blocks.js';
 import {
   listTerminalSessions,
+  getTerminalSession,
   createTerminalSession,
   deleteTerminalSession,
   updateTerminalSession,
@@ -79,21 +82,52 @@ import {
   getBlock,
   updateBlock,
 } from '../db/terminal';
+import { getPtyManager } from '../pty/manager.js';
 import {
   runGoal,
   resolveApproval,
   explainBlock,
   suggestFix,
   executeDirectCommand,
+  stopCommand,
+  stopSessionProcesses,
   type TerminalAgentEmitter,
 } from '../ai/terminal-agent';
+import { clearSessionEnv } from '../ai/shell-env.js';
 import {
   listTasks,
+  getTask,
   createTask,
   updateTask,
   deleteTask,
   incrementPomodoro,
 } from '../db/tasks';
+import {
+  listSteps,
+  createStep,
+  createSteps,
+  setStepDone,
+  deleteStep,
+  stepProgressMap,
+} from '../db/task-steps';
+import {
+  listBlocks,
+  createBlock,
+  updateBlock,
+  deleteBlock,
+} from '../db/task-blocks';
+import {
+  createFocusSession,
+  listFocusSessions,
+  getFocusStats,
+  startOfDay,
+} from '../db/focus-sessions';
+import {
+  breakdownTask,
+  expandBrainDump,
+  planDay,
+} from '../ai/task-copilot';
+import { createTaskCopilotAgent } from '../ai/task-copilot-agent';
 
 /** One cached agent per provider/model pair, for the duration of the session. */
 const agentCache = new Map<string, ReturnType<typeof createDesktopAgent>>();
@@ -575,39 +609,97 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
         mainWindow.webContents.send('terminal:agent-done', { sessionId: sid, summary });
       }
       // Auto-rename: truncate goal to a clean title and notify sidebar
-      if (!currentGoal) return;
-      const autoTitle = currentGoal.length > 48 ? `${currentGoal.slice(0, 45)}…` : currentGoal;
-      updateTerminalSession(sid, { title: autoTitle });
+      const autoTitle = currentGoal
+        ? (currentGoal.length > 48 ? `${currentGoal.slice(0, 45)}…` : currentGoal)
+        : undefined;
+      updateTerminalSession(sid, {
+        status: 'done',
+        ...(autoTitle ? { title: autoTitle } : {}),
+      });
       if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('terminal:session-renamed', {
+        if (autoTitle) {
+          mainWindow.webContents.send('terminal:session-renamed', {
+            sessionId: sid,
+            title: autoTitle,
+          });
+        }
+        mainWindow.webContents.send('terminal:session-status', {
           sessionId: sid,
-          title: autoTitle,
+          status: 'done',
         });
+        mainWindow.webContents.send('terminal:sessions-changed');
       }
     },
     onError(sid, error) {
+      updateTerminalSession(sid, { status: 'error' });
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('terminal:agent-error', { sessionId: sid, error });
+        mainWindow.webContents.send('terminal:session-status', {
+          sessionId: sid,
+          status: 'error',
+        });
+        mainWindow.webContents.send('terminal:sessions-changed');
       }
     },
   });
 
-  ipcMain.handle('terminal:sessions-list', () => listTerminalSessions());
+  ipcMain.handle('terminal:sessions-list', () => {
+    const list = listTerminalSessions();
+    const ptyMgr = getPtyManager();
+    if (ptyMgr) {
+      return list.map((session) => {
+        if (ptyMgr.hasActiveRunningCommand(session.id)) {
+          return { ...session, status: 'running' as const };
+        }
+        return session;
+      });
+    }
+    return list;
+  });
+
+  ipcMain.handle('terminal:session-get', (_e, { id }: { id: string }) => {
+    const session = getTerminalSession(id);
+    if (!session) return null;
+    const ptyMgr = getPtyManager();
+    if (ptyMgr && ptyMgr.hasActiveRunningCommand(id)) {
+      return { ...session, status: 'running' as const };
+    }
+    return session;
+  });
 
   ipcMain.handle(
     'terminal:session-create',
-    (_e, { title }: { title?: string }) => createTerminalSession({ title }),
+    (_e, { title, goal, cwd }: { title?: string; goal?: string; cwd?: string }) => {
+      const session = createTerminalSession({ title, goal, cwd });
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:sessions-changed');
+      }
+      return session;
+    },
   );
 
   ipcMain.handle(
     'terminal:session-delete',
-    (_e, { id }: { id: string }) => deleteTerminalSession(id),
+    (_e, { id }: { id: string }) => {
+      stopSessionProcesses(id);
+      getPtyManager()?.killBySessionId(id);
+      clearSessionEnv(id);
+      deleteTerminalSession(id);
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:sessions-changed');
+      }
+    },
   );
 
   ipcMain.handle(
     'terminal:session-rename',
-    (_e, { id, title }: { id: string; title: string }) =>
-      updateTerminalSession(id, { title }),
+    (_e, { id, title }: { id: string; title: string }) => {
+      updateTerminalSession(id, { title });
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:session-renamed', { sessionId: id, title });
+        mainWindow.webContents.send('terminal:sessions-changed');
+      }
+    },
   );
 
   ipcMain.handle(
@@ -633,6 +725,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
           sessionId,
           status: 'running',
         });
+        mainWindow.webContents.send('terminal:sessions-changed');
       }
 
       // Build the emitter — bridges agent events to IPC events
@@ -649,12 +742,68 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       _e,
       { sessionId, command, cwd }: { sessionId: string; command: string; cwd?: string },
     ) => {
-      // Fire-and-forget: the block moves pending → running → done over IPC.
+      const session = getTerminalSession(sessionId);
+      const effectiveCwd = cwd || session?.cwd || process.cwd();
+
+      // If the session title starts with "cd " and a real command is now run, update the title
+      if (session && session.title.startsWith('cd ') && !command.trim().startsWith('cd')) {
+        const folder = effectiveCwd ? path.basename(effectiveCwd) : '';
+        const shortCmd = command.length > 25 ? `${command.slice(0, 22)}…` : command;
+        const newTitle = `${shortCmd} · ${folder || 'terminal'}`;
+        updateTerminalSession(sessionId, { title: newTitle });
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('terminal:session-renamed', {
+            sessionId,
+            title: newTitle,
+          });
+          mainWindow.webContents.send('terminal:sessions-changed');
+        }
+      }
+
+      updateTerminalSession(sessionId, { status: 'running', ...(effectiveCwd ? { cwd: effectiveCwd } : {}) });
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:session-status', {
+          sessionId,
+          status: 'running',
+        });
+        mainWindow.webContents.send('terminal:sessions-changed');
+      }
+
+      const emitter = makeTerminalEmitter();
       void executeDirectCommand({
         sessionId,
         command,
-        cwd,
-        emitter: makeTerminalEmitter(),
+        cwd: effectiveCwd,
+        emitter: {
+          ...emitter,
+          onCwdChanged: (newCwd) => {
+            if (!mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('pty:cwd-changed', { ptyId: '', cwd: newCwd });
+            }
+          },
+          onDone: (sid, summary) => {
+            emitter.onDone(sid, summary);
+            updateTerminalSession(sid, { status: 'idle' });
+            if (!mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('terminal:session-status', {
+                sessionId: sid,
+                status: 'idle',
+              });
+              mainWindow.webContents.send('terminal:sessions-changed');
+            }
+          },
+          onError: (sid, err) => {
+            emitter.onError(sid, err);
+            updateTerminalSession(sid, { status: 'error' });
+            if (!mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('terminal:session-status', {
+                sessionId: sid,
+                status: 'error',
+              });
+              mainWindow.webContents.send('terminal:sessions-changed');
+            }
+          },
+        },
       });
     },
   );
@@ -702,6 +851,22 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     async (_e, { blockId }: { blockId: string }) => {
       const explanation = await explainBlock(blockId);
       return { explanation };
+    },
+  );
+
+  ipcMain.handle(
+    'terminal:stop-command',
+    (_e, { blockId }: { blockId: string }) => {
+      return { stopped: stopCommand(blockId) };
+    },
+  );
+
+  ipcMain.handle(
+    'terminal:open-url',
+    (_e, { url }: { url: string }) => {
+      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+        void shell.openExternal(url);
+      }
     },
   );
 
@@ -795,4 +960,203 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       };
     }
   });
+
+  // ── Focus system · breakdown steps ────────────────────────────────────────
+
+  ipcMain.handle(
+    'tasks:steps-list',
+    (_e, { taskId }: { taskId: string }) => listSteps(taskId),
+  );
+
+  ipcMain.handle(
+    'tasks:step-add',
+    (_e, { taskId, title }: { taskId: string; title: string }) =>
+      createStep({ task_id: taskId, title }),
+  );
+
+  ipcMain.handle(
+    'tasks:step-toggle',
+    (_e, { id, done }: { id: string; done: boolean }) => setStepDone(id, done),
+  );
+
+  ipcMain.handle(
+    'tasks:step-delete',
+    (_e, { id }: { id: string }) => deleteStep(id),
+  );
+
+  ipcMain.handle('tasks:steps-progress', () => stepProgressMap());
+
+  // ── Focus system · time blocking ──────────────────────────────────────────
+
+  ipcMain.handle(
+    'tasks:blocks-list',
+    (_e, req: { from?: number; to?: number } | void) =>
+      listBlocks(req ?? undefined),
+  );
+
+  ipcMain.handle(
+    'tasks:block-create',
+    (_e, req: Parameters<typeof createBlock>[0]) => createBlock(req),
+  );
+
+  ipcMain.handle(
+    'tasks:block-update',
+    (
+      _e,
+      { id, ...patch }: { id: string } & Parameters<typeof updateBlock>[1],
+    ) => updateBlock(id, patch),
+  );
+
+  ipcMain.handle(
+    'tasks:block-delete',
+    (_e, { id }: { id: string }) => deleteBlock(id),
+  );
+
+  // ── Focus system · sessions & stats ───────────────────────────────────────
+
+  ipcMain.handle(
+    'focus:session-create',
+    (_e, req: Parameters<typeof createFocusSession>[0]) =>
+      createFocusSession(req),
+  );
+
+  ipcMain.handle(
+    'focus:sessions-list',
+    (_e, req: { from?: number; to?: number } | void) =>
+      listFocusSessions(req ?? undefined),
+  );
+
+  ipcMain.handle('focus:stats', () => getFocusStats());
+
+  // ── AI focus copilot ──────────────────────────────────────────────────────
+
+  ipcMain.handle(
+    'tasks:breakdown',
+    async (_e, { taskId }: { taskId: string }) => {
+      const task = getTask(taskId);
+      if (!task) throw new Error('Task not found');
+      const { steps, note } = await breakdownTask({
+        title: task.title,
+        description: task.description,
+      });
+      return { steps: createSteps(taskId, steps), note };
+    },
+  );
+
+  ipcMain.handle(
+    'tasks:brain-dump',
+    async (_e, { text }: { text: string }) => {
+      const trimmed = (text ?? '').trim();
+      if (!trimmed) return { tasks: [], note: 'Nothing to add.' };
+      const { tasks: drafts, note } = await expandBrainDump(trimmed);
+      const created = drafts.map((d) =>
+        createTask({
+          title: d.title,
+          description: d.description,
+          priority: d.priority,
+          estimate_mins: d.estimate_mins,
+          status: 'backlog',
+        }),
+      );
+      return { tasks: created, note };
+    },
+  );
+
+  ipcMain.handle(
+    'tasks:plan-day',
+    async (
+      _e,
+      req: { day?: number; workStartMin?: number; workEndMin?: number } | void,
+    ) => {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const dayStart = startOfDay(req?.day ?? nowSec);
+      const dayEnd = dayStart + 86_400;
+      const workStartMin = req?.workStartMin ?? 9 * 60;
+      const workEndMin = req?.workEndMin ?? 18 * 60;
+
+      const openTasks = listTasks().filter((t) => t.status !== 'done');
+      if (openTasks.length === 0) {
+        return { blocks: [], note: 'No open tasks to schedule.' };
+      }
+
+      const busy = listBlocks({ from: dayStart, to: dayEnd }).map((b) => ({
+        title: b.title || b.task_title || 'Time block',
+        start_min: Math.max(0, Math.round((b.start_at - dayStart) / 60)),
+        end_min: Math.round((b.end_at - dayStart) / 60),
+      }));
+
+      const { blocks: proposals, note } = await planDay({
+        tasks: openTasks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          priority: t.priority,
+          estimate_mins: t.estimate_mins,
+          due_at: t.due_at,
+        })),
+        busy,
+        workStartMin,
+        workEndMin,
+      });
+
+      const validIds = new Set(openTasks.map((t) => t.id));
+      const created = proposals
+        .filter((p) => validIds.has(p.task_id))
+        .map((p) => {
+          const start = dayStart + p.start_min * 60;
+          return createBlock({
+            task_id: p.task_id,
+            title: p.title,
+            start_at: start,
+            end_at: start + p.duration_min * 60,
+          });
+        });
+
+      return { blocks: created, note };
+    },
+  );
+
+  // ── Focus copilot (agent with tools) ──────────────────────────────────────
+
+  /**
+   * One copilot turn. Mirrors `agent:chat` but runs the task copilot agent,
+   * streams over copilot-namespaced events, and signals `copilot:changed` so the
+   * board refreshes after tools have (possibly) mutated task data.
+   */
+  ipcMain.handle(
+    'copilot:chat',
+    async (_e, { messages }: { messages: UIMessage[] }) => {
+      const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const fail = (err: unknown) => {
+        if (mainWindow.isDestroyed()) return;
+        mainWindow.webContents.send('copilot:stream-error', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      };
+
+      try {
+        const modelMessages = await convertToModelMessages(messages);
+        const agent = createTaskCopilotAgent();
+        const result = await agent.stream({ messages: modelMessages });
+
+        for await (const chunk of result.fullStream) {
+          if (mainWindow.isDestroyed()) return;
+          if (chunk?.type === 'error') {
+            fail(chunk.error);
+            return;
+          }
+          mainWindow.webContents.send(
+            'copilot:stream-chunk',
+            JSON.stringify(chunk),
+          );
+        }
+
+        if (mainWindow.isDestroyed()) return;
+        mainWindow.webContents.send('copilot:stream-done', { runId });
+        // Tools may have added/changed tasks, blocks, or terminal sessions.
+        mainWindow.webContents.send('copilot:changed');
+      } catch (err) {
+        fail(err);
+      }
+    },
+  );
 }

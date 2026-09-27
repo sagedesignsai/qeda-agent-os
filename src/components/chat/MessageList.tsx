@@ -34,6 +34,7 @@ import { ToolCard } from './ToolCard';
 import { Spinner } from '@/components/ui/spinner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircleIcon, BrainIcon, CheckIcon, XIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 /** Normalised view of a `tool-*` UI part. */
 interface ToolPartView {
@@ -55,6 +56,8 @@ interface MessageListProps {
     toolCallId: string;
     approved: boolean;
   }) => void;
+  /** Replaces the default empty state (used by the focus copilot). */
+  emptyState?: ReactNode;
 }
 
 /** Collapsible "thinking" block for model reasoning. */
@@ -77,8 +80,10 @@ export function MessageList({
   status,
   error,
   onApproval,
+  emptyState,
 }: MessageListProps) {
   if (messages.length === 0 && status === 'ready') {
+    if (emptyState) return <>{emptyState}</>;
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
         <div className="flex flex-col items-center gap-2 text-center">

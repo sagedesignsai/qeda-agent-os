@@ -1,39 +1,31 @@
 /**
  * pages/Tasks.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * ADHD Focus Task Manager.
+ * The ADHD focus system: a *doing* surface (Today) and a *planning* surface
+ * (Board), plus an AI copilot that removes the activation barrier.
  *
- * Layout:
- *   ┌─────────────────────────────────────────────────────────────────────────┐
- *   │  PageHeader  (+ New Task button + Prioritize AI button)                  │
- *   ├──────────┬──────────┬──────────────────────────────────────────────────┤
- *   │ Backlog  │  Active  │  Done                                             │
- *   │ (cards)  │  (cards) │  (cards)                                         │
- *   └──────────┴──────────┴──────────────────────────────────────────────────┘
- *   [FocusMode overlay when a task is focused]
+ *   ┌─ PageHeader ────────────────────────────────────────────────────────────┐
+ *   │  Backlog · Active · Done                              [Brain dump] [+]  │
+ *   ├─ Tabs: Today | Board ───────────────────────────────────────────────────┤
+ *   │  Today  → focus stats, time blocks, "Plan my day"                       │
+ *   │  Board  → the three-column kanban                                       │
+ *   └─────────────────────────────────────────────────────────────────────────┘
+ *   [FocusMode overlay]  [TaskStepsSheet]  [BrainDumpDialog]  [ScheduleBlock]
  *
- * Each TaskCard shows:
- *   - Priority indicator (colored left border)
- *   - Title + description snippet
- *   - Pomodoro count (🍅 ×n)
- *   - Due date (if set, red when overdue)
- *   - Quick actions: Move to next status, Focus, Delete
- *
- * FocusMode overlay:
- *   - Full-screen dark overlay
- *   - Task title + description
- *   - Pomodoro timer (25 min work / 5 min break, configurable)
- *   - "Hand to agent" → opens a new terminal session with the task as goal
+ * FocusMode pairs the pomodoro timer with a synthesised soundscape and records
+ * every phase to the DB, which is what feeds the stats strip and streaks.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   ArrowRightIcon,
+  BotIcon,
   BrainIcon,
+  CalendarPlusIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleDashedIcon,
@@ -44,10 +36,12 @@ import {
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
+  SkipForwardIcon,
+  SparklesIcon,
   TerminalSquareIcon,
-  TimerIcon,
   Trash2Icon,
   UndoIcon,
+  WavesIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -68,11 +62,22 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
-import type { Task } from '@/main/ipc/channels';
+import { BrainDumpDialog } from '@/components/tasks/BrainDumpDialog';
+import { CopilotPanel } from '@/components/copilot/CopilotPanel';
+import { FocusAudioPanel } from '@/components/tasks/FocusAudioPanel';
+import { ScheduleBlockDialog } from '@/components/tasks/ScheduleBlockDialog';
+import { TaskStepsSheet } from '@/components/tasks/TaskStepsSheet';
+import { TodayTimeline } from '@/components/tasks/TodayTimeline';
+import { useFocusAudio, type UseFocusAudioReturn } from '@/hooks/use-focus-audio';
+import { useFocusTimer, type PhaseCompleteInfo } from '@/hooks/use-focus-timer';
+import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
 
@@ -93,99 +98,32 @@ const STATUS_META: Record<Status, { label: string; icon: React.ComponentType<{ c
 
 const COLUMNS: Status[] = ['backlog', 'active', 'done'];
 
-// ─── Pomodoro timer ───────────────────────────────────────────────────────────
-
-const WORK_MINS = 25;
-const BREAK_MINS = 5;
-
-type TimerPhase = 'work' | 'break' | 'idle';
-
-interface PomodoroState {
-  phase: TimerPhase;
-  secondsLeft: number;
-  running: boolean;
-  completed: number; // pomodoros completed this session
-}
-
-function usePomodoroTimer(taskId: string | null, onComplete: () => void) {
-  const [state, setState] = useState<PomodoroState>({
-    phase: 'idle',
-    secondsLeft: WORK_MINS * 60,
-    running: false,
-    completed: 0,
-  });
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clear = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    // Reset timer when task changes
-    clear();
-    setState({ phase: 'idle', secondsLeft: WORK_MINS * 60, running: false, completed: 0 });
-  }, [taskId]);
-
-  useEffect(() => {
-    if (!state.running) { clear(); return; }
-
-    intervalRef.current = setInterval(() => {
-      setState((prev) => {
-        if (prev.secondsLeft > 1) {
-          return { ...prev, secondsLeft: prev.secondsLeft - 1 };
-        }
-        // Phase complete
-        clear();
-        if (prev.phase === 'work') {
-          onComplete();
-          return {
-            phase: 'break',
-            secondsLeft: BREAK_MINS * 60,
-            running: false,
-            completed: prev.completed + 1,
-          };
-        }
-        return {
-          phase: 'work',
-          secondsLeft: WORK_MINS * 60,
-          running: false,
-          completed: prev.completed,
-        };
-      });
-    }, 1000);
-
-    return clear;
-  }, [state.running, onComplete]);
-
-  const start = () =>
-    setState((p) => ({
-      ...p,
-      phase: p.phase === 'idle' ? 'work' : p.phase,
-      secondsLeft: p.phase === 'idle' ? WORK_MINS * 60 : p.secondsLeft,
-      running: true,
-    }));
-  const pause = () => setState((p) => ({ ...p, running: false }));
-  const reset = () => {
-    clear();
-    setState({ phase: 'idle', secondsLeft: WORK_MINS * 60, running: false, completed: state.completed });
-  };
-
-  return { state, start, pause, reset };
-}
+const DURATION_PRESETS = [
+  { label: '25 / 5', work: 25, break: 5 },
+  { label: '50 / 10', work: 50, break: 10 },
+] as const;
 
 // ─── Task card ────────────────────────────────────────────────────────────────
 
 interface TaskCardProps {
   task: Task;
+  progress?: StepProgress;
   onMove: (id: string, to: Status) => void;
   onDelete: (id: string) => void;
   onFocus: (task: Task) => void;
+  onOpenSteps: (task: Task) => void;
+  onSchedule: (task: Task) => void;
 }
 
-function TaskCard({ task, onMove, onDelete, onFocus }: TaskCardProps) {
+function TaskCard({
+  task,
+  progress,
+  onMove,
+  onDelete,
+  onFocus,
+  onOpenSteps,
+  onSchedule,
+}: TaskCardProps) {
   const pm = PRIORITY_META[task.priority as Priority];
   const sm = STATUS_META[task.status];
   const isOverdue =
@@ -227,7 +165,7 @@ function TaskCard({ task, onMove, onDelete, onFocus }: TaskCardProps) {
               <ChevronDownIcon className="size-3" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuContent align="end" className="w-44">
             {sm.next && (
               <DropdownMenuItem onClick={() => onMove(task.id, sm.next!)}>
                 <ArrowRightIcon className="mr-2 size-3" />
@@ -244,6 +182,15 @@ function TaskCard({ task, onMove, onDelete, onFocus }: TaskCardProps) {
               <FocusIcon className="mr-2 size-3" />
               Focus mode
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onOpenSteps(task)}>
+              <SparklesIcon className="mr-2 size-3 text-amber-500" />
+              Break down
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onSchedule(task)}>
+              <CalendarPlusIcon className="mr-2 size-3" />
+              Block time
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onClick={() => onDelete(task.id)}
@@ -270,6 +217,24 @@ function TaskCard({ task, onMove, onDelete, onFocus }: TaskCardProps) {
         >
           {pm.label}
         </Badge>
+
+        {progress && progress.total > 0 && (
+          <button
+            type="button"
+            onClick={() => onOpenSteps(task)}
+            className="flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            <CheckIcon className="size-2.5" />
+            {progress.done}/{progress.total}
+          </button>
+        )}
+
+        {task.estimate_mins && (
+          <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+            <ClockIcon className="size-2.5" />
+            {task.estimate_mins}m
+          </span>
+        )}
 
         {task.pomodoro_count > 0 && (
           <span className="text-[10px] text-muted-foreground">
@@ -310,24 +275,46 @@ function TaskCard({ task, onMove, onDelete, onFocus }: TaskCardProps) {
 
 interface FocusModeProps {
   task: Task;
+  audio: UseFocusAudioReturn;
   onClose: () => void;
-  onPomodoroComplete: (taskId: string) => void;
+  onPhaseComplete: (info: PhaseCompleteInfo & { taskId: string }) => void;
 }
 
-function FocusMode({ task, onClose, onPomodoroComplete }: FocusModeProps) {
+function FocusMode({ task, audio, onClose, onPhaseComplete }: FocusModeProps) {
   const navigate = useNavigate();
-  const onComplete = useCallback(() => {
-    onPomodoroComplete(task.id);
-    toast.success('Pomodoro complete! Take a 5-min break.');
-  }, [task.id, onPomodoroComplete]);
+  const [presetIndex, setPresetIndex] = useState(0);
+  const [showAudio, setShowAudio] = useState(false);
+  const preset = DURATION_PRESETS[presetIndex];
 
-  const { state, start, pause, reset } = usePomodoroTimer(task.id, onComplete);
+  const handlePhase = useCallback(
+    (info: PhaseCompleteInfo) => {
+      onPhaseComplete({ ...info, taskId: task.id });
+      if (info.phase === 'work' && info.completed) {
+        toast.success('Pomodoro complete! Take a break.');
+      }
+    },
+    [task.id, onPhaseComplete],
+  );
+
+  const { state, progress, start, pause, reset, skip } = useFocusTimer({
+    taskId: task.id,
+    workMins: preset.work,
+    breakMins: preset.break,
+    onPhaseComplete: handlePhase,
+  });
 
   const mins = Math.floor(state.secondsLeft / 60).toString().padStart(2, '0');
   const secs = (state.secondsLeft % 60).toString().padStart(2, '0');
 
   const phaseColor = state.phase === 'break' ? 'text-emerald-400' : 'text-amber-400';
-  const ringColor  = state.phase === 'break' ? 'ring-emerald-500/40' : 'ring-amber-500/40';
+  const ringColor = state.phase === 'break' ? '#34d399' : '#f59e0b';
+
+  const handleStart = useCallback(() => {
+    if (!audio.playing && (audio.config.noise || audio.config.binaural)) {
+      void audio.start();
+    }
+    start();
+  }, [audio, start]);
 
   const handToAgent = async () => {
     try {
@@ -347,7 +334,7 @@ function FocusMode({ task, onClose, onPomodoroComplete }: FocusModeProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/90 backdrop-blur-md"
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <motion.div
@@ -355,7 +342,7 @@ function FocusMode({ task, onClose, onPomodoroComplete }: FocusModeProps) {
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="flex w-full max-w-md flex-col items-center gap-8 rounded-2xl border border-zinc-800 bg-zinc-950 p-8"
+        className="my-8 flex w-full max-w-md flex-col items-center gap-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-8"
       >
         {/* Task info */}
         <div className="text-center">
@@ -373,19 +360,34 @@ function FocusMode({ task, onClose, onPomodoroComplete }: FocusModeProps) {
 
         {/* Timer ring */}
         <div
-          className={cn(
-            'flex size-36 flex-col items-center justify-center rounded-full ring-4 transition-all',
-            ringColor,
-            state.running ? 'ring-opacity-100' : 'ring-opacity-30',
-          )}
+          className="rounded-full p-1.5"
+          style={{
+            background: `conic-gradient(${ringColor} ${Math.round(progress * 360)}deg, rgba(63,63,70,0.5) 0deg)`,
+          }}
         >
-          <span className={cn('font-mono text-4xl font-bold tabular-nums', phaseColor)}>
-            {mins}:{secs}
-          </span>
-          <span className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">
-            {state.phase === 'idle' ? 'ready' : state.phase}
-          </span>
+          <div className="flex size-36 flex-col items-center justify-center rounded-full bg-zinc-950">
+            <span className={cn('font-mono text-4xl font-bold tabular-nums', phaseColor)}>
+              {mins}:{secs}
+            </span>
+            <span className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">
+              {state.phase === 'idle' ? 'ready' : state.phase}
+            </span>
+          </div>
         </div>
+
+        {/* Duration preset */}
+        <ToggleGroup
+          type="single"
+          value={String(presetIndex)}
+          onValueChange={(v) => v !== '' && setPresetIndex(Number(v))}
+          size="sm"
+        >
+          {DURATION_PRESETS.map((p, i) => (
+            <ToggleGroupItem key={p.label} value={String(i)} className="text-[11px]">
+              {p.label} min
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
 
         {/* Controls */}
         <div className="flex items-center gap-3">
@@ -401,11 +403,20 @@ function FocusMode({ task, onClose, onPomodoroComplete }: FocusModeProps) {
             <Button
               size="icon"
               className="size-10 rounded-full bg-emerald-600 hover:bg-emerald-500"
-              onClick={start}
+              onClick={handleStart}
             >
               <PlayIcon className="size-5" />
             </Button>
           )}
+          <Button
+            size="icon"
+            variant="outline"
+            className="size-10 rounded-full border-zinc-700 text-zinc-400"
+            onClick={skip}
+            aria-label="Skip phase"
+          >
+            <SkipForwardIcon className="size-4" />
+          </Button>
           <Button
             size="icon"
             variant="outline"
@@ -414,14 +425,44 @@ function FocusMode({ task, onClose, onPomodoroComplete }: FocusModeProps) {
           >
             <RefreshCwIcon className="size-4" />
           </Button>
+          <Button
+            size="icon"
+            variant="outline"
+            className={cn(
+              'size-10 rounded-full border-zinc-700',
+              (audio.playing || showAudio) && 'border-sky-700 text-sky-400',
+            )}
+            onClick={() => {
+              setShowAudio((v) => !v);
+              if (audio.playing) audio.stop();
+            }}
+            aria-label="Soundscape"
+          >
+            <WavesIcon className="size-4" />
+          </Button>
         </div>
 
         {/* Pomodoro count */}
         {state.completed > 0 && (
           <p className="text-sm text-zinc-400">
-            {'🍅'.repeat(state.completed)} {state.completed} pomodoro{state.completed > 1 ? 's' : ''} this session
+            {'🍅'.repeat(Math.min(state.completed, 8))} {state.completed} pomodoro
+            {state.completed > 1 ? 's' : ''} this session
           </p>
         )}
+
+        {/* Soundscape */}
+        <AnimatePresence>
+          {showAudio && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="w-full overflow-hidden"
+            >
+              <FocusAudioPanel audio={audio} />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Hand to agent */}
         <Button
@@ -446,20 +487,33 @@ function FocusMode({ task, onClose, onPomodoroComplete }: FocusModeProps) {
 interface NewTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (data: { title: string; description: string; priority: Priority }) => void;
+  onSave: (data: {
+    title: string;
+    description: string;
+    priority: Priority;
+    estimate_mins: number | null;
+  }) => void;
 }
 
 function NewTaskDialog({ open, onOpenChange, onSave }: NewTaskDialogProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Priority>(2);
+  const [estimate, setEstimate] = useState('');
 
   const handleSave = () => {
     if (!title.trim()) return;
-    onSave({ title: title.trim(), description: description.trim(), priority });
+    const parsed = Number(estimate);
+    onSave({
+      title: title.trim(),
+      description: description.trim(),
+      priority,
+      estimate_mins: estimate.trim() && parsed > 0 ? parsed : null,
+    });
     setTitle('');
     setDescription('');
     setPriority(2);
+    setEstimate('');
     onOpenChange(false);
   };
 
@@ -504,6 +558,19 @@ function NewTaskDialog({ open, onOpenChange, onSave }: NewTaskDialogProps) {
               </Button>
             ))}
           </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Estimate:</span>
+            <Input
+              type="number"
+              min={5}
+              step={5}
+              placeholder="mins"
+              value={estimate}
+              onChange={(e) => setEstimate(e.target.value)}
+              className="h-7 w-24 text-xs"
+            />
+          </div>
         </div>
 
         <DialogFooter>
@@ -524,12 +591,24 @@ function NewTaskDialog({ open, onOpenChange, onSave }: NewTaskDialogProps) {
 interface ColumnProps {
   status: Status;
   tasks: Task[];
+  stepProgress: Record<string, StepProgress>;
   onMove: (id: string, to: Status) => void;
   onDelete: (id: string) => void;
   onFocus: (task: Task) => void;
+  onOpenSteps: (task: Task) => void;
+  onSchedule: (task: Task) => void;
 }
 
-function Column({ status, tasks, onMove, onDelete, onFocus }: ColumnProps) {
+function Column({
+  status,
+  tasks,
+  stepProgress,
+  onMove,
+  onDelete,
+  onFocus,
+  onOpenSteps,
+  onSchedule,
+}: ColumnProps) {
   const meta = STATUS_META[status];
   const StatusIcon = meta.icon;
 
@@ -538,7 +617,7 @@ function Column({ status, tasks, onMove, onDelete, onFocus }: ColumnProps) {
       {/* Column header */}
       <div className="flex items-center gap-1.5 px-1">
         <StatusIcon className="size-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {meta.label}
         </span>
         <Badge
@@ -557,9 +636,12 @@ function Column({ status, tasks, onMove, onDelete, onFocus }: ColumnProps) {
               <TaskCard
                 key={task.id}
                 task={task}
+                progress={stepProgress[task.id]}
                 onMove={onMove}
                 onDelete={onDelete}
                 onFocus={onFocus}
+                onOpenSteps={onOpenSteps}
+                onSchedule={onSchedule}
               />
             ))}
             {tasks.length === 0 && (
@@ -582,10 +664,24 @@ function Column({ status, tasks, onMove, onDelete, onFocus }: ColumnProps) {
 
 export default function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [stepProgress, setStepProgress] = useState<Record<string, StepProgress>>({});
+  const [stats, setStats] = useState<FocusStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<'today' | 'board'>('today');
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [brainDumpOpen, setBrainDumpOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  /** Bumped whenever task data may have changed, to refresh the Today view. */
+  const [dataVersion, setDataVersion] = useState(0);
   const [focusedTask, setFocusedTask] = useState<Task | null>(null);
+  const [stepsTask, setStepsTask] = useState<Task | null>(null);
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleTaskId, setScheduleTaskId] = useState<string | null>(null);
   const [isPrioritizing, setIsPrioritizing] = useState(false);
+
+  const audio = useFocusAudio();
 
   const load = useCallback(async () => {
     try {
@@ -598,20 +694,54 @@ export default function Tasks() {
     }
   }, []);
 
+  const loadSteps = useCallback(async () => {
+    try {
+      const map = await window.electron.ipc.invoke<Record<string, StepProgress>>(
+        'tasks:steps-progress',
+      );
+      setStepProgress(map ?? {});
+    } catch {
+      /* progress badges are best-effort */
+    }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const s = await window.electron.ipc.invoke<FocusStats>('focus:stats');
+      setStats(s);
+    } catch {
+      /* stats are best-effort */
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadSteps();
+    void loadStats();
+  }, [load, loadSteps, loadStats]);
+
+  /** Reload everything the copilot's tools could have touched. */
+  const refreshAll = useCallback(() => {
+    void load();
+    void loadSteps();
+    void loadStats();
+    setDataVersion((v) => v + 1);
+  }, [load, loadSteps, loadStats]);
 
   const handleCreate = async (data: {
     title: string;
     description: string;
     priority: Priority;
+    estimate_mins: number | null;
   }) => {
     try {
       const task = await window.electron.ipc.invoke<Task>('tasks:create', {
         title: data.title,
         description: data.description,
         priority: data.priority,
+        estimate_mins: data.estimate_mins,
         status: 'backlog',
       });
       setTasks((prev) => [task, ...prev]);
@@ -621,14 +751,12 @@ export default function Tasks() {
   };
 
   const handleMove = async (id: string, to: Status) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: to } : t)),
-    );
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status: to } : t)));
     try {
       await window.electron.ipc.invoke('tasks:update', { id, status: to });
     } catch {
       toast.error('Could not update task');
-      void load(); // revert
+      void load();
     }
   };
 
@@ -642,34 +770,53 @@ export default function Tasks() {
     }
   };
 
-  const handlePomodoroComplete = async (taskId: string) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === taskId ? { ...t, pomodoro_count: t.pomodoro_count + 1 } : t,
-      ),
-    );
-    try {
-      await window.electron.ipc.invoke('tasks:increment-pomodoro', { id: taskId });
-    } catch {
-      // Best-effort
-    }
-  };
+  const handlePhaseComplete = useCallback(
+    async (info: PhaseCompleteInfo & { taskId: string }) => {
+      try {
+        await window.electron.ipc.invoke('focus:session-create', {
+          task_id: info.taskId,
+          kind: info.phase,
+          planned_sec: info.plannedSec,
+          actual_sec: info.actualSec,
+          completed: info.completed,
+        });
+      } catch {
+        /* session recording is best-effort */
+      }
+
+      if (info.phase === 'work' && info.completed) {
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === info.taskId
+              ? { ...t, pomodoro_count: t.pomodoro_count + 1 }
+              : t,
+          ),
+        );
+        try {
+          await window.electron.ipc.invoke('tasks:increment-pomodoro', {
+            id: info.taskId,
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
+
+      void loadStats();
+    },
+    [loadStats],
+  );
 
   const handlePrioritize = async () => {
     setIsPrioritizing(true);
     try {
-      const result = await window.electron.ipc.invoke<{ orderedIds: string[]; reasoning: string }>(
-        'tasks:prioritize',
-        {},
-      );
-      // Reorder tasks by the agent's suggestion
+      const result = await window.electron.ipc.invoke<{
+        orderedIds: string[];
+        reasoning: string;
+      }>('tasks:prioritize', {});
       const idOrder = result.orderedIds;
-      setTasks((prev) => {
-        const sorted = [...prev].sort(
-          (a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id),
-        );
-        return sorted;
-      });
+      setTasks((prev) =>
+        [...prev].sort((a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id)),
+      );
       toast.success('Tasks prioritized by AI', {
         description: result.reasoning.slice(0, 120),
       });
@@ -680,8 +827,23 @@ export default function Tasks() {
     }
   };
 
+  const openSteps = (task: Task) => {
+    setStepsTask(task);
+    setStepsOpen(true);
+  };
+
+  const openSchedule = (task: Task | null) => {
+    setScheduleTaskId(task?.id ?? null);
+    setScheduleOpen(true);
+  };
+
   const tasksByStatus = (status: Status) =>
     tasks.filter((t) => t.status === status);
+
+  const openTasks = useMemo(
+    () => tasks.filter((t) => t.status !== 'done'),
+    [tasks],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -693,13 +855,31 @@ export default function Tasks() {
               size="sm"
               variant="outline"
               className="h-7 gap-1.5 text-xs"
-              onClick={handlePrioritize}
+              onClick={() => setCopilotOpen(true)}
+            >
+              <BotIcon className="size-3 text-primary" />
+              Copilot
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => setBrainDumpOpen(true)}
+            >
+              <BrainIcon className="size-3 text-violet-500" />
+              Brain dump
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 text-xs"
+              onClick={() => void handlePrioritize()}
               disabled={isPrioritizing || tasks.length === 0}
             >
               {isPrioritizing ? (
                 <Loader2Icon className="size-3 animate-spin" />
               ) : (
-                <BrainIcon className="size-3" />
+                <SparklesIcon className="size-3" />
               )}
               Prioritize
             </Button>
@@ -715,31 +895,91 @@ export default function Tasks() {
         }
       />
 
-      {/* Board */}
-      <div className="flex min-h-0 flex-1 gap-3 overflow-hidden p-4">
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          COLUMNS.map((status) => (
-            <Column
-              key={status}
-              status={status}
-              tasks={tasksByStatus(status)}
-              onMove={handleMove}
-              onDelete={handleDelete}
-              onFocus={setFocusedTask}
-            />
-          ))
-        )}
-      </div>
+      <Tabs
+        value={view}
+        onValueChange={(v) => setView(v as 'today' | 'board')}
+        className="min-h-0 flex-1 gap-0"
+      >
+        <div className="border-b border-border/60 px-4 pt-3">
+          <TabsList>
+            <TabsTrigger value="today" className="gap-1.5">
+              <FocusIcon className="size-3.5" />
+              Today
+            </TabsTrigger>
+            <TabsTrigger value="board" className="gap-1.5">
+              <CircleDashedIcon className="size-3.5" />
+              Board
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-      {/* New task dialog */}
+        <TabsContent value="today" className="min-h-0 overflow-hidden">
+          <TodayTimeline
+            tasks={tasks}
+            stats={stats}
+            statsLoading={statsLoading}
+            refreshSignal={dataVersion}
+            onFocusTask={setFocusedTask}
+          />
+        </TabsContent>
+
+        <TabsContent value="board" className="min-h-0 overflow-hidden">
+          {loading ? (
+            <div className="flex h-full items-center justify-center p-4">
+              <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <div className="flex h-full min-h-0 gap-3 overflow-hidden p-4">
+              {COLUMNS.map((status) => (
+                <Column
+                  key={status}
+                  status={status}
+                  tasks={tasksByStatus(status)}
+                  stepProgress={stepProgress}
+                  onMove={handleMove}
+                  onDelete={handleDelete}
+                  onFocus={setFocusedTask}
+                  onOpenSteps={openSteps}
+                  onSchedule={openSchedule}
+                />
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Dialogs */}
       <NewTaskDialog
         open={newTaskOpen}
         onOpenChange={setNewTaskOpen}
         onSave={handleCreate}
+      />
+
+      <BrainDumpDialog
+        open={brainDumpOpen}
+        onOpenChange={setBrainDumpOpen}
+        onCreated={(created) => setTasks((prev) => [...created, ...prev])}
+      />
+
+      <CopilotPanel
+        open={copilotOpen}
+        onOpenChange={setCopilotOpen}
+        onChanged={refreshAll}
+      />
+
+      <ScheduleBlockDialog
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        tasks={openTasks}
+        presetTaskId={scheduleTaskId}
+        onSaved={() => undefined}
+      />
+
+      <TaskStepsSheet
+        task={stepsTask}
+        open={stepsOpen}
+        onOpenChange={setStepsOpen}
+        onChanged={() => void loadSteps()}
       />
 
       {/* Focus mode overlay */}
@@ -747,9 +987,28 @@ export default function Tasks() {
         {focusedTask && (
           <FocusMode
             task={focusedTask}
+            audio={audio}
             onClose={() => setFocusedTask(null)}
-            onPomodoroComplete={handlePomodoroComplete}
+            onPhaseComplete={handlePhaseComplete}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Soundscape keeps playing outside focus mode — give it an off switch. */}
+      <AnimatePresence>
+        {audio.playing && !focusedTask && (
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            onClick={() => audio.stop()}
+            className="fixed right-4 bottom-4 z-40 flex items-center gap-2 rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-lg transition-colors hover:text-foreground"
+          >
+            <WavesIcon className="size-3.5 text-sky-500" />
+            Soundscape playing
+            <span className="text-muted-foreground/60">· stop</span>
+          </motion.button>
         )}
       </AnimatePresence>
     </div>

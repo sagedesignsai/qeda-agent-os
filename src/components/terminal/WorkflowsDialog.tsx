@@ -54,7 +54,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   git: 'bg-purple-900/60 text-purple-300 border-purple-700/40',
   system: 'bg-orange-900/60 text-orange-300 border-orange-700/40',
   dev: 'bg-emerald-900/60 text-emerald-300 border-emerald-700/40',
-  custom: 'bg-pink-900/60 text-pink-300 border-pink-700/40',
+  custom: 'bg-violet-900/60 text-violet-300 border-violet-700/40',
 };
 
 export function WorkflowsDialog({
@@ -164,7 +164,7 @@ export function WorkflowsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl p-0 gap-0 overflow-hidden border-border bg-background">
+      <DialogContent className="w-[88vw] max-w-5xl min-w-[680px] p-0 gap-0 overflow-hidden border-border bg-background shadow-2xl">
         <DialogHeader className="border-b border-border/60 px-5 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">

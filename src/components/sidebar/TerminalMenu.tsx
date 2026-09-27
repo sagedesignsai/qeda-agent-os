@@ -56,16 +56,48 @@ import { useIpcEvent } from '@/hooks/use-ipc';
 
 function SessionStatusDot({ status }: { status: TerminalSession['status'] }) {
   if (status === 'running') {
-    return <Loader2Icon className="size-3 shrink-0 animate-spin text-sky-400" />;
+    return (
+      <span className="relative flex size-2.5 shrink-0 items-center justify-center">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+        <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+      </span>
+    );
   }
   if (status === 'done') {
-    return <CheckCircle2Icon className="size-3 shrink-0 text-emerald-400" />;
+    return <CheckCircle2Icon className="size-3 shrink-0 text-emerald-400/80" />;
   }
   if (status === 'error') {
     return <XCircleIcon className="size-3 shrink-0 text-rose-400" />;
   }
   // idle
-  return <CircleDashedIcon className="size-3 shrink-0 text-muted-foreground/60" />;
+  return <CircleDashedIcon className="size-3 shrink-0 text-muted-foreground/50" />;
+}
+
+// ─── Session label ────────────────────────────────────────────────────────────
+
+function SessionLabel({ session }: { session: TerminalSession }) {
+  const rawTitle = session.title || session.goal || 'Untitled';
+  const parts = rawTitle.split(' · ');
+  const cmd = parts[0];
+  const context = parts.slice(1).join(' · ');
+
+  return (
+    <span className="flex min-w-0 flex-1 items-baseline gap-1.5 truncate">
+      <span className={cn(
+        'font-mono text-xs font-medium truncate',
+        session.status === 'running' && 'text-emerald-400',
+        session.status === 'done' && 'text-foreground/90',
+        session.status === 'idle' && 'text-muted-foreground',
+      )}>
+        {cmd}
+      </span>
+      {context && (
+        <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
+          · {context}
+        </span>
+      )}
+    </span>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -109,6 +141,15 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
   }, [activeId]);
 
   // ── Live event subscriptions ─────────────────────────────────────────────
+
+  // Reload whenever a session is created, deleted, or assigned by PTY
+  useIpcEvent('terminal:sessions-changed', () => {
+    void reload();
+  });
+
+  useIpcEvent('pty:session-assigned', () => {
+    void reload();
+  });
 
   // When a running session finishes, update its status in-place without a
   // full reload (avoids a flash).
@@ -260,12 +301,7 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
                     >
                       {/* Status dot replaces the static icon */}
                       <SessionStatusDot status={session.status} />
-                      <span className={cn(
-                        'truncate',
-                        session.status === 'done' && 'text-muted-foreground',
-                      )}>
-                        {session.title || session.goal || 'Untitled'}
-                      </span>
+                      <SessionLabel session={session} />
                     </SidebarMenuButton>
 
                     <DropdownMenu>

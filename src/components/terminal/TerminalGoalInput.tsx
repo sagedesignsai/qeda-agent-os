@@ -26,7 +26,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { isDirectCommandInput } from '@/lib/terminal-input';
+import { isDirectCommandInput, isInteractiveCommand } from '@/lib/terminal-input';
 import { WorkflowsDialog } from '@/components/terminal/WorkflowsDialog';
 import { TerminalHistoryDialog } from '@/components/terminal/TerminalHistoryDialog';
 import {
@@ -34,6 +34,7 @@ import {
   getHistorySuggestion,
 } from '@/lib/terminal-history';
 import {
+  AlertTriangleIcon,
   BookOpenIcon,
   ClockIcon,
   GitBranchIcon,
@@ -66,6 +67,7 @@ const TAG_COLORS: Record<string, string> = {
 
 interface TerminalGoalInputProps {
   onSubmit: (goal: string) => void;
+  onRunInShell?: (cmd: string) => void;
   isRunning?: boolean;
   disabled?: boolean;
   className?: string;
@@ -82,6 +84,7 @@ interface TerminalGoalInputProps {
 
 export function TerminalGoalInput({
   onSubmit,
+  onRunInShell,
   isRunning = false,
   disabled = false,
   className,
@@ -93,6 +96,7 @@ export function TerminalGoalInput({
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [workflowsOpen, setWorkflowsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [interactivePrompt, setInteractivePrompt] = useState<string | null>(null);
 
   // Adopt an external prefill whenever it changes identity.
   useEffect(() => {
@@ -109,6 +113,14 @@ export function TerminalGoalInput({
   const handleSubmit = (message: PromptInputMessage) => {
     const goal = message.text.trim();
     if (!goal || disabled || isRunning) return;
+
+    // Check if command requires interactive TTY input
+    const rawCmd = goal.replace(/^[!$]\s?/, '').trim();
+    if (isInteractiveCommand(rawCmd)) {
+      setInteractivePrompt(rawCmd);
+      return;
+    }
+
     addCommandHistory(goal, cwd);
     onSubmit(goal);
     setText('');
@@ -190,6 +202,61 @@ export function TerminalGoalInput({
             </div>
           )}
         </div>
+
+        {/* Interactive TTY warning prompt banner */}
+        {interactivePrompt && (
+          <div className="mx-2 mb-2 mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 font-medium text-amber-300">
+                <AlertTriangleIcon className="size-3.5 shrink-0 text-amber-400" />
+                <span>Interactive TTY Command Detected</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInteractivePrompt(null)}
+                className="text-muted-foreground hover:text-foreground text-xs px-1"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-foreground">
+                {interactivePrompt}
+              </code>{' '}
+              requires interactive terminal input (prompts, passwords, or curses UI) and may hang in block mode.
+            </p>
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="h-6 text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  const cmd = interactivePrompt;
+                  setInteractivePrompt(null);
+                  addCommandHistory(cmd, cwd);
+                  onSubmit(cmd);
+                  setText('');
+                }}
+              >
+                Run in Block Mode Anyway
+              </Button>
+              <Button
+                type="button"
+                size="xs"
+                className="h-6 text-[11px] bg-primary text-primary-foreground hover:bg-primary/90"
+                onClick={() => {
+                  const cmd = interactivePrompt;
+                  setInteractivePrompt(null);
+                  setText('');
+                  onRunInShell?.(cmd);
+                }}
+              >
+                Run in Shell Mode ↗
+              </Button>
+            </div>
+          </div>
+        )}
 
         <PromptInputTextarea
           placeholder="Describe a goal, or start with ! to run a command…"

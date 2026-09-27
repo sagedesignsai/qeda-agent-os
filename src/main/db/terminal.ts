@@ -17,6 +17,8 @@ export interface TerminalSession {
   title: string;
   goal: string;
   status: TerminalSessionStatus;
+  cwd?: string;
+  env?: string;
   created_at: number;
   updated_at: number;
 }
@@ -65,22 +67,32 @@ export function getTerminalSession(id: string): TerminalSession | null {
 export function createTerminalSession(opts: {
   title?: string;
   goal?: string;
+  cwd?: string;
+  env?: string;
 }): TerminalSession {
   const id = nanoid();
   const now = Math.floor(Date.now() / 1000);
   getDb()
     .prepare(
-      `INSERT INTO terminal_sessions (id, title, goal, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO terminal_sessions (id, title, goal, cwd, env, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, opts.title ?? 'New Session', opts.goal ?? '', now, now);
+    .run(
+      id,
+      opts.title ?? 'New Session',
+      opts.goal ?? '',
+      opts.cwd ?? '',
+      opts.env ?? '{}',
+      now,
+      now,
+    );
   return getTerminalSession(id)!;
 }
 
-/** Update a session's title, goal or status. */
+/** Update a session's title, goal, status, cwd, or env. */
 export function updateTerminalSession(
   id: string,
-  patch: Partial<Pick<TerminalSession, 'title' | 'goal' | 'status'>>,
+  patch: Partial<Pick<TerminalSession, 'title' | 'goal' | 'status' | 'cwd' | 'env'>>,
 ): void {
   const now = Math.floor(Date.now() / 1000);
   const sets: string[] = ['updated_at = ?'];
@@ -89,6 +101,8 @@ export function updateTerminalSession(
   if (patch.title  !== undefined) { sets.push('title = ?');  values.push(patch.title); }
   if (patch.goal   !== undefined) { sets.push('goal = ?');   values.push(patch.goal); }
   if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
+  if (patch.cwd    !== undefined) { sets.push('cwd = ?');    values.push(patch.cwd); }
+  if (patch.env    !== undefined) { sets.push('env = ?');    values.push(patch.env); }
 
   values.push(id);
   getDb()

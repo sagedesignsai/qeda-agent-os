@@ -17,7 +17,7 @@ inspectable.
 | **Chat** | Conversational agent with tool use, plus deep research runs with citations |
 | **Workspace** | Block-editor notebooks, version history, and local RAG over your own pages |
 | **Terminal** | Agent Mode (goal → plan → approve → execute) and Shell Mode (raw PTY + xterm.js) |
-| **Focus** | Task manager with a Pomodoro timer and agent-assisted prioritisation |
+| **Focus** | Task manager with time blocking, a synthesised soundscape, focus sessions, and an AI copilot agent with tools |
 
 ## The name
 
@@ -187,6 +187,34 @@ endpoint. Set both `EMBEDDING_PROVIDER` and `EMBEDDING_MODEL`, and make sure
 `EMBEDDING_DIM` matches the model — otherwise RAG reports a clear configuration
 error instead of failing at request time. Changing the dimension after indexing
 requires re-indexing, since the `vec0` table is created with a fixed width.
+
+### Focus system
+
+The Focus module is built in layers with clear boundaries:
+
+- **Data** — `db/task-steps.ts` (breakdown checklists), `db/task-blocks.ts`
+  (time boxes), `db/focus-sessions.ts` (phase history + streaks). The `tasks`
+  table gains an `estimate_mins` column via an idempotent migration.
+- **AI** — `ai/task-copilot.ts` exposes three schema-validated operations
+  (`breakdownTask`, `expandBrainDump`, `planDay`) through `generateObject`, so
+  nothing parses free-form JSON.
+- **Copilot agent** — `ai/task-copilot-agent.ts` is a `ToolLoopAgent` whose tools
+  (`tools/tasks.ts`) can list, create, schedule, and (with approval) edit tasks
+  and blocks, plus read-only context tools over the web, workspace, filesystem,
+  and RAG index. Approval is risk-based: additive actions run straight through,
+  while edits and deletions pause as approve/deny cards. The panel reuses the
+  chat streaming/approval plumbing via `hooks/use-copilot-chat.ts`.
+- **Audio** — `lib/focus-audio.ts` synthesises white/pink/brown noise and
+  binaural beats at runtime with the Web Audio API. No assets, no network.
+- **State** — `hooks/use-focus-timer.ts` (UI-free interval machine) and
+  `hooks/use-focus-audio.ts` (engine binding) keep the views thin.
+- **Views** — `pages/Tasks.tsx` is a two-tab surface: **Today** (a calm, finite
+  timeline of blocks) and **Board** (the planning kanban), plus a focus overlay,
+  a steps sheet, a brain-dump dialog, and a schedule dialog.
+
+The two prompts that matter most (breakdown and brain dump) are written to be
+anti-overwhelm: fewer, smaller, action-first items, with priority by real
+consequence rather than volume.
 
 ## Testing notes
 

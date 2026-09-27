@@ -61,3 +61,98 @@ export function formatDuration(ms: number): string {
   const remainder = Math.round(seconds % 60);
   return `${minutes}m ${remainder}s`;
 }
+
+/** Regex matching local development server addresses (localhost, 127.0.0.1, 0.0.0.0). */
+export const LOCALHOST_REGEX =
+  /(https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/[^\s"')\]]*)?)/gi;
+
+/** Extract unique local dev server URLs from stdout/stderr (e.g. Next.js, Vite). */
+export function extractLocalhostUrls(text: string): string[] {
+  if (!text) return [];
+  const matches = text.match(LOCALHOST_REGEX);
+  if (!matches) return [];
+  const cleaned = matches.map((u) => u.replace(/[.,;:)\]]+$/, ''));
+  return Array.from(new Set(cleaned));
+}
+
+/** Detect whether a command or its output represents a unified Git diff. */
+export function isGitDiff(cmd?: string, text?: string): boolean {
+  if (
+    cmd &&
+    (cmd.startsWith('git diff') ||
+      cmd.startsWith('git show') ||
+      cmd.startsWith('git log -p'))
+  ) {
+    return true;
+  }
+  if (!text) return false;
+  return (
+    text.includes('diff --git ') ||
+    (text.includes('--- a/') && text.includes('+++ b/'))
+  );
+}
+
+/** Parse a standard .env file content into key-value pairs without executing code. */
+export function parseDotEnv(content: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!match) continue;
+
+    const key = match[1];
+    let val = match[2].trim();
+
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+
+    result[key] = val;
+  }
+  return result;
+}
+
+/** Parse export statements from a command string (e.g. export PORT=3000). */
+export function parseExportCommand(command: string): Record<string, string> | null {
+  const trimmed = command.trim();
+  if (!trimmed.startsWith('export ') && trimmed !== 'export') return null;
+
+  const rest = trimmed.slice(7).trim();
+  if (!rest) return null;
+
+  const result: Record<string, string> = {};
+  const regex = /([A-Za-z_][A-Za-z0-9_]*)=(?:"([^"]*)"|'([^']*)'|([^\s;]+))/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(rest)) !== null) {
+    const key = match[1];
+    const val = match[2] ?? match[3] ?? match[4] ?? '';
+    result[key] = val;
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+const INTERACTIVE_PATTERNS = [
+  /^sudo\b/,
+  /^git\s+add\s+-[p|i]\b/,
+  /^git\s+commit\s*$/,
+  /^npm\s+init(?!\s+-y)\b/,
+  /^yarn\s+create\b/,
+  /^pnpm\s+create\b/,
+  /^(?:nano|vim|vi|emacs|less|more|top|htop)\b/,
+  /^(?:python|python3|node|irb|php\s+-a)\s*$/,
+  /^ssh\b/,
+];
+
+/** Returns true if the command requires an interactive TTY and cannot run cleanly in a subshell pipe. */
+export function isInteractiveCommand(command: string): boolean {
+  const trimmed = command.trim();
+  return INTERACTIVE_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+

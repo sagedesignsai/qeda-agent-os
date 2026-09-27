@@ -25,17 +25,21 @@
 import Ansi from 'ansi-to-react';
 import { motion, AnimatePresence, type HTMLMotionProps } from 'motion/react';
 import {
+  AlertTriangleIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleDashedIcon,
   CircleSlashIcon,
   CopyIcon,
+  ExternalLinkIcon,
   FilterIcon,
+  GlobeIcon,
   Loader2Icon,
   LightbulbIcon,
   PlayIcon,
   RotateCwIcon,
   SearchIcon,
+  SquareIcon,
   TerminalSquareIcon,
   WrenchIcon,
   XCircleIcon,
@@ -60,7 +64,12 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import { formatDuration } from '@/lib/terminal-input';
+import {
+  formatDuration,
+  extractLocalhostUrls,
+  isGitDiff,
+  isInteractiveCommand,
+} from '@/lib/terminal-input';
 import type { FixSuggestion } from '@/hooks/use-terminal-session';
 import type { TerminalBlock } from '@/main/ipc/channels';
 
@@ -73,11 +82,13 @@ interface CommandBlockCtx {
   onExplain?: () => void;
   isExplaining?: boolean;
   onRerun?: () => void;
+  onStop?: () => void;
   onFix?: () => void;
   fix?: FixSuggestion;
   isFixing?: boolean;
   /** Send a proposed repair to the input bar for review (never auto-runs). */
   onUseFix?: (command: string) => void;
+  onRunInShell?: (command: string) => void;
   isSearchOpen: boolean;
   setIsSearchOpen: React.Dispatch<React.SetStateAction<boolean>>;
   searchQuery: string;
@@ -143,10 +154,12 @@ export interface CommandBlockProps extends HTMLMotionProps<'div'> {
   onExplain?: () => void;
   isExplaining?: boolean;
   onRerun?: () => void;
+  onStop?: () => void;
   onFix?: () => void;
   fix?: FixSuggestion;
   isFixing?: boolean;
   onUseFix?: (command: string) => void;
+  onRunInShell?: (command: string) => void;
 }
 
 export function CommandBlock({
@@ -156,10 +169,12 @@ export function CommandBlock({
   onExplain,
   isExplaining,
   onRerun,
+  onStop,
   onFix,
   fix,
   isFixing,
   onUseFix,
+  onRunInShell,
   children,
   className,
   ...props
@@ -176,10 +191,12 @@ export function CommandBlock({
       onExplain,
       isExplaining,
       onRerun,
+      onStop,
       onFix,
       fix,
       isFixing,
       onUseFix,
+      onRunInShell,
       isSearchOpen,
       setIsSearchOpen,
       searchQuery,
@@ -194,10 +211,12 @@ export function CommandBlock({
       onExplain,
       isExplaining,
       onRerun,
+      onStop,
       onFix,
       fix,
       isFixing,
       onUseFix,
+      onRunInShell,
       isSearchOpen,
       searchQuery,
       filterMode,
@@ -239,7 +258,7 @@ export function CommandBlock({
 // ─── Header ───────────────────────────────────────────────────────────────────
 
 export function CommandBlockHeader({ className }: { className?: string }) {
-  const { block, onRerun, isSearchOpen, setIsSearchOpen } = useBlock();
+  const { block, onRerun, onStop, isSearchOpen, setIsSearchOpen } = useBlock();
   const meta = STATUS_META[block.status];
   const StatusIcon = meta.icon;
   const canRerun = Boolean(onRerun) && block.status !== 'pending' && block.status !== 'running';
@@ -264,8 +283,34 @@ export function CommandBlockHeader({ className }: { className?: string }) {
       {/* Command */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="shrink-0 text-muted-foreground/75">$</span>
-        <span className="truncate text-foreground">{block.command || '…'}</span>
+        <span className="truncate text-foreground font-mono">{block.command || '…'}</span>
       </div>
+
+      {/* Running pulse badge & Stop action button (Pillar 1 & 4) */}
+      {block.status === 'running' && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="flex items-center gap-1.5 rounded-full bg-sky-500/10 px-2 py-0.5 font-sans text-[10px] font-medium text-sky-400">
+            <span className="size-1.5 rounded-full bg-sky-400 animate-ping" />
+            Running…
+          </span>
+          {onStop && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-6 gap-1 px-2 font-sans text-[10px] font-semibold bg-rose-600/90 text-white hover:bg-rose-500 transition-colors shadow-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onStop();
+              }}
+              title="Stop running process (Ctrl+C)"
+              aria-label="Stop running command"
+            >
+              <SquareIcon className="size-2.5 fill-current" />
+              Stop <kbd className="ml-0.5 rounded bg-rose-800/80 px-1 py-0.2 font-mono text-[9px]">^C</kbd>
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* In-block Search / Filter toggle (Warp Pillar 1) */}
       {hasOutput && (
@@ -462,10 +507,85 @@ export function CommandBlockFilterBar({ className }: { className?: string }) {
   );
 }
 
+// ─── Helpers: Git Diff Renderer ──────────────────────────────────────────────
+
+function renderGitDiff(text: string) {
+  const lines = text.split('\n');
+  return (
+    <div className="font-mono text-[12px] leading-relaxed select-text">
+      {lines.map((line, idx) => {
+        if (line.startsWith('diff --git')) {
+          return (
+            <div
+              key={idx}
+              className="mt-2.5 border-t border-border/50 pt-2 font-bold text-foreground first:mt-0 first:border-0 first:pt-0"
+            >
+              {line}
+            </div>
+          );
+        }
+        if (
+          line.startsWith('index ') ||
+          line.startsWith('old mode ') ||
+          line.startsWith('new mode ')
+        ) {
+          return (
+            <div key={idx} className="text-muted-foreground/60">
+              {line}
+            </div>
+          );
+        }
+        if (line.startsWith('--- ') || line.startsWith('+++ ')) {
+          return (
+            <div key={idx} className="font-semibold text-muted-foreground/80">
+              {line}
+            </div>
+          );
+        }
+        if (line.startsWith('@@')) {
+          return (
+            <div
+              key={idx}
+              className="my-1 rounded bg-cyan-950/40 px-1 py-0.5 font-mono text-[11px] font-semibold text-cyan-400 border border-cyan-800/30"
+            >
+              {line}
+            </div>
+          );
+        }
+        if (line.startsWith('+')) {
+          return (
+            <div
+              key={idx}
+              className="bg-emerald-950/30 px-1.5 text-emerald-400 border-l-2 border-emerald-500"
+            >
+              {line}
+            </div>
+          );
+        }
+        if (line.startsWith('-')) {
+          return (
+            <div
+              key={idx}
+              className="bg-rose-950/30 px-1.5 text-rose-400 border-l-2 border-rose-500"
+            >
+              {line}
+            </div>
+          );
+        }
+        return (
+          <div key={idx} className="px-1.5 text-foreground/85">
+            {line || '\u00A0'}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Output ───────────────────────────────────────────────────────────────────
 
 export function CommandBlockOutput({ className }: { className?: string }) {
-  const { block, isSearchOpen, searchQuery, filterMode } = useBlock();
+  const { block, isSearchOpen, searchQuery, filterMode, onRunInShell } = useBlock();
   const containerRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -473,6 +593,32 @@ export function CommandBlockOutput({ className }: { className?: string }) {
   const hasOutput = output && output.length > 0;
   const isVisible =
     block.status === 'running' || block.status === 'done' || block.status === 'error';
+
+  // Detected dev server URLs (e.g. Next.js, Vite, Express on localhost:3000)
+  const detectedUrls = useMemo(() => extractLocalhostUrls(output || ''), [output]);
+
+  const handleOpenUrl = (url: string) => {
+    void window.electron.ipc.invoke('terminal:open-url', { url });
+  };
+
+  const userScrolledBlockUpRef = useRef(false);
+
+  const handleBlockScroll = useCallback(() => {
+    if (!containerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+    userScrolledBlockUpRef.current = scrollHeight - scrollTop - clientHeight > 40;
+  }, []);
+
+  // Auto-scroll to latest output while command is running unless user scrolled up
+  useEffect(() => {
+    if (block.status === 'running' && containerRef.current && !userScrolledBlockUpRef.current) {
+      requestAnimationFrame(() => {
+        if (containerRef.current && !userScrolledBlockUpRef.current) {
+          containerRef.current.scrollTop = containerRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [block.status, output]);
 
   // In-block line filtering (Warp Pillar 1)
   const isFilteringActive = isSearchOpen && searchQuery.trim().length > 0 && filterMode;
@@ -509,11 +655,57 @@ export function CommandBlockOutput({ className }: { className?: string }) {
   if (!isVisible && !hasOutput) return null;
 
   const hasMatches = isFilteringActive ? displayOutput.length > 0 : true;
+  const isDiff = isGitDiff(block.command, displayOutput);
 
   return (
     <div className={cn('relative', className)}>
+      {/* Interactive TTY Warning Banner */}
+      {isInteractiveCommand(block.command) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/25 bg-amber-500/10 px-4 py-2">
+          <div className="flex items-center gap-1.5 font-sans text-[11px] font-medium text-amber-300">
+            <AlertTriangleIcon className="size-3.5 text-amber-400 shrink-0" />
+            <span>This command requires interactive TTY input (prompts/keybindings)</span>
+          </div>
+          {onRunInShell && (
+            <Button
+              type="button"
+              size="xs"
+              className="h-5 gap-1 px-2 font-sans text-[10px] bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={() => onRunInShell(block.command)}
+            >
+              Run in Shell Mode ↗
+            </Button>
+          )}
+        </div>
+      )}
+
+      {/* Dev Server URL banner (1-click browser launch for Next.js, Vite, etc.) */}
+      {detectedUrls.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/40 bg-sky-950/25 px-4 py-2">
+          <div className="flex items-center gap-1.5 font-sans text-[11px] font-medium text-sky-300">
+            <GlobeIcon className="size-3.5 text-sky-400 animate-pulse" />
+            <span>Active Server:</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {detectedUrls.map((url) => (
+              <button
+                type="button"
+                key={url}
+                onClick={() => handleOpenUrl(url)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 font-mono text-[11px] text-sky-200 transition-colors hover:border-sky-400 hover:bg-sky-500/25 cursor-pointer"
+                title={`Open ${url} in default browser`}
+              >
+                {url}
+                <ExternalLinkIcon className="size-3 text-sky-400" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div
         ref={containerRef}
+        onScroll={handleBlockScroll}
         className={cn(
           'overflow-auto px-4 py-3 text-[12px] leading-relaxed',
           collapsed ? 'max-h-32' : 'max-h-72',
@@ -522,12 +714,16 @@ export function CommandBlockOutput({ className }: { className?: string }) {
       >
         {hasOutput ? (
           hasMatches ? (
-            <pre className="whitespace-pre-wrap break-words">
-              <Ansi>{displayOutput}</Ansi>
-              {block.status === 'running' && (
-                <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-sky-400" />
-              )}
-            </pre>
+            isDiff ? (
+              renderGitDiff(displayOutput)
+            ) : (
+              <pre className="whitespace-pre-wrap break-words">
+                <Ansi>{displayOutput}</Ansi>
+                {block.status === 'running' && (
+                  <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse rounded-sm bg-sky-400" />
+                )}
+              </pre>
+            )
           ) : (
             <div className="py-2 font-sans text-xs italic text-muted-foreground/75">
               No lines matched &ldquo;{searchQuery}&rdquo;

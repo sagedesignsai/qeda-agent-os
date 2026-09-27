@@ -46,6 +46,8 @@ import { useIpcEvent } from '@/hooks/use-ipc';
 export interface XtermPaneHandle {
   /** Focus the terminal input. */
   focus(): void;
+  /** Re-fit the terminal to its container. */
+  fit(): void;
   /** Write data directly to the xterm display (without going to PTY). */
   writeRaw(data: string): void;
   /** Current ptyId, or null if not yet spawned. */
@@ -174,6 +176,8 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
     const termRef      = useRef<Terminal | null>(null);
     const fitAddonRef  = useRef<FitAddon | null>(null);
     const ptyIdRef     = useRef<string | null>(null);
+    const sessionIdRef = useRef<string | undefined>(sessionId);
+    sessionIdRef.current = sessionId;
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
     // The xterm instance is built in a mount effect, but the theme has to be
@@ -182,11 +186,42 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
     const [term, setTerm] = useState<Terminal | null>(null);
     useXtermTheme(term);
 
+    // Track session promotion from OSC 133
+    useIpcEvent('pty:session-assigned', (...args: unknown[]) => {
+      const { ptyId, sessionId: sid } = args[0] as { ptyId: string; sessionId: string };
+      if (ptyId === ptyIdRef.current) {
+        sessionIdRef.current = sid;
+      }
+    });
+
     // Expose handle to parent
     useImperativeHandle(ref, () => ({
-      focus() { termRef.current?.focus(); },
-      writeRaw(data: string) { termRef.current?.write(data); },
-      get ptyId() { return ptyIdRef.current; },
+      focus() {
+        termRef.current?.focus();
+      },
+      fit() {
+        if (
+          containerRef.current &&
+          containerRef.current.clientWidth > 0 &&
+          containerRef.current.clientHeight > 0
+        ) {
+          fitAddonRef.current?.fit();
+          const { cols: c, rows: r } = termRef.current ?? {};
+          if (ptyIdRef.current && c && r) {
+            void window.electron.ipc.invoke('pty:resize', {
+              ptyId: ptyIdRef.current,
+              cols: c,
+              rows: r,
+            });
+          }
+        }
+      },
+      writeRaw(data: string) {
+        termRef.current?.write(data);
+      },
+      get ptyId() {
+        return ptyIdRef.current;
+      },
     }));
 
     // ── PTY data event → write to xterm ───────────────────────────────────
@@ -222,6 +257,8 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
         cursorBlink: true,
         cursorStyle: 'block',
         scrollback: 5000,
+        scrollOnUserInput: true,
+        smoothScrollDuration: 0,
         allowProposedApi: true,
       });
 
@@ -268,6 +305,13 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
         // Defer slightly so the container has settled its new dimensions
         requestAnimationFrame(() => {
           if (!termRef.current || !fitAddonRef.current) return;
+          if (
+            !containerRef.current ||
+            containerRef.current.clientWidth === 0 ||
+            containerRef.current.clientHeight === 0
+          ) {
+            return;
+          }
           fitAddonRef.current.fit();
           const { cols: c, rows: r } = termRef.current;
           if (ptyIdRef.current) {
@@ -288,10 +332,12 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
       return () => {
         onDataDispose.dispose();
         observer.disconnect();
-        if (ptyIdRef.current) {
+        // Only kill the PTY process if this was an ephemeral scratchpad without a session.
+        // Saved sessions keep their background processes alive across sidebar/tab switches.
+        if (ptyIdRef.current && !sessionIdRef.current) {
           void window.electron.ipc.invoke('pty:kill', { ptyId: ptyIdRef.current });
-          ptyIdRef.current = null;
         }
+        ptyIdRef.current = null;
         term.dispose();
         termRef.current     = null;
         fitAddonRef.current = null;

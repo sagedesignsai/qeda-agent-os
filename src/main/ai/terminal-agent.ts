@@ -26,8 +26,10 @@
  */
 
 import { generateText, tool, isStepCount, type LanguageModel } from 'ai';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, readdir, stat } from 'node:fs/promises';
+import fs from 'node:fs';
+import path from 'node:path';
 import { z } from 'zod';
 import { resolveModel } from './provider.js';
 import { getSettings } from './settings.js';
@@ -39,6 +41,12 @@ import {
   getSessionBlocks,
   type TerminalBlock,
 } from '../db/terminal.js';
+import {
+  getShellExecutable,
+  buildExecutionEnv,
+  setSessionEnvVar,
+  parseExportCommand,
+} from './shell-env.js';
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -103,6 +111,60 @@ function cleanupApprovalGates(sessionId: string): void {
   approvalGates.delete(sessionId);
 }
 
+// ─── Active process tracking & cancellation ───────────────────────────────────
+
+const activeProcesses = new Map<string, ChildProcess>();
+const sessionActiveBlocks = new Map<string, Set<string>>();
+
+/**
+ * Terminate a running command process (SIGINT first, then SIGKILL if needed).
+ * Returns true if an active process was found and signaled.
+ */
+export function stopCommand(blockId: string): boolean {
+  const child = activeProcesses.get(blockId);
+  if (!child || !child.pid) return false;
+  try {
+    if (process.platform !== 'win32') {
+      try {
+        process.kill(-child.pid, 'SIGINT');
+      } catch {
+        child.kill('SIGINT');
+      }
+    } else {
+      child.kill('SIGINT');
+    }
+
+    // Fallback force-kill if process tree refuses to exit gracefully
+    setTimeout(() => {
+      if (activeProcesses.has(blockId) && child.pid) {
+        try {
+          if (process.platform !== 'win32') {
+            process.kill(-child.pid, 'SIGKILL');
+          } else {
+            child.kill('SIGKILL');
+          }
+        } catch {}
+      }
+    }, 2500);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Terminate all active processes belonging to a given session.
+ */
+export function stopSessionProcesses(sessionId: string): void {
+  const blocks = sessionActiveBlocks.get(sessionId);
+  if (blocks) {
+    for (const blockId of Array.from(blocks)) {
+      stopCommand(blockId);
+    }
+    sessionActiveBlocks.delete(sessionId);
+  }
+}
+
 // ─── Command execution ────────────────────────────────────────────────────────
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -111,50 +173,124 @@ function runCommand(
   command: string,
   cwd?: string,
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  onChunk?: (chunk: string) => void,
+  blockId?: string,
+  sessionId?: string,
 ): Promise<{
   output: string;
   exitCode: number | null;
   timedOut: boolean;
   durationMs: number;
+  finalCwd?: string;
 }> {
   return new Promise((resolve) => {
     const chunks: string[] = [];
     let timedOut = false;
+    let reportedCwd: string | undefined;
     // Wall-clock timing starts before spawn so the number reflects what the
     // user actually waited, matching how Warp reports block duration.
     const startedAt = Date.now();
 
-    const child = spawn('sh', ['-c', command], {
+    const isUnix = process.platform !== 'win32';
+    const shellBin = getShellExecutable();
+    const env = buildExecutionEnv(sessionId, cwd);
+
+    // Transparent FD3 probe: wrap command in a block that probes final working directory to fd 3
+    const wrappedCommand = isUnix
+      ? `__c=0\n{\n${command}\n}\n__c=$?\npwd >&3 2>/dev/null\nexit $__c`
+      : command;
+
+    const stdio: Array<'ignore' | 'pipe'> = isUnix
+      ? ['ignore', 'pipe', 'pipe', 'pipe']
+      : ['ignore', 'pipe', 'pipe'];
+
+    const child = spawn(shellBin, ['-c', wrappedCommand], {
       cwd,
-      env: { ...process.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      env,
+      stdio,
+      detached: isUnix,
     });
 
-    child.stdout.on('data', (d: Buffer) => chunks.push(d.toString()));
-    child.stderr.on('data', (d: Buffer) => chunks.push(d.toString()));
+    if (blockId) {
+      activeProcesses.set(blockId, child);
+      if (sessionId) {
+        let set = sessionActiveBlocks.get(sessionId);
+        if (!set) {
+          set = new Set();
+          sessionActiveBlocks.set(sessionId, set);
+        }
+        set.add(blockId);
+      }
+    }
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
-    }, timeoutMs);
+    const handleChunk = (d: Buffer) => {
+      const str = d.toString();
+      chunks.push(str);
+      onChunk?.(str);
+    };
 
-    child.on('close', (code) => {
-      clearTimeout(timer);
+    child.stdout?.on('data', handleChunk);
+    child.stderr?.on('data', handleChunk);
+
+    if (isUnix && child.stdio[3]) {
+      const cwdChunks: string[] = [];
+      child.stdio[3].on('data', (d: Buffer) => {
+        cwdChunks.push(d.toString());
+      });
+      child.stdio[3].on('end', () => {
+        const full = cwdChunks.join('').trim();
+        if (full) {
+          const lines = full.split('\n');
+          reportedCwd = lines[lines.length - 1]?.trim();
+        }
+      });
+    }
+
+    let timer: NodeJS.Timeout | null = null;
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        if (isUnix && child.pid) {
+          try {
+            process.kill(-child.pid, 'SIGTERM');
+          } catch {
+            child.kill('SIGTERM');
+          }
+        } else {
+          child.kill('SIGTERM');
+        }
+      }, timeoutMs);
+    }
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      if (blockId) {
+        activeProcesses.delete(blockId);
+        if (sessionId) {
+          sessionActiveBlocks.get(sessionId)?.delete(blockId);
+        }
+      }
+    };
+
+    child.on('close', (code, signal) => {
+      cleanup();
       resolve({
         output: chunks.join(''),
-        exitCode: code,
+        exitCode: code !== null ? code : signal === 'SIGINT' ? 130 : null,
         timedOut,
         durationMs: Date.now() - startedAt,
+        finalCwd: reportedCwd || cwd,
       });
     });
 
     child.on('error', (err) => {
-      clearTimeout(timer);
+      cleanup();
       resolve({
         output: err.message,
         exitCode: null,
         timedOut: false,
         durationMs: Date.now() - startedAt,
+        finalCwd: cwd,
       });
     });
   });
@@ -171,6 +307,8 @@ export interface TerminalAgentEmitter {
   onDone(sessionId: string, summary: string): void;
   /** Unrecoverable error. */
   onError(sessionId: string, error: string): void;
+  /** Working directory changed (e.g. from direct cd command). */
+  onCwdChanged?(newCwd: string): void;
 }
 
 // ─── Direct execution (Warp-style) ───────────────────────────────────────────
@@ -183,15 +321,16 @@ export interface TerminalAgentEmitter {
  * treats commands you type yourself. Approval exists only for commands the
  * *agent* proposes, which the user has not seen yet.
  *
- * Used by both "run this command now" and "re-run this block", so a re-run
- * creates a fresh block with its own timing rather than mutating history.
+ * Direct commands default to timeoutMs = 0 (no timeout) so long-running
+ * processes (like next dev, vite, or docker compose) run continuously until
+ * explicitly stopped via SIGINT / Ctrl+C.
  */
 export async function executeDirectCommand({
   sessionId,
   command,
   emitter,
   cwd,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  timeoutMs = 0,
 }: {
   sessionId: string;
   command: string;
@@ -199,20 +338,58 @@ export async function executeDirectCommand({
   cwd?: string;
   timeoutMs?: number;
 }): Promise<void> {
-  const block = appendBlock({ sessionId, command, agentThought: '' });
+  const exportVars = parseExportCommand(command);
+  if (exportVars) {
+    for (const [k, v] of Object.entries(exportVars)) {
+      setSessionEnvVar(sessionId, k, v);
+    }
+  }
+
+  const thought = exportVars ? 'Environment variable updated' : '';
+  const block = appendBlock({ sessionId, command, agentThought: thought });
   emitter.onBlockProposed(block);
 
   updateBlock(block.id, { status: 'running' });
   emitter.onBlockUpdated({ id: block.id, status: 'running' });
 
-  const { output, exitCode, timedOut, durationMs } = await runCommand(
+  let accumulatedOutput = '';
+  let lastEmitTime = 0;
+  let emitTimer: NodeJS.Timeout | null = null;
+
+  const flushOutput = () => {
+    if (emitTimer) {
+      clearTimeout(emitTimer);
+      emitTimer = null;
+    }
+    lastEmitTime = Date.now();
+    updateBlock(block.id, { output: accumulatedOutput });
+    emitter.onBlockUpdated({ id: block.id, output: accumulatedOutput });
+  };
+
+  const onChunk = (chunk: string) => {
+    accumulatedOutput += chunk;
+    const now = Date.now();
+    if (now - lastEmitTime > 100) {
+      flushOutput();
+    } else if (!emitTimer) {
+      emitTimer = setTimeout(flushOutput, 100);
+    }
+  };
+
+  const { output, exitCode, timedOut, durationMs, finalCwd } = await runCommand(
     command,
     cwd,
     timeoutMs,
+    onChunk,
+    block.id,
+    sessionId,
   );
 
+  if (emitTimer) clearTimeout(emitTimer);
+
+  // 0 is normal success; 130 is SIGINT (user Ctrl+C) which is a clean stop
   const finalStatus: TerminalBlock['status'] =
-    timedOut ? 'error' : exitCode === 0 ? 'done' : 'error';
+    timedOut ? 'error' : exitCode === 0 || exitCode === 130 ? 'done' : 'error';
   const finalOutput = timedOut ? `${output}\n[Command timed out]` : output;
 
   updateBlock(block.id, {
@@ -228,6 +405,21 @@ export async function executeDirectCommand({
     exit_code: exitCode,
     duration_ms: durationMs,
   });
+
+  // Track resulting working directory from FD3 probe
+  if (finalCwd && finalCwd !== cwd) {
+    try {
+      updateTerminalSession(sessionId, { cwd: finalCwd });
+      emitter.onCwdChanged?.(finalCwd);
+    } catch {}
+  }
+
+  // Notify finish so session status is updated from 'running' to 'done' or 'error'
+  if (finalStatus === 'done') {
+    emitter.onDone(sessionId, finalOutput);
+  } else {
+    emitter.onError(sessionId, finalOutput);
+  }
 }
 
 // ─── Agent tool set ───────────────────────────────────────────────────────────
@@ -282,12 +474,40 @@ function buildTerminalTools(
       updateBlock(block.id, { status: 'running' });
       emitter.onBlockUpdated({ id: block.id, status: 'running' });
 
-      // 5. Execute
+      // 5. Execute with live output streaming
+      let accumulatedOutput = '';
+      let lastEmitTime = 0;
+      let emitTimer: NodeJS.Timeout | null = null;
+
+      const flushOutput = () => {
+        if (emitTimer) {
+          clearTimeout(emitTimer);
+          emitTimer = null;
+        }
+        lastEmitTime = Date.now();
+        updateBlock(block.id, { output: accumulatedOutput });
+        emitter.onBlockUpdated({ id: block.id, output: accumulatedOutput });
+      };
+
+      const onChunk = (chunk: string) => {
+        accumulatedOutput += chunk;
+        const now = Date.now();
+        if (now - lastEmitTime > 100) {
+          flushOutput();
+        } else if (!emitTimer) {
+          emitTimer = setTimeout(flushOutput, 100);
+        }
+      };
+
       const { output, exitCode, timedOut, durationMs } = await runCommand(
         command,
         cwd,
         timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        onChunk,
+        block.id,
       );
+
+      if (emitTimer) clearTimeout(emitTimer);
 
       const finalStatus: TerminalBlock['status'] =
         timedOut ? 'error' : exitCode === 0 ? 'done' : 'error';

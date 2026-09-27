@@ -24,6 +24,9 @@ import type {
 import type { ServiceStatus } from '../services/keys.js';
 import type { TerminalSession, TerminalBlock } from '../db/terminal.js';
 import type { Task } from '../db/tasks.js';
+import type { TaskStep, StepProgress } from '../db/task-steps.js';
+import type { TaskBlock, TaskBlockWithTask } from '../db/task-blocks.js';
+import type { FocusSession, FocusStats } from '../db/focus-sessions.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -33,6 +36,9 @@ export type { ResearchRun, ResearchSourceWithEvidence };
 export type { ServiceStatus };
 export type { TerminalSession, TerminalBlock };
 export type { Task };
+export type { TaskStep, StepProgress };
+export type { TaskBlock, TaskBlockWithTask };
+export type { FocusSession, FocusStats };
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -179,8 +185,9 @@ export interface IpcChannels {
 
   // ── Agentic terminal ────────────────────────────────────────────────────────
   'terminal:sessions-list': { req: void; res: TerminalSession[] };
+  'terminal:session-get': { req: { id: string }; res: TerminalSession | null };
   'terminal:session-create': {
-    req: { title?: string };
+    req: { title?: string; goal?: string; cwd?: string };
     res: TerminalSession;
   };
   'terminal:session-delete': { req: { id: string }; res: void };
@@ -246,6 +253,16 @@ export interface IpcChannels {
     req: { blockId: string };
     res: { diagnosis: string; command: string };
   };
+  /** Stop / cancel an active running command block (SIGINT/Ctrl+C). */
+  'terminal:stop-command': {
+    req: { blockId: string };
+    res: { stopped: boolean };
+  };
+  /** Open an external URL in the user's default browser. */
+  'terminal:open-url': {
+    req: { url: string };
+    res: void;
+  };
 
   // Streamed events pushed from main → renderer during a terminal agent run
   /** A new command block has been proposed and is waiting for approval. */
@@ -256,6 +273,12 @@ export interface IpcChannels {
   'terminal:agent-done': { sessionId: string; summary: string };
   /** The terminal agent hit an unrecoverable error. */
   'terminal:agent-error': { sessionId: string; error: string };
+  /** Terminal session status changed (idle / running / done / error). */
+  'terminal:session-status': { sessionId: string; status: TerminalSession['status'] };
+  /** Terminal session title changed. */
+  'terminal:session-renamed': { sessionId: string; title: string };
+  /** Terminal sessions list changed (created, deleted, etc). */
+  'terminal:sessions-changed': void;
 
   // ── ADHD task manager ───────────────────────────────────────────────────────
   'tasks:list': { req: { status?: Task['status'] }; res: Task[] };
@@ -277,6 +300,89 @@ export interface IpcChannels {
     req: void;
     res: { orderedIds: string[]; reasoning: string };
   };
+
+  // ── Focus system · breakdown steps ──────────────────────────────────────────
+  'tasks:steps-list': { req: { taskId: string }; res: TaskStep[] };
+  'tasks:step-add': { req: { taskId: string; title: string }; res: TaskStep };
+  'tasks:step-toggle': { req: { id: string; done: boolean }; res: void };
+  'tasks:step-delete': { req: { id: string }; res: void };
+  /** Step progress keyed by task id, for board badges. */
+  'tasks:steps-progress': { req: void; res: Record<string, StepProgress> };
+
+  // ── Focus system · time blocking ────────────────────────────────────────────
+  'tasks:blocks-list': {
+    req: { from?: number; to?: number } | void;
+    res: TaskBlockWithTask[];
+  };
+  'tasks:block-create': {
+    req: {
+      task_id?: string | null;
+      title?: string;
+      start_at: number;
+      end_at: number;
+    };
+    res: TaskBlock;
+  };
+  'tasks:block-update': {
+    req: { id: string } & Partial<
+      Pick<TaskBlock, 'title' | 'start_at' | 'end_at' | 'status'>
+    >;
+    res: void;
+  };
+  'tasks:block-delete': { req: { id: string }; res: void };
+
+  // ── Focus system · sessions & stats ─────────────────────────────────────────
+  'focus:session-create': {
+    req: {
+      task_id?: string | null;
+      kind?: FocusSession['kind'];
+      planned_sec?: number;
+      actual_sec?: number;
+      completed?: boolean;
+      started_at?: number;
+      ended_at?: number | null;
+    };
+    res: FocusSession;
+  };
+  'focus:sessions-list': {
+    req: { from?: number; to?: number } | void;
+    res: FocusSession[];
+  };
+  'focus:stats': { req: void; res: FocusStats };
+
+  // ── AI focus copilot ────────────────────────────────────────────────────────
+  /** Break a task into a checklist, persisting the steps. */
+  'tasks:breakdown': {
+    req: { taskId: string };
+    res: { steps: TaskStep[]; note: string };
+  };
+  /** Turn a brain dump into real tasks, creating them. */
+  'tasks:brain-dump': {
+    req: { text: string };
+    res: { tasks: Task[]; note: string };
+  };
+  /** Propose (and persist) a realistic day of time blocks. */
+  'tasks:plan-day': {
+    req: { day?: number; workStartMin?: number; workEndMin?: number } | void;
+    res: { blocks: TaskBlock[]; note: string };
+  };
+
+  // ── Focus copilot (agent chat, streaming via IPC events) ─────────────────
+  /** Run one copilot turn. Streams back over `copilot:stream-*`. */
+  'copilot:chat': { req: { messages: UIMessage[] }; res: void };
+  'copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'copilot:stream-done': { runId: string };
+  'copilot:stream-error': { error: string };
+  'copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  /** The copilot may have changed tasks, blocks, or sessions — refresh. */
+  'copilot:changed': void;
+
   /** Get current working directory and git branch for rich prompt (Warp Pillar 2). */
   'terminal:get-context-info': {
     req: { cwd?: string } | void;
@@ -334,6 +440,8 @@ export interface IpcChannels {
   };
   /** OSC 7 working directory change. */
   'pty:cwd-changed': { ptyId: string; cwd: string };
+  /** PTY was automatically assigned to a newly created session on first command. */
+  'pty:session-assigned': { ptyId: string; sessionId: string; title: string };
 }
 
 export type ChannelName = keyof IpcChannels;

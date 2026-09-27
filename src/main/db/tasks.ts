@@ -20,6 +20,8 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   due_at: number | null;
+  /** Rough time estimate in minutes (drives time blocking). */
+  estimate_mins: number | null;
   pomodoro_count: number;
   position: number;
   created_at: number;
@@ -59,6 +61,7 @@ export function createTask(opts: {
   description?: string;
   priority?: TaskPriority;
   due_at?: number | null;
+  estimate_mins?: number | null;
   status?: TaskStatus;
 }): Task {
   const id = nanoid();
@@ -75,8 +78,8 @@ export function createTask(opts: {
   getDb()
     .prepare(
       `INSERT INTO tasks
-         (id, title, description, status, priority, due_at, position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, title, description, status, priority, due_at, estimate_mins, position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -85,6 +88,7 @@ export function createTask(opts: {
       opts.status ?? 'backlog',
       opts.priority ?? 2,
       opts.due_at ?? null,
+      opts.estimate_mins ?? null,
       maxPos + 1,
       now,
       now,
@@ -104,6 +108,7 @@ export function updateTask(
       | 'status'
       | 'priority'
       | 'due_at'
+      | 'estimate_mins'
       | 'position'
       | 'pomodoro_count'
     >

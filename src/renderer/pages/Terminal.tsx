@@ -21,16 +21,21 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertCircleIcon, BotIcon, TerminalIcon } from 'lucide-react';
+import {
+  AlertCircleIcon,
+  BotIcon,
+  ExternalLinkIcon,
+  SquareIcon,
+  TerminalIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   CommandBlock,
   CommandBlockHeader,
@@ -48,7 +53,8 @@ import { TerminalGoalInput } from '@/components/terminal/TerminalGoalInput';
 import { TerminalWelcome } from '@/components/terminal/TerminalWelcome';
 import { XtermPane, type XtermPaneHandle } from '@/components/terminal/XtermPane';
 import { useTerminalSession } from '@/hooks/use-terminal-session';
-import { parseComposerInput } from '@/lib/terminal-input';
+import { useIpcEvent } from '@/hooks/use-ipc';
+import { extractLocalhostUrls, parseComposerInput } from '@/lib/terminal-input';
 import { cn } from '@/lib/utils';
 import type { TerminalBlock } from '@/main/ipc/channels';
 
@@ -123,6 +129,7 @@ export default function Terminal() {
 
   const [mode, setMode] = useState<TerminalMode>('agent');
   const [shellExited, setShellExited] = useState(false);
+  const [hasVisitedShell, setHasVisitedShell] = useState(false);
 
   const {
     blocks,
@@ -139,6 +146,7 @@ export default function Terminal() {
     reject,
     explain,
     fix,
+    stop,
   } = useTerminalSession(sessionId);
 
   // When a fix is accepted, it goes into the composer rather than straight to
@@ -147,6 +155,59 @@ export default function Terminal() {
   const handleUseFix = useCallback((command: string) => {
     setDraftCommand(command);
   }, []);
+
+  // Context info: cwd & git branch for Warp-style rich prompt (Pillar 2)
+  const [contextInfo, setContextInfo] = useState<{ cwd?: string; gitBranch?: string | null }>({});
+
+  const refreshContext = useCallback((targetCwd?: string) => {
+    void window.electron.ipc
+      .invoke<{ cwd: string; gitBranch: string | null }>('terminal:get-context-info', {
+        cwd: targetCwd,
+      })
+      .then((info) => setContextInfo(info))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshContext();
+  }, [refreshContext]);
+
+  // Update working directory whenever PTY shell reports OSC 7 directory changes
+  useIpcEvent('pty:cwd-changed', (...args: unknown[]) => {
+    const { cwd } = args[0] as { cwd: string };
+    refreshContext(cwd);
+  });
+
+  // Promote scratchpad to saved session when first command is run in PTY
+  useIpcEvent('pty:session-assigned', (...args: unknown[]) => {
+    const { sessionId: newSessionId } = args[0] as {
+      ptyId: string;
+      sessionId: string;
+      title: string;
+    };
+    if (!sessionId) {
+      navigate(`/terminal/${newSessionId}`, { replace: true });
+    }
+  });
+
+  // Track saved session working directory for fresh shell launches
+  const [sessionCwd, setSessionCwd] = useState<string | undefined>();
+  useEffect(() => {
+    setShellExited(false);
+    if (!sessionId) {
+      setSessionCwd(undefined);
+      return;
+    }
+    void window.electron.ipc
+      .invoke<{ id: string; cwd?: string } | null>('terminal:session-get', { id: sessionId })
+      .then((data) => {
+        if (data?.cwd) {
+          setSessionCwd(data.cwd);
+          refreshContext(data.cwd);
+        }
+      })
+      .catch(() => {});
+  }, [sessionId, refreshContext]);
 
   // Auto-run goal from ?goal= (set by Tasks "Hand to Agent")
   useEffect(() => {
@@ -157,22 +218,48 @@ export default function Terminal() {
     }
   }, [sessionId, searchParams, setSearchParams, status, runGoal]);
 
-  // Auto-scroll agent blocks
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [blocks.length, summary]);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
 
-  // Focus xterm when switching to shell mode
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    userScrolledUpRef.current = scrollHeight - scrollTop - clientHeight > 80;
+  }, []);
+
+  const lastBlock = blocks[blocks.length - 1];
+  const lastOutput = lastBlock?.output;
+  const lastStatus = lastBlock?.status;
+
+  // Auto-scroll agent blocks smoothly as new blocks arrive or as output streams in
+  useEffect(() => {
+    if (scrollContainerRef.current && !userScrolledUpRef.current) {
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current && !userScrolledUpRef.current) {
+          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [blocks.length, lastOutput, lastStatus, summary]);
+
+  // Focus and re-fit xterm when switching to shell mode
   useEffect(() => {
     if (mode === 'shell') {
-      setTimeout(() => xtermRef.current?.focus(), 50);
+      setHasVisitedShell(true);
+      requestAnimationFrame(() => {
+        xtermRef.current?.fit();
+        xtermRef.current?.focus();
+      });
     }
   }, [mode]);
 
   // Reset shell-exited state when switching back to shell mode
   const handleModeChange = useCallback((m: TerminalMode) => {
     setMode(m);
-    if (m === 'shell') setShellExited(false);
+    if (m === 'shell') {
+      setHasVisitedShell(true);
+      setShellExited(false);
+    }
   }, []);
 
   // Agent goal submission
@@ -189,9 +276,16 @@ export default function Terminal() {
       }
 
       try {
+        const folder = contextInfo.cwd ? contextInfo.cwd.split('/').filter(Boolean).pop() || '' : '';
+        const branchSuffix = contextInfo.gitBranch ? ` (${contextInfo.gitBranch})` : '';
+        const contextSuffix = folder ? ` · ${folder}${branchSuffix}` : '';
+        const cmdText = intent.kind === 'command' ? intent.command : input;
+        const shortCmd = cmdText.length > 25 ? `${cmdText.slice(0, 22)}…` : cmdText;
+        const title = `${shortCmd}${contextSuffix}`;
+
         const session = await window.electron.ipc.invoke<{ id: string }>(
           'terminal:session-create',
-          { title: input.length > 50 ? `${input.slice(0, 47)}…` : input },
+          { title, goal: input, cwd: contextInfo.cwd },
         );
         navigate(`/terminal/${session.id}`, { replace: true });
         // Replay through this same handler once the session id exists.
@@ -200,7 +294,7 @@ export default function Terminal() {
         toast.error('Could not create terminal session');
       }
     },
-    [sessionId, navigate, runGoal, runCommand],
+    [sessionId, navigate, runGoal, runCommand, contextInfo],
   );
 
   useEffect(() => {
@@ -217,6 +311,34 @@ export default function Terminal() {
   const isDone    = status === 'done' || status === 'error';
   const isRunning = status === 'running';
 
+  const runningBlock = useMemo(() => blocks.find((b) => b.status === 'running'), [blocks]);
+  const runningUrls = useMemo(
+    () => (runningBlock?.output ? extractLocalhostUrls(runningBlock.output) : []),
+    [runningBlock?.output],
+  );
+
+  const pendingShellCmdRef = useRef<string | null>(null);
+
+  const handleRunInShell = useCallback((cmd: string) => {
+    setMode('shell');
+    setHasVisitedShell(true);
+    setShellExited(false);
+
+    requestAnimationFrame(() => {
+      xtermRef.current?.fit();
+      xtermRef.current?.focus();
+      const ptyId = xtermRef.current?.ptyId;
+      if (ptyId) {
+        void window.electron.ipc.invoke('pty:write', {
+          ptyId,
+          data: cmd + '\n',
+        });
+      } else {
+        pendingShellCmdRef.current = cmd;
+      }
+    });
+  }, []);
+
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -224,6 +346,39 @@ export default function Terminal() {
         crumbs={[{ label: 'Terminal' }]}
         actions={
           <div className="flex items-center gap-2">
+            {runningBlock && (
+              <div className="flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1 text-xs text-sky-200">
+                <span className="size-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span
+                  className="font-mono text-[11px] font-medium text-sky-300 truncate max-w-[140px]"
+                  title={runningBlock.command}
+                >
+                  {runningBlock.command}
+                </span>
+                {runningUrls.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void window.electron.ipc.invoke('terminal:open-url', { url: runningUrls[0] })}
+                    className="inline-flex items-center gap-1 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-mono text-sky-200 hover:bg-sky-500/30 transition-colors cursor-pointer"
+                    title={`Open ${runningUrls[0]}`}
+                  >
+                    {runningUrls[0].replace(/^https?:\/\//, '')}
+                    <ExternalLinkIcon className="size-2.5 text-sky-400" />
+                  </button>
+                )}
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="destructive"
+                  className="h-5 px-1.5 text-[10px] bg-rose-600/90 hover:bg-rose-500 text-white"
+                  onClick={() => stop(runningBlock.id)}
+                  title="Stop running service"
+                >
+                  <SquareIcon className="size-2 fill-current" />
+                  Stop
+                </Button>
+              </div>
+            )}
             <ModeSwitcher
               mode={mode}
               onChange={handleModeChange}
@@ -235,11 +390,11 @@ export default function Terminal() {
       />
 
       {/* ── Content area ────────────────────────────────────────────────────── */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
 
         {/* ── Agent Mode ──────────────────────────────────────────────────── */}
-        <div className={cn('flex h-full flex-col', mode !== 'agent' && 'hidden')}>
-          <ScrollArea className="flex-1">
+        <div className={cn('flex h-full flex-col min-h-0', mode !== 'agent' && 'hidden')}>
+          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto">
             <div className="mx-auto max-w-3xl px-4 py-6">
               <AnimatePresence initial={false}>
                 {!hasBlocks && !isRunning ? (
@@ -262,10 +417,12 @@ export default function Terminal() {
                         onExplain={() => explain(block.id)}
                         isExplaining={isExplainingId === block.id}
                         onRerun={() => rerun(block.id)}
+                        onStop={() => stop(block.id)}
                         onFix={() => fix(block.id)}
                         fix={fixes[block.id]}
                         isFixing={isFixingId === block.id}
                         onUseFix={handleUseFix}
+                        onRunInShell={handleRunInShell}
                       >
                         {block.status === 'skipped' ? (
                           <>
@@ -309,18 +466,21 @@ export default function Terminal() {
                   </div>
                 )}
               </AnimatePresence>
-              <div ref={bottomRef} className="h-4" />
+              <div className="h-4" />
             </div>
-          </ScrollArea>
+          </div>
 
           {/* Goal input */}
           <div className="border-t border-border/60 p-3">
             <div className="mx-auto max-w-3xl">
               <TerminalGoalInput
                 onSubmit={handleGoalSubmit}
+                onRunInShell={handleRunInShell}
                 isRunning={isRunning}
                 disabled={isRunning}
                 prefill={draftCommand}
+                cwd={contextInfo.cwd}
+                gitBranch={contextInfo.gitBranch}
               />
             </div>
           </div>
@@ -328,11 +488,23 @@ export default function Terminal() {
 
         {/* ── Shell Mode ──────────────────────────────────────────────────── */}
         <div className={cn('h-full', mode !== 'shell' && 'hidden')}>
-          {mode === 'shell' && !shellExited && (
+          {hasVisitedShell && !shellExited && (
             <XtermPane
+              key={sessionId ?? 'scratch'}
               ref={xtermRef}
               sessionId={sessionId}
+              cwd={sessionCwd || contextInfo.cwd}
               className="h-full"
+              onReady={(ptyId) => {
+                if (pendingShellCmdRef.current) {
+                  const cmd = pendingShellCmdRef.current;
+                  pendingShellCmdRef.current = null;
+                  void window.electron.ipc.invoke('pty:write', {
+                    ptyId,
+                    data: cmd + '\n',
+                  });
+                }
+              }}
               onExit={(code) => {
                 setShellExited(true);
                 toast.info(`Shell exited with code ${code}`);

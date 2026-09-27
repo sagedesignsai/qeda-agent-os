@@ -92,7 +92,7 @@ export function TerminalHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden border-border bg-background">
+      <DialogContent className="w-[85vw] max-w-2xl min-w-[480px] p-0 gap-0 overflow-hidden border-border bg-background shadow-2xl">
         <DialogHeader className="border-b border-border/60 px-4 py-3">
           <div className="flex items-center gap-2">
             <ClockIcon className="size-4 text-sky-400" />

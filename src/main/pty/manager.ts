@@ -27,7 +27,13 @@ import {
   getZshIntegrationDir,
   cleanupShellIntegration,
 } from './shell-integration.js';
-import { appendBlock, updateBlock } from '../db/terminal.js';
+import { execSync } from 'node:child_process';
+import {
+  appendBlock,
+  updateBlock,
+  createTerminalSession,
+  updateTerminalSession,
+} from '../db/terminal.js';
 
 // node-pty is a native module — import type separately to avoid bundler issues.
 // The actual require happens at runtime inside the main process.
@@ -41,10 +47,14 @@ interface PtyEntry {
   ptyId: string;
   parser?: Osc133Parser;
   sessionId?: string;
+  outputBuffer: string[];
+  totalOutputBytes: number;
+  isCommandRunning?: boolean;
 }
 
 export class PtyManager {
   private readonly ptys = new Map<string, PtyEntry>();
+  private readonly sessionPtys = new Map<string, string>();
   private window: BrowserWindow;
 
   constructor(window: BrowserWindow) {
@@ -56,10 +66,32 @@ export class PtyManager {
     this.window = window;
   }
 
+  /** Check if a session has an active running PTY command (e.g. dev server). */
+  hasActiveRunningCommand(sessionId: string): boolean {
+    const ptyId = this.sessionPtys.get(sessionId);
+    if (!ptyId) return false;
+    const entry = this.ptys.get(ptyId);
+    return !!(entry && entry.isCommandRunning);
+  }
+
+  /** Check if a session has an active running PTY process. */
+  hasActivePty(sessionId: string): boolean {
+    const ptyId = this.sessionPtys.get(sessionId);
+    return !!(ptyId && this.ptys.has(ptyId));
+  }
+
+  /** Kill the active PTY associated with a session ID. */
+  killBySessionId(sessionId: string): void {
+    const ptyId = this.sessionPtys.get(sessionId);
+    if (ptyId) {
+      this.kill(ptyId);
+      this.sessionPtys.delete(sessionId);
+    }
+  }
+
   /**
-   * Spawn a new PTY shell and start forwarding its output to the renderer.
-   * If shell integration is enabled (default), injects OSC 133 semantic hooks
-   * to automatically slice interactive commands into blocks.
+   * Spawn a new PTY shell (or re-attach to an existing one for the session)
+   * and start forwarding its output to the renderer.
    * Returns the ptyId.
    */
   create(opts: {
@@ -70,6 +102,28 @@ export class PtyManager {
     sessionId?: string;
     enableShellIntegration?: boolean;
   }): string {
+    // If sessionId already has an active running PTY, reattach and replay recent output
+    if (opts.sessionId && this.sessionPtys.has(opts.sessionId)) {
+      const existingPtyId = this.sessionPtys.get(opts.sessionId)!;
+      const existing = this.ptys.get(existingPtyId);
+      if (existing) {
+        try {
+          existing.pty.resize(opts.cols, opts.rows);
+        } catch {}
+        // Replay output buffer to renderer so terminal state is restored
+        if (existing.outputBuffer.length > 0 && !this.window.isDestroyed()) {
+          const replayData = existing.outputBuffer.join('');
+          this.window.webContents.send('pty:data', {
+            ptyId: existing.ptyId,
+            data: replayData,
+          });
+        }
+        return existing.ptyId;
+      } else {
+        this.sessionPtys.delete(opts.sessionId);
+      }
+    }
+
     const ptyId = nanoid();
 
     const targetShell =
@@ -105,22 +159,76 @@ export class PtyManager {
     });
 
     let activeBlockId: string | null = null;
+    let entry: PtyEntry;
 
     const parser = new Osc133Parser({
       onCommandStart: (command, cwd) => {
-        if (opts.sessionId && command) {
+        // Auto-create session on first command if this PTY was launched without a sessionId
+        if (!opts.sessionId && !entry.sessionId && command) {
+          try {
+            const folder = cwd ? path.basename(cwd) : '';
+            let branch = '';
+            try {
+              branch = execSync('git rev-parse --abbrev-ref HEAD', {
+                cwd: cwd || undefined,
+                encoding: 'utf-8',
+                stdio: ['ignore', 'pipe', 'ignore'],
+                timeout: 1000,
+              }).trim();
+            } catch {}
+
+            const branchSuffix = branch ? ` (${branch})` : '';
+            const shortCmd = command.length > 25 ? `${command.slice(0, 22)}…` : command;
+            const title = `${shortCmd} · ${folder || 'terminal'}${branchSuffix}`;
+
+            const session = createTerminalSession({
+              title,
+              goal: command,
+              cwd: cwd || undefined,
+            });
+            updateTerminalSession(session.id, { status: 'running' });
+
+            opts.sessionId = session.id;
+            entry.sessionId = session.id;
+            this.sessionPtys.set(session.id, ptyId);
+
+            if (!this.window.isDestroyed()) {
+              this.window.webContents.send('pty:session-assigned', {
+                ptyId,
+                sessionId: session.id,
+                title,
+              });
+              this.window.webContents.send('terminal:session-status', {
+                sessionId: session.id,
+                status: 'running',
+              });
+              this.window.webContents.send('terminal:sessions-changed');
+            }
+          } catch (err) {
+            console.warn('[PtyManager] Could not auto-create session on command start:', err);
+          }
+        }
+
+        const sid = opts.sessionId || entry.sessionId;
+        if (sid && command) {
+          entry.isCommandRunning = true;
           try {
             const block = appendBlock({
-              sessionId: opts.sessionId,
+              sessionId: sid,
               command,
               agentThought: '',
             });
             activeBlockId = block.id;
             updateBlock(block.id, { status: 'running' });
+            updateTerminalSession(sid, { status: 'running' });
             if (!this.window.isDestroyed()) {
               this.window.webContents.send('terminal:block-proposed', block);
               this.window.webContents.send('terminal:block-update-event', {
                 id: block.id,
+                status: 'running',
+              });
+              this.window.webContents.send('terminal:session-status', {
+                sessionId: sid,
                 status: 'running',
               });
             }
@@ -137,7 +245,9 @@ export class PtyManager {
         }
       },
       onCommandEnd: (event) => {
-        if (opts.sessionId && activeBlockId) {
+        entry.isCommandRunning = false;
+        const sid = opts.sessionId || entry.sessionId;
+        if (sid && activeBlockId) {
           try {
             updateBlock(activeBlockId, {
               status: event.status,
@@ -145,6 +255,8 @@ export class PtyManager {
               exit_code: event.exitCode,
               duration_ms: event.durationMs,
             });
+            const sessionStatus = event.exitCode === 0 ? 'idle' : 'error';
+            updateTerminalSession(sid, { status: sessionStatus });
             if (!this.window.isDestroyed()) {
               this.window.webContents.send('terminal:block-update-event', {
                 id: activeBlockId,
@@ -153,6 +265,11 @@ export class PtyManager {
                 exit_code: event.exitCode,
                 duration_ms: event.durationMs,
               });
+              this.window.webContents.send('terminal:session-status', {
+                sessionId: sid,
+                status: sessionStatus,
+              });
+              this.window.webContents.send('terminal:sessions-changed');
             }
           } catch {
             // DB safety
@@ -172,6 +289,12 @@ export class PtyManager {
         }
       },
       onCwdChange: (cwd) => {
+        const sid = opts.sessionId || entry.sessionId;
+        if (sid) {
+          try {
+            updateTerminalSession(sid, { cwd });
+          } catch {}
+        }
         if (!this.window.isDestroyed()) {
           this.window.webContents.send('pty:cwd-changed', { ptyId, cwd });
         }
@@ -181,20 +304,54 @@ export class PtyManager {
     // Forward clean PTY output (OSC control sequences stripped) to renderer
     instance.onData((data: string) => {
       const clean = parser.feed(data);
-      if (!this.window.isDestroyed() && clean.length > 0) {
-        this.window.webContents.send('pty:data', { ptyId, data: clean });
+      if (clean.length > 0) {
+        entry.outputBuffer.push(clean);
+        entry.totalOutputBytes += clean.length;
+        while (entry.totalOutputBytes > 120_000 && entry.outputBuffer.length > 1) {
+          const removed = entry.outputBuffer.shift()!;
+          entry.totalOutputBytes -= removed.length;
+        }
+
+        if (!this.window.isDestroyed()) {
+          this.window.webContents.send('pty:data', { ptyId, data: clean });
+        }
       }
     });
 
     // Forward PTY exit to renderer and clean up
     instance.onExit(({ exitCode }: { exitCode: number }) => {
+      const sid = opts.sessionId || entry.sessionId;
+      if (sid) {
+        this.sessionPtys.delete(sid);
+        try {
+          updateTerminalSession(sid, { status: exitCode === 0 ? 'done' : 'error' });
+          if (!this.window.isDestroyed()) {
+            this.window.webContents.send('terminal:session-status', {
+              sessionId: sid,
+              status: exitCode === 0 ? 'done' : 'error',
+            });
+            this.window.webContents.send('terminal:sessions-changed');
+          }
+        } catch {}
+      }
       if (!this.window.isDestroyed()) {
         this.window.webContents.send('pty:exit', { ptyId, exitCode });
       }
       this.ptys.delete(ptyId);
     });
 
-    this.ptys.set(ptyId, { pty: instance, ptyId, parser, sessionId: opts.sessionId });
+    entry = {
+      pty: instance,
+      ptyId,
+      parser,
+      sessionId: opts.sessionId,
+      outputBuffer: [],
+      totalOutputBytes: 0,
+    };
+    this.ptys.set(ptyId, entry);
+    if (opts.sessionId) {
+      this.sessionPtys.set(opts.sessionId, ptyId);
+    }
     return ptyId;
   }
 
@@ -212,9 +369,24 @@ export class PtyManager {
   kill(ptyId: string): void {
     const entry = this.ptys.get(ptyId);
     if (entry) {
-      entry.pty.kill();
+      if (entry.sessionId) {
+        this.sessionPtys.delete(entry.sessionId);
+      }
+      try {
+        entry.pty.kill();
+      } catch {}
       this.ptys.delete(ptyId);
     }
+  }
+
+  /** Kill the active PTY associated with a specific session ID, if any. */
+  killBySessionId(sessionId: string): boolean {
+    const ptyId = this.sessionPtys.get(sessionId);
+    if (ptyId) {
+      this.kill(ptyId);
+      return true;
+    }
+    return false;
   }
 
   /** Kill all PTYs — call on window close or reload. */
@@ -222,6 +394,7 @@ export class PtyManager {
     for (const { ptyId } of this.ptys.values()) {
       this.kill(ptyId);
     }
+    this.sessionPtys.clear();
     cleanupShellIntegration();
   }
 }
