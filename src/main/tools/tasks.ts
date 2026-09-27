@@ -9,8 +9,9 @@
  *   • additive  — create a task, add steps, block time, open a terminal.
  *                 These only add work, so they run without an interruption.
  *   • risky     — update, complete, delete, or reschedule *existing* work.
- *                 These are listed in `RISKY_TASK_TOOLS`; the agent's approval
- *                 policy turns a call into a user-approval request.
+ *                 These are classed `destructive` in tools/policies/copilot.ts,
+ *                 which derives to a user-approval request. There is no name
+ *                 list here to drift out of sync.
  *
  * Every tool returns a `{ success, … }` envelope (matching the rest of the tool
  * registry) so the model can recover from a bad id instead of throwing.
@@ -589,15 +590,14 @@ export const taskTools = {
 };
 
 /**
- * Tools that modify or remove existing work. The agent's `toolApproval` policy
- * returns `'user-approval'` for exactly these, implementing "approve only risky
- * actions" — additive tools still run straight through.
+ * REMOVED: `RISKY_TASK_TOOLS`.
+ *
+ * This hand-maintained set of six tool names WAS the copilot's approval policy.
+ * It is now derived from capability classes in `tools/policies/copilot.ts`:
+ * `updateTask`, `completeTask`, `deleteTask`, `assignTaskToProject`, `moveBlock`
+ * and `deleteBlock` are all classed `destructive`, which derives to
+ * `'user-approval'` — the same six, with no list left to keep in sync.
+ *
+ * The derivation additionally gates the two indexing tools (`cost`), which is
+ * new intended behaviour rather than a translation of the old set.
  */
-export const RISKY_TASK_TOOLS: ReadonlySet<string> = new Set([
-  'updateTask',
-  'completeTask',
-  'deleteTask',
-  'assignTaskToProject',
-  'moveBlock',
-  'deleteBlock',
-]);

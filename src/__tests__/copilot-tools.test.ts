@@ -22,7 +22,8 @@ import { listTasks } from '../main/db/tasks';
 import { listSteps } from '../main/db/task-steps';
 import { listBlocks } from '../main/db/task-blocks';
 import { listTerminalSessions } from '../main/db/terminal';
-import { taskTools, RISKY_TASK_TOOLS } from '../main/tools/tasks';
+import { taskTools } from '../main/tools/tasks';
+import { copilotTools, isRiskyCopilotTool } from '../main/ai/task-copilot-agent';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -191,22 +192,35 @@ describe('copilot task tools', () => {
     expect(listTerminalSessions()).toHaveLength(1);
   });
 
-  it('classifies exactly the destructive tools as risky', () => {
-    expect([...RISKY_TASK_TOOLS].sort()).toEqual(
+  it('classifies exactly the gated tools as risky, derived not listed', () => {
+    // The six `destructive` task verbs, unchanged from the old hand-maintained
+    // set, plus the two `cost` indexing tools that are new intended behaviour.
+    const gated = [...copilotTools]
+      .filter((name) => isRiskyCopilotTool(name))
+      .sort();
+
+    expect(gated).toEqual(
       [
         'assignTaskToProject',
         'completeTask',
         'deleteBlock',
         'deleteTask',
+        'indexFile',
+        'indexPage',
         'moveBlock',
         'updateTask',
       ].sort(),
     );
+
     // Additive tools must never require approval.
-    expect(RISKY_TASK_TOOLS.has('createTask')).toBe(false);
-    expect(RISKY_TASK_TOOLS.has('createTasks')).toBe(false);
-    expect(RISKY_TASK_TOOLS.has('addSteps')).toBe(false);
-    expect(RISKY_TASK_TOOLS.has('scheduleBlock')).toBe(false);
-    expect(RISKY_TASK_TOOLS.has('handToTerminal')).toBe(false);
+    for (const additive of [
+      'createTask',
+      'createTasks',
+      'addSteps',
+      'scheduleBlock',
+      'handToTerminal',
+    ]) {
+      expect(isRiskyCopilotTool(additive)).toBe(false);
+    }
   });
 });

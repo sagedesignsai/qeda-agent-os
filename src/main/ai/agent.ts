@@ -18,7 +18,7 @@ import { ToolLoopAgent, isStepCount, type ModelMessage } from 'ai';
 import { getSettings } from './settings';
 import { resolveModel } from './provider';
 import type { ModelTarget } from './fallback';
-import { allTools, toolApprovalPolicy } from '../tools/index';
+import { allTools, chatApprovalPolicy } from '../tools/index';
 import { renderProjectContext } from './project-context';
 import {
   getPage,
@@ -192,7 +192,9 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
     model: model as any,
     instructions,
     tools: allTools,
-    toolApproval: toolApprovalPolicy,
+    // Derived from tools/policies/chat.ts rather than a hand-maintained name map.
+    // The Tools page calls the same policy, so manual execution cannot bypass it.
+    toolApproval: chatApprovalPolicy,
     stopWhen: isStepCount(40),
   });
 }

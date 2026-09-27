@@ -29,8 +29,8 @@ single most important thing to know before changing any of them.
 
 | Agent | Factory | Kind | Tools | Step budget | Approval mechanism |
 | --- | --- | --- | --- | --- | --- |
-| Chat | `createDesktopAgent` (`ai/agent.ts:190`) | `ToolLoopAgent` | `allTools` — **49** | `isStepCount(40)` | Name→status map (`toolApprovalPolicy`) |
-| Focus copilot | `createTaskCopilotAgent` (`ai/task-copilot-agent.ts:146`) | `ToolLoopAgent` | 27 (17 task verbs + 10 context) | `isStepCount(25)` | Predicate over a `ReadonlySet` |
+| Chat | `createDesktopAgent` (`ai/agent.ts:190`) | `ToolLoopAgent` | `allTools` — **36** | `isStepCount(40)` | Derived from `tools/policies/chat.ts` |
+| Focus copilot | `createTaskCopilotAgent` (`ai/task-copilot-agent.ts:146`) | `ToolLoopAgent` | 34 (17 task verbs + 17 context) | `isStepCount(25)` | Derived from `tools/policies/copilot.ts` |
 | Terminal | `runGoal` (`ai/terminal-agent.ts:610`) | **hand-rolled goal loop** | Not a tool registry | n/a | IPC round-trip: `resolveApproval` |
 
 Corrections to existing beliefs, both verified:
@@ -240,20 +240,24 @@ Tool definitions are sent on **every** turn. The copilot is rebuilt per turn
 (`task-copilot-agent.ts:82` carries the current local time into the prompt), so
 its tool set is paid for repeatedly.
 
-| Agent | Today | After §6 | Ceiling |
-| --- | --- | --- | --- |
-| Focus copilot | 27 | 34 | **36** |
-| Chat | 49 | 53 | **56** |
+| Agent | Today | Ceiling |
+| --- | --- | --- |
+| Focus copilot | 34 | **42** |
+| Chat | 36 | **45** |
 
-The chat agent's increase is not a choice: `allTools` (`tools/index.ts`) spreads
-every registered group, so adding `tools/repo.ts` (§6.1) reaches it implicitly.
-That is the right default — the chat agent is the general surface — but it means
-the chat agent's tool set changes whenever *any* new group is registered, and
-the ceiling is what catches that.
+Note that `allTools` does **not** spread `taskTools` — the 17 task verbs are
+copilot-only, so the chat surface is smaller than the sum of all registered tool
+groups suggests. Classifying a tool an agent does not expose is dead policy and
+the §5.2 test rejects it.
 
-Ceilings are guardrails with headroom above the post-§6 count, not targets. A
-change that pushes an agent past its ceiling **MUST** either drop tools or raise
-the ceiling in this document in the same review; silently exceeding it is not
+Adding `tools/repo.ts` (§6.1) reaches the chat agent implicitly, because
+`allTools` spreads every registered group. That is the right default — chat is
+the general surface — but it means the chat agent's tool set changes whenever
+*any* new group is registered, and the ceiling is what catches that.
+
+Ceilings are guardrails with headroom above today's count, not targets. A change
+that pushes an agent past its ceiling **MUST** either drop tools or raise the
+ceiling in this document in the same review; silently exceeding it is not
 acceptable.
 
 Step budgets are **not** governed here beyond recording them (§2). The copilot's

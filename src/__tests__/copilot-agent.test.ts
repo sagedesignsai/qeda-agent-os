@@ -22,7 +22,6 @@ import {
   copilotTools,
   isRiskyCopilotTool,
 } from '../main/ai/task-copilot-agent';
-import { RISKY_TASK_TOOLS } from '../main/tools/tasks';
 
 describe('copilot agent definition', () => {
   it('exposes the task verb tools', () => {
@@ -66,10 +65,22 @@ describe('copilot agent definition', () => {
     }
   });
 
-  it('flags exactly the risky tools for approval', () => {
-    for (const toolName of RISKY_TASK_TOOLS) {
+  it('flags exactly the gated tools for approval', () => {
+    // The `destructive` verbs, unchanged from the old hand-maintained set.
+    for (const toolName of [
+      'updateTask',
+      'completeTask',
+      'deleteTask',
+      'assignTaskToProject',
+      'moveBlock',
+      'deleteBlock',
+    ]) {
       expect(isRiskyCopilotTool(toolName)).toBe(true);
     }
+
+    // Plus the two `cost` indexing tools, which are new intended behaviour.
+    expect(isRiskyCopilotTool('indexFile')).toBe(true);
+    expect(isRiskyCopilotTool('indexPage')).toBe(true);
 
     for (const toolName of [
       'createTask',
@@ -80,6 +91,11 @@ describe('copilot agent definition', () => {
       'handToTerminal',
       'webSearch',
       'listTasks',
+      // Read-only repo tools must never gate.
+      'gitStatus',
+      'gitLog',
+      'gitDiffStat',
+      'grepSearch',
     ]) {
       expect(isRiskyCopilotTool(toolName)).toBe(false);
     }

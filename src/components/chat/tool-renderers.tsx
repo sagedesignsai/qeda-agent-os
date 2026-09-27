@@ -21,6 +21,9 @@ import {
   BookOpenIcon,
   AudioLinesIcon,
   QuoteIcon,
+  GitBranchIcon,
+  HistoryIcon,
+  FileDiffIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -378,6 +381,260 @@ export function TranscriptCard({ output }: { output: Output }) {
   );
 }
 
+// ─── Repository tools (tools/repo.ts) ─────────────────────────────────────────
+
+interface CommitView {
+  sha?: string;
+  author?: string;
+  when?: string;
+  subject?: string;
+}
+
+/**
+ * `gitStatus` — where the repo stands.
+ *
+ * The dirty/clean state and the ahead/behind counts are the two things that
+ * change what an agent should propose next, so they get visual weight; the
+ * per-file change list stays collapsed until asked for.
+ */
+export function GitStatusCard({ output }: { output: Output }) {
+  const branch = asString(output.branch) || 'unknown';
+  const clean = output.clean === true;
+  const ahead = asNumber(output.ahead) ?? 0;
+  const behind = asNumber(output.behind) ?? 0;
+  const untracked = asNumber(output.untracked) ?? 0;
+  const changes = asArray<{ XY?: string; path?: string }>(output.changes);
+  const truncated = output.changesTruncated === true;
+
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<GitBranchIcon className="size-3.5" />}
+        label={branch}
+        meta={
+          <>
+            <Badge variant={clean ? 'secondary' : 'outline'} className="gap-1 text-[10px]">
+              {clean ? 'clean' : `${asNumber(output.changedFileCount) ?? changes.length} changed`}
+            </Badge>
+            {ahead > 0 && (
+              <Badge variant="secondary" className="text-[10px]">
+                ↑{ahead}
+              </Badge>
+            )}
+            {behind > 0 && (
+              <Badge variant="secondary" className="text-[10px]">
+                ↓{behind}
+              </Badge>
+            )}
+          </>
+        }
+      />
+      {(untracked > 0 || truncated) && (
+        <div className="flex flex-wrap gap-2 border-b px-3 py-1.5 text-[11px] text-muted-foreground">
+          {untracked > 0 && <span>{untracked} untracked</span>}
+          {truncated && <span>list truncated</span>}
+        </div>
+      )}
+      {changes.length > 0 && <ChangeList changes={changes} truncated={truncated} />}
+    </CardShell>
+  );
+}
+
+function ChangeList({
+  changes,
+  truncated,
+}: {
+  changes: { XY?: string; path?: string }[];
+  truncated: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-1 px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {open ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
+        {open ? 'Hide' : 'Show'} changed files
+        {truncated && <span className="ml-1 opacity-70">(partial)</span>}
+      </button>
+      {open && (
+        <ul className="max-h-48 overflow-auto border-t px-3 py-1.5 font-mono text-[11px]">
+          {changes.map((c, i) => (
+            <li key={`${c.path}-${i}`} className="flex gap-2 py-px">
+              {/* XY is git's staged/unstaged pair; both matter for "is it saved". */}
+              <span
+                className={cn(
+                  'w-5 shrink-0 select-none',
+                  c.XY?.includes('?')
+                    ? 'text-muted-foreground'
+                    : c.XY?.includes('A')
+                      ? 'text-emerald-500'
+                      : 'text-amber-500',
+                )}
+              >
+                {c.XY ?? '  '}
+              </span>
+              <span className="truncate">{c.path ?? ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** `gitLog` — recent history, newest first. */
+export function GitLogCard({ output }: { output: Output }) {
+  const commits = asArray<CommitView>(output.commits);
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<HistoryIcon className="size-3.5" />}
+        label="Recent commits"
+        meta={
+          <Badge variant="secondary" className="text-[10px]">
+            {asNumber(output.count) ?? commits.length}
+          </Badge>
+        }
+      />
+      {commits.length === 0 ? (
+        <p className="px-3 py-2 text-[11px] text-muted-foreground">
+          No commits yet.
+        </p>
+      ) : (
+        <ul className="divide-y">
+          {commits.map((c) => (
+            <li key={c.sha} className="flex items-start gap-2 px-3 py-1.5 text-[11px]">
+              <span className="shrink-0 font-mono text-muted-foreground">
+                {c.sha?.slice(0, 7)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{c.subject}</span>
+                <span className="text-muted-foreground">
+                  {c.author}
+                  {c.when ? ` · ${c.when}` : ''}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </CardShell>
+  );
+}
+
+/** `gitDiffStat` — what changed, as per-file counts. */
+export function DiffStatCard({ output }: { output: Output }) {
+  const files = asArray<{ file?: string; added?: number | null; removed?: number | null }>(
+    output.files,
+  );
+  const truncated = output.filesTruncated === true;
+  const added = asNumber(output.totalAdded) ?? 0;
+  const removed = asNumber(output.totalRemoved) ?? 0;
+
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<FileDiffIcon className="size-3.5" />}
+        label={asString(output.ref) || 'working tree'}
+        meta={
+          <>
+            <span className="text-[10px] text-emerald-500">+{added}</span>
+            <span className="text-[10px] text-rose-500">−{removed}</span>
+          </>
+        }
+      />
+      {files.length === 0 ? (
+        <p className="px-3 py-2 text-[11px] text-muted-foreground">No changes.</p>
+      ) : (
+        <ul className="max-h-56 overflow-auto border-t px-3 py-1.5 font-mono text-[11px]">
+          {files.map((f, i) => (
+            <li key={`${f.file}-${i}`} className="flex items-center gap-2 py-px">
+              <span className="min-w-0 flex-1 truncate">{f.file}</span>
+              {/* Binary files report null rather than a count. */}
+              <span className="shrink-0 text-emerald-500">
+                {f.added === null ? '' : `+${f.added}`}
+              </span>
+              <span className="shrink-0 text-rose-500">
+                {f.removed === null ? '' : `−${f.removed}`}
+              </span>
+            </li>
+          ))}
+          {truncated && (
+            <li className="pt-1 font-sans text-muted-foreground">
+              list truncated — more files changed
+            </li>
+          )}
+        </ul>
+      )}
+    </CardShell>
+  );
+}
+
+interface GrepFileView {
+  file?: string;
+  matches?: { line?: number; text?: string }[];
+}
+
+/**
+ * `grepSearch` — matches grouped by file.
+ *
+ * Always surfaces the truncation notice. A capped result that renders like a
+ * complete one is actively misleading: the agent may conclude a symbol is
+ * defined in exactly one place when the search stopped early.
+ */
+export function GrepResultsCard({ output }: { output: Output }) {
+  const results = asArray<GrepFileView>(output.results);
+  const truncated = output.truncated === true;
+  const total = asNumber(output.matchCount) ?? 0;
+  const pattern = asString(output.pattern);
+
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<SearchIcon className="size-3.5" />}
+        label={pattern ? `“${pattern}”` : 'Search'}
+        meta={
+          <Badge variant="secondary" className="gap-1 text-[10px]">
+            {total} in {asNumber(output.filesWithMatches) ?? results.length} file
+            {(asNumber(output.filesWithMatches) ?? results.length) === 1 ? '' : 's'}
+          </Badge>
+        }
+      />
+      {truncated && (
+        <div className="border-b bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-500">
+          {asString(output.truncatedReason) || 'Results truncated'} — this is not the full set.
+        </div>
+      )}
+      {results.length === 0 ? (
+        <p className="px-3 py-2 text-[11px] text-muted-foreground">No matches.</p>
+      ) : (
+        <ul className="max-h-72 divide-y overflow-auto">
+          {results.map((f) => (
+            <li key={f.file} className="px-3 py-1.5">
+              <div className="truncate font-mono text-[11px] text-muted-foreground">
+                {f.file}
+              </div>
+              <ul className="mt-0.5 font-mono text-[11px]">
+                {asArray<{ line?: number; text?: string }>(f.matches).map((m, i) => (
+                  <li key={i} className="flex gap-2 py-px">
+                    <span className="w-10 shrink-0 text-right text-muted-foreground/70">
+                      {m.line}
+                    </span>
+                    <span className="min-w-0 flex-1 break-all">{m.text}</span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </CardShell>
+  );
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /** Tool names that have a purpose-built renderer. */
@@ -388,6 +645,10 @@ export const SPECIALIZED_TOOLS = new Set([
   'findImages',
   'textToSpeech',
   'transcribeAudio',
+  'gitStatus',
+  'gitLog',
+  'gitDiffStat',
+  'grepSearch',
 ]);
 
 /** Render the specialized card for a tool, or null when it has none. */
@@ -413,6 +674,14 @@ export function renderSpecializedTool(
       return <AudioCard output={data} />;
     case 'transcribeAudio':
       return <TranscriptCard output={data} />;
+    case 'gitStatus':
+      return <GitStatusCard output={data} />;
+    case 'gitLog':
+      return <GitLogCard output={data} />;
+    case 'gitDiffStat':
+      return <DiffStatCard output={data} />;
+    case 'grepSearch':
+      return <GrepResultsCard output={data} />;
     default:
       return null;
   }
