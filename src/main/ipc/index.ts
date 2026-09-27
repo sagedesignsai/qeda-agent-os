@@ -73,7 +73,7 @@ import { registerNotificationsHandlers } from './handlers/notifications';
  * appeared in the original file so a future bisect reads sensibly.
  */
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
-  registerSessionsHandlers();
+  registerSessionsHandlers({ mainWindow });
   registerSettingsHandlers({ mainWindow });
   registerToolsHandlers({ mainWindow });
   registerWorkspaceHandlers();

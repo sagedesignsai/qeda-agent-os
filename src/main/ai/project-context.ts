@@ -20,9 +20,37 @@
  */
 
 import { getProject, projectRollup } from '../db/projects';
+import { getRawSettings } from './settings';
 
 export interface ProjectAgentContext {
   projectId?: string;
+}
+
+/**
+ * Resolve which project a turn belongs to.
+ *
+ * A scoped surface wins: an explicit `?project=<id>` is a deliberate, temporary
+ * lens ("I am looking at this project HERE") and must not be overridden.
+ *
+ * Otherwise fall back to the persisted default. This fallback is what makes the
+ * agents useful on a fresh launch: the renderer's scope lives in MemoryRouter
+ * state and is always empty at startup, so without it main could never name a
+ * project, the "Active project" block would be blank, and the repo tools —
+ * which resolve `projectId → repo_path` — would have nothing to resolve and
+ * would (correctly, per spec §6.1) refuse rather than guess.
+ *
+ * A stored id pointing at a deleted project resolves to null here rather than
+ * throwing: `renderProjectContext` already returns '' for an unknown id, so a
+ * stale default degrades to "unscoped" instead of breaking the turn.
+ */
+export function resolveActiveProjectId(scoped?: string | null): string | null {
+  if (scoped) return scoped;
+  try {
+    return getRawSettings().activeProjectId || null;
+  } catch {
+    // Settings unreadable (first run, corrupt file) must not fail a turn.
+    return null;
+  }
 }
 
 /**

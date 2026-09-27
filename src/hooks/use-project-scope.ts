@@ -9,9 +9,21 @@
  * it resolves the project (name + repo path) and offers the two operations
  * every scoped surface needs: clear the scope, and carry it onto a path.
  *
- * Keeping the scope in the URL rather than a store means it survives reloads,
- * is shareable between the sidebar and the page, and disappears the moment the
- * user navigates somewhere genuinely global.
+ * Keeping the scope in the query string rather than a store means the sidebar and
+ * the page agree on it for free, and it disappears the moment the user navigates
+ * somewhere genuinely global.
+ *
+ * IMPORTANT: this scope is deliberately TRANSIENT. The router is a
+ * `MemoryRouter` (renderer/App.tsx), so there is no real URL — the param lives
+ * in in-memory history and is destroyed by any reload or app restart. An earlier
+ * version of this comment claimed the scope "survives reloads"; that was false.
+ *
+ * What survives a restart is the separate PERSISTED DEFAULT in settings.json
+ * (`AppSettings.activeProjectId`, written via `settings:set-active-project` when
+ * the user picks a project). The two are different concepts and do not
+ * conflict: this is a per-surface lens, the default is "what I was last doing".
+ * Agents resolve a scoped id first and fall back to the default
+ * (`resolveActiveProjectId`), so a fresh launch still has a project.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 

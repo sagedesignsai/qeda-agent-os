@@ -58,6 +58,23 @@ export interface AppSettings {
    * welcome flow is shown exactly once. Absent on a fresh install.
    */
   onboardingCompleted?: boolean;
+  /**
+   * The project the user was last working in, restored on launch.
+   *
+   * This is a GLOBAL DEFAULT, not a per-surface scope. A surface that carries
+   * an explicit `?project=<id>` still wins for that surface only; this is what
+   * applies when nothing is scoped.
+   *
+   * It lives here rather than in the renderer because the main process needs it
+   * independently: the chat and copilot agents are handed a project id, and when
+   * the renderer sends none (a fresh launch is always unscoped) the repo tools
+   * would otherwise have no project to resolve `repo_path` from. Keeping it in
+   * settings.json means main can answer "what is the current project" on its own.
+   *
+   * Not a column on `projects`: "which project is selected" is a preference of
+   * this install, not a property of the project.
+   */
+  activeProjectId?: string | null;
   providers: ProvidersMap;
   customProviders?: CustomProviderSettings[];
 }

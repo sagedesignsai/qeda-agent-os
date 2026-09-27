@@ -9,7 +9,7 @@
  */
 
 import { type UIMessage } from 'ai';
-import { ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import {
   createSession,
   deleteSession,
@@ -20,7 +20,24 @@ import {
   upsertMessage,
 } from '../../db/sessions';
 
-export function registerSessionsHandlers(): void {
+export function registerSessionsHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
+  /**
+   * Tell the renderer a session row changed.
+   *
+   * The sidebar's recents list and the Sessions page are two surfaces reading the
+   * same rows. Without this, deleting a conversation leaves it in the sidebar
+   * until something forces a remount.
+   */
+  const broadcastSessionsChanged = () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('sessions:changed');
+    }
+  };
+
   ipcMain.handle(
     'sessions:list',
     (_e, req: { projectId?: string | null } | void) =>
@@ -29,23 +46,33 @@ export function registerSessionsHandlers(): void {
 
   ipcMain.handle(
     'sessions:create',
-    (_e, { title, projectId }: { title?: string; projectId?: string | null }) =>
-      createSession(title, projectId ?? null),
+    (_e, { title, projectId }: { title?: string; projectId?: string | null }) => {
+      const session = createSession(title, projectId ?? null);
+      broadcastSessionsChanged();
+      return session;
+    },
   );
 
   ipcMain.handle(
     'sessions:set-project',
-    (_e, { id, projectId }: { id: string; projectId: string | null }) =>
-      updateSessionProject(id, projectId),
+    (_e, { id, projectId }: { id: string; projectId: string | null }) => {
+      updateSessionProject(id, projectId);
+      broadcastSessionsChanged();
+    },
   );
 
-  ipcMain.handle('sessions:delete', (_e, { id }: { id: string }) =>
-    deleteSession(id),
-  );
+  ipcMain.handle('sessions:delete', (_e, { id }: { id: string }) => {
+    const removed = deleteSession(id);
+    // Only broadcast on a real delete: the renderer already removed the row, and
+    // a broadcast for a no-op would refetch for nothing.
+    if (removed) broadcastSessionsChanged();
+    return removed;
+  });
 
-  ipcMain.handle('sessions:rename', (_e, { id, title }: { id: string; title: string }) =>
-    updateSessionTitle(id, title),
-  );
+  ipcMain.handle('sessions:rename', (_e, { id, title }: { id: string; title: string }) => {
+    updateSessionTitle(id, title);
+    broadcastSessionsChanged();
+  });
 
   ipcMain.handle('sessions:messages', (_e, { id }: { id: string }) =>
     loadMessages(id),
@@ -53,6 +80,10 @@ export function registerSessionsHandlers(): void {
 
   // The renderer owns the reconstructed UIMessages, so it hands them back for
   // persistence. Upserts are keyed by message id, making re-sends idempotent.
+  //
+  // Deliberately does NOT broadcast. This runs at the end of every chat turn, so
+  // broadcasting here would refetch the session list once per turn for a change
+  // the recents list does not display (it shows titles and recency, not bodies).
   ipcMain.handle(
     'sessions:save-messages',
     (_e, { sessionId, messages }: { sessionId: string; messages: UIMessage[] }) => {

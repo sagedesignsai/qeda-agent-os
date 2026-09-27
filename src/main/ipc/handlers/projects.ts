@@ -9,6 +9,7 @@
  */
 
 import { ipcMain, dialog, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
+import { getRawSettings, saveSettings } from '../../ai/settings';
 import {
   createProject,
   deleteProject,
@@ -62,7 +63,19 @@ export function registerProjectsHandlers({ mainWindow }: { mainWindow: BrowserWi
     'projects:delete',
     (_e, { id }: { id: string }) => {
       const removed = deleteProject(id);
-      if (removed) broadcastProjectsChanged();
+      if (removed) {
+        // Do not leave the persisted default pointing at a deleted project. The
+        // agent-side resolver already tolerates a stale id (it degrades to
+        // unscoped), but clearing it here means the next launch is clean rather
+        // than quietly unscoped-because-something-was-deleted.
+        if (getRawSettings().activeProjectId === id) {
+          saveSettings({ ...getRawSettings(), activeProjectId: null });
+          if (!mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('settings:changed');
+          }
+        }
+        broadcastProjectsChanged();
+      }
       return removed;
     },
   );

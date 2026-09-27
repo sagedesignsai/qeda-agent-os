@@ -109,6 +109,15 @@ export interface IpcChannels {
     req: { sessionId: string; messages: UIMessage[] };
     res: void;
   };
+  /**
+   * A session was created, renamed, deleted, or moved between projects.
+   *
+   * Needed because the sidebar's recents list and the Sessions page are two
+   * surfaces reading the same rows; without this the sidebar keeps showing a
+   * conversation that was deleted until something forces a remount. Same
+   * broadcast shape as `projects:changed`.
+   */
+  'sessions:changed': void;
 
   // Settings
   'settings:get': {
@@ -132,6 +141,17 @@ export interface IpcChannels {
    * cannot reach them. Same broadcast shape as `projects:changed`.
    */
   'settings:changed': void;
+  /**
+   * Record the project the user is working in, so a fresh launch restores it.
+   *
+   * Separate from `settings:save` on purpose: that channel is the Settings
+   * dialog's, and it saves per-section with a merge that would drag unrelated
+   * provider state along. The active project is set by a sidebar click, not by
+   * the dialog, and should not require opening Settings.
+   *
+   * Pass `null` to clear it.
+   */
+  'settings:set-active-project': { req: { projectId: string | null }; res: void };
 
   // Providers
   'providers:list': { req: void; res: ProviderInfo[] };

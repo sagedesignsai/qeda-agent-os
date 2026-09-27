@@ -137,6 +137,15 @@ export function AppSidebar({
     : null;
 
   const handleSelectProject = (projectToSelect: Project | null) => {
+    // Selecting a project also makes it the persisted default, so a fresh launch
+    // returns to where the user was working. This is deliberately separate from
+    // the `?project=` scope below: that is a temporary per-surface lens, this is
+    // "what I was last doing". Clearing the scope does NOT clear the default —
+    // pick "All Projects" for that.
+    void window.electron.ipc.invoke('settings:set-active-project', {
+      projectId: projectToSelect?.id ?? null,
+    });
+
     if (!projectToSelect) {
       clearScope();
       if (location.pathname.startsWith('/projects/')) {

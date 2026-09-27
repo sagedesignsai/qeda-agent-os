@@ -16,6 +16,7 @@
 
 import { type UIMessage } from 'ai';
 import { createDesktopAgent, type WorkspaceContext } from '../ai/agent';
+import { resolveActiveProjectId } from '../ai/project-context';
 import { type ModelTarget } from '../ai/fallback';
 import { type ChatContext } from './channels';
 
@@ -42,14 +43,34 @@ export function getAgent(
   mode: AgentMode,
   context?: ChatContext,
 ): ReturnType<typeof createDesktopAgent> {
-  const key = cacheKey(target, mode, context);
+  // Resolve the project ONCE, before the cache key is computed, and put the
+  // resolved value into the context the agent receives. Two reasons this must
+  // happen here rather than at the call site:
+  //
+  //  1. Fallback. An unscoped surface — the normal state on a fresh launch,
+  //     since the renderer's scope lives in MemoryRouter memory — resolves to
+  //     the persisted default, so the prompt still names a project and the repo
+  //     tools have an id to resolve `repo_path` from.
+  //  2. Cache correctness. The key includes the project id, so resolving first
+  //     means a turn that fell back to the default and a turn explicitly scoped
+  //     to that same project share one agent — correct, they are the same
+  //     context. Resolving after the key would let an unscoped turn reuse an
+  //     agent built for a *different* project.
+  const resolved: ChatContext | undefined = context?.projectId
+    ? context
+    : (() => {
+        const projectId = resolveActiveProjectId(null);
+        return projectId ? { ...context, projectId } : context;
+      })();
+
+  const key = cacheKey(target, mode, resolved);
   let agent = agentCache.get(key);
   if (!agent) {
     agent = createDesktopAgent({
       target,
       researchMode: mode !== 'chat',
       notebookMode: mode === 'notebook',
-      context: context as WorkspaceContext | undefined,
+      context: resolved as WorkspaceContext | undefined,
     });
     agentCache.set(key, agent);
   }

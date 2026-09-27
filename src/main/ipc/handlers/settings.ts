@@ -45,10 +45,30 @@ export function registerSettingsHandlers({ mainWindow }: { mainWindow: BrowserWi
       // tools/rag.ts, which falls back to the environment when they are unset.
       embeddingProvider: s.embeddingProvider ?? '',
       embeddingModel: s.embeddingModel ?? '',
+      // The restored default project. Empty string rather than null so the
+      // renderer gets a plain falsy value it can compare against directly.
+      activeProjectId: s.activeProjectId ?? '',
       providers: sanitizedProviders,
       serviceKeysSet,
     };
   });
+
+  /**
+   * Record the active project. Deliberately NOT folded into `settings:save`:
+   * that is the Settings dialog's channel and carries a provider-state merge,
+   * whereas this is a one-field write from a sidebar click.
+   */
+  ipcMain.handle(
+    'settings:set-active-project',
+    (_e, { projectId }: { projectId: string | null }) => {
+      const current = getRawSettings();
+      // Store null rather than '' so the field round-trips as "no default".
+      saveSettings({ ...current, activeProjectId: projectId || null });
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('settings:changed');
+      }
+    },
+  );
 
   ipcMain.handle('settings:save', (_e, incoming: Partial<AppSettings>) => {
     // The renderer only sends the fields it edits, so merge over the decrypted

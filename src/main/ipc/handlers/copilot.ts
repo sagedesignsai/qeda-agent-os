@@ -12,7 +12,7 @@ import { type UIMessage } from 'ai';
 import { ipcMain, type BrowserWindow } from 'electron';
 import { describeFallbackReason, isOutputChunk, isRetryableProviderError } from '../../ai/fallback';
 import { prepareModelMessages } from '../../ai/messages';
-import { renderProjectContext } from '../../ai/project-context';
+import { renderProjectContext, resolveActiveProjectId } from '../../ai/project-context';
 import { resolveModelChain } from '../../ai/provider';
 import { breakdownTask, expandBrainDump, planDay } from '../../ai/task-copilot';
 import { createTaskCopilotAgent } from '../../ai/task-copilot-agent';
@@ -136,8 +136,11 @@ export function registerCopilotHandlers({ mainWindow }: { mainWindow: BrowserWin
       try {
         const modelMessages = await prepareModelMessages(messages);
         // The rendered block carries deadline/repo/progress, not just the name.
-        const activeProject = context?.projectId
-          ? renderProjectContext(context)
+        // Falls back to the persisted default when the surface is unscoped,
+        // which is the normal state on a fresh launch.
+        const projectId = resolveActiveProjectId(context?.projectId);
+        const activeProject = projectId
+          ? renderProjectContext({ projectId })
           : undefined;
 
         const chain = resolveModelChain();
