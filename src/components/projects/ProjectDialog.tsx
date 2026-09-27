@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { FolderOpenIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -101,6 +102,28 @@ export function ProjectDialog({
     }
   };
 
+  const handleChooseDirectory = async () => {
+    try {
+      const selected = await window.electron.ipc.invoke<string | null>(
+        'dialog:open-directory',
+        {
+          defaultPath: repoPath || undefined,
+          title: 'Select Project Directory',
+        },
+      );
+      if (selected) {
+        setRepoPath(selected);
+        if (!name.trim()) {
+          const parts = selected.split(/[/|\\]/).filter(Boolean);
+          const folderName = parts.pop();
+          if (folderName) setName(folderName);
+        }
+      }
+    } catch {
+      // Best-effort
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -168,14 +191,43 @@ export function ProjectDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="project-repo">Repo path</Label>
-            <Input
-              id="project-repo"
-              value={repoPath}
-              onChange={(e) => setRepoPath(e.target.value)}
-              placeholder="/data/projects/…"
-              className="font-mono text-xs"
-            />
+            <div className="flex items-center justify-between">
+              <Label htmlFor="project-repo">Repo path</Label>
+              <span className="text-[10px] text-muted-foreground">Optional</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Input
+                  id="project-repo"
+                  value={repoPath}
+                  onChange={(e) => setRepoPath(e.target.value)}
+                  placeholder="/data/projects/…"
+                  className="font-mono text-xs pr-8"
+                />
+                {repoPath && (
+                  <button
+                    type="button"
+                    onClick={() => setRepoPath('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors"
+                    title="Clear directory"
+                    aria-label="Clear directory"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleChooseDirectory()}
+                className="shrink-0 gap-1.5 border-border/80 text-xs hover:bg-accent"
+                title="Select folder using native file picker"
+              >
+                <FolderOpenIcon className="size-3.5 text-primary/80" />
+                Browse…
+              </Button>
+            </div>
             <p className="text-[11px] text-muted-foreground">
               Terminal sessions in this project start here.
             </p>

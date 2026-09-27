@@ -11,7 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { BotIcon, SparklesIcon } from 'lucide-react';
+import { BotIcon, PlusIcon, SparklesIcon, XIcon } from 'lucide-react';
 
 import {
   Conversation,
@@ -64,6 +64,8 @@ export function CopilotPanel({
     messages,
     status,
     error,
+    fallbackNotice,
+    dismissFallbackNotice,
     sendMessage,
     respondToApproval,
     clearMessages,
@@ -105,14 +107,28 @@ export function CopilotPanel({
         side="right"
         className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
       >
-        <SheetHeader className="border-b border-border/60">
-          <SheetTitle className="flex items-center gap-2 pr-8">
-            <SparklesIcon className="size-4 text-amber-500" />
-            Focus Copilot
-          </SheetTitle>
-          <SheetDescription>
-            An agent with tools over your tasks, calendar, focus stats, the web,
-            and your workspace.
+        <SheetHeader className="border-b border-border/60 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <SparklesIcon className="size-4 text-amber-500" />
+              Focus Copilot
+            </SheetTitle>
+            <div className="mr-6 flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 text-muted-foreground hover:text-foreground"
+                onClick={clearMessages}
+                title="New session / Clear"
+                disabled={messages.length === 0}
+              >
+                <PlusIcon className="size-3.5" />
+                <span className="sr-only">New session</span>
+              </Button>
+            </div>
+          </div>
+          <SheetDescription className="text-xs text-muted-foreground">
+            An agent with tools over your tasks, calendar, stats, and workspace.
           </SheetDescription>
         </SheetHeader>
 
@@ -124,10 +140,27 @@ export function CopilotPanel({
               error={error}
               onApproval={respondToApproval}
               emptyState={emptyState}
+              onRetry={(text) => sendMessage(text)}
             />
           </ConversationContent>
           <ConversationScrollButton />
         </Conversation>
+
+        {fallbackNotice && (
+          <div className="mx-3 my-2 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
+            <span className="truncate">
+              Provider <strong>{fallbackNotice.fromProvider}</strong> unavailable ({fallbackNotice.reason}) — switched to <strong>{fallbackNotice.toProvider}</strong>
+            </span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-5 shrink-0 text-amber-500 hover:text-amber-400"
+              onClick={dismissFallbackNotice}
+            >
+              <XIcon className="size-3" />
+            </Button>
+          </div>
+        )}
 
         <div className="border-t border-border/60 p-3">
           <PromptInput

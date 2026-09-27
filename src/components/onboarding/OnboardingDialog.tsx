@@ -23,9 +23,11 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
+  FolderOpenIcon,
   Loader2Icon,
   SparklesIcon,
   TargetIcon,
+  XIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { QedaLogomark } from '@/components/QedaLogo';
@@ -362,6 +364,31 @@ function ProjectStep({
   repoPath,
   setRepoPath,
 }: ProjectStepProps) {
+  const handleChooseDirectory = async () => {
+    try {
+      const selected = await window.electron.ipc.invoke<string | null>(
+        'dialog:open-directory',
+        {
+          defaultPath: repoPath || undefined,
+          title: 'Select Project Directory',
+        },
+      );
+      if (selected) {
+        setRepoPath(selected);
+        // If the project name is currently empty, suggest the folder's name
+        if (!name.trim()) {
+          const parts = selected.split(/[/|\\]/).filter(Boolean);
+          const folderName = parts.pop();
+          if (folderName) {
+            setName(folderName);
+          }
+        }
+      }
+    } catch {
+      // Best-effort
+    }
+  };
+
   return (
     <>
       <DialogHeader>
@@ -394,26 +421,57 @@ function ProjectStep({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="ob-deadline">Deadline</Label>
-            <Input
-              id="ob-deadline"
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
-            />
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="ob-repo">Directory location</Label>
+            <span className="text-[10px] text-muted-foreground">Optional</span>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ob-repo">Repo path</Label>
-            <Input
-              id="ob-repo"
-              value={repoPath}
-              onChange={(e) => setRepoPath(e.target.value)}
-              placeholder="/code/…"
-              className="font-mono text-xs"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Input
+                id="ob-repo"
+                value={repoPath}
+                onChange={(e) => setRepoPath(e.target.value)}
+                placeholder="Choose a directory or type path…"
+                className="font-mono text-xs pr-8"
+              />
+              {repoPath && (
+                <button
+                  type="button"
+                  onClick={() => setRepoPath('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors"
+                  title="Clear directory"
+                  aria-label="Clear directory"
+                >
+                  <XIcon className="size-3.5" />
+                </button>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleChooseDirectory()}
+              className="shrink-0 gap-1.5 border-border/80 text-xs hover:bg-accent"
+              title="Select folder using native file picker"
+            >
+              <FolderOpenIcon className="size-3.5 text-primary/80" />
+              Browse…
+            </Button>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Terminal sessions and agents in this project will run from this folder.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ob-deadline">Deadline</Label>
+          <Input
+            id="ob-deadline"
+            type="date"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+          />
         </div>
       </div>
     </>

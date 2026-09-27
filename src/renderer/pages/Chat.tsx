@@ -45,6 +45,18 @@ export default function Chat() {
     clear: clearProjectScope,
     withScope,
   } = useProjectScope();
+
+  // The chat agent receives the active project so its answers can assume this
+  // is the current context of work. Merged, so a handover context (page/notebook)
+  // and the URL scope coexist.
+  useEffect(() => {
+    setChatContext((prev) => {
+      if (projectId) return { ...prev, projectId };
+      if (!prev?.projectId) return prev;
+      const { projectId: _dropped, ...rest } = prev;
+      return Object.keys(rest).length ? (rest as ChatContext) : undefined;
+    });
+  }, [projectId]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [sessionTitle, setSessionTitle] = useState('');
   const [chatContext, setChatContext] = useState<ChatContext | undefined>(
@@ -64,7 +76,7 @@ export default function Chat() {
   useEffect(() => {
     const state = location.state as ChatLocationState | null;
     if (state?.chatContext) {
-      setChatContext(state.chatContext);
+      setChatContext((prev) => ({ ...prev, ...state.chatContext }));
     }
   }, [location.state]);
 
@@ -197,7 +209,19 @@ export default function Chat() {
                 {messages.length} {messages.length === 1 ? 'msg' : 'msgs'}
               </Badge>
             )}
-            <ChatContextPicker value={chatContext} onChange={setChatContext} />
+            <ChatContextPicker
+              value={chatContext}
+              onChange={(ctx) =>
+                setChatContext((prev) => {
+                  // The picker owns page/notebook context; the project scope is
+                  // owned by the URL (see useProjectScope) and survives here.
+                  const merged = { projectId: prev?.projectId, ...ctx };
+                  return Object.values(merged).some(Boolean)
+                    ? (merged as ChatContext)
+                    : undefined;
+                })
+              }
+            />
             {messages.length > 0 && (
               <Button
                 variant="ghost"

@@ -1,25 +1,29 @@
 /**
  * components/chat/MessageList.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Renders the list of UIMessages using ai-elements components.
- *
- * Handles:
- *   • User messages (right-aligned bubble)
- *   • Assistant text messages with streaming markdown
- *   • Reasoning ("thinking") blocks
- *   • Tool calls – status card, terminal output for shell commands
- *   • Tool approvals – human-in-the-loop approve / reject
- *   • Streaming indicator
- *   • Error state
+ * Renders the list of UIMessages using an agent-first, dense, minimalist layout:
+ *   • User prompts: full-width, capped-height capsules with hover copy & retry actions
+ *   • Reasoning: compact single-line "Worked on reasoning ❯" accordions
+ *   • Tool calls: ultra-dense status pills with natural-language labels
+ *   • Tool approvals: human-in-the-loop interactive confirmation cards
+ *   • Assistant output: unboxed, high-density markdown documents
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useState, type ReactNode } from 'react';
 import type { UIMessage } from 'ai';
+import { format } from 'date-fns';
 import {
-  Message,
-  MessageContent,
-  MessageResponse,
-} from '@/components/ai-elements/message';
+  AlertCircleIcon,
+  BrainIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  RotateCcwIcon,
+  XIcon,
+} from 'lucide-react';
+
+import { MessageResponse } from '@/components/ai-elements/message';
 import {
   Confirmation,
   ConfirmationTitle,
@@ -33,8 +37,8 @@ import {
 import { ToolCard } from './ToolCard';
 import { Spinner } from '@/components/ui/spinner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircleIcon, BrainIcon, CheckIcon, XIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 /** Normalised view of a `tool-*` UI part. */
 interface ToolPartView {
@@ -47,7 +51,7 @@ interface ToolPartView {
   approval?: ConfirmationProps['approval'];
 }
 
-interface MessageListProps {
+export interface MessageListProps {
   messages: UIMessage[];
   status: 'ready' | 'streaming' | 'error';
   error: Error | undefined;
@@ -58,20 +62,103 @@ interface MessageListProps {
   }) => void;
   /** Replaces the default empty state (used by the focus copilot). */
   emptyState?: ReactNode;
+  /** Callback to retry or re-populate a prompt. */
+  onRetry?: (text: string) => void;
 }
 
-/** Collapsible "thinking" block for model reasoning. */
-function ReasoningBlock({ text }: { text: string }) {
+/** Capped-height user prompt capsule with hover-revealed copy and retry actions. */
+function UserPromptCapsule({
+  text,
+  createdAt,
+  onRetry,
+}: {
+  text: string;
+  createdAt?: number;
+  onRetry?: (text: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    void navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const timeString = createdAt
+    ? format(new Date(createdAt), 'h:mm')
+    : format(new Date(), 'h:mm');
+
   return (
-    <details className="rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-      <summary className="flex cursor-pointer items-center gap-1.5 font-medium text-muted-foreground">
-        <BrainIcon className="size-3.5" />
+    <div className="group relative flex w-full items-start justify-between gap-3 rounded-xl border border-border/50 bg-muted/20 px-3.5 py-2.5 transition-colors hover:border-border/80 hover:bg-muted/30">
+      {/* Capped-height scrollable prompt text so agent responses are prioritized */}
+      <div className="max-h-24 min-h-0 flex-1 overflow-y-auto text-xs leading-relaxed text-foreground/90 select-text">
+        <p className="whitespace-pre-wrap font-normal">{text}</p>
+      </div>
+
+      {/* Hover-revealed timestamp and action buttons */}
+      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <span className="mr-0.5 text-[10px] tabular-nums text-muted-foreground/60 select-none">
+          {timeString}
+        </span>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          onClick={handleCopy}
+          title="Copy prompt"
+        >
+          {copied ? (
+            <CheckIcon className="size-3 text-emerald-500" />
+          ) : (
+            <CopyIcon className="size-3" />
+          )}
+          <span className="sr-only">Copy prompt</span>
+        </Button>
+        {onRetry && (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-6 text-muted-foreground hover:text-foreground"
+            onClick={() => onRetry(text)}
+            title="Retry / edit prompt"
+          >
+            <RotateCcwIcon className="size-3" />
+            <span className="sr-only">Retry prompt</span>
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Compact single-line collapsible thinking block for model reasoning. */
+function ReasoningBlock({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="my-0.5 w-full">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="group flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <BrainIcon className="size-3 text-muted-foreground/70 group-hover:text-foreground" />
         <span>Reasoning</span>
-      </summary>
-      <p className="mt-2 whitespace-pre-wrap text-muted-foreground italic">
-        {text}
-      </p>
-    </details>
+        <ChevronRightIcon
+          className={cn(
+            'size-3 text-muted-foreground/50 transition-transform duration-150 group-hover:text-foreground',
+            open && 'rotate-90 text-foreground',
+          )}
+        />
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-lg border border-border/40 bg-muted/20 p-2.5 text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap italic">
+          {text}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -81,6 +168,7 @@ export function MessageList({
   error,
   onApproval,
   emptyState,
+  onRetry,
 }: MessageListProps) {
   if (messages.length === 0 && status === 'ready') {
     if (emptyState) return <>{emptyState}</>;
@@ -102,17 +190,45 @@ export function MessageList({
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6">
-      {messages.map((message) => (
-        <Message key={message.id} from={message.role}>
-          <MessageContent>
+    <div className="flex flex-col gap-3.5 px-4 py-5">
+      {messages.map((message) => {
+        // ── User turn: Capped-height prompt capsule with hover actions ────────
+        if (message.role === 'user') {
+          const textPart = message.parts.find((p) => p.type === 'text');
+          const text = textPart && 'text' in textPart ? String(textPart.text) : '';
+          const rawDate = (message as { createdAt?: unknown }).createdAt;
+          const createdAt =
+            typeof rawDate === 'number'
+              ? rawDate
+              : rawDate instanceof Date
+                ? rawDate.getTime()
+                : typeof rawDate === 'string'
+                  ? new Date(rawDate).getTime()
+                  : undefined;
+
+          return (
+            <UserPromptCapsule
+              key={message.id}
+              text={text}
+              createdAt={createdAt}
+              onRetry={onRetry}
+            />
+          );
+        }
+
+        // ── Assistant turn: Unboxed, document-style layout ─────────────────────
+        return (
+          <div key={message.id} className="flex w-full flex-col gap-2.5 text-sm">
             {message.parts.map((part, i) => {
               // ── Text part ──────────────────────────────────────────────────
               if (part.type === 'text') {
                 return (
-                  <MessageResponse key={`${message.id}-text-${i}`}>
-                    {part.text}
-                  </MessageResponse>
+                  <div
+                    key={`${message.id}-text-${i}`}
+                    className="leading-relaxed text-foreground select-text"
+                  >
+                    <MessageResponse>{part.text}</MessageResponse>
+                  </div>
                 );
               }
 
@@ -227,9 +343,9 @@ export function MessageList({
 
               return null;
             })}
-          </MessageContent>
-        </Message>
-      ))}
+          </div>
+        );
+      })}
 
       {/* Streaming indicator */}
       {status === 'streaming' && (

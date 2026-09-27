@@ -53,6 +53,8 @@ const invoke = jest.fn((channel: string, payload?: unknown) => {
       });
     case 'tasks:create':
       return Promise.resolve({ id: 'task-1' });
+    case 'dialog:open-directory':
+      return Promise.resolve('/home/user/awesome-project');
     default:
       return Promise.resolve(undefined);
   }
@@ -139,5 +141,27 @@ describe('OnboardingDialog', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Open project/i }));
     expect(onOpenProject).toHaveBeenCalledWith('project-1');
+  }, TEST_TIMEOUT);
+
+  it('selects a directory via native dialog and infers project name if blank', async () => {
+    render(
+      <OnboardingDialog open onClose={() => {}} onOpenProject={() => {}} />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Get started/i }));
+    expect(await screen.findByRole('button', { name: /Browse…/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Browse…/i }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('dialog:open-directory', {
+        title: 'Select Project Directory',
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('/home/user/awesome-project')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('awesome-project')).toBeInTheDocument();
+    });
   }, TEST_TIMEOUT);
 });

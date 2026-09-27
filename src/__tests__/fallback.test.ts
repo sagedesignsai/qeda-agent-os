@@ -134,34 +134,83 @@ describe('resolveChain', () => {
 });
 
 describe('isRetryableProviderError', () => {
-  it('retries on rate limits and upstream failures', () => {
+  it('retries on rate limits, quota issues, and upstream failures', () => {
     expect(isRetryableProviderError({ statusCode: 429 })).toBe(true);
     expect(isRetryableProviderError({ statusCode: 503 })).toBe(true);
     expect(isRetryableProviderError({ statusCode: 500 })).toBe(true);
+    expect(isRetryableProviderError({ statusCode: 408 })).toBe(true);
   });
 
-  it('does not retry client errors that another provider cannot fix', () => {
-    expect(isRetryableProviderError({ statusCode: 400 })).toBe(false);
-    expect(isRetryableProviderError({ statusCode: 401 })).toBe(false);
-    expect(isRetryableProviderError({ statusCode: 404 })).toBe(false);
-    expect(isRetryableProviderError(new Error('Invalid tool call'))).toBe(false);
-    expect(isRetryableProviderError(new Error('No API key for provider'))).toBe(
-      false,
-    );
+  it('retries on provider-side rejections and catalog issues', () => {
+    // 400 from strict providers (e.g. Groq reasoning_content rejection or context window)
+    expect(isRetryableProviderError({ statusCode: 400 })).toBe(true);
+    // 401/402/403/404 from expired keys, unpaid credits, or decommissioned models
+    expect(isRetryableProviderError({ statusCode: 401 })).toBe(true);
+    expect(isRetryableProviderError({ statusCode: 402 })).toBe(true);
+    expect(isRetryableProviderError({ statusCode: 403 })).toBe(true);
+    expect(isRetryableProviderError({ statusCode: 404 })).toBe(true);
+  });
+
+  it('detects AI SDK typed provider error markers', () => {
+    expect(
+      isRetryableProviderError({
+        [Symbol.for('vercel.ai.error.AI_NoSuchModelError')]: true,
+      }),
+    ).toBe(true);
+    expect(
+      isRetryableProviderError({
+        [Symbol.for('vercel.ai.error.AI_UnsupportedFunctionalityError')]: true,
+      }),
+    ).toBe(true);
+    expect(
+      isRetryableProviderError({
+        [Symbol.for('vercel.ai.error.AI_EmptyResponseBodyError')]: true,
+      }),
+    ).toBe(true);
+    expect(
+      isRetryableProviderError({
+        [Symbol.for('vercel.ai.error.AI_StreamProviderError')]: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not retry aborted requests or local client errors', () => {
+    expect(isRetryableProviderError({ name: 'AbortError' })).toBe(false);
+    expect(
+      isRetryableProviderError({
+        name: 'AI_RetryError',
+        reason: 'abort',
+      }),
+    ).toBe(false);
+    expect(
+      isRetryableProviderError({
+        [Symbol.for('vercel.ai.error.AI_MessageConversionError')]: true,
+      }),
+    ).toBe(false);
+    expect(
+      isRetryableProviderError({
+        [Symbol.for('vercel.ai.error.AI_InvalidArgumentError')]: true,
+      }),
+    ).toBe(false);
   });
 
   it('unwraps the SDK RetryError to find the real cause', () => {
     expect(
       isRetryableProviderError({ lastError: { statusCode: 429 } }),
     ).toBe(true);
-    // A wrapped auth failure must stay non-retryable.
     expect(
-      isRetryableProviderError({ lastError: { statusCode: 401 } }),
-    ).toBe(false);
+      isRetryableProviderError({ lastError: { statusCode: 400 } }),
+    ).toBe(true);
+    expect(
+      isRetryableProviderError({
+        errors: [{ statusCode: 429 }],
+      }),
+    ).toBe(true);
   });
 
   it('unwraps `cause` chains', () => {
     expect(isRetryableProviderError({ cause: { status: 503 } })).toBe(true);
+    expect(isRetryableProviderError({ cause: { statusCode: 404 } })).toBe(true);
   });
 
   it('trusts an explicit isRetryable flag', () => {
@@ -174,6 +223,7 @@ describe('isRetryableProviderError', () => {
       true,
     );
     expect(isRetryableProviderError(new Error('socket hang up'))).toBe(true);
+    expect(isRetryableProviderError(new Error('bad gateway'))).toBe(true);
   });
 
   it('handles junk without throwing', () => {
@@ -207,15 +257,29 @@ describe('isOutputChunk', () => {
 });
 
 describe('describeFallbackReason', () => {
-  it('names the common cases', () => {
+  it('names the common cases and unwraps RetryError', () => {
     expect(describeFallbackReason({ statusCode: 429 })).toBe(
       'rate limit reached',
+    );
+    expect(describeFallbackReason({ statusCode: 400 })).toBe(
+      'request rejected by provider (HTTP 400)',
+    );
+    expect(describeFallbackReason({ statusCode: 401 })).toBe(
+      'invalid or expired API key (HTTP 401)',
+    );
+    expect(describeFallbackReason({ statusCode: 404 })).toBe(
+      'model not found or decommissioned (HTTP 404)',
     );
     expect(describeFallbackReason({ statusCode: 502 })).toBe(
       'provider error (HTTP 502)',
     );
+    expect(
+      describeFallbackReason({
+        lastError: { statusCode: 429 },
+      }),
+    ).toBe('rate limit reached');
     expect(describeFallbackReason(new Error('fetch failed'))).toBe(
-      'fetch failed',
+      'network connection failed',
     );
     expect(describeFallbackReason(undefined)).toBe('provider unavailable');
   });

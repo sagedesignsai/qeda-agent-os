@@ -19,6 +19,7 @@ import {
   Loader2Icon,
   MoreHorizontalIcon,
   SparklesIcon,
+  SunIcon,
   Trash2Icon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -33,8 +34,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { useGamification } from '@/hooks/use-gamification';
+import { triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
+import { XP_REWARDS } from '@/lib/gamification';
 import { FocusStatsStrip } from './FocusStatsStrip';
 import { ScheduleBlockDialog } from './ScheduleBlockDialog';
+import { MorningKickoffDialog } from './MorningKickoffDialog';
 import type {
   FocusStats,
   Task,
@@ -104,7 +109,9 @@ export function TodayTimeline({
   const [loading, setLoading] = useState(true);
   const [planning, setPlanning] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [kickoffOpen, setKickoffOpen] = useState(false);
   const [presetTaskId, setPresetTaskId] = useState<string | null>(null);
+  const gamification = useGamification();
 
   const load = useCallback(async () => {
     try {
@@ -163,7 +170,9 @@ export function TodayTimeline({
           description: result.note?.slice(0, 140),
         });
       } else {
-        toast.success(`Planned ${result.blocks.length} block${result.blocks.length > 1 ? 's' : ''}`, {
+        void gamification.awardXp(XP_REWARDS.DAY_PLAN, 'ai_day_plan');
+        triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
+        toast.success(`Planned ${result.blocks.length} block${result.blocks.length > 1 ? 's' : ''} (+40 XP)`, {
           description: result.note?.slice(0, 140),
         });
       }
@@ -196,6 +205,16 @@ export function TodayTimeline({
           <Button
             size="sm"
             variant="outline"
+            className="h-7 gap-1.5 border-amber-500/30 text-xs text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
+            onClick={() => setKickoffOpen(true)}
+            disabled={openTasks.length === 0}
+          >
+            <SunIcon className="size-3.5 fill-amber-500/20" />
+            Morning Kickoff
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             className="h-7 gap-1.5 text-xs"
             onClick={() => void planMyDay()}
             disabled={planning || openTasks.length === 0}
@@ -205,7 +224,7 @@ export function TodayTimeline({
             ) : (
               <SparklesIcon className="size-3 text-amber-500" />
             )}
-            Plan my day
+            Auto-plan
           </Button>
           <Button
             size="sm"
@@ -357,6 +376,15 @@ export function TodayTimeline({
         presetTaskId={presetTaskId}
         projectId={projectId ?? null}
         onSaved={() => void load()}
+      />
+
+      <MorningKickoffDialog
+        open={kickoffOpen}
+        onOpenChange={setKickoffOpen}
+        tasks={tasks}
+        projectId={projectId}
+        onScheduled={() => void load()}
+        onStartFocus={onFocusTask}
       />
     </div>
   );

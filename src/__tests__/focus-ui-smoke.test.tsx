@@ -18,9 +18,15 @@ import { ScheduleBlockDialog } from '../components/tasks/ScheduleBlockDialog';
 import { FocusAudioPanel } from '../components/tasks/FocusAudioPanel';
 import { FocusStatsStrip } from '../components/tasks/FocusStatsStrip';
 import { CopilotPanel } from '../components/copilot/CopilotPanel';
+import { HeaderLevelChip } from '../components/gamification/HeaderLevelChip';
+import { ParticleCanvas } from '../components/gamification/ParticleCanvas';
+import { FloatingFocusBar } from '../components/focus/FloatingFocusBar';
+import { SingleTaskLens } from '../components/tasks/SingleTaskLens';
+import { MorningKickoffDialog } from '../components/tasks/MorningKickoffDialog';
 import { useCopilotChat } from '../hooks/use-copilot-chat';
 import { useFocusTimer } from '../hooks/use-focus-timer';
 import { useFocusAudio } from '../hooks/use-focus-audio';
+import { useGamification } from '../hooks/use-gamification';
 
 describe('focus system UI modules', () => {
   it('exports the page and task components', () => {
@@ -33,6 +39,11 @@ describe('focus system UI modules', () => {
       FocusAudioPanel,
       FocusStatsStrip,
       CopilotPanel,
+      HeaderLevelChip,
+      ParticleCanvas,
+      FloatingFocusBar,
+      SingleTaskLens,
+      MorningKickoffDialog,
     ]) {
       expect(typeof component).toBe('function');
     }
@@ -42,5 +53,6 @@ describe('focus system UI modules', () => {
     expect(typeof useFocusTimer).toBe('function');
     expect(typeof useFocusAudio).toBe('function');
     expect(typeof useCopilotChat).toBe('function');
+    expect(typeof useGamification).toBe('function');
   });
 });

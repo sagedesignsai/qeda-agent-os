@@ -32,6 +32,7 @@ import { filesystemTools } from '../tools/filesystem.js';
 import { workspaceTools } from '../tools/workspace.js';
 import { ragTools } from '../tools/rag.js';
 import { serviceTools } from '../tools/services.js';
+import type { ModelTarget } from './fallback.js';
 
 // ─── Context tools (read-only, least privilege) ───────────────────────────────
 
@@ -79,10 +80,13 @@ function currentTimeContext(): string {
 }
 
 function buildInstructions(activeProject?: string): string {
+  // The shared block (ai/project-context.ts) describes the project; the
+  // sentence below adds the copilot-specific filing behaviour on top of it.
   const projectNote = activeProject
     ? `
-## Active project
-The user is currently working inside the project **${activeProject}**. Default new tasks there (listProjects to get its id) unless they clearly belong elsewhere; still cross-check the whole board when planning a day.`
+${activeProject}
+
+Default new tasks into the active project (listProjects to get its id) unless they clearly belong elsewhere; still cross-check the whole board when planning a day.`
     : '';
   return `You are the Focus Copilot inside Qeda — a calm, practical productivity partner for someone with ADHD.
 
@@ -130,9 +134,14 @@ export function isRiskyCopilotTool(toolName: string): boolean {
  * Build a fresh copilot agent. Rebuilt per turn so the instructions always carry
  * the current local time.
  */
-export function createTaskCopilotAgent(opts?: { activeProject?: string }) {
+export function createTaskCopilotAgent(opts?: {
+  activeProject?: string;
+  target?: ModelTarget;
+}) {
   const settings = getSettings();
-  const model = resolveModel(settings.activeProvider, settings.activeModel);
+  const providerId = opts?.target?.providerId ?? settings.activeProvider;
+  const modelId = opts?.target?.modelId ?? settings.activeModel;
+  const model = resolveModel(providerId, modelId);
 
   return new ToolLoopAgent({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

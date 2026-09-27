@@ -28,6 +28,7 @@ import type { TaskStep, StepProgress } from '../db/task-steps.js';
 import type { TaskBlock, TaskBlockWithTask } from '../db/task-blocks.js';
 import type { FocusSession, FocusStats } from '../db/focus-sessions.js';
 import type { Project, ProjectStatus, ProjectRollup } from '../db/projects.js';
+import type { GamificationState } from '../../lib/gamification.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -41,6 +42,7 @@ export type { TaskStep, StepProgress };
 export type { TaskBlock, TaskBlockWithTask };
 export type { FocusSession, FocusStats };
 export type { Project, ProjectStatus, ProjectRollup };
+export type { GamificationState };
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -81,7 +83,12 @@ export interface ResearchTrace {
   sources: ResearchSourceWithEvidence[];
 }
 
-export type ChatContext = { pageId?: string; notebookId?: string };
+export type ChatContext = {
+  pageId?: string;
+  notebookId?: string;
+  /** The project this turn is scoped to, when the surface carries `?project=`. */
+  projectId?: string;
+};
 
 export interface IpcChannels {
   // Session management
@@ -116,6 +123,15 @@ export interface IpcChannels {
     };
   };
   'settings:save': { req: Partial<AppSettings>; res: void };
+  /**
+   * Settings were written — re-read them.
+   *
+   * Needed because the readouts that display the active provider/model live in
+   * components that mounted long before the Settings dialog opened (the sidebar
+   * footer, the composer indicator), so a local state update inside the dialog
+   * cannot reach them. Same broadcast shape as `projects:changed`.
+   */
+  'settings:changed': void;
 
   // Providers
   'providers:list': { req: void; res: ProviderInfo[] };
@@ -345,6 +361,12 @@ export interface IpcChannels {
    *  Declared as an event (no req/res). */
   'projects:changed': void;
 
+  /** Prompt the user to select a directory on the local machine via native OS dialog. */
+  'dialog:open-directory': {
+    req: { defaultPath?: string; title?: string } | void;
+    res: string | null;
+  };
+
   // ── ADHD task manager ───────────────────────────────────────────────────────
   'tasks:list': {
     req: { status?: Task['status']; projectId?: string | null };
@@ -429,6 +451,21 @@ export interface IpcChannels {
     res: FocusSession[];
   };
   'focus:stats': { req: void; res: FocusStats };
+
+  // ── Gamification & Dopamine System ──────────────────────────────────────────
+  'gamification:get-state': { req: void; res: GamificationState };
+  'gamification:award-xp': {
+    req: { amount: number; source: string; entityId?: string };
+    res: { state: GamificationState; leveledUp: boolean };
+  };
+  'gamification:use-shield': { req: void; res: GamificationState };
+  'gamification:updated': { state: GamificationState; leveledUp: boolean };
+
+  // ── Native Reminders & OS Notifications ─────────────────────────────────────
+  'notifications:notify': {
+    req: { title: string; body: string; silent?: boolean };
+    res: boolean;
+  };
 
   // ── AI focus copilot ────────────────────────────────────────────────────────
   /** Break a task into a checklist, persisting the steps. */

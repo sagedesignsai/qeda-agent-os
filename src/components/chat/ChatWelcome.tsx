@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useGenerateNotebook } from '@/components/GenerateNotebookDialog';
 import { QedaLogomark } from '@/components/QedaLogo';
+import { useIpcEvent } from '@/hooks/use-ipc';
 
 interface ChatWelcomeProps {
   onSend: (text: string) => void;
@@ -89,6 +90,27 @@ function ModelIndicator() {
       cancelled = true;
     };
   }, []);
+
+  // This indicator mounts once per chat surface, long before the Settings
+  // dialog exists, so the one-shot fetch above went stale after a model
+  // change. Re-read on the same broadcast the sidebar footer listens to.
+  useIpcEvent(
+    'settings:changed',
+    () => {
+      void (async () => {
+        try {
+          const s = await window.electron.ipc.invoke<{
+            activeProvider?: string;
+            activeModel?: string;
+          }>('settings:get');
+          setLabel([s?.activeProvider, s?.activeModel].filter(Boolean).join(' · '));
+        } catch {
+          setLabel('');
+        }
+      })();
+    },
+    [],
+  );
 
   if (!label) return null;
 

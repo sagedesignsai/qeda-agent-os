@@ -124,58 +124,175 @@ export function isOutputChunk(type: unknown): boolean {
   return typeof type === 'string' && OUTPUT_CHUNK_TYPES.has(type);
 }
 
-/** HTTP statuses worth retrying elsewhere. */
-function isRetryableStatus(status: number): boolean {
+
+/**
+ * Check for AI SDK marker symbols across versions and module loaders.
+ * (Identical to AISDKError.hasMarker in @ai-sdk/provider).
+ */
+function hasAiErrorMarker(error: unknown, marker: string): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const sym = Symbol.for(marker);
+  return sym in error && (error as Record<symbol, unknown>)[sym] === true;
+}
+
+export const isAiApICallError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_APICallError') ||
+  (err as { name?: string })?.name === 'AI_APICallError' ||
+  (err as { name?: string })?.name === 'APICallError';
+
+export const isAiRetryError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_RetryError') ||
+  (err as { name?: string })?.name === 'AI_RetryError' ||
+  (err as { name?: string })?.name === 'RetryError';
+
+export const isAiStreamProviderError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_StreamProviderError') ||
+  (err as { name?: string })?.name === 'AI_StreamProviderError' ||
+  (err as { name?: string })?.name === 'StreamProviderError';
+
+export const isAiNoSuchModelError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_NoSuchModelError') ||
+  (err as { name?: string })?.name === 'AI_NoSuchModelError' ||
+  (err as { name?: string })?.name === 'NoSuchModelError';
+
+export const isAiNoSuchProviderError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_NoSuchProviderError') ||
+  (err as { name?: string })?.name === 'AI_NoSuchProviderError' ||
+  (err as { name?: string })?.name === 'NoSuchProviderError';
+
+export const isAiEmptyResponseBodyError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_EmptyResponseBodyError') ||
+  (err as { name?: string })?.name === 'AI_EmptyResponseBodyError' ||
+  (err as { name?: string })?.name === 'EmptyResponseBodyError';
+
+export const isAiJsonParseError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_JSONParseError') ||
+  (err as { name?: string })?.name === 'AI_JSONParseError' ||
+  (err as { name?: string })?.name === 'JSONParseError';
+
+export const isAiUnsupportedFunctionalityError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_UnsupportedFunctionalityError') ||
+  (err as { name?: string })?.name === 'AI_UnsupportedFunctionalityError' ||
+  (err as { name?: string })?.name === 'UnsupportedFunctionalityError';
+
+export const isAiLoadApiKeyError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_LoadAPIKeyError') ||
+  (err as { name?: string })?.name === 'AI_LoadAPIKeyError' ||
+  (err as { name?: string })?.name === 'LoadAPIKeyError';
+
+export const isAiNonRetryableClientError = (err: unknown): boolean =>
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_MessageConversionError') ||
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_InvalidArgumentError') ||
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_InvalidPromptError') ||
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_InvalidToolInputError') ||
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_NoSuchToolError') ||
+  hasAiErrorMarker(err, 'vercel.ai.error.AI_InvalidStreamPartError') ||
+  (err as { name?: string })?.name === 'MessageConversionError' ||
+  (err as { name?: string })?.name === 'InvalidArgumentError' ||
+  (err as { name?: string })?.name === 'InvalidPromptError';
+
+function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const c = err as { name?: unknown; message?: unknown; reason?: unknown };
+  if (c.name === 'AbortError') return true;
+  if (c.reason === 'abort') return true;
+  if (typeof c.message === 'string' && /^AbortError/i.test(c.message)) return true;
+  return false;
+}
+
+/** HTTP statuses indicating a provider/model problem worth retrying on the next target. */
+function isRetryableProviderStatus(status: number): boolean {
   return (
-    status === 408 || // request timeout
-    status === 409 || // conflict
-    status === 425 || // too early
-    status === 429 || // rate limited – the main case
-    status >= 500 // upstream failure
+    status === 400 || // Bad Request: provider schema/parameter rejection (e.g. reasoning_content, context limit)
+    status === 401 || // Unauthorized: invalid or expired API key on this provider
+    status === 402 || // Payment Required: insufficient credits on this provider
+    status === 403 || // Forbidden: quota exceeded or region blocked on this provider
+    status === 404 || // Not Found: model decommissioned or unsupported on this provider
+    status === 408 || // Request Timeout
+    status === 409 || // Conflict
+    status === 425 || // Too Early
+    status === 429 || // Rate Limited
+    status >= 500 // Upstream provider failure (500, 502, 503, 504)
   );
 }
 
 const RETRYABLE_MESSAGE =
-  /rate.?limit|too many requests|quota|overloaded|capacity|temporarily unavailable|service unavailable|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|fetch failed|socket hang up|network error/i;
+  /rate.?limit|too many requests|quota|overloaded|capacity|temporarily unavailable|service unavailable|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EPIPE|fetch failed|socket hang up|network error|bad gateway|gateway timeout|unsupported|decommissioned|not supported/i;
 
 /**
  * Decide whether an error means "this provider cannot serve us right now, but
  * another one might".
  *
- * Walks the wrapper chain: the SDK's `RetryError` keeps the underlying failure
- * in `lastError`, and anything can carry a `cause`. A bad request, an invalid
- * key or a malformed tool call must NOT trigger fallback — retrying those on a
- * different provider just burns another provider's quota and hides the bug.
+ * Walks the wrapper chain (AI SDK RetryError and cause properties).
+ * Returns true for provider-side failures (rate limits, outages, 4xx/5xx responses,
+ * missing models, streaming errors), while protecting against retrying user aborts
+ * or purely client-side programming errors.
  */
 export function isRetryableProviderError(error: unknown, depth = 0): boolean {
   if (!error || depth > 4) return false;
+
+  // Never retry aborted turns.
+  if (isAbortError(error)) return false;
+
+  // Pure client code errors (local message formatting, missing arguments) will fail identically everywhere.
+  if (isAiNonRetryableClientError(error)) return false;
+
+  // Typed AI SDK error classes representing provider-side or catalog problems:
+  if (
+    isAiNoSuchModelError(error) ||
+    isAiNoSuchProviderError(error) ||
+    isAiUnsupportedFunctionalityError(error) ||
+    isAiEmptyResponseBodyError(error) ||
+    isAiJsonParseError(error) ||
+    isAiLoadApiKeyError(error)
+  ) {
+    return true;
+  }
 
   const candidate = error as {
     statusCode?: unknown;
     status?: unknown;
     isRetryable?: unknown;
     lastError?: unknown;
+    errors?: unknown[];
     cause?: unknown;
     message?: unknown;
+    reason?: unknown;
   };
 
+  // If a provider HTTP status code is present, check if it warrants falling back.
   if (typeof candidate.statusCode === 'number') {
-    return isRetryableStatus(candidate.statusCode);
+    return isRetryableProviderStatus(candidate.statusCode);
   }
   if (typeof candidate.status === 'number') {
-    return isRetryableStatus(candidate.status);
+    return isRetryableProviderStatus(candidate.status);
   }
 
-  // Unwrap SDK error wrappers before falling back to message sniffing, so a
-  // wrapped 401 is not mistaken for a transient network problem.
+  // Unwrap AI SDK RetryError to examine the underlying provider failure.
   if (candidate.lastError !== undefined) {
     return isRetryableProviderError(candidate.lastError, depth + 1);
   }
+  if (Array.isArray(candidate.errors) && candidate.errors.length > 0) {
+    return isRetryableProviderError(
+      candidate.errors[candidate.errors.length - 1],
+      depth + 1,
+    );
+  }
+
+  // Unwrap cause chains.
   if (candidate.cause !== undefined) {
     return isRetryableProviderError(candidate.cause, depth + 1);
   }
 
-  if (typeof candidate.isRetryable === 'boolean') return candidate.isRetryable;
+  // If the SDK explicitly flagged the error as retryable.
+  if (typeof candidate.isRetryable === 'boolean' && candidate.isRetryable) {
+    return true;
+  }
+
+  // An APICallError or StreamProviderError without explicit numeric status is still a provider API failure.
+  if (isAiApICallError(error) || isAiStreamProviderError(error)) {
+    return true;
+  }
 
   const message =
     typeof candidate.message === 'string' ? candidate.message : String(error);
@@ -183,15 +300,56 @@ export function isRetryableProviderError(error: unknown, depth = 0): boolean {
 }
 
 /** Short, user-facing explanation of why a fallback happened. */
-export function describeFallbackReason(error: unknown): string {
-  const candidate = error as { statusCode?: unknown; message?: unknown };
-  if (candidate?.statusCode === 429) return 'rate limit reached';
-  if (typeof candidate?.statusCode === 'number' && candidate.statusCode >= 500) {
-    return `provider error (HTTP ${candidate.statusCode})`;
+export function describeFallbackReason(error: unknown, depth = 0): string {
+  if (!error || depth > 4) return 'provider unavailable';
+
+  const candidate = error as {
+    statusCode?: unknown;
+    status?: unknown;
+    lastError?: unknown;
+    cause?: unknown;
+    message?: unknown;
+  };
+
+  // Unwrap RetryError or cause to find the root provider failure.
+  if (candidate.lastError !== undefined) {
+    return describeFallbackReason(candidate.lastError, depth + 1);
   }
-  if (typeof candidate?.message === 'string') {
-    return candidate.message.split('\n')[0].slice(0, 160);
+
+  const statusCode =
+    typeof candidate.statusCode === 'number'
+      ? candidate.statusCode
+      : typeof candidate.status === 'number'
+        ? candidate.status
+        : undefined;
+
+  if (statusCode === 429) return 'rate limit reached';
+  if (statusCode === 401) return 'invalid or expired API key (HTTP 401)';
+  if (statusCode === 402) return 'insufficient credits (HTTP 402)';
+  if (statusCode === 403) return 'access forbidden or quota exceeded (HTTP 403)';
+  if (statusCode === 404) return 'model not found or decommissioned (HTTP 404)';
+  if (statusCode === 400) return 'request rejected by provider (HTTP 400)';
+  if (statusCode !== undefined && statusCode >= 500) {
+    return `provider error (HTTP ${statusCode})`;
   }
+
+  if (isAiNoSuchModelError(error)) return 'model not found on provider';
+  if (isAiUnsupportedFunctionalityError(error)) return 'unsupported model functionality';
+  if (isAiEmptyResponseBodyError(error)) return 'empty response from provider';
+  if (isAiJsonParseError(error)) return 'malformed response from provider';
+
+  if (candidate.cause !== undefined) {
+    const fromCause = describeFallbackReason(candidate.cause, depth + 1);
+    if (fromCause !== 'provider unavailable') return fromCause;
+  }
+
+  if (typeof candidate.message === 'string' && candidate.message.trim()) {
+    const firstLine = candidate.message.split('\n')[0].trim();
+    if (/rate.?limit/i.test(firstLine)) return 'rate limit reached';
+    if (/fetch failed|ECONN|socket hang up/i.test(firstLine)) return 'network connection failed';
+    return firstLine.slice(0, 160);
+  }
+
   return 'provider unavailable';
 }
 

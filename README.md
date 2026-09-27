@@ -95,6 +95,12 @@ renderer sends the full `UIMessage[]` to main, main converts it with
 `convertToModelMessages`, streams, and forwards every `fullStream` chunk back
 over the `agent:stream-chunk` event.
 
+Both the chat agent and the focus copilot receive the active project when their
+surface is scoped: `ai/project-context.ts` renders a shared "Active project"
+block (outcome, deadline, repo path, task progress) into the system prompt, and
+the agent cache keys on the project so scoped and unscoped chats never share an
+agent.
+
 ### Streaming
 
 The renderer folds each JSON chunk into UI parts in `use-agent-chat.ts`:
@@ -236,8 +242,9 @@ container.
   Projects page and the sidebar without the UI stitching four reads together.
 - **Copilot** — the task tools gain `listProjects`, `createProject`, and an
   approval-gated `assignTaskToProject`; `listTasks` and task creation are
-  project-aware, and the agent is told the active project so new capture lands
-  in the right place.
+  project-aware. When its surface is scoped, the copilot's system prompt carries
+  the shared "Active project" block plus a filing instruction, so new capture
+  lands in the right place.
 - **Views** — `pages/Projects.tsx` is a grid of rollup cards at `/projects` and a
   project detail at `/projects/:projectId`; `components/sidebar/ProjectsMenu.tsx`
   makes the rail a project switcher. Tasks, Terminal, and Chat all accept a

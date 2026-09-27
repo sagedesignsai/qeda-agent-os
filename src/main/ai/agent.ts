@@ -19,6 +19,7 @@ import { getSettings } from './settings';
 import { resolveModel } from './provider';
 import type { ModelTarget } from './fallback';
 import { allTools, toolApprovalPolicy } from '../tools/index';
+import { renderProjectContext } from './project-context';
 import {
   getPage,
   loadPageMarkdown,
@@ -104,6 +105,8 @@ function renderPageForPrompt(page: Page, maxChars: number): string {
 export interface WorkspaceContext {
   pageId?: string;
   notebookId?: string;
+  /** The project this conversation belongs to, when scoped. */
+  projectId?: string;
 }
 
 /**
@@ -113,11 +116,16 @@ export interface WorkspaceContext {
  * the full text of its five most recently updated pages.
  */
 function renderContextBlock(context: WorkspaceContext | undefined): string {
-  if (!context?.pageId && !context?.notebookId) return '';
+  if (!context?.pageId && !context?.notebookId && !context?.projectId) return '';
 
   const sections: string[] = ['\n## Workspace context', 'The user is working from this knowledge-base context. Prefer it as the source of truth for related questions.'];
 
   try {
+    if (context.projectId) {
+      const projectBlock = renderProjectContext(context);
+      if (projectBlock) sections.push(projectBlock.trim());
+    }
+
     if (context.pageId) {
       const page = getPage(context.pageId);
       if (page) {
@@ -174,6 +182,7 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
     options.researchMode || options.notebookMode ? RESEARCH_SUPPLEMENT : '',
     options.notebookMode ? NOTEBOOK_SUPPLEMENT : '',
     renderContextBlock(options.context),
+    renderProjectContext(options.context),
   ]
     .filter(Boolean)
     .join('\n\n');

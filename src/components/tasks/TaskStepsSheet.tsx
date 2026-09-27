@@ -25,6 +25,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
+import { useGamification } from '@/hooks/use-gamification';
+import { triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
+import { XP_REWARDS } from '@/lib/gamification';
 import type { Task, TaskStep } from '@/main/ipc/channels';
 
 export interface TaskStepsSheetProps {
@@ -45,6 +48,7 @@ export function TaskStepsSheet({
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [breakingDown, setBreakingDown] = useState(false);
+  const gamification = useGamification();
 
   const taskId = task?.id ?? null;
 
@@ -86,6 +90,9 @@ export function TaskStepsSheet({
 
   const toggleStep = async (step: TaskStep) => {
     const next = step.done ? 0 : 1;
+    if (!step.done) {
+      void gamification.awardXp(XP_REWARDS.STEP_COMPLETE, 'step_complete', step.id);
+    }
     setSteps((prev) =>
       prev.map((s) => (s.id === step.id ? { ...s, done: next } : s)),
     );
@@ -194,6 +201,11 @@ export function TaskStepsSheet({
                   <Checkbox
                     checked={step.done === 1}
                     onCheckedChange={() => void toggleStep(step)}
+                    onClick={(e) => {
+                      if (!step.done) {
+                        triggerParticleBurst(e.clientX, e.clientY);
+                      }
+                    }}
                     className="mt-0.5"
                   />
                   <span

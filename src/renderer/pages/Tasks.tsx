@@ -31,7 +31,9 @@ import {
   CircleDashedIcon,
   ClockIcon,
   FocusIcon,
+  PencilIcon,
   Loader2Icon,
+  Minimize2Icon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
@@ -42,22 +44,14 @@ import {
   Trash2Icon,
   UndoIcon,
   WavesIcon,
+  XIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,15 +64,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { BrainDumpDialog } from '@/components/tasks/BrainDumpDialog';
+import { TaskDialog } from '@/components/tasks/TaskDialog';
+import {
+  useTaskMutations,
+  type CreateTaskInput,
+  type UpdateTaskPatch,
+} from '@/hooks/use-task-mutations';
+import { useProjects } from '@/hooks/use-projects';
 import { CopilotPanel } from '@/components/copilot/CopilotPanel';
 import { FocusAudioPanel } from '@/components/tasks/FocusAudioPanel';
 import { ScheduleBlockDialog } from '@/components/tasks/ScheduleBlockDialog';
 import { TaskStepsSheet } from '@/components/tasks/TaskStepsSheet';
 import { TodayTimeline } from '@/components/tasks/TodayTimeline';
 import { useFocusAudio, type UseFocusAudioReturn } from '@/hooks/use-focus-audio';
-import { useFocusTimer, type PhaseCompleteInfo } from '@/hooks/use-focus-timer';
+import { useFocusTimer, type PhaseCompleteInfo, type UseFocusTimerReturn } from '@/hooks/use-focus-timer';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
+import { useGamification } from '@/hooks/use-gamification';
+import { HeaderLevelChip } from '@/components/gamification/HeaderLevelChip';
+import { ParticleCanvas, triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
+import { FloatingFocusBar } from '@/components/focus/FloatingFocusBar';
+import { SingleTaskLens } from '@/components/tasks/SingleTaskLens';
+import { XP_REWARDS } from '@/lib/gamification';
 import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
@@ -115,6 +122,7 @@ interface TaskCardProps {
   onFocus: (task: Task) => void;
   onOpenSteps: (task: Task) => void;
   onSchedule: (task: Task) => void;
+  onEdit: (task: Task) => void;
 }
 
 function TaskCard({
@@ -125,6 +133,7 @@ function TaskCard({
   onFocus,
   onOpenSteps,
   onSchedule,
+  onEdit,
 }: TaskCardProps) {
   const pm = PRIORITY_META[task.priority as Priority];
   const sm = STATUS_META[task.status];
@@ -174,6 +183,10 @@ function TaskCard({
                 Move to {STATUS_META[sm.next].label}
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem onClick={() => onEdit(task)}>
+              <PencilIcon className="mr-2 size-3" />
+              Edit
+            </DropdownMenuItem>
             {task.status === 'done' && (
               <DropdownMenuItem onClick={() => onMove(task.id, 'active')}>
                 <UndoIcon className="mr-2 size-3" />
@@ -278,32 +291,27 @@ function TaskCard({
 interface FocusModeProps {
   task: Task;
   audio: UseFocusAudioReturn;
+  timer: UseFocusTimerReturn;
+  presetIndex: number;
+  onPresetChange: (index: number) => void;
+  onMinimize: () => void;
   onClose: () => void;
-  onPhaseComplete: (info: PhaseCompleteInfo & { taskId: string }) => void;
+  onComplete: (task: Task, event: React.MouseEvent) => void;
 }
 
-function FocusMode({ task, audio, onClose, onPhaseComplete }: FocusModeProps) {
+function FocusMode({
+  task,
+  audio,
+  timer,
+  presetIndex,
+  onPresetChange,
+  onMinimize,
+  onClose,
+  onComplete,
+}: FocusModeProps) {
   const navigate = useNavigate();
-  const [presetIndex, setPresetIndex] = useState(0);
   const [showAudio, setShowAudio] = useState(false);
-  const preset = DURATION_PRESETS[presetIndex];
-
-  const handlePhase = useCallback(
-    (info: PhaseCompleteInfo) => {
-      onPhaseComplete({ ...info, taskId: task.id });
-      if (info.phase === 'work' && info.completed) {
-        toast.success('Pomodoro complete! Take a break.');
-      }
-    },
-    [task.id, onPhaseComplete],
-  );
-
-  const { state, progress, start, pause, reset, skip } = useFocusTimer({
-    taskId: task.id,
-    workMins: preset.work,
-    breakMins: preset.break,
-    onPhaseComplete: handlePhase,
-  });
+  const { state, progress, pause, reset, skip } = timer;
 
   const mins = Math.floor(state.secondsLeft / 60).toString().padStart(2, '0');
   const secs = (state.secondsLeft % 60).toString().padStart(2, '0');
@@ -315,8 +323,8 @@ function FocusMode({ task, audio, onClose, onPhaseComplete }: FocusModeProps) {
     if (!audio.playing && (audio.config.noise || audio.config.binaural)) {
       void audio.start();
     }
-    start();
-  }, [audio, start]);
+    timer.start();
+  }, [audio, timer]);
 
   const handToAgent = async () => {
     try {
@@ -331,13 +339,20 @@ function FocusMode({ task, audio, onClose, onPhaseComplete }: FocusModeProps) {
     }
   };
 
+  const xpReward =
+    task.priority === 1
+      ? XP_REWARDS.TASK_HIGH
+      : task.priority === 2
+        ? XP_REWARDS.TASK_MED
+        : XP_REWARDS.TASK_LOW;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/90 backdrop-blur-md"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && onMinimize()}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
@@ -346,14 +361,38 @@ function FocusMode({ task, audio, onClose, onPhaseComplete }: FocusModeProps) {
         transition={{ duration: 0.2 }}
         className="my-8 flex w-full max-w-md flex-col items-center gap-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-8"
       >
-        {/* Task info */}
-        <div className="text-center">
-          <div className="mb-1 flex items-center justify-center gap-1.5">
+        {/* Header bar with minimize & close */}
+        <div className="flex w-full items-center justify-between pb-1 border-b border-zinc-900">
+          <div className="flex items-center gap-1.5">
             <BrainIcon className="size-4 text-amber-400" />
             <span className="text-xs uppercase tracking-widest text-zinc-500">
-              Focus
+              Focus Mode
             </span>
           </div>
+          <div className="flex items-center gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 rounded-full text-zinc-400 hover:text-white"
+              onClick={onMinimize}
+              title="Minimize to floating bar"
+            >
+              <Minimize2Icon className="size-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 rounded-full text-zinc-400 hover:text-rose-400"
+              onClick={onClose}
+              title="Exit focus mode"
+            >
+              <XIcon className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Task info */}
+        <div className="text-center">
           <h2 className="text-xl font-semibold text-white">{task.title}</h2>
           {task.description && (
             <p className="mt-1.5 text-sm text-zinc-400">{task.description}</p>
@@ -381,7 +420,7 @@ function FocusMode({ task, audio, onClose, onPhaseComplete }: FocusModeProps) {
         <ToggleGroup
           type="single"
           value={String(presetIndex)}
-          onValueChange={(v) => v !== '' && setPresetIndex(Number(v))}
+          onValueChange={(v) => v !== '' && onPresetChange(Number(v))}
           size="sm"
         >
           {DURATION_PRESETS.map((p, i) => (
@@ -466,125 +505,38 @@ function FocusMode({ task, audio, onClose, onPhaseComplete }: FocusModeProps) {
           )}
         </AnimatePresence>
 
-        {/* Hand to agent */}
-        <Button
-          variant="outline"
-          className="gap-2 border-zinc-700 text-zinc-300 hover:border-emerald-700 hover:text-emerald-400"
-          onClick={handToAgent}
-        >
-          <TerminalSquareIcon className="size-4" />
-          Hand to Agent
-        </Button>
+        {/* Action Row */}
+        <div className="flex w-full flex-col gap-2">
+          <Button
+            className="w-full gap-2 bg-emerald-600 font-semibold text-white hover:bg-emerald-500"
+            onClick={(e) => onComplete(task, e)}
+          >
+            <CheckIcon className="size-4 stroke-[2.5]" />
+            Complete Task (+{xpReward} XP)
+          </Button>
 
-        <Button variant="ghost" className="text-xs text-zinc-600" onClick={onClose}>
-          Exit focus mode
-        </Button>
-      </motion.div>
-    </motion.div>
-  );
-}
+          <div className="flex w-full items-center gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2 border-zinc-700 text-zinc-300 hover:border-emerald-700 hover:text-emerald-400"
+              onClick={handToAgent}
+            >
+              <TerminalSquareIcon className="size-4" />
+              Hand to Agent
+            </Button>
 
-// ─── New task dialog ──────────────────────────────────────────────────────────
-
-interface NewTaskDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSave: (data: {
-    title: string;
-    description: string;
-    priority: Priority;
-    estimate_mins: number | null;
-  }) => void;
-}
-
-function NewTaskDialog({ open, onOpenChange, onSave }: NewTaskDialogProps) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<Priority>(2);
-  const [estimate, setEstimate] = useState('');
-
-  const handleSave = () => {
-    if (!title.trim()) return;
-    const parsed = Number(estimate);
-    onSave({
-      title: title.trim(),
-      description: description.trim(),
-      priority,
-      estimate_mins: estimate.trim() && parsed > 0 ? parsed : null,
-    });
-    setTitle('');
-    setDescription('');
-    setPriority(2);
-    setEstimate('');
-    onOpenChange(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>New task</DialogTitle>
-          <DialogDescription>Add a task to your backlog.</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-3">
-          <Input
-            placeholder="Task title…"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            autoFocus
-          />
-          <Textarea
-            placeholder="Description (optional)…"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            className="resize-none"
-          />
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Priority:</span>
-            {([1, 2, 3] as Priority[]).map((p) => (
-              <Button
-                key={p}
-                size="sm"
-                variant={priority === p ? 'default' : 'outline'}
-                className={cn(
-                  'h-7 px-2.5 text-xs',
-                  priority === p && PRIORITY_META[p].color,
-                )}
-                onClick={() => setPriority(p)}
-              >
-                {PRIORITY_META[p].label}
-              </Button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Estimate:</span>
-            <Input
-              type="number"
-              min={5}
-              step={5}
-              placeholder="mins"
-              value={estimate}
-              onChange={(e) => setEstimate(e.target.value)}
-              className="h-7 w-24 text-xs"
-            />
+            <Button
+              variant="outline"
+              className="border-zinc-700 text-zinc-400 hover:text-zinc-200"
+              onClick={onMinimize}
+            >
+              <Minimize2Icon className="mr-1.5 size-3.5" />
+              Minimize
+            </Button>
           </div>
         </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={!title.trim()}>
-            Add task
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </motion.div>
+    </motion.div>
   );
 }
 
@@ -599,6 +551,7 @@ interface ColumnProps {
   onFocus: (task: Task) => void;
   onOpenSteps: (task: Task) => void;
   onSchedule: (task: Task) => void;
+  onEdit: (task: Task) => void;
 }
 
 function Column({
@@ -610,6 +563,7 @@ function Column({
   onFocus,
   onOpenSteps,
   onSchedule,
+  onEdit,
 }: ColumnProps) {
   const meta = STATUS_META[status];
   const StatusIcon = meta.icon;
@@ -644,6 +598,7 @@ function Column({
                 onFocus={onFocus}
                 onOpenSteps={onOpenSteps}
                 onSchedule={onSchedule}
+                onEdit={onEdit}
               />
             ))}
             {tasks.length === 0 && (
@@ -666,25 +621,39 @@ function Column({
 
 export default function Tasks() {
   const { projectId, projectName, clear: clearProjectScope } = useProjectScope();
+  const { projects } = useProjects();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stepProgress, setStepProgress] = useState<Record<string, StepProgress>>({});
   const [stats, setStats] = useState<FocusStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'today' | 'board'>('today');
-  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  /** Set when the dialog is editing an existing task; null = create. */
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [brainDumpOpen, setBrainDumpOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   /** Bumped whenever task data may have changed, to refresh the Today view. */
   const [dataVersion, setDataVersion] = useState(0);
   const [focusedTask, setFocusedTask] = useState<Task | null>(null);
+  const [focusDisplayMode, setFocusDisplayMode] = useState<'modal' | 'floating' | 'closed'>('closed');
+  const [singleLens, setSingleLens] = useState(false);
+  const [presetIndex, setPresetIndex] = useState(0);
+  const preset = DURATION_PRESETS[presetIndex];
+
   const [stepsTask, setStepsTask] = useState<Task | null>(null);
   const [stepsOpen, setStepsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleTaskId, setScheduleTaskId] = useState<string | null>(null);
   const [isPrioritizing, setIsPrioritizing] = useState(false);
 
+  const gamification = useGamification();
   const audio = useFocusAudio();
+
+  const startFocus = useCallback((task: Task) => {
+    setFocusedTask(task);
+    setFocusDisplayMode('modal');
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -736,28 +705,59 @@ export default function Tasks() {
     setDataVersion((v) => v + 1);
   }, [load, loadSteps, loadStats]);
 
-  const handleCreate = async (data: {
-    title: string;
-    description: string;
-    priority: Priority;
-    estimate_mins: number | null;
-  }) => {
-    try {
-      const task = await window.electron.ipc.invoke<Task>('tasks:create', {
-        title: data.title,
-        description: data.description,
-        priority: data.priority,
-        estimate_mins: data.estimate_mins,
-        project_id: projectId ?? undefined,
-        status: 'backlog',
-      });
-      setTasks((prev) => [task, ...prev]);
-    } catch {
-      toast.error('Could not create task');
+  const mutations = useTaskMutations({
+    onCreated: (task) => setTasks((prev) => [task, ...prev]),
+    onUpdated: (id, patch) =>
+      setTasks((prev) =>
+        prev.map((t) => (t.id === id ? ({ ...t, ...patch } as Task) : t)),
+      ),
+    onRemoved: (id) => setTasks((prev) => prev.filter((t) => t.id !== id)),
+  });
+
+  /** Create when editingTask is null; write the patch when editing. */
+  const handleTaskSubmit = async (
+    data: CreateTaskInput | UpdateTaskPatch,
+  ) => {
+    if (editingTask) {
+      await mutations.update(editingTask.id, data as UpdateTaskPatch);
+    } else {
+      const scoped: CreateTaskInput = {
+        ...(data as CreateTaskInput),
+        // A scoped surface files new tasks there unless the form said otherwise.
+        project_id:
+          (data as CreateTaskInput).project_id ?? projectId ?? null,
+      };
+      await mutations.create(scoped);
     }
   };
 
+  const openCreate = () => {
+    setEditingTask(null);
+    setTaskDialogOpen(true);
+  };
+
+  const openEdit = (task: Task) => {
+    setEditingTask(task);
+    setTaskDialogOpen(true);
+  };
+
   const handleMove = async (id: string, to: Status) => {
+    const target = tasks.find((t) => t.id === id);
+    if (to === 'done' && target && target.status !== 'done') {
+      const xp =
+        target.priority === 1
+          ? XP_REWARDS.TASK_HIGH
+          : target.priority === 2
+            ? XP_REWARDS.TASK_MED
+            : XP_REWARDS.TASK_LOW;
+      void gamification.awardXp(xp, `task_p${target.priority}`, id);
+      triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
+    }
+    if (to === 'done' && focusedTask?.id === id) {
+      focusTimer.pause();
+      setFocusDisplayMode('closed');
+      setFocusedTask(null);
+    }
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status: to } : t)));
     try {
       await window.electron.ipc.invoke('tasks:update', { id, status: to });
@@ -792,6 +792,11 @@ export default function Tasks() {
       }
 
       if (info.phase === 'work' && info.completed) {
+        const mins = Math.max(1, Math.round(info.actualSec / 60));
+        const xp = mins * XP_REWARDS.FOCUS_MINUTE + XP_REWARDS.POMODORO_COMPLETE;
+        void gamification.awardXp(xp, 'pomodoro_complete', info.taskId);
+        triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
+
         setTasks((prev) =>
           prev.map((t) =>
             t.id === info.taskId
@@ -810,8 +815,37 @@ export default function Tasks() {
 
       void loadStats();
     },
-    [loadStats],
+    [loadStats, gamification],
   );
+
+  const handleTimerPhase = useCallback(
+    (info: PhaseCompleteInfo) => {
+      if (focusedTask) {
+        handlePhaseComplete({ ...info, taskId: focusedTask.id });
+      }
+      if (info.phase === 'work' && info.completed) {
+        toast.success('Pomodoro complete! Take a break.');
+        void window.electron.ipc.invoke('notifications:notify', {
+          title: 'Pomodoro Complete! 🍅',
+          body: 'Great focus session. Take a 5-minute restorative break.',
+        });
+      } else if (info.phase === 'break' && info.completed) {
+        toast.info('Break finished! Ready to resume flow.');
+        void window.electron.ipc.invoke('notifications:notify', {
+          title: 'Break Finished! ⚡',
+          body: 'Your break is done. Jump back into flow state.',
+        });
+      }
+    },
+    [focusedTask, handlePhaseComplete],
+  );
+
+  const focusTimer = useFocusTimer({
+    taskId: focusedTask?.id ?? null,
+    workMins: preset.work,
+    breakMins: preset.break,
+    onPhaseComplete: handleTimerPhase,
+  });
 
   const handlePrioritize = async () => {
     setIsPrioritizing(true);
@@ -861,6 +895,7 @@ export default function Tasks() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <HeaderLevelChip state={gamification.state} loading={gamification.loading} />
             <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             <Button
               size="sm"
@@ -897,7 +932,7 @@ export default function Tasks() {
             <Button
               size="sm"
               className="h-7 gap-1.5 text-xs"
-              onClick={() => setNewTaskOpen(true)}
+              onClick={openCreate}
             >
               <PlusIcon className="size-3" />
               New task
@@ -911,7 +946,7 @@ export default function Tasks() {
         onValueChange={(v) => setView(v as 'today' | 'board')}
         className="min-h-0 flex-1 gap-0"
       >
-        <div className="border-b border-border/60 px-4 pt-3">
+        <div className="flex items-center justify-between border-b border-border/60 px-4 pt-3">
           <TabsList>
             <TabsTrigger value="today" className="gap-1.5">
               <FocusIcon className="size-3.5" />
@@ -922,6 +957,21 @@ export default function Tasks() {
               Board
             </TabsTrigger>
           </TabsList>
+
+          {view === 'board' && (
+            <Button
+              size="sm"
+              variant={singleLens ? 'default' : 'outline'}
+              className={cn(
+                'h-7 gap-1.5 text-xs',
+                singleLens && 'bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400',
+              )}
+              onClick={() => setSingleLens(!singleLens)}
+            >
+              <BrainIcon className="size-3.5" />
+              {singleLens ? 'Show All Columns' : 'Single-Task Lens'}
+            </Button>
+          )}
         </div>
 
         <TabsContent value="today" className="min-h-0 overflow-hidden">
@@ -931,7 +981,7 @@ export default function Tasks() {
             statsLoading={statsLoading}
             refreshSignal={dataVersion}
             projectId={projectId}
-            onFocusTask={setFocusedTask}
+            onFocusTask={startFocus}
           />
         </TabsContent>
 
@@ -940,6 +990,18 @@ export default function Tasks() {
             <div className="flex h-full items-center justify-center p-4">
               <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
             </div>
+          ) : singleLens ? (
+            <SingleTaskLens
+              tasks={tasks}
+              stepProgress={stepProgress}
+              onFocus={startFocus}
+              onOpenSteps={openSteps}
+              onComplete={(task, e) => {
+                triggerParticleBurst(e.clientX, e.clientY);
+                void handleMove(task.id, 'done');
+              }}
+              onExit={() => setSingleLens(false)}
+            />
           ) : (
             <div className="flex h-full min-h-0 gap-3 overflow-hidden p-4">
               {COLUMNS.map((status) => (
@@ -950,9 +1012,10 @@ export default function Tasks() {
                   stepProgress={stepProgress}
                   onMove={handleMove}
                   onDelete={handleDelete}
-                  onFocus={setFocusedTask}
+                  onFocus={startFocus}
                   onOpenSteps={openSteps}
                   onSchedule={openSchedule}
+                  onEdit={openEdit}
                 />
               ))}
             </div>
@@ -961,10 +1024,13 @@ export default function Tasks() {
       </Tabs>
 
       {/* Dialogs */}
-      <NewTaskDialog
-        open={newTaskOpen}
-        onOpenChange={setNewTaskOpen}
-        onSave={handleCreate}
+      <TaskDialog
+        open={taskDialogOpen}
+        onOpenChange={setTaskDialogOpen}
+        task={editingTask}
+        projects={projects}
+        defaultProjectId={projectId ?? null}
+        onSubmit={handleTaskSubmit}
       />
 
       <BrainDumpDialog
@@ -997,19 +1063,60 @@ export default function Tasks() {
 
       {/* Focus mode overlay */}
       <AnimatePresence>
-        {focusedTask && (
+        {focusDisplayMode === 'modal' && focusedTask && (
           <FocusMode
             task={focusedTask}
             audio={audio}
-            onClose={() => setFocusedTask(null)}
-            onPhaseComplete={handlePhaseComplete}
+            timer={focusTimer}
+            presetIndex={presetIndex}
+            onPresetChange={setPresetIndex}
+            onMinimize={() => setFocusDisplayMode('floating')}
+            onClose={() => {
+              setFocusDisplayMode('closed');
+              setFocusedTask(null);
+              focusTimer.pause();
+            }}
+            onComplete={(task, e) => {
+              triggerParticleBurst(e.clientX, e.clientY);
+              void handleMove(task.id, 'done');
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Ambient Floating Focus Bar & Mini-Player */}
+      <AnimatePresence>
+        {focusDisplayMode === 'floating' && focusedTask && (
+          <FloatingFocusBar
+            task={focusedTask}
+            timerState={focusTimer.state}
+            progress={focusTimer.progress}
+            audio={audio}
+            onStart={() => {
+              if (!audio.playing && (audio.config.noise || audio.config.binaural)) {
+                void audio.start();
+              }
+              focusTimer.start();
+            }}
+            onPause={focusTimer.pause}
+            onSkip={focusTimer.skip}
+            onExpand={() => setFocusDisplayMode('modal')}
+            onClose={() => {
+              setFocusDisplayMode('closed');
+              setFocusedTask(null);
+              focusTimer.pause();
+            }}
+            onCompleteTask={(task, e) => {
+              triggerParticleBurst(e.clientX, e.clientY);
+              void handleMove(task.id, 'done');
+            }}
           />
         )}
       </AnimatePresence>
 
       {/* Soundscape keeps playing outside focus mode — give it an off switch. */}
       <AnimatePresence>
-        {audio.playing && !focusedTask && (
+        {audio.playing && (!focusedTask || focusDisplayMode === 'closed') && (
           <motion.button
             type="button"
             initial={{ opacity: 0, y: 8 }}
@@ -1024,6 +1131,8 @@ export default function Tasks() {
           </motion.button>
         )}
       </AnimatePresence>
+
+      <ParticleCanvas />
     </div>
   );
 }

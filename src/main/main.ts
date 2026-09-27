@@ -15,7 +15,7 @@ import log from 'electron-log';
 // module reads them during app startup.
 import { loadEnvironment } from './env';
 import { getDb, closeDb } from './db/client.js';
-import { registerIpcHandlers } from './ipc/handlers.js';
+import { registerIpcHandlers } from './ipc/index.js';
 import { registerPtyHandlers } from './pty/manager.js';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';

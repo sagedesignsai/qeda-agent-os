@@ -377,6 +377,31 @@ CREATE INDEX IF NOT EXISTS idx_focus_sessions_started ON focus_sessions(started_
 CREATE INDEX IF NOT EXISTS idx_focus_sessions_task    ON focus_sessions(task_id);
 `;
 
+// ─── Gamification & Dopamine System ──────────────────────────────────────────
+
+export const CREATE_GAMIFICATION_STATE = `
+CREATE TABLE IF NOT EXISTS gamification_state (
+  id              TEXT PRIMARY KEY DEFAULT 'default',
+  current_xp      INTEGER NOT NULL DEFAULT 0,
+  current_level   INTEGER NOT NULL DEFAULT 1,
+  streak_days     INTEGER NOT NULL DEFAULT 0,
+  streak_shields  INTEGER NOT NULL DEFAULT 2,
+  last_active_day TEXT NOT NULL DEFAULT '',
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+);
+`;
+
+export const CREATE_XP_LEDGER = `
+CREATE TABLE IF NOT EXISTS xp_ledger (
+  id          TEXT PRIMARY KEY,
+  amount      INTEGER NOT NULL,
+  source      TEXT NOT NULL,
+  entity_id   TEXT,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_xp_ledger_created ON xp_ledger(created_at);
+`;
+
 // ─── Full-text search ─────────────────────────────────────────────────────────
 
 /**
@@ -416,6 +441,8 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_TASK_STEPS,
   CREATE_TASK_BLOCKS,
   CREATE_FOCUS_SESSIONS,
+  CREATE_GAMIFICATION_STATE,
+  CREATE_XP_LEDGER,
 ];
 
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────

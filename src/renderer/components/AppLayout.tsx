@@ -6,7 +6,7 @@ import {
 } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { CommandPalette } from '@/components/CommandPalette';
-import { SettingsDialog } from '@/components/chat/SettingsDialog';
+import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { GenerateNotebookProvider } from '@/components/GenerateNotebookDialog';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
 import { useProjects } from '@/hooks/use-projects';
