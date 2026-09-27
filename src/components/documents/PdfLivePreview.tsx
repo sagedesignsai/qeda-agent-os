@@ -12,7 +12,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePDF } from '@react-pdf/renderer';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,10 +49,23 @@ export function PdfLivePreview({ doc }: PdfLivePreviewProps) {
   // @react-pdf/renderer's usePDF hook manages web-worker or on-the-fly rendering
   const [instance, updateInstance] = usePDF({ document: docElement });
 
-  // Update instance when document changes
+  const updateInstanceRef = useRef(updateInstance);
+  updateInstanceRef.current = updateInstance;
+  const isFirstRender = useRef(true);
+
+  // Debounce document updates to avoid thrashing worker/PDF generation
   useEffect(() => {
-    updateInstance(docElement);
-  }, [docElement, updateInstance]);
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      updateInstanceRef.current(docElement);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [docElement]);
 
   const handleNativeExport = async () => {
     if (!instance.blob) {

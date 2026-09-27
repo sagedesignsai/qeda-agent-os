@@ -180,3 +180,89 @@ describe('React-PDF Renderer Compilation', () => {
     expect(blob.size).toBeGreaterThan(0);
   });
 });
+
+describe('PDF Studio Text Elements & Rich Inline Capabilities', () => {
+  const {
+    parseInlineSpans,
+    renderInlineFormattedText,
+  } = require('../lib/pdf-studio/inline-text');
+  const { THEMES } = require('../lib/pdf-studio/themes');
+
+  it('parses markdown formatting into structured inline text spans', () => {
+    const input =
+      'Hello **bold**, *italic*, __underline__, ~~strike~~, `const x = 1;`, and [Docugent](https://docugent.ai) with {color:accent}highlight{/color}!';
+    const spans = parseInlineSpans(input);
+
+    expect(spans.length).toBeGreaterThan(6);
+
+    const boldSpan = spans.find((s: any) => s.text === 'bold');
+    expect(boldSpan?.bold).toBe(true);
+
+    const italicSpan = spans.find((s: any) => s.text === 'italic');
+    expect(italicSpan?.italic).toBe(true);
+
+    const underlineSpan = spans.find((s: any) => s.text === 'underline');
+    expect(underlineSpan?.underline).toBe(true);
+
+    const strikeSpan = spans.find((s: any) => s.text === 'strike');
+    expect(strikeSpan?.strike).toBe(true);
+
+    const codeSpan = spans.find((s: any) => s.text === 'const x = 1;');
+    expect(codeSpan?.code).toBe(true);
+
+    const linkSpan = spans.find((s: any) => s.text === 'Docugent');
+    expect(linkSpan?.href).toBe('https://docugent.ai');
+
+    const colorSpan = spans.find((s: any) => s.text === 'highlight');
+    expect(colorSpan?.color).toBe('accent');
+  });
+
+  it('compiles document with headings, bookmarks, minPresenceAhead, and destinations', async () => {
+    const baseDoc = createBlankDocument();
+    baseDoc.blocks = [
+      {
+        id: 'h1-intro',
+        anchorId: 'section-intro',
+        type: 'heading',
+        level: 1,
+        text: '1. Executive Summary',
+        bookmark: 'Executive Summary',
+        minPresenceAhead: 40,
+        hyphenationPenalty: Infinity,
+      },
+      {
+        id: 'p1-desc',
+        anchorId: 'p-summary',
+        type: 'paragraph',
+        content:
+          'This document contains **crucial** project data with [Jump to Terms](#section-terms) and `code snippets`.',
+        orphans: 3,
+        widows: 3,
+        minPresenceAhead: 15,
+      },
+      {
+        id: 'p2-dynamic',
+        type: 'paragraph',
+        content: 'Document Page: {{pageNumber}} / {{totalPages}}',
+        renderDynamic: true,
+      },
+      {
+        id: 'h2-terms',
+        anchorId: 'section-terms',
+        type: 'heading',
+        level: 2,
+        text: '2. Terms & Pricing',
+        bookmark: true,
+        minPresenceAhead: 25,
+      },
+    ];
+
+    const element = React.createElement(PdfDocumentView, { doc: baseDoc });
+    const instance = pdf(element);
+    const blob = await instance.toBlob();
+
+    expect(blob).toBeDefined();
+    expect(blob.size).toBeGreaterThan(0);
+  });
+});
+

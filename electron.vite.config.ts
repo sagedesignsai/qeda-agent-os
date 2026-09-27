@@ -51,6 +51,9 @@ export default defineConfig({
         '@': path.join(root, 'src'),
       },
     },
+    optimizeDeps: {
+      include: ['@react-pdf/renderer'],
+    },
     server: {
       host: 'localhost',
       port: Number(process.env.PORT || 1212),

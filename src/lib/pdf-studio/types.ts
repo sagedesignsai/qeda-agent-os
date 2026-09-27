@@ -61,6 +61,38 @@ export interface DocumentSettings {
   footer: DocumentFooterConfig;
 }
 
+// ─── Bookmark & Inline Text Definitions ──────────────────────────────────────
+
+export interface PdfBookmarkObject {
+  title: string;
+  top?: number;
+  left?: number;
+  zoom?: number;
+  fit?: boolean;
+  expanded?: boolean;
+}
+
+export type PdfBookmark = string | PdfBookmarkObject;
+
+// Module augmentation for @react-pdf/renderer TextProps
+declare module '@react-pdf/renderer' {
+  interface TextProps {
+    bookmark?: string | PdfBookmarkObject;
+  }
+}
+
+export interface InlineTextSpan {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  code?: boolean;
+  color?: string;
+  backgroundColor?: string;
+  href?: string; // external URL or internal '#destination'
+}
+
 // ─── Block Definitions ────────────────────────────────────────────────────────
 
 export type BlockType =
@@ -78,10 +110,18 @@ export type BlockType =
 export interface BaseBlock {
   id: string;
   type: BlockType;
+  /** Custom destination ID for internal document navigation / #links */
+  anchorId?: string;
   /** If false, the block will not be split across pages (React-PDF wrap={false}) */
   wrap?: boolean;
   /** If true, forces a page break right before this block (React-PDF break={true}) */
   breakBefore?: boolean;
+  /** Hint that no page wrapping should occur between following sibling elements within n points */
+  minPresenceAhead?: number;
+  /** If true, renders element in all wrapped pages (React-PDF fixed={true}) */
+  fixed?: boolean;
+  /** Enables debug bounding box outline */
+  debug?: boolean;
   marginTop?: number;
   marginBottom?: number;
 }
@@ -93,6 +133,12 @@ export interface HeadingBlock extends BaseBlock {
   subtitle?: string;
   align?: 'left' | 'center' | 'right';
   badge?: string;
+  /** Attach bookmark to PDF outline tree (string, Bookmark object, or false to disable) */
+  bookmark?: boolean | PdfBookmark;
+  /** Hyphenation penalty (e.g. Infinity to prevent hyphenating words in headings) */
+  hyphenationPenalty?: number;
+  /** Structured inline text spans if not using string formatting */
+  spans?: InlineTextSpan[];
 }
 
 export interface ParagraphBlock extends BaseBlock {
@@ -102,8 +148,22 @@ export interface ParagraphBlock extends BaseBlock {
   fontSize?: number;
   bold?: boolean;
   italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
   color?: string;
   lineHeight?: number;
+  /** Minimum lines at bottom of page before breaking (default: 2) */
+  orphans?: number;
+  /** Minimum lines at top of page after breaking (default: 2) */
+  widows?: number;
+  /** Hyphenation penalty for paragraph text */
+  hyphenationPenalty?: number;
+  /** Attach bookmark to PDF outline tree */
+  bookmark?: boolean | PdfBookmark;
+  /** Structured inline text spans if not using string formatting */
+  spans?: InlineTextSpan[];
+  /** Render dynamic page context ({{pageNumber}}, {{totalPages}}) via React-PDF render prop */
+  renderDynamic?: boolean;
 }
 
 export interface ColumnDefinition {

@@ -29,6 +29,7 @@ module.exports = {
   Page: passthrough('div'),
   View: passthrough('div'),
   Text: passthrough('span'),
+  Link: passthrough('a'),
   Image: passthrough('img'),
   Svg: passthrough('svg'),
   Path: passthrough('path'),

@@ -80,15 +80,6 @@ export class PtyManager {
     return !!(ptyId && this.ptys.has(ptyId));
   }
 
-  /** Kill the active PTY associated with a session ID. */
-  killBySessionId(sessionId: string): void {
-    const ptyId = this.sessionPtys.get(sessionId);
-    if (ptyId) {
-      this.kill(ptyId);
-      this.sessionPtys.delete(sessionId);
-    }
-  }
-
   /**
    * Spawn a new PTY shell (or re-attach to an existing one for the session)
    * and start forwarding its output to the renderer.
