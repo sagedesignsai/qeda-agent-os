@@ -21,13 +21,18 @@
  *
  * SAFETY MODEL (spec §6.1)
  * ───────────────────────
- *  • Every tool requires an explicit `path`. There is no default and no
- *    inference from the active project — least privilege, and the model must
- *    already know where the repo is (projects carry `repo_path`, rendered into
- *    the prompt by ai/project-context.ts).
- *  • Paths are resolved through `fs.realpath` before use, and every file
- *    touched is re-checked for containment, so a symlink pointing outside the
- *    root cannot be followed.
+ *  • Every tool takes a PROJECT ID, never a filesystem path. The repository
+ *    root is read from the `projects.repo_path` column, so the path is never
+ *    model-authored: it cannot be mistyped, cannot be pointed somewhere
+ *    unintended, and needs no prompt text to be copied out of. The active
+ *    project id is already in the system prompt (ai/project-context.ts), so
+ *    the model can name the project with no lookup round-trip.
+ *  • A project with no `repo_path` — the common case, and always true for the
+ *    Inbox — returns an explicit, actionable error. It does NOT fall back to a
+ *    default, a home directory, or the current working directory.
+ *  • The resolved root goes through `fs.realpath`, and every file walked by
+ *    grepSearch is re-checked for containment, so a symlink pointing outside
+ *    the project's own tree cannot be followed.
  *  • Output is bounded everywhere. An unbounded `grep` in a large tree will
  *    exhaust the context window mid-turn, which is the realistic failure mode.
  *    Truncation is always reported rather than silent.
@@ -45,8 +50,14 @@ import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { getProject } from '../db/projects.js';
 
 const execFileAsync = promisify(execFile);
+
+/** Error text without the "Error: " prefix a bare String(err) leaves behind. */
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 // ─── Output bounds ────────────────────────────────────────────────────────────
 
@@ -83,22 +94,8 @@ const SKIP_DIRS = new Set([
 // ─── Path safety ──────────────────────────────────────────────────────────────
 
 /**
- * Resolve a directory to its real path, failing loudly if it is not a
- * directory. Symlinks are followed here so that containment checks below
- * compare real locations, not aliases.
- */
-async function resolveRoot(dir: string): Promise<string> {
-  const real = await fs.realpath(path.resolve(dir));
-  const stat = await fs.stat(real);
-  if (!stat.isDirectory()) {
-    throw new Error(`Not a directory: ${dir}`);
-  }
-  return real;
-}
-
-/**
  * True when `target` is `root` or lives beneath it, after resolving both.
- * Used to stop a symlink from escaping the tree the user pointed at.
+ * Used to stop a symlink from escaping the tree the project points at.
  */
 function isInside(root: string, target: string): boolean {
   const rel = path.relative(root, target);
@@ -121,6 +118,61 @@ async function resolveWithin(root: string, candidate: string): Promise<string> {
     );
   }
   return real;
+}
+
+// ─── Project → repository root ────────────────────────────────────────────────
+
+/**
+ * Resolve a project id to the repository working directory.
+ *
+ * The tool takes a PROJECT ID, never a filesystem path. That is a deliberate
+ * inversion of the obvious design, and it is what makes these tools safe to
+ * hand to an autonomous agent:
+ *
+ *  • The path is never model-authored, so it cannot be wrong, cannot be
+ *    typo'd into somewhere unintended, and needs no prompt text to be copied
+ *    out of. An earlier iteration took a required `path` and relied on the
+ *    system prompt's `Repo: …` line; that silently degraded to a guess
+ *    whenever the prompt had no repo in it.
+ *  • Containment is exact: the root comes from the `projects.repo_path`
+ *    column, not from the call.
+ *  • A project with no `repo_path` — the common case, and always true for the
+ *    Inbox — returns a clear, actionable error instead of an empty result the
+ *    model would try to work around.
+ *
+ * The active project id is already present in the system prompt
+ * (`ai/project-context.ts`: "… (id: proj-1)"), so the model can name the
+ * project without a lookup round-trip.
+ */
+async function resolveRepoRoot(projectId: string): Promise<{ root: string; projectName: string }> {
+  const project = getProject(projectId);
+  if (!project) {
+    throw new Error(
+      `No project with id "${projectId}". Call listProjects to see the available projects and their ids.`,
+    );
+  }
+  if (!project.repo_path) {
+    throw new Error(
+      `The project "${project.name}" has no repository path configured. ` +
+        `Set one on the project before asking about its code.`,
+    );
+  }
+
+  const real = await fs.realpath(path.resolve(project.repo_path));
+  const stat = await fs.stat(real);
+  if (!stat.isDirectory()) {
+    throw new Error(
+      `The repository path for "${project.name}" is not a directory: ${project.repo_path}`,
+    );
+  }
+  // A worktree or submodule has `.git` as a FILE, so test existence, not type.
+  if (!(await fs.stat(path.join(real, '.git')).catch(() => null))) {
+    throw new Error(
+      `The configured path for "${project.name}" is not a git repository: ${project.repo_path}`,
+    );
+  }
+
+  return { root: real, projectName: project.name };
 }
 
 // ─── git plumbing ─────────────────────────────────────────────────────────────
@@ -152,11 +204,13 @@ async function git(cwd: string, args: string[]): Promise<GitResult> {
   }
 }
 
-/** Required-path schema, reused by all four tools. */
-const rootArg = z
+/** Required project id, reused by all four tools. */
+const projectArg = z
   .string()
   .describe(
-    'Absolute path to the repository or directory to inspect. Required — there is no default.',
+    'The id of the project whose repository to inspect (e.g. "proj-1"). ' +
+      'The repository path is read from the project record — do not pass a filesystem path. ' +
+      'Your active project id is stated in the system prompt; call listProjects to see others.',
   );
 
 // ─── gitStatus ────────────────────────────────────────────────────────────────
@@ -167,14 +221,15 @@ export const gitStatusTool = tool({
     'and whether the working tree is clean. Read-only: cannot change anything. ' +
     'Use this first to orient yourself in an unfamiliar repository.',
   inputSchema: z.object({
-    path: rootArg,
+    projectId: projectArg,
   }),
-  execute: async ({ path: root }) => {
+  execute: async ({ projectId }) => {
     let cwd: string;
+    let projectName: string;
     try {
-      cwd = await resolveRoot(root);
+      ({ root: cwd, projectName } = await resolveRepoRoot(projectId));
     } catch (err) {
-      return { success: false as const, error: String(err) };
+      return { success: false as const, error: errMsg(err) };
     }
 
     // --porcelain=v1 --branch gives a machine-readable branch header line
@@ -202,6 +257,8 @@ export const gitStatusTool = tool({
 
     return {
       success: true as const,
+      projectId,
+      projectName,
       path: cwd,
       branch,
       upstream,
@@ -227,7 +284,7 @@ export const gitLogTool = tool({
     'Read-only. Optionally filter to commits touching a single path, which is the fastest way to ' +
     'learn what a file has been for.',
   inputSchema: z.object({
-    path: rootArg,
+    projectId: projectArg,
     count: z
       .number()
       .int()
@@ -240,12 +297,13 @@ export const gitLogTool = tool({
       .optional()
       .describe('Only show commits that touched this path, relative to the repository root.'),
   }),
-  execute: async ({ path: root, count = 10, file }) => {
+  execute: async ({ projectId, count = 10, file }) => {
     let cwd: string;
+    let projectName: string;
     try {
-      cwd = await resolveRoot(root);
+      ({ root: cwd, projectName } = await resolveRepoRoot(projectId));
     } catch (err) {
-      return { success: false as const, error: String(err) };
+      return { success: false as const, error: errMsg(err) };
     }
 
     const args = [
@@ -280,7 +338,7 @@ export const gitLogTool = tool({
         };
       });
 
-    return { success: true as const, path: cwd, commits, count: commits.length };
+    return { success: true as const, projectId, projectName, path: cwd, commits, count: commits.length };
   },
 });
 
@@ -292,18 +350,19 @@ export const gitDiffStatTool = tool({
     'added/removed line counts. Read-only. Use `ref: "HEAD"` for uncommitted work, or a branch ' +
     'or tag name to compare against.',
   inputSchema: z.object({
-    path: rootArg,
+    projectId: projectArg,
     ref: z
       .string()
       .optional()
       .describe('Git ref to diff against. Omit to diff the working tree against HEAD.'),
   }),
-  execute: async ({ path: root, ref }) => {
+  execute: async ({ projectId, ref }) => {
     let cwd: string;
+    let projectName: string;
     try {
-      cwd = await resolveRoot(root);
+      ({ root: cwd, projectName } = await resolveRepoRoot(projectId));
     } catch (err) {
-      return { success: false as const, error: String(err) };
+      return { success: false as const, error: errMsg(err) };
     }
 
     const args = ['diff', '--numstat'];
@@ -337,6 +396,8 @@ export const gitDiffStatTool = tool({
 
     return {
       success: true as const,
+      projectId,
+      projectName,
       path: cwd,
       ref: ref ?? 'working tree (vs HEAD)',
       changedFileCount: files.length,
@@ -356,7 +417,7 @@ export const grepSearchTool = tool({
     'and line numbers. Read-only. Skips binary files, .git, node_modules and build output, and ' +
     'caps the number of matches — the response always reports whether it was truncated.',
   inputSchema: z.object({
-    path: rootArg,
+    projectId: projectArg,
     pattern: z.string().min(1).describe('Literal substring to search for. Not a regex.'),
     include: z
       .string()
@@ -370,12 +431,13 @@ export const grepSearchTool = tool({
       .default(MAX_GREP_MATCHES)
       .describe(`Maximum matches to return (1-${MAX_GREP_MATCHES}).`),
   }),
-  execute: async ({ path: root, pattern, include, maxMatches = MAX_GREP_MATCHES }) => {
+  execute: async ({ projectId, pattern, include, maxMatches = MAX_GREP_MATCHES }) => {
     let cwd: string;
+    let projectName: string;
     try {
-      cwd = await resolveRoot(root);
+      ({ root: cwd, projectName } = await resolveRepoRoot(projectId));
     } catch (err) {
-      return { success: false as const, error: String(err) };
+      return { success: false as const, error: errMsg(err) };
     }
 
     const matches: { file: string; line: number; text: string }[] = [];
@@ -467,6 +529,8 @@ export const grepSearchTool = tool({
 
     return {
       success: true as const,
+      projectId,
+      projectName,
       path: cwd,
       pattern,
       matchCount: matches.length,

@@ -183,12 +183,20 @@ New group `tools/repo.ts`, four tools, all `read`, all `not-applicable`:
 
 Rules:
 
-- **Every tool takes an explicit, required, absolute path.** No defaults, no
-  ambient reach, no inference from the active project. The model must already
-  know the repo location from `ai/project-context.ts` (projects carry
-  `repo_path`).
-- The path **MUST** be resolved and confirmed inside the given root before any
-  filesystem access, including for symlinks. Reject traversal outside the root.
+- **Every tool takes a required `projectId`, never a filesystem path.** The
+  repository root is read from the `projects.repo_path` column, so the path is
+  never model-authored. This is stricter than passing an explicit path, and
+  strictly better:
+  - it cannot be mistyped or pointed somewhere unintended;
+  - it needs no prompt text to be copied out — the active project id is already
+    rendered into the system prompt by `ai/project-context.ts`
+    ("… (id: proj-1)"), so the model can name the project with no lookup;
+  - a project with no `repo_path` — the common case, and always true for the
+    Inbox — returns an explicit error instead of silently degrading to a guess.
+    It **MUST NOT** fall back to a default, a home directory, or `process.cwd()`.
+- The resolved root **MUST** go through `fs.realpath`, and every file walked
+  **MUST** be re-checked for containment, so a symlink pointing outside the
+  project's own tree cannot be followed.
 - Output **MUST** be bounded: cap matches per tool, truncate long lines, and
   report what was truncated. An unbounded `grep` on a large repo will blow the
   context window mid-turn.
