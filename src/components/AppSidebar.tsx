@@ -37,6 +37,7 @@ import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ChatMenu } from '@/components/sidebar/ChatMenu';
 import { WorkspaceMenu } from '@/components/sidebar/WorkspaceMenu';
 import { ProjectsMenu } from '@/components/sidebar/ProjectsMenu';
+import { DocumentsMenu } from '@/components/sidebar/DocumentsMenu';
 import { QedaLogomark } from '@/components/QedaLogo';
 import {
   DropdownMenu,
@@ -58,6 +59,7 @@ import {
   FolderKanbanIcon,
   ChevronsUpDownIcon,
   CheckIcon,
+  FileTextIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjects } from '@/hooks/use-projects';
@@ -87,6 +89,7 @@ interface AppSidebarProps {
 const NAV_ITEMS = [
   { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },
   { to: '/projects', label: 'Projects', icon: FolderKanbanIcon },
+  { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/workspace', label: 'Workspace', icon: NotebookIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
   { to: '/tasks', label: 'Tasks', icon: CheckSquareIcon },
@@ -95,15 +98,19 @@ const NAV_ITEMS = [
 /** Which section submenu a pathname belongs to, if any. */
 function sectionOf(
   pathname: string,
-): 'chat' | 'workspace' | 'terminal' | 'projects' | null {
+): 'chat' | 'workspace' | 'terminal' | 'projects' | 'documents' | null {
   if (pathname === '/chat' || pathname.startsWith('/chat/')) return 'chat';
   if (pathname === '/projects' || pathname.startsWith('/projects/')) {
     return 'projects';
   }
+  if (pathname === '/documents' || pathname.startsWith('/documents/')) {
+    return 'documents';
+  }
   if (pathname === '/workspace' || pathname.startsWith('/workspace/')) {
     return 'workspace';
   }
-  if (pathname === '/terminal' || pathname.startsWith('/terminal/')) return 'terminal';
+  if (pathname === '/terminal' || pathname.startsWith('/terminal/'))
+    return 'terminal';
   return null;
 }
 
@@ -139,7 +146,7 @@ export function AppSidebar({
 
   const activeProjectId = queryProjectId || routeProjectId || null;
   const activeProject = activeProjectId
-    ? projects.find((p) => p.id === activeProjectId) ?? null
+    ? (projects.find((p) => p.id === activeProjectId) ?? null)
     : null;
 
   /**
@@ -228,7 +235,9 @@ export function AppSidebar({
 
   const section = sectionOf(location.pathname);
   const view =
-    collapsed || !section || showMainAt === location.pathname ? 'main' : section;
+    collapsed || !section || showMainAt === location.pathname
+      ? 'main'
+      : section;
 
   // Starting a chat only navigates: the session is created by the first
   // message, so bailing out here leaves no empty conversation behind.
@@ -243,7 +252,11 @@ export function AppSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link to="/chat" onClick={() => setShowMainAt(null)} className="group/brand">
+              <Link
+                to="/chat"
+                onClick={() => setShowMainAt(null)}
+                className="group/brand"
+              >
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-card border border-border/70 text-foreground shadow-sm group-hover/brand:border-primary/50 group-hover/brand:bg-accent/40 transition-all">
                   <QedaLogomark
                     size={16}
@@ -314,7 +327,11 @@ export function AppSidebar({
                         tooltip={label}
                       >
                         <Link
-                          to={activeProjectId && to !== '/projects' ? withScope(to) : to}
+                          to={
+                            activeProjectId && to !== '/projects'
+                              ? withScope(to)
+                              : to
+                          }
                           onClick={() => setShowMainAt(null)}
                         >
                           <Icon />
@@ -368,6 +385,10 @@ export function AppSidebar({
 
       {view === 'projects' && (
         <ProjectsMenu onBack={() => setShowMainAt(location.pathname)} />
+      )}
+
+      {view === 'documents' && (
+        <DocumentsMenu onBack={() => setShowMainAt(location.pathname)} />
       )}
 
       <SidebarFooter>
@@ -455,10 +476,13 @@ export function AppSidebar({
                     <FolderKanbanIcon className="size-3.5 text-muted-foreground" />
                     <span>All Projects (Global)</span>
                   </div>
-                  {!activeProject && <CheckIcon className="size-3.5 text-primary" />}
+                  {!activeProject && (
+                    <CheckIcon className="size-3.5 text-primary" />
+                  )}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                {projects.filter((p) => p.status !== 'archived').length === 0 ? (
+                {projects.filter((p) => p.status !== 'archived').length ===
+                0 ? (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">
                     No projects created yet
                   </div>
@@ -487,7 +511,9 @@ export function AppSidebar({
                               }
                             />
                             <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                            <span className="truncate font-medium">{p.name}</span>
+                            <span className="truncate font-medium">
+                              {p.name}
+                            </span>
                           </div>
                           {isSelected && (
                             <CheckIcon className="size-3.5 text-primary shrink-0 ml-1" />

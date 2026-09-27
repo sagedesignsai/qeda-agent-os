@@ -1,35 +1,49 @@
-# Vellum
+<p align="center">
+  <img src="./assets/logomark.svg" alt="Qeda Logo" width="80" height="auto" />
+</p>
 
-> **A figment of your intention, made real.**
+<h1 align="center">Qeda</h1>
 
-A **local agent OS** built on Electron, React and the Vercel AI SDK. The agent
+<p align="center">
+  <strong>Finish what you start. A local agent OS built for completion.</strong><br>
+  <em>From the isiZulu word <strong>qeda</strong> — to finish, complete, or bring to an end.</em>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Electron-35-47848F?logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19" />
+  <img src="https://img.shields.io/badge/TypeScript-5%20%7C%207-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/AI%20SDK-v7-000000?logo=vercel&logoColor=white" alt="Vercel AI SDK" />
+  <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" />
+</p>
+
+A **local agent OS** built on Electron, React 19, TypeScript, and the Vercel AI SDK. The agent
 runs in the Electron **main process** with real access to the local machine —
 filesystem, shell, clipboard and a local document index — and the renderer talks
-to it exclusively over typed IPC.
+to it exclusively over typed IPC channels.
 
-Describe a goal. Vellum plans the work, proposes each command, and waits for
-your approval before running anything. What comes back is not a chat log but a
+Describe a goal. Qeda plans the work, proposes each command, and waits for
+your approval before running anything. What comes back is not an ephemeral chat log but a
 record: every command, its output, and its exit code, written down and
 inspectable.
 
 | Module | What it does |
 | --- | --- |
-| **Chat** | Conversational agent with tool use, plus deep research runs with citations |
+| **Chat** | Conversational agent with tool use, streaming reasoning, and deep research runs with citations |
 | **Workspace** | Block-editor notebooks, version history, and local RAG over your own pages |
 | **Terminal** | Agent Mode (goal → plan → approve → execute) and Shell Mode (raw PTY + xterm.js) |
 | **Projects** | The spine: an outcome with a deadline, its tasks, its repo, its docs, and its chats in one place |
-| **Focus** | Task manager with time blocking, a synthesised soundscape, focus sessions, and an AI copilot agent with tools |
+| **Tasks & Focus** | Task manager with time blocking, synthesised soundscapes, focus sessions, and an AI copilot agent with tools |
 
 ## The name
 
-*Vellum* is the parchment scribes worked on — the surface where thought was
-pressed into something durable and readable. That is the bet here: an agent
-should not leave a trail of activity you cannot audit, it should leave a record
-you can read. The same word is the root of *vellus*, "a writing tablet."
+*Qeda* (pronounced *k'e-da* / *!e-da*) is an **isiZulu** word meaning **to finish, to complete, or to bring to an end**.
 
-The project started from
-[electron-react-boilerplate](https://github.com/electron-react-boilerplate/electron-react-boilerplate)
-(electron-vite + React 19 + TypeScript) and layers an agent runtime on top.
+In modern productivity and software development, the hardest challenge is rarely starting — it is seeing work through to the finish line. Qeda is engineered around that single promise: taking human intention and carrying it through plans, approvals, and execution until the job is done.
+
+The visual mark pairs a bold circular "Q" with an energetic lightning finish, symbolizing the transition from intention to accomplished outcome. *(Note: During early pre-release development, the project was code-named Vellum; the on-disk SQLite store remains `vellum.db` for seamless data continuity).*
+
+Built with electron-vite, React 19, TypeScript, and Tailwind CSS, layering a high-performance, privileged local agent runtime directly into the OS shell.
 
 ## Requirements
 
@@ -82,10 +96,10 @@ src/
 │   └── ipc/               # Typed channel contract + handlers
 ├── hooks/                 # use-agent-chat (IPC transport), use-ipc
 ├── components/            # chat/*, 50 ai-elements/*, vendored shadcn ui/*
-└── renderer/              # App shell and pages (Chat, Tools, Sessions)
+└── renderer/              # App shell, router, and views (Chat, Workspace, Terminal, Tasks, Projects)
 ```
 
-**Routes:** `/` Agent Chat · `/tools` Tools & Sandbox · `/sessions` Session History
+**Routes:** `/chat` Agent Chat & Research · `/workspace` Notebooks & Docs · `/terminal` Agent & Shell PTY · `/tasks` Tasks & Focus · `/projects` Project Hub
 
 ### The agent loop
 
@@ -122,8 +136,9 @@ rewrites the tool part to `approval-responded` before re-running the turn —
 `convertToModelMessages` turns that into the `tool-approval-response` message the
 model needs to continue.
 
-Executing a tool directly from the Tools page goes through the same policy: main
-shows a confirmation dialog before running anything that requires approval.### Providers
+Tool execution across all agent surfaces (Chat, Terminal Agent, and Task Copilot) adheres to this policy: main process guards display approval cards and confirmation dialogs before running anything requiring permissions.
+
+### Providers
 
 The provider registry lives in `src/main/ai/registry.ts` and is the single
 source of truth for the app, the IPC layer and the Settings dialog. Every

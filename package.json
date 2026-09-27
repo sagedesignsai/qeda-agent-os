@@ -72,6 +72,7 @@
     "@base-ui/react": "^1.8.0",
     "@electron/notarize": "^3.1.1",
     "@radix-ui/react-use-controllable-state": "^1.2.6",
+    "@react-pdf/renderer": "^4.9.0",
     "@rive-app/react-webgl2": "^4.35.0",
     "@shadcn/react": "^0.3.1",
     "@streamdown/cjk": "^1.0.3",

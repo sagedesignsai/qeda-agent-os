@@ -29,6 +29,7 @@ import type { TaskBlock, TaskBlockWithTask } from '../db/task-blocks.js';
 import type { FocusSession, FocusStats } from '../db/focus-sessions.js';
 import type { Project, ProjectStatus, ProjectRollup } from '../db/projects.js';
 import type { GamificationState } from '../../lib/gamification.js';
+import type { PdfDocumentRecord, PdfDocumentSummary } from '../db/documents.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -43,6 +44,7 @@ export type { TaskBlock, TaskBlockWithTask };
 export type { FocusSession, FocusStats };
 export type { Project, ProjectStatus, ProjectRollup };
 export type { GamificationState };
+export type { PdfDocumentRecord, PdfDocumentSummary };
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -92,7 +94,10 @@ export type ChatContext = {
 
 export interface IpcChannels {
   // Session management
-  'sessions:list': { req: { projectId?: string | null } | void; res: Session[] };
+  'sessions:list': {
+    req: { projectId?: string | null } | void;
+    res: Session[];
+  };
   'sessions:create': {
     req: { title?: string; projectId?: string | null };
     res: Session;
@@ -151,7 +156,10 @@ export interface IpcChannels {
    *
    * Pass `null` to clear it.
    */
-  'settings:set-active-project': { req: { projectId: string | null }; res: void };
+  'settings:set-active-project': {
+    req: { projectId: string | null };
+    res: void;
+  };
 
   // Providers
   'providers:list': { req: void; res: ProviderInfo[] };
@@ -202,14 +210,20 @@ export interface IpcChannels {
   };
   'pages:delete': { req: { id: string }; res: void };
   /** Save the block list produced by the editor (single write choke point). */
-  'pages:save-blocks': { req: { id: string; blocks: Block[]; title?: string }; res: void };
+  'pages:save-blocks': {
+    req: { id: string; blocks: Block[]; title?: string };
+    res: void;
+  };
   'pages:search': { req: { query: string; limit?: number }; res: SearchHit[] };
   'pages:restore-version': { req: { versionId: string }; res: boolean };
   'workspace:tags': { req: void; res: { name: string; count: number }[] };
 
   // ── Research ──────────────────────────────────────────────────────────────
   'research:trace': { req: { runId: string }; res: ResearchTrace | null };
-  'research:list': { req: { pageId?: string; notebookId?: string }; res: ResearchRun[] };
+  'research:list': {
+    req: { pageId?: string; notebookId?: string };
+    res: ResearchRun[];
+  };
 
   // ── Agent chat (streaming via IPC event emitter) ──────────────────────────
   'agent:chat': {
@@ -257,7 +271,12 @@ export interface IpcChannels {
       patch: Partial<
         Pick<
           TerminalBlock,
-          'status' | 'output' | 'exit_code' | 'explanation' | 'command' | 'duration_ms'
+          | 'status'
+          | 'output'
+          | 'exit_code'
+          | 'explanation'
+          | 'command'
+          | 'duration_ms'
         >
       >;
     };
@@ -277,7 +296,10 @@ export interface IpcChannels {
     res: void;
   };
   /** Approve a pending command block (runs the command). */
-  'terminal:approve': { req: { sessionId: string; blockId: string }; res: void };
+  'terminal:approve': {
+    req: { sessionId: string; blockId: string };
+    res: void;
+  };
   /** Reject a pending command block (marks it skipped). */
   'terminal:reject': { req: { sessionId: string; blockId: string }; res: void };
   /** Ask the agent to explain the output of a finished block. */
@@ -329,7 +351,10 @@ export interface IpcChannels {
   /** The terminal agent hit an unrecoverable error. */
   'terminal:agent-error': { sessionId: string; error: string };
   /** Terminal session status changed (idle / running / done / error). */
-  'terminal:session-status': { sessionId: string; status: TerminalSession['status'] };
+  'terminal:session-status': {
+    sessionId: string;
+    status: TerminalSession['status'];
+  };
   /** Terminal session title changed. */
   'terminal:session-renamed': { sessionId: string; title: string };
   /** Terminal sessions list changed (created, deleted, etc). */
@@ -395,7 +420,10 @@ export interface IpcChannels {
   'tasks:create': {
     req: Pick<Task, 'title'> &
       Partial<
-        Pick<Task, 'description' | 'priority' | 'due_at' | 'status' | 'project_id'>
+        Pick<
+          Task,
+          'description' | 'priority' | 'due_at' | 'status' | 'project_id'
+        >
       >;
     res: Task;
   };
@@ -582,6 +610,53 @@ export interface IpcChannels {
   'pty:cwd-changed': { ptyId: string; cwd: string };
   /** PTY was automatically assigned to a newly created session on first command. */
   'pty:session-assigned': { ptyId: string; sessionId: string; title: string };
+
+  // ── Document Studio (React-PDF document composer) ─────────────────────────
+  /** List composed documents, optionally scoped by project. */
+  'documents:list': {
+    req: { projectId?: string | null } | void;
+    res: PdfDocumentSummary[];
+  };
+  /** Retrieve a full composed document record by ID. */
+  'documents:get': {
+    req: { id: string };
+    res: PdfDocumentRecord | null;
+  };
+  /** Save or update a document record. */
+  'documents:save': {
+    req: {
+      id: string;
+      projectId?: string | null;
+      title: string;
+      description?: string;
+      templateId?: string;
+      dataJson: string;
+    };
+    res: PdfDocumentRecord;
+  };
+  /** Delete a document by ID. */
+  'documents:delete': {
+    req: { id: string };
+    res: boolean;
+  };
+  /** Export a document to a native PDF file on disk via save dialog. */
+  'documents:export-file': {
+    req: {
+      id: string;
+      format: 'pdf' | 'json';
+      filename?: string;
+      pdfBase64?: string;
+      dataJson?: string;
+    };
+    res: { ok: boolean; filePath?: string; error?: string };
+  };
+  /** Use AI Copilot to generate a structured content block for a document. */
+  'documents:ai-generate-block': {
+    req: { prompt: string; blockType?: string; context?: string };
+    res: { block: unknown; note?: string };
+  };
+  /** Broadcast when any document changes, created or deleted. */
+  'documents:changed': void;
 }
 
 export type ChannelName = keyof IpcChannels;

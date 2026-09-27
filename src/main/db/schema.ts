@@ -418,6 +418,20 @@ CREATE VIRTUAL TABLE IF NOT EXISTS pages_fts USING fts5(
 );
 `;
 
+export const CREATE_DOCUMENTS = `
+CREATE TABLE IF NOT EXISTS documents (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  title       TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  template_id TEXT NOT NULL DEFAULT '',
+  data_json   TEXT NOT NULL,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
+`;
+
 /** DDL applied in order; every statement must be idempotent. */
 export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SESSIONS,
@@ -443,6 +457,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_FOCUS_SESSIONS,
   CREATE_GAMIFICATION_STATE,
   CREATE_XP_LEDGER,
+  CREATE_DOCUMENTS,
 ];
 
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────
@@ -520,7 +535,9 @@ export function applyMigrations(db: {
   // orphan-task adoption below) reference those columns.
   if (typeof db.prepare === 'function') {
     const columnsOf = (table: string): string[] =>
-      db.prepare!(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+      db.prepare!(`PRAGMA table_info(${table})`)
+        .all()
+        .map((c) => c.name);
 
     try {
       const blockCols = columnsOf('terminal_blocks');
@@ -530,10 +547,14 @@ export function applyMigrations(db: {
 
       const terminalCols = columnsOf('terminal_sessions');
       if (!terminalCols.includes('cwd')) {
-        db.exec("ALTER TABLE terminal_sessions ADD COLUMN cwd TEXT NOT NULL DEFAULT ''");
+        db.exec(
+          "ALTER TABLE terminal_sessions ADD COLUMN cwd TEXT NOT NULL DEFAULT ''",
+        );
       }
       if (!terminalCols.includes('env')) {
-        db.exec("ALTER TABLE terminal_sessions ADD COLUMN env TEXT NOT NULL DEFAULT '{}'");
+        db.exec(
+          "ALTER TABLE terminal_sessions ADD COLUMN env TEXT NOT NULL DEFAULT '{}'",
+        );
       }
       if (!terminalCols.includes('project_id')) {
         db.exec(
@@ -562,6 +583,13 @@ export function applyMigrations(db: {
       if (!chatSessionCols.includes('project_id')) {
         db.exec(
           'ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
+      }
+
+      const docCols = columnsOf('documents');
+      if (!docCols.includes('project_id')) {
+        db.exec(
+          'ALTER TABLE documents ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
         );
       }
     } catch {

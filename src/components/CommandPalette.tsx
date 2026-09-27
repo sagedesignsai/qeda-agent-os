@@ -150,6 +150,11 @@ export function CommandPalette({
               <span>Chat &amp; Research</span>
               <CommandShortcut>⌘1</CommandShortcut>
             </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/documents'))}>
+              <FileTextIcon />
+              <span>Documents Studio</span>
+              <CommandShortcut>⌘3</CommandShortcut>
+            </CommandItem>
             <CommandItem onSelect={() => run(() => navigate('/workspace'))}>
               <NotebookIcon />
               <span>Workspace</span>
@@ -177,9 +182,7 @@ export function CommandPalette({
             </CommandItem>
             <CommandItem
               onSelect={() =>
-                run(() =>
-                  setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'),
-                )
+                run(() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark'))
               }
             >
               {resolvedTheme === 'dark' ? <SunIcon /> : <MoonIcon />}
@@ -202,9 +205,7 @@ export function CommandPalette({
                   <CommandItem
                     key={session.id}
                     value={`chat ${session.title} ${session.id}`}
-                    onSelect={() =>
-                      run(() => navigate(`/chat/${session.id}`))
-                    }
+                    onSelect={() => run(() => navigate(`/chat/${session.id}`))}
                   >
                     <MessageSquareIcon />
                     <span className="truncate">

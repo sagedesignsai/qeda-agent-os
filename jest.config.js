@@ -18,6 +18,7 @@ module.exports = {
     '^nanoid$': '<rootDir>/.erb/mocks/nanoidMock.js',
     '^react-resizable-panels$': '<rootDir>/.erb/mocks/resizablePanelsMock.js',
     '^use-stick-to-bottom$': '<rootDir>/.erb/mocks/useStickToBottomMock.js',
+    '^@react-pdf/renderer$': '<rootDir>/.erb/mocks/reactPdfMock.js',
     '^electron$': '<rootDir>/.erb/mocks/electronMock.js',
     '\\.svg\\?react$': '<rootDir>/.erb/mocks/svgComponentMock.js',
     '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$':
