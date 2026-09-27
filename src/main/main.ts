@@ -68,7 +68,7 @@ const createWindow = async () => {
 
   mainWindow = new BrowserWindow({
     show: false,
-    title: 'Vellum',
+    title: 'Qeda',
     width: 1024,
     height: 728,
     // Matches the dark theme background so the first paint never flashes white.

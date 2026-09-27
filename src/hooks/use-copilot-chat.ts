@@ -20,10 +20,11 @@ const COPILOT_TRANSPORT: AgentTransport = {
   fallbackChannel: 'copilot:stream-fallback',
 };
 
-export function useCopilotChat(): UseAgentChatReturn {
+export function useCopilotChat(opts?: { projectId?: string }): UseAgentChatReturn {
   return useAgentChat({
     sessionId: 'focus-copilot',
     transport: COPILOT_TRANSPORT,
+    context: opts?.projectId ? { projectId: opts.projectId } : undefined,
     persist: false,
     hydrate: false,
   });

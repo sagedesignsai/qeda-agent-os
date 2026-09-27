@@ -87,6 +87,8 @@ export interface TodayTimelineProps {
   statsLoading?: boolean;
   /** Bump to force a reload of blocks (e.g. after a task changes). */
   refreshSignal?: number;
+  /** Scope the timeline to one project, for a project's Today view. */
+  projectId?: string | null;
   onFocusTask: (task: Task) => void;
 }
 
@@ -95,6 +97,7 @@ export function TodayTimeline({
   stats,
   statsLoading,
   refreshSignal = 0,
+  projectId,
   onFocusTask,
 }: TodayTimelineProps) {
   const [blocks, setBlocks] = useState<TaskBlockWithTask[]>([]);
@@ -108,7 +111,7 @@ export function TodayTimeline({
       const from = startOfToday();
       const rows = await window.electron.ipc.invoke<TaskBlockWithTask[]>(
         'tasks:blocks-list',
-        { from, to: from + 86_400 },
+        { from, to: from + 86_400, projectId: projectId ?? null },
       );
       setBlocks(rows ?? []);
     } catch {
@@ -116,7 +119,7 @@ export function TodayTimeline({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   useEffect(() => {
     void load();
@@ -352,6 +355,7 @@ export function TodayTimeline({
         onOpenChange={setScheduleOpen}
         tasks={openTasks}
         presetTaskId={presetTaskId}
+        projectId={projectId ?? null}
         onSaved={() => void load()}
       />
     </div>

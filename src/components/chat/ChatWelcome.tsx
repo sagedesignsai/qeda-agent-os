@@ -26,6 +26,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useGenerateNotebook } from '@/components/GenerateNotebookDialog';
+import { QedaLogomark } from '@/components/QedaLogo';
 
 interface ChatWelcomeProps {
   onSend: (text: string) => void;
@@ -107,6 +108,14 @@ export function ChatWelcome({ onSend, disabled, isStreaming }: ChatWelcomeProps)
 
   return (
     <div className="flex min-h-full w-full flex-col items-center justify-center px-4 pb-20">
+      <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-card border border-border/80 shadow-sm text-foreground">
+        <QedaLogomark
+          size="md"
+          ringClassName="text-foreground"
+          boltClassName="text-sky-400"
+          animated
+        />
+      </div>
       <h1 className="text-balance text-center text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
         What do you want to build or run?
       </h1>
@@ -119,7 +128,7 @@ export function ChatWelcome({ onSend, disabled, isStreaming }: ChatWelcomeProps)
           isStreaming={isStreaming}
           tall
           footerLeft={footerLeft}
-          placeholder="Research a topic, summarize your notes, or ask Vellum anything…"
+          placeholder="Research a topic, summarize your notes, or ask Qeda anything…"
         />
       </div>
 

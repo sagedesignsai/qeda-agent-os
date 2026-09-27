@@ -28,16 +28,19 @@ describe('copilot agent definition', () => {
   it('exposes the task verb tools', () => {
     for (const name of [
       'listTasks',
+      'listProjects',
       'getTask',
       'getFocusStats',
       'listBlocks',
       'createTask',
       'createTasks',
+      'createProject',
       'addSteps',
       'scheduleBlock',
       'updateTask',
       'completeTask',
       'deleteTask',
+      'assignTaskToProject',
       'moveBlock',
       'deleteBlock',
       'handToTerminal',
@@ -71,6 +74,7 @@ describe('copilot agent definition', () => {
     for (const toolName of [
       'createTask',
       'createTasks',
+      'createProject',
       'addSteps',
       'scheduleBlock',
       'handToTerminal',

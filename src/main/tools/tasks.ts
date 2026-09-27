@@ -43,6 +43,11 @@ import {
 } from '../db/task-blocks.js';
 import { getFocusStats } from '../db/focus-sessions.js';
 import { createTerminalSession } from '../db/terminal.js';
+import {
+  listProjectRollups,
+  getProject,
+  createProject,
+} from '../db/projects.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,6 +76,7 @@ function serializeTask(task: Task) {
     priority: task.priority,
     due_at: task.due_at,
     estimate_mins: task.estimate_mins,
+    project_id: task.project_id,
     pomodoro_count: task.pomodoro_count,
     steps: progress.total > 0 ? `${progress.done}/${progress.total}` : null,
   };
@@ -99,6 +105,12 @@ const draftTaskSchema = z.object({
     .union([z.string(), z.number()])
     .optional()
     .describe('Due date as an ISO datetime string (preferred) or unix seconds.'),
+  projectId: z
+    .string()
+    .optional()
+    .describe(
+      'Project id from listProjects. Omit to file in the Inbox (unsorted capture).',
+    ),
 });
 
 function createFromDraft(draft: z.infer<typeof draftTaskSchema>): Task {
@@ -108,6 +120,7 @@ function createFromDraft(draft: z.infer<typeof draftTaskSchema>): Task {
     priority: (draft.priority ?? 2) as TaskPriority,
     estimate_mins: draft.estimate_mins ?? null,
     due_at: toEpochSeconds(draft.due),
+    project_id: draft.projectId ?? null,
     status: 'backlog',
   });
 }
@@ -122,11 +135,52 @@ export const listTasksTool = tool({
       .enum(['backlog', 'active', 'done'])
       .optional()
       .describe('Restrict to a single column.'),
+    projectId: z
+      .string()
+      .optional()
+      .describe('Restrict to one project (id from listProjects).'),
   }),
-  execute: async ({ status }) => {
+  execute: async ({ status, projectId }) => {
     try {
-      const tasks = listTasks(status ? { status } : undefined).map(serializeTask);
+      const tasks = listTasks({ status, projectId }).map(serializeTask);
       return { success: true, count: tasks.length, tasks };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  },
+});
+
+export const listProjectsTool = tool({
+  description:
+    'List projects with their progress: task counts, overdue items, and focus minutes logged today and overall. Call this to see the shape of the work and to get project ids before filing tasks.',
+  inputSchema: z.object({
+    includeArchived: z
+      .boolean()
+      .optional()
+      .describe('Include archived projects (default false).'),
+  }),
+  execute: async ({ includeArchived }) => {
+    try {
+      const rollups = listProjectRollups({
+        includeArchived: includeArchived ?? false,
+      });
+      return {
+        success: true,
+        count: rollups.length,
+        projects: rollups.map((r) => ({
+          id: r.project.id,
+          name: r.project.name,
+          status: r.project.status,
+          deadline: r.project.deadline,
+          repo_path: r.project.repo_path,
+          taskTotal: r.taskTotal,
+          taskDone: r.taskDone,
+          taskActive: r.taskActive,
+          taskBacklog: r.taskBacklog,
+          overdue: r.overdue,
+          focusMinutesToday: Math.round(r.focusSecToday / 60),
+        })),
+      };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -325,7 +379,63 @@ export const handToTerminalTool = tool({
   },
 });
 
+export const createProjectTool = tool({
+  description:
+    'Create a project — the container an outcome, its tasks, its repo, and its docs hang off. Use when the user starts something new that will span more than a sitting. Additive, so no approval is needed.',
+  inputSchema: z.object({
+    name: z.string().min(1).describe('Short project name.'),
+    description: z.string().optional().describe('One sentence on the outcome.'),
+    deadline: z
+      .union([z.string(), z.number()])
+      .optional()
+      .describe('Target date as ISO string (preferred) or unix seconds.'),
+    repoPath: z
+      .string()
+      .optional()
+      .describe('Working directory for this project\u2019s terminal sessions.'),
+  }),
+  execute: async ({ name, description, deadline, repoPath }) => {
+    try {
+      const project = createProject({
+        name: name.trim(),
+        description: description ?? '',
+        deadline: toEpochSeconds(deadline),
+        repo_path: repoPath ?? null,
+      });
+      return {
+        success: true,
+        project: { id: project.id, name: project.name, status: project.status },
+      };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  },
+});
+
 // ─── Risky write tools (require approval) ─────────────────────────────────────
+
+export const assignTaskToProjectTool = tool({
+  description:
+    'Move an existing task into a project. Changes where work is filed, so it asks for approval.',
+  inputSchema: z.object({
+    taskId: z.string(),
+    projectId: z.string().describe('Destination project id, or "inbox" to unsort.'),
+  }),
+  execute: async ({ taskId, projectId }) => {
+    if (!getTask(taskId)) {
+      return { success: false, error: `No task with id ${taskId}` };
+    }
+    if (!getProject(projectId)) {
+      return { success: false, error: `No project with id ${projectId}` };
+    }
+    try {
+      updateTask(taskId, { project_id: projectId });
+      return { success: true, taskId, projectId };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  },
+});
 
 export const updateTaskTool = tool({
   description:
@@ -460,17 +570,20 @@ export const deleteBlockTool = tool({
 /** Every task-domain tool, keyed by the name the model sees. */
 export const taskTools = {
   listTasks: listTasksTool,
+  listProjects: listProjectsTool,
   getTask: getTaskTool,
   getFocusStats: getFocusStatsTool,
   listBlocks: listBlocksTool,
   createTask: createTaskTool,
   createTasks: createTasksTool,
+  createProject: createProjectTool,
   addSteps: addStepsTool,
   scheduleBlock: scheduleBlockTool,
   handToTerminal: handToTerminalTool,
   updateTask: updateTaskTool,
   completeTask: completeTaskTool,
   deleteTask: deleteTaskTool,
+  assignTaskToProject: assignTaskToProjectTool,
   moveBlock: moveBlockTool,
   deleteBlock: deleteBlockTool,
 };
@@ -484,6 +597,7 @@ export const RISKY_TASK_TOOLS: ReadonlySet<string> = new Set([
   'updateTask',
   'completeTask',
   'deleteTask',
+  'assignTaskToProject',
   'moveBlock',
   'deleteBlock',
 ]);

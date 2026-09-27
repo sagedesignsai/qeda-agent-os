@@ -1,7 +1,8 @@
 {
-  "name": "vellum",
-  "description": "A local agent OS — describe the goal, approve the work",
+  "name": "qeda",
+  "description": "Qeda — A local agent OS: describe the goal, approve the work",
   "keywords": [
+    "qeda",
     "vellum",
     "agent",
     "ai",
@@ -166,8 +167,8 @@
     "vite-plugin-svgr": "^4.5.0"
   },
   "build": {
-    "productName": "Vellum",
-    "appId": "com.vellum.desktop",
+    "productName": "Qeda",
+    "appId": "com.qeda.desktop",
     "asar": true,
     "afterSign": ".erb/scripts/notarize.js",
     "asarUnpack": "**\\*.{node,dll}",

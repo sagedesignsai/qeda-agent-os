@@ -1,7 +1,7 @@
 {
-  "name": "vellum",
+  "name": "qeda",
   "version": "4.6.0",
-  "description": "A local agent OS — describe the goal, approve the work",
+  "description": "Qeda — A local agent OS: describe the goal, approve the work",
   "license": "MIT",
   "author": {
     "name": "Electron React Boilerplate Maintainers",

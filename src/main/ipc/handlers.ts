@@ -128,6 +128,15 @@ import {
   planDay,
 } from '../ai/task-copilot';
 import { createTaskCopilotAgent } from '../ai/task-copilot-agent';
+import {
+  listProjects,
+  getProject,
+  createProject,
+  updateProject,
+  deleteProject,
+  listProjectRollups,
+} from '../db/projects';
+import { updateSessionProject } from '../db/sessions';
 
 /** One cached agent per provider/model pair, for the duration of the session. */
 const agentCache = new Map<string, ReturnType<typeof createDesktopAgent>>();
@@ -204,10 +213,22 @@ function detectMode(messages: UIMessage[]): AgentMode {
 export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   // ── Sessions ──────────────────────────────────────────────────────────────
 
-  ipcMain.handle('sessions:list', () => listSessions());
+  ipcMain.handle(
+    'sessions:list',
+    (_e, req: { projectId?: string | null } | void) =>
+      listSessions(req?.projectId !== undefined ? { projectId: req.projectId } : undefined),
+  );
 
-  ipcMain.handle('sessions:create', (_e, { title }: { title?: string }) =>
-    createSession(title),
+  ipcMain.handle(
+    'sessions:create',
+    (_e, { title, projectId }: { title?: string; projectId?: string | null }) =>
+      createSession(title, projectId ?? null),
+  );
+
+  ipcMain.handle(
+    'sessions:set-project',
+    (_e, { id, projectId }: { id: string; projectId: string | null }) =>
+      updateSessionProject(id, projectId),
   );
 
   ipcMain.handle('sessions:delete', (_e, { id }: { id: string }) =>
@@ -257,6 +278,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
       activeProvider: s.activeProvider,
       activeModel: s.activeModel,
       fallbackEnabled: s.fallbackEnabled !== false,
+      onboardingCompleted: s.onboardingCompleted === true,
       braveApiKeySet: Boolean(s.braveApiKey),
       providers: sanitizedProviders,
       serviceKeysSet,
@@ -643,8 +665,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     },
   });
 
-  ipcMain.handle('terminal:sessions-list', () => {
-    const list = listTerminalSessions();
+  ipcMain.handle(
+    'terminal:sessions-list',
+    (_e, req: { projectId?: string | null } | void) => {
+    const list = listTerminalSessions(
+      req?.projectId !== undefined ? { projectId: req.projectId } : undefined,
+    );
     const ptyMgr = getPtyManager();
     if (ptyMgr) {
       return list.map((session) => {
@@ -669,8 +695,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(
     'terminal:session-create',
-    (_e, { title, goal, cwd }: { title?: string; goal?: string; cwd?: string }) => {
-      const session = createTerminalSession({ title, goal, cwd });
+    (
+      _e,
+      {
+        title,
+        goal,
+        cwd,
+        project_id,
+      }: {
+        title?: string;
+        goal?: string;
+        cwd?: string;
+        project_id?: string | null;
+      },
+    ) => {
+      const session = createTerminalSession({ title, goal, cwd, project_id });
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('terminal:sessions-changed');
       }
@@ -893,12 +932,67 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
     },
   );
 
+  // ── Projects (the productivity spine) ─────────────────────────────────────
+
+  ipcMain.handle(
+    'projects:list',
+    (_e, req: Parameters<typeof listProjects>[0]) => listProjects(req),
+  );
+
+  ipcMain.handle(
+    'projects:rollups',
+    (_e, req: Parameters<typeof listProjectRollups>[0]) =>
+      listProjectRollups(req),
+  );
+
+  ipcMain.handle(
+    'projects:get',
+    (_e, { id }: { id: string }) => getProject(id),
+  );
+
+  const broadcastProjectsChanged = () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('projects:changed');
+    }
+  };
+
+  ipcMain.handle(
+    'projects:create',
+    (_e, req: Parameters<typeof createProject>[0]) => {
+      const project = createProject(req);
+      broadcastProjectsChanged();
+      return project;
+    },
+  );
+
+  ipcMain.handle(
+    'projects:update',
+    (_e, { id, ...patch }: { id: string } & Parameters<typeof updateProject>[1]) => {
+      updateProject(id, patch);
+      broadcastProjectsChanged();
+    },
+  );
+
+  ipcMain.handle(
+    'projects:delete',
+    (_e, { id }: { id: string }) => {
+      const removed = deleteProject(id);
+      if (removed) broadcastProjectsChanged();
+      return removed;
+    },
+  );
+
   // ── ADHD task manager ─────────────────────────────────────────────────────
 
   ipcMain.handle(
     'tasks:list',
-    (_e, { status }: { status?: import('../db/tasks').TaskStatus }) =>
-      listTasks({ status }),
+    (
+      _e,
+      {
+        status,
+        projectId,
+      }: { status?: import('../db/tasks').TaskStatus; projectId?: string | null },
+    ) => listTasks({ status, projectId }),
   );
 
   ipcMain.handle(
@@ -990,7 +1084,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
   ipcMain.handle(
     'tasks:blocks-list',
-    (_e, req: { from?: number; to?: number } | void) =>
+    (_e, req: { from?: number; to?: number; projectId?: string | null } | void) =>
       listBlocks(req ?? undefined),
   );
 
@@ -1124,7 +1218,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
    */
   ipcMain.handle(
     'copilot:chat',
-    async (_e, { messages }: { messages: UIMessage[] }) => {
+    async (
+      _e,
+      {
+        messages,
+        context,
+      }: { messages: UIMessage[]; context?: { projectId?: string } },
+    ) => {
       const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const fail = (err: unknown) => {
         if (mainWindow.isDestroyed()) return;
@@ -1135,7 +1235,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
 
       try {
         const modelMessages = await convertToModelMessages(messages);
-        const agent = createTaskCopilotAgent();
+        const activeProject = context?.projectId
+          ? getProject(context.projectId)?.name
+          : undefined;
+        const agent = createTaskCopilotAgent({ activeProject });
         const result = await agent.stream({ messages: modelMessages });
 
         for await (const chunk of result.fullStream) {

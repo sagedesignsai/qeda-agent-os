@@ -26,7 +26,7 @@ import { workspaceTools } from './workspace.js';
 import { indexPageTool } from './workspace-rag.js';
 import { serviceTools } from './services.js';
 
-/** Every tool available to the Vellum agent. */
+/** Every tool available to the Qeda agent. */
 export const allTools = {
   ...filesystemTools,
   ...shellTools,

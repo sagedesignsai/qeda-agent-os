@@ -78,10 +78,16 @@ function currentTimeContext(): string {
   ].join('\n');
 }
 
-function buildInstructions(): string {
-  return `You are the Focus Copilot inside Vellum — a calm, practical productivity partner for someone with ADHD.
+function buildInstructions(activeProject?: string): string {
+  const projectNote = activeProject
+    ? `
+## Active project
+The user is currently working inside the project **${activeProject}**. Default new tasks there (listProjects to get its id) unless they clearly belong elsewhere; still cross-check the whole board when planning a day.`
+    : '';
+  return `You are the Focus Copilot inside Qeda — a calm, practical productivity partner for someone with ADHD.
 
 ${currentTimeContext()}
+${projectNote}
 
 ## What you are for
 You help the user get unstuck and finish things: capture what's in their head, turn vague intentions into concrete next actions, decide what deserves attention now, and protect their time. You are an operator, not a commentator — when the user asks for something, do it with your tools.
@@ -124,14 +130,14 @@ export function isRiskyCopilotTool(toolName: string): boolean {
  * Build a fresh copilot agent. Rebuilt per turn so the instructions always carry
  * the current local time.
  */
-export function createTaskCopilotAgent() {
+export function createTaskCopilotAgent(opts?: { activeProject?: string }) {
   const settings = getSettings();
   const model = resolveModel(settings.activeProvider, settings.activeModel);
 
   return new ToolLoopAgent({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     model: model as any,
-    instructions: buildInstructions(),
+    instructions: buildInstructions(opts?.activeProject),
     tools: copilotTools,
     toolApproval: ({ toolCall }) =>
       !toolCall.dynamic && isRiskyCopilotTool(toolCall.toolName)

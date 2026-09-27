@@ -53,6 +53,8 @@ import { TerminalGoalInput } from '@/components/terminal/TerminalGoalInput';
 import { TerminalWelcome } from '@/components/terminal/TerminalWelcome';
 import { XtermPane, type XtermPaneHandle } from '@/components/terminal/XtermPane';
 import { useTerminalSession } from '@/hooks/use-terminal-session';
+import { useProjectScope } from '@/hooks/use-project-scope';
+import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useIpcEvent } from '@/hooks/use-ipc';
 import { extractLocalhostUrls, parseComposerInput } from '@/lib/terminal-input';
 import { cn } from '@/lib/utils';
@@ -124,6 +126,13 @@ export default function Terminal() {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    projectId,
+    project,
+    projectName,
+    clear: clearProjectScope,
+    withScope,
+  } = useProjectScope();
   const bottomRef = useRef<HTMLDivElement>(null);
   const xtermRef  = useRef<XtermPaneHandle>(null);
 
@@ -168,9 +177,10 @@ export default function Terminal() {
       .catch(() => {});
   }, []);
 
+  // A project-scoped session starts in the project's repo when it has one.
   useEffect(() => {
-    refreshContext();
-  }, [refreshContext]);
+    refreshContext(project?.repo_path ?? undefined);
+  }, [refreshContext, project?.repo_path]);
 
   // Update working directory whenever PTY shell reports OSC 7 directory changes
   useIpcEvent('pty:cwd-changed', (...args: unknown[]) => {
@@ -186,7 +196,7 @@ export default function Terminal() {
       title: string;
     };
     if (!sessionId) {
-      navigate(`/terminal/${newSessionId}`, { replace: true });
+      navigate(withScope(`/terminal/${newSessionId}`), { replace: true });
     }
   });
 
@@ -213,7 +223,10 @@ export default function Terminal() {
   useEffect(() => {
     const goal = searchParams.get('goal');
     if (goal && sessionId && status === 'idle') {
-      setSearchParams({}, { replace: true });
+      // Drop only `goal`; the project scope must survive.
+      const next = new URLSearchParams(searchParams);
+      next.delete('goal');
+      setSearchParams(next, { replace: true });
       runGoal(decodeURIComponent(goal));
     }
   }, [sessionId, searchParams, setSearchParams, status, runGoal]);
@@ -285,16 +298,22 @@ export default function Terminal() {
 
         const session = await window.electron.ipc.invoke<{ id: string }>(
           'terminal:session-create',
-          { title, goal: input, cwd: contextInfo.cwd },
+          {
+            title,
+            goal: input,
+            // A project's repo wins over the ambient working directory.
+            cwd: project?.repo_path || contextInfo.cwd,
+            project_id: projectId ?? null,
+          },
         );
-        navigate(`/terminal/${session.id}`, { replace: true });
+        navigate(withScope(`/terminal/${session.id}`), { replace: true });
         // Replay through this same handler once the session id exists.
         pendingGoalRef.current = input;
       } catch {
         toast.error('Could not create terminal session');
       }
     },
-    [sessionId, navigate, runGoal, runCommand, contextInfo],
+    [sessionId, navigate, runGoal, runCommand, contextInfo, project, projectId, withScope],
   );
 
   useEffect(() => {
@@ -343,9 +362,13 @@ export default function Terminal() {
     <div className="flex h-full flex-col bg-background text-foreground">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <PageHeader
-        crumbs={[{ label: 'Terminal' }]}
+        crumbs={[
+          { label: 'Terminal' },
+          ...(projectName ? [{ label: projectName }] : []),
+        ]}
         actions={
           <div className="flex items-center gap-2">
+            <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             {runningBlock && (
               <div className="flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1 text-xs text-sky-200">
                 <span className="size-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />

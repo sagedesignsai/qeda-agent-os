@@ -19,6 +19,8 @@ export interface TerminalSession {
   status: TerminalSessionStatus;
   cwd?: string;
   env?: string;
+  /** Owning project, or null when unassigned. */
+  project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -47,8 +49,17 @@ export interface TerminalBlock {
 
 // ─── Session CRUD ─────────────────────────────────────────────────────────────
 
-/** Return all sessions, newest first. */
-export function listTerminalSessions(): TerminalSession[] {
+/** Return all sessions, newest first. Optionally filter by project. */
+export function listTerminalSessions(opts?: {
+  projectId?: string | null;
+}): TerminalSession[] {
+  if (opts?.projectId !== undefined) {
+    return getDb()
+      .prepare(
+        `SELECT * FROM terminal_sessions WHERE project_id = ? ORDER BY updated_at DESC`,
+      )
+      .all(opts.projectId) as TerminalSession[];
+  }
   return getDb()
     .prepare(`SELECT * FROM terminal_sessions ORDER BY updated_at DESC`)
     .all() as TerminalSession[];
@@ -69,13 +80,14 @@ export function createTerminalSession(opts: {
   goal?: string;
   cwd?: string;
   env?: string;
+  project_id?: string | null;
 }): TerminalSession {
   const id = nanoid();
   const now = Math.floor(Date.now() / 1000);
   getDb()
     .prepare(
-      `INSERT INTO terminal_sessions (id, title, goal, cwd, env, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO terminal_sessions (id, title, goal, cwd, env, project_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -83,6 +95,7 @@ export function createTerminalSession(opts: {
       opts.goal ?? '',
       opts.cwd ?? '',
       opts.env ?? '{}',
+      opts.project_id ?? null,
       now,
       now,
     );
@@ -92,7 +105,12 @@ export function createTerminalSession(opts: {
 /** Update a session's title, goal, status, cwd, or env. */
 export function updateTerminalSession(
   id: string,
-  patch: Partial<Pick<TerminalSession, 'title' | 'goal' | 'status' | 'cwd' | 'env'>>,
+  patch: Partial<
+    Pick<
+      TerminalSession,
+      'title' | 'goal' | 'status' | 'cwd' | 'env' | 'project_id'
+    >
+  >,
 ): void {
   const now = Math.floor(Date.now() / 1000);
   const sets: string[] = ['updated_at = ?'];
@@ -103,6 +121,7 @@ export function updateTerminalSession(
   if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
   if (patch.cwd    !== undefined) { sets.push('cwd = ?');    values.push(patch.cwd); }
   if (patch.env    !== undefined) { sets.push('env = ?');    values.push(patch.env); }
+  if (patch.project_id !== undefined) { sets.push('project_id = ?'); values.push(patch.project_id); }
 
   values.push(id);
   getDb()

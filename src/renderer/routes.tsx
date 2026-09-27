@@ -23,6 +23,7 @@ import Chat from './pages/Chat';
 import Workspace from './pages/Workspace';
 import Terminal from './pages/Terminal';
 import Tasks from './pages/Tasks';
+import Projects from './pages/Projects';
 
 export const routes: RouteObject[] = [
   {
@@ -56,6 +57,14 @@ export const routes: RouteObject[] = [
       },
 
       { path: 'tasks', element: <Tasks /> },
+
+      {
+        path: 'projects',
+        children: [
+          { index: true, element: <Projects /> },
+          { path: ':projectId', element: <Projects /> },
+        ],
+      },
 
       { path: '*', element: <Navigate to="/chat" replace /> },
     ],

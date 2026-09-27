@@ -68,8 +68,8 @@ export const DEFAULT_AGENT_TRANSPORT: AgentTransport = {
 export interface UseAgentChatOptions {
   sessionId: string;
   initialMessages?: UIMessage[];
-  /** Workspace context bound to this chat (page or notebook). */
-  context?: { pageId?: string; notebookId?: string };
+  /** Workspace context bound to this chat (page, notebook, or project). */
+  context?: { pageId?: string; notebookId?: string; projectId?: string };
   /** Channel names for this agent. Defaults to the main chat's. */
   transport?: AgentTransport;
   /** Persist the rebuilt conversation on completion (default true). */

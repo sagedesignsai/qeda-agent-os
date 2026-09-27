@@ -15,6 +15,8 @@ import { getDb } from './client.js';
 export interface Session {
   id: string;
   title: string;
+  /** Owning project, or null when unassigned. */
+  project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -29,16 +31,26 @@ export interface PersistedMessage {
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
-export function createSession(title = 'New Chat'): Session {
+export function createSession(
+  title = 'New Chat',
+  projectId: string | null = null,
+): Session {
   const db = getDb();
   const id = randomUUID();
   db.prepare(
-    'INSERT INTO sessions (id, title) VALUES (?, ?)',
-  ).run(id, title);
+    'INSERT INTO sessions (id, title, project_id) VALUES (?, ?, ?)',
+  ).run(id, title, projectId);
   return db.prepare<[string], Session>('SELECT * FROM sessions WHERE id = ?').get(id)!;
 }
 
-export function listSessions(): Session[] {
+export function listSessions(opts?: { projectId?: string | null }): Session[] {
+  if (opts?.projectId !== undefined) {
+    return getDb()
+      .prepare<[string | null], Session>(
+        'SELECT * FROM sessions WHERE project_id = ? ORDER BY updated_at DESC',
+      )
+      .all(opts.projectId);
+  }
   return getDb()
     .prepare<[], Session>(
       'SELECT * FROM sessions ORDER BY updated_at DESC',
@@ -58,6 +70,15 @@ export function updateSessionTitle(id: string, title: string): void {
       'UPDATE sessions SET title = ?, updated_at = unixepoch() WHERE id = ?',
     )
     .run(title, id);
+}
+
+/** Move a session into a project (or out of one with null). */
+export function updateSessionProject(id: string, projectId: string | null): void {
+  getDb()
+    .prepare(
+      'UPDATE sessions SET project_id = ?, updated_at = unixepoch() WHERE id = ?',
+    )
+    .run(projectId, id);
 }
 
 export function deleteSession(id: string): void {

@@ -48,6 +48,8 @@ const SUGGESTIONS = [
 export interface CopilotPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Scope the copilot to a project so it defaults new tasks there. */
+  projectId?: string | null;
   /** Fired after a turn that may have changed tasks, blocks, or sessions. */
   onChanged?: () => void;
 }
@@ -55,6 +57,7 @@ export interface CopilotPanelProps {
 export function CopilotPanel({
   open,
   onOpenChange,
+  projectId,
   onChanged,
 }: CopilotPanelProps) {
   const {
@@ -64,7 +67,7 @@ export function CopilotPanel({
     sendMessage,
     respondToApproval,
     clearMessages,
-  } = useCopilotChat();
+  } = useCopilotChat({ projectId: projectId ?? undefined });
 
   // Tool calls can mutate task data; let the board know after each turn.
   useIpcEvent('copilot:changed', () => onChanged?.());

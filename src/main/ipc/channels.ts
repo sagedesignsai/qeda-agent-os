@@ -27,6 +27,7 @@ import type { Task } from '../db/tasks.js';
 import type { TaskStep, StepProgress } from '../db/task-steps.js';
 import type { TaskBlock, TaskBlockWithTask } from '../db/task-blocks.js';
 import type { FocusSession, FocusStats } from '../db/focus-sessions.js';
+import type { Project, ProjectStatus, ProjectRollup } from '../db/projects.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -39,6 +40,7 @@ export type { Task };
 export type { TaskStep, StepProgress };
 export type { TaskBlock, TaskBlockWithTask };
 export type { FocusSession, FocusStats };
+export type { Project, ProjectStatus, ProjectRollup };
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -83,10 +85,17 @@ export type ChatContext = { pageId?: string; notebookId?: string };
 
 export interface IpcChannels {
   // Session management
-  'sessions:list': { req: void; res: Session[] };
-  'sessions:create': { req: { title?: string }; res: Session };
+  'sessions:list': { req: { projectId?: string | null } | void; res: Session[] };
+  'sessions:create': {
+    req: { title?: string; projectId?: string | null };
+    res: Session;
+  };
   'sessions:delete': { req: { id: string }; res: void };
   'sessions:rename': { req: { id: string; title: string }; res: void };
+  'sessions:set-project': {
+    req: { id: string; projectId: string | null };
+    res: void;
+  };
   'sessions:messages': { req: { id: string }; res: UIMessage[] };
   /** Persist the renderer's reconstructed conversation (upsert by message id). */
   'sessions:save-messages': {
@@ -102,6 +111,8 @@ export interface IpcChannels {
       braveApiKeySet: boolean;
       /** Which external services have a key set (never the value itself). */
       serviceKeysSet: Record<string, boolean>;
+      /** True once first-launch onboarding has been finished or skipped. */
+      onboardingCompleted: boolean;
     };
   };
   'settings:save': { req: Partial<AppSettings>; res: void };
@@ -184,10 +195,18 @@ export interface IpcChannels {
   };
 
   // ── Agentic terminal ────────────────────────────────────────────────────────
-  'terminal:sessions-list': { req: void; res: TerminalSession[] };
+  'terminal:sessions-list': {
+    req: { projectId?: string | null } | void;
+    res: TerminalSession[];
+  };
   'terminal:session-get': { req: { id: string }; res: TerminalSession | null };
   'terminal:session-create': {
-    req: { title?: string; goal?: string; cwd?: string };
+    req: {
+      title?: string;
+      goal?: string;
+      cwd?: string;
+      project_id?: string | null;
+    };
     res: TerminalSession;
   };
   'terminal:session-delete': { req: { id: string }; res: void };
@@ -280,16 +299,76 @@ export interface IpcChannels {
   /** Terminal sessions list changed (created, deleted, etc). */
   'terminal:sessions-changed': void;
 
+  // ── Projects (the productivity spine) ────────────────────────────────────────
+  'projects:list': {
+    req: { status?: ProjectStatus; includeArchived?: boolean } | void;
+    res: Project[];
+  };
+  'projects:rollups': {
+    req: { status?: ProjectStatus; includeArchived?: boolean } | void;
+    res: ProjectRollup[];
+  };
+  'projects:get': { req: { id: string }; res: Project | null };
+  'projects:create': {
+    req: {
+      name: string;
+      description?: string;
+      status?: ProjectStatus;
+      color?: string;
+      icon?: string;
+      deadline?: number | null;
+      repo_path?: string | null;
+      notebook_id?: string | null;
+    };
+    res: Project;
+  };
+  'projects:update': {
+    req: { id: string } & Partial<
+      Pick<
+        Project,
+        | 'name'
+        | 'description'
+        | 'status'
+        | 'color'
+        | 'icon'
+        | 'deadline'
+        | 'repo_path'
+        | 'notebook_id'
+        | 'sort_order'
+      >
+    >;
+    res: void;
+  };
+  /** Delete a project; its tasks are re-homed to the Inbox. */
+  'projects:delete': { req: { id: string }; res: boolean };
+  /** A project was created/updated/deleted — re-fetch.
+   *  Declared as an event (no req/res). */
+  'projects:changed': void;
+
   // ── ADHD task manager ───────────────────────────────────────────────────────
-  'tasks:list': { req: { status?: Task['status'] }; res: Task[] };
+  'tasks:list': {
+    req: { status?: Task['status']; projectId?: string | null };
+    res: Task[];
+  };
   'tasks:create': {
     req: Pick<Task, 'title'> &
-      Partial<Pick<Task, 'description' | 'priority' | 'due_at' | 'status'>>;
+      Partial<
+        Pick<Task, 'description' | 'priority' | 'due_at' | 'status' | 'project_id'>
+      >;
     res: Task;
   };
   'tasks:update': {
     req: { id: string } & Partial<
-      Pick<Task, 'title' | 'description' | 'status' | 'priority' | 'due_at' | 'position'>
+      Pick<
+        Task,
+        | 'title'
+        | 'description'
+        | 'status'
+        | 'priority'
+        | 'due_at'
+        | 'position'
+        | 'project_id'
+      >
     >;
     res: void;
   };
@@ -311,12 +390,13 @@ export interface IpcChannels {
 
   // ── Focus system · time blocking ────────────────────────────────────────────
   'tasks:blocks-list': {
-    req: { from?: number; to?: number } | void;
+    req: { from?: number; to?: number; projectId?: string | null } | void;
     res: TaskBlockWithTask[];
   };
   'tasks:block-create': {
     req: {
       task_id?: string | null;
+      project_id?: string | null;
       title?: string;
       start_at: number;
       end_at: number;
@@ -325,7 +405,7 @@ export interface IpcChannels {
   };
   'tasks:block-update': {
     req: { id: string } & Partial<
-      Pick<TaskBlock, 'title' | 'start_at' | 'end_at' | 'status'>
+      Pick<TaskBlock, 'title' | 'start_at' | 'end_at' | 'status' | 'project_id'>
     >;
     res: void;
   };
@@ -369,7 +449,10 @@ export interface IpcChannels {
 
   // ── Focus copilot (agent chat, streaming via IPC events) ─────────────────
   /** Run one copilot turn. Streams back over `copilot:stream-*`. */
-  'copilot:chat': { req: { messages: UIMessage[] }; res: void };
+  'copilot:chat': {
+    req: { messages: UIMessage[]; context?: { projectId?: string } };
+    res: void;
+  };
   'copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
   'copilot:stream-done': { runId: string };
   'copilot:stream-error': { error: string };

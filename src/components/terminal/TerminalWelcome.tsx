@@ -16,6 +16,7 @@ import {
   ZapIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { QedaLogomark } from '@/components/QedaLogo';
 
 const EXAMPLES = [
   {
@@ -63,13 +64,18 @@ export function TerminalWelcome({ className }: TerminalWelcomeProps) {
         transition={{ duration: 0.3 }}
         className="flex flex-col items-center gap-3 text-center"
       >
-        <div className="flex size-12 items-center justify-center rounded-xl bg-card ring-1 ring-ring">
-          <TerminalSquareIcon className="size-6 text-emerald-400" />
+        <div className="flex size-14 items-center justify-center rounded-2xl bg-card border border-border/80 shadow-md">
+          <QedaLogomark
+            size="md"
+            ringClassName="text-foreground"
+            boltClassName="text-emerald-400"
+            animated
+          />
         </div>
         <div>
-          <h2 className="font-semibold text-foreground">Agentic Terminal</h2>
+          <h2 className="font-semibold text-foreground">Qeda Agentic Terminal</h2>
           <p className="mt-1 text-sm text-muted-foreground/75">
-            Describe a goal. The agent plans and runs the commands.
+            Describe a goal. The agent plans, approves, and completes the commands.
           </p>
         </div>
       </motion.div>

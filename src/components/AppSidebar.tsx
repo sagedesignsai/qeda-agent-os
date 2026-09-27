@@ -36,8 +36,9 @@ import {
 import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ChatMenu } from '@/components/sidebar/ChatMenu';
 import { WorkspaceMenu } from '@/components/sidebar/WorkspaceMenu';
+import { ProjectsMenu } from '@/components/sidebar/ProjectsMenu';
+import { QedaLogomark } from '@/components/QedaLogo';
 import {
-  BookOpenIcon,
   MessageSquareIcon,
   NotebookIcon,
   SettingsIcon,
@@ -46,6 +47,7 @@ import {
   SparklesIcon,
   TerminalIcon,
   CheckSquareIcon,
+  FolderKanbanIcon,
 } from 'lucide-react';
 import { TerminalMenu } from '@/components/sidebar/TerminalMenu';
 
@@ -61,14 +63,20 @@ interface AppSidebarProps {
 
 const NAV_ITEMS = [
   { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },
+  { to: '/projects', label: 'Projects', icon: FolderKanbanIcon },
   { to: '/workspace', label: 'Workspace', icon: NotebookIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
   { to: '/tasks', label: 'Tasks', icon: CheckSquareIcon },
 ];
 
 /** Which section submenu a pathname belongs to, if any. */
-function sectionOf(pathname: string): 'chat' | 'workspace' | 'terminal' | null {
+function sectionOf(
+  pathname: string,
+): 'chat' | 'workspace' | 'terminal' | 'projects' | null {
   if (pathname === '/chat' || pathname.startsWith('/chat/')) return 'chat';
+  if (pathname === '/projects' || pathname.startsWith('/projects/')) {
+    return 'projects';
+  }
   if (pathname === '/workspace' || pathname.startsWith('/workspace/')) {
     return 'workspace';
   }
@@ -149,13 +157,18 @@ export function AppSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <Link to="/chat" onClick={() => setShowMainAt(null)}>
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-tr from-primary to-primary/70 text-primary-foreground shadow-sm">
-                  <BookOpenIcon className="size-4" />
+              <Link to="/chat" onClick={() => setShowMainAt(null)} className="group/brand">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-card border border-border/70 text-foreground shadow-sm group-hover/brand:border-primary/50 group-hover/brand:bg-accent/40 transition-all">
+                  <QedaLogomark
+                    size={16}
+                    ringClassName="text-foreground"
+                    boltClassName="text-sky-400 group-hover/brand:text-amber-400"
+                    animated
+                  />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold tracking-tight">
-                    Vellum
+                  <span className="truncate font-bold tracking-tight text-foreground">
+                    Qeda
                   </span>
                   <span className="truncate text-xs text-sidebar-foreground/70">
                     Agent OS
@@ -262,6 +275,10 @@ export function AppSidebar({
 
       {view === 'terminal' && (
         <TerminalMenu onBack={() => setShowMainAt(location.pathname)} />
+      )}
+
+      {view === 'projects' && (
+        <ProjectsMenu onBack={() => setShowMainAt(location.pathname)} />
       )}
 
       <SidebarFooter>

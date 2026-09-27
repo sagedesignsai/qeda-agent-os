@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Outlet } from 'react-router';
+import { Outlet, useNavigate } from 'react-router';
 import {
   SidebarInset,
   SidebarProvider,
@@ -8,10 +8,59 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SettingsDialog } from '@/components/chat/SettingsDialog';
 import { GenerateNotebookProvider } from '@/components/GenerateNotebookDialog';
+import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
+import { useProjects } from '@/hooks/use-projects';
+
+/** The Inbox is seeded for every install, so it does not count as a project. */
+const INBOX_PROJECT_ID = 'inbox';
 
 export function AppLayout() {
+  const navigate = useNavigate();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /** null while we don't yet know; false until the user finishes onboarding. */
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(
+    null,
+  );
+  /** Latched: decided once, only lowered by an explicit close. */
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const { rollups, loading: projectsLoading } = useProjects();
+
+  // A brand-new install should meet the welcome flow once. Gating on "no real
+  // projects yet" too means an existing user upgrading into this build never
+  // sees it, even though they have no `onboardingCompleted` flag stored.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const s = await window.electron.ipc.invoke<{
+          onboardingCompleted?: boolean;
+        }>('settings:get');
+        if (!cancelled) setOnboardingCompleted(s?.onboardingCompleted === true);
+      } catch {
+        if (!cancelled) setOnboardingCompleted(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const hasRealProject = rollups.some(
+    (r) => r.project.id !== INBOX_PROJECT_ID,
+  );
+  // Decide eligibility exactly once. If we kept recomputing, creating the first
+  // project inside the flow would flip `hasRealProject` and slam the dialog shut
+  // before the final step could be seen.
+  useEffect(() => {
+    if (onboardingChecked) return;
+    if (onboardingCompleted === null || projectsLoading) return;
+    setOnboardingChecked(true);
+    if (onboardingCompleted === false && !hasRealProject) {
+      setShowOnboarding(true);
+    }
+  }, [onboardingChecked, onboardingCompleted, projectsLoading, hasRealProject]);
 
   // Global keyboard shortcuts: ⌘K / Ctrl+K opens the palette, ⌘, opens settings.
   // (The sidebar's own ⌘B toggle is registered by SidebarProvider.)
@@ -60,6 +109,19 @@ export function AppLayout() {
         />
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+        <OnboardingDialog
+          open={showOnboarding}
+          onClose={() => {
+            setOnboardingCompleted(true);
+            setShowOnboarding(false);
+          }}
+          onOpenProject={(id) => {
+            setOnboardingCompleted(true);
+            setShowOnboarding(false);
+            navigate(`/projects/${id}`);
+          }}
+        />
       </SidebarProvider>
     </GenerateNotebookProvider>
   );

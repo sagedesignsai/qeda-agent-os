@@ -51,6 +51,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { TerminalSession } from '@/main/ipc/channels';
 import { useIpcEvent } from '@/hooks/use-ipc';
+import { useProjectScope } from '@/hooks/use-project-scope';
 
 // ─── Status indicator ─────────────────────────────────────────────────────────
 
@@ -105,6 +106,7 @@ function SessionLabel({ session }: { session: TerminalSession }) {
 export function TerminalMenu({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const { sessionId: activeId } = useParams<{ sessionId?: string }>();
+  const { projectId, withScope } = useProjectScope();
 
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [search, setSearch] = useState('');
@@ -112,10 +114,12 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
   const [editValue, setEditValue] = useState('');
 
   // ── Data loading ────────────────────────────────────────────────────────
+  // When scoped, only this project's sessions are listed.
   const reload = async () => {
     try {
       const data = await window.electron.ipc.invoke<TerminalSession[]>(
         'terminal:sessions-list',
+        projectId ? { projectId } : {},
       );
       setSessions(data ?? []);
     } catch {
@@ -123,14 +127,15 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // Reload whenever the active session changes so sessions auto-created by
-  // the Terminal page appear here without a manual refresh.
+  // Reload whenever the active session or the project scope changes, so
+  // sessions auto-created by the Terminal page appear without a manual refresh.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const data = await window.electron.ipc.invoke<TerminalSession[]>(
           'terminal:sessions-list',
+          projectId ? { projectId } : {},
         );
         if (!cancelled) setSessions(data ?? []);
       } catch {
@@ -138,7 +143,7 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeId]);
+  }, [activeId, projectId]);
 
   // ── Live event subscriptions ─────────────────────────────────────────────
 
@@ -199,13 +204,13 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
   // Navigate to /terminal — the page auto-creates a session on first goal
   const handleNew = () => {
     setSearch('');
-    navigate('/terminal');
+    navigate(withScope('/terminal'));
   };
 
   const handleDelete = async (id: string) => {
     try {
       await window.electron.ipc.invoke('terminal:session-delete', { id });
-      if (id === activeId) navigate('/terminal');
+      if (id === activeId) navigate(withScope('/terminal'));
       await reload();
       toast.success('Session deleted.');
     } catch {
@@ -297,7 +302,7 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
                       size="sm"
                       isActive={session.id === activeId}
                       tooltip={session.title || session.goal || 'Untitled'}
-                      onClick={() => navigate(`/terminal/${session.id}`)}
+                      onClick={() => navigate(withScope(`/terminal/${session.id}`))}
                     >
                       {/* Status dot replaces the static icon */}
                       <SessionStatusDot status={session.status} />

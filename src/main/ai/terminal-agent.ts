@@ -51,7 +51,7 @@ import {
 // ─── System prompt ────────────────────────────────────────────────────────────
 
 const TERMINAL_AGENT_INSTRUCTIONS = `
-You are a terminal agent running inside the Vellum agent suite.
+You are a terminal agent running inside the Qeda agent suite.
 
 Your job is to achieve a user-provided goal by intelligently composing and running shell commands.
 

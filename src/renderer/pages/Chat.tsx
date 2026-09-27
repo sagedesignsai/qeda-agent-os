@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Trash2Icon, AlertCircleIcon, XIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { useProjectScope } from '@/hooks/use-project-scope';
+import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import type { ChatContext } from '../../main/ipc/channels';
 
 export interface ChatLocationState {
@@ -37,6 +39,12 @@ export default function Chat() {
   const location = useLocation();
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId?: string }>();
+  const {
+    projectId,
+    projectName,
+    clear: clearProjectScope,
+    withScope,
+  } = useProjectScope();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [sessionTitle, setSessionTitle] = useState('');
   const [chatContext, setChatContext] = useState<ChatContext | undefined>(
@@ -143,11 +151,11 @@ export default function Chat() {
         const title = trimmed.slice(0, 32).trim();
         const session = await window.electron.ipc.invoke<{ id: string }>(
           'sessions:create',
-          { title },
+          { title, projectId: projectId ?? null },
         );
         setSessionTitle(title);
         pendingSendRef.current = trimmed;
-        navigate(`/chat/${session.id}`, { replace: true });
+        navigate(withScope(`/chat/${session.id}`), { replace: true });
       } catch {
         toast.error('Failed to start a new session.');
       } finally {
@@ -174,11 +182,13 @@ export default function Chat() {
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
       <PageHeader
         crumbs={[
-          { label: 'Chat', to: '/chat' },
+          { label: 'Chat', to: withScope('/chat') },
+          ...(projectName ? [{ label: projectName }] : []),
           { label: sessionTitle || 'New conversation' },
         ]}
         actions={
           <>
+            <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             {messages.length > 0 && (
               <Badge
                 variant="secondary"

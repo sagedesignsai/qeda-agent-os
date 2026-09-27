@@ -38,6 +38,7 @@ import {
   TrashIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useProjectScope } from '@/hooks/use-project-scope';
 
 interface Session {
   id: string;
@@ -47,28 +48,37 @@ interface Session {
 export function ChatMenu({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
   const { sessionId: activeId } = useParams<{ sessionId?: string }>();
+  const { projectId, withScope } = useProjectScope();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [search, setSearch] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
 
+  // When scoped, only this project's conversations are listed.
+  const listPayload = projectId ? { projectId } : {};
+
   const reload = async () => {
     try {
-      const data = await window.electron.ipc.invoke<Session[]>('sessions:list');
+      const data = await window.electron.ipc.invoke<Session[]>(
+        'sessions:list',
+        listPayload,
+      );
       setSessions(data ?? []);
     } catch {
       // Best-effort.
     }
   };
 
-  // Refetch when the active session changes so chats created elsewhere (the
-  // Chat page auto-creating one) show up.
+  // Refetch when the active session or the project scope changes, so chats
+  // created elsewhere (the Chat page auto-creating one) show up.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const data =
-          await window.electron.ipc.invoke<Session[]>('sessions:list');
+        const data = await window.electron.ipc.invoke<Session[]>(
+          'sessions:list',
+          projectId ? { projectId } : {},
+        );
         if (!cancelled) setSessions(data ?? []);
       } catch {
         // Best-effort.
@@ -77,7 +87,7 @@ export function ChatMenu({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [activeId]);
+  }, [activeId, projectId]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -89,13 +99,13 @@ export function ChatMenu({ onBack }: { onBack: () => void }) {
   // message, so bailing out here leaves no empty conversation behind.
   const handleNew = () => {
     setSearch('');
-    navigate('/chat');
+    navigate(withScope('/chat'));
   };
 
   const handleDelete = async (id: string) => {
     try {
       await window.electron.ipc.invoke('sessions:delete', { id });
-      if (id === activeId) navigate('/chat');
+      if (id === activeId) navigate(withScope('/chat'));
       await reload();
       toast.success('Conversation deleted.');
     } catch {
@@ -182,7 +192,7 @@ export function ChatMenu({ onBack }: { onBack: () => void }) {
                       size="sm"
                       isActive={session.id === activeId}
                       tooltip={session.title || 'Untitled'}
-                      onClick={() => navigate(`/chat/${session.id}`)}
+                      onClick={() => navigate(withScope(`/chat/${session.id}`))}
                     >
                       <MessageSquareIcon />
                       <span>{session.title || 'Untitled'}</span>

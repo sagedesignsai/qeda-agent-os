@@ -40,6 +40,8 @@ export interface ScheduleBlockDialogProps {
   tasks: Task[];
   /** Pre-select this task when the dialog opens. */
   presetTaskId?: string | null;
+  /** Project to file a standalone block under (scoped views). */
+  projectId?: string | null;
   onSaved: () => void;
 }
 
@@ -63,6 +65,7 @@ export function ScheduleBlockDialog({
   onOpenChange,
   tasks,
   presetTaskId,
+  projectId,
   onSaved,
 }: ScheduleBlockDialogProps) {
   const [target, setTarget] = useState<string>('custom');
@@ -98,6 +101,7 @@ export function ScheduleBlockDialog({
       const start = todayAt(time);
       await window.electron.ipc.invoke('tasks:block-create', {
         task_id: target === 'custom' ? null : target,
+        project_id: target === 'custom' ? (projectId ?? null) : null,
         title: target === 'custom' ? title.trim() : '',
         start_at: start,
         end_at: start + duration * 60,

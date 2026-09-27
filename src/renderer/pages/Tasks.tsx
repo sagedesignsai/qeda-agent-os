@@ -77,6 +77,8 @@ import { TaskStepsSheet } from '@/components/tasks/TaskStepsSheet';
 import { TodayTimeline } from '@/components/tasks/TodayTimeline';
 import { useFocusAudio, type UseFocusAudioReturn } from '@/hooks/use-focus-audio';
 import { useFocusTimer, type PhaseCompleteInfo } from '@/hooks/use-focus-timer';
+import { useProjectScope } from '@/hooks/use-project-scope';
+import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
@@ -663,6 +665,7 @@ function Column({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Tasks() {
+  const { projectId, projectName, clear: clearProjectScope } = useProjectScope();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stepProgress, setStepProgress] = useState<Record<string, StepProgress>>({});
   const [stats, setStats] = useState<FocusStats | null>(null);
@@ -685,14 +688,17 @@ export default function Tasks() {
 
   const load = useCallback(async () => {
     try {
-      const rows = await window.electron.ipc.invoke<Task[]>('tasks:list', {});
+      const rows = await window.electron.ipc.invoke<Task[]>(
+        'tasks:list',
+        projectId ? { projectId } : {},
+      );
       setTasks(rows ?? []);
     } catch {
       toast.error('Could not load tasks');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   const loadSteps = useCallback(async () => {
     try {
@@ -742,6 +748,7 @@ export default function Tasks() {
         description: data.description,
         priority: data.priority,
         estimate_mins: data.estimate_mins,
+        project_id: projectId ?? undefined,
         status: 'backlog',
       });
       setTasks((prev) => [task, ...prev]);
@@ -848,9 +855,13 @@ export default function Tasks() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        crumbs={[{ label: 'Tasks' }]}
+        crumbs={[
+          { label: 'Tasks' },
+          ...(projectName ? [{ label: projectName }] : []),
+        ]}
         actions={
           <div className="flex items-center gap-2">
+            <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             <Button
               size="sm"
               variant="outline"
@@ -919,6 +930,7 @@ export default function Tasks() {
             stats={stats}
             statsLoading={statsLoading}
             refreshSignal={dataVersion}
+            projectId={projectId}
             onFocusTask={setFocusedTask}
           />
         </TabsContent>
@@ -964,6 +976,7 @@ export default function Tasks() {
       <CopilotPanel
         open={copilotOpen}
         onOpenChange={setCopilotOpen}
+        projectId={projectId}
         onChanged={refreshAll}
       />
 

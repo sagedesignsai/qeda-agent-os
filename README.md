@@ -17,6 +17,7 @@ inspectable.
 | **Chat** | Conversational agent with tool use, plus deep research runs with citations |
 | **Workspace** | Block-editor notebooks, version history, and local RAG over your own pages |
 | **Terminal** | Agent Mode (goal → plan → approve → execute) and Shell Mode (raw PTY + xterm.js) |
+| **Projects** | The spine: an outcome with a deadline, its tasks, its repo, its docs, and its chats in one place |
 | **Focus** | Task manager with time blocking, a synthesised soundscape, focus sessions, and an AI copilot agent with tools |
 
 ## The name
@@ -215,6 +216,46 @@ The Focus module is built in layers with clear boundaries:
 The two prompts that matter most (breakdown and brain dump) are written to be
 anti-overwhelm: fewer, smaller, action-first items, with priority by real
 consequence rather than volume.
+
+### Projects
+
+A project is the unit of *intent* the rest of the productivity system hangs off,
+because "project" used to mean four disconnected things: an outcome, a repo, a
+notebook, and a set of tasks. `db/projects.ts` unifies them behind one row with
+nullable `project_id` columns on `tasks`, `task_blocks`, `sessions`, and
+`terminal_sessions` — so a project is an *optional lens*, not a mandatory
+container.
+
+- **Data** — `db/schema.ts` defines `projects` and its foreign keys, and the
+  `MIGRATE_INBOX_PROJECT` / `MIGRATE_ASSIGN_ORPHAN_TASKS` data migrations seed an
+  **Inbox** project (`id = 'inbox'`) and file every pre-existing task into it.
+  Deleting a project re-homes its tasks to the Inbox rather than deleting work;
+  the Inbox itself cannot be deleted.
+- **Rollups** — `projectRollup(id, now?)` answers "how far along is this, what's
+  overdue, how much focus has it received today?" in one query, driving the
+  Projects page and the sidebar without the UI stitching four reads together.
+- **Copilot** — the task tools gain `listProjects`, `createProject`, and an
+  approval-gated `assignTaskToProject`; `listTasks` and task creation are
+  project-aware, and the agent is told the active project so new capture lands
+  in the right place.
+- **Views** — `pages/Projects.tsx` is a grid of rollup cards at `/projects` and a
+  project detail at `/projects/:projectId`; `components/sidebar/ProjectsMenu.tsx`
+  makes the rail a project switcher. Tasks, Terminal, and Chat all accept a
+  `?project=` scope via the shared `hooks/use-project-scope.ts`: lists filter to
+  the project, anything created while scoped is filed into it (a Terminal
+  session starts in the project's `repo_path` when set), and a header chip clears
+  the scope. So a project is a *view* over the work, not a copy of it. When only
+  the Inbox exists (e.g. onboarding was skipped) the grid is replaced by a
+  first-run empty state that still surfaces the Inbox, so quick capture is never
+  stranded.
+- **Onboarding** — because the Inbox is seeded for every install, "no projects"
+  really means *only the Inbox exists*. On first launch `AppLayout` renders
+  `components/onboarding/OnboardingDialog.tsx`: a guided welcome → project →
+  first task → ready flow. It is gated on both the persisted
+  `onboardingCompleted` setting **and** the absence of any real project, so an
+  existing user upgrading into the build never sees it. Every step is skippable;
+  the project is created on the last step so backing up can't leave a half-made
+  row behind.
 
 ## Testing notes
 

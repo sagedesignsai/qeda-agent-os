@@ -193,7 +193,14 @@ describe('copilot task tools', () => {
 
   it('classifies exactly the destructive tools as risky', () => {
     expect([...RISKY_TASK_TOOLS].sort()).toEqual(
-      ['completeTask', 'deleteBlock', 'deleteTask', 'moveBlock', 'updateTask'].sort(),
+      [
+        'assignTaskToProject',
+        'completeTask',
+        'deleteBlock',
+        'deleteTask',
+        'moveBlock',
+        'updateTask',
+      ].sort(),
     );
     // Additive tools must never require approval.
     expect(RISKY_TASK_TOOLS.has('createTask')).toBe(false);

@@ -20,6 +20,8 @@ export type BlockStatus = 'planned' | 'active' | 'done' | 'skipped';
 export interface TaskBlock {
   id: string;
   task_id: string | null;
+  /** Set for project-level blocks (standups, reviews); null for task blocks. */
+  project_id: string | null;
   title: string;
   /** Unix epoch seconds. */
   start_at: number;
@@ -57,6 +59,8 @@ export function listBlocks(opts?: {
   from?: number;
   to?: number;
   taskId?: string;
+  /** Match blocks owned by the project *or* by one of its tasks. */
+  projectId?: string | null;
 }): TaskBlockWithTask[] {
   const where: string[] = [];
   const values: unknown[] = [];
@@ -72,6 +76,10 @@ export function listBlocks(opts?: {
   if (opts?.taskId) {
     where.push('b.task_id = ?');
     values.push(opts.taskId);
+  }
+  if (opts?.projectId) {
+    where.push('(b.project_id = ? OR t.project_id = ?)');
+    values.push(opts.projectId, opts.projectId);
   }
 
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -94,6 +102,7 @@ export function getBlock(id: string): TaskBlock | null {
 /** Create a time block. */
 export function createBlock(opts: {
   task_id?: string | null;
+  project_id?: string | null;
   title?: string;
   start_at: number;
   end_at: number;
@@ -105,12 +114,13 @@ export function createBlock(opts: {
   getDb()
     .prepare(
       `INSERT INTO task_blocks
-         (id, task_id, title, start_at, end_at, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, task_id, project_id, title, start_at, end_at, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
       opts.task_id ?? null,
+      opts.project_id ?? null,
       opts.title ?? '',
       opts.start_at,
       opts.end_at,
@@ -126,7 +136,10 @@ export function createBlock(opts: {
 export function updateBlock(
   id: string,
   patch: Partial<
-    Pick<TaskBlock, 'task_id' | 'title' | 'start_at' | 'end_at' | 'status'>
+    Pick<
+      TaskBlock,
+      'task_id' | 'project_id' | 'title' | 'start_at' | 'end_at' | 'status'
+    >
   >,
 ): void {
   const now = Math.floor(Date.now() / 1000);

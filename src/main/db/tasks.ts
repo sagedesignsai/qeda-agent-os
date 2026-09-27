@@ -7,6 +7,7 @@
 
 import { nanoid } from 'nanoid';
 import { getDb } from './client.js';
+import { INBOX_PROJECT_ID } from './schema.js';
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ export interface Task {
   due_at: number | null;
   /** Rough time estimate in minutes (drives time blocking). */
   estimate_mins: number | null;
+  /** Owning project. Defaults to the Inbox so a task always has a home. */
+  project_id: string;
   pomodoro_count: number;
   position: number;
   created_at: number;
@@ -30,20 +33,33 @@ export interface Task {
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
-/** Return all tasks ordered by status then position. */
-export function listTasks(opts?: { status?: TaskStatus }): Task[] {
+/**
+ * Return tasks ordered by status then position, optionally narrowed to one
+ * status and/or one project.
+ */
+export function listTasks(opts?: {
+  status?: TaskStatus;
+  /** Narrow to one project; nullish means every project. */
+  projectId?: string | null;
+}): Task[] {
+  const where: string[] = [];
+  const values: unknown[] = [];
+
   if (opts?.status) {
-    return getDb()
-      .prepare(
-        `SELECT * FROM tasks WHERE status = ? ORDER BY position ASC, created_at ASC`,
-      )
-      .all(opts.status) as Task[];
+    where.push('status = ?');
+    values.push(opts.status);
   }
+  if (opts?.projectId) {
+    where.push('project_id = ?');
+    values.push(opts.projectId);
+  }
+
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   return getDb()
     .prepare(
-      `SELECT * FROM tasks ORDER BY status, position ASC, created_at ASC`,
+      `SELECT * FROM tasks ${clause} ORDER BY status, position ASC, created_at ASC`,
     )
-    .all() as Task[];
+    .all(...values) as Task[];
 }
 
 /** Get a single task by id. */
@@ -62,6 +78,8 @@ export function createTask(opts: {
   priority?: TaskPriority;
   due_at?: number | null;
   estimate_mins?: number | null;
+  /** Omit to file the task in the Inbox. */
+  project_id?: string | null;
   status?: TaskStatus;
 }): Task {
   const id = nanoid();
@@ -78,8 +96,8 @@ export function createTask(opts: {
   getDb()
     .prepare(
       `INSERT INTO tasks
-         (id, title, description, status, priority, due_at, estimate_mins, position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, title, description, status, priority, due_at, estimate_mins, project_id, position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -89,6 +107,7 @@ export function createTask(opts: {
       opts.priority ?? 2,
       opts.due_at ?? null,
       opts.estimate_mins ?? null,
+      opts.project_id ?? INBOX_PROJECT_ID,
       maxPos + 1,
       now,
       now,
@@ -109,6 +128,7 @@ export function updateTask(
       | 'priority'
       | 'due_at'
       | 'estimate_mins'
+      | 'project_id'
       | 'position'
       | 'pomodoro_count'
     >

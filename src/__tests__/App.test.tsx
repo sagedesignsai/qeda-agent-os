@@ -33,6 +33,9 @@ const ipcInvoke = jest.fn((channel: string) => {
       return Promise.resolve({
         activeProvider: 'gateway',
         activeModel: 'openai/gpt-4o',
+        // Onboarding already completed, so the welcome modal stays closed and
+        // the rail underneath remains accessible to role queries.
+        onboardingCompleted: true,
         providers: {},
       });
     case 'sessions:create':
@@ -75,7 +78,7 @@ describe('App', () => {
     async () => {
       render(<App />);
 
-      expect(await screen.findByText('Vellum')).toBeInTheDocument();
+      expect(await screen.findByText('Qeda')).toBeInTheDocument();
       expect(
         screen.getByRole('link', { name: /Chat & Research/ }),
       ).toBeInTheDocument();

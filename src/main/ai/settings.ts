@@ -53,6 +53,11 @@ export interface AppSettings {
    * environment is used as a fallback at resolution time (see services/keys.ts).
    */
   serviceKeys?: Record<string, string>;
+  /**
+   * Set once the first-launch onboarding has been finished or skipped, so the
+   * welcome flow is shown exactly once. Absent on a fresh install.
+   */
+  onboardingCompleted?: boolean;
   providers: ProvidersMap;
   customProviders?: CustomProviderSettings[];
 }
