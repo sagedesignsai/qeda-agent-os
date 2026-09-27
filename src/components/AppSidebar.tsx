@@ -124,7 +124,13 @@ export function AppSidebar({
   const [provider, setProvider] = useState<string>('');
   const [model, setModel] = useState<string>('');
 
-  const { projectId: queryProjectId, clear: clearScope, withScope } = useProjectScope();
+  const {
+    projectId: queryProjectId,
+    clear: clearScope,
+    withScope,
+    activeProjectId: resolvedProjectId,
+    activeProjectName: resolvedProjectName,
+  } = useProjectScope();
   const { projects } = useProjects();
 
   const routeProjectId = location.pathname.startsWith('/projects/')
@@ -135,6 +141,14 @@ export function AppSidebar({
   const activeProject = activeProjectId
     ? projects.find((p) => p.id === activeProjectId) ?? null
     : null;
+
+  /**
+   * True only when there is genuinely nothing: no scope AND no remembered
+   * project. This is the state where the copilot cannot resolve a repository,
+   * and the only one that earns attention colour in the rail. A remembered
+   * default keeps the neutral treatment because it is the normal case.
+   */
+  const hasNoProjectAtAll = !activeProject && !resolvedProjectId;
 
   const handleSelectProject = (projectToSelect: Project | null) => {
     // Selecting a project also makes it the persisted default, so a fresh launch
@@ -363,7 +377,15 @@ export function AppSidebar({
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
                   size="sm"
-                  title={activeProject ? `Project: ${activeProject.name}` : 'Project: All Projects'}
+                  title={
+                    activeProject
+                      ? `Project: ${activeProject.name}`
+                      : hasNoProjectAtAll
+                        ? 'No project selected. The copilot cannot read your code or files until you pick one.'
+                        : resolvedProjectName
+                          ? `Scoped to all projects. Agents use "${resolvedProjectName}" (your last project).`
+                          : 'Project: All Projects'
+                  }
                   className={cn(
                     'w-full justify-between gap-1.5 rounded-md px-2 py-1.5 text-xs transition-colors',
                     activeProject
@@ -385,13 +407,31 @@ export function AppSidebar({
                         }
                       />
                     ) : (
-                      <FolderKanbanIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <FolderKanbanIcon
+                        className={cn(
+                          'size-3.5 shrink-0',
+                          hasNoProjectAtAll
+                            ? 'text-amber-500'
+                            : 'text-muted-foreground',
+                        )}
+                      />
                     )}
                     <span className="shrink-0 font-medium text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
                       Project:
                     </span>
-                    <span className="truncate font-semibold text-[11px] group-data-[collapsible=icon]:hidden">
-                      {activeProject ? activeProject.name : 'All Projects'}
+                    <span
+                      className={cn(
+                        'truncate text-[11px] group-data-[collapsible=icon]:hidden',
+                        hasNoProjectAtAll
+                          ? 'font-semibold text-amber-600 dark:text-amber-500'
+                          : 'font-semibold',
+                      )}
+                    >
+                      {activeProject
+                        ? activeProject.name
+                        : hasNoProjectAtAll
+                          ? 'No project'
+                          : 'All Projects'}
                     </span>
                   </div>
                   <ChevronsUpDownIcon className="size-3 shrink-0 text-muted-foreground/70 group-data-[collapsible=icon]:hidden" />

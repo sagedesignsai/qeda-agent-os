@@ -35,6 +35,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { MessageList } from '@/components/chat/MessageList';
+import { ActiveProjectNotice } from '@/components/projects/ActiveProjectNotice';
 import { useCopilotChat } from '@/hooks/use-copilot-chat';
 import { useIpcEvent } from '@/hooks/use-ipc';
 
@@ -130,6 +131,11 @@ export function CopilotPanel({
           <SheetDescription className="text-xs text-muted-foreground">
             An agent with tools over your tasks, calendar, stats, and workspace.
           </SheetDescription>
+
+          {/* Which project this agent is grounded in — and, when there is none,
+              why that limits it. Without this the copilot's refusal to touch a
+              repo looked identical to it simply having nothing to say. */}
+          <ActiveProjectNotice className="mt-2" />
         </SheetHeader>
 
         <Conversation className="flex-1">

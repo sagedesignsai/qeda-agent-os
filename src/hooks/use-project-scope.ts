@@ -38,6 +38,24 @@ export interface ProjectScope {
   /** The resolved project, once loaded. */
   project: Project | null;
   projectName: string | null;
+  /**
+   * The project an AGENT will act on this turn — not the same as `projectId`.
+   * Mirrors `resolveActiveProjectId` in main: an explicit scope wins, otherwise
+   * the persisted default applies.
+   *
+   * Null means no project at all — the state where the copilot cannot resolve a
+   * repository and will refuse rather than guess. `projectId === null` alone
+   * cannot express that, which is why this exists.
+   */
+  activeProjectId: string | null;
+  activeProject: Project | null;
+  activeProjectName: string | null;
+  /**
+   * True when the active project came from the persisted default rather than an
+   * explicit `?project=` here. Drives quiet-vs-explicit styling: a restored
+   * default is the happy path and must not be dressed up as a problem.
+   */
+  isActiveProjectDefaulted: boolean;
   /** Drop the `project` param, preserving any others (e.g. `goal`). */
   clear: () => void;
   /** Append `?project=` (or `&project=`) to a path when scoped. */
@@ -48,6 +66,8 @@ export function useProjectScope(): ProjectScope {
   const [searchParams, setSearchParams] = useSearchParams();
   const projectId = searchParams.get('project');
   const [project, setProject] = useState<Project | null>(null);
+  /** The restored default from settings.json; '' means none is set. */
+  const [defaultProjectId, setDefaultProjectId] = useState('');
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -74,6 +94,60 @@ export function useProjectScope(): ProjectScope {
     void load();
   }, [projectId]);
 
+  // The persisted default. Read through `settings:get` rather than a new
+  // channel, and kept fresh on `settings:changed` — the same broadcast the
+  // sidebar's own write triggers.
+  const loadDefault = useCallback(async () => {
+    try {
+      const s = await window.electron.ipc.invoke<{ activeProjectId?: string }>(
+        'settings:get',
+      );
+      setDefaultProjectId(s?.activeProjectId ?? '');
+    } catch {
+      setDefaultProjectId('');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDefault();
+  }, [loadDefault]);
+
+  useIpcEvent('settings:changed', () => {
+    void loadDefault();
+  });
+
+  // Scope wins; the default only applies when nothing is scoped. When scoped we
+  // reuse the already-loaded `project` rather than issuing a second projects:get.
+  const activeProjectId = projectId || defaultProjectId || null;
+  const isActiveProjectDefaulted = !projectId && Boolean(defaultProjectId);
+
+  // Resolve the default project's row (name for the UI). Best-effort.
+  const [defaultProject, setDefaultProject] = useState<Project | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (projectId || !defaultProjectId) {
+      setDefaultProject(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void (async () => {
+      try {
+        const found = await window.electron.ipc.invoke<Project | null>('projects:get', {
+          id: defaultProjectId,
+        });
+        if (!cancelled) setDefaultProject(found ?? null);
+      } catch {
+        if (!cancelled) setDefaultProject(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, defaultProjectId]);
+
+  const activeProject = projectId ? project : defaultProject;
+
   const clear = useCallback(() => {
     const next = new URLSearchParams(searchParams);
     next.delete('project');
@@ -93,6 +167,10 @@ export function useProjectScope(): ProjectScope {
     projectId,
     project,
     projectName: project?.name ?? null,
+    activeProjectId,
+    activeProject,
+    activeProjectName: activeProject?.name ?? null,
+    isActiveProjectDefaulted,
     clear,
     withScope,
   };
