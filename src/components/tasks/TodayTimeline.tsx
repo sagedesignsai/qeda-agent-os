@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   CalendarPlusIcon,
@@ -40,8 +40,11 @@ import { XP_REWARDS } from '@/lib/gamification';
 import { FocusStatsStrip } from './FocusStatsStrip';
 import { ScheduleBlockDialog } from './ScheduleBlockDialog';
 import { MorningKickoffDialog } from './MorningKickoffDialog';
+import { TodayEmptyHero } from './TodayEmptyHero';
+import { getNextBestMove } from '@/lib/task-recommendations';
 import type {
   FocusStats,
+  StepProgress,
   Task,
   TaskBlockWithTask,
 } from '@/main/ipc/channels';
@@ -90,20 +93,28 @@ export interface TodayTimelineProps {
   tasks: Task[];
   stats: FocusStats | null;
   statsLoading?: boolean;
+  stepProgress?: Record<string, StepProgress>;
   /** Bump to force a reload of blocks (e.g. after a task changes). */
   refreshSignal?: number;
   /** Scope the timeline to one project, for a project's Today view. */
   projectId?: string | null;
   onFocusTask: (task: Task) => void;
+  onOpenSteps?: (task: Task) => void;
+  onSendPrompt?: (prompt: string) => void;
+  onOpenBrainDump?: () => void;
 }
 
 export function TodayTimeline({
   tasks,
   stats,
   statsLoading,
+  stepProgress,
   refreshSignal = 0,
   projectId,
   onFocusTask,
+  onOpenSteps,
+  onSendPrompt,
+  onOpenBrainDump,
 }: TodayTimelineProps) {
   const [blocks, setBlocks] = useState<TaskBlockWithTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +122,13 @@ export function TodayTimeline({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [kickoffOpen, setKickoffOpen] = useState(false);
   const [presetTaskId, setPresetTaskId] = useState<string | null>(null);
+  const [shuffleIndex, setShuffleIndex] = useState(0);
   const gamification = useGamification();
+
+  const recommendation = useMemo(
+    () => getNextBestMove({ tasks, stepProgress, shuffleIndex }),
+    [tasks, stepProgress, shuffleIndex],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -246,27 +263,44 @@ export function TodayTimeline({
           <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : blocks.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/50 py-16 text-center">
-          <ClockIcon className="size-6 text-muted-foreground/50" />
-          <div>
-            <p className="text-sm font-medium">Nothing blocked yet</p>
-            <p className="text-xs text-muted-foreground">
-              Let the copilot shape your day, or block one thing yourself.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs"
-            onClick={() => void planMyDay()}
-            disabled={planning || openTasks.length === 0}
-          >
-            <SparklesIcon className="size-3 text-amber-500" />
-            Plan my day
-          </Button>
-        </div>
+        <TodayEmptyHero
+          recommendation={recommendation}
+          openTasksCount={openTasks.length}
+          streakDays={stats?.streakDays ?? gamification.state?.streakDays ?? 0}
+          onStartFlow={(task, e) => {
+            triggerParticleBurst(e.clientX, e.clientY);
+            onFocusTask(task);
+          }}
+          onOpenSteps={onOpenSteps}
+          onShuffle={() => setShuffleIndex((prev) => prev + 1)}
+          onOpenKickoff={() => setKickoffOpen(true)}
+          onAutoPlan={() => void planMyDay()}
+          onSendPrompt={onSendPrompt}
+          onOpenBrainDump={onOpenBrainDump}
+          planning={planning}
+        />
       ) : (
-        <ol className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
+          {/* Quick Copilot prompt strip when timeline is active */}
+          <button
+            type="button"
+            onClick={() =>
+              onSendPrompt?.(
+                'Review my current schedule for today, suggest optimizations, or help adjust my plan.',
+              )
+            }
+            className="group flex w-full items-center gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3.5 py-2 text-xs text-muted-foreground transition-all hover:border-amber-500/40 hover:bg-card hover:text-foreground"
+          >
+            <SparklesIcon className="size-3.5 text-amber-500 transition-transform group-hover:scale-110" />
+            <span className="flex-1 text-left">
+              Ask Copilot to re-balance, add tasks, or adjust today's schedule…
+            </span>
+            <span className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              Ask Copilot
+            </span>
+          </button>
+
+          <ol className="flex flex-col gap-2">
           {blocks.map((block) => {
             const meta = BLOCK_STATUS[block.status];
             const task = tasks.find((t) => t.id === block.task_id) ?? null;
@@ -367,6 +401,7 @@ export function TodayTimeline({
             );
           })}
         </ol>
+        </div>
       )}
 
       <ScheduleBlockDialog

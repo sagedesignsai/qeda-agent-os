@@ -11,6 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useEffect } from 'react';
 import { BotIcon, PlusIcon, SparklesIcon, XIcon } from 'lucide-react';
 
 import {
@@ -53,6 +54,9 @@ export interface CopilotPanelProps {
   projectId?: string | null;
   /** Fired after a turn that may have changed tasks, blocks, or sessions. */
   onChanged?: () => void;
+  /** Initial prompt to automatically dispatch when opened from a welcome card or shortcut. */
+  initialPrompt?: string | null;
+  onInitialPromptHandled?: () => void;
 }
 
 export function CopilotPanel({
@@ -60,6 +64,8 @@ export function CopilotPanel({
   onOpenChange,
   projectId,
   onChanged,
+  initialPrompt,
+  onInitialPromptHandled,
 }: CopilotPanelProps) {
   const {
     messages,
@@ -71,6 +77,14 @@ export function CopilotPanel({
     respondToApproval,
     clearMessages,
   } = useCopilotChat({ projectId: projectId ?? undefined });
+
+  // When opened with a pre-seeded prompt, send it immediately
+  useEffect(() => {
+    if (open && initialPrompt && initialPrompt.trim()) {
+      sendMessage(initialPrompt.trim());
+      onInitialPromptHandled?.();
+    }
+  }, [open, initialPrompt, sendMessage, onInitialPromptHandled]);
 
   // Tool calls can mutate task data; let the board know after each turn.
   useIpcEvent('copilot:changed', () => onChanged?.());

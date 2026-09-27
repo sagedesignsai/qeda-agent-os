@@ -23,6 +23,8 @@ import { ParticleCanvas } from '../components/gamification/ParticleCanvas';
 import { FloatingFocusBar } from '../components/focus/FloatingFocusBar';
 import { SingleTaskLens } from '../components/tasks/SingleTaskLens';
 import { MorningKickoffDialog } from '../components/tasks/MorningKickoffDialog';
+import { ActiveLaunchpad } from '../components/tasks/ActiveLaunchpad';
+import { TodayEmptyHero } from '../components/tasks/TodayEmptyHero';
 import { useCopilotChat } from '../hooks/use-copilot-chat';
 import { useFocusTimer } from '../hooks/use-focus-timer';
 import { useFocusAudio } from '../hooks/use-focus-audio';
@@ -44,6 +46,8 @@ describe('focus system UI modules', () => {
       FloatingFocusBar,
       SingleTaskLens,
       MorningKickoffDialog,
+      ActiveLaunchpad,
+      TodayEmptyHero,
     ]) {
       expect(typeof component).toBe('function');
     }

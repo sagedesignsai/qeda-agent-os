@@ -85,6 +85,8 @@ import { HeaderLevelChip } from '@/components/gamification/HeaderLevelChip';
 import { ParticleCanvas, triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
 import { FloatingFocusBar } from '@/components/focus/FloatingFocusBar';
 import { SingleTaskLens } from '@/components/tasks/SingleTaskLens';
+import { ActiveLaunchpad } from '@/components/tasks/ActiveLaunchpad';
+import { getNextBestMove, type TaskRecommendation } from '@/lib/task-recommendations';
 import { XP_REWARDS } from '@/lib/gamification';
 import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 
@@ -546,24 +548,30 @@ interface ColumnProps {
   status: Status;
   tasks: Task[];
   stepProgress: Record<string, StepProgress>;
+  recommendation?: TaskRecommendation | null;
   onMove: (id: string, to: Status) => void;
   onDelete: (id: string) => void;
   onFocus: (task: Task) => void;
   onOpenSteps: (task: Task) => void;
   onSchedule: (task: Task) => void;
   onEdit: (task: Task) => void;
+  onStartFlow?: (task: Task, event: React.MouseEvent) => void;
+  onShuffle?: () => void;
 }
 
 function Column({
   status,
   tasks,
   stepProgress,
+  recommendation,
   onMove,
   onDelete,
   onFocus,
   onOpenSteps,
   onSchedule,
   onEdit,
+  onStartFlow,
+  onShuffle,
 }: ColumnProps) {
   const meta = STATUS_META[status];
   const StatusIcon = meta.icon;
@@ -602,13 +610,22 @@ function Column({
               />
             ))}
             {tasks.length === 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="rounded-lg border border-dashed border-border/40 py-8 text-center"
-              >
-                <p className="text-xs text-muted-foreground/50">Empty</p>
-              </motion.div>
+              status === 'active' && recommendation?.task && onStartFlow && onShuffle ? (
+                <ActiveLaunchpad
+                  recommendation={recommendation}
+                  onStartFlow={onStartFlow}
+                  onOpenSteps={onOpenSteps}
+                  onShuffle={onShuffle}
+                />
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="rounded-lg border border-dashed border-border/40 py-8 text-center"
+                >
+                  <p className="text-xs text-muted-foreground/50">Empty</p>
+                </motion.div>
+              )
             )}
           </AnimatePresence>
         </div>
@@ -633,6 +650,7 @@ export default function Tasks() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [brainDumpOpen, setBrainDumpOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<string | null>(null);
   /** Bumped whenever task data may have changed, to refresh the Today view. */
   const [dataVersion, setDataVersion] = useState(0);
   const [focusedTask, setFocusedTask] = useState<Task | null>(null);
@@ -641,14 +659,25 @@ export default function Tasks() {
   const [presetIndex, setPresetIndex] = useState(0);
   const preset = DURATION_PRESETS[presetIndex];
 
+  const handleSendCopilotPrompt = useCallback((prompt: string) => {
+    setCopilotInitialPrompt(prompt);
+    setCopilotOpen(true);
+  }, []);
+
   const [stepsTask, setStepsTask] = useState<Task | null>(null);
   const [stepsOpen, setStepsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleTaskId, setScheduleTaskId] = useState<string | null>(null);
   const [isPrioritizing, setIsPrioritizing] = useState(false);
+  const [shuffleIndex, setShuffleIndex] = useState(0);
 
   const gamification = useGamification();
   const audio = useFocusAudio();
+
+  const recommendation = useMemo(
+    () => getNextBestMove({ tasks, stepProgress, shuffleIndex }),
+    [tasks, stepProgress, shuffleIndex],
+  );
 
   const startFocus = useCallback((task: Task) => {
     setFocusedTask(task);
@@ -776,6 +805,15 @@ export default function Tasks() {
       void load();
     }
   };
+
+  const handleStartFlow = useCallback(
+    (task: Task, e: React.MouseEvent) => {
+      triggerParticleBurst(e.clientX, e.clientY);
+      void handleMove(task.id, 'active');
+      startFocus(task);
+    },
+    [handleMove, startFocus],
+  );
 
   const handlePhaseComplete = useCallback(
     async (info: PhaseCompleteInfo & { taskId: string }) => {
@@ -979,9 +1017,13 @@ export default function Tasks() {
             tasks={tasks}
             stats={stats}
             statsLoading={statsLoading}
+            stepProgress={stepProgress}
             refreshSignal={dataVersion}
             projectId={projectId}
             onFocusTask={startFocus}
+            onOpenSteps={openSteps}
+            onSendPrompt={handleSendCopilotPrompt}
+            onOpenBrainDump={() => setBrainDumpOpen(true)}
           />
         </TabsContent>
 
@@ -1010,12 +1052,15 @@ export default function Tasks() {
                   status={status}
                   tasks={tasksByStatus(status)}
                   stepProgress={stepProgress}
+                  recommendation={status === 'active' ? recommendation : null}
                   onMove={handleMove}
                   onDelete={handleDelete}
                   onFocus={startFocus}
                   onOpenSteps={openSteps}
                   onSchedule={openSchedule}
                   onEdit={openEdit}
+                  onStartFlow={handleStartFlow}
+                  onShuffle={() => setShuffleIndex((prev) => prev + 1)}
                 />
               ))}
             </div>
@@ -1044,6 +1089,8 @@ export default function Tasks() {
         onOpenChange={setCopilotOpen}
         projectId={projectId}
         onChanged={refreshAll}
+        initialPrompt={copilotInitialPrompt}
+        onInitialPromptHandled={() => setCopilotInitialPrompt(null)}
       />
 
       <ScheduleBlockDialog
