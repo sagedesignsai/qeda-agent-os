@@ -31,10 +31,16 @@ export type UpdateTaskPatch = Partial<
     | 'priority'
     | 'due_at'
     | 'estimate_mins'
-    | 'project_id'
     | 'position'
   >
->;
+> & {
+  /**
+   * `null` means "no project" in the dialog. `Task['project_id']` is non-nullable
+   * (the DB always falls back to the Inbox), so the un-assign is widened here
+   * and normalised to the Inbox by `updateTask`.
+   */
+  project_id?: string | null;
+};
 
 export interface UseTaskMutationsReturn {
   creating: boolean;

@@ -46,6 +46,7 @@
     "start": "electron-vite dev --watch",
     "test": "jest",
     "test:smoke": "node .erb/scripts/smoke-test.cjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "electron-vite preview"
   },
   "browserslist": [
@@ -108,6 +109,7 @@
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.3.0",
     "react-jsx-parser": "^2.4.1",
+    "react-pdf": "^11.0.0",
     "react-resizable-panels": "^4.12.4",
     "react-router-dom": "^7.18.4",
     "recharts": "^3.8.0",

@@ -21,6 +21,7 @@ const MOCK_TASKS: Task[] = [
     description: 'Summarize the core architecture and value prop',
     status: 'active',
     priority: 1,
+    position: 0,
     estimate_mins: 45,
     due_at: null,
     pomodoro_count: 2,
@@ -34,6 +35,7 @@ const MOCK_TASKS: Task[] = [
     description: '',
     status: 'backlog',
     priority: 2,
+    position: 1,
     estimate_mins: 15,
     due_at: null,
     pomodoro_count: 0,
@@ -51,7 +53,15 @@ const MOCK_TIMER_STATE: FocusTimerState = {
 };
 
 const MOCK_AUDIO: UseFocusAudioReturn = {
-  config: { noise: 'brown', noiseVolume: 0.5, binaural: 'alpha', binauralVolume: 0.3 },
+  config: {
+    noise: 'brown',
+    noiseVolume: 0.5,
+    // `binaural` is the on/off flag; the beat character comes from `beatHz`.
+    binaural: true,
+    carrierHz: 200,
+    beatHz: 10,
+    binauralVolume: 0.3,
+  },
   playing: false,
   start: jest.fn().mockResolvedValue(undefined),
   stop: jest.fn(),

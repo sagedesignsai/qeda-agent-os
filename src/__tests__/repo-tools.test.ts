@@ -84,7 +84,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  useTestDatabase(null);
+  useTestDatabase(null as unknown as Database.Database);
   db.close();
   fs.rmSync(repo, { recursive: true, force: true });
 });

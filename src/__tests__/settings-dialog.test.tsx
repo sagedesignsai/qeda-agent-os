@@ -99,9 +99,12 @@ function renderDialog() {
 
 /** Every `settings:save` payload recorded so far. */
 function savePayloads(): Record<string, unknown>[] {
+  // `invoke` is declared with only its `channel` parameter, so jest types the
+  // recorded calls as `[channel]`. The renderer really does pass a second
+  // payload argument, so widen the tuple here to read it back.
   return invoke.mock.calls
     .filter((call) => call[0] === 'settings:save')
-    .map((call) => call[1] as Record<string, unknown>);
+    .map((call) => (call as unknown as [string, Record<string, unknown>])[1]);
 }
 
 /**

@@ -128,11 +128,13 @@ export function updateTask(
       | 'priority'
       | 'due_at'
       | 'estimate_mins'
-      | 'project_id'
       | 'position'
       | 'pomodoro_count'
     >
-  >,
+  > & {
+    /** `null` un-assigns the task; it is stored as the Inbox. */
+    project_id?: string | null;
+  },
 ): void {
   const now = Math.floor(Date.now() / 1000);
   const sets: string[] = ['updated_at = ?'];
@@ -140,8 +142,14 @@ export function updateTask(
 
   for (const [key, val] of Object.entries(patch)) {
     if (val !== undefined) {
+      // A task always belongs to a project, so `null` (the UI's "no project"
+      // choice) means the Inbox — same rule as `createTask`. Writing NULL here
+      // would leave a row that `Task['project_id']: string` cannot represent,
+      // and that the project-filter queries would silently drop.
+      const value =
+        key === 'project_id' && val === null ? INBOX_PROJECT_ID : val;
       sets.push(`${key} = ?`);
-      values.push(val);
+      values.push(value);
     }
   }
 

@@ -106,6 +106,19 @@ export interface DraftTask {
   estimate_mins: number;
 }
 
+/**
+ * Narrow a model-supplied priority to the `Priority` union.
+ *
+ * Zod validates the 1–3 range, but it cannot express the value as a literal
+ * union, so the inferred type stays `number`. The check is repeated here (and
+ * throws rather than casting) so a schema/model drift surfaces as a clear
+ * error instead of a bogus task priority.
+ */
+function toPriority(priority: number): Priority {
+  if (priority === 1 || priority === 2 || priority === 3) return priority;
+  throw new Error(`Model returned an out-of-range task priority: ${priority}`);
+}
+
 export interface BrainDumpResult {
   tasks: DraftTask[];
   note: string;
@@ -137,7 +150,15 @@ ${text}
 """`,
   });
 
-  return { tasks: object.tasks, note: object.note };
+  return {
+    // `BRAIN_DUMP_SCHEMA` constrains priority to 1–3, but zod infers `number`
+    // rather than the `1 | 2 | 3` union, so narrow it here instead of casting.
+    tasks: object.tasks.map((t) => ({
+      ...t,
+      priority: toPriority(t.priority),
+    })),
+    note: object.note,
+  };
 }
 
 // ─── Day planning ─────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import {
   safeParseDoc,
   type FrameNode,
   type StudioDoc,
+  type TokenName,
 } from '@/lib/studio';
 
 const baseFrame = {
@@ -63,7 +64,13 @@ describe('Studio document schema', () => {
 
   it('rejects an unknown token name', () => {
     const result = safeParseDoc(
-      frameDoc({ background: { kind: 'token', name: 'zinc-900' } }),
+      // `zinc-900` is deliberately not a design token. The point of this case is
+      // that an unknown token name is a *validation error*, so the literal has to
+      // be forced past the compile-time `TokenName` union to reach the runtime
+      // check. Only the schema verdict is under test here, not the type.
+      frameDoc({
+        background: { kind: 'token', name: 'zinc-900' as TokenName },
+      }),
     );
     expect(result.success).toBe(false);
   });

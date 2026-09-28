@@ -36,7 +36,7 @@ describe('terminal-execution and stopCommand', () => {
   });
 
   afterEach(() => {
-    useTestDatabase(null);
+    useTestDatabase(null as unknown as Database.Database);
     db.close();
   });
 

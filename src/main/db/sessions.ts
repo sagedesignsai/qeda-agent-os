@@ -81,9 +81,15 @@ export function updateSessionProject(id: string, projectId: string | null): void
     .run(projectId, id);
 }
 
-export function deleteSession(id: string): void {
+/**
+ * Delete a session and its messages.
+ * Returns `true` when a row was actually removed, so callers can skip
+ * follow-up work (e.g. a `sessions:changed` broadcast) for a no-op delete.
+ */
+export function deleteSession(id: string): boolean {
   // CASCADE deletes messages automatically.
-  getDb().prepare('DELETE FROM sessions WHERE id = ?').run(id);
+  const result = getDb().prepare('DELETE FROM sessions WHERE id = ?').run(id);
+  return result.changes > 0;
 }
 
 // ─── Messages ─────────────────────────────────────────────────────────────────

@@ -262,6 +262,9 @@ export type PdfBlock =
 
 // ─── Top-level Document Structure ─────────────────────────────────────────────
 
+import type { DocNode } from './primitives-ast';
+export * from './primitives-ast';
+
 export interface PdfDocument {
   id: string;
   title: string;
@@ -270,6 +273,8 @@ export interface PdfDocument {
   templateId?: string;
   settings: DocumentSettings;
   blocks: PdfBlock[];
+  /** Optional hierarchical Yoga flexbox primitive tree */
+  nodes?: DocNode[];
   createdAt: number;
   updatedAt: number;
 }

@@ -46,7 +46,7 @@ describe('copilot task tools', () => {
   });
 
   afterEach(() => {
-    useTestDatabase(null);
+    useTestDatabase(null as unknown as Database.Database);
     db.close();
   });
 
@@ -195,7 +195,9 @@ describe('copilot task tools', () => {
   it('classifies exactly the gated tools as risky, derived not listed', () => {
     // The six `destructive` task verbs, unchanged from the old hand-maintained
     // set, plus the two `cost` indexing tools that are new intended behaviour.
-    const gated = [...copilotTools]
+    // `copilotTools` is a name → tool map, so the names are its keys. (Spreading
+    // the object itself is not iterable and throws.)
+    const gated = Object.keys(copilotTools)
       .filter((name) => isRiskyCopilotTool(name))
       .sort();
 

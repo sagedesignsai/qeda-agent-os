@@ -13,7 +13,10 @@ import type { Task } from '@/main/ipc/channels';
 
 const mockTask: Task = {
   id: 'task-launch-1',
-  project_id: null,
+  // `Task['project_id']` is non-nullable (the DB always stores the Inbox), but
+  // this fixture exercises the "no project" render path, so the null is forced
+  // past the type. The runtime value under test is unchanged.
+  project_id: null as unknown as string,
   title: 'Implement OAuth Token Refresh',
   description: 'Need to secure credentials and handle rotation',
   status: 'backlog',

@@ -103,7 +103,18 @@ export function fillBrown(out: Float32Array): void {
 }
 
 /** Generate `length` samples of the given noise type. */
-export function generateNoise(type: NoiseType, length: number): Float32Array {
+/**
+ * Generate a noise buffer of `length` samples.
+ *
+ * The return type is pinned to `Float32Array<ArrayBuffer>` (not the default
+ * `Float32Array<ArrayBufferLike>`) because `AudioBuffer.copyToChannel` only
+ * accepts a view over a plain `ArrayBuffer`. `new Float32Array(length)` always
+ * allocates one, so the narrower type is accurate.
+ */
+export function generateNoise(
+  type: NoiseType,
+  length: number,
+): Float32Array<ArrayBuffer> {
   const out = new Float32Array(length);
   if (type === 'white') fillWhite(out);
   else if (type === 'pink') fillPink(out);

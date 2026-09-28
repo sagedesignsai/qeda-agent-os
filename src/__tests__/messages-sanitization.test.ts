@@ -52,7 +52,7 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
         id: 'msg-2',
         role: 'assistant',
         parts: [
-          // @ts-expect-error - testing reasoning part shape emitted by AI SDK
+          // testing reasoning part shape emitted by AI SDK (now typed by it)
           { type: 'reasoning', text: 'Thinking about how to answer...' },
           { type: 'text', text: 'Hello! I can help you manage tasks and focus.' },
         ],
@@ -87,7 +87,7 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
         id: 'msg-2',
         role: 'assistant',
         parts: [
-          // @ts-expect-error - testing pure reasoning
+          // testing pure reasoning (now typed by the AI SDK)
           { type: 'reasoning', text: 'Scratchpad thinking only' },
         ],
       };
@@ -111,7 +111,7 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
       const msg: ModelMessage = {
         role: 'assistant',
         content: [
-          // @ts-expect-error - reasoning content part shape
+          // reasoning content part shape (now typed by the AI SDK)
           { type: 'reasoning', text: 'Internal thoughts' },
           { type: 'text', text: 'Visible answer' },
         ],
@@ -133,7 +133,7 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
           id: '2',
           role: 'assistant',
           parts: [
-            // @ts-expect-error - reasoning part
+            // reasoning part (now typed by the AI SDK)
             { type: 'reasoning', text: 'The user is greeting me. I should greet them back.' },
             { type: 'text', text: 'Hey there! What is on your mind today?' },
           ],

@@ -11,7 +11,10 @@ import type { Task } from '@/main/ipc/channels';
 function makeTask(overrides: Partial<Task>): Task {
   return {
     id: 't-1',
-    project_id: null,
+    // `Task['project_id']` is non-nullable (the DB always stores the Inbox), but
+  // this fixture exercises the "no project" path, so the null is forced past the
+  // type. The runtime value under test is unchanged.
+  project_id: null as unknown as string,
     title: 'Sample task',
     description: '',
     status: 'backlog',

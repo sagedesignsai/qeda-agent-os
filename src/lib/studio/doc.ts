@@ -29,9 +29,12 @@
  */
 
 import { z } from 'zod';
-import { TOKEN_NAMES } from './tokens';
+import { TOKEN_NAMES, type TokenName } from './tokens';
 
-export type { TokenName } from './tokens';
+// Re-exported (not re-declared) so `doc.ts` and `tokens.ts` can never disagree on
+// what a token name is. The local `import` above is what makes `TokenName`
+// usable below — a bare `export … from` would not create a binding here.
+export type { TokenName };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Primitives
@@ -106,8 +109,11 @@ export const ColorSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+/** Colour value, inferred. `compile.ts` re-exports this — it is part of the public API. */
+export type Color = z.infer<typeof ColorSchema>;
+
 /** One gradient stop. Exactly one of `token` / `hex` must be present. */
-const GradientStopSchema = z
+export const GradientStopSchema = z
   .object({
     token: TokenNameSchema.optional(),
     hex: Hex.optional(),
@@ -223,7 +229,7 @@ export type StudioNode =
   | ShapeNode
   | GroupNode;
 
-const FrameSchema: z.ZodType<FrameNode> = z.object({
+export const FrameSchema = z.object({
   kind: z.literal('frame'),
   w: PxPositive,
   h: PxPositive,
@@ -238,7 +244,7 @@ const FrameSchema: z.ZodType<FrameNode> = z.object({
   children: z.array(z.lazy((): z.ZodType<StudioNode> => NodeSchema)),
 });
 
-const TextSchema: z.ZodType<TextNode> = z.object({
+export const TextSchema = z.object({
   kind: z.literal('text'),
   content: z.string(),
   size: PxPositive,
@@ -251,7 +257,7 @@ const TextSchema: z.ZodType<TextNode> = z.object({
   animation: AnimationSchema.optional(),
 });
 
-const ImageSchema: z.ZodType<ImageNode> = z.object({
+export const ImageSchema = z.object({
   kind: z.literal('image'),
   src: ImageSrcSchema,
   fit: FitSchema,
@@ -260,7 +266,7 @@ const ImageSchema: z.ZodType<ImageNode> = z.object({
   h: PxPositive.optional(),
 });
 
-const ShapeSchema: z.ZodType<ShapeNode> = z.object({
+export const ShapeSchema = z.object({
   kind: z.literal('shape'),
   shape: ShapeKindSchema,
   fill: ColorSchema,
@@ -269,7 +275,7 @@ const ShapeSchema: z.ZodType<ShapeNode> = z.object({
   radius: Px,
 });
 
-const GroupSchema: z.ZodType<GroupNode> = z.object({
+export const GroupSchema = z.object({
   kind: z.literal('group'),
   opacity: z.number().finite().min(0).max(1).optional(),
   rotate: z.number().finite().min(-360).max(360).optional(),

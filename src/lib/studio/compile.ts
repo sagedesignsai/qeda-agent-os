@@ -135,6 +135,12 @@ function color(c: Color): string {
       return c.value;
     case 'rgba':
       return `rgba(${c.rgba.map(num).join(',')})`;
+    default:
+      // Unreachable for any schema-valid `Color` — the union is exactly the
+      // three cases above. `z.infer` widens the union enough that TS cannot
+      // prove the switch exhaustive, so guard it here rather than letting an
+      // unhandled kind fall through as `undefined`.
+      throw new Error(`Unknown color kind: ${String((c as Color).kind)}`);
   }
 }
 
@@ -440,6 +446,9 @@ function colorLabel(c: Color): string {
       return c.value;
     case 'rgba':
       return `rgba(${c.rgba.join(',')})`;
+    default:
+      // Unreachable for any schema-valid `Color` — see `color()` above.
+      throw new Error(`Unknown color kind: ${String((c as Color).kind)}`);
   }
 }
 

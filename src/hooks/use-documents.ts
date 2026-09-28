@@ -544,6 +544,7 @@ export function useDocumentEditor(documentId: string | null) {
     moveBlock,
     duplicateBlock,
     removeBlock,
+    updateDocument: triggerAutoSave,
     saveNow: () => (doc ? saveToBackend(doc) : Promise.resolve()),
   };
 }

@@ -43,7 +43,7 @@ describe('focus system data layer', () => {
   });
 
   afterEach(() => {
-    useTestDatabase(null);
+    useTestDatabase(null as unknown as Database.Database);
     db.close();
   });
 

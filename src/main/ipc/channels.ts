@@ -102,7 +102,7 @@ export interface IpcChannels {
     req: { title?: string; projectId?: string | null };
     res: Session;
   };
-  'sessions:delete': { req: { id: string }; res: void };
+  'sessions:delete': { req: { id: string }; res: boolean };
   'sessions:rename': { req: { id: string; title: string }; res: void };
   'sessions:set-project': {
     req: { id: string; projectId: string | null };
