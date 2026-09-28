@@ -30,6 +30,18 @@ import type { FocusSession, FocusStats } from '../db/focus-sessions.js';
 import type { Project, ProjectStatus, ProjectRollup } from '../db/projects.js';
 import type { GamificationState } from '../../lib/gamification.js';
 import type { PdfDocumentRecord, PdfDocumentSummary } from '../db/documents.js';
+import type {
+  StudioTake,
+  StudioTakeSummary,
+  StudioStyling,
+  StudioCut,
+  StudioZoom,
+  StudioCaption,
+  StudioCaptionWord,
+  StudioSocialKit,
+  MouseTrackerEvent,
+} from '../../lib/studio-types.js';
+import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -45,6 +57,18 @@ export type { FocusSession, FocusStats };
 export type { Project, ProjectStatus, ProjectRollup };
 export type { GamificationState };
 export type { PdfDocumentRecord, PdfDocumentSummary };
+export type {
+  StudioTake,
+  StudioTakeSummary,
+  StudioStyling,
+  StudioCut,
+  StudioZoom,
+  StudioCaption,
+  StudioCaptionWord,
+  StudioSocialKit,
+  MouseTrackerEvent,
+};
+export { DEFAULT_STUDIO_STYLING };
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -657,6 +681,113 @@ export interface IpcChannels {
   };
   /** Broadcast when any document changes, created or deleted. */
   'documents:changed': void;
+
+  // ── Studio (Showcase Video Generator & Recorder) ─────────────────────────
+  /** List capture sources (screens and windows) via desktopCapturer. */
+  'studio:list-sources': {
+    req: { types?: ('screen' | 'window')[] } | void;
+    res: Array<{
+      id: string;
+      name: string;
+      thumbnailDataUrl: string;
+      displayId?: string;
+      appIcon?: string;
+    }>;
+  };
+  /** List saved showcase takes, optionally scoped by project. */
+  'studio:list-takes': {
+    req: { projectId?: string | null } | void;
+    res: StudioTakeSummary[];
+  };
+  /** Retrieve a full take record by ID. */
+  'studio:get-take': {
+    req: { id: string };
+    res: StudioTake | null;
+  };
+  /** Save or update a showcase take record. */
+  'studio:save-take': {
+    req: {
+      id: string;
+      projectId?: string | null;
+      title?: string;
+      description?: string | null;
+      sourceType?: 'screen' | 'window';
+      sourceName?: string | null;
+      durationMs?: number;
+      videoPath?: string;
+      audioPath?: string | null;
+      mouseEventsPath?: string | null;
+      cuts?: StudioCut[];
+      zooms?: StudioZoom[];
+      captions?: StudioCaption[];
+      styling?: StudioStyling;
+      socialKit?: StudioSocialKit | null;
+    };
+    res: StudioTake;
+  };
+  /** Delete a showcase take by ID. */
+  'studio:delete-take': {
+    req: { id: string };
+    res: boolean;
+  };
+  /** Start global mouse telemetry tracker. */
+  'studio:start-mouse-tracker': {
+    req: { takeId: string } | void;
+    res: { ok: boolean };
+  };
+  /** Stop global mouse telemetry tracker and write event log. */
+  'studio:stop-mouse-tracker': {
+    req: { takeId: string };
+    res: { ok: boolean; count: number; filePath: string };
+  };
+  /** Save recorded media blob chunks to a local video file. */
+  'studio:save-recording-chunk': {
+    req: {
+      takeId: string;
+      chunkBase64: string;
+      isFirst?: boolean;
+      isLast: boolean;
+      mimeType?: string;
+      durationMs?: number;
+    };
+    res: { ok: boolean; videoPath: string; durationMs: number };
+  };
+  /** Retrieve mouse telemetry events for a take. */
+  'studio:get-mouse-events': {
+    req: { takeId: string };
+    res: MouseTrackerEvent[];
+  };
+  /** Run autonomous Magic Draft processing (silence trimming, kinetic zoom curves, captions). */
+  'studio:process-draft': {
+    req: { takeId: string; force?: boolean };
+    res: StudioTake;
+  };
+  /** Generate AI Social Release Kit (changelog, tweet thread, release notes). */
+  'studio:generate-social-kit': {
+    req: { takeId: string };
+    res: StudioSocialKit;
+  };
+  /** Export video to MP4 or GIF via main process. */
+  'studio:export-video': {
+    req: {
+      takeId: string;
+      format: 'mp4' | 'gif' | 'webm';
+      quality?: 'high' | 'medium';
+    };
+    res: { ok: boolean; filePath?: string; error?: string };
+  };
+  /** Open a file or folder in OS default file explorer. */
+  'studio:open-path': {
+    req: { path: string };
+    res: boolean;
+  };
+  /** Retrieve video as base64 data URL for player rendering. */
+  'studio:read-video-data': {
+    req: { takeId: string };
+    res: string | null;
+  };
+  /** Broadcast when any take changes, created, updated or deleted. */
+  'studio:changed': void;
 }
 
 export type ChannelName = keyof IpcChannels;

@@ -60,6 +60,7 @@ import {
   ChevronsUpDownIcon,
   CheckIcon,
   FileTextIcon,
+  VideoIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjects } from '@/hooks/use-projects';
@@ -89,6 +90,7 @@ interface AppSidebarProps {
 const NAV_ITEMS = [
   { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },
   { to: '/projects', label: 'Projects', icon: FolderKanbanIcon },
+  { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
   { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/workspace', label: 'Workspace', icon: NotebookIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },

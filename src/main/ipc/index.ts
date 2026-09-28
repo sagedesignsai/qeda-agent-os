@@ -65,6 +65,7 @@ import { registerCopilotHandlers } from './handlers/copilot';
 import { registerGamificationHandlers } from './handlers/gamification';
 import { registerNotificationsHandlers } from './handlers/notifications';
 import { registerDocumentsHandlers } from './handlers/documents';
+import { registerStudioHandlers } from './handlers/studio';
 
 /**
  * Register every request/response handler.
@@ -87,4 +88,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerGamificationHandlers({ mainWindow });
   registerNotificationsHandlers();
   registerDocumentsHandlers({ mainWindow });
+  registerStudioHandlers({ mainWindow });
 }

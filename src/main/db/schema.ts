@@ -432,6 +432,30 @@ CREATE TABLE IF NOT EXISTS documents (
 CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
 `;
 
+export const CREATE_STUDIO_TAKES = `
+CREATE TABLE IF NOT EXISTS studio_takes (
+  id                TEXT PRIMARY KEY,
+  project_id        TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  title             TEXT NOT NULL,
+  description       TEXT,
+  source_type       TEXT NOT NULL DEFAULT 'screen',
+  source_name       TEXT,
+  duration_ms       INTEGER NOT NULL DEFAULT 0,
+  video_path        TEXT NOT NULL,
+  audio_path        TEXT,
+  mouse_events_path TEXT,
+  cuts_json         TEXT,
+  zooms_json        TEXT,
+  captions_json     TEXT,
+  styling_json      TEXT,
+  social_kit_json   TEXT,
+  created_at        INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at        INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_studio_takes_project ON studio_takes(project_id);
+CREATE INDEX IF NOT EXISTS idx_studio_takes_created ON studio_takes(created_at DESC);
+`;
+
 /** DDL applied in order; every statement must be idempotent. */
 export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SESSIONS,
@@ -458,6 +482,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_GAMIFICATION_STATE,
   CREATE_XP_LEDGER,
   CREATE_DOCUMENTS,
+  CREATE_STUDIO_TAKES,
 ];
 
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────
@@ -590,6 +615,13 @@ export function applyMigrations(db: {
       if (!docCols.includes('project_id')) {
         db.exec(
           'ALTER TABLE documents ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
+      }
+
+      const studioCols = columnsOf('studio_takes');
+      if (!studioCols.includes('project_id')) {
+        db.exec(
+          'ALTER TABLE studio_takes ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
         );
       }
     } catch {

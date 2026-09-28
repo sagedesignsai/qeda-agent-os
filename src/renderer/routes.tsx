@@ -25,6 +25,7 @@ import Terminal from './pages/Terminal';
 import Tasks from './pages/Tasks';
 import Projects from './pages/Projects';
 import Documents from './pages/Documents';
+import Studio from './pages/Studio';
 
 export const routes: RouteObject[] = [
   {
@@ -37,6 +38,14 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Chat /> },
           { path: ':sessionId', element: <Chat /> },
+        ],
+      },
+
+      {
+        path: 'studio',
+        children: [
+          { index: true, element: <Studio /> },
+          { path: ':takeId', element: <Studio /> },
         ],
       },
 
