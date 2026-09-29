@@ -15,7 +15,13 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 
 /** The subset of `settings:get` the sections actually read. */
 export interface SettingsSnapshot {
@@ -90,7 +96,9 @@ export function SettingsStoreProvider({
     setSaving(true);
     try {
       await window.electron.ipc.invoke('settings:save', patch);
-      setSnapshot((prev) => (prev ? { ...prev, ...(patch as Partial<SettingsSnapshot>) } : prev));
+      setSnapshot((prev) =>
+        prev ? { ...prev, ...(patch as Partial<SettingsSnapshot>) } : prev,
+      );
     } finally {
       setSaving(false);
     }
@@ -106,7 +114,9 @@ export function SettingsStoreProvider({
 export function useSettingsStore(): SettingsStoreValue {
   const ctx = useContext(SettingsStoreContext);
   if (!ctx) {
-    throw new Error('useSettingsStore must be used within a SettingsStoreProvider.');
+    throw new Error(
+      'useSettingsStore must be used within a SettingsStoreProvider.',
+    );
   }
   return ctx;
 }

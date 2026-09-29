@@ -149,7 +149,9 @@ function LayerItem({
           {/* Node Label */}
           <span className="truncate text-[11px]">{displayName}</span>
 
-          {node.locked && <LockIcon className="h-2.5 w-2.5 text-amber-500 shrink-0 ml-1" />}
+          {node.locked && (
+            <LockIcon className="h-2.5 w-2.5 text-amber-500 shrink-0 ml-1" />
+          )}
         </div>
 
         {/* Hover Action Buttons */}
@@ -187,7 +189,9 @@ function LayerItem({
                   <SmileIcon className="mr-1.5 h-3.5 w-3.5 text-cyan-500" />
                   Icon
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onAddChild(node.id, 'divider')}>
+                <DropdownMenuItem
+                  onClick={() => onAddChild(node.id, 'divider')}
+                >
                   <MinusIcon className="mr-1.5 h-3.5 w-3.5 text-gray-400" />
                   Divider
                 </DropdownMenuItem>
@@ -208,7 +212,11 @@ function LayerItem({
             className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
             title={node.hidden ? 'Unhide' : 'Hide'}
           >
-            {node.hidden ? <EyeOffIcon className="h-3 w-3" /> : <EyeIcon className="h-3 w-3" />}
+            {node.hidden ? (
+              <EyeOffIcon className="h-3 w-3" />
+            ) : (
+              <EyeIcon className="h-3 w-3" />
+            )}
           </button>
 
           <button
@@ -261,7 +269,9 @@ export function DocumentLayersTree({
       <div className="flex items-center justify-between border-b border-border/70 px-3 py-2.5 bg-muted/20">
         <div className="flex items-center gap-1.5">
           <LayersIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-semibold text-foreground">Document Layers</span>
+          <span className="text-xs font-semibold text-foreground">
+            Document Layers
+          </span>
         </div>
 
         <div className="flex items-center gap-1">

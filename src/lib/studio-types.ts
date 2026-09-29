@@ -134,6 +134,7 @@ export interface TimelineClip {
     text?: string;
     volume?: number;
     reason?: string;
+    speed?: number;
   };
 }
 

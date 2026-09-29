@@ -40,7 +40,9 @@ export function createSession(
   db.prepare(
     'INSERT INTO sessions (id, title, project_id) VALUES (?, ?, ?)',
   ).run(id, title, projectId);
-  return db.prepare<[string], Session>('SELECT * FROM sessions WHERE id = ?').get(id)!;
+  return db
+    .prepare<[string], Session>('SELECT * FROM sessions WHERE id = ?')
+    .get(id)!;
 }
 
 export function listSessions(opts?: { projectId?: string | null }): Session[] {
@@ -52,9 +54,7 @@ export function listSessions(opts?: { projectId?: string | null }): Session[] {
       .all(opts.projectId);
   }
   return getDb()
-    .prepare<[], Session>(
-      'SELECT * FROM sessions ORDER BY updated_at DESC',
-    )
+    .prepare<[], Session>('SELECT * FROM sessions ORDER BY updated_at DESC')
     .all();
 }
 
@@ -73,7 +73,10 @@ export function updateSessionTitle(id: string, title: string): void {
 }
 
 /** Move a session into a project (or out of one with null). */
-export function updateSessionProject(id: string, projectId: string | null): void {
+export function updateSessionProject(
+  id: string,
+  projectId: string | null,
+): void {
   getDb()
     .prepare(
       'UPDATE sessions SET project_id = ?, updated_at = unixepoch() WHERE id = ?',
@@ -132,7 +135,5 @@ export function loadMessages(sessionId: string): UIMessage[] {
 
 /** Delete all messages for a session (keeps session metadata). */
 export function clearMessages(sessionId: string): void {
-  getDb()
-    .prepare('DELETE FROM messages WHERE session_id = ?')
-    .run(sessionId);
+  getDb().prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
 }

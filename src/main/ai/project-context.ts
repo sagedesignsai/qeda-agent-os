@@ -81,11 +81,14 @@ export function renderProjectContext(
     }
     if (project.deadline !== null) {
       lines.push(
-        `Deadline: ${new Date(project.deadline * 1000).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })}`,
+        `Deadline: ${new Date(project.deadline * 1000).toLocaleDateString(
+          'en-US',
+          {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          },
+        )}`,
       );
     }
     if (project.repo_path) {

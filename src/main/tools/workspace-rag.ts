@@ -10,13 +10,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { tool } from 'ai';
+import { tool, embedMany, embed } from 'ai';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../db/client.js';
 import { getEmbeddingModel } from './rag.js';
 import { getPage, loadPageMarkdown, type Page } from '../db/workspace.js';
-import { embedMany, embed } from 'ai';
 
 /** Stable pseudo-path so page chunks can be cleaned up by path prefix. */
 export function pageIndexPath(pageId: string): string {
@@ -28,7 +27,9 @@ export function removePageFromRagIndex(pageId: string): number {
   const db = getDb();
   const indexPath = pageIndexPath(pageId);
   const ids = db
-    .prepare<[string], { id: string }>('SELECT id FROM chunks WHERE file_path = ?')
+    .prepare<[string], { id: string }>(
+      'SELECT id FROM chunks WHERE file_path = ?',
+    )
     .all(indexPath)
     .map((r) => r.id);
   if (ids.length === 0) return 0;
@@ -36,14 +37,18 @@ export function removePageFromRagIndex(pageId: string): number {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM chunks WHERE file_path = ?').run(indexPath);
     const placeholders = ids.map(() => '?').join(',');
-    db.prepare(`DELETE FROM embeddings WHERE chunk_id IN (${placeholders})`).run(...ids);
+    db.prepare(
+      `DELETE FROM embeddings WHERE chunk_id IN (${placeholders})`,
+    ).run(...ids);
   });
   tx();
   return ids.length;
 }
 
 /** Chunk + embed a page's markdown into the RAG index. */
-export async function indexPageIntoRag(page: Page): Promise<{ chunksIndexed: number }> {
+export async function indexPageIntoRag(
+  page: Page,
+): Promise<{ chunksIndexed: number }> {
   const db = getDb();
   const markdown = loadPageMarkdown(page.id);
 
@@ -71,7 +76,9 @@ export async function indexPageIntoRag(page: Page): Promise<{ chunksIndexed: num
   const insertChunk = db.prepare(
     'INSERT INTO chunks (id, file_path, chunk_index, content) VALUES (?, ?, ?, ?)',
   );
-  const insertVec = db.prepare('INSERT INTO embeddings (chunk_id, embedding) VALUES (?, ?)');
+  const insertVec = db.prepare(
+    'INSERT INTO embeddings (chunk_id, embedding) VALUES (?, ?)',
+  );
 
   const insertAll = db.transaction(() => {
     chunks.forEach((content, i) => {
@@ -106,7 +113,9 @@ export async function searchWorkspaceRag(query: string, topK = 5) {
 
   const filtered = results.filter((r) => {
     const row = db
-      .prepare<[string], { file_path: string }>('SELECT file_path FROM chunks WHERE id = ?')
+      .prepare<[string], { file_path: string }>(
+        'SELECT file_path FROM chunks WHERE id = ?',
+      )
       .get(r.chunk_id);
     return row?.file_path.startsWith('vellum-page://') ?? false;
   });
@@ -117,7 +126,10 @@ export async function searchWorkspaceRag(query: string, topK = 5) {
     limited.length === 0
       ? []
       : db
-          .prepare<string[], { id: string; file_path: string; content: string }>(
+          .prepare<
+            string[],
+            { id: string; file_path: string; content: string }
+          >(
             `SELECT id, file_path, content FROM chunks WHERE id IN (${placeholders})`,
           )
           .all(...limited.map((r) => r.chunk_id));

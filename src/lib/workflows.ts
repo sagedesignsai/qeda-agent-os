@@ -48,7 +48,8 @@ export function extractWorkflowParams(command: string): WorkflowParam[] {
       seen.add(name);
       params.push({
         name,
-        defaultValue: defaultValue !== undefined ? defaultValue.trim() : undefined,
+        defaultValue:
+          defaultValue !== undefined ? defaultValue.trim() : undefined,
       });
     }
   }
@@ -64,13 +65,16 @@ export function interpolateWorkflow(
   command: string,
   paramValues: Record<string, string>,
 ): string {
-  return command.replace(PARAM_REGEX, (_fullMatch, name: string, defaultValue?: string) => {
-    const provided = paramValues[name];
-    if (provided !== undefined && provided.trim() !== '') {
-      return provided.trim();
-    }
-    return defaultValue !== undefined ? defaultValue.trim() : '';
-  });
+  return command.replace(
+    PARAM_REGEX,
+    (_fullMatch, name: string, defaultValue?: string) => {
+      const provided = paramValues[name];
+      if (provided !== undefined && provided.trim() !== '') {
+        return provided.trim();
+      }
+      return defaultValue !== undefined ? defaultValue.trim() : '';
+    },
+  );
 }
 
 // ─── Built-in Curated Runbooks ────────────────────────────────────────────────
@@ -80,10 +84,17 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
   {
     id: 'ports-kill',
     name: 'Kill Process on Port',
-    description: 'Find whatever process is holding a port and forcefully terminate it.',
+    description:
+      'Find whatever process is holding a port and forcefully terminate it.',
     command: 'lsof -ti:{{port:3000}} | xargs kill -9',
     category: 'ports',
-    params: [{ name: 'port', defaultValue: '3000', description: 'Port number to free up' }],
+    params: [
+      {
+        name: 'port',
+        defaultValue: '3000',
+        description: 'Port number to free up',
+      },
+    ],
   },
   {
     id: 'ports-find',
@@ -91,7 +102,13 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     description: 'Inspect the process listening on a given network port.',
     command: 'lsof -i :{{port:3000}}',
     category: 'ports',
-    params: [{ name: 'port', defaultValue: '3000', description: 'Port number to inspect' }],
+    params: [
+      {
+        name: 'port',
+        defaultValue: '3000',
+        description: 'Port number to inspect',
+      },
+    ],
   },
   {
     id: 'ports-listening',
@@ -107,7 +124,8 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     id: 'docker-clean-images',
     name: 'Prune Dangling Images',
     description: 'Remove all untagged / dangling Docker images.',
-    command: 'docker rmi $(docker images -f "dangling=true" -q) 2>/dev/null || docker image prune -f',
+    command:
+      'docker rmi $(docker images -f "dangling=true" -q) 2>/dev/null || docker image prune -f',
     category: 'docker',
     params: [],
   },
@@ -122,12 +140,21 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
   {
     id: 'docker-logs-tail',
     name: 'Tail Container Logs',
-    description: 'Stream realtime stdout/stderr logs from a specific container.',
+    description:
+      'Stream realtime stdout/stderr logs from a specific container.',
     command: 'docker logs -f --tail {{lines:100}} {{container_name}}',
     category: 'docker',
     params: [
-      { name: 'lines', defaultValue: '100', description: 'Number of past lines to show' },
-      { name: 'container_name', defaultValue: '', description: 'Container ID or name' },
+      {
+        name: 'lines',
+        defaultValue: '100',
+        description: 'Number of past lines to show',
+      },
+      {
+        name: 'container_name',
+        defaultValue: '',
+        description: 'Container ID or name',
+      },
     ],
   },
   {
@@ -137,8 +164,16 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     command: 'docker exec -it {{container_name}} {{shell:sh}}',
     category: 'docker',
     params: [
-      { name: 'container_name', defaultValue: '', description: 'Target container' },
-      { name: 'shell', defaultValue: 'sh', description: 'Shell binary (sh, bash)' },
+      {
+        name: 'container_name',
+        defaultValue: '',
+        description: 'Target container',
+      },
+      {
+        name: 'shell',
+        defaultValue: 'sh',
+        description: 'Shell binary (sh, bash)',
+      },
     ],
   },
 
@@ -150,7 +185,11 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     command: 'git checkout -b {{branch_name}} {{base_branch:HEAD}}',
     category: 'git',
     params: [
-      { name: 'branch_name', defaultValue: '', description: 'Name of the new branch' },
+      {
+        name: 'branch_name',
+        defaultValue: '',
+        description: 'Name of the new branch',
+      },
       { name: 'base_branch', defaultValue: 'HEAD', description: 'Start point' },
     ],
   },
@@ -160,7 +199,13 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     description: 'Force delete a local git branch that is no longer needed.',
     command: 'git branch -D {{branch_name}}',
     category: 'git',
-    params: [{ name: 'branch_name', defaultValue: '', description: 'Branch to delete' }],
+    params: [
+      {
+        name: 'branch_name',
+        defaultValue: '',
+        description: 'Branch to delete',
+      },
+    ],
   },
   {
     id: 'git-log-graph',
@@ -168,7 +213,9 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     description: 'Print a compact, colorful commit tree graph.',
     command: 'git log --graph --oneline --decorate -n {{count:15}}',
     category: 'git',
-    params: [{ name: 'count', defaultValue: '15', description: 'Number of commits' }],
+    params: [
+      { name: 'count', defaultValue: '15', description: 'Number of commits' },
+    ],
   },
   {
     id: 'git-discard-changes',
@@ -184,18 +231,29 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     id: 'system-find-large-files',
     name: 'Find Large Files',
     description: 'Locate files exceeding a specific size threshold.',
-    command: 'find {{directory:.}} -type f -size +{{min_size:50M}} -exec ls -lh {} + 2>/dev/null',
+    command:
+      'find {{directory:.}} -type f -size +{{min_size:50M}} -exec ls -lh {} + 2>/dev/null',
     category: 'system',
     params: [
-      { name: 'directory', defaultValue: '.', description: 'Directory to search' },
-      { name: 'min_size', defaultValue: '50M', description: 'Minimum size (e.g. 10M, 100M, 1G)' },
+      {
+        name: 'directory',
+        defaultValue: '.',
+        description: 'Directory to search',
+      },
+      {
+        name: 'min_size',
+        defaultValue: '50M',
+        description: 'Minimum size (e.g. 10M, 100M, 1G)',
+      },
     ],
   },
   {
     id: 'system-folder-sizes',
     name: 'Folder Disk Usage Summary',
-    description: 'Calculate disk space used by directories, sorted largest first.',
-    command: 'du -sh {{path:./*}} 2>/dev/null | sort -hr | head -n {{limit:10}}',
+    description:
+      'Calculate disk space used by directories, sorted largest first.',
+    command:
+      'du -sh {{path:./*}} 2>/dev/null | sort -hr | head -n {{limit:10}}',
     category: 'system',
     params: [
       { name: 'path', defaultValue: './*', description: 'Target path or glob' },
@@ -208,14 +266,17 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     description: 'Display top running processes sorted by memory consumption.',
     command: 'ps aux --sort=-%mem | head -n {{lines:15}}',
     category: 'system',
-    params: [{ name: 'lines', defaultValue: '15', description: 'Number of processes' }],
+    params: [
+      { name: 'lines', defaultValue: '15', description: 'Number of processes' },
+    ],
   },
 
   // Dev & Project
   {
     id: 'dev-clean-node-modules',
     name: 'Clean & Reinstall Node Modules',
-    description: 'Remove node_modules and lockfiles, then trigger a fresh install.',
+    description:
+      'Remove node_modules and lockfiles, then trigger a fresh install.',
     command: 'rm -rf node_modules package-lock.json && npm install',
     category: 'dev',
     params: [],
@@ -224,9 +285,12 @@ export const BUILTIN_WORKFLOWS: TerminalWorkflow[] = [
     id: 'dev-grep-todos',
     name: 'Find TODO and FIXME Tags',
     description: 'Search repository code for TODO, FIXME, or HACK comments.',
-    command: 'grep -rnE "(TODO|FIXME|HACK):" {{path:.}} --exclude-dir=node_modules --exclude-dir=.git',
+    command:
+      'grep -rnE "(TODO|FIXME|HACK):" {{path:.}} --exclude-dir=node_modules --exclude-dir=.git',
     category: 'dev',
-    params: [{ name: 'path', defaultValue: '.', description: 'Directory path' }],
+    params: [
+      { name: 'path', defaultValue: '.', description: 'Directory path' },
+    ],
   },
 ];
 
@@ -245,7 +309,9 @@ export function getCustomWorkflows(): TerminalWorkflow[] {
   }
 }
 
-export function saveCustomWorkflow(workflow: Omit<TerminalWorkflow, 'id' | 'isCustom'>): TerminalWorkflow {
+export function saveCustomWorkflow(
+  workflow: Omit<TerminalWorkflow, 'id' | 'isCustom'>,
+): TerminalWorkflow {
   const customList = getCustomWorkflows();
   const id = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const created: TerminalWorkflow = {
@@ -253,7 +319,9 @@ export function saveCustomWorkflow(workflow: Omit<TerminalWorkflow, 'id' | 'isCu
     id,
     isCustom: true,
     category: 'custom',
-    params: workflow.params?.length ? workflow.params : extractWorkflowParams(workflow.command),
+    params: workflow.params?.length
+      ? workflow.params
+      : extractWorkflowParams(workflow.command),
   };
   const updated = [created, ...customList];
   if (typeof window !== 'undefined' && window.localStorage) {
@@ -266,7 +334,10 @@ export function deleteCustomWorkflow(id: string): void {
   const customList = getCustomWorkflows();
   const filtered = customList.filter((w) => w.id !== id);
   if (typeof window !== 'undefined' && window.localStorage) {
-    localStorage.setItem(CUSTOM_WORKFLOWS_STORAGE_KEY, JSON.stringify(filtered));
+    localStorage.setItem(
+      CUSTOM_WORKFLOWS_STORAGE_KEY,
+      JSON.stringify(filtered),
+    );
   }
 }
 

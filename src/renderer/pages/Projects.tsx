@@ -61,17 +61,14 @@ import type { ProjectRollup } from '@/main/ipc/channels';
 export default function Projects() {
   const { projectId } = useParams<{ projectId?: string }>();
   const navigate = useNavigate();
-  const {
-    rollups,
-    loading,
-    createProject,
-    updateProject,
-    deleteProject,
-  } = useProjects();
+  const { rollups, loading, createProject, updateProject, deleteProject } =
+    useProjects();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProjectRollup | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<ProjectRollup | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ProjectRollup | null>(
+    null,
+  );
 
   const selected = useMemo(
     () => rollups.find((r) => r.project.id === projectId) ?? null,
@@ -101,7 +98,9 @@ export default function Projects() {
         if (created) navigate(`/projects/${created.id}`);
       }
     } catch {
-      toast.error(editing ? 'Could not update project' : 'Could not create project');
+      toast.error(
+        editing ? 'Could not update project' : 'Could not create project',
+      );
     }
   };
 
@@ -205,7 +204,10 @@ export default function Projects() {
                 {status.label}
               </Badge>
               {project.deadline !== null && (
-                <Badge variant="outline" className="gap-1 text-[10px] font-normal">
+                <Badge
+                  variant="outline"
+                  className="gap-1 text-[10px] font-normal"
+                >
                   <TargetIcon className="size-3" />
                   {formatDistanceToNow(new Date(project.deadline * 1000), {
                     addSuffix: true,
@@ -213,7 +215,10 @@ export default function Projects() {
                 </Badge>
               )}
               {project.repo_path && (
-                <Badge variant="outline" className="gap-1 font-mono text-[10px] font-normal">
+                <Badge
+                  variant="outline"
+                  className="gap-1 font-mono text-[10px] font-normal"
+                >
                   {project.repo_path}
                 </Badge>
               )}
@@ -227,7 +232,9 @@ export default function Projects() {
                     ? 'No tasks yet'
                     : `${selected.taskDone} of ${selected.taskTotal} tasks done`}
                 </span>
-                <span className="tabular-nums text-muted-foreground">{pct}%</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {pct}%
+                </span>
               </div>
               <Progress value={pct} className="h-2" />
 
@@ -325,9 +332,7 @@ export default function Projects() {
             onOpen={(id) => navigate(`/projects/${id}`)}
             onEdit={openEdit}
             onDelete={(id) =>
-              setPendingDelete(
-                rollups.find((r) => r.project.id === id) ?? null,
-              )
+              setPendingDelete(rollups.find((r) => r.project.id === id) ?? null)
             }
           />
         ) : (
@@ -344,7 +349,9 @@ export default function Projects() {
                     rollup={rollup}
                     onOpen={(id) => navigate(`/projects/${id}`)}
                     onEdit={openEdit}
-                    onArchive={(id, archived) => void handleArchive(id, archived)}
+                    onArchive={(id, archived) =>
+                      void handleArchive(id, archived)
+                    }
                     onDelete={(id) =>
                       setPendingDelete(
                         rollups.find((r) => r.project.id === id) ?? null,

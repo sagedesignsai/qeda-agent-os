@@ -96,8 +96,14 @@ function renderPageForPrompt(page: Page, maxChars: number): string {
   const tags = listPageTags(page.id);
   const markdown = loadPageMarkdown(page.id);
   const body =
-    markdown.length > maxChars ? `${markdown.slice(0, maxChars)}\n… (truncated)` : markdown;
-  return [`### ${page.title} (page_id: ${page.id})`, tags.length ? `tags: ${tags.join(', ')}` : '', body]
+    markdown.length > maxChars
+      ? `${markdown.slice(0, maxChars)}\n… (truncated)`
+      : markdown;
+  return [
+    `### ${page.title} (page_id: ${page.id})`,
+    tags.length ? `tags: ${tags.join(', ')}` : '',
+    body,
+  ]
     .filter(Boolean)
     .join('\n');
 }
@@ -116,9 +122,13 @@ export interface WorkspaceContext {
  * the full text of its five most recently updated pages.
  */
 function renderContextBlock(context: WorkspaceContext | undefined): string {
-  if (!context?.pageId && !context?.notebookId && !context?.projectId) return '';
+  if (!context?.pageId && !context?.notebookId && !context?.projectId)
+    return '';
 
-  const sections: string[] = ['\n## Workspace context', 'The user is working from this knowledge-base context. Prefer it as the source of truth for related questions.'];
+  const sections: string[] = [
+    '\n## Workspace context',
+    'The user is working from this knowledge-base context. Prefer it as the source of truth for related questions.',
+  ];
 
   try {
     if (context.projectId) {
@@ -136,7 +146,8 @@ function renderContextBlock(context: WorkspaceContext | undefined): string {
     } else if (context.notebookId) {
       const pages = listPages(context.notebookId);
       sections.push(`Notebook with ${pages.length} page(s):`);
-      for (const page of pages) sections.push(`- ${page.title} (page_id: ${page.id})`);
+      for (const page of pages)
+        sections.push(`- ${page.title} (page_id: ${page.id})`);
       const recent = pages
         .slice()
         .sort((a, b) => b.updated_at - a.updated_at)
@@ -188,7 +199,6 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
     .join('\n\n');
 
   return new ToolLoopAgent({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     model: model as any,
     instructions,
     tools: allTools,
@@ -200,7 +210,10 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
 }
 
 /** Back-compat signature used by tests and older call sites. */
-export function createAgentWithMessages(target?: ModelTarget, messages?: ModelMessage[]) {
+export function createAgentWithMessages(
+  target?: ModelTarget,
+  messages?: ModelMessage[],
+) {
   void messages;
   return createDesktopAgent({ target });
 }

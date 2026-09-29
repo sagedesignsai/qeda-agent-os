@@ -62,10 +62,13 @@ export function WorkflowsDialog({
   onOpenChange,
   onSelectWorkflow,
 }: WorkflowsDialogProps) {
-  const [workflows, setWorkflows] = useState<TerminalWorkflow[]>(getAllWorkflows);
+  const [workflows, setWorkflows] =
+    useState<TerminalWorkflow[]>(getAllWorkflows);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [selectedId, setSelectedId] = useState<string>(() => workflows[0]?.id || '');
+  const [selectedId, setSelectedId] = useState<string>(
+    () => workflows[0]?.id || '',
+  );
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
 
@@ -174,7 +177,8 @@ export function WorkflowsDialog({
                   Terminal Workflows & Runbooks
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
-                  Warp-style parameterized templates. Fill variables and run or insert.
+                  Warp-style parameterized templates. Fill variables and run or
+                  insert.
                 </DialogDescription>
               </div>
             </div>
@@ -184,7 +188,9 @@ export function WorkflowsDialog({
               className="h-7 gap-1.5 text-xs font-sans"
               onClick={() => setIsCreating((prev) => !prev)}
             >
-              {isCreating ? 'Back to list' : (
+              {isCreating ? (
+                'Back to list'
+              ) : (
                 <>
                   <PlusIcon className="size-3.5" />
                   New Workflow
@@ -217,7 +223,9 @@ export function WorkflowsDialog({
             </div>
             <div>
               <Label className="text-xs font-medium">
-                Command Template (Use <code className="text-emerald-400">{'{{param}}'}</code> or <code className="text-emerald-400">{'{{param:default}}'}</code>)
+                Command Template (Use{' '}
+                <code className="text-emerald-400">{'{{param}}'}</code> or{' '}
+                <code className="text-emerald-400">{'{{param:default}}'}</code>)
               </Label>
               <Input
                 placeholder="e.g. docker run -d -p {{port:5432}}:5432 postgres:{{version:16}}"
@@ -227,7 +235,8 @@ export function WorkflowsDialog({
                 required
               />
               <p className="mt-1.5 text-[11px] text-muted-foreground/80">
-                Variables inside {'{{...}}'} will automatically render as interactive input fields.
+                Variables inside {'{{...}}'} will automatically render as
+                interactive input fields.
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
@@ -239,7 +248,11 @@ export function WorkflowsDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white">
+              <Button
+                type="submit"
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white"
+              >
                 Save Workflow
               </Button>
             </div>
@@ -260,22 +273,30 @@ export function WorkflowsDialog({
                 </div>
                 {/* Category filters */}
                 <div className="flex flex-wrap gap-1">
-                  {(['all', 'ports', 'docker', 'git', 'system', 'dev', 'custom'] as const).map(
-                    (cat) => (
-                      <button
-                        key={cat}
-                        onClick={() => setSelectedCategory(cat)}
-                        className={cn(
-                          'rounded px-2 py-0.5 text-[10px] font-sans capitalize transition-colors',
-                          selectedCategory === cat
-                            ? 'bg-accent text-accent-foreground font-semibold'
-                            : 'text-muted-foreground/75 hover:bg-muted hover:text-foreground',
-                        )}
-                      >
-                        {cat}
-                      </button>
-                    ),
-                  )}
+                  {(
+                    [
+                      'all',
+                      'ports',
+                      'docker',
+                      'git',
+                      'system',
+                      'dev',
+                      'custom',
+                    ] as const
+                  ).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory(cat)}
+                      className={cn(
+                        'rounded px-2 py-0.5 text-[10px] font-sans capitalize transition-colors',
+                        selectedCategory === cat
+                          ? 'bg-accent text-accent-foreground font-semibold'
+                          : 'text-muted-foreground/75 hover:bg-muted hover:text-foreground',
+                      )}
+                    >
+                      {cat}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -387,7 +408,9 @@ export function WorkflowsDialog({
                               </div>
                               <Input
                                 value={paramValues[param.name] ?? ''}
-                                placeholder={param.defaultValue || `Enter ${param.name}...`}
+                                placeholder={
+                                  param.defaultValue || `Enter ${param.name}...`
+                                }
                                 onChange={(e) =>
                                   setParamValues((prev) => ({
                                     ...prev,

@@ -76,17 +76,30 @@ import { FocusAudioPanel } from '@/components/tasks/FocusAudioPanel';
 import { ScheduleBlockDialog } from '@/components/tasks/ScheduleBlockDialog';
 import { TaskStepsSheet } from '@/components/tasks/TaskStepsSheet';
 import { TodayTimeline } from '@/components/tasks/TodayTimeline';
-import { useFocusAudio, type UseFocusAudioReturn } from '@/hooks/use-focus-audio';
-import { useFocusTimer, type PhaseCompleteInfo, type UseFocusTimerReturn } from '@/hooks/use-focus-timer';
+import {
+  useFocusAudio,
+  type UseFocusAudioReturn,
+} from '@/hooks/use-focus-audio';
+import {
+  useFocusTimer,
+  type PhaseCompleteInfo,
+  type UseFocusTimerReturn,
+} from '@/hooks/use-focus-timer';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useGamification } from '@/hooks/use-gamification';
 import { HeaderLevelChip } from '@/components/gamification/HeaderLevelChip';
-import { ParticleCanvas, triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
+import {
+  ParticleCanvas,
+  triggerParticleBurst,
+} from '@/components/gamification/ParticleCanvas';
 import { FloatingFocusBar } from '@/components/focus/FloatingFocusBar';
 import { SingleTaskLens } from '@/components/tasks/SingleTaskLens';
 import { ActiveLaunchpad } from '@/components/tasks/ActiveLaunchpad';
-import { getNextBestMove, type TaskRecommendation } from '@/lib/task-recommendations';
+import {
+  getNextBestMove,
+  type TaskRecommendation,
+} from '@/lib/task-recommendations';
 import { XP_REWARDS } from '@/lib/gamification';
 import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 
@@ -95,16 +108,26 @@ import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 type Priority = 1 | 2 | 3;
 type Status = Task['status'];
 
-const PRIORITY_META: Record<Priority, { label: string; color: string; border: string }> = {
-  1: { label: 'High',   color: 'text-rose-400',    border: 'border-l-rose-500' },
-  2: { label: 'Medium', color: 'text-amber-400',   border: 'border-l-amber-500' },
-  3: { label: 'Low',    color: 'text-zinc-500',    border: 'border-l-zinc-600' },
+const PRIORITY_META: Record<
+  Priority,
+  { label: string; color: string; border: string }
+> = {
+  1: { label: 'High', color: 'text-rose-400', border: 'border-l-rose-500' },
+  2: { label: 'Medium', color: 'text-amber-400', border: 'border-l-amber-500' },
+  3: { label: 'Low', color: 'text-zinc-500', border: 'border-l-zinc-600' },
 };
 
-const STATUS_META: Record<Status, { label: string; icon: React.ComponentType<{ className?: string }>; next: Status | null }> = {
+const STATUS_META: Record<
+  Status,
+  {
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    next: Status | null;
+  }
+> = {
   backlog: { label: 'Backlog', icon: CircleDashedIcon, next: 'active' },
-  active:  { label: 'Active',  icon: PlayIcon,         next: 'done' },
-  done:    { label: 'Done',    icon: CheckIcon,        next: null },
+  active: { label: 'Active', icon: PlayIcon, next: 'done' },
+  done: { label: 'Done', icon: CheckIcon, next: null },
 };
 
 const COLUMNS: Status[] = ['backlog', 'active', 'done'];
@@ -140,7 +163,8 @@ function TaskCard({
   const pm = PRIORITY_META[task.priority as Priority];
   const sm = STATUS_META[task.status];
   const isOverdue =
-    task.due_at !== null && task.due_at !== undefined &&
+    task.due_at !== null &&
+    task.due_at !== undefined &&
     task.due_at < Math.floor(Date.now() / 1000) &&
     task.status !== 'done';
 
@@ -230,7 +254,10 @@ function TaskCard({
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Badge
           variant="outline"
-          className={cn('h-4 border-0 bg-transparent px-0 text-[10px]', pm.color)}
+          className={cn(
+            'h-4 border-0 bg-transparent px-0 text-[10px]',
+            pm.color,
+          )}
         >
           {pm.label}
         </Badge>
@@ -267,7 +294,9 @@ function TaskCard({
             )}
           >
             <ClockIcon className="size-2.5" />
-            {isOverdue ? 'overdue' : formatDistanceToNow(task.due_at * 1000, { addSuffix: true })}
+            {isOverdue
+              ? 'overdue'
+              : formatDistanceToNow(task.due_at * 1000, { addSuffix: true })}
           </span>
         )}
       </div>
@@ -315,10 +344,13 @@ function FocusMode({
   const [showAudio, setShowAudio] = useState(false);
   const { state, progress, pause, reset, skip } = timer;
 
-  const mins = Math.floor(state.secondsLeft / 60).toString().padStart(2, '0');
+  const mins = Math.floor(state.secondsLeft / 60)
+    .toString()
+    .padStart(2, '0');
   const secs = (state.secondsLeft % 60).toString().padStart(2, '0');
 
-  const phaseColor = state.phase === 'break' ? 'text-emerald-400' : 'text-amber-400';
+  const phaseColor =
+    state.phase === 'break' ? 'text-emerald-400' : 'text-amber-400';
   const ringColor = state.phase === 'break' ? '#34d399' : '#f59e0b';
 
   const handleStart = useCallback(() => {
@@ -335,7 +367,9 @@ function FocusMode({
         { title: task.title },
       );
       onClose();
-      navigate(`/terminal/${session.id}?goal=${encodeURIComponent(task.title)}`);
+      navigate(
+        `/terminal/${session.id}?goal=${encodeURIComponent(task.title)}`,
+      );
     } catch {
       toast.error('Could not create terminal session');
     }
@@ -409,7 +443,12 @@ function FocusMode({
           }}
         >
           <div className="flex size-36 flex-col items-center justify-center rounded-full bg-zinc-950">
-            <span className={cn('font-mono text-4xl font-bold tabular-nums', phaseColor)}>
+            <span
+              className={cn(
+                'font-mono text-4xl font-bold tabular-nums',
+                phaseColor,
+              )}
+            >
               {mins}:{secs}
             </span>
             <span className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">
@@ -426,7 +465,11 @@ function FocusMode({
           size="sm"
         >
           {DURATION_PRESETS.map((p, i) => (
-            <ToggleGroupItem key={p.label} value={String(i)} className="text-[11px]">
+            <ToggleGroupItem
+              key={p.label}
+              value={String(i)}
+              className="text-[11px]"
+            >
               {p.label} min
             </ToggleGroupItem>
           ))}
@@ -488,7 +531,8 @@ function FocusMode({
         {/* Pomodoro count */}
         {state.completed > 0 && (
           <p className="text-sm text-zinc-400">
-            {'🍅'.repeat(Math.min(state.completed, 8))} {state.completed} pomodoro
+            {'🍅'.repeat(Math.min(state.completed, 8))} {state.completed}{' '}
+            pomodoro
             {state.completed > 1 ? 's' : ''} this session
           </p>
         )}
@@ -609,8 +653,11 @@ function Column({
                 onEdit={onEdit}
               />
             ))}
-            {tasks.length === 0 && (
-              status === 'active' && recommendation?.task && onStartFlow && onShuffle ? (
+            {tasks.length === 0 &&
+              (status === 'active' &&
+              recommendation?.task &&
+              onStartFlow &&
+              onShuffle ? (
                 <ActiveLaunchpad
                   recommendation={recommendation}
                   onStartFlow={onStartFlow}
@@ -625,8 +672,7 @@ function Column({
                 >
                   <p className="text-xs text-muted-foreground/50">Empty</p>
                 </motion.div>
-              )
-            )}
+              ))}
           </AnimatePresence>
         </div>
       </ScrollArea>
@@ -637,10 +683,16 @@ function Column({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Tasks() {
-  const { projectId, projectName, clear: clearProjectScope } = useProjectScope();
+  const {
+    projectId,
+    projectName,
+    clear: clearProjectScope,
+  } = useProjectScope();
   const { projects } = useProjects();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [stepProgress, setStepProgress] = useState<Record<string, StepProgress>>({});
+  const [stepProgress, setStepProgress] = useState<
+    Record<string, StepProgress>
+  >({});
   const [stats, setStats] = useState<FocusStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -650,11 +702,15 @@ export default function Tasks() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [brainDumpOpen, setBrainDumpOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
-  const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<string | null>(null);
+  const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
+    string | null
+  >(null);
   /** Bumped whenever task data may have changed, to refresh the Today view. */
   const [dataVersion, setDataVersion] = useState(0);
   const [focusedTask, setFocusedTask] = useState<Task | null>(null);
-  const [focusDisplayMode, setFocusDisplayMode] = useState<'modal' | 'floating' | 'closed'>('closed');
+  const [focusDisplayMode, setFocusDisplayMode] = useState<
+    'modal' | 'floating' | 'closed'
+  >('closed');
   const [singleLens, setSingleLens] = useState(false);
   const [presetIndex, setPresetIndex] = useState(0);
   const preset = DURATION_PRESETS[presetIndex];
@@ -700,9 +756,9 @@ export default function Tasks() {
 
   const loadSteps = useCallback(async () => {
     try {
-      const map = await window.electron.ipc.invoke<Record<string, StepProgress>>(
-        'tasks:steps-progress',
-      );
+      const map = await window.electron.ipc.invoke<
+        Record<string, StepProgress>
+      >('tasks:steps-progress');
       setStepProgress(map ?? {});
     } catch {
       /* progress badges are best-effort */
@@ -744,17 +800,14 @@ export default function Tasks() {
   });
 
   /** Create when editingTask is null; write the patch when editing. */
-  const handleTaskSubmit = async (
-    data: CreateTaskInput | UpdateTaskPatch,
-  ) => {
+  const handleTaskSubmit = async (data: CreateTaskInput | UpdateTaskPatch) => {
     if (editingTask) {
       await mutations.update(editingTask.id, data as UpdateTaskPatch);
     } else {
       const scoped: CreateTaskInput = {
         ...(data as CreateTaskInput),
         // A scoped surface files new tasks there unless the form said otherwise.
-        project_id:
-          (data as CreateTaskInput).project_id ?? projectId ?? null,
+        project_id: (data as CreateTaskInput).project_id ?? projectId ?? null,
       };
       await mutations.create(scoped);
     }
@@ -787,7 +840,9 @@ export default function Tasks() {
       setFocusDisplayMode('closed');
       setFocusedTask(null);
     }
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, status: to } : t)));
+    setTasks((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, status: to } : t)),
+    );
     try {
       await window.electron.ipc.invoke('tasks:update', { id, status: to });
     } catch {
@@ -831,7 +886,8 @@ export default function Tasks() {
 
       if (info.phase === 'work' && info.completed) {
         const mins = Math.max(1, Math.round(info.actualSec / 60));
-        const xp = mins * XP_REWARDS.FOCUS_MINUTE + XP_REWARDS.POMODORO_COMPLETE;
+        const xp =
+          mins * XP_REWARDS.FOCUS_MINUTE + XP_REWARDS.POMODORO_COMPLETE;
         void gamification.awardXp(xp, 'pomodoro_complete', info.taskId);
         triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
 
@@ -933,7 +989,10 @@ export default function Tasks() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <HeaderLevelChip state={gamification.state} loading={gamification.loading} />
+            <HeaderLevelChip
+              state={gamification.state}
+              loading={gamification.loading}
+            />
             <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             <Button
               size="sm"
@@ -1002,7 +1061,8 @@ export default function Tasks() {
               variant={singleLens ? 'default' : 'outline'}
               className={cn(
                 'h-7 gap-1.5 text-xs',
-                singleLens && 'bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400',
+                singleLens &&
+                  'bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400',
               )}
               onClick={() => setSingleLens(!singleLens)}
             >
@@ -1140,7 +1200,10 @@ export default function Tasks() {
             progress={focusTimer.progress}
             audio={audio}
             onStart={() => {
-              if (!audio.playing && (audio.config.noise || audio.config.binaural)) {
+              if (
+                !audio.playing &&
+                (audio.config.noise || audio.config.binaural)
+              ) {
                 void audio.start();
               }
               focusTimer.start();

@@ -43,9 +43,8 @@ export function listSteps(taskId: string): TaskStep[] {
 /** A single step by id. */
 export function getStep(id: string): TaskStep | null {
   return (
-    (getDb()
-      .prepare(`SELECT * FROM task_steps WHERE id = ?`)
-      .get(id) as TaskStep | undefined) ?? null
+    (getDb().prepare(`SELECT * FROM task_steps WHERE id = ?`).get(id) as
+      TaskStep | undefined) ?? null
   );
 }
 

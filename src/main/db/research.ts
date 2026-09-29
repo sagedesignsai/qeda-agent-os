@@ -16,7 +16,8 @@ import { getDb } from './client.js';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
 
-export type ResearchRunStatus = 'running' | 'completed' | 'failed' | 'cancelled';
+export type ResearchRunStatus =
+  'running' | 'completed' | 'failed' | 'cancelled';
 export type ResearchSourceKind = 'web' | 'page' | 'file';
 
 export interface ResearchRun {
@@ -71,7 +72,13 @@ export function createResearchRun(input: CreateResearchRunInput): ResearchRun {
   db.prepare(
     `INSERT INTO research_runs (id, session_id, page_id, notebook_id, question)
      VALUES (?, ?, ?, ?, ?)`,
-  ).run(id, input.sessionId ?? null, input.pageId ?? null, input.notebookId ?? null, input.question);
+  ).run(
+    id,
+    input.sessionId ?? null,
+    input.pageId ?? null,
+    input.notebookId ?? null,
+    input.question,
+  );
   return db
     .prepare<[string], ResearchRun>('SELECT * FROM research_runs WHERE id = ?')
     .get(id)!;
@@ -89,8 +96,10 @@ export function updateResearchRun(
 ): void {
   const fields: string[] = [];
   const values: unknown[] = [];
-  if (patch.status !== undefined) fields.push('status = ?'), values.push(patch.status);
-  if (patch.report !== undefined) fields.push('report = ?'), values.push(patch.report);
+  if (patch.status !== undefined)
+    (fields.push('status = ?'), values.push(patch.status));
+  if (patch.report !== undefined)
+    (fields.push('report = ?'), values.push(patch.report));
   if (fields.length === 0) return;
   values.push(id);
   getDb()
@@ -100,7 +109,9 @@ export function updateResearchRun(
     .run(...values);
 }
 
-export function listResearchRuns(filter: { pageId?: string; notebookId?: string; limit?: number } = {}): ResearchRun[] {
+export function listResearchRuns(
+  filter: { pageId?: string; notebookId?: string; limit?: number } = {},
+): ResearchRun[] {
   const db = getDb();
   const limit = filter.limit ?? 25;
   if (filter.pageId) {
@@ -162,7 +173,9 @@ export function addResearchSource(input: AddSourceInput): ResearchSource {
     input.snippet ?? '',
   );
   return db
-    .prepare<[string], ResearchSource>('SELECT * FROM research_sources WHERE id = ?')
+    .prepare<[string], ResearchSource>(
+      'SELECT * FROM research_sources WHERE id = ?',
+    )
     .get(id)!;
 }
 
@@ -182,17 +195,21 @@ export function addResearchEvidence(input: AddEvidenceInput): ResearchEvidence {
     'INSERT INTO research_evidence (id, source_id, run_id, quote, note) VALUES (?, ?, ?, ?, ?)',
   ).run(id, input.sourceId, input.runId, input.quote, input.note ?? '');
   return db
-    .prepare<[string], ResearchEvidence>('SELECT * FROM research_evidence WHERE id = ?')
+    .prepare<[string], ResearchEvidence>(
+      'SELECT * FROM research_evidence WHERE id = ?',
+    )
     .get(id)!;
 }
 
 // ─── Composite reads (the research trace) ─────────────────────────────────────
 
 /** Full audit trail for one run: sources with their evidence, in discovery order. */
-export function getResearchTrace(runId: string): {
-  run: ResearchRun;
-  sources: ResearchSourceWithEvidence[];
-} | undefined {
+export function getResearchTrace(runId: string):
+  | {
+      run: ResearchRun;
+      sources: ResearchSourceWithEvidence[];
+    }
+  | undefined {
   const db = getDb();
   const run = getResearchRun(runId);
   if (!run) return undefined;
@@ -232,7 +249,9 @@ export function getResearchTrace(runId: string): {
  * Formatted citation list for a run — what the agent embeds in its reports and
  * the UI shows as "Sources".
  */
-export function getRunCitations(runId: string): { n: number; title: string; url: string | null }[] {
+export function getRunCitations(
+  runId: string,
+): { n: number; title: string; url: string | null }[] {
   const sources = getDb()
     .prepare<[string], ResearchSource>(
       'SELECT * FROM research_sources WHERE run_id = ? ORDER BY created_at, rowid',

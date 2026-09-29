@@ -18,7 +18,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import type { StyleValue, TokenReference } from '@/lib/pdf-studio/primitives-ast';
+import type {
+  StyleValue,
+  TokenReference,
+} from '@/lib/pdf-studio/primitives-ast';
 import { isToken } from '@/lib/pdf-studio/primitives-ast';
 
 export interface TokenItem {
@@ -65,7 +68,11 @@ export function TokenDualInput({
 
   return (
     <div className="flex flex-col gap-1 text-xs">
-      {label && <span className="text-[11px] font-medium text-muted-foreground">{label}</span>}
+      {label && (
+        <span className="text-[11px] font-medium text-muted-foreground">
+          {label}
+        </span>
+      )}
 
       <div className="flex items-center gap-1.5">
         {isBoundToToken ? (
@@ -147,7 +154,9 @@ export function TokenDualInput({
                         style={{ backgroundColor: t.value }}
                       />
                     )}
-                    <span className="font-mono text-[11px] truncate">${t.name}</span>
+                    <span className="font-mono text-[11px] truncate">
+                      ${t.name}
+                    </span>
                   </div>
                   <span className="text-[10px] text-muted-foreground truncate max-w-[70px]">
                     {t.value}

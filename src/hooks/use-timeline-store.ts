@@ -339,6 +339,58 @@ class TimelineStore {
     this.notify();
   };
 
+  findClip = (
+    clipId: string,
+  ): { track: TimelineTrack; clip: TimelineClip } | null => {
+    for (const track of this.state.tracks) {
+      const clip = track.clips.find((c) => c.id === clipId);
+      if (clip) {
+        return { track, clip };
+      }
+    }
+    return null;
+  };
+
+  updateClip = (
+    clipId: string,
+    patch: Partial<TimelineClip>,
+    trackId?: string,
+  ) => {
+    let targetTrackId = trackId;
+    if (!targetTrackId) {
+      const found = this.findClip(clipId);
+      if (!found) return;
+      targetTrackId = found.track.id;
+    }
+
+    this.state = {
+      ...this.state,
+      tracks: this.state.tracks.map((t) =>
+        t.id === targetTrackId
+          ? {
+              ...t,
+              clips: t.clips.map((c) =>
+                c.id === clipId
+                  ? {
+                      ...c,
+                      ...patch,
+                      payload:
+                        c.payload || patch.payload
+                          ? {
+                              ...(c.payload || {}),
+                              ...(patch.payload || {}),
+                            }
+                          : undefined,
+                    }
+                  : c,
+              ),
+            }
+          : t,
+      ),
+    };
+    this.notify();
+  };
+
   addClip = (
     trackType: TrackType,
     clipData: {
@@ -440,5 +492,19 @@ export function useTimelineTools() {
     setZoomPxPerMs: timelineStore.setZoomPxPerMs,
     splitAtPlayhead: timelineStore.splitAtPlayhead,
     deleteSelectedClip: timelineStore.deleteSelectedClip,
+    updateClip: timelineStore.updateClip,
   };
+}
+
+export function useSelectedClip(): {
+  track: TimelineTrack;
+  clip: TimelineClip;
+} | null {
+  const state = useTimelineState();
+  if (!state.selectedClipId) return null;
+  for (const track of state.tracks) {
+    const clip = track.clips.find((c) => c.id === state.selectedClipId);
+    if (clip) return { track, clip };
+  }
+  return null;
 }

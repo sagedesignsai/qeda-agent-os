@@ -14,7 +14,10 @@ const partsOf = (messages: UIMessage[]): DraftPart[] =>
   messages[messages.length - 1].parts as unknown as DraftPart[];
 
 const fold = (parts: Array<Record<string, unknown>>): UIMessage[] =>
-  parts.reduce<UIMessage[]>((acc, part) => applyStreamPart(acc, part as never), []);
+  parts.reduce<UIMessage[]>(
+    (acc, part) => applyStreamPart(acc, part as never),
+    [],
+  );
 
 describe('applyStreamPart', () => {
   it('accumulates assistant text from `text` deltas', () => {

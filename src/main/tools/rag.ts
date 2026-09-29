@@ -96,9 +96,7 @@ export const indexFileTool = tool({
         .map((r) => r.id);
 
       if (oldIds.length > 0) {
-        db.prepare(
-          `DELETE FROM chunks WHERE file_path = ?`,
-        ).run(resolved);
+        db.prepare(`DELETE FROM chunks WHERE file_path = ?`).run(resolved);
         // Also remove from vec table
         const placeholders = oldIds.map(() => '?').join(',');
         db.prepare(
@@ -107,7 +105,9 @@ export const indexFileTool = tool({
       }
 
       // Embed all chunks in one batch call.
-      const model = getEmbeddingModel() as Parameters<typeof embedMany>[0]['model'];
+      const model = getEmbeddingModel() as Parameters<
+        typeof embedMany
+      >[0]['model'];
       const { embeddings } = await embedMany({ model, values: chunks });
 
       // Insert chunks + vectors.
@@ -180,7 +180,15 @@ export const searchDocsTool = tool({
       // Fetch chunk text for each result.
       const placeholders = results.map(() => '?').join(',');
       const chunks = db
-        .prepare<string[], { id: string; file_path: string; content: string; chunk_index: number }>(
+        .prepare<
+          string[],
+          {
+            id: string;
+            file_path: string;
+            content: string;
+            chunk_index: number;
+          }
+        >(
           `SELECT id, file_path, content, chunk_index
            FROM chunks WHERE id IN (${placeholders})`,
         )
@@ -225,7 +233,7 @@ export const listIndexedTool = tool({
 });
 
 export const removeFromIndexTool = tool({
-  description: 'Remove a file\'s chunks from the local document index.',
+  description: "Remove a file's chunks from the local document index.",
   inputSchema: z.object({
     filePath: z.string().describe('Path of the file to remove from the index.'),
   }),
@@ -234,7 +242,9 @@ export const removeFromIndexTool = tool({
     const db = getDb();
     try {
       const ids = db
-        .prepare<[string], { id: string }>('SELECT id FROM chunks WHERE file_path = ?')
+        .prepare<[string], { id: string }>(
+          'SELECT id FROM chunks WHERE file_path = ?',
+        )
         .all(resolved)
         .map((r) => r.id);
 
@@ -244,7 +254,9 @@ export const removeFromIndexTool = tool({
 
       db.prepare('DELETE FROM chunks WHERE file_path = ?').run(resolved);
       const ph = ids.map(() => '?').join(',');
-      db.prepare(`DELETE FROM embeddings WHERE chunk_id IN (${ph})`).run(...ids);
+      db.prepare(`DELETE FROM embeddings WHERE chunk_id IN (${ph})`).run(
+        ...ids,
+      );
 
       return { success: true, path: resolved, chunksRemoved: ids.length };
     } catch (err) {

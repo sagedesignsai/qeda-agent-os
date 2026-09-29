@@ -11,7 +11,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-export type ServiceCategory = 'search' | 'scrape' | 'docs' | 'images' | 'speech';
+export type ServiceCategory =
+  'search' | 'scrape' | 'docs' | 'images' | 'speech';
 
 export interface ServiceConfig {
   /** Stable id used in settings, the service key map, IPC and tool params. */

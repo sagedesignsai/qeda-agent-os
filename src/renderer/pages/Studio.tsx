@@ -25,6 +25,7 @@ import {
   LayersIcon,
   PanelLeft as PanelLeftIcon,
   PanelRight as PanelRightIcon,
+  SparklesIcon,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -53,6 +54,7 @@ import { StudioSourcePicker } from '@/components/studio/StudioSourcePicker';
 import { StudioRecordingBar } from '@/components/studio/StudioRecordingBar';
 import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
 import { StudioContentPanel } from '@/components/studio/content/StudioContentPanel';
+import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
 import type { ContentItemPayload } from '@/components/studio/content/items/ContentCardItem';
 import type { StudioTake } from '@/lib/studio-types';
 import { toast } from 'sonner';
@@ -75,7 +77,6 @@ export default function Studio() {
     stopRecording,
     updateStyling,
     updateZooms,
-    runMagicDraft,
     generateSocialKit,
     exportVideo,
     deleteTake,
@@ -87,9 +88,13 @@ export default function Studio() {
   const [durationMs, setDurationMs] = useState(0);
   const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
 
-  // Modals
+  // Modals & Copilot
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const [socialKitModalOpen, setSocialKitModalOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
+    string | null
+  >(null);
 
   // Content library & inspector panel states & refs
   const [contentPanelCollapsed, setContentPanelCollapsed] = useState(false);
@@ -215,6 +220,24 @@ export default function Studio() {
     };
     updateZooms([...activeTake.zooms, newZoom]);
     toast.success('Added zoom keyframe at playhead');
+  };
+
+  const handleRunMagicDraftViaCopilot = () => {
+    setCopilotInitialPrompt(
+      'Run a complete Magic Draft on this take: prune dead air pauses, calculate kinetic zooms from mouse dwell points, and polish canvas styling.',
+    );
+    setCopilotOpen(true);
+  };
+
+  const handleOpenSocialKitViaCopilot = () => {
+    if (activeTake?.socialKit) {
+      setSocialKitModalOpen(true);
+    } else {
+      setCopilotInitialPrompt(
+        'Draft a high-converting AI Social Release Kit for this showcase take: viral X/Twitter thread, GitHub changelog markdown, and LinkedIn announcement.',
+      );
+      setCopilotOpen(true);
+    }
   };
 
   const handleOpenSocialKit = async () => {
@@ -506,6 +529,31 @@ export default function Studio() {
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer shadow-2xs font-medium"
+                    onClick={() => setSourcePickerOpen(true)}
+                    title="Record a new screen or window take"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="hidden sm:inline">Record Take</span>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 cursor-pointer shadow-2xs font-medium"
+                    onClick={() => {
+                      setCopilotInitialPrompt(null);
+                      setCopilotOpen(true);
+                    }}
+                    title="Open Studio AI Copilot Director"
+                  >
+                    <SparklesIcon className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="hidden sm:inline">AI Director</span>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="h-8 gap-1.5 text-xs"
                     onClick={handleOpenSocialKit}
                     disabled={isGeneratingSocialKit}
@@ -586,6 +634,7 @@ export default function Studio() {
                   <StudioContentPanel
                     takes={takes}
                     onAddClip={handleInsertClip}
+                    onNewRecording={() => setSourcePickerOpen(true)}
                     isCollapsed={contentPanelCollapsed}
                     onToggleCollapse={toggleLeftPanel}
                   />
@@ -683,8 +732,8 @@ export default function Studio() {
                     isProcessingDraft={isProcessingDraft}
                     isGeneratingSocialKit={isGeneratingSocialKit}
                     onUpdateStyling={updateStyling}
-                    onRunMagicDraft={runMagicDraft}
-                    onGenerateSocialKit={handleOpenSocialKit}
+                    onRunMagicDraft={handleRunMagicDraftViaCopilot}
+                    onGenerateSocialKit={handleOpenSocialKitViaCopilot}
                     onExportVideo={exportVideo}
                     onAddZoomAtPlayhead={handleAddZoomAtPlayhead}
                     onToggleCollapse={toggleRightPanel}
@@ -749,6 +798,18 @@ export default function Studio() {
         onOpenChange={setSocialKitModalOpen}
         socialKit={activeTake?.socialKit ?? null}
       />
+
+      {activeTake && (
+        <StudioCopilotSheet
+          open={copilotOpen}
+          onOpenChange={setCopilotOpen}
+          activeTake={activeTake}
+          currentTimeMs={currentTimeMs}
+          initialPrompt={copilotInitialPrompt}
+          onInitialPromptHandled={() => setCopilotInitialPrompt(null)}
+          onChanged={() => loadTake(activeTake.id)}
+        />
+      )}
     </div>
   );
 }

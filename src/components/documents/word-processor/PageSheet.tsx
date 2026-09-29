@@ -54,7 +54,9 @@ export function getPageDimensions(
       break;
   }
 
-  return orientation === 'landscape' ? { width: h, height: w } : { width: w, height: h };
+  return orientation === 'landscape'
+    ? { width: h, height: w }
+    : { width: w, height: h };
 }
 
 export function PageSheet({
@@ -65,11 +67,15 @@ export function PageSheet({
   darkCanvas,
   children,
 }: PageSheetProps) {
-  const { width, height } = getPageDimensions(settings.pageSize, settings.orientation);
+  const { width, height } = getPageDimensions(
+    settings.pageSize,
+    settings.orientation,
+  );
   const { margins, header, footer } = settings;
 
   // Scale points to pixels (~1.33 px per pt)
-  const ptToPx = width / (settings.orientation === 'landscape' ? 841.89 : 595.28);
+  const ptToPx =
+    width / (settings.orientation === 'landscape' ? 841.89 : 595.28);
   const padTop = Math.round(margins.top * ptToPx);
   const padBottom = Math.round(margins.bottom * ptToPx);
   const padLeft = Math.round(margins.left * ptToPx);
@@ -85,7 +91,8 @@ export function PageSheet({
       style={{
         width: `${width}px`,
         minHeight: `${height}px`,
-        fontFamily: theme.fontFamily === 'Courier' ? 'monospace' : theme.fontFamily,
+        fontFamily:
+          theme.fontFamily === 'Courier' ? 'monospace' : theme.fontFamily,
       }}
     >
       {/* ─── LibreOffice Signature Margin Crop Marks ──────────────────────── */}
@@ -145,7 +152,9 @@ export function PageSheet({
             <span>{header.rightText || ''}</span>
           </div>
           {header.showDivider && (
-            <div className={`h-[1px] w-full ${darkCanvas ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
+            <div
+              className={`h-[1px] w-full ${darkCanvas ? 'bg-zinc-800' : 'bg-zinc-200'}`}
+            />
           )}
         </div>
       )}
@@ -175,7 +184,9 @@ export function PageSheet({
           }}
         >
           {footer.showDivider && (
-            <div className={`h-[1px] w-full mb-1 ${darkCanvas ? 'bg-zinc-800' : 'bg-zinc-200'}`} />
+            <div
+              className={`h-[1px] w-full mb-1 ${darkCanvas ? 'bg-zinc-800' : 'bg-zinc-200'}`}
+            />
           )}
           <div className="flex items-center justify-between">
             <span>{footer.leftText || ''}</span>

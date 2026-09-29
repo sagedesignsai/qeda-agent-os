@@ -8,7 +8,9 @@
  */
 
 jest.mock('ai', () => ({ generateObject: jest.fn() }));
-jest.mock('../main/ai/provider.js', () => ({ resolveModel: jest.fn(() => ({})) }));
+jest.mock('../main/ai/provider.js', () => ({
+  resolveModel: jest.fn(() => ({})),
+}));
 jest.mock('../main/ai/settings.js', () => ({
   getSettings: jest.fn(() => ({ activeProvider: 'test', activeModel: 'test' })),
 }));
@@ -71,7 +73,12 @@ describe('task-copilot', () => {
     mockGenerateObject.mockResolvedValue({
       object: {
         blocks: [
-          { task_id: 't1', title: 'Deep work', start_min: 540, duration_min: 60 },
+          {
+            task_id: 't1',
+            title: 'Deep work',
+            start_min: 540,
+            duration_min: 60,
+          },
         ],
         note: 'Front-loaded the hardest task.',
       },

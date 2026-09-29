@@ -165,7 +165,9 @@ function background(bg: FrameNode['background']): string {
       const stops = [...bg.stops]
         .sort((a, b) => a.offset - b.offset)
         .map((s) => {
-          const value = s.token ? tokenColor(s.token) : (s.hex ?? 'transparent');
+          const value = s.token
+            ? tokenColor(s.token)
+            : (s.hex ?? 'transparent');
           return `${cssSafe(value)} ${num(s.offset * 100)}%`;
         });
       return `linear-gradient(${num(bg.angle)}deg,${stops.join(',')})`;
@@ -195,7 +197,8 @@ const ANIMATION_DECLARATION: Record<AnimationPreset, string> = {
   'rise-in': 'animation:studio-rise-in 520ms cubic-bezier(0.22,1,0.36,1) both',
   'slide-in-left':
     'animation:studio-slide-in-left 520ms cubic-bezier(0.22,1,0.36,1) both',
-  'scale-in': 'animation:studio-scale-in 460ms cubic-bezier(0.22,1,0.36,1) both',
+  'scale-in':
+    'animation:studio-scale-in 460ms cubic-bezier(0.22,1,0.36,1) both',
 };
 
 function animationStyle(a: AnimationPreset | undefined): string {
@@ -228,7 +231,9 @@ const ALIGN_CSS: Record<Align, string> = {
  * `false`/`undefined` when a declaration is conditional — the conditional
  * branches read better than building arrays imperatively.
  */
-function styleAttr(declarations: (string | boolean | undefined | null)[]): string {
+function styleAttr(
+  declarations: (string | boolean | undefined | null)[],
+): string {
   const css = declarations
     .filter((d): d is string => typeof d === 'string' && d.length > 0)
     .join(';');

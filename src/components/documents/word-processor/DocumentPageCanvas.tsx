@@ -166,96 +166,101 @@ export function DocumentPageCanvas({
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          {hasNodes ? (
-            /* ─── Modern Hierarchical Flexbox Engine Canvas ──────────────── */
-            nodePages.map((pageNodes, pageIdx) => (
-              <PageSheet
-                key={pageIdx}
-                pageNumber={pageIdx + 1}
-                totalPages={nodePages.length}
-                settings={doc.settings}
-                theme={doc.settings.theme}
-                darkCanvas={darkCanvas}
-              >
-                <div className="flex flex-col gap-3 w-full h-full min-h-[300px]">
-                  {pageNodes.map((node) => (
-                    <PrimitiveNodeRenderer
-                      key={node.id}
-                      node={node}
-                      selectedNodeId={selectedNodeId ?? null}
-                      theme={doc.settings.theme}
-                      onSelectNode={onSelectNode || (() => {})}
-                      onUpdateNode={onUpdateNode || (() => {})}
-                    />
-                  ))}
-                </div>
-              </PageSheet>
-            ))
-          ) : (
-            /* ─── Legacy Macro Blocks Canvas ────────────────────────────── */
-            pages.map((pageBlocks, pageIdx) => (
-              <PageSheet
-                key={pageIdx}
-                pageNumber={pageIdx + 1}
-                totalPages={pages.length}
-                settings={doc.settings}
-                theme={doc.settings.theme}
-                darkCanvas={darkCanvas}
-              >
-                {pageBlocks.map((block) => {
-                  const isActive = activeBlockId === block.id;
-
-                  return (
-                    <div key={block.id} className="relative">
-                      {/* Inline AI Prompt positioned right above the active block */}
-                      {isActive && inlineAiOpen && (
-                        <InlineAiPrompt
-                          block={activeBlock}
-                          documentTitle={doc.title}
-                          onUpdateBlock={onUpdateBlock}
-                          onClose={onCloseInlineAi}
-                        />
-                      )}
-
-                      <InlineBlockRenderer
-                        block={block}
-                        theme={doc.settings.theme}
-                        isActive={isActive}
-                        onSelect={() => onSelectBlock(block.id)}
-                        onUpdate={(updates) => onUpdateBlock(block.id, updates)}
-                        onDelete={() => onDeleteBlock(block.id)}
-                        onMoveUp={() => onMoveBlock(block.id, 'up')}
-                        onMoveDown={() => onMoveBlock(block.id, 'down')}
-                        onInsertAfter={(type) =>
-                          onInsertBlockAfter(block.id, type)
-                        }
-                      // Table operations
-                      onAddTableRow={(r) => onAddTableRow(block.id, r)}
-                      onDeleteTableRow={(r) => onDeleteTableRow(block.id, r)}
-                      onAddTableCol={(c) => onAddTableCol(block.id, c)}
-                      onDeleteTableCol={(c) => onDeleteTableCol(block.id, c)}
-                      onUpdateTableCell={(r, c, text) =>
-                        onUpdateTableCell(block.id, r, c, text)
-                      }
-                      onUpdateTableHeader={(c, text) =>
-                        onUpdateTableHeader(block.id, c, text)
-                      }
-                    />
-                  </div>
-                );
-              })}
-
-              {/* Empty page helper */}
-              {pageBlocks.length === 0 && (
-                <div
-                  className="py-12 text-center text-xs text-zinc-400 hover:text-zinc-600 cursor-pointer"
-                  onClick={() => onInsertBlockAfter(null, 'paragraph')}
+          {hasNodes
+            ? /* ─── Modern Hierarchical Flexbox Engine Canvas ──────────────── */
+              nodePages.map((pageNodes, pageIdx) => (
+                <PageSheet
+                  key={pageIdx}
+                  pageNumber={pageIdx + 1}
+                  totalPages={nodePages.length}
+                  settings={doc.settings}
+                  theme={doc.settings.theme}
+                  darkCanvas={darkCanvas}
                 >
-                  Click here to start typing on this page...
-                </div>
-              )}
-            </PageSheet>
-          )))}
+                  <div className="flex flex-col gap-3 w-full h-full min-h-[300px]">
+                    {pageNodes.map((node) => (
+                      <PrimitiveNodeRenderer
+                        key={node.id}
+                        node={node}
+                        selectedNodeId={selectedNodeId ?? null}
+                        theme={doc.settings.theme}
+                        onSelectNode={onSelectNode || (() => {})}
+                        onUpdateNode={onUpdateNode || (() => {})}
+                      />
+                    ))}
+                  </div>
+                </PageSheet>
+              ))
+            : /* ─── Legacy Macro Blocks Canvas ────────────────────────────── */
+              pages.map((pageBlocks, pageIdx) => (
+                <PageSheet
+                  key={pageIdx}
+                  pageNumber={pageIdx + 1}
+                  totalPages={pages.length}
+                  settings={doc.settings}
+                  theme={doc.settings.theme}
+                  darkCanvas={darkCanvas}
+                >
+                  {pageBlocks.map((block) => {
+                    const isActive = activeBlockId === block.id;
+
+                    return (
+                      <div key={block.id} className="relative">
+                        {/* Inline AI Prompt positioned right above the active block */}
+                        {isActive && inlineAiOpen && (
+                          <InlineAiPrompt
+                            block={activeBlock}
+                            documentTitle={doc.title}
+                            onUpdateBlock={onUpdateBlock}
+                            onClose={onCloseInlineAi}
+                          />
+                        )}
+
+                        <InlineBlockRenderer
+                          block={block}
+                          theme={doc.settings.theme}
+                          isActive={isActive}
+                          onSelect={() => onSelectBlock(block.id)}
+                          onUpdate={(updates) =>
+                            onUpdateBlock(block.id, updates)
+                          }
+                          onDelete={() => onDeleteBlock(block.id)}
+                          onMoveUp={() => onMoveBlock(block.id, 'up')}
+                          onMoveDown={() => onMoveBlock(block.id, 'down')}
+                          onInsertAfter={(type) =>
+                            onInsertBlockAfter(block.id, type)
+                          }
+                          // Table operations
+                          onAddTableRow={(r) => onAddTableRow(block.id, r)}
+                          onDeleteTableRow={(r) =>
+                            onDeleteTableRow(block.id, r)
+                          }
+                          onAddTableCol={(c) => onAddTableCol(block.id, c)}
+                          onDeleteTableCol={(c) =>
+                            onDeleteTableCol(block.id, c)
+                          }
+                          onUpdateTableCell={(r, c, text) =>
+                            onUpdateTableCell(block.id, r, c, text)
+                          }
+                          onUpdateTableHeader={(c, text) =>
+                            onUpdateTableHeader(block.id, c, text)
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+
+                  {/* Empty page helper */}
+                  {pageBlocks.length === 0 && (
+                    <div
+                      className="py-12 text-center text-xs text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                      onClick={() => onInsertBlockAfter(null, 'paragraph')}
+                    >
+                      Click here to start typing on this page...
+                    </div>
+                  )}
+                </PageSheet>
+              ))}
         </div>
       </div>
     </div>

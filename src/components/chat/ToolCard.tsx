@@ -66,7 +66,8 @@ function getFriendlyToolSummary(
     case 'runShell': {
       const cmd = typeof input.command === 'string' ? input.command : '';
       if (cmd.includes('jest')) title = 'Run jest on copilot tests';
-      else if (cmd) title = `Run ${cmd.length > 40 ? cmd.slice(0, 37) + '…' : cmd}`;
+      else if (cmd)
+        title = `Run ${cmd.length > 40 ? cmd.slice(0, 37) + '…' : cmd}`;
       else title = 'Run shell command';
       break;
     }

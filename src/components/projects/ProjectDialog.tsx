@@ -193,7 +193,9 @@ export function ProjectDialog({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label htmlFor="project-repo">Repo path</Label>
-              <span className="text-[10px] text-muted-foreground">Optional</span>
+              <span className="text-[10px] text-muted-foreground">
+                Optional
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
@@ -238,7 +240,10 @@ export function ProjectDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => void handleSubmit()} disabled={!name.trim() || saving}>
+          <Button
+            onClick={() => void handleSubmit()}
+            disabled={!name.trim() || saving}
+          >
             {editing ? 'Save' : 'Create project'}
           </Button>
         </DialogFooter>

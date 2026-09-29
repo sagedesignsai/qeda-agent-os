@@ -127,7 +127,12 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 function LocationDisplay() {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}{location.search}</div>;
+  return (
+    <div data-testid="location">
+      {location.pathname}
+      {location.search}
+    </div>
+  );
 }
 
 function renderSidebar(initialUrl = '/chat') {
@@ -135,7 +140,10 @@ function renderSidebar(initialUrl = '/chat') {
     <MemoryRouter initialEntries={[initialUrl]}>
       <TooltipProvider>
         <SidebarProvider>
-          <AppSidebar onOpenCommandPalette={jest.fn()} onOpenSettings={jest.fn()} />
+          <AppSidebar
+            onOpenCommandPalette={jest.fn()}
+            onOpenSettings={jest.fn()}
+          />
           <Routes>
             <Route path="*" element={<LocationDisplay />} />
           </Routes>
@@ -153,7 +161,9 @@ describe('AppSidebar Active Project Indicator', () => {
       expect(screen.getByText('All Projects')).toBeInTheDocument();
     });
     // Check that selected model is also rendered right after
-    expect(await screen.findByText('llama-3.3-70b-versatile')).toBeInTheDocument();
+    expect(
+      await screen.findByText('llama-3.3-70b-versatile'),
+    ).toBeInTheDocument();
   });
 
   it('displays the active project name and status when scoped via ?project=', async () => {
@@ -175,35 +185,31 @@ describe('AppSidebar Active Project Indicator', () => {
   });
 
   // Skipped: Radix UI dropdown synthetic pointer events in JSDOM cause delays
-  it.skip(
-    'opens dropdown switcher and switches active project',
-    async () => {
-      renderSidebar('/chat');
+  it.skip('opens dropdown switcher and switches active project', async () => {
+    renderSidebar('/chat');
 
-      await waitFor(() => {
-        expect(screen.getByText('All Projects')).toBeInTheDocument();
-      });
+    await waitFor(() => {
+      expect(screen.getByText('All Projects')).toBeInTheDocument();
+    });
 
-      const projectButton = screen.getByText('All Projects').closest('button');
-      expect(projectButton).toBeInTheDocument();
-      fireEvent.pointerDown(projectButton!, { button: 0 });
+    const projectButton = screen.getByText('All Projects').closest('button');
+    expect(projectButton).toBeInTheDocument();
+    fireEvent.pointerDown(projectButton!, { button: 0 });
 
-      // Dropdown should show both projects
-      await waitFor(() => {
-        expect(screen.getByText('Vellum Core')).toBeInTheDocument();
-      });
-      expect(screen.getByText('Docugent Web')).toBeInTheDocument();
+    // Dropdown should show both projects
+    await waitFor(() => {
+      expect(screen.getByText('Vellum Core')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Docugent Web')).toBeInTheDocument();
 
-      // Click on Docugent Web
-      fireEvent.click(screen.getByText('Docugent Web'));
+    // Click on Docugent Web
+    fireEvent.click(screen.getByText('Docugent Web'));
 
-      // URL search params should now have ?project=proj-2
-      await waitFor(() => {
-        expect(screen.getByTestId('location')).toHaveTextContent(
-          '/chat?project=proj-2',
-        );
-      });
-    },
-    20_000,
-  );
+    // URL search params should now have ?project=proj-2
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/chat?project=proj-2',
+      );
+    });
+  }, 20_000);
 });

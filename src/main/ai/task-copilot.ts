@@ -42,7 +42,9 @@ const BREAKDOWN_SCHEMA = z.object({
     .array(z.string())
     .min(2)
     .max(8)
-    .describe('2–6 short, concrete, action-first steps; each starts with a verb.'),
+    .describe(
+      '2–6 short, concrete, action-first steps; each starts with a verb.',
+    ),
   note: z.string().describe('One short, warm sentence of encouragement.'),
 });
 
@@ -84,9 +86,16 @@ const BRAIN_DUMP_SCHEMA = z.object({
   tasks: z
     .array(
       z.object({
-        title: z.string().describe('Imperative task title, under ~80 characters.'),
+        title: z
+          .string()
+          .describe('Imperative task title, under ~80 characters.'),
         description: z.string().describe('One clarifying sentence, or empty.'),
-        priority: z.number().int().min(1).max(3).describe('1=high 2=medium 3=low'),
+        priority: z
+          .number()
+          .int()
+          .min(1)
+          .max(3)
+          .describe('1=high 2=medium 3=low'),
         estimate_mins: z
           .number()
           .int()
@@ -96,7 +105,9 @@ const BRAIN_DUMP_SCHEMA = z.object({
       }),
     )
     .max(20),
-  note: z.string().describe('A short, reassuring overview of what you extracted.'),
+  note: z
+    .string()
+    .describe('A short, reassuring overview of what you extracted.'),
 });
 
 export interface DraftTask {

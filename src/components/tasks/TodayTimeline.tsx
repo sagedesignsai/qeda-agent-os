@@ -149,7 +149,10 @@ export function TodayTimeline({
     void load();
   }, [load, refreshSignal]);
 
-  const updateStatus = async (block: TaskBlockWithTask, status: BlockStatus) => {
+  const updateStatus = async (
+    block: TaskBlockWithTask,
+    status: BlockStatus,
+  ) => {
     setBlocks((prev) =>
       prev.map((b) => (b.id === block.id ? { ...b, status } : b)),
     );
@@ -189,9 +192,12 @@ export function TodayTimeline({
       } else {
         void gamification.awardXp(XP_REWARDS.DAY_PLAN, 'ai_day_plan');
         triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
-        toast.success(`Planned ${result.blocks.length} block${result.blocks.length > 1 ? 's' : ''} (+40 XP)`, {
-          description: result.note?.slice(0, 140),
-        });
+        toast.success(
+          `Planned ${result.blocks.length} block${result.blocks.length > 1 ? 's' : ''} (+40 XP)`,
+          {
+            description: result.note?.slice(0, 140),
+          },
+        );
       }
     } catch {
       toast.error('Could not plan your day', {
@@ -212,7 +218,9 @@ export function TodayTimeline({
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold">{format(new Date(), 'EEEE')}</h2>
+          <h2 className="text-sm font-semibold">
+            {format(new Date(), 'EEEE')}
+          </h2>
           <p className="text-xs text-muted-foreground">
             {format(new Date(), 'MMMM d')} · {blocks.length} block
             {blocks.length === 1 ? '' : 's'}
@@ -301,106 +309,108 @@ export function TodayTimeline({
           </button>
 
           <ol className="flex flex-col gap-2">
-          {blocks.map((block) => {
-            const meta = BLOCK_STATUS[block.status];
-            const task = tasks.find((t) => t.id === block.task_id) ?? null;
-            const label = block.task_title || block.title || 'Untitled block';
-            const isNow =
-              nowSec >= block.start_at &&
-              nowSec < block.end_at &&
-              block.status !== 'done';
-            const mins = Math.round((block.end_at - block.start_at) / 60);
+            {blocks.map((block) => {
+              const meta = BLOCK_STATUS[block.status];
+              const task = tasks.find((t) => t.id === block.task_id) ?? null;
+              const label = block.task_title || block.title || 'Untitled block';
+              const isNow =
+                nowSec >= block.start_at &&
+                nowSec < block.end_at &&
+                block.status !== 'done';
+              const mins = Math.round((block.end_at - block.start_at) / 60);
 
-            return (
-              <li
-                key={block.id}
-                className={cn(
-                  'group flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2.5',
-                  isNow && 'border-sky-500/50 ring-1 ring-sky-500/20',
-                )}
-              >
-                {/* Time rail */}
-                <div className="flex w-12 shrink-0 flex-col items-end">
-                  <span className="text-xs font-medium tabular-nums">
-                    {format(block.start_at * 1000, 'HH:mm')}
-                  </span>
-                  <span className="text-[10px] tabular-nums text-muted-foreground">
-                    {format(block.end_at * 1000, 'HH:mm')}
-                  </span>
-                </div>
-
-                <span className={cn('size-1.5 shrink-0 rounded-full', meta.dot)} />
-
-                {/* Content */}
-                <div className="min-w-0 flex-1">
-                  <p
-                    className={cn(
-                      'truncate text-sm font-medium',
-                      block.status === 'done' && 'text-muted-foreground line-through',
-                    )}
-                  >
-                    {label}
-                  </p>
-                  <p className={cn('text-[10px]', meta.text)}>
-                    {meta.label} · {mins}m
-                    {isNow && ' · now'}
-                  </p>
-                </div>
-
-                {/* Actions */}
-                <div className="flex shrink-0 items-center gap-1">
-                  {task && task.status !== 'done' && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 gap-1 text-[11px] text-muted-foreground"
-                      onClick={() => onFocusTask(task)}
-                    >
-                      <FocusIcon className="size-3" />
-                      Focus
-                    </Button>
+              return (
+                <li
+                  key={block.id}
+                  className={cn(
+                    'group flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2.5',
+                    isNow && 'border-sky-500/50 ring-1 ring-sky-500/20',
                   )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                >
+                  {/* Time rail */}
+                  <div className="flex w-12 shrink-0 flex-col items-end">
+                    <span className="text-xs font-medium tabular-nums">
+                      {format(block.start_at * 1000, 'HH:mm')}
+                    </span>
+                    <span className="text-[10px] tabular-nums text-muted-foreground">
+                      {format(block.end_at * 1000, 'HH:mm')}
+                    </span>
+                  </div>
+
+                  <span
+                    className={cn('size-1.5 shrink-0 rounded-full', meta.dot)}
+                  />
+
+                  {/* Content */}
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={cn(
+                        'truncate text-sm font-medium',
+                        block.status === 'done' &&
+                          'text-muted-foreground line-through',
+                      )}
+                    >
+                      {label}
+                    </p>
+                    <p className={cn('text-[10px]', meta.text)}>
+                      {meta.label} · {mins}m{isNow && ' · now'}
+                    </p>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex shrink-0 items-center gap-1">
+                    {task && task.status !== 'done' && (
                       <Button
-                        size="icon"
+                        size="sm"
                         variant="ghost"
-                        className="size-7 opacity-0 transition-opacity group-hover:opacity-100"
+                        className="h-7 gap-1 text-[11px] text-muted-foreground"
+                        onClick={() => onFocusTask(task)}
                       >
-                        <MoreHorizontalIcon className="size-3.5" />
+                        <FocusIcon className="size-3" />
+                        Focus
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuLabel>Mark as</DropdownMenuLabel>
-                      {ALL_STATUSES.map((status) => (
-                        <DropdownMenuItem
-                          key={status}
-                          onClick={() => void updateStatus(block, status)}
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-7 opacity-0 transition-opacity group-hover:opacity-100"
                         >
-                          <CircleIcon
-                            className={cn(
-                              'mr-2 size-2',
-                              BLOCK_STATUS[status].fill,
-                            )}
-                          />
-                          {BLOCK_STATUS[status].label}
+                          <MoreHorizontalIcon className="size-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-40">
+                        <DropdownMenuLabel>Mark as</DropdownMenuLabel>
+                        {ALL_STATUSES.map((status) => (
+                          <DropdownMenuItem
+                            key={status}
+                            onClick={() => void updateStatus(block, status)}
+                          >
+                            <CircleIcon
+                              className={cn(
+                                'mr-2 size-2',
+                                BLOCK_STATUS[status].fill,
+                              )}
+                            />
+                            {BLOCK_STATUS[status].label}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => void removeBlock(block)}
+                        >
+                          <Trash2Icon className="mr-2 size-3" />
+                          Delete
                         </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => void removeBlock(block)}
-                      >
-                        <Trash2Icon className="mr-2 size-3" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
         </div>
       )}
 

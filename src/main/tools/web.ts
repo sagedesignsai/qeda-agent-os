@@ -33,7 +33,11 @@ export const webSearchTool = tool({
   description:
     'Search the public web for sources. Returns a list of results with title, URL and snippet. Use it to discover candidate sources before reading them with fetchUrl.',
   inputSchema: z.object({
-    query: z.string().describe('The search query. Be specific; add the current year for recent topics.'),
+    query: z
+      .string()
+      .describe(
+        'The search query. Be specific; add the current year for recent topics.',
+      ),
     count: z
       .number()
       .int()
@@ -67,7 +71,10 @@ export { htmlToText } from './html-text.js';
 
 const MAX_FETCH_CHARS = 24_000;
 
-function truncate(text: string, max: number): { text: string; truncated: boolean } {
+function truncate(
+  text: string,
+  max: number,
+): { text: string; truncated: boolean } {
   if (text.length <= max) return { text, truncated: false };
   return { text: text.slice(0, max), truncated: true };
 }
@@ -89,7 +96,10 @@ export const fetchUrlTool = tool({
     try {
       const parsed = new URL(url);
       if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        return { success: false, error: `Unsupported protocol: ${parsed.protocol}` };
+        return {
+          success: false,
+          error: `Unsupported protocol: ${parsed.protocol}`,
+        };
       }
 
       const response = await fetch(parsed, {
@@ -103,7 +113,10 @@ export const fetchUrlTool = tool({
       });
 
       if (!response.ok) {
-        return { success: false, error: `HTTP ${response.status} fetching ${url}` };
+        return {
+          success: false,
+          error: `HTTP ${response.status} fetching ${url}`,
+        };
       }
 
       const contentType = response.headers.get('content-type') ?? '';

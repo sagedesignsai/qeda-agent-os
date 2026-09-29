@@ -90,9 +90,13 @@ export function useProjectScope(): ProjectScope {
   }, [load]);
 
   // Keep the name fresh if the project is renamed elsewhere.
-  useIpcEvent('projects:changed', () => {
-    void load();
-  }, [projectId]);
+  useIpcEvent(
+    'projects:changed',
+    () => {
+      void load();
+    },
+    [projectId],
+  );
 
   // The persisted default. Read through `settings:get` rather than a new
   // channel, and kept fresh on `settings:changed` — the same broadcast the
@@ -133,9 +137,12 @@ export function useProjectScope(): ProjectScope {
     }
     void (async () => {
       try {
-        const found = await window.electron.ipc.invoke<Project | null>('projects:get', {
-          id: defaultProjectId,
-        });
+        const found = await window.electron.ipc.invoke<Project | null>(
+          'projects:get',
+          {
+            id: defaultProjectId,
+          },
+        );
         if (!cancelled) setDefaultProject(found ?? null);
       } catch {
         if (!cancelled) setDefaultProject(null);

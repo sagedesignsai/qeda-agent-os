@@ -8,7 +8,12 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 
-import { ipcMain, dialog, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
+import {
+  ipcMain,
+  dialog,
+  BrowserWindow,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { getRawSettings, saveSettings } from '../../ai/settings';
 import {
   createProject,
@@ -19,7 +24,11 @@ import {
   updateProject,
 } from '../../db/projects';
 
-export function registerProjectsHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
+export function registerProjectsHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
   ipcMain.handle(
     'projects:list',
     (_e, req: Parameters<typeof listProjects>[0]) => listProjects(req),
@@ -31,9 +40,8 @@ export function registerProjectsHandlers({ mainWindow }: { mainWindow: BrowserWi
       listProjectRollups(req),
   );
 
-  ipcMain.handle(
-    'projects:get',
-    (_e, { id }: { id: string }) => getProject(id),
+  ipcMain.handle('projects:get', (_e, { id }: { id: string }) =>
+    getProject(id),
   );
 
   const broadcastProjectsChanged = () => {
@@ -53,32 +61,32 @@ export function registerProjectsHandlers({ mainWindow }: { mainWindow: BrowserWi
 
   ipcMain.handle(
     'projects:update',
-    (_e, { id, ...patch }: { id: string } & Parameters<typeof updateProject>[1]) => {
+    (
+      _e,
+      { id, ...patch }: { id: string } & Parameters<typeof updateProject>[1],
+    ) => {
       updateProject(id, patch);
       broadcastProjectsChanged();
     },
   );
 
-  ipcMain.handle(
-    'projects:delete',
-    (_e, { id }: { id: string }) => {
-      const removed = deleteProject(id);
-      if (removed) {
-        // Do not leave the persisted default pointing at a deleted project. The
-        // agent-side resolver already tolerates a stale id (it degrades to
-        // unscoped), but clearing it here means the next launch is clean rather
-        // than quietly unscoped-because-something-was-deleted.
-        if (getRawSettings().activeProjectId === id) {
-          saveSettings({ ...getRawSettings(), activeProjectId: null });
-          if (!mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('settings:changed');
-          }
+  ipcMain.handle('projects:delete', (_e, { id }: { id: string }) => {
+    const removed = deleteProject(id);
+    if (removed) {
+      // Do not leave the persisted default pointing at a deleted project. The
+      // agent-side resolver already tolerates a stale id (it degrades to
+      // unscoped), but clearing it here means the next launch is clean rather
+      // than quietly unscoped-because-something-was-deleted.
+      if (getRawSettings().activeProjectId === id) {
+        saveSettings({ ...getRawSettings(), activeProjectId: null });
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('settings:changed');
         }
-        broadcastProjectsChanged();
       }
-      return removed;
-    },
-  );
+      broadcastProjectsChanged();
+    }
+    return removed;
+  });
 
   ipcMain.handle(
     'dialog:open-directory',
@@ -99,5 +107,4 @@ export function registerProjectsHandlers({ mainWindow }: { mainWindow: BrowserWi
       return result.filePaths[0];
     },
   );
-
 }

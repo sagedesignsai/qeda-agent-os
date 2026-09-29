@@ -65,7 +65,11 @@ describe('braveWebSearch', () => {
 
   it('translates HTTP 429 into a quota message', async () => {
     const fetchImpl = (async () =>
-      ({ ok: false, status: 429, json: async () => ({}) }) as unknown as Response) as typeof fetch;
+      ({
+        ok: false,
+        status: 429,
+        json: async () => ({}),
+      }) as unknown as Response) as typeof fetch;
 
     await expect(
       braveWebSearch({ query: 'x', apiKey: 'key', fetchImpl }),
@@ -96,7 +100,6 @@ describe('braveWebSearch', () => {
 
 describe('htmlToText (pure module)', () => {
   it('strips scripts, tags and collapses whitespace', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { htmlToText } = require('../main/tools/html-text') as {
       htmlToText: (html: string) => string;
     };

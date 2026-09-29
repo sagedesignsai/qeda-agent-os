@@ -71,7 +71,9 @@ export interface ResolvedService {
  * Resolve a service or return an error message. Tools use this so a missing
  * key surfaces as a clear, actionable message instead of an HTTP 401.
  */
-export function resolveService(id: string): { ok: true; value: ResolvedService } | { ok: false; error: string } {
+export function resolveService(
+  id: string,
+): { ok: true; value: ResolvedService } | { ok: false; error: string } {
   const service = getService(id);
   if (!service) return { ok: false, error: `Unknown service: ${id}` };
   const apiKey = resolveServiceKey(id);

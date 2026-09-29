@@ -28,7 +28,9 @@
 import type { ToolPolicyMap } from '../capability';
 
 /** Shorthand so the table below reads as a classification, not as boilerplate. */
-const t = (capability: ToolPolicyMap[string]['capability']): ToolPolicyMap[string] => ({
+const t = (
+  capability: ToolPolicyMap[string]['capability'],
+): ToolPolicyMap[string] => ({
   capability,
 });
 

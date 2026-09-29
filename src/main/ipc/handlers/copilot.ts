@@ -10,9 +10,16 @@
 
 import { type UIMessage } from 'ai';
 import { ipcMain, type BrowserWindow } from 'electron';
-import { describeFallbackReason, isOutputChunk, isRetryableProviderError } from '../../ai/fallback';
+import {
+  describeFallbackReason,
+  isOutputChunk,
+  isRetryableProviderError,
+} from '../../ai/fallback';
 import { prepareModelMessages } from '../../ai/messages';
-import { renderProjectContext, resolveActiveProjectId } from '../../ai/project-context';
+import {
+  renderProjectContext,
+  resolveActiveProjectId,
+} from '../../ai/project-context';
 import { resolveModelChain } from '../../ai/provider';
 import { breakdownTask, expandBrainDump, planDay } from '../../ai/task-copilot';
 import { createTaskCopilotAgent } from '../../ai/task-copilot-agent';
@@ -21,7 +28,11 @@ import { createBlock, listBlocks } from '../../db/task-blocks';
 import { createSteps } from '../../db/task-steps';
 import { createTask, getTask, listTasks } from '../../db/tasks';
 
-export function registerCopilotHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
+export function registerCopilotHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
   // ── AI focus copilot ──────────────────────────────────────────────────────
 
   ipcMain.handle(
@@ -37,24 +48,21 @@ export function registerCopilotHandlers({ mainWindow }: { mainWindow: BrowserWin
     },
   );
 
-  ipcMain.handle(
-    'tasks:brain-dump',
-    async (_e, { text }: { text: string }) => {
-      const trimmed = (text ?? '').trim();
-      if (!trimmed) return { tasks: [], note: 'Nothing to add.' };
-      const { tasks: drafts, note } = await expandBrainDump(trimmed);
-      const created = drafts.map((d) =>
-        createTask({
-          title: d.title,
-          description: d.description,
-          priority: d.priority,
-          estimate_mins: d.estimate_mins,
-          status: 'backlog',
-        }),
-      );
-      return { tasks: created, note };
-    },
-  );
+  ipcMain.handle('tasks:brain-dump', async (_e, { text }: { text: string }) => {
+    const trimmed = (text ?? '').trim();
+    if (!trimmed) return { tasks: [], note: 'Nothing to add.' };
+    const { tasks: drafts, note } = await expandBrainDump(trimmed);
+    const created = drafts.map((d) =>
+      createTask({
+        title: d.title,
+        description: d.description,
+        priority: d.priority,
+        estimate_mins: d.estimate_mins,
+        status: 'backlog',
+      }),
+    );
+    return { tasks: created, note };
+  });
 
   ipcMain.handle(
     'tasks:plan-day',

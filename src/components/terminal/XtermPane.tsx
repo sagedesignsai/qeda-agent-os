@@ -104,21 +104,21 @@ function readToken(name: string): string {
  * emulator draws as *chrome* is token-driven.
  */
 const ANSI_COLORS = {
-  black:       '#18181b',
-  red:         '#ef4444',
-  green:       '#22c55e',
-  yellow:      '#eab308',
-  blue:        '#3b82f6',
-  magenta:     '#a855f7',
-  cyan:        '#06b6d4',
-  white:       '#d4d4d8',
+  black: '#18181b',
+  red: '#ef4444',
+  green: '#22c55e',
+  yellow: '#eab308',
+  blue: '#3b82f6',
+  magenta: '#a855f7',
+  cyan: '#06b6d4',
+  white: '#d4d4d8',
   brightBlack: '#3f3f46',
-  brightRed:   '#f87171',
+  brightRed: '#f87171',
   brightGreen: '#4ade80',
-  brightYellow:'#facc15',
-  brightBlue:  '#60a5fa',
-  brightMagenta:'#c084fc',
-  brightCyan:  '#22d3ee',
+  brightYellow: '#facc15',
+  brightBlue: '#60a5fa',
+  brightMagenta: '#c084fc',
+  brightCyan: '#22d3ee',
   brightWhite: '#fafafa',
 } as const;
 
@@ -173,9 +173,9 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const termRef      = useRef<Terminal | null>(null);
-    const fitAddonRef  = useRef<FitAddon | null>(null);
-    const ptyIdRef     = useRef<string | null>(null);
+    const termRef = useRef<Terminal | null>(null);
+    const fitAddonRef = useRef<FitAddon | null>(null);
+    const ptyIdRef = useRef<string | null>(null);
     const sessionIdRef = useRef<string | undefined>(sessionId);
     sessionIdRef.current = sessionId;
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -188,7 +188,10 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
 
     // Track session promotion from OSC 133
     useIpcEvent('pty:session-assigned', (...args: unknown[]) => {
-      const { ptyId, sessionId: sid } = args[0] as { ptyId: string; sessionId: string };
+      const { ptyId, sessionId: sid } = args[0] as {
+        ptyId: string;
+        sessionId: string;
+      };
       if (ptyId === ptyIdRef.current) {
         sessionIdRef.current = sid;
       }
@@ -234,7 +237,10 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
 
     // ── PTY exit event ────────────────────────────────────────────────────
     useIpcEvent('pty:exit', (...args: unknown[]) => {
-      const { ptyId, exitCode } = args[0] as { ptyId: string; exitCode: number };
+      const { ptyId, exitCode } = args[0] as {
+        ptyId: string;
+        exitCode: number;
+      };
       if (ptyId === ptyIdRef.current) {
         termRef.current?.write(
           `\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`,
@@ -269,7 +275,7 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
       term.open(containerRef.current);
       fitAddon.fit();
 
-      termRef.current   = term;
+      termRef.current = term;
       fitAddonRef.current = fitAddon;
       setTerm(term);
 
@@ -335,11 +341,13 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
         // Only kill the PTY process if this was an ephemeral scratchpad without a session.
         // Saved sessions keep their background processes alive across sidebar/tab switches.
         if (ptyIdRef.current && !sessionIdRef.current) {
-          void window.electron.ipc.invoke('pty:kill', { ptyId: ptyIdRef.current });
+          void window.electron.ipc.invoke('pty:kill', {
+            ptyId: ptyIdRef.current,
+          });
         }
         ptyIdRef.current = null;
         term.dispose();
-        termRef.current     = null;
+        termRef.current = null;
         fitAddonRef.current = null;
         setTerm(null);
       };
@@ -349,10 +357,7 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
     return (
       <div
         ref={containerRef}
-        className={cn(
-          'size-full overflow-hidden bg-background p-1',
-          className,
-        )}
+        className={cn('size-full overflow-hidden bg-background p-1', className)}
         // Let clicks through to xterm's own event handling
         onClick={() => termRef.current?.focus()}
         {...props}

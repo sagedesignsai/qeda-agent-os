@@ -24,9 +24,7 @@ describe('extractWorkflowParams', () => {
   it('extracts parameters with defaults', () => {
     const cmd = 'lsof -ti:{{port:3000}} | xargs kill -9';
     const params = extractWorkflowParams(cmd);
-    expect(params).toEqual([
-      { name: 'port', defaultValue: '3000' },
-    ]);
+    expect(params).toEqual([{ name: 'port', defaultValue: '3000' }]);
   });
 
   it('deduplicates parameters named multiple times', () => {
@@ -37,7 +35,8 @@ describe('extractWorkflowParams', () => {
   });
 
   it('handles multiple parameters with and without defaults', () => {
-    const cmd = 'git checkout -b {{branch}} origin/{{base:main}} --track {{remote:origin}}';
+    const cmd =
+      'git checkout -b {{branch}} origin/{{base:main}} --track {{remote:origin}}';
     const params = extractWorkflowParams(cmd);
     expect(params).toEqual([
       { name: 'branch', defaultValue: undefined },
@@ -57,7 +56,9 @@ describe('interpolateWorkflow', () => {
   it('falls back to default value when user input is empty or omitted', () => {
     const cmd = 'lsof -ti:{{port:3000}} | xargs kill -9';
     expect(interpolateWorkflow(cmd, {})).toBe('lsof -ti:3000 | xargs kill -9');
-    expect(interpolateWorkflow(cmd, { port: '  ' })).toBe('lsof -ti:3000 | xargs kill -9');
+    expect(interpolateWorkflow(cmd, { port: '  ' })).toBe(
+      'lsof -ti:3000 | xargs kill -9',
+    );
   });
 
   it('falls back to empty string when no default exists and user input is omitted', () => {
@@ -66,7 +67,8 @@ describe('interpolateWorkflow', () => {
   });
 
   it('handles complex shell pipes with multiple replacements', () => {
-    const cmd = 'find {{dir:.}} -type f -name "{{pattern:*.log}}" -size +{{size:10M}}';
+    const cmd =
+      'find {{dir:.}} -type f -name "{{pattern:*.log}}" -size +{{size:10M}}';
     const result = interpolateWorkflow(cmd, {
       dir: '/var/log',
       pattern: '*.err',

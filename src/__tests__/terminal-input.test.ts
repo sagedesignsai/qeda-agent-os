@@ -168,7 +168,8 @@ describe('extractLocalhostUrls', () => {
   });
 
   it('cleans trailing punctuation', () => {
-    const output = 'Server running at http://localhost:8080. Check it out (http://127.0.0.1:4000)!';
+    const output =
+      'Server running at http://localhost:8080. Check it out (http://127.0.0.1:4000)!';
     expect(extractLocalhostUrls(output)).toEqual([
       'http://localhost:8080',
       'http://127.0.0.1:4000',
@@ -205,8 +206,9 @@ index 83db48f..bf269f4 100644
   });
 
   it('returns false for standard non-diff output', () => {
-    expect(isGitDiff('git status', 'On branch main\nnothing to commit')).toBe(false);
+    expect(isGitDiff('git status', 'On branch main\nnothing to commit')).toBe(
+      false,
+    );
     expect(isGitDiff('ls -la', 'total 0\ndrwxr-xr-x .')).toBe(false);
   });
 });
-

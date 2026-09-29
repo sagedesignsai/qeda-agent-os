@@ -68,8 +68,15 @@ export const DEFAULT_AGENT_TRANSPORT: AgentTransport = {
 export interface UseAgentChatOptions {
   sessionId: string;
   initialMessages?: UIMessage[];
-  /** Workspace context bound to this chat (page, notebook, or project). */
-  context?: { pageId?: string; notebookId?: string; projectId?: string };
+  /** Workspace context bound to this chat (page, notebook, project, or take). */
+  context?: {
+    pageId?: string;
+    notebookId?: string;
+    projectId?: string;
+    takeId?: string;
+    currentTimeMs?: number;
+    [key: string]: unknown;
+  };
   /** Channel names for this agent. Defaults to the main chat's. */
   transport?: AgentTransport;
   /** Persist the rebuilt conversation on completion (default true). */
@@ -176,15 +183,11 @@ export function applyStreamPart(
 
     // ── Tool calls ───────────────────────────────────────────────────────────
     case 'tool-input-start':
-      patchToolPart(
-        part.id,
-        { state: 'input-streaming' },
-        () => ({
-          type: `tool-${part.toolName ?? 'unknown'}`,
-          toolCallId: part.id,
-          toolName: part.toolName,
-        }),
-      );
+      patchToolPart(part.id, { state: 'input-streaming' }, () => ({
+        type: `tool-${part.toolName ?? 'unknown'}`,
+        toolCallId: part.id,
+        toolName: part.toolName,
+      }));
       break;
 
     case 'tool-call':
@@ -218,7 +221,8 @@ export function applyStreamPart(
     case 'tool-error':
       patchToolPart(part.toolCallId, {
         state: 'output-error',
-        errorText: part.errorText ?? String(part.error ?? 'Tool execution failed'),
+        errorText:
+          part.errorText ?? String(part.error ?? 'Tool execution failed'),
       });
       break;
 
@@ -391,7 +395,11 @@ export function useAgentChat({
             ...message,
             parts: parts.map((p) =>
               isToolPart(p, toolCallId)
-                ? { ...p, state: 'approval-responded', approval: { id: approvalId, approved } }
+                ? {
+                    ...p,
+                    state: 'approval-responded',
+                    approval: { id: approvalId, approved },
+                  }
                 : p,
             ) as unknown as UIMessage['parts'],
           } as UIMessage;
@@ -442,7 +450,10 @@ export function useAgentChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, commitMessages, hydrate]);
 
-  const dismissFallbackNotice = useCallback(() => setFallbackNotice(undefined), []);
+  const dismissFallbackNotice = useCallback(
+    () => setFallbackNotice(undefined),
+    [],
+  );
 
   return {
     messages,

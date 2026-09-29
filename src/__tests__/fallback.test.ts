@@ -57,7 +57,7 @@ describe('buildModelChain', () => {
     expect(chain.slice(1).map((t) => t.providerId)).not.toContain('cohere');
   });
 
-  it('uses each fallback provider\'s curated free model', () => {
+  it("uses each fallback provider's curated free model", () => {
     const chain = buildModelChain({
       activeProvider: 'cohere',
       activeModel: 'command-a',
@@ -195,12 +195,12 @@ describe('isRetryableProviderError', () => {
   });
 
   it('unwraps the SDK RetryError to find the real cause', () => {
-    expect(
-      isRetryableProviderError({ lastError: { statusCode: 429 } }),
-    ).toBe(true);
-    expect(
-      isRetryableProviderError({ lastError: { statusCode: 400 } }),
-    ).toBe(true);
+    expect(isRetryableProviderError({ lastError: { statusCode: 429 } })).toBe(
+      true,
+    );
+    expect(isRetryableProviderError({ lastError: { statusCode: 400 } })).toBe(
+      true,
+    );
     expect(
       isRetryableProviderError({
         errors: [{ statusCode: 429 }],

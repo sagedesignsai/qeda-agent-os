@@ -113,7 +113,11 @@ export function ActiveLaunchpad({
               )}
             >
               P{task.priority}{' '}
-              {task.priority === 1 ? 'High' : task.priority === 2 ? 'Med' : 'Low'}
+              {task.priority === 1
+                ? 'High'
+                : task.priority === 2
+                  ? 'Med'
+                  : 'Low'}
             </span>
             {task.estimate_mins && (
               <span className="flex items-center gap-0.5">

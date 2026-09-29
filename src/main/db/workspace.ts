@@ -73,24 +73,31 @@ export interface BacklinkEdge {
 
 // ─── Notebooks ────────────────────────────────────────────────────────────────
 
-export function createNotebook(title: string, description = '', icon = 'notebook'): Notebook {
+export function createNotebook(
+  title: string,
+  description = '',
+  icon = 'notebook',
+): Notebook {
   const db = getDb();
   const id = randomUUID();
-  db.prepare('INSERT INTO notebooks (id, title, description, icon) VALUES (?, ?, ?, ?)').run(
-    id,
-    title,
-    description,
-    icon,
-  );
-  return db.prepare<[string], Notebook>('SELECT * FROM notebooks WHERE id = ?').get(id)!;
+  db.prepare(
+    'INSERT INTO notebooks (id, title, description, icon) VALUES (?, ?, ?, ?)',
+  ).run(id, title, description, icon);
+  return db
+    .prepare<[string], Notebook>('SELECT * FROM notebooks WHERE id = ?')
+    .get(id)!;
 }
 
 export function listNotebooks(): Notebook[] {
-  return getDb().prepare<[], Notebook>('SELECT * FROM notebooks ORDER BY updated_at DESC').all();
+  return getDb()
+    .prepare<[], Notebook>('SELECT * FROM notebooks ORDER BY updated_at DESC')
+    .all();
 }
 
 export function getNotebook(id: string): Notebook | undefined {
-  return getDb().prepare<[string], Notebook>('SELECT * FROM notebooks WHERE id = ?').get(id);
+  return getDb()
+    .prepare<[string], Notebook>('SELECT * FROM notebooks WHERE id = ?')
+    .get(id);
 }
 
 export function updateNotebook(
@@ -100,14 +107,17 @@ export function updateNotebook(
   const db = getDb();
   const fields: string[] = [];
   const values: unknown[] = [];
-  if (patch.title !== undefined) fields.push('title = ?'), values.push(patch.title);
-  if (patch.description !== undefined) fields.push('description = ?'), values.push(patch.description);
-  if (patch.icon !== undefined) fields.push('icon = ?'), values.push(patch.icon);
+  if (patch.title !== undefined)
+    (fields.push('title = ?'), values.push(patch.title));
+  if (patch.description !== undefined)
+    (fields.push('description = ?'), values.push(patch.description));
+  if (patch.icon !== undefined)
+    (fields.push('icon = ?'), values.push(patch.icon));
   if (fields.length === 0) return;
   values.push(id);
-  db.prepare(`UPDATE notebooks SET ${fields.join(', ')}, updated_at = unixepoch() WHERE id = ?`).run(
-    ...values,
-  );
+  db.prepare(
+    `UPDATE notebooks SET ${fields.join(', ')}, updated_at = unixepoch() WHERE id = ?`,
+  ).run(...values);
 }
 
 export function deleteNotebook(id: string): void {
@@ -116,46 +126,65 @@ export function deleteNotebook(id: string): void {
 
 // ─── Pages ────────────────────────────────────────────────────────────────────
 
-export function createPage(notebookId: string, title: string, parentPage: string | null = null): Page {
+export function createPage(
+  notebookId: string,
+  title: string,
+  parentPage: string | null = null,
+): Page {
   const db = getDb();
   const id = randomUUID();
-  const maxOrder = db
-    .prepare<[string], { m: number | null }>(
-      'SELECT MAX(sort_order) AS m FROM pages WHERE notebook_id = ?',
-    )
-    .get(notebookId)?.m ?? 0;
+  const maxOrder =
+    db
+      .prepare<[string], { m: number | null }>(
+        'SELECT MAX(sort_order) AS m FROM pages WHERE notebook_id = ?',
+      )
+      .get(notebookId)?.m ?? 0;
   db.prepare(
     'INSERT INTO pages (id, notebook_id, parent_page, title, sort_order) VALUES (?, ?, ?, ?, ?)',
   ).run(id, notebookId, parentPage, title, maxOrder + 1);
-  return db.prepare<[string], Page>('SELECT * FROM pages WHERE id = ?').get(id)!;
+  return db
+    .prepare<[string], Page>('SELECT * FROM pages WHERE id = ?')
+    .get(id)!;
 }
 
 export function getPage(id: string): Page | undefined {
-  return getDb().prepare<[string], Page>('SELECT * FROM pages WHERE id = ?').get(id);
+  return getDb()
+    .prepare<[string], Page>('SELECT * FROM pages WHERE id = ?')
+    .get(id);
 }
 
 export function listPages(notebookId?: string): Page[] {
   const db = getDb();
   if (notebookId) {
     return db
-      .prepare<[string], Page>('SELECT * FROM pages WHERE notebook_id = ? ORDER BY sort_order, title')
+      .prepare<[string], Page>(
+        'SELECT * FROM pages WHERE notebook_id = ? ORDER BY sort_order, title',
+      )
       .all(notebookId);
   }
-  return db.prepare<[], Page>('SELECT * FROM pages ORDER BY notebook_id, sort_order').all();
+  return db
+    .prepare<[], Page>('SELECT * FROM pages ORDER BY notebook_id, sort_order')
+    .all();
 }
 
-export function updatePage(id: string, patch: { title?: string; parent_page?: string | null; sort_order?: number }): void {
+export function updatePage(
+  id: string,
+  patch: { title?: string; parent_page?: string | null; sort_order?: number },
+): void {
   const db = getDb();
   const fields: string[] = [];
   const values: unknown[] = [];
-  if (patch.title !== undefined) fields.push('title = ?'), values.push(patch.title);
-  if (patch.parent_page !== undefined) fields.push('parent_page = ?'), values.push(patch.parent_page);
-  if (patch.sort_order !== undefined) fields.push('sort_order = ?'), values.push(patch.sort_order);
+  if (patch.title !== undefined)
+    (fields.push('title = ?'), values.push(patch.title));
+  if (patch.parent_page !== undefined)
+    (fields.push('parent_page = ?'), values.push(patch.parent_page));
+  if (patch.sort_order !== undefined)
+    (fields.push('sort_order = ?'), values.push(patch.sort_order));
   if (fields.length === 0) return;
   values.push(id);
-  db.prepare(`UPDATE pages SET ${fields.join(', ')}, updated_at = unixepoch() WHERE id = ?`).run(
-    ...values,
-  );
+  db.prepare(
+    `UPDATE pages SET ${fields.join(', ')}, updated_at = unixepoch() WHERE id = ?`,
+  ).run(...values);
 }
 
 /** Delete a page plus its FTS entry. Cascades remove blocks/versions/edges. */
@@ -211,7 +240,9 @@ export function loadBlocks(pageId: string): BlockRow[] {
 
 /** Blocks as the pure-library shape the renderer edits. */
 export function loadPageBlocks(pageId: string): Block[] {
-  return loadBlocks(pageId).map(({ page_id: _p, position: _pos, ...block }) => block);
+  return loadBlocks(pageId).map(
+    ({ page_id: _p, position: _pos, ...block }) => block,
+  );
 }
 
 /** Full markdown body of a page. */
@@ -319,19 +350,24 @@ export interface SavePageOptions {
  *
  * Wrapped in one transaction so the FTS index can never drift from the rows.
  */
-export function savePageBlocks(pageId: string, blocks: Block[], options: SavePageOptions = {}): void {
+export function savePageBlocks(
+  pageId: string,
+  blocks: Block[],
+  options: SavePageOptions = {},
+): void {
   const db = getDb();
   const markdown = serializeBlocksToMarkdown(blocks);
 
   const tx = db.transaction(() => {
     // 1. Title.
     if (options.title !== undefined) {
-      db.prepare('UPDATE pages SET title = ?, updated_at = unixepoch() WHERE id = ?').run(
-        options.title,
+      db.prepare(
+        'UPDATE pages SET title = ?, updated_at = unixepoch() WHERE id = ?',
+      ).run(options.title, pageId);
+    } else {
+      db.prepare('UPDATE pages SET updated_at = unixepoch() WHERE id = ?').run(
         pageId,
       );
-    } else {
-      db.prepare('UPDATE pages SET updated_at = unixepoch() WHERE id = ?').run(pageId);
     }
 
     // 2. Blocks: replace-all is simplest and pages are small.
@@ -354,18 +390,20 @@ export function savePageBlocks(pageId: string, blocks: Block[], options: SavePag
 
     // 3. FTS sync (delete + insert row).
     db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(pageId);
-    const page = db.prepare<[string], Page>('SELECT * FROM pages WHERE id = ?').get(pageId);
+    const page = db
+      .prepare<[string], Page>('SELECT * FROM pages WHERE id = ?')
+      .get(pageId);
     if (page) {
-      db.prepare('INSERT INTO pages_fts (page_id, title, body) VALUES (?, ?, ?)').run(
-        pageId,
-        options.title ?? page.title,
-        markdown,
-      );
+      db.prepare(
+        'INSERT INTO pages_fts (page_id, title, body) VALUES (?, ?, ?)',
+      ).run(pageId, options.title ?? page.title, markdown);
     }
 
     // 4. Backlinks: recompute from doc: links + wiki names.
     db.prepare('DELETE FROM backlinks WHERE from_page = ?').run(pageId);
-    const insertEdge = db.prepare('INSERT OR IGNORE INTO backlinks (from_page, to_page) VALUES (?, ?)');
+    const insertEdge = db.prepare(
+      'INSERT OR IGNORE INTO backlinks (from_page, to_page) VALUES (?, ?)',
+    );
     for (const link of extractDocLinks(blocks)) {
       if (link.target.startsWith('doc:')) {
         const targetId = link.target.slice('doc:'.length).trim();
@@ -373,7 +411,9 @@ export function savePageBlocks(pageId: string, blocks: Block[], options: SavePag
       } else if (link.target.startsWith('wiki:')) {
         const name = link.target.slice('wiki:'.length).trim();
         const target = db
-          .prepare<[string], { id: string }>('SELECT id FROM pages WHERE title = ? LIMIT 1')
+          .prepare<[string], { id: string }>(
+            'SELECT id FROM pages WHERE title = ? LIMIT 1',
+          )
           .get(name);
         if (target && target.id !== pageId) insertEdge.run(pageId, target.id);
       }
@@ -381,14 +421,18 @@ export function savePageBlocks(pageId: string, blocks: Block[], options: SavePag
 
     // 5. Tags: recompute from #tags.
     db.prepare('DELETE FROM page_tags WHERE page_id = ?').run(pageId);
-    const insertPageTag = db.prepare('INSERT OR IGNORE INTO page_tags (page_id, tag_id) VALUES (?, ?)');
+    const insertPageTag = db.prepare(
+      'INSERT OR IGNORE INTO page_tags (page_id, tag_id) VALUES (?, ?)',
+    );
     for (const tag of extractDocTags(blocks)) {
       insertPageTag.run(pageId, tagIdFor(tag));
     }
 
     // 6. Version snapshot.
     if (!options.skipVersion) {
-      const current = db.prepare<[string], Page>('SELECT * FROM pages WHERE id = ?').get(pageId);
+      const current = db
+        .prepare<[string], Page>('SELECT * FROM pages WHERE id = ?')
+        .get(pageId);
       db.prepare(
         'INSERT INTO page_versions (id, page_id, title, markdown, origin) VALUES (?, ?, ?, ?, ?)',
       ).run(
@@ -412,7 +456,11 @@ export function createPageWithBlocks(
   parentPage: string | null = null,
 ): Page {
   const page = createPage(notebookId, title, parentPage);
-  savePageBlocks(page.id, blocks, { title, versionOrigin: 'manual', skipVersion: true });
+  savePageBlocks(page.id, blocks, {
+    title,
+    versionOrigin: 'manual',
+    skipVersion: true,
+  });
   return page;
 }
 
@@ -511,7 +559,10 @@ export function searchPages(query: string, limit = 20): SearchHit[] {
 
   const db = getDb();
   const rows = db
-    .prepare<[string, number], { page_id: string; title: string; snippet: string; rank: number }>(
+    .prepare<
+      [string, number],
+      { page_id: string; title: string; snippet: string; rank: number }
+    >(
       `SELECT page_id, title,
               snippet(pages_fts, 2, '[', ']', '…', 12) AS snippet,
               bm25(pages_fts) AS rank

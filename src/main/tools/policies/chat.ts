@@ -31,7 +31,8 @@ const t = (
   capability: ToolPolicyMap[string]['capability'],
   approval?: ToolPolicyMap[string]['approval'],
   reason?: string,
-): ToolPolicyMap[string] => (approval ? { capability, approval, reason } : { capability });
+): ToolPolicyMap[string] =>
+  approval ? { capability, approval, reason } : { capability };
 
 export const chatToolPolicies: ToolPolicyMap = {
   // ── Clipboard ──────────────────────────────────────────────────────────────
@@ -65,11 +66,7 @@ export const chatToolPolicies: ToolPolicyMap = {
     'not-applicable',
     'Chat is a direct, user-initiated surface; embedding spend is already bounded by the user configuring a provider.',
   ),
-  indexPage: t(
-    'cost',
-    'not-applicable',
-    'Same rationale as indexFile.',
-  ),
+  indexPage: t('cost', 'not-applicable', 'Same rationale as indexFile.'),
   removeFromIndex: t('destructive'),
 
   // ── Web / services ─────────────────────────────────────────────────────────

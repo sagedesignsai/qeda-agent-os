@@ -85,8 +85,7 @@ export function fillPink(out: Float32Array): void {
     b3 = 0.8665 * b3 + white * 0.3104856;
     b4 = 0.55 * b4 + white * 0.5329522;
     b5 = -0.7616 * b5 - white * 0.016898;
-    out[i] =
-      (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+    out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
     b6 = white * 0.115926;
   }
 }
@@ -230,7 +229,10 @@ export class FocusAudioEngine {
 
   private buildBinaural(ctx: AudioContext, config: FocusSoundConfig): void {
     if (!this.master) return;
-    const { left, right } = binauralFrequencies(config.carrierHz, config.beatHz);
+    const { left, right } = binauralFrequencies(
+      config.carrierHz,
+      config.beatHz,
+    );
 
     const gain = ctx.createGain();
     gain.gain.value = config.binauralVolume;
@@ -273,11 +275,7 @@ export class FocusAudioEngine {
       this.noiseGain.gain.setTargetAtTime(config.noiseVolume, now, 0.05);
     }
     if (this.binauralGain) {
-      this.binauralGain.gain.setTargetAtTime(
-        config.binauralVolume,
-        now,
-        0.05,
-      );
+      this.binauralGain.gain.setTargetAtTime(config.binauralVolume, now, 0.05);
     }
   }
 

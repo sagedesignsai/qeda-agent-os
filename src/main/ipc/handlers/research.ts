@@ -19,7 +19,7 @@ export function registerResearchHandlers(): void {
 
   ipcMain.handle(
     'research:list',
-    (_e, filter: { pageId?: string; notebookId?: string }) => listResearchRuns(filter),
+    (_e, filter: { pageId?: string; notebookId?: string }) =>
+      listResearchRuns(filter),
   );
-
 }

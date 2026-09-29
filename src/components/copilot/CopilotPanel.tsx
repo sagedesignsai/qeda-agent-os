@@ -169,7 +169,9 @@ export function CopilotPanel({
         {fallbackNotice && (
           <div className="mx-3 my-2 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
             <span className="truncate">
-              Provider <strong>{fallbackNotice.fromProvider}</strong> unavailable ({fallbackNotice.reason}) — switched to <strong>{fallbackNotice.toProvider}</strong>
+              Provider <strong>{fallbackNotice.fromProvider}</strong>{' '}
+              unavailable ({fallbackNotice.reason}) — switched to{' '}
+              <strong>{fallbackNotice.toProvider}</strong>
             </span>
             <Button
               size="icon"

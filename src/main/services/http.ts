@@ -59,7 +59,11 @@ async function readErrorBody(response: Response): Promise<string> {
   }
 }
 
-function describeStatus(service: string, status: number, detail: string): string {
+function describeStatus(
+  service: string,
+  status: number,
+  detail: string,
+): string {
   const base =
     status === 401 || status === 403
       ? `${service} rejected the API key (HTTP ${status}).`
@@ -112,18 +116,27 @@ async function send(options: RequestOptions): Promise<Response> {
 
   if (!response.ok) {
     const detail = await readErrorBody(response);
-    throw new ServiceHttpError(service, describeStatus(service, response.status, detail), response.status);
+    throw new ServiceHttpError(
+      service,
+      describeStatus(service, response.status, detail),
+      response.status,
+    );
   }
   return response;
 }
 
 /** Perform a request and parse a JSON response. */
-export async function requestJson<T = unknown>(options: RequestOptions): Promise<T> {
+export async function requestJson<T = unknown>(
+  options: RequestOptions,
+): Promise<T> {
   const response = await send(options);
   try {
     return (await response.json()) as T;
   } catch {
-    throw new ServiceHttpError(options.service, `${options.service} returned invalid JSON.`);
+    throw new ServiceHttpError(
+      options.service,
+      `${options.service} returned invalid JSON.`,
+    );
   }
 }
 

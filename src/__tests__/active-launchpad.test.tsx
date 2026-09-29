@@ -60,9 +60,13 @@ describe('ActiveLaunchpad', () => {
       />,
     );
 
-    expect(screen.getByText('Implement OAuth Token Refresh')).toBeInTheDocument();
     expect(
-      screen.getByText('Quick Win (25m): lowest activation barrier to build flow'),
+      screen.getByText('Implement OAuth Token Refresh'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Quick Win (25m): lowest activation barrier to build flow',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText('Recommended Next Move')).toBeInTheDocument();
     expect(screen.getByText('+100 XP')).toBeInTheDocument();
@@ -110,7 +114,9 @@ describe('TodayEmptyHero', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/3d streak/i)).toBeInTheDocument();
     expect(screen.getByText(/5 tasks/i)).toBeInTheDocument();
-    expect(screen.getByText('Implement OAuth Token Refresh')).toBeInTheDocument();
+    expect(
+      screen.getByText('Implement OAuth Token Refresh'),
+    ).toBeInTheDocument();
 
     // Flow button
     const flowBtn = screen.getByRole('button', { name: /quick start/i });
@@ -123,7 +129,9 @@ describe('TodayEmptyHero', () => {
     expect(onOpenKickoff).toHaveBeenCalled();
 
     // Auto-Plan button
-    const autoPlanBtn = screen.getByRole('button', { name: /auto-plan day with ai/i });
+    const autoPlanBtn = screen.getByRole('button', {
+      name: /auto-plan day with ai/i,
+    });
     fireEvent.click(autoPlanBtn);
     expect(onAutoPlan).toHaveBeenCalled();
   });
@@ -159,7 +167,9 @@ describe('TodayEmptyHero', () => {
     expect(onSendPrompt).toHaveBeenCalledWith('Schedule 2 hours for deep work');
 
     // Click suggestion chip for planning
-    const planChip = screen.getByRole('button', { name: /plan today's top 3/i });
+    const planChip = screen.getByRole('button', {
+      name: /plan today's top 3/i,
+    });
     fireEvent.click(planChip);
     expect(onSendPrompt).toHaveBeenCalledWith(
       expect.stringContaining('top 3 priorities'),
@@ -173,4 +183,3 @@ describe('TodayEmptyHero', () => {
     expect(onOpenBrainDump).toHaveBeenCalled();
   });
 });
-

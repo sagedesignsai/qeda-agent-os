@@ -117,7 +117,10 @@ export function useTerminalSession(
 
   // ── Streaming event: agent finished ──────────────────────────────────────
   useIpcEvent('terminal:agent-done', (...args: unknown[]) => {
-    const { sessionId: sid, summary: s } = args[0] as { sessionId: string; summary: string };
+    const { sessionId: sid, summary: s } = args[0] as {
+      sessionId: string;
+      summary: string;
+    };
     if (sid !== activeSessionRef.current) return;
     setSummary(s);
     setStatus('done');
@@ -125,7 +128,10 @@ export function useTerminalSession(
 
   // ── Streaming event: agent errored ────────────────────────────────────────
   useIpcEvent('terminal:agent-error', (...args: unknown[]) => {
-    const { sessionId: sid, error: e } = args[0] as { sessionId: string; error: string };
+    const { sessionId: sid, error: e } = args[0] as {
+      sessionId: string;
+      error: string;
+    };
     if (sid !== activeSessionRef.current) return;
     setError(e);
     setStatus('error');
@@ -158,7 +164,10 @@ export function useTerminalSession(
   const rerun = useCallback(
     (blockId: string) => {
       if (!sessionId) return;
-      void window.electron.ipc.invoke('terminal:rerun-block', { sessionId, blockId });
+      void window.electron.ipc.invoke('terminal:rerun-block', {
+        sessionId,
+        blockId,
+      });
     },
     [sessionId],
   );
@@ -166,7 +175,10 @@ export function useTerminalSession(
   const approve = useCallback(
     (blockId: string) => {
       if (!sessionId) return;
-      void window.electron.ipc.invoke('terminal:approve', { sessionId, blockId });
+      void window.electron.ipc.invoke('terminal:approve', {
+        sessionId,
+        blockId,
+      });
     },
     [sessionId],
   );
@@ -174,7 +186,10 @@ export function useTerminalSession(
   const reject = useCallback(
     (blockId: string) => {
       if (!sessionId) return;
-      void window.electron.ipc.invoke('terminal:reject', { sessionId, blockId });
+      void window.electron.ipc.invoke('terminal:reject', {
+        sessionId,
+        blockId,
+      });
     },
     [sessionId],
   );

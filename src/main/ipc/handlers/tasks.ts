@@ -11,10 +11,31 @@
 import { isStepCount } from 'ai';
 import { ipcMain } from 'electron';
 import { getSettings } from '../../ai/settings';
-import { createFocusSession, getFocusStats, listFocusSessions } from '../../db/focus-sessions';
-import { createBlock, deleteBlock, listBlocks, updateBlock } from '../../db/task-blocks';
-import { createStep, deleteStep, listSteps, setStepDone, stepProgressMap } from '../../db/task-steps';
-import { createTask, deleteTask, incrementPomodoro, listTasks, updateTask } from '../../db/tasks';
+import {
+  createFocusSession,
+  getFocusStats,
+  listFocusSessions,
+} from '../../db/focus-sessions';
+import {
+  createBlock,
+  deleteBlock,
+  listBlocks,
+  updateBlock,
+} from '../../db/task-blocks';
+import {
+  createStep,
+  deleteStep,
+  listSteps,
+  setStepDone,
+  stepProgressMap,
+} from '../../db/task-steps';
+import {
+  createTask,
+  deleteTask,
+  incrementPomodoro,
+  listTasks,
+  updateTask,
+} from '../../db/tasks';
 
 export function registerTasksHandlers(): void {
   // ── ADHD task manager ─────────────────────────────────────────────────────
@@ -26,16 +47,15 @@ export function registerTasksHandlers(): void {
       {
         status,
         projectId,
-      }: { status?: import('../../db/tasks').TaskStatus; projectId?: string | null },
+      }: {
+        status?: import('../../db/tasks').TaskStatus;
+        projectId?: string | null;
+      },
     ) => listTasks({ status, projectId }),
   );
 
-  ipcMain.handle(
-    'tasks:create',
-    (
-      _e,
-      req: Parameters<typeof createTask>[0],
-    ) => createTask(req),
+  ipcMain.handle('tasks:create', (_e, req: Parameters<typeof createTask>[0]) =>
+    createTask(req),
   );
 
   ipcMain.handle(
@@ -44,14 +64,12 @@ export function registerTasksHandlers(): void {
       updateTask(id, patch),
   );
 
-  ipcMain.handle(
-    'tasks:delete',
-    (_e, { id }: { id: string }) => deleteTask(id),
+  ipcMain.handle('tasks:delete', (_e, { id }: { id: string }) =>
+    deleteTask(id),
   );
 
-  ipcMain.handle(
-    'tasks:increment-pomodoro',
-    (_e, { id }: { id: string }) => incrementPomodoro(id),
+  ipcMain.handle('tasks:increment-pomodoro', (_e, { id }: { id: string }) =>
+    incrementPomodoro(id),
   );
 
   ipcMain.handle('tasks:prioritize', async () => {
@@ -59,25 +77,32 @@ export function registerTasksHandlers(): void {
     const { resolveModel } = await import('../../ai/provider.js');
     const { generateText } = await import('ai');
     const allTasks = listTasks();
-    if (allTasks.length === 0) return { orderedIds: [], reasoning: 'No tasks to prioritize.' };
+    if (allTasks.length === 0)
+      return { orderedIds: [], reasoning: 'No tasks to prioritize.' };
 
     const settings = getSettings();
     const model = resolveModel(settings.activeProvider, settings.activeModel);
 
     const taskList = allTasks
-      .map((t) => `- id:${t.id} priority:${t.priority} status:${t.status} title:"${t.title}"`)
+      .map(
+        (t) =>
+          `- id:${t.id} priority:${t.priority} status:${t.status} title:"${t.title}"`,
+      )
       .join('\n');
 
     const result = await generateText({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       model: model as any,
-      system: 'You are a productivity assistant. Given a list of tasks, return a JSON object with "orderedIds" (array of task ids, highest priority first) and "reasoning" (one sentence explaining your decision). Output only valid JSON.',
+      system:
+        'You are a productivity assistant. Given a list of tasks, return a JSON object with "orderedIds" (array of task ids, highest priority first) and "reasoning" (one sentence explaining your decision). Output only valid JSON.',
       prompt: `Tasks:\n${taskList}\n\nReturn JSON only.`,
       stopWhen: isStepCount(1),
     });
 
     try {
-      const parsed = JSON.parse(result.text ?? '{}') as { orderedIds?: string[]; reasoning?: string };
+      const parsed = JSON.parse(result.text ?? '{}') as {
+        orderedIds?: string[];
+        reasoning?: string;
+      };
       return {
         orderedIds: parsed.orderedIds ?? allTasks.map((t) => t.id),
         reasoning: parsed.reasoning ?? 'Prioritized by AI.',
@@ -92,9 +117,8 @@ export function registerTasksHandlers(): void {
 
   // ── Focus system · breakdown steps ────────────────────────────────────────
 
-  ipcMain.handle(
-    'tasks:steps-list',
-    (_e, { taskId }: { taskId: string }) => listSteps(taskId),
+  ipcMain.handle('tasks:steps-list', (_e, { taskId }: { taskId: string }) =>
+    listSteps(taskId),
   );
 
   ipcMain.handle(
@@ -108,9 +132,8 @@ export function registerTasksHandlers(): void {
     (_e, { id, done }: { id: string; done: boolean }) => setStepDone(id, done),
   );
 
-  ipcMain.handle(
-    'tasks:step-delete',
-    (_e, { id }: { id: string }) => deleteStep(id),
+  ipcMain.handle('tasks:step-delete', (_e, { id }: { id: string }) =>
+    deleteStep(id),
   );
 
   ipcMain.handle('tasks:steps-progress', () => stepProgressMap());
@@ -119,8 +142,10 @@ export function registerTasksHandlers(): void {
 
   ipcMain.handle(
     'tasks:blocks-list',
-    (_e, req: { from?: number; to?: number; projectId?: string | null } | void) =>
-      listBlocks(req ?? undefined),
+    (
+      _e,
+      req: { from?: number; to?: number; projectId?: string | null } | void,
+    ) => listBlocks(req ?? undefined),
   );
 
   ipcMain.handle(
@@ -136,9 +161,8 @@ export function registerTasksHandlers(): void {
     ) => updateBlock(id, patch),
   );
 
-  ipcMain.handle(
-    'tasks:block-delete',
-    (_e, { id }: { id: string }) => deleteBlock(id),
+  ipcMain.handle('tasks:block-delete', (_e, { id }: { id: string }) =>
+    deleteBlock(id),
   );
 
   // ── Focus system · sessions & stats ───────────────────────────────────────
@@ -156,5 +180,4 @@ export function registerTasksHandlers(): void {
   );
 
   ipcMain.handle('focus:stats', () => getFocusStats());
-
 }

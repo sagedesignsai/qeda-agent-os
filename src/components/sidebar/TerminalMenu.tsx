@@ -71,7 +71,9 @@ function SessionStatusDot({ status }: { status: TerminalSession['status'] }) {
     return <XCircleIcon className="size-3 shrink-0 text-rose-400" />;
   }
   // idle
-  return <CircleDashedIcon className="size-3 shrink-0 text-muted-foreground/50" />;
+  return (
+    <CircleDashedIcon className="size-3 shrink-0 text-muted-foreground/50" />
+  );
 }
 
 // ─── Session label ────────────────────────────────────────────────────────────
@@ -84,12 +86,14 @@ function SessionLabel({ session }: { session: TerminalSession }) {
 
   return (
     <span className="flex min-w-0 flex-1 items-baseline gap-1.5 truncate">
-      <span className={cn(
-        'font-mono text-xs font-medium truncate',
-        session.status === 'running' && 'text-emerald-400',
-        session.status === 'done' && 'text-foreground/90',
-        session.status === 'idle' && 'text-muted-foreground',
-      )}>
+      <span
+        className={cn(
+          'font-mono text-xs font-medium truncate',
+          session.status === 'running' && 'text-emerald-400',
+          session.status === 'done' && 'text-foreground/90',
+          session.status === 'idle' && 'text-muted-foreground',
+        )}
+      >
         {cmd}
       </span>
       {context && (
@@ -142,7 +146,9 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
         // Best-effort
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [activeId, projectId]);
 
   // ── Live event subscriptions ─────────────────────────────────────────────
@@ -161,20 +167,27 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
   useIpcEvent('terminal:agent-done', (...args: unknown[]) => {
     const { sessionId } = args[0] as { sessionId: string };
     setSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? { ...s, status: 'done' as const } : s)),
+      prev.map((s) =>
+        s.id === sessionId ? { ...s, status: 'done' as const } : s,
+      ),
     );
   });
 
   useIpcEvent('terminal:agent-error', (...args: unknown[]) => {
     const { sessionId } = args[0] as { sessionId: string };
     setSessions((prev) =>
-      prev.map((s) => (s.id === sessionId ? { ...s, status: 'error' as const } : s)),
+      prev.map((s) =>
+        s.id === sessionId ? { ...s, status: 'error' as const } : s,
+      ),
     );
   });
 
   // Spinner starts as soon as a goal begins running.
   useIpcEvent('terminal:session-status', (...args: unknown[]) => {
-    const { sessionId, status } = args[0] as { sessionId: string; status: TerminalSession['status'] };
+    const { sessionId, status } = args[0] as {
+      sessionId: string;
+      status: TerminalSession['status'];
+    };
     setSessions((prev) =>
       prev.map((s) => (s.id === sessionId ? { ...s, status } : s)),
     );
@@ -182,7 +195,10 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
 
   // When main renames a session after goal completion, reflect it immediately.
   useIpcEvent('terminal:session-renamed', (...args: unknown[]) => {
-    const { sessionId, title } = args[0] as { sessionId: string; title: string };
+    const { sessionId, title } = args[0] as {
+      sessionId: string;
+      title: string;
+    };
     setSessions((prev) =>
       prev.map((s) => (s.id === sessionId ? { ...s, title } : s)),
     );
@@ -194,8 +210,7 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
     if (!q) return sessions;
     return sessions.filter(
       (s) =>
-        s.title.toLowerCase().includes(q) ||
-        s.goal.toLowerCase().includes(q),
+        s.title.toLowerCase().includes(q) || s.goal.toLowerCase().includes(q),
     );
   }, [sessions, search]);
 
@@ -228,7 +243,10 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
     setEditingId(null);
     if (!title) return;
     try {
-      await window.electron.ipc.invoke('terminal:session-rename', { id, title });
+      await window.electron.ipc.invoke('terminal:session-rename', {
+        id,
+        title,
+      });
       await reload();
     } catch {
       toast.error('Failed to rename session.');
@@ -302,7 +320,9 @@ export function TerminalMenu({ onBack }: { onBack: () => void }) {
                       size="sm"
                       isActive={session.id === activeId}
                       tooltip={session.title || session.goal || 'Untitled'}
-                      onClick={() => navigate(withScope(`/terminal/${session.id}`))}
+                      onClick={() =>
+                        navigate(withScope(`/terminal/${session.id}`))
+                      }
                     >
                       {/* Status dot replaces the static icon */}
                       <SessionStatusDot status={session.status} />

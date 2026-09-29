@@ -131,14 +131,19 @@ export class Osc133Parser {
           this.commandStartTime = Date.now();
           this.currentOutput = '';
           this.currentBlockId = `pty-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          this.callbacks.onCommandStart?.(this.currentCommand.trim(), this.currentCwd);
+          this.callbacks.onCommandStart?.(
+            this.currentCommand.trim(),
+            this.currentCwd,
+          );
           break;
 
-        case 'D': { // Command execution end
+        case 'D': {
+          // Command execution end
           const parts = payload.split(';');
           const code = parts.length > 2 ? parseInt(parts[2], 10) : 0;
           const exitCode = Number.isNaN(code) ? 0 : code;
-          const durationMs = this.commandStartTime > 0 ? Date.now() - this.commandStartTime : 0;
+          const durationMs =
+            this.commandStartTime > 0 ? Date.now() - this.commandStartTime : 0;
 
           if (this.state === 'running' || this.currentBlockId) {
             this.callbacks.onCommandEnd?.({

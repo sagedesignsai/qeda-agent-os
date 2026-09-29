@@ -265,4 +265,3 @@ describe('PDF Studio Text Elements & Rich Inline Capabilities', () => {
     expect(blob.size).toBeGreaterThan(0);
   });
 });
-

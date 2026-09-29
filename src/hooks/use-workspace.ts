@@ -8,7 +8,12 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { Notebook, Page, PageDetail, SearchHit } from '../main/ipc/channels';
+import type {
+  Notebook,
+  Page,
+  PageDetail,
+  SearchHit,
+} from '../main/ipc/channels';
 
 export function useNotebooks() {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
@@ -16,7 +21,8 @@ export function useNotebooks() {
 
   const reload = useCallback(async () => {
     try {
-      const data = await window.electron.ipc.invoke<Notebook[]>('notebooks:list');
+      const data =
+        await window.electron.ipc.invoke<Notebook[]>('notebooks:list');
       setNotebooks(data ?? []);
     } finally {
       setLoading(false);
@@ -64,7 +70,10 @@ export function usePageDetail(pageId: string | null) {
   const reload = useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const data = await window.electron.ipc.invoke<PageDetail | null>('pages:get', { id });
+      const data = await window.electron.ipc.invoke<PageDetail | null>(
+        'pages:get',
+        { id },
+      );
       setDetail(data);
       return data;
     } finally {
@@ -95,7 +104,10 @@ export function usePageSearch() {
     }
     setSearching(true);
     try {
-      const data = await window.electron.ipc.invoke<SearchHit[]>('pages:search', { query });
+      const data = await window.electron.ipc.invoke<SearchHit[]>(
+        'pages:search',
+        { query },
+      );
       setHits(data ?? []);
     } finally {
       setSearching(false);

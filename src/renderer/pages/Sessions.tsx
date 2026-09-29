@@ -9,7 +9,13 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -66,7 +72,10 @@ export default function Sessions() {
   const handleExport = async (session: Session, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const messages = await window.electron.ipc.invoke<any[]>('sessions:messages', { id: session.id });
+      const messages = await window.electron.ipc.invoke<any[]>(
+        'sessions:messages',
+        { id: session.id },
+      );
       let md = `# ${session.title}\n*Exported on ${new Date().toLocaleString()}*\n\n---\n\n`;
 
       for (const m of messages) {
@@ -74,7 +83,10 @@ export default function Sessions() {
         for (const p of m.parts || []) {
           if (p.type === 'text') {
             md += `${p.text}\n\n`;
-          } else if (p.type === 'tool-invocation' || p.type?.startsWith?.('tool-')) {
+          } else if (
+            p.type === 'tool-invocation' ||
+            p.type?.startsWith?.('tool-')
+          ) {
             const name = p.toolName || p.type.replace(/^tool-/, '');
             md += `> **Tool Execution: \`${name}\`**\n`;
             md += `> \`\`\`json\n> ${JSON.stringify(p.input, null, 2)}\n> \`\`\`\n\n`;
@@ -148,7 +160,9 @@ export default function Sessions() {
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Total Sessions</p>
-                <h3 className="text-lg font-bold text-foreground">{sessions.length}</h3>
+                <h3 className="text-lg font-bold text-foreground">
+                  {sessions.length}
+                </h3>
               </div>
             </CardContent>
           </Card>
@@ -161,8 +175,13 @@ export default function Sessions() {
               <div>
                 <p className="text-xs text-muted-foreground">Storage Engine</p>
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-sm font-semibold text-foreground">SQLite 3</h3>
-                  <Badge variant="outline" className="text-[10px] h-4 px-1 text-emerald-500 border-emerald-500/30">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    SQLite 3
+                  </h3>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] h-4 px-1 text-emerald-500 border-emerald-500/30"
+                  >
                     WAL mode
                   </Badge>
                 </div>
@@ -179,7 +198,12 @@ export default function Sessions() {
                 <p className="text-xs text-muted-foreground">Last Synced</p>
                 <h3 className="text-xs font-semibold text-foreground">
                   {sessions[0]?.updated_at
-                    ? new Date(sessions[0].updated_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    ? new Date(
+                        sessions[0].updated_at * 1000,
+                      ).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
                     : 'Just now'}
                 </h3>
               </div>
@@ -206,7 +230,9 @@ export default function Sessions() {
             <div className="flex flex-col items-center justify-center p-12 text-center text-muted-foreground">
               <MessageSquareIcon className="h-10 w-10 mb-2 stroke-1 opacity-40" />
               <p className="text-sm font-medium">No sessions found</p>
-              <p className="text-xs mt-1">Start a new chat to begin recording sessions.</p>
+              <p className="text-xs mt-1">
+                Start a new chat to begin recording sessions.
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-border">

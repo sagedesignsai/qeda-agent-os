@@ -10,7 +10,13 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckIcon, Loader2Icon, PlusIcon, SparklesIcon, Trash2Icon } from 'lucide-react';
+import {
+  CheckIcon,
+  Loader2Icon,
+  PlusIcon,
+  SparklesIcon,
+  Trash2Icon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -77,10 +83,13 @@ export function TaskStepsSheet({
     if (!title || !taskId) return;
     setDraft('');
     try {
-      const step = await window.electron.ipc.invoke<TaskStep>('tasks:step-add', {
-        taskId,
-        title,
-      });
+      const step = await window.electron.ipc.invoke<TaskStep>(
+        'tasks:step-add',
+        {
+          taskId,
+          title,
+        },
+      );
       setSteps((prev) => [...prev, step]);
       onChanged?.();
     } catch {
@@ -91,7 +100,11 @@ export function TaskStepsSheet({
   const toggleStep = async (step: TaskStep) => {
     const next = step.done ? 0 : 1;
     if (!step.done) {
-      void gamification.awardXp(XP_REWARDS.STEP_COMPLETE, 'step_complete', step.id);
+      void gamification.awardXp(
+        XP_REWARDS.STEP_COMPLETE,
+        'step_complete',
+        step.id,
+      );
     }
     setSteps((prev) =>
       prev.map((s) => (s.id === step.id ? { ...s, done: next } : s)),
@@ -148,7 +161,10 @@ export function TaskStepsSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-md"
+      >
         <SheetHeader className="border-b border-border/60">
           <SheetTitle className="pr-8">{task?.title ?? 'Task'}</SheetTitle>
           <SheetDescription>

@@ -56,7 +56,12 @@ function serializePage(page: Page, tags: string[]): string {
     .join('\n');
 }
 
-function pageSummary(page: Page): { id: string; title: string; notebook_id: string; updated_at: number } {
+function pageSummary(page: Page): {
+  id: string;
+  title: string;
+  notebook_id: string;
+  updated_at: number;
+} {
   return {
     id: page.id,
     title: page.title,
@@ -71,7 +76,10 @@ export const listPagesTool = tool({
   description:
     'List knowledge-base pages in the workspace. Optionally filter by notebook. Returns id, title, notebook and last-updated for each page.',
   inputSchema: z.object({
-    notebookId: z.string().optional().describe('Restrict the listing to this notebook.'),
+    notebookId: z
+      .string()
+      .optional()
+      .describe('Restrict the listing to this notebook.'),
   }),
   execute: async ({ notebookId }) => {
     try {
@@ -94,9 +102,20 @@ export const getPageTool = tool({
       const page = getPage(pageId);
       if (!page) return { success: false, error: `No page with id ${pageId}` };
 
-      const backlinks = listBacklinks(pageId).map((p) => ({ id: p.id, title: p.title }));
-      const outgoing = listOutgoingLinks(pageId).map((p) => ({ id: p.id, title: p.title }));
-      return { success: true, page: serializePage(page, listPageTags(pageId)), backlinks, outgoing };
+      const backlinks = listBacklinks(pageId).map((p) => ({
+        id: p.id,
+        title: p.title,
+      }));
+      const outgoing = listOutgoingLinks(pageId).map((p) => ({
+        id: p.id,
+        title: p.title,
+      }));
+      return {
+        success: true,
+        page: serializePage(page, listPageTags(pageId)),
+        backlinks,
+        outgoing,
+      };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -108,7 +127,13 @@ export const findPagesTool = tool({
     'Full-text search across all workspace pages (titles and bodies). Returns page ids, titles and matched snippets.',
   inputSchema: z.object({
     query: z.string().describe('Keywords to search for.'),
-    limit: z.number().int().min(1).max(20).default(8).describe('Maximum number of hits.'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(8)
+      .describe('Maximum number of hits.'),
   }),
   execute: async ({ query, limit }) => {
     try {
@@ -125,12 +150,22 @@ export const createNotebookTool = tool({
     'Create a new notebook — a container for a multi-page document, tutorial or paper. Returns a notebookId to pass to writePage/writeNotebook.',
   inputSchema: z.object({
     title: z.string().describe('Notebook title.'),
-    description: z.string().optional().describe('One-line summary of what the notebook covers.'),
-    icon: z.string().optional().describe('Icon keyword, e.g. "flask", "book", "gamepad".'),
+    description: z
+      .string()
+      .optional()
+      .describe('One-line summary of what the notebook covers.'),
+    icon: z
+      .string()
+      .optional()
+      .describe('Icon keyword, e.g. "flask", "book", "gamepad".'),
   }),
   execute: async ({ title, description, icon }) => {
     try {
-      const notebook = createNotebook(title, description ?? '', icon ?? 'notebook');
+      const notebook = createNotebook(
+        title,
+        description ?? '',
+        icon ?? 'notebook',
+      );
       return { success: true, notebookId: notebook.id, title: notebook.title };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -148,14 +183,24 @@ export const writeNotebookTool = tool({
   description:
     'Create a complete multi-page notebook in one call: an ordered list of pages with optional nesting. List a parent page BEFORE its children and nest with parentTitle/parentPageId. Bodies are markdown (headings, lists, code fences, [[Page Title]] links). Returns the created page ids. Use this to generate a full tutorial, guide or paper rather than one page at a time.',
   inputSchema: z.object({
-    notebookId: z.string().describe('The notebook to build the pages in (from createNotebook).'),
+    notebookId: z
+      .string()
+      .describe('The notebook to build the pages in (from createNotebook).'),
     pages: z
       .array(
         z.object({
           title: z.string().describe('Page title.'),
           markdown: z.string().describe('Full markdown body of the page.'),
-          parentTitle: z.string().optional().describe('Nest under the page with this title (must be listed earlier).'),
-          parentPageId: z.string().optional().describe('Nest under this existing page id.'),
+          parentTitle: z
+            .string()
+            .optional()
+            .describe(
+              'Nest under the page with this title (must be listed earlier).',
+            ),
+          parentPageId: z
+            .string()
+            .optional()
+            .describe('Nest under this existing page id.'),
         }),
       )
       .min(1)
@@ -164,7 +209,9 @@ export const writeNotebookTool = tool({
     index: z
       .boolean()
       .default(true)
-      .describe('Index the new pages into the semantic (vector) store so they can be used as AI context.'),
+      .describe(
+        'Index the new pages into the semantic (vector) store so they can be used as AI context.',
+      ),
   }),
   execute: async ({ notebookId, pages, index }) => {
     try {
@@ -208,24 +255,39 @@ export const writePageTool = tool({
   description:
     'Create a new page in a notebook, or overwrite an existing one. Body is markdown; headings, lists, todos, quotes, code fences and dividers become structured blocks. Use findPages/listPages to find page ids, or omit pageId to create.',
   inputSchema: z.object({
-    notebookId: z.string().describe('Notebook to create the page in (ignored when overwriting).'),
+    notebookId: z
+      .string()
+      .describe('Notebook to create the page in (ignored when overwriting).'),
     title: z.string().describe('Page title.'),
     markdown: z.string().describe('Full markdown body of the page.'),
-    pageId: z.string().optional().describe('Existing page id to overwrite instead of creating.'),
-    parentPageId: z.string().optional().describe('Optional parent page id for nesting.'),
+    pageId: z
+      .string()
+      .optional()
+      .describe('Existing page id to overwrite instead of creating.'),
+    parentPageId: z
+      .string()
+      .optional()
+      .describe('Optional parent page id for nesting.'),
   }),
   execute: async ({ notebookId, title, markdown, pageId, parentPageId }) => {
     try {
       const blocks = parseMarkdownToBlocks(markdown);
       if (pageId) {
         const page = getPage(pageId);
-        if (!page) return { success: false, error: `No page with id ${pageId}` };
+        if (!page)
+          return { success: false, error: `No page with id ${pageId}` };
         savePageBlocks(pageId, blocks, { title, versionOrigin: 'ai' });
         return { success: true, pageId, action: 'overwritten', title };
       }
       const notebook = getNotebook(notebookId);
-      if (!notebook) return { success: false, error: `No notebook with id ${notebookId}` };
-      const page = createPageWithBlocks(notebookId, title, blocks, parentPageId ?? null);
+      if (!notebook)
+        return { success: false, error: `No notebook with id ${notebookId}` };
+      const page = createPageWithBlocks(
+        notebookId,
+        title,
+        blocks,
+        parentPageId ?? null,
+      );
       return { success: true, pageId: page.id, action: 'created', title };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -246,7 +308,9 @@ export const appendToPageTool = tool({
       if (!page) return { success: false, error: `No page with id ${pageId}` };
       const existing = loadPageMarkdown(pageId);
       const merged = `${existing.trimEnd()}\n\n${markdown.trim()}\n`;
-      savePageBlocks(pageId, parseMarkdownToBlocks(merged), { versionOrigin: 'ai' });
+      savePageBlocks(pageId, parseMarkdownToBlocks(merged), {
+        versionOrigin: 'ai',
+      });
       return { success: true, pageId, title: page.title };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -285,8 +349,14 @@ export const startResearchRunTool = tool({
   inputSchema: z.object({
     question: z.string().describe('The research question, stated precisely.'),
     pageId: z.string().optional().describe('Attach the run to this page.'),
-    notebookId: z.string().optional().describe('Attach the run to this notebook.'),
-    sessionId: z.string().optional().describe('Chat session that initiated the run.'),
+    notebookId: z
+      .string()
+      .optional()
+      .describe('Attach the run to this notebook.'),
+    sessionId: z
+      .string()
+      .optional()
+      .describe('Chat session that initiated the run.'),
   }),
   execute: async ({ question, pageId, notebookId, sessionId }) => {
     try {
@@ -311,13 +381,20 @@ export const recordSourceTool = tool({
     url: z.string().optional().describe('Source URL (web sources).'),
     pageId: z.string().optional().describe('Workspace page id (kind: page).'),
     title: z.string().optional().describe('Human-readable source title.'),
-    kind: z.enum(['web', 'page', 'file']).default('web').describe('Source kind.'),
-    snippet: z.string().optional().describe('Short excerpt or summary of the source.'),
+    kind: z
+      .enum(['web', 'page', 'file'])
+      .default('web')
+      .describe('Source kind.'),
+    snippet: z
+      .string()
+      .optional()
+      .describe('Short excerpt or summary of the source.'),
   }),
   execute: async ({ runId, url, pageId, title, kind, snippet }) => {
     try {
       const run = getResearchRun(runId);
-      if (!run) return { success: false, error: `No research run with id ${runId}` };
+      if (!run)
+        return { success: false, error: `No research run with id ${runId}` };
       const source = addResearchSource({
         runId,
         url: url ?? null,
@@ -338,15 +415,26 @@ export const recordEvidenceTool = tool({
     'Attach an evidence quote from a source to a research run. Quote exactly what the source says; add a short note on why it matters. Every claim in the final report should trace back to recorded evidence.',
   inputSchema: z.object({
     runId: z.string().describe('The research run id.'),
-    sourceId: z.string().describe('The source the quote came from (from recordSource).'),
+    sourceId: z
+      .string()
+      .describe('The source the quote came from (from recordSource).'),
     quote: z.string().describe('The exact quote from the source.'),
-    note: z.string().optional().describe('Why this evidence matters for the question.'),
+    note: z
+      .string()
+      .optional()
+      .describe('Why this evidence matters for the question.'),
   }),
   execute: async ({ runId, sourceId, quote, note }) => {
     try {
       const run = getResearchRun(runId);
-      if (!run) return { success: false, error: `No research run with id ${runId}` };
-      const evidence = addResearchEvidence({ runId, sourceId, quote, note: note ?? '' });
+      if (!run)
+        return { success: false, error: `No research run with id ${runId}` };
+      const evidence = addResearchEvidence({
+        runId,
+        sourceId,
+        quote,
+        note: note ?? '',
+      });
       return { success: true, evidenceId: evidence.id };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -368,9 +456,15 @@ export const completeResearchRunTool = tool({
   execute: async ({ runId, report, status }) => {
     try {
       const run = getResearchRun(runId);
-      if (!run) return { success: false, error: `No research run with id ${runId}` };
+      if (!run)
+        return { success: false, error: `No research run with id ${runId}` };
       updateResearchRun(runId, { report, status: status as ResearchRunStatus });
-      return { success: true, runId, status, citations: getRunCitations(runId) };
+      return {
+        success: true,
+        runId,
+        status,
+        citations: getRunCitations(runId),
+      };
     } catch (err) {
       return { success: false, error: String(err) };
     }

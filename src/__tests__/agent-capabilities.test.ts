@@ -25,8 +25,11 @@ import {
   type Capability,
   type ToolPolicyMap,
 } from '../main/tools/capability';
-import { chatToolPolicies, copilotToolPolicies } from '../main/tools/index';
-import { allTools } from '../main/tools/index';
+import {
+  chatToolPolicies,
+  copilotToolPolicies,
+  allTools,
+} from '../main/tools/index';
 import { copilotTools } from '../main/ai/task-copilot-agent';
 
 /**
@@ -50,12 +53,12 @@ describe('capability derivation', () => {
   });
 
   it('lets an override win in either direction', () => {
-    expect(deriveApproval({ capability: 'write-local', approval: 'user-approval' })).toBe(
-      'user-approval',
-    );
-    expect(deriveApproval({ capability: 'cost', approval: 'not-applicable' })).toBe(
-      'not-applicable',
-    );
+    expect(
+      deriveApproval({ capability: 'write-local', approval: 'user-approval' }),
+    ).toBe('user-approval');
+    expect(
+      deriveApproval({ capability: 'cost', approval: 'not-applicable' }),
+    ).toBe('not-applicable');
   });
 });
 
@@ -85,9 +88,15 @@ describe('approval policy behaviour', () => {
   });
 
   it('resolves a classified tool by its class', () => {
-    expect(policy({ toolCall: { toolName: 'readThing' } })).toBe('not-applicable');
-    expect(policy({ toolCall: { toolName: 'writeThing' } })).toBe('not-applicable');
-    expect(policy({ toolCall: { toolName: 'nukeThing' } })).toBe('user-approval');
+    expect(policy({ toolCall: { toolName: 'readThing' } })).toBe(
+      'not-applicable',
+    );
+    expect(policy({ toolCall: { toolName: 'writeThing' } })).toBe(
+      'not-applicable',
+    );
+    expect(policy({ toolCall: { toolName: 'nukeThing' } })).toBe(
+      'user-approval',
+    );
   });
 });
 
@@ -157,13 +166,21 @@ describe('§8 tool-count ceilings', () => {
   });
 
   it('keeps the copilot under its ceiling', () => {
-    expect(Object.keys(copilotTools).length).toBeLessThanOrEqual(CEILING.copilot);
+    expect(Object.keys(copilotTools).length).toBeLessThanOrEqual(
+      CEILING.copilot,
+    );
   });
 });
 
 describe('taxonomy invariants', () => {
   it('uses only the five specified capabilities', () => {
-    const valid: Capability[] = ['read', 'write-local', 'destructive', 'network', 'cost'];
+    const valid: Capability[] = [
+      'read',
+      'write-local',
+      'destructive',
+      'network',
+      'cost',
+    ];
     const all = { ...chatToolPolicies, ...copilotToolPolicies };
     for (const [name, policy] of Object.entries(all)) {
       expect(valid).toContain(policy.capability);

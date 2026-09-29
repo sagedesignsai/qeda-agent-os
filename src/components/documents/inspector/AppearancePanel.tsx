@@ -23,7 +23,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TokenDualInput, type TokenItem } from './TokenDualInput';
-import type { NodeAppearance, StyleValue } from '@/lib/pdf-studio/primitives-ast';
+import type {
+  NodeAppearance,
+  StyleValue,
+} from '@/lib/pdf-studio/primitives-ast';
 
 interface AppearancePanelProps {
   appearance: NodeAppearance | undefined;
@@ -89,7 +92,9 @@ export function AppearancePanel({
 
       {/* Blend Mode */}
       <div className="flex items-center justify-between gap-2">
-        <Label className="text-[11px] font-medium text-muted-foreground">Blend Mode</Label>
+        <Label className="text-[11px] font-medium text-muted-foreground">
+          Blend Mode
+        </Label>
         <Select
           value={blendMode}
           onValueChange={(val: 'normal' | 'multiply' | 'screen' | 'overlay') =>

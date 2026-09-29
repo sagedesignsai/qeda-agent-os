@@ -30,11 +30,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from '../db/tasks.js';
-import {
-  listSteps,
-  createSteps,
-  stepProgress,
-} from '../db/task-steps.js';
+import { listSteps, createSteps, stepProgress } from '../db/task-steps.js';
 import {
   listBlocks,
   getBlock,
@@ -93,7 +89,10 @@ const PRIORITY = z
 /** Shared shape for a task the copilot wants to create. */
 const draftTaskSchema = z.object({
   title: z.string().min(1).describe('Short, imperative title.'),
-  description: z.string().optional().describe('One clarifying sentence, or omit.'),
+  description: z
+    .string()
+    .optional()
+    .describe('One clarifying sentence, or omit.'),
   priority: PRIORITY.optional(),
   estimate_mins: z
     .number()
@@ -105,7 +104,9 @@ const draftTaskSchema = z.object({
   due: z
     .union([z.string(), z.number()])
     .optional()
-    .describe('Due date as an ISO datetime string (preferred) or unix seconds.'),
+    .describe(
+      'Due date as an ISO datetime string (preferred) or unix seconds.',
+    ),
   projectId: z
     .string()
     .optional()
@@ -250,7 +251,13 @@ export const listBlocksTool = tool({
         end_at: b.end_at,
         status: b.status,
       }));
-      return { success: true, from: start, to: end, count: blocks.length, blocks };
+      return {
+        success: true,
+        from: start,
+        to: end,
+        count: blocks.length,
+        blocks,
+      };
     } catch (err) {
       return { success: false, error: String(err) };
     }
@@ -280,7 +287,9 @@ export const createTasksTool = tool({
   }),
   execute: async ({ tasks }) => {
     try {
-      const created = tasks.map((draft) => serializeTask(createFromDraft(draft)));
+      const created = tasks.map((draft) =>
+        serializeTask(createFromDraft(draft)),
+      );
       return { success: true, count: created.length, tasks: created };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -320,17 +329,28 @@ export const scheduleBlockTool = tool({
   description:
     'Schedule one focus block. Provide either a taskId or a plain title. `start` is an ISO datetime; durationMins is 15–180. Leave buffers between blocks.',
   inputSchema: z.object({
-    taskId: z.string().optional().describe('Attach the block to an existing task.'),
-    title: z.string().optional().describe('Standalone label when no task is given.'),
+    taskId: z
+      .string()
+      .optional()
+      .describe('Attach the block to an existing task.'),
+    title: z
+      .string()
+      .optional()
+      .describe('Standalone label when no task is given.'),
     start: z
       .string()
-      .describe('ISO 8601 datetime for the block start, e.g. 2026-09-27T14:00.'),
+      .describe(
+        'ISO 8601 datetime for the block start, e.g. 2026-09-27T14:00.',
+      ),
     durationMins: z.number().int().min(15).max(180).default(45),
   }),
   execute: async ({ taskId, title, start, durationMins }) => {
     const startAt = toEpochSeconds(start);
     if (startAt === null) {
-      return { success: false, error: `Could not parse start datetime "${start}".` };
+      return {
+        success: false,
+        error: `Could not parse start datetime "${start}".`,
+      };
     }
     if (!taskId && !title) {
       return { success: false, error: 'Provide a taskId or a title.' };
@@ -420,7 +440,9 @@ export const assignTaskToProjectTool = tool({
     'Move an existing task into a project. Changes where work is filed, so it asks for approval.',
   inputSchema: z.object({
     taskId: z.string(),
-    projectId: z.string().describe('Destination project id, or "inbox" to unsort.'),
+    projectId: z
+      .string()
+      .describe('Destination project id, or "inbox" to unsort.'),
   }),
   execute: async ({ taskId, projectId }) => {
     if (!getTask(taskId)) {
@@ -463,11 +485,15 @@ export const updateTaskTool = tool({
     try {
       const update: Parameters<typeof updateTask>[1] = {};
       if (patch.title !== undefined) update.title = patch.title;
-      if (patch.description !== undefined) update.description = patch.description;
-      if (patch.priority !== undefined) update.priority = patch.priority as TaskPriority;
-      if (patch.estimate_mins !== undefined) update.estimate_mins = patch.estimate_mins;
+      if (patch.description !== undefined)
+        update.description = patch.description;
+      if (patch.priority !== undefined)
+        update.priority = patch.priority as TaskPriority;
+      if (patch.estimate_mins !== undefined)
+        update.estimate_mins = patch.estimate_mins;
       if (patch.due !== undefined) update.due_at = toEpochSeconds(patch.due);
-      if (patch.status !== undefined) update.status = patch.status as TaskStatus;
+      if (patch.status !== undefined)
+        update.status = patch.status as TaskStatus;
 
       updateTask(taskId, update);
       return { success: true, task: serializeTask(getTask(taskId)!) };
@@ -532,7 +558,10 @@ export const moveBlockTool = tool({
       if (start !== undefined) {
         const parsed = toEpochSeconds(start);
         if (parsed === null) {
-          return { success: false, error: `Could not parse start datetime "${start}".` };
+          return {
+            success: false,
+            error: `Could not parse start datetime "${start}".`,
+          };
         }
         nextStart = parsed;
         update.start_at = parsed;
@@ -552,7 +581,8 @@ export const moveBlockTool = tool({
 });
 
 export const deleteBlockTool = tool({
-  description: 'Delete a scheduled time block. Destructive, so it asks for approval.',
+  description:
+    'Delete a scheduled time block. Destructive, so it asks for approval.',
   inputSchema: z.object({ blockId: z.string() }),
   execute: async ({ blockId }) => {
     const block = getBlock(blockId);

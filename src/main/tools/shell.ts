@@ -80,7 +80,12 @@ export const runShellTool = tool({
 
       child.on('error', (err) => {
         clearTimeout(timer);
-        resolve({ success: false, exitCode: null, output: chunks.join(''), error: err.message });
+        resolve({
+          success: false,
+          exitCode: null,
+          output: chunks.join(''),
+          error: err.message,
+        });
       });
     }),
 });

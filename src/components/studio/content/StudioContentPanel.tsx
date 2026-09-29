@@ -30,6 +30,7 @@ export type ContentTab = 'media' | 'text' | 'effects' | 'audio';
 interface StudioContentPanelProps {
   takes: StudioTakeSummary[];
   onAddClip: (clip: ContentItemPayload) => void;
+  onNewRecording?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -37,6 +38,7 @@ interface StudioContentPanelProps {
 export function StudioContentPanel({
   takes,
   onAddClip,
+  onNewRecording,
   isCollapsed = false,
   onToggleCollapse,
 }: StudioContentPanelProps) {
@@ -188,7 +190,11 @@ export function StudioContentPanel({
       {/* ── Active Tab Content ───────────────────────────────────────────────── */}
       <div className="flex-1 overflow-hidden p-3 min-h-0">
         {activeTab === 'media' && (
-          <StudioMediaTab takes={takes} onAddClip={onAddClip} />
+          <StudioMediaTab
+            takes={takes}
+            onAddClip={onAddClip}
+            onNewRecording={onNewRecording}
+          />
         )}
         {activeTab === 'text' && <StudioTextTab onAddClip={onAddClip} />}
         {activeTab === 'effects' && <StudioEffectsTab onAddClip={onAddClip} />}

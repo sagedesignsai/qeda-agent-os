@@ -14,9 +14,16 @@
 import { braveWebSearch } from '../tools/brave-search.js';
 import { requestJson } from './http.js';
 
-export type SearchProvider = 'tavily' | 'exa' | 'serper' | 'firecrawl' | 'brave';
+export type SearchProvider =
+  'tavily' | 'exa' | 'serper' | 'firecrawl' | 'brave';
 
-export const SEARCH_PROVIDERS: SearchProvider[] = ['tavily', 'exa', 'serper', 'firecrawl', 'brave'];
+export const SEARCH_PROVIDERS: SearchProvider[] = [
+  'tavily',
+  'exa',
+  'serper',
+  'firecrawl',
+  'brave',
+];
 
 export interface SourceResult {
   title: string;
@@ -81,8 +88,12 @@ async function tavilySearch(req: SearchRequest): Promise<SearchResponse> {
       search_depth: 'advanced',
       topic: 'general',
       include_answer: req.includeAnswer ?? false,
-      ...(req.includeDomains?.length ? { include_domains: req.includeDomains } : {}),
-      ...(req.excludeDomains?.length ? { exclude_domains: req.excludeDomains } : {}),
+      ...(req.includeDomains?.length
+        ? { include_domains: req.includeDomains }
+        : {}),
+      ...(req.excludeDomains?.length
+        ? { exclude_domains: req.excludeDomains }
+        : {}),
     },
     fetchImpl: req.fetchImpl,
   });
@@ -126,8 +137,12 @@ async function exaSearch(req: SearchRequest): Promise<SearchResponse> {
       numResults: clampCount(req.count),
       type: 'auto',
       contents: { text: { maxCharacters: 1_200 } },
-      ...(req.includeDomains?.length ? { includeDomains: req.includeDomains } : {}),
-      ...(req.excludeDomains?.length ? { excludeDomains: req.excludeDomains } : {}),
+      ...(req.includeDomains?.length
+        ? { includeDomains: req.includeDomains }
+        : {}),
+      ...(req.excludeDomains?.length
+        ? { excludeDomains: req.excludeDomains }
+        : {}),
     },
     fetchImpl: req.fetchImpl,
   });
@@ -150,7 +165,13 @@ async function exaSearch(req: SearchRequest): Promise<SearchResponse> {
 interface SerperResponse {
   answerBox?: { answer?: string; snippet?: string };
   knowledgeGraph?: { description?: string };
-  organic?: Array<{ title?: string; link?: string; snippet?: string; date?: string; position?: number }>;
+  organic?: Array<{
+    title?: string;
+    link?: string;
+    snippet?: string;
+    date?: string;
+    position?: number;
+  }>;
 }
 
 async function serperSearch(req: SearchRequest): Promise<SearchResponse> {
@@ -167,7 +188,10 @@ async function serperSearch(req: SearchRequest): Promise<SearchResponse> {
     fetchImpl: req.fetchImpl,
   });
 
-  const answer = data.answerBox?.answer ?? data.answerBox?.snippet ?? data.knowledgeGraph?.description;
+  const answer =
+    data.answerBox?.answer ??
+    data.answerBox?.snippet ??
+    data.knowledgeGraph?.description;
   return {
     results: (data.organic ?? [])
       .filter((r) => typeof r.link === 'string' && r.link)
@@ -177,7 +201,9 @@ async function serperSearch(req: SearchRequest): Promise<SearchResponse> {
         snippet: truncate(r.snippet),
         provider: 'serper' as const,
         ...(r.date ? { publishedDate: r.date } : {}),
-        ...(typeof r.position === 'number' ? { score: 1 / (r.position + 1) } : {}),
+        ...(typeof r.position === 'number'
+          ? { score: 1 / (r.position + 1) }
+          : {}),
       })),
     ...(answer ? { answer } : {}),
   };
@@ -187,9 +213,7 @@ async function serperSearch(req: SearchRequest): Promise<SearchResponse> {
 
 interface FirecrawlSearchResponse {
   success?: boolean;
-  data?:
-    | { web?: FirecrawlWebResult[] }
-    | FirecrawlWebResult[];
+  data?: { web?: FirecrawlWebResult[] } | FirecrawlWebResult[];
 }
 
 interface FirecrawlWebResult {
@@ -213,7 +237,7 @@ async function firecrawlSearch(req: SearchRequest): Promise<SearchResponse> {
     fetchImpl: req.fetchImpl,
   });
 
-  const web = Array.isArray(data.data) ? data.data : data.data?.web ?? [];
+  const web = Array.isArray(data.data) ? data.data : (data.data?.web ?? []);
   return {
     results: web
       .filter((r) => typeof r.url === 'string' && r.url)

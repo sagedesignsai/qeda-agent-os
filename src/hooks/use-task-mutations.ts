@@ -62,7 +62,10 @@ export function useTaskMutations(opts?: {
     async (input: CreateTaskInput): Promise<Task | null> => {
       setCreating(true);
       try {
-        const task = await window.electron.ipc.invoke<Task>('tasks:create', input);
+        const task = await window.electron.ipc.invoke<Task>(
+          'tasks:create',
+          input,
+        );
         opts?.onCreated?.(task);
         return task ?? null;
       } catch {

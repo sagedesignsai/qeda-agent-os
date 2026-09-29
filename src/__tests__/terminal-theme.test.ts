@@ -20,8 +20,18 @@ const EXTRA_FILES = [
 
 /** Token utilities the Terminal is allowed to use. */
 const TOKENS = [
-  'background', 'foreground', 'card', 'popover', 'primary', 'secondary',
-  'muted', 'accent', 'destructive', 'border', 'input', 'ring',
+  'background',
+  'foreground',
+  'card',
+  'popover',
+  'primary',
+  'secondary',
+  'muted',
+  'accent',
+  'destructive',
+  'border',
+  'input',
+  'ring',
 ];
 
 /**
@@ -37,8 +47,18 @@ const TOKENS = [
  * exclusion list above and add them here.
  */
 const PALETTE_FAMILIES = [
-  'zinc', 'slate', 'neutral', 'stone', 'gray',
-  'red', 'yellow', 'lime', 'teal', 'indigo', 'fuchsia', 'pink',
+  'zinc',
+  'slate',
+  'neutral',
+  'stone',
+  'gray',
+  'red',
+  'yellow',
+  'lime',
+  'teal',
+  'indigo',
+  'fuchsia',
+  'pink',
 ];
 
 const UTILITY_RE = new RegExp(

@@ -267,7 +267,8 @@ export default function Chat() {
             <AlertDescription className="text-xs">
               <span className="font-medium">{fallbackNotice.fromProvider}</span>{' '}
               was unavailable ({fallbackNotice.reason}) — this reply is coming
-              from <span className="font-medium">{fallbackNotice.toProvider}</span>{' '}
+              from{' '}
+              <span className="font-medium">{fallbackNotice.toProvider}</span>{' '}
               <span className="font-mono text-[11px]">
                 {fallbackNotice.toModel}
               </span>

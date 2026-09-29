@@ -53,7 +53,11 @@ interface InlineBlockRendererProps {
   onDeleteTableRow?: (rowIndex: number) => void;
   onAddTableCol?: (colIndex?: number) => void;
   onDeleteTableCol?: (colIndex: number) => void;
-  onUpdateTableCell?: (rowIndex: number, colIndex: number, text: string) => void;
+  onUpdateTableCell?: (
+    rowIndex: number,
+    colIndex: number,
+    text: string,
+  ) => void;
   onUpdateTableHeader?: (colIndex: number, text: string) => void;
 }
 
@@ -74,7 +78,10 @@ export function InlineBlockRenderer({
   onUpdateTableCell,
   onUpdateTableHeader,
 }: InlineBlockRendererProps) {
-  const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
+  const [selectedCell, setSelectedCell] = useState<{
+    row: number;
+    col: number;
+  } | null>(null);
 
   return (
     <div
@@ -155,7 +162,9 @@ export function InlineBlockRenderer({
         />
       )}
 
-      {block.type === 'divider' && <DividerRenderer block={block as DividerBlock} />}
+      {block.type === 'divider' && (
+        <DividerRenderer block={block as DividerBlock} />
+      )}
 
       {block.type === 'page-break' && <PageBreakRenderer />}
 
@@ -226,7 +235,8 @@ function HeadingRenderer({
         )}`}
         style={{
           color: block.level === 1 ? theme.primaryColor : undefined,
-          fontFamily: theme.fontFamily === 'Courier' ? 'monospace' : theme.fontFamily,
+          fontFamily:
+            theme.fontFamily === 'Courier' ? 'monospace' : theme.fontFamily,
         }}
       />
 
@@ -300,7 +310,8 @@ function ParagraphRenderer({
             .filter(Boolean)
             .join(' '),
           color: block.color || theme.textColor || '#18181b',
-          fontFamily: theme.fontFamily === 'Courier' ? 'monospace' : theme.fontFamily,
+          fontFamily:
+            theme.fontFamily === 'Courier' ? 'monospace' : theme.fontFamily,
         }}
       />
     </div>
@@ -357,7 +368,8 @@ function TableRenderer({
           <thead>
             <tr
               style={{
-                backgroundColor: block.headerBg || theme.surfaceColor || '#f4f4f5',
+                backgroundColor:
+                  block.headerBg || theme.surfaceColor || '#f4f4f5',
                 borderBottom: '2px solid #e4e4e7',
               }}
             >
@@ -398,13 +410,17 @@ function TableRenderer({
                       <td
                         key={cIdx}
                         className={`p-1.5 border-r border-zinc-200 last:border-r-0 transition-colors ${
-                          isCellActive ? 'ring-2 ring-primary/60 bg-primary/5' : ''
+                          isCellActive
+                            ? 'ring-2 ring-primary/60 bg-primary/5'
+                            : ''
                         }`}
                         onClick={() => onSelectCell(rIdx, cIdx)}
                       >
                         <input
                           value={cellText}
-                          onChange={(e) => onUpdateCell(rIdx, cIdx, e.target.value)}
+                          onChange={(e) =>
+                            onUpdateCell(rIdx, cIdx, e.target.value)
+                          }
                           onFocus={() => onSelectCell(rIdx, cIdx)}
                           onKeyDown={(e) => {
                             // Pressing Tab in last cell adds a row
@@ -595,10 +611,14 @@ function ColumnsRenderer({
           className="rounded border border-dashed border-zinc-300 p-2 space-y-2 bg-zinc-50/40"
         >
           {col.title && (
-            <div className="font-semibold text-xs text-zinc-700">{col.title}</div>
+            <div className="font-semibold text-xs text-zinc-700">
+              {col.title}
+            </div>
           )}
           <div className="text-xs text-zinc-500">
-            {col.blocks.length > 0 ? `${col.blocks.length} sub-elements` : 'Empty column'}
+            {col.blocks.length > 0
+              ? `${col.blocks.length} sub-elements`
+              : 'Empty column'}
           </div>
         </div>
       ))}

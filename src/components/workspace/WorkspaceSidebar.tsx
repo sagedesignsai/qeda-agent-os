@@ -102,7 +102,11 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
               className="flex h-4 w-4 items-center justify-center text-muted-foreground"
               aria-label={expanded ? 'Collapse' : 'Expand'}
             >
-              {expanded ? <ChevronDownIcon className="h-3 w-3" /> : <ChevronRightIcon className="h-3 w-3" />}
+              {expanded ? (
+                <ChevronDownIcon className="h-3 w-3" />
+              ) : (
+                <ChevronRightIcon className="h-3 w-3" />
+              )}
             </button>
           ) : (
             <span className="w-4" />
@@ -126,16 +130,23 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => props.onCreatePage(page.notebook_id, page.id)}>
+              <DropdownMenuItem
+                onSelect={() => props.onCreatePage(page.notebook_id, page.id)}
+              >
                 <PlusIcon className="h-3.5 w-3.5" /> Add sub-page
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => {
-                const title = window.prompt('Rename page', page.title);
-                if (title?.trim()) props.onRenamePage(page.id, title.trim());
-              }}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  const title = window.prompt('Rename page', page.title);
+                  if (title?.trim()) props.onRenamePage(page.id, title.trim());
+                }}
+              >
                 <PencilIcon className="h-3.5 w-3.5" /> Rename
               </DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive" onSelect={() => props.onDeletePage(page.id)}>
+              <DropdownMenuItem
+                className="text-destructive"
+                onSelect={() => props.onDeletePage(page.id)}
+              >
                 <TrashIcon className="h-3.5 w-3.5" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -175,7 +186,10 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
                 onClick={() => props.onSearchSelect(hit.page_id)}
               >
                 <div className="font-medium">{hit.title}</div>
-                <div className="truncate text-muted-foreground" dangerouslySetInnerHTML={{ __html: hit.snippet }} />
+                <div
+                  className="truncate text-muted-foreground"
+                  dangerouslySetInnerHTML={{ __html: hit.snippet }}
+                />
               </button>
             ))}
           </div>
@@ -185,7 +199,9 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
       {/* Notebooks */}
       <div className="flex-1 overflow-y-auto p-2">
         <div className="mb-1 flex items-center justify-between px-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Notebooks</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Notebooks
+          </span>
           <button
             type="button"
             className="text-muted-foreground hover:text-foreground"
@@ -243,16 +259,27 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => props.onCreatePage(notebook.id)}>
+                  <DropdownMenuItem
+                    onSelect={() => props.onCreatePage(notebook.id)}
+                  >
                     <PlusIcon className="h-3.5 w-3.5" /> New page
                   </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => {
-                    const title = window.prompt('Rename notebook', notebook.title);
-                    if (title?.trim()) props.onRenameNotebook(notebook.id, title.trim());
-                  }}>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      const title = window.prompt(
+                        'Rename notebook',
+                        notebook.title,
+                      );
+                      if (title?.trim())
+                        props.onRenameNotebook(notebook.id, title.trim());
+                    }}
+                  >
                     <PencilIcon className="h-3.5 w-3.5" /> Rename
                   </DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive" onSelect={() => props.onDeleteNotebook(notebook.id)}>
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onSelect={() => props.onDeleteNotebook(notebook.id)}
+                  >
                     <TrashIcon className="h-3.5 w-3.5" /> Delete notebook
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -301,7 +328,11 @@ export function WorkspaceSidebar(props: WorkspaceSidebarProps) {
               <button
                 key={tag.name}
                 type="button"
-                onClick={() => props.onSelectTag(props.activeTag === tag.name ? null : tag.name)}
+                onClick={() =>
+                  props.onSelectTag(
+                    props.activeTag === tag.name ? null : tag.name,
+                  )
+                }
                 className={cn(
                   'rounded px-1.5 py-0.5 font-mono text-[10px]',
                   props.activeTag === tag.name

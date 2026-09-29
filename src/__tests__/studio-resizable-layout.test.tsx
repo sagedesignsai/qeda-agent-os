@@ -23,6 +23,8 @@ const mockTake: StudioTake = {
   sourceType: 'window',
   sourceName: 'IDE Window',
   videoPath: '/path/to/test.webm',
+  audioPath: null,
+  mouseEventsPath: null,
   durationMs: 45000,
   fileSizeBytes: 1234567,
   cuts: [],

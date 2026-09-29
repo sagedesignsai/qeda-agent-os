@@ -11,20 +11,29 @@
  */
 
 jest.mock('ai', () => ({
-  convertToModelMessages: jest.fn(async (messages: Array<{ role: string; parts?: Array<{ type: string; [key: string]: unknown }> }>) => {
-    return messages.map((msg) => {
-      if (msg.role === 'assistant') {
+  convertToModelMessages: jest.fn(
+    async (
+      messages: Array<{
+        role: string;
+        parts?: Array<{ type: string; [key: string]: unknown }>;
+      }>,
+    ) => {
+      return messages.map((msg) => {
+        if (msg.role === 'assistant') {
+          return {
+            role: 'assistant',
+            content: (msg.parts ?? []).map((p) => ({ ...p })),
+          };
+        }
         return {
-          role: 'assistant',
-          content: (msg.parts ?? []).map((p) => ({ ...p })),
+          role: msg.role,
+          content: (msg.parts ?? [])
+            .map((p) => ('text' in p ? String(p.text) : ''))
+            .join(''),
         };
-      }
-      return {
-        role: msg.role,
-        content: (msg.parts ?? []).map((p) => ('text' in p ? String(p.text) : '')).join(''),
-      };
-    });
-  }),
+      });
+    },
+  ),
 }));
 
 import type { UIMessage, ModelMessage } from 'ai';
@@ -54,7 +63,10 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
         parts: [
           // testing reasoning part shape emitted by AI SDK (now typed by it)
           { type: 'reasoning', text: 'Thinking about how to answer...' },
-          { type: 'text', text: 'Hello! I can help you manage tasks and focus.' },
+          {
+            type: 'text',
+            text: 'Hello! I can help you manage tasks and focus.',
+          },
         ],
       };
 
@@ -117,7 +129,9 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
         ],
       };
       const result = sanitizeModelMessages([msg]);
-      expect(result[0].content).toEqual([{ type: 'text', text: 'Visible answer' }]);
+      expect(result[0].content).toEqual([
+        { type: 'text', text: 'Visible answer' },
+      ]);
     });
   });
 
@@ -134,14 +148,22 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
           role: 'assistant',
           parts: [
             // reasoning part (now typed by the AI SDK)
-            { type: 'reasoning', text: 'The user is greeting me. I should greet them back.' },
+            {
+              type: 'reasoning',
+              text: 'The user is greeting me. I should greet them back.',
+            },
             { type: 'text', text: 'Hey there! What is on your mind today?' },
           ],
         },
         {
           id: '3',
           role: 'user',
-          parts: [{ type: 'text', text: 'what can you tell me about the current project' }],
+          parts: [
+            {
+              type: 'text',
+              text: 'what can you tell me about the current project',
+            },
+          ],
         },
       ];
 
@@ -156,7 +178,8 @@ describe('Message sanitization for OpenAI-compatible providers', () => {
       const assistantContent = modelMessages[1].content;
       if (Array.isArray(assistantContent)) {
         const hasReasoning = assistantContent.some(
-          (part: { type: string }) => part.type === 'reasoning' || part.type === 'reasoning-file',
+          (part: { type: string }) =>
+            part.type === 'reasoning' || part.type === 'reasoning-file',
         );
         expect(hasReasoning).toBe(false);
         expect(assistantContent).toEqual([

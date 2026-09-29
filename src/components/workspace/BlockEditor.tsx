@@ -67,13 +67,28 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const BLOCK_TYPE_ITEMS: { type: BlockType; label: string; icon: typeof TypeIcon; marker: string }[] = [
+const BLOCK_TYPE_ITEMS: {
+  type: BlockType;
+  label: string;
+  icon: typeof TypeIcon;
+  marker: string;
+}[] = [
   { type: 'paragraph', label: 'Text', icon: TypeIcon, marker: '' },
   { type: 'heading1', label: 'Heading 1', icon: Heading1Icon, marker: '# ' },
   { type: 'heading2', label: 'Heading 2', icon: Heading2Icon, marker: '## ' },
   { type: 'heading3', label: 'Heading 3', icon: Heading3Icon, marker: '### ' },
-  { type: 'bulleted-list', label: 'Bulleted list', icon: ListIcon, marker: '- ' },
-  { type: 'numbered-list', label: 'Numbered list', icon: ListOrderedIcon, marker: '1. ' },
+  {
+    type: 'bulleted-list',
+    label: 'Bulleted list',
+    icon: ListIcon,
+    marker: '- ',
+  },
+  {
+    type: 'numbered-list',
+    label: 'Numbered list',
+    icon: ListOrderedIcon,
+    marker: '1. ',
+  },
   { type: 'todo', label: 'To-do', icon: CheckSquareIcon, marker: '- [ ] ' },
   { type: 'quote', label: 'Quote', icon: QuoteIcon, marker: '> ' },
   { type: 'code', label: 'Code', icon: CodeIcon, marker: '```' },
@@ -91,10 +106,18 @@ interface BlockEditorProps {
 
 const SAVE_DEBOUNCE_MS = 800;
 
-export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSaved }: BlockEditorProps) {
+export function BlockEditor({
+  pageId,
+  title,
+  initialBlocks,
+  onTitleChange,
+  onSaved,
+}: BlockEditorProps) {
   const [blocks, setBlocks] = useState<Block[]>(initialBlocks);
   const [localTitle, setLocalTitle] = useState(title);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>(
+    'idle',
+  );
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusedBlockRef = useRef<string | null>(null);
@@ -109,25 +132,24 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
   // ── Debounced save ──────────────────────────────────────────────────────
 
   const scheduleSave = useMemo(
-    () =>
-      (nextBlocks: Block[], nextTitle: string) => {
-        if (saveTimer.current) clearTimeout(saveTimer.current);
-        setSaveState('saving');
-        saveTimer.current = setTimeout(() => {
-          window.electron.ipc
-            .invoke('pages:save-blocks', {
-              id: pageId,
-              blocks: nextBlocks,
-              title: nextTitle,
-            })
-            .then(() => {
-              setSaveState('saved');
-              onSaved?.();
-              setTimeout(() => setSaveState('idle'), 1500);
-            })
-            .catch(() => setSaveState('idle'));
-        }, SAVE_DEBOUNCE_MS);
-      },
+    () => (nextBlocks: Block[], nextTitle: string) => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      setSaveState('saving');
+      saveTimer.current = setTimeout(() => {
+        window.electron.ipc
+          .invoke('pages:save-blocks', {
+            id: pageId,
+            blocks: nextBlocks,
+            title: nextTitle,
+          })
+          .then(() => {
+            setSaveState('saved');
+            onSaved?.();
+            setTimeout(() => setSaveState('idle'), 1500);
+          })
+          .catch(() => setSaveState('idle'));
+      }, SAVE_DEBOUNCE_MS);
+    },
     [pageId, onSaved],
   );
 
@@ -157,21 +179,53 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
     const block = blocks.find((b) => b.id === id);
     if (block?.type === 'paragraph') {
       if (text.startsWith('# ')) {
-        next = setBlockType(updateBlock(blocks, id, { text: text.slice(2) }), id, 'heading1');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: text.slice(2) }),
+          id,
+          'heading1',
+        );
       } else if (text.startsWith('## ')) {
-        next = setBlockType(updateBlock(blocks, id, { text: text.slice(3) }), id, 'heading2');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: text.slice(3) }),
+          id,
+          'heading2',
+        );
       } else if (text.startsWith('### ')) {
-        next = setBlockType(updateBlock(blocks, id, { text: text.slice(4) }), id, 'heading3');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: text.slice(4) }),
+          id,
+          'heading3',
+        );
       } else if (text.startsWith('- [ ] ')) {
-        next = setBlockType(updateBlock(blocks, id, { text: text.slice(6), checked: false }), id, 'todo');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: text.slice(6), checked: false }),
+          id,
+          'todo',
+        );
       } else if (text.startsWith('- ')) {
-        next = setBlockType(updateBlock(blocks, id, { text: text.slice(2) }), id, 'bulleted-list');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: text.slice(2) }),
+          id,
+          'bulleted-list',
+        );
       } else if (text.startsWith('1. ')) {
-        next = setBlockType(updateBlock(blocks, id, { text: text.slice(3) }), id, 'numbered-list');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: text.slice(3) }),
+          id,
+          'numbered-list',
+        );
       } else if (text.startsWith('> ')) {
-        next = setBlockType(updateBlock(blocks, id, { text: text.slice(2) }), id, 'quote');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: text.slice(2) }),
+          id,
+          'quote',
+        );
       } else if (text === '---') {
-        next = setBlockType(updateBlock(blocks, id, { text: '' }), id, 'divider');
+        next = setBlockType(
+          updateBlock(blocks, id, { text: '' }),
+          id,
+          'divider',
+        );
         const after = insertBlockAfter(next, id);
         next = after.blocks;
         focusBlock(after.id);
@@ -209,7 +263,13 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
     if (!isBlockLevelMarkdown(pasted)) return;
 
     const el = event.currentTarget;
-    const result = insertParsedBlocksAt(blocks, id, pasted, el.selectionStart, el.selectionEnd);
+    const result = insertParsedBlocksAt(
+      blocks,
+      id,
+      pasted,
+      el.selectionStart,
+      el.selectionEnd,
+    );
     if (!result) return;
 
     event.preventDefault();
@@ -246,14 +306,20 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
     });
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>, id: string) => {
+  const handleKeyDown = (
+    event: React.KeyboardEvent<HTMLTextAreaElement>,
+    id: string,
+  ) => {
     const el = event.currentTarget;
 
     // Slash menu shortcut hint is handled by typing "/" — the menu is a
     // lightweight dropdown rendered below the block toolbar.
 
     if (event.key === 'Enter' && !event.shiftKey) {
-      if (el.tagName === 'TEXTAREA' && blocks.find((b) => b.id === id)?.type === 'code') {
+      if (
+        el.tagName === 'TEXTAREA' &&
+        blocks.find((b) => b.id === id)?.type === 'code'
+      ) {
         return; // allow newlines inside code
       }
       event.preventDefault();
@@ -263,7 +329,11 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
       return;
     }
 
-    if (event.key === 'Backspace' && el.selectionStart === 0 && el.selectionEnd === 0) {
+    if (
+      event.key === 'Backspace' &&
+      el.selectionStart === 0 &&
+      el.selectionEnd === 0
+    ) {
       const block = blocks.find((b) => b.id === id);
       if (!block) return;
       const index = blocks.findIndex((b) => b.id === id);
@@ -287,7 +357,11 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
           event.preventDefault();
           const caret = prev.text.length;
           const withoutCurrent = removeBlock(blocks, id);
-          applyBlocks(updateBlock(withoutCurrent, prev.id, { text: prev.text + block.text }));
+          applyBlocks(
+            updateBlock(withoutCurrent, prev.id, {
+              text: prev.text + block.text,
+            }),
+          );
           focusBlock(prev.id, caret);
           return;
         }
@@ -301,7 +375,10 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
       return;
     }
 
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    if (
+      event.altKey &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
       event.preventDefault();
       applyBlocks(moveBlock(blocks, id, event.key === 'ArrowUp' ? -1 : 1));
       return;
@@ -324,9 +401,12 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
         focusedBlockRef.current = block.id;
         setFocusedId(block.id);
       },
-      onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => handleTextChange(block.id, e.target.value),
-      onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => handleKeyDown(e, block.id),
-      onPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => handlePaste(e, block.id),
+      onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) =>
+        handleTextChange(block.id, e.target.value),
+      onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) =>
+        handleKeyDown(e, block.id),
+      onPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) =>
+        handlePaste(e, block.id),
       rows: Math.max(1, block.text.split('\n').length),
       spellCheck: false,
       className: 'w-full resize-none bg-transparent outline-none',
@@ -393,20 +473,53 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
 
         <div className="min-w-0 flex-1">
           {block.type === 'heading1' && (
-            <textarea {...common} rows={1} placeholder="Heading 1" className={cn(common.className, 'text-xl font-bold tracking-tight')} />
+            <textarea
+              {...common}
+              rows={1}
+              placeholder="Heading 1"
+              className={cn(
+                common.className,
+                'text-xl font-bold tracking-tight',
+              )}
+            />
           )}
           {block.type === 'heading2' && (
-            <textarea {...common} rows={1} placeholder="Heading 2" className={cn(common.className, 'text-lg font-bold tracking-tight')} />
+            <textarea
+              {...common}
+              rows={1}
+              placeholder="Heading 2"
+              className={cn(
+                common.className,
+                'text-lg font-bold tracking-tight',
+              )}
+            />
           )}
           {block.type === 'heading3' && (
-            <textarea {...common} rows={1} placeholder="Heading 3" className={cn(common.className, 'text-base font-semibold')} />
+            <textarea
+              {...common}
+              rows={1}
+              placeholder="Heading 3"
+              className={cn(common.className, 'text-base font-semibold')}
+            />
           )}
           {block.type === 'paragraph' && (
-            <textarea {...common} placeholder={index === 0 ? 'Write, press "/" for blocks…' : "Type '/' for blocks"} className={cn(common.className, 'py-0.5 leading-7')} />
+            <textarea
+              {...common}
+              placeholder={
+                index === 0
+                  ? 'Write, press "/" for blocks…'
+                  : "Type '/' for blocks"
+              }
+              className={cn(common.className, 'py-0.5 leading-7')}
+            />
           )}
           {block.type === 'quote' && (
             <blockquote className="border-l-2 border-primary/40 pl-3 text-muted-foreground">
-              <textarea {...common} placeholder="Quote" className={cn(common.className, 'italic')} />
+              <textarea
+                {...common}
+                placeholder="Quote"
+                className={cn(common.className, 'italic')}
+              />
             </blockquote>
           )}
           {block.type === 'todo' && (
@@ -420,14 +533,20 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
               />
               <textarea
                 {...common}
-                className={cn(common.className, block.checked ? 'text-muted-foreground line-through' : '')}
+                className={cn(
+                  common.className,
+                  block.checked ? 'text-muted-foreground line-through' : '',
+                )}
               />
             </div>
           )}
-          {(block.type === 'bulleted-list' || block.type === 'numbered-list') && (
+          {(block.type === 'bulleted-list' ||
+            block.type === 'numbered-list') && (
             <div className="flex items-start gap-2">
               <span className="mt-2 select-none text-muted-foreground">
-                {block.type === 'bulleted-list' ? '•' : `${listNumberFor(blocks, index)}.`}
+                {block.type === 'bulleted-list'
+                  ? '•'
+                  : `${listNumberFor(blocks, index)}.`}
               </span>
               <textarea {...common} className={common.className} />
             </div>
@@ -437,7 +556,13 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
               <div className="flex items-center justify-between border-b bg-muted/60 px-2 py-1">
                 <input
                   value={block.language ?? ''}
-                  onChange={(e) => applyBlocks(updateBlock(blocks, block.id, { language: e.target.value }))}
+                  onChange={(e) =>
+                    applyBlocks(
+                      updateBlock(blocks, block.id, {
+                        language: e.target.value,
+                      }),
+                    )
+                  }
                   placeholder="language"
                   className="w-24 bg-transparent text-[10px] font-mono uppercase text-muted-foreground outline-none"
                   aria-label="Code language"
@@ -471,7 +596,10 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
                 {...common}
                 rows={1}
                 placeholder="![alt](https://…)"
-                className={cn(common.className, 'font-mono text-xs text-muted-foreground')}
+                className={cn(
+                  common.className,
+                  'font-mono text-xs text-muted-foreground',
+                )}
               />
             </div>
           )}
@@ -498,7 +626,10 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
           {tags.length > 0 && (
             <span className="flex flex-wrap gap-1">
               {tags.map((tag) => (
-                <span key={tag} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                <span
+                  key={tag}
+                  className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]"
+                >
                   #{tag}
                 </span>
               ))}
@@ -523,31 +654,43 @@ export function BlockEditor({ pageId, title, initialBlocks, onTitleChange, onSav
       <div className="flex shrink-0 items-center gap-1 border-y bg-card/20 px-8 py-1.5">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs text-muted-foreground">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+            >
               <PlusIcon /> Block <ChevronDownIcon className="h-3 w-3" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            {BLOCK_TYPE_ITEMS.filter((item) => item.type !== 'paragraph').map(({ type, label, icon: Icon }) => (
-              <DropdownMenuItem
-                key={type}
-                onSelect={() => {
-                  const { blocks: next, id } = insertBlockAfter(blocks, focusedBlockRef.current, {
-                    id: newBlockId(),
-                    type,
-                    text: '',
-                  });
-                  applyBlocks(next);
-                  focusBlock(id);
-                }}
-              >
-                <Icon className="h-3.5 w-3.5" /> {label}
-              </DropdownMenuItem>
-            ))}
+            {BLOCK_TYPE_ITEMS.filter((item) => item.type !== 'paragraph').map(
+              ({ type, label, icon: Icon }) => (
+                <DropdownMenuItem
+                  key={type}
+                  onSelect={() => {
+                    const { blocks: next, id } = insertBlockAfter(
+                      blocks,
+                      focusedBlockRef.current,
+                      {
+                        id: newBlockId(),
+                        type,
+                        text: '',
+                      },
+                    );
+                    applyBlocks(next);
+                    focusBlock(id);
+                  }}
+                >
+                  <Icon className="h-3.5 w-3.5" /> {label}
+                </DropdownMenuItem>
+              ),
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <span className="text-[10px] text-muted-foreground/70">
-          Markdown shortcuts: #, -, 1., - [ ], &gt;, ```, ![alt](url), --- · Enter splits · Tab indents · Alt+↑↓ moves · Paste markdown to insert blocks
+          Markdown shortcuts: #, -, 1., - [ ], &gt;, ```, ![alt](url), --- ·
+          Enter splits · Tab indents · Alt+↑↓ moves · Paste markdown to insert
+          blocks
         </span>
         <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
           {blocks.length} {blocks.length === 1 ? 'block' : 'blocks'}
@@ -569,7 +712,8 @@ function listNumberFor(blocks: Block[], index: number): number {
   let n = 1;
   for (let i = 0; i < index; i += 1) {
     if (blocks[i].type === 'numbered-list') n += 1;
-    else if (blocks[i].type !== 'bulleted-list' && blocks[i].type !== 'todo') n = 1;
+    else if (blocks[i].type !== 'bulleted-list' && blocks[i].type !== 'todo')
+      n = 1;
   }
   return n;
 }

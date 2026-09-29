@@ -91,9 +91,8 @@ export function listBlocks(opts?: {
 /** A single block by id. */
 export function getBlock(id: string): TaskBlock | null {
   return (
-    (getDb()
-      .prepare(`SELECT * FROM task_blocks WHERE id = ?`)
-      .get(id) as TaskBlock | undefined) ?? null
+    (getDb().prepare(`SELECT * FROM task_blocks WHERE id = ?`).get(id) as
+      TaskBlock | undefined) ?? null
   );
 }
 

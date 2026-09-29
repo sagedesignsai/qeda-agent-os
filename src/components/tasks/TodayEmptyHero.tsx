@@ -62,23 +62,27 @@ const SUGGESTIONS: Suggestion[] = [
   {
     label: "Plan today's top 3",
     icon: SunIcon,
-    prompt: 'Look at my backlog and plan my top 3 priorities for today with realistic time estimates.',
+    prompt:
+      'Look at my backlog and plan my top 3 priorities for today with realistic time estimates.',
   },
   {
     label: 'Brain dump thoughts',
     icon: BrainIcon,
-    prompt: 'Help me brain dump and organize all the scattered thoughts in my head into clean tasks.',
+    prompt:
+      'Help me brain dump and organize all the scattered thoughts in my head into clean tasks.',
     action: 'brain-dump',
   },
   {
     label: 'Find 3 quick wins',
     icon: ZapIcon,
-    prompt: 'Find 3 quick-win tasks in my backlog that take 15 minutes or less so I can build instant momentum.',
+    prompt:
+      'Find 3 quick-win tasks in my backlog that take 15 minutes or less so I can build instant momentum.',
   },
   {
     label: 'Break down a goal',
     icon: SparklesIcon,
-    prompt: 'I have a large milestone I want to tackle. Guide me through breaking it down into 2-minute starter steps.',
+    prompt:
+      'I have a large milestone I want to tackle. Guide me through breaking it down into 2-minute starter steps.',
   },
 ];
 
@@ -154,14 +158,23 @@ export function TodayEmptyHero({
         <p className="text-xs text-muted-foreground">
           {openTasksCount > 0 ? (
             <>
-              You have <strong className="text-foreground">{openTasksCount} tasks</strong> waiting.
+              You have{' '}
+              <strong className="text-foreground">
+                {openTasksCount} tasks
+              </strong>{' '}
+              waiting.
               {streakDays > 0 ? (
                 <span className="ml-1">
                   Complete 1 task to protect your{' '}
-                  <strong className="text-amber-400">{streakDays}d streak</strong>.
+                  <strong className="text-amber-400">
+                    {streakDays}d streak
+                  </strong>
+                  .
                 </span>
               ) : (
-                <span className="ml-1">Start with a quick win to build momentum.</span>
+                <span className="ml-1">
+                  Start with a quick win to build momentum.
+                </span>
               )}
             </>
           ) : (
@@ -265,7 +278,9 @@ export function TodayEmptyHero({
 
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/30">
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <span className="font-medium text-rose-400">P{task.priority} Priority</span>
+                <span className="font-medium text-rose-400">
+                  P{task.priority} Priority
+                </span>
                 {task.estimate_mins && (
                   <span className="flex items-center gap-0.5">
                     <ClockIcon className="size-2.5" />
@@ -282,7 +297,9 @@ export function TodayEmptyHero({
                     className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
                     onClick={handleShuffleClick}
                   >
-                    <RefreshCwIcon className={cn('size-3', shuffling && 'animate-spin')} />
+                    <RefreshCwIcon
+                      className={cn('size-3', shuffling && 'animate-spin')}
+                    />
                     Suggest another
                   </Button>
                 )}

@@ -37,7 +37,10 @@ import {
   LayersIcon,
 } from 'lucide-react';
 
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+const ICON_MAP: Record<
+  string,
+  React.ComponentType<{ className?: string; style?: React.CSSProperties }>
+> = {
   check: CheckIcon,
   'alert-circle': AlertCircleIcon,
   'alert-triangle': AlertTriangleIcon,

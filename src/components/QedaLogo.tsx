@@ -43,7 +43,10 @@ export interface QedaLogomarkProps extends React.SVGProps<SVGSVGElement> {
   animated?: boolean;
 }
 
-export interface QedaLogoProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'children'> {
+export interface QedaLogoProps extends Omit<
+  React.HTMLAttributes<HTMLDivElement>,
+  'children'
+> {
   /** Logo variant: mark, full (mark + name), or wordmark (name only) */
   variant?: QedaLogoVariant;
   /** Size preset */
@@ -58,12 +61,15 @@ export interface QedaLogoProps extends Omit<React.HTMLAttributes<HTMLDivElement>
   textClassName?: string;
 }
 
-const SIZE_MAP: Record<QedaLogoSize, { width: number; height: number; class: string }> = {
-  xs:  { width: 14, height: 18, class: 'w-3.5 h-auto' },
-  sm:  { width: 18, height: 23, class: 'w-4.5 h-auto' },
-  md:  { width: 24, height: 31, class: 'w-6 h-auto' },
-  lg:  { width: 32, height: 41, class: 'w-8 h-auto' },
-  xl:  { width: 44, height: 57, class: 'w-11 h-auto' },
+const SIZE_MAP: Record<
+  QedaLogoSize,
+  { width: number; height: number; class: string }
+> = {
+  xs: { width: 14, height: 18, class: 'w-3.5 h-auto' },
+  sm: { width: 18, height: 23, class: 'w-4.5 h-auto' },
+  md: { width: 24, height: 31, class: 'w-6 h-auto' },
+  lg: { width: 32, height: 41, class: 'w-8 h-auto' },
+  xl: { width: 44, height: 57, class: 'w-11 h-auto' },
   '2xl': { width: 64, height: 83, class: 'w-16 h-auto' },
 };
 
@@ -94,8 +100,16 @@ export function QedaLogomark({
   ...props
 }: QedaLogomarkProps) {
   const sizeConfig = typeof size === 'string' ? SIZE_MAP[size] : null;
-  const width = sizeConfig ? sizeConfig.width : typeof size === 'number' ? size : 24;
-  const height = sizeConfig ? sizeConfig.height : typeof size === 'number' ? Math.round(size * 1.294) : 31;
+  const width = sizeConfig
+    ? sizeConfig.width
+    : typeof size === 'number'
+      ? size
+      : 24;
+  const height = sizeConfig
+    ? sizeConfig.height
+    : typeof size === 'number'
+      ? Math.round(size * 1.294)
+      : 31;
 
   const glowStyle = glow
     ? {
@@ -136,7 +150,8 @@ export function QedaLogomark({
           fill={boltColor ?? 'currentColor'}
           className={cn(
             'transition-colors',
-            animated && 'transition-transform duration-300 group-hover:translate-x-0.5 group-hover:translate-y-0.5',
+            animated &&
+              'transition-transform duration-300 group-hover:translate-x-0.5 group-hover:translate-y-0.5',
             boltClassName,
           )}
         />
@@ -162,20 +177,47 @@ export function QedaLogo({
     return <QedaLogomark size={size} {...markProps} className={className} />;
   }
 
-  const textSizeClasses: Record<QedaLogoSize, { title: string; subtitle: string; gap: string }> = {
-    xs:  { title: 'text-xs tracking-tight',      subtitle: 'text-[9px]',   gap: 'gap-1.5' },
-    sm:  { title: 'text-sm tracking-tight',      subtitle: 'text-[10px]',  gap: 'gap-2' },
-    md:  { title: 'text-base tracking-tight',    subtitle: 'text-xs',      gap: 'gap-2.5' },
-    lg:  { title: 'text-lg tracking-tight',      subtitle: 'text-xs',      gap: 'gap-3' },
-    xl:  { title: 'text-2xl tracking-tighter',   subtitle: 'text-sm',      gap: 'gap-3.5' },
-    '2xl': { title: 'text-3xl tracking-tighter', subtitle: 'text-base',    gap: 'gap-4' },
+  const textSizeClasses: Record<
+    QedaLogoSize,
+    { title: string; subtitle: string; gap: string }
+  > = {
+    xs: {
+      title: 'text-xs tracking-tight',
+      subtitle: 'text-[9px]',
+      gap: 'gap-1.5',
+    },
+    sm: {
+      title: 'text-sm tracking-tight',
+      subtitle: 'text-[10px]',
+      gap: 'gap-2',
+    },
+    md: {
+      title: 'text-base tracking-tight',
+      subtitle: 'text-xs',
+      gap: 'gap-2.5',
+    },
+    lg: { title: 'text-lg tracking-tight', subtitle: 'text-xs', gap: 'gap-3' },
+    xl: {
+      title: 'text-2xl tracking-tighter',
+      subtitle: 'text-sm',
+      gap: 'gap-3.5',
+    },
+    '2xl': {
+      title: 'text-3xl tracking-tighter',
+      subtitle: 'text-base',
+      gap: 'gap-4',
+    },
   };
 
   const textConfig = textSizeClasses[size];
 
   return (
     <div
-      className={cn('group inline-flex items-center select-none', textConfig.gap, className)}
+      className={cn(
+        'group inline-flex items-center select-none',
+        textConfig.gap,
+        className,
+      )}
       role="banner"
       aria-label="Qeda"
       {...props}
@@ -185,11 +227,18 @@ export function QedaLogo({
       )}
 
       <div className={cn('grid text-left leading-tight', textClassName)}>
-        <span className={cn('font-bold text-foreground truncate', textConfig.title)}>
+        <span
+          className={cn('font-bold text-foreground truncate', textConfig.title)}
+        >
           Qeda
         </span>
         {!hideSubtitle && subtitle && (
-          <span className={cn('text-muted-foreground/80 font-medium truncate', textConfig.subtitle)}>
+          <span
+            className={cn(
+              'text-muted-foreground/80 font-medium truncate',
+              textConfig.subtitle,
+            )}
+          >
             {subtitle}
           </span>
         )}

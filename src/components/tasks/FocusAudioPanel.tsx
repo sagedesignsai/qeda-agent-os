@@ -71,7 +71,9 @@ export function FocusAudioPanel({ audio, className }: FocusAudioPanelProps) {
           type="single"
           value={config.noise ?? 'off'}
           onValueChange={(value) =>
-            setConfig({ noise: (value || 'off') === 'off' ? null : (value as NoiseType) })
+            setConfig({
+              noise: (value || 'off') === 'off' ? null : (value as NoiseType),
+            })
           }
           size="sm"
           className="w-full"
@@ -157,7 +159,9 @@ export function FocusAudioPanel({ audio, className }: FocusAudioPanelProps) {
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="w-10 shrink-0 text-[10px] text-zinc-500">Vol</span>
+              <span className="w-10 shrink-0 text-[10px] text-zinc-500">
+                Vol
+              </span>
               <Slider
                 value={[Math.round(config.binauralVolume * 100)]}
                 onValueChange={([v]) => setConfig({ binauralVolume: v / 100 })}

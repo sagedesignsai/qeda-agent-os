@@ -70,7 +70,9 @@ export function getHistorySuggestion(prefix: string): string | null {
   if (!trimmed || trimmed.length < 2) return null;
 
   const history = getCommandHistory();
-  const match = history.find((h) => h.command.startsWith(trimmed) && h.command !== trimmed);
+  const match = history.find(
+    (h) => h.command.startsWith(trimmed) && h.command !== trimmed,
+  );
   if (!match) return null;
 
   // Return the remaining suffix
@@ -85,7 +87,9 @@ export function searchCommandHistory(query: string): HistoryEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) return history;
 
-  return history.filter((h) =>
-    h.command.toLowerCase().includes(q) || (h.cwd && h.cwd.toLowerCase().includes(q)),
+  return history.filter(
+    (h) =>
+      h.command.toLowerCase().includes(q) ||
+      (h.cwd && h.cwd.toLowerCase().includes(q)),
   );
 }

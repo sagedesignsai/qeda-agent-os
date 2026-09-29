@@ -49,20 +49,30 @@ interface GenerateNotebookContextValue {
   open: () => void;
 }
 
-const GenerateNotebookContext = createContext<GenerateNotebookContextValue | null>(null);
+const GenerateNotebookContext =
+  createContext<GenerateNotebookContextValue | null>(null);
 
 /** Open the notebook generation dialog from anywhere below the provider. */
 export function useGenerateNotebook(): GenerateNotebookContextValue {
   const ctx = useContext(GenerateNotebookContext);
   if (!ctx) {
-    throw new Error('useGenerateNotebook must be used within a GenerateNotebookProvider.');
+    throw new Error(
+      'useGenerateNotebook must be used within a GenerateNotebookProvider.',
+    );
   }
   return ctx;
 }
 
-export function GenerateNotebookProvider({ children }: { children: ReactNode }) {
+export function GenerateNotebookProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
-  const value = useMemo<GenerateNotebookContextValue>(() => ({ open: () => setOpen(true) }), []);
+  const value = useMemo<GenerateNotebookContextValue>(
+    () => ({ open: () => setOpen(true) }),
+    [],
+  );
   return (
     <GenerateNotebookContext.Provider value={value}>
       {children}
@@ -76,7 +86,10 @@ interface GenerateNotebookDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function GenerateNotebookDialog({ open, onOpenChange }: GenerateNotebookDialogProps) {
+export function GenerateNotebookDialog({
+  open,
+  onOpenChange,
+}: GenerateNotebookDialogProps) {
   const navigate = useNavigate();
   const [topic, setTopic] = useState('');
   const [audience, setAudience] = useState('');
@@ -99,9 +112,12 @@ export function GenerateNotebookDialog({ open, onOpenChange }: GenerateNotebookD
     if (!trimmed) return;
     setBusy(true);
     try {
-      const session = await window.electron.ipc.invoke<{ id: string }>('sessions:create', {
-        title: trimmed.slice(0, 40),
-      });
+      const session = await window.electron.ipc.invoke<{ id: string }>(
+        'sessions:create',
+        {
+          title: trimmed.slice(0, 40),
+        },
+      );
       const prompt = buildNotebookPrompt({ topic: trimmed, depth, audience });
       reset();
       onOpenChange(false);
@@ -145,13 +161,18 @@ export function GenerateNotebookDialog({ open, onOpenChange }: GenerateNotebookD
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="gn-depth">Scope</Label>
-              <Select value={depth} onValueChange={(v) => setDepth(v as NotebookDepth)}>
+              <Select
+                value={depth}
+                onValueChange={(v) => setDepth(v as NotebookDepth)}
+              >
                 <SelectTrigger id="gn-depth" className="text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="quick">Quick — 3–4 sections</SelectItem>
-                  <SelectItem value="standard">Standard — 5–7 sections</SelectItem>
+                  <SelectItem value="standard">
+                    Standard — 5–7 sections
+                  </SelectItem>
                   <SelectItem value="deep">Deep — 8–12 sections</SelectItem>
                 </SelectContent>
               </Select>
@@ -174,7 +195,11 @@ export function GenerateNotebookDialog({ open, onOpenChange }: GenerateNotebookD
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleGenerate} disabled={busy || !topic.trim()} className="gap-1.5">
+          <Button
+            onClick={handleGenerate}
+            disabled={busy || !topic.trim()}
+            className="gap-1.5"
+          >
             <SparklesIcon className="h-3.5 w-3.5" />
             {busy ? 'Starting…' : 'Generate'}
           </Button>

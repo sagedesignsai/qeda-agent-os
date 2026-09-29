@@ -16,8 +16,7 @@
  */
 
 export type ComposerIntent =
-  | { kind: 'goal'; text: string }
-  | { kind: 'command'; command: string };
+  { kind: 'goal'; text: string } | { kind: 'command'; command: string };
 
 /** Prefixes that switch the composer from "ask the agent" to "run this now". */
 const DIRECT_PREFIX = /^[!$]\s?/;
@@ -99,7 +98,9 @@ export function parseDotEnv(content: string): Record<string, string> {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
 
-    const match = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    const match = line.match(
+      /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/,
+    );
     if (!match) continue;
 
     const key = match[1];
@@ -118,7 +119,9 @@ export function parseDotEnv(content: string): Record<string, string> {
 }
 
 /** Parse export statements from a command string (e.g. export PORT=3000). */
-export function parseExportCommand(command: string): Record<string, string> | null {
+export function parseExportCommand(
+  command: string,
+): Record<string, string> | null {
   const trimmed = command.trim();
   if (!trimmed.startsWith('export ') && trimmed !== 'export') return null;
 
@@ -155,4 +158,3 @@ export function isInteractiveCommand(command: string): boolean {
   const trimmed = command.trim();
   return INTERACTIVE_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
-

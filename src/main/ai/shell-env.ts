@@ -33,7 +33,9 @@ export function getShellExecutable(): string {
 export function getLoginEnvironment(): Record<string, string> {
   if (cachedLoginEnv) return cachedLoginEnv;
 
-  const baseEnv: Record<string, string> = { ...(process.env as Record<string, string>) };
+  const baseEnv: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+  };
 
   if (process.platform === 'win32') {
     cachedLoginEnv = baseEnv;
@@ -124,7 +126,11 @@ export function getSessionEnv(sessionId: string): Record<string, string> {
   return env ?? {};
 }
 
-export function setSessionEnvVar(sessionId: string, key: string, value: string): void {
+export function setSessionEnvVar(
+  sessionId: string,
+  key: string,
+  value: string,
+): void {
   const current = { ...getSessionEnv(sessionId) };
   current[key] = value;
   sessionEnvStore.set(sessionId, current);

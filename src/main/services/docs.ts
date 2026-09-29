@@ -51,7 +51,11 @@ interface Context7Response {
     sourceFile?: string;
     pageTitle?: string;
   }>;
-  infoSnippets?: Array<{ breadcrumb?: string; content?: string; pageId?: string }>;
+  infoSnippets?: Array<{
+    breadcrumb?: string;
+    content?: string;
+    pageId?: string;
+  }>;
 }
 
 const CONTEXT7_SEARCH_URL = 'https://context7.com/api/v3/search';
@@ -71,22 +75,26 @@ export async function context7Docs(req: DocsRequest): Promise<DocsResult> {
     fetchImpl: req.fetchImpl,
   });
 
-  const codeSnippets: DocsCodeSnippet[] = (data.codeSnippets ?? []).map((snippet) => {
-    const primary = snippet.codeList?.[0];
-    return {
-      title: snippet.codeTitle ?? snippet.pageTitle ?? 'Snippet',
-      description: snippet.codeDescription ?? '',
-      language: snippet.codeLanguage ?? primary?.language ?? 'text',
-      code: primary?.code ?? '',
-      ...(snippet.sourceFile ? { source: snippet.sourceFile } : {}),
-    };
-  });
+  const codeSnippets: DocsCodeSnippet[] = (data.codeSnippets ?? []).map(
+    (snippet) => {
+      const primary = snippet.codeList?.[0];
+      return {
+        title: snippet.codeTitle ?? snippet.pageTitle ?? 'Snippet',
+        description: snippet.codeDescription ?? '',
+        language: snippet.codeLanguage ?? primary?.language ?? 'text',
+        code: primary?.code ?? '',
+        ...(snippet.sourceFile ? { source: snippet.sourceFile } : {}),
+      };
+    },
+  );
 
-  const infoSnippets: DocsInfoSnippet[] = (data.infoSnippets ?? []).map((snippet) => ({
-    breadcrumb: snippet.breadcrumb ?? '',
-    content: snippet.content ?? '',
-    ...(snippet.pageId ? { pageId: snippet.pageId } : {}),
-  }));
+  const infoSnippets: DocsInfoSnippet[] = (data.infoSnippets ?? []).map(
+    (snippet) => ({
+      breadcrumb: snippet.breadcrumb ?? '',
+      content: snippet.content ?? '',
+      ...(snippet.pageId ? { pageId: snippet.pageId } : {}),
+    }),
+  );
 
   return { codeSnippets, infoSnippets };
 }

@@ -124,7 +124,6 @@ export function isOutputChunk(type: unknown): boolean {
   return typeof type === 'string' && OUTPUT_CHUNK_TYPES.has(type);
 }
 
-
 /**
  * Check for AI SDK marker symbols across versions and module loaders.
  * (Identical to AISDKError.hasMarker in @ai-sdk/provider).
@@ -196,7 +195,8 @@ function isAbortError(err: unknown): boolean {
   const c = err as { name?: unknown; message?: unknown; reason?: unknown };
   if (c.name === 'AbortError') return true;
   if (c.reason === 'abort') return true;
-  if (typeof c.message === 'string' && /^AbortError/i.test(c.message)) return true;
+  if (typeof c.message === 'string' && /^AbortError/i.test(c.message))
+    return true;
   return false;
 }
 
@@ -326,7 +326,8 @@ export function describeFallbackReason(error: unknown, depth = 0): string {
   if (statusCode === 429) return 'rate limit reached';
   if (statusCode === 401) return 'invalid or expired API key (HTTP 401)';
   if (statusCode === 402) return 'insufficient credits (HTTP 402)';
-  if (statusCode === 403) return 'access forbidden or quota exceeded (HTTP 403)';
+  if (statusCode === 403)
+    return 'access forbidden or quota exceeded (HTTP 403)';
   if (statusCode === 404) return 'model not found or decommissioned (HTTP 404)';
   if (statusCode === 400) return 'request rejected by provider (HTTP 400)';
   if (statusCode !== undefined && statusCode >= 500) {
@@ -334,7 +335,8 @@ export function describeFallbackReason(error: unknown, depth = 0): string {
   }
 
   if (isAiNoSuchModelError(error)) return 'model not found on provider';
-  if (isAiUnsupportedFunctionalityError(error)) return 'unsupported model functionality';
+  if (isAiUnsupportedFunctionalityError(error))
+    return 'unsupported model functionality';
   if (isAiEmptyResponseBodyError(error)) return 'empty response from provider';
   if (isAiJsonParseError(error)) return 'malformed response from provider';
 
@@ -346,7 +348,8 @@ export function describeFallbackReason(error: unknown, depth = 0): string {
   if (typeof candidate.message === 'string' && candidate.message.trim()) {
     const firstLine = candidate.message.split('\n')[0].trim();
     if (/rate.?limit/i.test(firstLine)) return 'rate limit reached';
-    if (/fetch failed|ECONN|socket hang up/i.test(firstLine)) return 'network connection failed';
+    if (/fetch failed|ECONN|socket hang up/i.test(firstLine))
+      return 'network connection failed';
     return firstLine.slice(0, 160);
   }
 

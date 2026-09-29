@@ -13,7 +13,9 @@ jest.mock('ai', () => ({
   embed: jest.fn(),
   embedMany: jest.fn(),
 }));
-jest.mock('../main/ai/provider.js', () => ({ resolveModel: jest.fn(() => ({})) }));
+jest.mock('../main/ai/provider.js', () => ({
+  resolveModel: jest.fn(() => ({})),
+}));
 jest.mock('../main/ai/settings.js', () => ({
   getSettings: jest.fn(() => ({ activeProvider: 'test', activeModel: 'test' })),
 }));

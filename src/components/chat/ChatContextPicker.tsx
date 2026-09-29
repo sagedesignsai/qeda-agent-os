@@ -9,9 +9,19 @@
 
 import { useEffect, useState } from 'react';
 import type { ChatContext, Notebook, Page } from '@/main/ipc/channels';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { BookOpenIcon, FileTextIcon, XIcon, LibraryIcon, ChevronDownIcon } from 'lucide-react';
+import {
+  BookOpenIcon,
+  FileTextIcon,
+  XIcon,
+  LibraryIcon,
+  ChevronDownIcon,
+} from 'lucide-react';
 
 interface ChatContextPickerProps {
   value?: ChatContext;
@@ -60,7 +70,11 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
             }
             title="Bind this chat to a page or notebook"
           >
-            {value?.pageId ? <FileTextIcon className="h-3 w-3" /> : <BookOpenIcon className="h-3 w-3" />}
+            {value?.pageId ? (
+              <FileTextIcon className="h-3 w-3" />
+            ) : (
+              <BookOpenIcon className="h-3 w-3" />
+            )}
             {label}
             <ChevronDownIcon className="h-3 w-3" />
           </Button>
@@ -84,7 +98,9 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
                 >
                   <BookOpenIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="flex-1 truncate">{notebook.title}</span>
-                  {value?.notebookId === notebook.id && <XIcon className="h-3 w-3 rotate-45 text-primary" />}
+                  {value?.notebookId === notebook.id && (
+                    <XIcon className="h-3 w-3 rotate-45 text-primary" />
+                  )}
                 </button>
                 {value?.notebookId === notebook.id && (
                   <div className="ml-5 border-l pl-2">
@@ -97,7 +113,9 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
                       >
                         <FileTextIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
                         <span className="flex-1 truncate">{page.title}</span>
-                        {value?.pageId === page.id && <span className="text-primary">•</span>}
+                        {value?.pageId === page.id && (
+                          <span className="text-primary">•</span>
+                        )}
                       </button>
                     ))}
                   </div>

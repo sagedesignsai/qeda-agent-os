@@ -65,9 +65,8 @@ export function listTasks(opts?: {
 /** Get a single task by id. */
 export function getTask(id: string): Task | null {
   return (
-    (getDb()
-      .prepare(`SELECT * FROM tasks WHERE id = ?`)
-      .get(id) as Task | undefined) ?? null
+    (getDb().prepare(`SELECT * FROM tasks WHERE id = ?`).get(id) as
+      Task | undefined) ?? null
   );
 }
 

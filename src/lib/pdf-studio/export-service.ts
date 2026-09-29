@@ -44,7 +44,9 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 /**
  * Compiles and triggers the native Electron save dialog to write the PDF to disk.
  */
-export async function exportDocumentToDisk(doc: PdfDocument): Promise<ExportResult> {
+export async function exportDocumentToDisk(
+  doc: PdfDocument,
+): Promise<ExportResult> {
   try {
     const toastId = toast.loading('Compiling PDF for export...');
     const blob = await compilePdfBlob(doc);
@@ -56,12 +58,15 @@ export async function exportDocumentToDisk(doc: PdfDocument): Promise<ExportResu
       .replace(/_+/g, '_');
     const filename = `${safeTitle}.pdf`;
 
-    const res = await window.electron.ipc.invoke<ExportResult>('documents:export-file', {
-      id: doc.id,
-      format: 'pdf',
-      filename,
-      pdfBase64: base64,
-    });
+    const res = await window.electron.ipc.invoke<ExportResult>(
+      'documents:export-file',
+      {
+        id: doc.id,
+        format: 'pdf',
+        filename,
+        pdfBase64: base64,
+      },
+    );
 
     toast.dismiss(toastId);
 

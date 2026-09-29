@@ -63,7 +63,9 @@ export function ChatInput({
       </PromptInputBody>
       {/* With a footer-left slot the row splits (indicator | submit); without
           one it collapses to a right-aligned submit. */}
-      <PromptInputFooter className={footerLeft ? 'justify-between' : 'justify-end'}>
+      <PromptInputFooter
+        className={footerLeft ? 'justify-between' : 'justify-end'}
+      >
         <PromptInputTools>{footerLeft}</PromptInputTools>
         <PromptInputSubmit
           status={isStreaming ? 'streaming' : undefined}

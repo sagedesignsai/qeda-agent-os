@@ -149,7 +149,9 @@ export function getSettings(): AppSettings {
     for (const [id, value] of Object.entries(decrypted.serviceKeys)) {
       if (typeof value !== 'string' || !value) continue;
       try {
-        decrypted.serviceKeys[id] = safeStorage.decryptString(Buffer.from(value, 'base64'));
+        decrypted.serviceKeys[id] = safeStorage.decryptString(
+          Buffer.from(value, 'base64'),
+        );
       } catch {
         delete decrypted.serviceKeys[id];
       }
@@ -158,9 +160,16 @@ export function getSettings(): AppSettings {
 
   // Decrypt named provider keys.
   for (const [key, val] of Object.entries(decrypted.providers)) {
-    if (val && typeof val === 'object' && 'apiKey' in val && typeof val.apiKey === 'string') {
+    if (
+      val &&
+      typeof val === 'object' &&
+      'apiKey' in val &&
+      typeof val.apiKey === 'string'
+    ) {
       try {
-        val.apiKey = safeStorage.decryptString(Buffer.from(val.apiKey, 'base64'));
+        val.apiKey = safeStorage.decryptString(
+          Buffer.from(val.apiKey, 'base64'),
+        );
       } catch {
         val.apiKey = undefined;
       }
@@ -172,7 +181,10 @@ export function getSettings(): AppSettings {
     decrypted.customProviders = decrypted.customProviders.map((c) => {
       if (!c.apiKey) return c;
       try {
-        return { ...c, apiKey: safeStorage.decryptString(Buffer.from(c.apiKey, 'base64')) };
+        return {
+          ...c,
+          apiKey: safeStorage.decryptString(Buffer.from(c.apiKey, 'base64')),
+        };
       } catch {
         return { ...c, apiKey: undefined };
       }
@@ -190,19 +202,28 @@ export function saveSettings(settings: AppSettings): void {
 
   if (safeStorage.isEncryptionAvailable()) {
     if (typeof toWrite.braveApiKey === 'string' && toWrite.braveApiKey) {
-      toWrite.braveApiKey = safeStorage.encryptString(toWrite.braveApiKey).toString('base64');
+      toWrite.braveApiKey = safeStorage
+        .encryptString(toWrite.braveApiKey)
+        .toString('base64');
     }
 
     if (toWrite.serviceKeys) {
       for (const [id, value] of Object.entries(toWrite.serviceKeys)) {
         if (typeof value === 'string' && value) {
-          toWrite.serviceKeys[id] = safeStorage.encryptString(value).toString('base64');
+          toWrite.serviceKeys[id] = safeStorage
+            .encryptString(value)
+            .toString('base64');
         }
       }
     }
 
     for (const val of Object.values(toWrite.providers)) {
-      if (val && 'apiKey' in val && typeof val.apiKey === 'string' && val.apiKey) {
+      if (
+        val &&
+        'apiKey' in val &&
+        typeof val.apiKey === 'string' &&
+        val.apiKey
+      ) {
         val.apiKey = safeStorage.encryptString(val.apiKey).toString('base64');
       }
     }
@@ -210,7 +231,10 @@ export function saveSettings(settings: AppSettings): void {
     if (Array.isArray(toWrite.customProviders)) {
       toWrite.customProviders = toWrite.customProviders.map((c) => {
         if (!c.apiKey) return c;
-        return { ...c, apiKey: safeStorage.encryptString(c.apiKey).toString('base64') };
+        return {
+          ...c,
+          apiKey: safeStorage.encryptString(c.apiKey).toString('base64'),
+        };
       });
     }
   }

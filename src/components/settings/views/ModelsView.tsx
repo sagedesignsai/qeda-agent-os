@@ -133,7 +133,8 @@ export function ModelsView() {
     setActiveProvider(providerId);
     setModels([]);
     setModelsError(undefined);
-    const suggested = providers.find((p) => p.id === providerId)?.freeModels ?? [];
+    const suggested =
+      providers.find((p) => p.id === providerId)?.freeModels ?? [];
     setActiveModel(suggested[0] ?? '');
   };
 
@@ -172,7 +173,9 @@ export function ModelsView() {
       setServiceKeys({});
       setBraveApiKey('');
 
-      toast.success('Saved. The agent uses the new model on your next message.');
+      toast.success(
+        'Saved. The agent uses the new model on your next message.',
+      );
     } catch (err) {
       toast.error(
         `Failed to save: ${err instanceof Error ? err.message : String(err)}`,
@@ -323,7 +326,11 @@ export function ModelsView() {
             id="brave-key"
             type="password"
             className="pl-8 text-sm"
-            placeholder={snapshot.braveApiKeySet ? '••••••••••••••••' : 'Enter Brave Search API key…'}
+            placeholder={
+              snapshot.braveApiKeySet
+                ? '••••••••••••••••'
+                : 'Enter Brave Search API key…'
+            }
             value={braveApiKey}
             onChange={(e) => setBraveApiKey(e.target.value)}
           />
@@ -343,7 +350,8 @@ export function ModelsView() {
         {SERVICE_CATEGORIES.map((category) => {
           // Brave has its own dedicated field above.
           const list = services.filter(
-            (service) => service.category === category.id && service.id !== 'brave',
+            (service) =>
+              service.category === category.id && service.id !== 'brave',
           );
           if (list.length === 0) return null;
           return (
@@ -354,17 +362,24 @@ export function ModelsView() {
               {list.map((service) => (
                 <div key={service.id} className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor={`svc-${service.id}`} className="text-sm font-normal">
+                    <Label
+                      htmlFor={`svc-${service.id}`}
+                      className="text-sm font-normal"
+                    >
                       {service.name}
                     </Label>
                     {service.configured && (
                       <Badge variant="secondary" className="gap-1 text-xs">
                         <CheckCircleIcon className="size-3 text-green-500" />
-                        {service.source === 'environment' ? 'From environment' : 'Saved'}
+                        {service.source === 'environment'
+                          ? 'From environment'
+                          : 'Saved'}
                       </Badge>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">{service.note}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {service.note}
+                  </p>
                   <div className="relative">
                     <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
                     <Input
@@ -406,13 +421,18 @@ export function ModelsView() {
         {providers.map((provider) => (
           <div key={provider.id} className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor={`key-${provider.id}`} className="text-sm font-normal">
+              <Label
+                htmlFor={`key-${provider.id}`}
+                className="text-sm font-normal"
+              >
                 {provider.name}
               </Label>
               {provider.apiKeySet && (
                 <Badge variant="secondary" className="gap-1 text-xs">
                   <CheckCircleIcon className="size-3 text-green-500" />
-                  {provider.apiKeySource === 'environment' ? 'From environment' : 'Saved'}
+                  {provider.apiKeySource === 'environment'
+                    ? 'From environment'
+                    : 'Saved'}
                 </Badge>
               )}
             </div>

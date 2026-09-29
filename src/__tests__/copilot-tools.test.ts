@@ -23,16 +23,16 @@ import { listSteps } from '../main/db/task-steps';
 import { listBlocks } from '../main/db/task-blocks';
 import { listTerminalSessions } from '../main/db/terminal';
 import { taskTools } from '../main/tools/tasks';
-import { copilotTools, isRiskyCopilotTool } from '../main/ai/task-copilot-agent';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import {
+  copilotTools,
+  isRiskyCopilotTool,
+} from '../main/ai/task-copilot-agent';
 
 /** Invoke a tool the way the SDK does: `execute(input, options)`. */
 function run(tool: unknown, input: unknown): Promise<any> {
-  return (tool as { execute: (i: unknown, o: unknown) => Promise<any> }).execute(
-    input,
-    { toolCallId: 'test', messages: [] },
-  );
+  return (
+    tool as { execute: (i: unknown, o: unknown) => Promise<any> }
+  ).execute(input, { toolCallId: 'test', messages: [] });
 }
 
 describe('copilot task tools', () => {
@@ -66,7 +66,10 @@ describe('copilot task tools', () => {
 
   it('creates many tasks for a brain dump', async () => {
     const result = await run(taskTools.createTasks, {
-      tasks: [{ title: 'Call the bank' }, { title: 'Book dentist', priority: 2 }],
+      tasks: [
+        { title: 'Call the bank' },
+        { title: 'Book dentist', priority: 2 },
+      ],
     });
 
     expect(result.success).toBe(true);

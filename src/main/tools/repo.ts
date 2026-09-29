@@ -144,7 +144,9 @@ async function resolveWithin(root: string, candidate: string): Promise<string> {
  * (`ai/project-context.ts`: "… (id: proj-1)"), so the model can name the
  * project without a lookup round-trip.
  */
-async function resolveRepoRoot(projectId: string): Promise<{ root: string; projectName: string }> {
+async function resolveRepoRoot(
+  projectId: string,
+): Promise<{ root: string; projectName: string }> {
   const project = getProject(projectId);
   if (!project) {
     throw new Error(
@@ -236,7 +238,10 @@ export const gitStatusTool = tool({
     // (`## main...origin/main [ahead 1]`) followed by one line per change.
     const res = await git(cwd, ['status', '--porcelain=v1', '--branch']);
     if (!res.success) {
-      return { success: false as const, error: res.stderr || 'git status failed' };
+      return {
+        success: false as const,
+        error: res.stderr || 'git status failed',
+      };
     }
 
     const lines = res.stdout.split('\n');
@@ -244,11 +249,16 @@ export const gitStatusTool = tool({
     const changes = lines.slice(1).filter((l) => l.trim().length > 0);
 
     const branch = header.split('...')[0]?.trim() || 'unknown';
-    const upstream = header.includes('...') ? header.split('...')[1]?.split('[')[0]?.trim() : undefined;
+    const upstream = header.includes('...')
+      ? header.split('...')[1]?.split('[')[0]?.trim()
+      : undefined;
     const aheadBehind = header.match(/\[(?:ahead|behind)\s+(\d+)\]/);
-    const ahead = aheadBehind?.[1] && header.includes('ahead') ? Number(aheadBehind[1]) : 0;
+    const ahead =
+      aheadBehind?.[1] && header.includes('ahead') ? Number(aheadBehind[1]) : 0;
     const behind =
-      aheadBehind?.[1] && header.includes('behind') ? Number(aheadBehind[1]) : 0;
+      aheadBehind?.[1] && header.includes('behind')
+        ? Number(aheadBehind[1])
+        : 0;
 
     // XY code: X = staged, Y = unstaged. Both letters matter for "is it clean".
     const staged = changes.filter((l) => l[0] !== ' ' && l[0] !== '?').length;
@@ -295,7 +305,9 @@ export const gitLogTool = tool({
     file: z
       .string()
       .optional()
-      .describe('Only show commits that touched this path, relative to the repository root.'),
+      .describe(
+        'Only show commits that touched this path, relative to the repository root.',
+      ),
   }),
   execute: async ({ projectId, count = 10, file }) => {
     let cwd: string;
@@ -329,7 +341,8 @@ export const gitLogTool = tool({
       .split('\n')
       .filter((l) => l.trim().length > 0)
       .map((line) => {
-        const [sha = '', author = '', when = '', ...subject] = line.split('\x1f');
+        const [sha = '', author = '', when = '', ...subject] =
+          line.split('\x1f');
         return {
           sha,
           author,
@@ -338,7 +351,14 @@ export const gitLogTool = tool({
         };
       });
 
-    return { success: true as const, projectId, projectName, path: cwd, commits, count: commits.length };
+    return {
+      success: true as const,
+      projectId,
+      projectName,
+      path: cwd,
+      commits,
+      count: commits.length,
+    };
   },
 });
 
@@ -354,7 +374,9 @@ export const gitDiffStatTool = tool({
     ref: z
       .string()
       .optional()
-      .describe('Git ref to diff against. Omit to diff the working tree against HEAD.'),
+      .describe(
+        'Git ref to diff against. Omit to diff the working tree against HEAD.',
+      ),
   }),
   execute: async ({ projectId, ref }) => {
     let cwd: string;
@@ -370,7 +392,10 @@ export const gitDiffStatTool = tool({
 
     const res = await git(cwd, args);
     if (!res.success) {
-      return { success: false as const, error: res.stderr || 'git diff failed' };
+      return {
+        success: false as const,
+        error: res.stderr || 'git diff failed',
+      };
     }
 
     const files = res.stdout
@@ -418,11 +443,16 @@ export const grepSearchTool = tool({
     'caps the number of matches — the response always reports whether it was truncated.',
   inputSchema: z.object({
     projectId: projectArg,
-    pattern: z.string().min(1).describe('Literal substring to search for. Not a regex.'),
+    pattern: z
+      .string()
+      .min(1)
+      .describe('Literal substring to search for. Not a regex.'),
     include: z
       .string()
       .optional()
-      .describe('Only search files whose name ends with this suffix, e.g. ".ts".'),
+      .describe(
+        'Only search files whose name ends with this suffix, e.g. ".ts".',
+      ),
     maxMatches: z
       .number()
       .int()
@@ -431,7 +461,12 @@ export const grepSearchTool = tool({
       .default(MAX_GREP_MATCHES)
       .describe(`Maximum matches to return (1-${MAX_GREP_MATCHES}).`),
   }),
-  execute: async ({ projectId, pattern, include, maxMatches = MAX_GREP_MATCHES }) => {
+  execute: async ({
+    projectId,
+    pattern,
+    include,
+    maxMatches = MAX_GREP_MATCHES,
+  }) => {
     let cwd: string;
     let projectName: string;
     try {
@@ -544,7 +579,10 @@ export const grepSearchTool = tool({
         : matches.length >= maxMatches
           ? `Reached the ${maxMatches}-match cap.`
           : undefined,
-      results: [...byFile.entries()].map(([file, hits]) => ({ file, matches: hits })),
+      results: [...byFile.entries()].map(([file, hits]) => ({
+        file,
+        matches: hits,
+      })),
     };
   },
 });

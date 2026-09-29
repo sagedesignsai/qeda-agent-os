@@ -9,7 +9,11 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useAgentChat, type AgentTransport, type UseAgentChatReturn } from './use-agent-chat';
+import {
+  useAgentChat,
+  type AgentTransport,
+  type UseAgentChatReturn,
+} from './use-agent-chat';
 
 /** Namespaced so a copilot turn never collides with a main-chat turn. */
 const COPILOT_TRANSPORT: AgentTransport = {
@@ -20,7 +24,9 @@ const COPILOT_TRANSPORT: AgentTransport = {
   fallbackChannel: 'copilot:stream-fallback',
 };
 
-export function useCopilotChat(opts?: { projectId?: string }): UseAgentChatReturn {
+export function useCopilotChat(opts?: {
+  projectId?: string;
+}): UseAgentChatReturn {
   return useAgentChat({
     sessionId: 'focus-copilot',
     transport: COPILOT_TRANSPORT,

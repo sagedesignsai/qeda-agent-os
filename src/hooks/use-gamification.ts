@@ -44,20 +44,20 @@ export function useGamification(): UseGamificationReturn {
   }, [load]);
 
   // Sync across windows or actions
-  useIpcEvent(
-    'gamification:updated',
-    (raw: unknown) => {
-      const payload = raw as { state: GamificationState; leveledUp: boolean };
-      if (!payload?.state) return;
-      setState(payload.state);
-      if (payload.leveledUp) {
-        celebrationAudio.playLevelUpFanfare();
-        toast.success(`Level Up! You reached Level ${payload.state.currentLevel}`, {
+  useIpcEvent('gamification:updated', (raw: unknown) => {
+    const payload = raw as { state: GamificationState; leveledUp: boolean };
+    if (!payload?.state) return;
+    setState(payload.state);
+    if (payload.leveledUp) {
+      celebrationAudio.playLevelUpFanfare();
+      toast.success(
+        `Level Up! You reached Level ${payload.state.currentLevel}`,
+        {
           description: `Rank: ${payload.state.rankTitle}`,
-        });
-      }
-    },
-  );
+        },
+      );
+    }
+  });
 
   const awardXp = useCallback(
     async (amount: number, source: string, entityId?: string) => {
@@ -73,9 +73,12 @@ export function useGamification(): UseGamificationReturn {
 
         if (result.leveledUp) {
           celebrationAudio.playLevelUpFanfare();
-          toast.success(`Level Up! You reached Level ${result.state.currentLevel}`, {
-            description: `Rank: ${result.state.rankTitle}`,
-          });
+          toast.success(
+            `Level Up! You reached Level ${result.state.currentLevel}`,
+            {
+              description: `Rank: ${result.state.rankTitle}`,
+            },
+          );
         }
       } catch {
         /* best-effort */

@@ -9,7 +9,11 @@
 
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable';
 import { Button } from '@/components/ui/button';
 import {
   Empty,
@@ -50,8 +54,7 @@ export default function Workspace() {
 
   // Prefer the loaded page's own notebook (a cross-notebook link may have
   // navigated with a stale :notebookId).
-  const contextNotebookId =
-    detail?.page.notebook_id ?? notebookId ?? null;
+  const contextNotebookId = detail?.page.notebook_id ?? notebookId ?? null;
   const activeNotebook =
     notebooks.find((n) => n.id === contextNotebookId) ?? null;
 
@@ -160,9 +163,7 @@ export default function Workspace() {
                   pageId={detail.page.id}
                   title={detail.page.title}
                   initialBlocks={detail.blocks}
-                  onSaved={
-                    pageId ? () => void reloadDetail(pageId) : undefined
-                  }
+                  onSaved={pageId ? () => void reloadDetail(pageId) : undefined}
                 />
               ) : (
                 <EmptyWorkspace

@@ -108,7 +108,11 @@ export interface TokenReference {
 export type StyleValue<T> = T | TokenReference;
 
 export function isToken(val: unknown): val is TokenReference {
-  return typeof val === 'object' && val !== null && (val as TokenReference).kind === 'token';
+  return (
+    typeof val === 'object' &&
+    val !== null &&
+    (val as TokenReference).kind === 'token'
+  );
 }
 
 export function resolveStyleValue<T>(
@@ -304,7 +308,10 @@ export function createColumnNode(overrides?: Partial<ColumnNode>): ColumnNode {
   };
 }
 
-export function createTextNode(content: string, overrides?: Partial<TextNode>): TextNode {
+export function createTextNode(
+  content: string,
+  overrides?: Partial<TextNode>,
+): TextNode {
   return {
     id: nanoid(8),
     type: 'text',
@@ -317,7 +324,10 @@ export function createTextNode(content: string, overrides?: Partial<TextNode>): 
   };
 }
 
-export function createIconNode(iconName: string, overrides?: Partial<IconNode>): IconNode {
+export function createIconNode(
+  iconName: string,
+  overrides?: Partial<IconNode>,
+): IconNode {
   return {
     id: nanoid(8),
     type: 'icon',
@@ -328,7 +338,9 @@ export function createIconNode(iconName: string, overrides?: Partial<IconNode>):
   };
 }
 
-export function createDividerNode(overrides?: Partial<DividerNode>): DividerNode {
+export function createDividerNode(
+  overrides?: Partial<DividerNode>,
+): DividerNode {
   return {
     id: nanoid(8),
     type: 'divider',
@@ -340,7 +352,10 @@ export function createDividerNode(overrides?: Partial<DividerNode>): DividerNode
   };
 }
 
-export function createSpacerNode(size = 16, overrides?: Partial<SpacerNode>): SpacerNode {
+export function createSpacerNode(
+  size = 16,
+  overrides?: Partial<SpacerNode>,
+): SpacerNode {
   return {
     id: nanoid(8),
     type: 'spacer',
@@ -403,7 +418,10 @@ export function updateNodeInTree(
   });
 }
 
-export function removeNodeFromTree(root: DocNode[], targetId: string): DocNode[] {
+export function removeNodeFromTree(
+  root: DocNode[],
+  targetId: string,
+): DocNode[] {
   return root
     .filter((node) => node.id !== targetId)
     .map((node) => {
@@ -532,7 +550,10 @@ export function legacyBlockToDocNode(block: PdfBlock): DocNode {
       const c = block as CalloutBlock;
       const box = createBoxNode({ id: c.id, name: `Callout (${c.variant})` });
 
-      const variantColors: Record<string, { border: string; bg: string; icon: string }> = {
+      const variantColors: Record<
+        string,
+        { border: string; bg: string; icon: string }
+      > = {
         info: { border: '#0284c7', bg: '#f0f9ff', icon: 'info' },
         warning: { border: '#f59e0b', bg: '#fffbeb', icon: 'alert-triangle' },
         success: { border: '#22c55e', bg: '#f0fdf4', icon: 'check-circle-2' },
@@ -595,7 +616,10 @@ export function legacyBlockToDocNode(block: PdfBlock): DocNode {
       row.layout.columnGap = 12;
 
       for (const item of m.items) {
-        const card = createBoxNode({ id: item.id, name: `Metric (${item.label})` });
+        const card = createBoxNode({
+          id: item.id,
+          name: `Metric (${item.label})`,
+        });
         card.appearance = {
           background: '#ffffff',
           border: {
@@ -724,7 +748,9 @@ export function legacyBlockToDocNode(block: PdfBlock): DocNode {
       }
 
       // Line
-      sigCol.children.push(createDividerNode({ thickness: 1, color: '#a1a1aa' }));
+      sigCol.children.push(
+        createDividerNode({ thickness: 1, color: '#a1a1aa' }),
+      );
 
       // Signee Name
       sigCol.children.push(

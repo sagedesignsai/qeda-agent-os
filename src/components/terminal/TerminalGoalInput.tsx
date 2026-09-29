@@ -26,7 +26,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { isDirectCommandInput, isInteractiveCommand } from '@/lib/terminal-input';
+import {
+  isDirectCommandInput,
+  isInteractiveCommand,
+} from '@/lib/terminal-input';
 import { WorkflowsDialog } from '@/components/terminal/WorkflowsDialog';
 import { TerminalHistoryDialog } from '@/components/terminal/TerminalHistoryDialog';
 import {
@@ -45,22 +48,54 @@ import {
 // ─── Preset goals ─────────────────────────────────────────────────────────────
 
 const PRESET_GOALS: { label: string; goal: string; tag: string }[] = [
-  { label: 'What is this folder?', goal: 'Explore the current directory and summarize what this project is, its structure, and key files.', tag: 'explore' },
-  { label: 'Check disk usage', goal: 'Show disk usage by folder in the current directory, sorted by size.', tag: 'system' },
-  { label: 'Find large files', goal: 'Find files larger than 50MB in the current directory and its subdirectories.', tag: 'system' },
-  { label: 'Fix sound issues', goal: 'Diagnose and attempt to fix sound/audio issues on this Linux system.', tag: 'diagnose' },
-  { label: 'Git status & log', goal: 'Show git status, recent commits, and any uncommitted changes in the current repo.', tag: 'git' },
-  { label: 'List running processes', goal: 'Show the top CPU and memory consuming processes currently running.', tag: 'system' },
-  { label: 'Check Node.js setup', goal: 'Check Node.js version, npm version, and list globally installed packages.', tag: 'dev' },
-  { label: 'Find TODO comments', goal: 'Search for TODO, FIXME, and HACK comments in all source files in the current directory.', tag: 'dev' },
+  {
+    label: 'What is this folder?',
+    goal: 'Explore the current directory and summarize what this project is, its structure, and key files.',
+    tag: 'explore',
+  },
+  {
+    label: 'Check disk usage',
+    goal: 'Show disk usage by folder in the current directory, sorted by size.',
+    tag: 'system',
+  },
+  {
+    label: 'Find large files',
+    goal: 'Find files larger than 50MB in the current directory and its subdirectories.',
+    tag: 'system',
+  },
+  {
+    label: 'Fix sound issues',
+    goal: 'Diagnose and attempt to fix sound/audio issues on this Linux system.',
+    tag: 'diagnose',
+  },
+  {
+    label: 'Git status & log',
+    goal: 'Show git status, recent commits, and any uncommitted changes in the current repo.',
+    tag: 'git',
+  },
+  {
+    label: 'List running processes',
+    goal: 'Show the top CPU and memory consuming processes currently running.',
+    tag: 'system',
+  },
+  {
+    label: 'Check Node.js setup',
+    goal: 'Check Node.js version, npm version, and list globally installed packages.',
+    tag: 'dev',
+  },
+  {
+    label: 'Find TODO comments',
+    goal: 'Search for TODO, FIXME, and HACK comments in all source files in the current directory.',
+    tag: 'dev',
+  },
 ];
 
 const TAG_COLORS: Record<string, string> = {
   explore: 'bg-sky-900/60 text-sky-300 border-sky-700/40',
-  system:  'bg-orange-900/60 text-orange-300 border-orange-700/40',
-  diagnose:'bg-rose-900/60 text-rose-300 border-rose-700/40',
-  git:     'bg-purple-900/60 text-purple-300 border-purple-700/40',
-  dev:     'bg-emerald-900/60 text-emerald-300 border-emerald-700/40',
+  system: 'bg-orange-900/60 text-orange-300 border-orange-700/40',
+  diagnose: 'bg-rose-900/60 text-rose-300 border-rose-700/40',
+  git: 'bg-purple-900/60 text-purple-300 border-purple-700/40',
+  dev: 'bg-emerald-900/60 text-emerald-300 border-emerald-700/40',
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -96,7 +131,9 @@ export function TerminalGoalInput({
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [workflowsOpen, setWorkflowsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [interactivePrompt, setInteractivePrompt] = useState<string | null>(null);
+  const [interactivePrompt, setInteractivePrompt] = useState<string | null>(
+    null,
+  );
 
   // Adopt an external prefill whenever it changes identity.
   useEffect(() => {
@@ -223,7 +260,8 @@ export function TerminalGoalInput({
               <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-foreground">
                 {interactivePrompt}
               </code>{' '}
-              requires interactive terminal input (prompts, passwords, or curses UI) and may hang in block mode.
+              requires interactive terminal input (prompts, passwords, or curses
+              UI) and may hang in block mode.
             </p>
             <div className="mt-2 flex items-center justify-end gap-2">
               <Button
@@ -263,7 +301,7 @@ export function TerminalGoalInput({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={(disabled || isRunning)}
+          disabled={disabled || isRunning}
           className="min-h-[52px] resize-none pl-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60"
         />
 
@@ -380,9 +418,13 @@ export function TerminalGoalInput({
         onOpenChange={setHistoryOpen}
         onSelectCommand={(cmd, runDirectly) => {
           if (runDirectly) {
-            onSubmit(cmd.startsWith('!') || cmd.startsWith('$') ? cmd : `!${cmd}`);
+            onSubmit(
+              cmd.startsWith('!') || cmd.startsWith('$') ? cmd : `!${cmd}`,
+            );
           } else {
-            setText(cmd.startsWith('!') || cmd.startsWith('$') ? cmd : `!${cmd}`);
+            setText(
+              cmd.startsWith('!') || cmd.startsWith('$') ? cmd : `!${cmd}`,
+            );
           }
         }}
       />

@@ -15,7 +15,11 @@ import { requestBinary, requestJson } from './http.js';
 
 export type TtsProvider = 'elevenlabs' | 'deepgram' | 'cartesia';
 
-export const TTS_PROVIDERS: TtsProvider[] = ['elevenlabs', 'deepgram', 'cartesia'];
+export const TTS_PROVIDERS: TtsProvider[] = [
+  'elevenlabs',
+  'deepgram',
+  'cartesia',
+];
 
 /** Well-known public default voices; callers may override via `voice`. */
 const DEFAULT_VOICE: Record<TtsProvider, string> = {
@@ -51,7 +55,11 @@ export async function synthesizeSpeech(req: TtsRequest): Promise<SpeechAudio> {
         body: { text: req.text, model_id: 'eleven_multilingual_v2' },
         fetchImpl: req.fetchImpl,
       });
-      return { provider: 'elevenlabs', contentType: contentType || 'audio/mpeg', bytes };
+      return {
+        provider: 'elevenlabs',
+        contentType: contentType || 'audio/mpeg',
+        bytes,
+      };
     }
     case 'deepgram': {
       const { bytes, contentType } = await requestBinary({
@@ -61,7 +69,11 @@ export async function synthesizeSpeech(req: TtsRequest): Promise<SpeechAudio> {
         body: { text: req.text },
         fetchImpl: req.fetchImpl,
       });
-      return { provider: 'deepgram', contentType: contentType || 'audio/mpeg', bytes };
+      return {
+        provider: 'deepgram',
+        contentType: contentType || 'audio/mpeg',
+        bytes,
+      };
     }
     case 'cartesia': {
       const { bytes, contentType } = await requestBinary({
@@ -76,11 +88,19 @@ export async function synthesizeSpeech(req: TtsRequest): Promise<SpeechAudio> {
           model_id: 'sonic-2',
           transcript: req.text,
           voice: { mode: 'id', id: voice },
-          output_format: { container: 'mp3', sample_rate: 44100, bit_rate: 128000 },
+          output_format: {
+            container: 'mp3',
+            sample_rate: 44100,
+            bit_rate: 128000,
+          },
         },
         fetchImpl: req.fetchImpl,
       });
-      return { provider: 'cartesia', contentType: contentType || 'audio/mpeg', bytes };
+      return {
+        provider: 'cartesia',
+        contentType: contentType || 'audio/mpeg',
+        bytes,
+      };
     }
   }
 }
@@ -100,7 +120,9 @@ interface DeepgramListenResponse {
 }
 
 /** Transcribe an audio buffer with Deepgram Nova. Returns plain text. */
-export async function deepgramTranscribe(req: TranscribeRequest): Promise<{ text: string }> {
+export async function deepgramTranscribe(
+  req: TranscribeRequest,
+): Promise<{ text: string }> {
   const model = req.model ?? 'nova-3';
   const data = await requestJson<DeepgramListenResponse>({
     service: 'Deepgram',
@@ -113,6 +135,7 @@ export async function deepgramTranscribe(req: TranscribeRequest): Promise<{ text
     timeoutMs: 120_000,
   });
 
-  const transcript = data.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
+  const transcript =
+    data.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '';
   return { text: transcript };
 }

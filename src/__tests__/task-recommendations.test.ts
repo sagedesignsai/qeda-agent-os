@@ -12,9 +12,9 @@ function makeTask(overrides: Partial<Task>): Task {
   return {
     id: 't-1',
     // `Task['project_id']` is non-nullable (the DB always stores the Inbox), but
-  // this fixture exercises the "no project" path, so the null is forced past the
-  // type. The runtime value under test is unchanged.
-  project_id: null as unknown as string,
+    // this fixture exercises the "no project" path, so the null is forced past the
+    // type. The runtime value under test is unchanged.
+    project_id: null as unknown as string,
     title: 'Sample task',
     description: '',
     status: 'backlog',
@@ -60,7 +60,11 @@ describe('getNextBestMove', () => {
 
   it('prefers quick wins (<= 15m) when priorities are identical', () => {
     const p2Long = makeTask({ id: 'p2-long', priority: 2, estimate_mins: 60 });
-    const p2Quick = makeTask({ id: 'p2-quick', priority: 2, estimate_mins: 15 });
+    const p2Quick = makeTask({
+      id: 'p2-quick',
+      priority: 2,
+      estimate_mins: 15,
+    });
 
     const res = getNextBestMove({ tasks: [p2Long, p2Quick] });
     expect(res.task?.id).toBe('p2-quick');

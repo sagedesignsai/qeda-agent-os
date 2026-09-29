@@ -29,11 +29,18 @@ interface PageInfoPanelProps {
   onVersionRestore?: (versionId: string) => void;
 }
 
-export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersionRestore }: PageInfoPanelProps) {
+export function PageInfoPanel({
+  detail,
+  onNavigate,
+  onChatWithContext,
+  onVersionRestore,
+}: PageInfoPanelProps) {
   const [runs, setRuns] = useState<ResearchRun[]>([]);
   const [runLoading, setRunLoading] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
-  const [trace, setTrace] = useState<import('@/main/ipc/channels').ResearchTrace | null>(null);
+  const [trace, setTrace] = useState<
+    import('@/main/ipc/channels').ResearchTrace | null
+  >(null);
 
   useEffect(() => {
     if (!detail) {
@@ -82,16 +89,28 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
     <div className="flex h-full flex-col overflow-hidden">
       <Tabs defaultValue="outline" className="flex h-full flex-col">
         <TabsList className="shrink-0 justify-start rounded-none border-b bg-transparent p-0">
-          <TabsTrigger value="outline" className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary">
+          <TabsTrigger
+            value="outline"
+            className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary"
+          >
             <ListTreeIcon className="h-3.5 w-3.5" /> Outline
           </TabsTrigger>
-          <TabsTrigger value="links" className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary">
+          <TabsTrigger
+            value="links"
+            className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary"
+          >
             <LinkIcon className="h-3.5 w-3.5" /> Links
           </TabsTrigger>
-          <TabsTrigger value="research" className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary">
+          <TabsTrigger
+            value="research"
+            className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary"
+          >
             <FlaskConicalIcon className="h-3.5 w-3.5" /> Research
           </TabsTrigger>
-          <TabsTrigger value="history" className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary">
+          <TabsTrigger
+            value="history"
+            className="gap-1 rounded-none border-b-2 border-transparent px-3 py-2 text-xs data-[state=active]:border-primary"
+          >
             <HistoryIcon className="h-3.5 w-3.5" /> History
           </TabsTrigger>
         </TabsList>
@@ -100,7 +119,9 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
           {/* ── Outline ─────────────────────────────────────────────────── */}
           <TabsContent value="outline" className="mt-0 space-y-3">
             <div>
-              <div className="mb-1 font-medium text-muted-foreground">Outline</div>
+              <div className="mb-1 font-medium text-muted-foreground">
+                Outline
+              </div>
               {headings.length === 0 ? (
                 <p className="text-muted-foreground">No headings yet.</p>
               ) : (
@@ -114,7 +135,9 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
                         block.type === 'heading3' && 'pl-7',
                       )}
                     >
-                      {block.text || <span className="text-muted-foreground">(empty)</span>}
+                      {block.text || (
+                        <span className="text-muted-foreground">(empty)</span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -124,18 +147,29 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
             <div>
               <div className="mb-1 font-medium text-muted-foreground">Tags</div>
               {detail.tags.length === 0 ? (
-                <p className="text-muted-foreground">Add #tags anywhere in the page.</p>
+                <p className="text-muted-foreground">
+                  Add #tags anywhere in the page.
+                </p>
               ) : (
                 <div className="flex flex-wrap gap-1">
                   {detail.tags.map((tag) => (
-                    <span key={tag} className="rounded bg-muted px-1.5 py-0.5 font-mono">#{tag}</span>
+                    <span
+                      key={tag}
+                      className="rounded bg-muted px-1.5 py-0.5 font-mono"
+                    >
+                      #{tag}
+                    </span>
                   ))}
                 </div>
               )}
             </div>
 
             {onChatWithContext && (
-              <Button size="sm" className="w-full" onClick={() => onChatWithContext(detail.page.id)}>
+              <Button
+                size="sm"
+                className="w-full"
+                onClick={() => onChatWithContext(detail.page.id)}
+              >
                 Chat about this page
               </Button>
             )}
@@ -168,7 +202,8 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
             {runLoading && <LoaderIcon className="h-3 w-3 animate-spin" />}
             {!runLoading && runs.length === 0 && (
               <p className="text-muted-foreground">
-                No research runs yet. Ask Vellum to research this page's topic in Chat.
+                No research runs yet. Ask Vellum to research this page's topic
+                in Chat.
               </p>
             )}
             {runs.map((run) => (
@@ -179,14 +214,19 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
                   onClick={() => void loadTrace(run.id)}
                 >
                   <FlaskConicalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="flex-1 truncate font-medium">{run.question}</span>
+                  <span className="flex-1 truncate font-medium">
+                    {run.question}
+                  </span>
                   <span
                     className={cn(
                       'rounded px-1 py-0.5 text-[9px] uppercase',
-                      run.status === 'completed' && 'bg-green-500/15 text-green-600',
-                      run.status === 'running' && 'bg-amber-500/15 text-amber-600',
+                      run.status === 'completed' &&
+                        'bg-green-500/15 text-green-600',
+                      run.status === 'running' &&
+                        'bg-amber-500/15 text-amber-600',
                       run.status === 'failed' && 'bg-red-500/15 text-red-600',
-                      run.status === 'cancelled' && 'bg-muted text-muted-foreground',
+                      run.status === 'cancelled' &&
+                        'bg-muted text-muted-foreground',
                     )}
                   >
                     {run.status}
@@ -195,10 +235,15 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
                 {openRunId === run.id && trace && (
                   <div className="space-y-2 border-t p-2">
                     {trace.sources.length === 0 && (
-                      <p className="text-muted-foreground">No sources recorded.</p>
+                      <p className="text-muted-foreground">
+                        No sources recorded.
+                      </p>
                     )}
                     {trace.sources.map((source, i) => (
-                      <div key={source.id} className="rounded bg-muted/40 p-1.5">
+                      <div
+                        key={source.id}
+                        className="rounded bg-muted/40 p-1.5"
+                      >
                         <div className="font-medium">
                           [{i + 1}]{' '}
                           {source.url ? (
@@ -216,14 +261,24 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
                           )}
                         </div>
                         {source.snippet && (
-                          <p className="mt-0.5 text-muted-foreground">{source.snippet.slice(0, 200)}</p>
+                          <p className="mt-0.5 text-muted-foreground">
+                            {source.snippet.slice(0, 200)}
+                          </p>
                         )}
                         {source.evidence.length > 0 && (
                           <ul className="mt-1 space-y-1">
                             {source.evidence.map((item) => (
-                              <li key={item.id} className="border-l-2 border-primary/40 pl-2 italic text-muted-foreground">
+                              <li
+                                key={item.id}
+                                className="border-l-2 border-primary/40 pl-2 italic text-muted-foreground"
+                              >
                                 “{item.quote.slice(0, 220)}”
-                                {item.note && <span className="not-italic"> — {item.note}</span>}
+                                {item.note && (
+                                  <span className="not-italic">
+                                    {' '}
+                                    — {item.note}
+                                  </span>
+                                )}
                               </li>
                             ))}
                           </ul>
@@ -250,11 +305,15 @@ export function PageInfoPanel({ detail, onNavigate, onChatWithContext, onVersion
               <p className="text-muted-foreground">No saved versions yet.</p>
             )}
             {detail.versions.map((version) => (
-              <div key={version.id} className="flex items-center gap-2 rounded px-1.5 py-1 hover:bg-accent">
+              <div
+                key={version.id}
+                className="flex items-center gap-2 rounded px-1.5 py-1 hover:bg-accent"
+              >
                 <div className="flex-1">
                   <div className="font-medium">{version.title}</div>
                   <div className="text-muted-foreground">
-                    {new Date(version.created_at * 1000).toLocaleString()} · {version.origin}
+                    {new Date(version.created_at * 1000).toLocaleString()} ·{' '}
+                    {version.origin}
                   </div>
                 </div>
                 {onVersionRestore && (

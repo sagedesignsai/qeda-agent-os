@@ -99,7 +99,10 @@ describe('terminal block store', () => {
       expect(a.position).toBe(0);
       expect(b.position).toBe(1);
       expect(a.status).toBe('pending');
-      expect(getSessionBlocks(s.id).map((x) => x.command)).toEqual(['ls', 'pwd']);
+      expect(getSessionBlocks(s.id).map((x) => x.command)).toEqual([
+        'ls',
+        'pwd',
+      ]);
     });
 
     it('getBlock returns one block or null', () => {
@@ -187,7 +190,11 @@ describe('terminal block store', () => {
     });
 
     it('preserves existing rows and backfills duration_ms as null', () => {
-      legacy.prepare(`INSERT INTO terminal_sessions (id, title) VALUES ('s1', 'Legacy')`).run();
+      legacy
+        .prepare(
+          `INSERT INTO terminal_sessions (id, title) VALUES ('s1', 'Legacy')`,
+        )
+        .run();
       legacy
         .prepare(
           `INSERT INTO terminal_blocks (id, session_id, position, command, output, status)
@@ -198,8 +205,14 @@ describe('terminal block store', () => {
       applyMigrations(legacy);
 
       const row = legacy
-        .prepare('SELECT command, output, duration_ms FROM terminal_blocks WHERE id = ?')
-        .get('b1') as { command: string; output: string; duration_ms: number | null };
+        .prepare(
+          'SELECT command, output, duration_ms FROM terminal_blocks WHERE id = ?',
+        )
+        .get('b1') as {
+        command: string;
+        output: string;
+        duration_ms: number | null;
+      };
 
       expect(row.command).toBe('echo hi');
       expect(row.output).toBe('hi');
@@ -208,7 +221,9 @@ describe('terminal block store', () => {
 
     it('accepts a duration write after the upgrade', () => {
       applyMigrations(legacy);
-      legacy.prepare(`INSERT INTO terminal_sessions (id, title) VALUES ('s2', 'S')`).run();
+      legacy
+        .prepare(`INSERT INTO terminal_sessions (id, title) VALUES ('s2', 'S')`)
+        .run();
       legacy
         .prepare(
           `INSERT INTO terminal_blocks (id, session_id, position, command, status, duration_ms)

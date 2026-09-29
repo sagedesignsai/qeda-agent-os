@@ -40,10 +40,7 @@ export type Capability =
 
 /** Statuses the AI SDK accepts from a `toolApproval` rule (v7). */
 export type ApprovalStatus =
-  | 'not-applicable'
-  | 'approved'
-  | 'denied'
-  | 'user-approval';
+  'not-applicable' | 'approved' | 'denied' | 'user-approval';
 
 export interface ToolPolicy {
   /**
@@ -130,7 +127,9 @@ export function createApprovalPolicy(
   policies: ToolPolicyMap,
   { onUnclassified = 'deny' }: ApprovalPolicyOptions = {},
 ) {
-  return ({ toolCall }: ApprovalOptions): ApprovalStatus | { type: 'denied'; reason: string } => {
+  return ({
+    toolCall,
+  }: ApprovalOptions): ApprovalStatus | { type: 'denied'; reason: string } => {
     // (1) Dynamic calls bypass name lookup entirely.
     if (toolCall.dynamic) {
       return 'user-approval';

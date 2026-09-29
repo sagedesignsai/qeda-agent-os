@@ -34,7 +34,11 @@ import {
 } from '../../db/terminal';
 import { getPtyManager } from '../../pty/manager.js';
 
-export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
+export function registerTerminalHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
   /**
    * Bridge agent/direct-execution events onto IPC. Built once per call site so
    * `terminal:execute-command`, `terminal:rerun-block` and `terminal:run-goal`
@@ -53,11 +57,16 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
     },
     onDone(sid, summary) {
       if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('terminal:agent-done', { sessionId: sid, summary });
+        mainWindow.webContents.send('terminal:agent-done', {
+          sessionId: sid,
+          summary,
+        });
       }
       // Auto-rename: truncate goal to a clean title and notify sidebar
       const autoTitle = currentGoal
-        ? (currentGoal.length > 48 ? `${currentGoal.slice(0, 45)}…` : currentGoal)
+        ? currentGoal.length > 48
+          ? `${currentGoal.slice(0, 45)}…`
+          : currentGoal
         : undefined;
       updateTerminalSession(sid, {
         status: 'done',
@@ -80,7 +89,10 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
     onError(sid, error) {
       updateTerminalSession(sid, { status: 'error' });
       if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('terminal:agent-error', { sessionId: sid, error });
+        mainWindow.webContents.send('terminal:agent-error', {
+          sessionId: sid,
+          error,
+        });
         mainWindow.webContents.send('terminal:session-status', {
           sessionId: sid,
           status: 'error',
@@ -93,20 +105,21 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
   ipcMain.handle(
     'terminal:sessions-list',
     (_e, req: { projectId?: string | null } | void) => {
-    const list = listTerminalSessions(
-      req?.projectId !== undefined ? { projectId: req.projectId } : undefined,
-    );
-    const ptyMgr = getPtyManager();
-    if (ptyMgr) {
-      return list.map((session) => {
-        if (ptyMgr.hasActiveRunningCommand(session.id)) {
-          return { ...session, status: 'running' as const };
-        }
-        return session;
-      });
-    }
-    return list;
-  });
+      const list = listTerminalSessions(
+        req?.projectId !== undefined ? { projectId: req.projectId } : undefined,
+      );
+      const ptyMgr = getPtyManager();
+      if (ptyMgr) {
+        return list.map((session) => {
+          if (ptyMgr.hasActiveRunningCommand(session.id)) {
+            return { ...session, status: 'running' as const };
+          }
+          return session;
+        });
+      }
+      return list;
+    },
+  );
 
   ipcMain.handle('terminal:session-get', (_e, { id }: { id: string }) => {
     const session = getTerminalSession(id);
@@ -142,25 +155,25 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
     },
   );
 
-  ipcMain.handle(
-    'terminal:session-delete',
-    (_e, { id }: { id: string }) => {
-      stopSessionProcesses(id);
-      getPtyManager()?.killBySessionId(id);
-      clearSessionEnv(id);
-      deleteTerminalSession(id);
-      if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('terminal:sessions-changed');
-      }
-    },
-  );
+  ipcMain.handle('terminal:session-delete', (_e, { id }: { id: string }) => {
+    stopSessionProcesses(id);
+    getPtyManager()?.killBySessionId(id);
+    clearSessionEnv(id);
+    deleteTerminalSession(id);
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('terminal:sessions-changed');
+    }
+  });
 
   ipcMain.handle(
     'terminal:session-rename',
     (_e, { id, title }: { id: string; title: string }) => {
       updateTerminalSession(id, { title });
       if (!mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('terminal:session-renamed', { sessionId: id, title });
+        mainWindow.webContents.send('terminal:session-renamed', {
+          sessionId: id,
+          title,
+        });
         mainWindow.webContents.send('terminal:sessions-changed');
       }
     },
@@ -173,8 +186,13 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
 
   ipcMain.handle(
     'terminal:block-update',
-    (_e, { id, patch }: { id: string; patch: Parameters<typeof updateTerminalBlock>[1] }) =>
-      updateTerminalBlock(id, patch),
+    (
+      _e,
+      {
+        id,
+        patch,
+      }: { id: string; patch: Parameters<typeof updateTerminalBlock>[1] },
+    ) => updateTerminalBlock(id, patch),
   );
 
   ipcMain.handle(
@@ -204,15 +222,24 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
     'terminal:execute-command',
     (
       _e,
-      { sessionId, command, cwd }: { sessionId: string; command: string; cwd?: string },
+      {
+        sessionId,
+        command,
+        cwd,
+      }: { sessionId: string; command: string; cwd?: string },
     ) => {
       const session = getTerminalSession(sessionId);
       const effectiveCwd = cwd || session?.cwd || process.cwd();
 
       // If the session title starts with "cd " and a real command is now run, update the title
-      if (session && session.title.startsWith('cd ') && !command.trim().startsWith('cd')) {
+      if (
+        session &&
+        session.title.startsWith('cd ') &&
+        !command.trim().startsWith('cd')
+      ) {
         const folder = effectiveCwd ? path.basename(effectiveCwd) : '';
-        const shortCmd = command.length > 25 ? `${command.slice(0, 22)}…` : command;
+        const shortCmd =
+          command.length > 25 ? `${command.slice(0, 22)}…` : command;
         const newTitle = `${shortCmd} · ${folder || 'terminal'}`;
         updateTerminalSession(sessionId, { title: newTitle });
         if (!mainWindow.isDestroyed()) {
@@ -224,7 +251,10 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
         }
       }
 
-      updateTerminalSession(sessionId, { status: 'running', ...(effectiveCwd ? { cwd: effectiveCwd } : {}) });
+      updateTerminalSession(sessionId, {
+        status: 'running',
+        ...(effectiveCwd ? { cwd: effectiveCwd } : {}),
+      });
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('terminal:session-status', {
           sessionId,
@@ -242,7 +272,10 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
           ...emitter,
           onCwdChanged: (newCwd) => {
             if (!mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('pty:cwd-changed', { ptyId: '', cwd: newCwd });
+              mainWindow.webContents.send('pty:cwd-changed', {
+                ptyId: '',
+                cwd: newCwd,
+              });
             }
           },
           onDone: (sid, summary) => {
@@ -325,14 +358,11 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
     },
   );
 
-  ipcMain.handle(
-    'terminal:open-url',
-    (_e, { url }: { url: string }) => {
-      if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-        void shell.openExternal(url);
-      }
-    },
-  );
+  ipcMain.handle('terminal:open-url', (_e, { url }: { url: string }) => {
+    if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+      void shell.openExternal(url);
+    }
+  });
 
   ipcMain.handle(
     'terminal:get-context-info',
@@ -340,12 +370,18 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
       const dir = opts?.cwd || process.env.HOME || process.cwd();
       let gitBranch: string | null = null;
       try {
-        const { stdout } = await new Promise<{ stdout: string }>((resolve, reject) => {
-          exec('git rev-parse --abbrev-ref HEAD', { cwd: dir, timeout: 1500 }, (err, out) => {
-            if (err) reject(err);
-            else resolve({ stdout: out });
-          });
-        });
+        const { stdout } = await new Promise<{ stdout: string }>(
+          (resolve, reject) => {
+            exec(
+              'git rev-parse --abbrev-ref HEAD',
+              { cwd: dir, timeout: 1500 },
+              (err, out) => {
+                if (err) reject(err);
+                else resolve({ stdout: out });
+              },
+            );
+          },
+        );
         const trimmed = stdout.trim();
         if (trimmed && !trimmed.includes('\n')) {
           gitBranch = trimmed;
@@ -356,5 +392,4 @@ export function registerTerminalHandlers({ mainWindow }: { mainWindow: BrowserWi
       return { cwd: dir, gitBranch };
     },
   );
-
 }

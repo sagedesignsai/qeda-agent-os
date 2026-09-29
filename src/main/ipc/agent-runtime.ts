@@ -26,7 +26,11 @@ const agentCache = new Map<string, ReturnType<typeof createDesktopAgent>>();
 /** The turn's operating mode, inferred from the user's latest message. */
 type AgentMode = 'chat' | 'research' | 'notebook';
 
-function cacheKey(target: ModelTarget, mode: AgentMode, context?: ChatContext): string {
+function cacheKey(
+  target: ModelTarget,
+  mode: AgentMode,
+  context?: ChatContext,
+): string {
   // Contexts are additive (page + notebook + project can coexist), so all three
   // go into the key — otherwise a project-scoped chat would reuse an agent whose
   // system prompt omits the project, and vice versa.

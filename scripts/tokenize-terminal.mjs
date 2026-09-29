@@ -89,7 +89,6 @@ const NEUTRAL_MAP = {
   'ring-zinc-800': 'ring-ring',
 };
 
-
 /**
  * Opt-in (`--status`): collapse status semantics onto the brand accent.
  * Not applied by default — emerald/rose carry "approved"/"failed" as a learned
@@ -126,20 +125,23 @@ for (const rel of FILES) {
   const before = readFileSync(abs, 'utf8');
   let fileEdits = 0;
 
-  const after = before.replace(CLASS_RE, (match, prefix, family, shade, alpha) => {
-    const key = `${prefix}-${family}-${shade}`;
-    const mapped = map[key];
-    if (!mapped) {
-      kept.add(match);
-      return match;
-    }
-    // An explicit modifier on the source wins; otherwise use whatever alpha the
-    // map itself specifies (that is how the faint text tiers get opacity).
-    // Bare `border-border` stays bare so the token's own alpha does the work.
-    const suffix = alpha ?? (mapped.includes('/') ? null : '');
-    fileEdits++;
-    return suffix ? `${mapped}/${suffix.replace('/', '')}` : mapped;
-  });
+  const after = before.replace(
+    CLASS_RE,
+    (match, prefix, family, shade, alpha) => {
+      const key = `${prefix}-${family}-${shade}`;
+      const mapped = map[key];
+      if (!mapped) {
+        kept.add(match);
+        return match;
+      }
+      // An explicit modifier on the source wins; otherwise use whatever alpha the
+      // map itself specifies (that is how the faint text tiers get opacity).
+      // Bare `border-border` stays bare so the token's own alpha does the work.
+      const suffix = alpha ?? (mapped.includes('/') ? null : '');
+      fileEdits++;
+      return suffix ? `${mapped}/${suffix.replace('/', '')}` : mapped;
+    },
+  );
 
   if (after !== before) {
     perFile.push({ rel, edits: fileEdits });
@@ -156,26 +158,40 @@ const c = {
 };
 
 console.log(
-  c.bold(`\n  Vellum token codemod  ${c.dim(APPLY ? '· WRITE' : '· dry run')}${WITH_STATUS ? ' · +status' : ''}\n`),
+  c.bold(
+    `\n  Vellum token codemod  ${c.dim(APPLY ? '· WRITE' : '· dry run')}${WITH_STATUS ? ' · +status' : ''}\n`,
+  ),
 );
 for (const { rel, edits } of perFile) {
-  console.log(`  ${c.green('●')} ${rel.padEnd(46)} ${String(edits).padStart(3)} classes`);
+  console.log(
+    `  ${c.green('●')} ${rel.padEnd(46)} ${String(edits).padStart(3)} classes`,
+  );
 }
 if (perFile.length === 0) {
   console.log(c.dim('  nothing to change — already tokenized (idempotent)'));
 }
-console.log(`\n  ${c.bold(String(totalEdits))} class replacements across ${perFile.length} files`);
+console.log(
+  `\n  ${c.bold(String(totalEdits))} class replacements across ${perFile.length} files`,
+);
 
 if (kept.size) {
   const list = [...kept].sort().join(', ');
-  console.log(`\n  ${c.yellow('kept')} ${kept.size} classes — no structural token maps to these:`);
+  console.log(
+    `\n  ${c.yellow('kept')} ${kept.size} classes — no structural token maps to these:`,
+  );
   console.log(c.dim(`        ${list}`));
   if (!WITH_STATUS) {
-    console.log(c.dim('        (status semantics — intentional. pass --status to remap)'));
+    console.log(
+      c.dim('        (status semantics — intentional. pass --status to remap)'),
+    );
   }
 }
-console.log(c.dim('  excluded: XtermPane.tsx — canvas needs real colours, not classes'));
+console.log(
+  c.dim('  excluded: XtermPane.tsx — canvas needs real colours, not classes'),
+);
 
 console.log(
-  APPLY ? c.green(c.bold('\n  ✓ written\n')) : c.yellow(c.bold('\n  dry run — pass --write to apply\n')),
+  APPLY
+    ? c.green(c.bold('\n  ✓ written\n'))
+    : c.yellow(c.bold('\n  dry run — pass --write to apply\n')),
 );

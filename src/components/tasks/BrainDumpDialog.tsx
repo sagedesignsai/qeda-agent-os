@@ -73,7 +73,9 @@ export function BrainDumpDialog({
       setNote(result.note ?? '');
       onCreated(result.tasks ?? []);
       if ((result.tasks ?? []).length > 0) {
-        toast.success(`Added ${result.tasks.length} task${result.tasks.length > 1 ? 's' : ''}`);
+        toast.success(
+          `Added ${result.tasks.length} task${result.tasks.length > 1 ? 's' : ''}`,
+        );
       } else {
         toast.info('Nothing actionable found', {
           description: result.note?.slice(0, 140),
@@ -103,8 +105,8 @@ export function BrainDumpDialog({
             Brain dump
           </DialogTitle>
           <DialogDescription>
-            Get it out of your head. The copilot turns it into a few real tasks —
-            duplicates merged, priorities assigned.
+            Get it out of your head. The copilot turns it into a few real tasks
+            — duplicates merged, priorities assigned.
           </DialogDescription>
         </DialogHeader>
 
@@ -155,7 +157,11 @@ export function BrainDumpDialog({
                   variant="outline"
                   className={`h-4 border-0 px-0 text-[10px] ${PRIORITY_TINT[task.priority] ?? ''}`}
                 >
-                  {task.priority === 1 ? 'High' : task.priority === 2 ? 'Med' : 'Low'}
+                  {task.priority === 1
+                    ? 'High'
+                    : task.priority === 2
+                      ? 'Med'
+                      : 'Low'}
                 </Badge>
               </li>
             ))}

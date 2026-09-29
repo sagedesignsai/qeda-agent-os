@@ -10,7 +10,14 @@ import { ipcMain, Notification } from 'electron';
 export function registerNotificationsHandlers(): void {
   ipcMain.handle(
     'notifications:notify',
-    (_event, { title, body, silent }: { title: string; body: string; silent?: boolean }) => {
+    (
+      _event,
+      {
+        title,
+        body,
+        silent,
+      }: { title: string; body: string; silent?: boolean },
+    ) => {
       try {
         if (!Notification.isSupported()) return false;
         const notification = new Notification({

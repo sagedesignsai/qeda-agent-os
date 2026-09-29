@@ -1,9 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Outlet, useNavigate } from 'react-router';
-import {
-  SidebarInset,
-  SidebarProvider,
-} from '@/components/ui/sidebar';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/AppSidebar';
 import { CommandPalette } from '@/components/CommandPalette';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
@@ -19,9 +16,9 @@ export function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   /** null while we don't yet know; false until the user finishes onboarding. */
-  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(
-    null,
-  );
+  const [onboardingCompleted, setOnboardingCompleted] = useState<
+    boolean | null
+  >(null);
   /** Latched: decided once, only lowered by an explicit close. */
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -47,9 +44,7 @@ export function AppLayout() {
     };
   }, []);
 
-  const hasRealProject = rollups.some(
-    (r) => r.project.id !== INBOX_PROJECT_ID,
-  );
+  const hasRealProject = rollups.some((r) => r.project.id !== INBOX_PROJECT_ID);
   // Decide eligibility exactly once. If we kept recomputing, creating the first
   // project inside the flow would flip `hasRealProject` and slam the dialog shut
   // before the final step could be seen.

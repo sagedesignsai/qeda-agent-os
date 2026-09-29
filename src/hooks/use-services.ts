@@ -16,7 +16,8 @@ export function useServices() {
 
   const reload = useCallback(async () => {
     try {
-      const data = await window.electron.ipc.invoke<ServiceStatus[]>('services:list');
+      const data =
+        await window.electron.ipc.invoke<ServiceStatus[]>('services:list');
       setServices(data ?? []);
     } catch {
       setServices([]);

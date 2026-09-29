@@ -49,9 +49,14 @@ export function HeaderLevelChip({ state, loading }: HeaderLevelChipProps) {
           </span>
 
           {state.streakShields > 0 && (
-            <span className="flex items-center gap-0.5 text-sky-400" title={`${state.streakShields} streak shield(s) available`}>
+            <span
+              className="flex items-center gap-0.5 text-sky-400"
+              title={`${state.streakShields} streak shield(s) available`}
+            >
               <ShieldIcon className="size-3 fill-sky-400/20" />
-              <span className="text-[10px] font-bold">{state.streakShields}</span>
+              <span className="text-[10px] font-bold">
+                {state.streakShields}
+              </span>
             </span>
           )}
         </Button>
@@ -63,8 +68,13 @@ export function HeaderLevelChip({ state, loading }: HeaderLevelChipProps) {
           <div>
             <div className="flex items-center gap-1.5">
               <ZapIcon className="size-4 fill-amber-500 text-amber-500" />
-              <h4 className="text-sm font-semibold">Level {state.currentLevel}</h4>
-              <Badge variant="secondary" className="text-[10px] uppercase font-bold tracking-wider">
+              <h4 className="text-sm font-semibold">
+                Level {state.currentLevel}
+              </h4>
+              <Badge
+                variant="secondary"
+                className="text-[10px] uppercase font-bold tracking-wider"
+              >
                 {state.rankTitle}
               </Badge>
             </div>
@@ -96,7 +106,8 @@ export function HeaderLevelChip({ state, loading }: HeaderLevelChipProps) {
             <span>Streak Shields: {state.streakShields} / 3</span>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            Forgiving grace: Missing a day consumes 1 shield instead of resetting your flow streak to zero.
+            Forgiving grace: Missing a day consumes 1 shield instead of
+            resetting your flow streak to zero.
           </p>
         </div>
 
@@ -104,19 +115,27 @@ export function HeaderLevelChip({ state, loading }: HeaderLevelChipProps) {
         <div className="mt-3 space-y-1 border-t border-border/60 pt-2.5 text-[11px] text-muted-foreground">
           <div className="flex items-center justify-between">
             <span>Focused Deep Work</span>
-            <span className="font-semibold text-foreground">+{XP_REWARDS.FOCUS_MINUTE} XP / min</span>
+            <span className="font-semibold text-foreground">
+              +{XP_REWARDS.FOCUS_MINUTE} XP / min
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span>High Priority Task (P1)</span>
-            <span className="font-semibold text-amber-400">+{XP_REWARDS.TASK_HIGH} XP</span>
+            <span className="font-semibold text-amber-400">
+              +{XP_REWARDS.TASK_HIGH} XP
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span>Sub-step Completed</span>
-            <span className="font-semibold text-foreground">+{XP_REWARDS.STEP_COMPLETE} XP</span>
+            <span className="font-semibold text-foreground">
+              +{XP_REWARDS.STEP_COMPLETE} XP
+            </span>
           </div>
           <div className="flex items-center justify-between">
             <span>Pomodoro Finished</span>
-            <span className="font-semibold text-emerald-400">+{XP_REWARDS.POMODORO_COMPLETE} XP</span>
+            <span className="font-semibold text-emerald-400">
+              +{XP_REWARDS.POMODORO_COMPLETE} XP
+            </span>
           </div>
         </div>
       </PopoverContent>

@@ -11,18 +11,30 @@
 import { ipcMain, type BrowserWindow } from 'electron';
 import { listProviderModels } from '../../ai/provider';
 import { PROVIDERS, envApiKey } from '../../ai/registry';
-import { getRawSettings, getSettings, saveSettings, type AppSettings } from '../../ai/settings';
+import {
+  getRawSettings,
+  getSettings,
+  saveSettings,
+  type AppSettings,
+} from '../../ai/settings';
 import { listServiceStatuses } from '../../services/keys';
 import { type ProviderInfo } from '../channels';
 import { resetAgents } from '../agent-runtime';
 
-export function registerSettingsHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
+export function registerSettingsHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
   // ── Settings ──────────────────────────────────────────────────────────────
 
   ipcMain.handle('settings:get', () => {
     const s = getRawSettings();
     // Only expose whether a key is set (boolean), never the actual value.
-    const sanitizedProviders: Record<string, { apiKey?: boolean; baseURL?: string }> = {};
+    const sanitizedProviders: Record<
+      string,
+      { apiKey?: boolean; baseURL?: string }
+    > = {};
     for (const [k, v] of Object.entries(s.providers)) {
       sanitizedProviders[k] = {
         apiKey: !!(v as { apiKey?: string })?.apiKey,
@@ -90,7 +102,9 @@ export function registerSettingsHandlers({ mainWindow }: { mainWindow: BrowserWi
     // External-service keys: merge per service. A non-empty value replaces the
     // stored key; an empty string clears it. Absent services are untouched.
     if (incoming.serviceKeys) {
-      const nextServiceKeys: Record<string, string> = { ...(current.serviceKeys ?? {}) };
+      const nextServiceKeys: Record<string, string> = {
+        ...(current.serviceKeys ?? {}),
+      };
       for (const [id, value] of Object.entries(incoming.serviceKeys)) {
         const trimmed = typeof value === 'string' ? value.trim() : '';
         if (trimmed) nextServiceKeys[id] = trimmed;
@@ -135,12 +149,13 @@ export function registerSettingsHandlers({ mainWindow }: { mainWindow: BrowserWi
     });
   });
 
-  ipcMain.handle('providers:models', (_e, { providerId }: { providerId: string }) =>
-    listProviderModels(providerId),
+  ipcMain.handle(
+    'providers:models',
+    (_e, { providerId }: { providerId: string }) =>
+      listProviderModels(providerId),
   );
 
   // ── External services ─────────────────────────────────────────────────────
 
   ipcMain.handle('services:list', () => listServiceStatuses());
-
 }

@@ -53,7 +53,10 @@ export function ProjectsMenu({ onBack }: { onBack: () => void }) {
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
-              <SidebarMenuButton size="sm" onClick={() => navigate('/projects')}>
+              <SidebarMenuButton
+                size="sm"
+                onClick={() => navigate('/projects')}
+              >
                 <PlusIcon />
                 <span>New project</span>
               </SidebarMenuButton>

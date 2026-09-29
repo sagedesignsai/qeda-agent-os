@@ -49,7 +49,10 @@ export interface UseWordProcessorProps {
   onUpdateDocument: (nextDoc: PdfDocument) => void;
 }
 
-export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProps) {
+export function useWordProcessor({
+  doc,
+  onUpdateDocument,
+}: UseWordProcessorProps) {
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [zoom, setZoom] = useState<number>(100);
@@ -139,7 +142,10 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
       } else if (b.type === 'callout') {
         text = `${b.title || ''} ${b.text}`;
       } else if (b.type === 'table') {
-        text = b.columns.map((c) => c.header).join(' ') + ' ' + b.rows.flat().join(' ');
+        text =
+          b.columns.map((c) => c.header).join(' ') +
+          ' ' +
+          b.rows.flat().join(' ');
       } else if (b.type === 'metrics') {
         text = b.items.map((i) => `${i.label} ${i.value}`).join(' ');
       }
@@ -150,8 +156,13 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
     }
 
     // Estimate pages based on content weight (~350 words per page or explicit breaks)
-    const explicitBreaks = doc.blocks.filter((b) => b.type === 'page-break').length;
-    const estimatedPages = Math.max(1, explicitBreaks + Math.ceil(words / 380) || 1);
+    const explicitBreaks = doc.blocks.filter(
+      (b) => b.type === 'page-break',
+    ).length;
+    const estimatedPages = Math.max(
+      1,
+      explicitBreaks + Math.ceil(words / 380) || 1,
+    );
 
     return {
       words,
@@ -209,7 +220,12 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
             id: baseId,
             type: 'table',
             columns: [
-              { id: 'c1', header: 'Item / Deliverable', widthPct: 60, align: 'left' },
+              {
+                id: 'c1',
+                header: 'Item / Deliverable',
+                widthPct: 60,
+                align: 'left',
+              },
               { id: 'c2', header: 'Status', widthPct: 40, align: 'center' },
             ],
             rows: [
@@ -235,8 +251,18 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
             type: 'metrics',
             columns: 3,
             items: [
-              { id: nanoid(4), label: 'Metric A', value: '99.9%', isPositive: true },
-              { id: nanoid(4), label: 'Metric B', value: '< 25ms', isPositive: true },
+              {
+                id: nanoid(4),
+                label: 'Metric A',
+                value: '99.9%',
+                isPositive: true,
+              },
+              {
+                id: nanoid(4),
+                label: 'Metric B',
+                value: '< 25ms',
+                isPositive: true,
+              },
               { id: nanoid(4), label: 'Throughput', value: '4.2k req/s' },
             ],
           };
@@ -346,7 +372,9 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
       const newWidth = Math.max(10, Math.floor(100 / (currentCols.length + 1)));
       const adjustedCols = currentCols.map((c) => ({
         ...c,
-        widthPct: Math.floor((c.widthPct * currentCols.length) / (currentCols.length + 1)),
+        widthPct: Math.floor(
+          (c.widthPct * currentCols.length) / (currentCols.length + 1),
+        ),
       }));
 
       const newCol = {
@@ -356,7 +384,8 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
         align: 'left' as const,
       };
 
-      const insertAt = colIndex !== undefined ? colIndex + 1 : adjustedCols.length;
+      const insertAt =
+        colIndex !== undefined ? colIndex + 1 : adjustedCols.length;
       adjustedCols.splice(insertAt, 0, newCol);
 
       const nextRows = block.rows.map((row) => {
@@ -387,7 +416,9 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
         widthPct: Math.round((c.widthPct / totalWidth) * 100),
       }));
 
-      const nextRows = block.rows.map((row) => row.filter((_, idx) => idx !== colIndex));
+      const nextRows = block.rows.map((row) =>
+        row.filter((_, idx) => idx !== colIndex),
+      );
 
       updateBlock(blockId, {
         columns: normalizedCols,
@@ -442,10 +473,15 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
 
   const updateNode = useCallback(
     (nodeId: string, patch: Partial<DocNode>) => {
-      const nextNodes = updateNodeInTree(currentNodes, nodeId, (node) => ({
-        ...node,
-        ...patch,
-      } as DocNode));
+      const nextNodes = updateNodeInTree(
+        currentNodes,
+        nodeId,
+        (node) =>
+          ({
+            ...node,
+            ...patch,
+          }) as DocNode,
+      );
       commitSnapshot({ ...doc, nodes: nextNodes, updatedAt: Date.now() });
     },
     [currentNodes, doc, commitSnapshot],
@@ -487,7 +523,10 @@ export function useWordProcessor({ doc, onUpdateDocument }: UseWordProcessorProp
             type: 'image',
             src: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&q=80',
             fit: 'cover',
-            sizing: { width: { mode: 'fill' }, height: { mode: 'fixed', value: 140 } },
+            sizing: {
+              width: { mode: 'fill' },
+              height: { mode: 'fixed', value: 140 },
+            },
           };
           break;
         case 'spacer':

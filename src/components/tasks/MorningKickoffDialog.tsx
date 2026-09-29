@@ -128,7 +128,8 @@ export function MorningKickoffDialog({
       triggerParticleBurst(e.clientX, e.clientY);
 
       toast.success('Day locked in! +40 XP awarded', {
-        description: '3 time-blocks have been scheduled on your Today timeline.',
+        description:
+          '3 time-blocks have been scheduled on your Today timeline.',
       });
 
       onScheduled();

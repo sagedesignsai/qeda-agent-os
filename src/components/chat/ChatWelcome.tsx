@@ -81,7 +81,9 @@ function ModelIndicator() {
           activeModel?: string;
         }>('settings:get');
         if (cancelled) return;
-        setLabel([s?.activeProvider, s?.activeModel].filter(Boolean).join(' · '));
+        setLabel(
+          [s?.activeProvider, s?.activeModel].filter(Boolean).join(' · '),
+        );
       } catch {
         if (!cancelled) setLabel('');
       }
@@ -103,7 +105,9 @@ function ModelIndicator() {
             activeProvider?: string;
             activeModel?: string;
           }>('settings:get');
-          setLabel([s?.activeProvider, s?.activeModel].filter(Boolean).join(' · '));
+          setLabel(
+            [s?.activeProvider, s?.activeModel].filter(Boolean).join(' · '),
+          );
         } catch {
           setLabel('');
         }
@@ -123,7 +127,11 @@ function ModelIndicator() {
   );
 }
 
-export function ChatWelcome({ onSend, disabled, isStreaming }: ChatWelcomeProps) {
+export function ChatWelcome({
+  onSend,
+  disabled,
+  isStreaming,
+}: ChatWelcomeProps) {
   const { open: openGenerateNotebook } = useGenerateNotebook();
 
   const footerLeft = <ModelIndicator />;

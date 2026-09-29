@@ -30,13 +30,20 @@ interface FirecrawlScrapeResponse {
   error?: string;
   data?: {
     markdown?: string;
-    metadata?: { title?: string; sourceURL?: string; statusCode?: number; error?: string };
+    metadata?: {
+      title?: string;
+      sourceURL?: string;
+      statusCode?: number;
+      error?: string;
+    };
   };
 }
 
 export const FIRECRAWL_SCRAPE_URL = 'https://api.firecrawl.dev/v2/scrape';
 
-export async function firecrawlScrape(req: ScrapeRequest): Promise<ScrapeResult> {
+export async function firecrawlScrape(
+  req: ScrapeRequest,
+): Promise<ScrapeResult> {
   const maxChars = req.maxChars ?? 24_000;
 
   const data = await requestJson<FirecrawlScrapeResponse>({
@@ -55,7 +62,10 @@ export async function firecrawlScrape(req: ScrapeRequest): Promise<ScrapeResult>
   });
 
   if (data.success === false) {
-    throw new ServiceHttpError('Firecrawl', data.error ?? `Failed to scrape ${req.url}`);
+    throw new ServiceHttpError(
+      'Firecrawl',
+      data.error ?? `Failed to scrape ${req.url}`,
+    );
   }
 
   const markdown = data.data?.markdown ?? '';

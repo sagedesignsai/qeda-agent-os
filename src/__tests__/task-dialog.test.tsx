@@ -92,9 +92,7 @@ describe('TaskDialog', () => {
 
   it('creates into the Inbox when no project is selected', async () => {
     const onSubmit = jest.fn().mockResolvedValue(undefined);
-    render(
-      <TaskDialog open onOpenChange={() => {}} onSubmit={onSubmit} />,
-    );
+    render(<TaskDialog open onOpenChange={() => {}} onSubmit={onSubmit} />);
 
     fireEvent.change(screen.getByLabelText('Title'), {
       target: { value: 'Unsorted thought' },

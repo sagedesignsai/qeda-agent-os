@@ -60,9 +60,8 @@ export function useProjects(): UseProjectsReturn {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await window.electron.ipc.invoke<ProjectRollup[]>(
-        'projects:rollups',
-      );
+      const next =
+        await window.electron.ipc.invoke<ProjectRollup[]>('projects:rollups');
       setRollups(next ?? []);
       setError(null);
     } catch (err) {
@@ -102,9 +101,12 @@ export function useProjects(): UseProjectsReturn {
 
   const deleteProject = useCallback(
     async (id: string): Promise<boolean> => {
-      const removed = await window.electron.ipc.invoke<boolean>('projects:delete', {
-        id,
-      });
+      const removed = await window.electron.ipc.invoke<boolean>(
+        'projects:delete',
+        {
+          id,
+        },
+      );
       await refresh();
       return removed;
     },

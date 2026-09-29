@@ -10,7 +10,12 @@
  */
 
 import React from 'react';
-import { ZoomInIcon, ZoomOutIcon, Maximize2Icon, FileTextIcon } from 'lucide-react';
+import {
+  ZoomInIcon,
+  ZoomOutIcon,
+  Maximize2Icon,
+  FileTextIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import {
@@ -55,7 +60,8 @@ export function DocumentStatusBar({
 
         <div className="flex items-center gap-2">
           <span>
-            {stats.words.toLocaleString()} {stats.words === 1 ? 'word' : 'words'}
+            {stats.words.toLocaleString()}{' '}
+            {stats.words === 1 ? 'word' : 'words'}
           </span>
           <span className="text-zinc-600">,</span>
           <span>{stats.characters.toLocaleString()} characters</span>

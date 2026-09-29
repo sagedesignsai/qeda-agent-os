@@ -75,14 +75,42 @@ import type { DocumentTheme } from '@/lib/pdf-studio/types';
 
 export function buildDocumentTokens(theme?: DocumentTheme): TokenItem[] {
   return [
-    { name: 'color-primary', label: 'Primary', value: theme?.primaryColor || '#0284c7' },
-    { name: 'color-secondary', label: 'Secondary', value: theme?.secondaryColor || '#475569' },
-    { name: 'color-accent', label: 'Accent', value: theme?.accentColor || '#f97316' },
-    { name: 'color-background', label: 'Background', value: theme?.backgroundColor || '#ffffff' },
-    { name: 'color-surface', label: 'Surface', value: theme?.surfaceColor || '#f8fafc' },
+    {
+      name: 'color-primary',
+      label: 'Primary',
+      value: theme?.primaryColor || '#0284c7',
+    },
+    {
+      name: 'color-secondary',
+      label: 'Secondary',
+      value: theme?.secondaryColor || '#475569',
+    },
+    {
+      name: 'color-accent',
+      label: 'Accent',
+      value: theme?.accentColor || '#f97316',
+    },
+    {
+      name: 'color-background',
+      label: 'Background',
+      value: theme?.backgroundColor || '#ffffff',
+    },
+    {
+      name: 'color-surface',
+      label: 'Surface',
+      value: theme?.surfaceColor || '#f8fafc',
+    },
     { name: 'color-text', label: 'Text', value: theme?.textColor || '#0f172a' },
-    { name: 'color-muted', label: 'Muted', value: theme?.mutedColor || '#64748b' },
-    { name: 'color-border', label: 'Border', value: theme?.borderColor || '#e2e8f0' },
+    {
+      name: 'color-muted',
+      label: 'Muted',
+      value: theme?.mutedColor || '#64748b',
+    },
+    {
+      name: 'color-border',
+      label: 'Border',
+      value: theme?.borderColor || '#e2e8f0',
+    },
   ];
 }
 
@@ -101,7 +129,12 @@ interface SectionProps {
   children: React.ReactNode;
 }
 
-function InspectorSection({ title, icon, defaultOpen = true, children }: SectionProps) {
+function InspectorSection({
+  title,
+  icon,
+  defaultOpen = true,
+  children,
+}: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -141,9 +174,12 @@ export function DocumentInspector({
         <div className="mb-3 rounded-full border border-border/60 bg-muted/40 p-3">
           <SlidersIcon className="h-5 w-5 text-muted-foreground/60" />
         </div>
-        <p className="text-xs font-medium text-foreground">No Element Selected</p>
+        <p className="text-xs font-medium text-foreground">
+          No Element Selected
+        </p>
         <p className="mt-1 text-[11px] text-muted-foreground leading-relaxed">
-          Select an element on the canvas or from the Layers tree to inspect and edit its layout and styles.
+          Select an element on the canvas or from the Layers tree to inspect and
+          edit its layout and styles.
         </p>
       </div>
     );
@@ -167,7 +203,8 @@ export function DocumentInspector({
             {selectedNode.type}
           </Badge>
           <span className="text-xs font-medium truncate text-foreground">
-            {selectedNode.name || `${selectedNode.type}_${selectedNode.id.slice(0, 4)}`}
+            {selectedNode.name ||
+              `${selectedNode.type}_${selectedNode.id.slice(0, 4)}`}
           </span>
         </div>
 
@@ -238,7 +275,9 @@ export function DocumentInspector({
       <div className="flex-1 overflow-y-auto">
         {/* Identity & Label */}
         <div className="p-3 border-b border-border/50 flex flex-col gap-1.5">
-          <Label className="text-[11px] font-medium text-muted-foreground">Element Name / Label</Label>
+          <Label className="text-[11px] font-medium text-muted-foreground">
+            Element Name / Label
+          </Label>
           <Input
             value={selectedNode.name || ''}
             placeholder={`e.g. ${selectedNode.type}_section`}
@@ -255,39 +294,44 @@ export function DocumentInspector({
           >
             <LayoutPanel
               layout={(selectedNode as BoxNode | RowNode | ColumnNode).layout}
-              onChange={(newLayout: YogaFlexProps) => handleUpdate({ layout: newLayout })}
+              onChange={(newLayout: YogaFlexProps) =>
+                handleUpdate({ layout: newLayout })
+              }
             />
           </InspectorSection>
         )}
 
         {/* Element Sizing (Containers, Text, Image) */}
-        {selectedNode.type !== 'page-break' && selectedNode.type !== 'divider' && selectedNode.type !== 'spacer' && (
-          <InspectorSection
-            title="Element Sizing"
-            icon={<Maximize2Icon className="h-3.5 w-3.5" />}
-          >
-            <ElementSizePanel
-              sizing={
-                isContainer
-                  ? (selectedNode as BoxNode).layout?.sizing
-                  : (selectedNode as ImageNode).sizing
-              }
-              onChange={(newSizing: NodeSizing) => {
-                if (isContainer) {
-                  const currentLayout = (selectedNode as BoxNode).layout || {};
-                  handleUpdate({
-                    layout: {
-                      ...currentLayout,
-                      sizing: newSizing,
-                    },
-                  });
-                } else if (selectedNode.type === 'image') {
-                  handleUpdate({ sizing: newSizing });
+        {selectedNode.type !== 'page-break' &&
+          selectedNode.type !== 'divider' &&
+          selectedNode.type !== 'spacer' && (
+            <InspectorSection
+              title="Element Sizing"
+              icon={<Maximize2Icon className="h-3.5 w-3.5" />}
+            >
+              <ElementSizePanel
+                sizing={
+                  isContainer
+                    ? (selectedNode as BoxNode).layout?.sizing
+                    : (selectedNode as ImageNode).sizing
                 }
-              }}
-            />
-          </InspectorSection>
-        )}
+                onChange={(newSizing: NodeSizing) => {
+                  if (isContainer) {
+                    const currentLayout =
+                      (selectedNode as BoxNode).layout || {};
+                    handleUpdate({
+                      layout: {
+                        ...currentLayout,
+                        sizing: newSizing,
+                      },
+                    });
+                  } else if (selectedNode.type === 'image') {
+                    handleUpdate({ sizing: newSizing });
+                  }
+                }}
+              />
+            </InspectorSection>
+          )}
 
         {/* Typography (For Text nodes) */}
         {selectedNode.type === 'text' && (
@@ -352,7 +396,9 @@ export function DocumentInspector({
             <AppearancePanel
               appearance={(selectedNode as BoxNode).appearance}
               tokens={tokens}
-              onChange={(newApp: NodeAppearance) => handleUpdate({ appearance: newApp })}
+              onChange={(newApp: NodeAppearance) =>
+                handleUpdate({ appearance: newApp })
+              }
             />
           </InspectorSection>
         )}
@@ -365,7 +411,9 @@ export function DocumentInspector({
           >
             <div className="flex flex-col gap-3 text-xs">
               <div className="flex flex-col gap-1">
-                <Label className="text-[11px] font-medium text-muted-foreground">Icon Name</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Icon Name
+                </Label>
                 <Input
                   value={(selectedNode as IconNode).iconName}
                   placeholder="e.g. check, star, info, alert-circle"
@@ -374,14 +422,20 @@ export function DocumentInspector({
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label className="text-[11px] font-medium text-muted-foreground">Size</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Size
+                </Label>
                 <div className="flex w-24 items-center gap-1 rounded-md border border-border/70 px-2 py-0.5 bg-background">
                   <Input
                     type="number"
                     min={8}
                     max={120}
                     value={(selectedNode as IconNode).size ?? 16}
-                    onChange={(e) => handleUpdate({ size: Math.max(8, Number(e.target.value)) })}
+                    onChange={(e) =>
+                      handleUpdate({
+                        size: Math.max(8, Number(e.target.value)),
+                      })
+                    }
                     className="h-5 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
                   />
                   <span className="text-[10px] text-muted-foreground">pt</span>
@@ -392,7 +446,9 @@ export function DocumentInspector({
                 value={(selectedNode as IconNode).color}
                 tokens={tokens}
                 type="color"
-                onChange={(val: StyleValue<string>) => handleUpdate({ color: val })}
+                onChange={(val: StyleValue<string>) =>
+                  handleUpdate({ color: val })
+                }
               />
             </div>
           </InspectorSection>
@@ -406,7 +462,9 @@ export function DocumentInspector({
           >
             <div className="flex flex-col gap-3 text-xs">
               <div className="flex flex-col gap-1">
-                <Label className="text-[11px] font-medium text-muted-foreground">Image Source (URL or Path)</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Image Source (URL or Path)
+                </Label>
                 <Input
                   value={(selectedNode as ImageNode).src}
                   placeholder="https://... or file:///..."
@@ -415,7 +473,9 @@ export function DocumentInspector({
                 />
               </div>
               <div className="flex items-center justify-between">
-                <Label className="text-[11px] font-medium text-muted-foreground">Fit Mode</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Fit Mode
+                </Label>
                 <Select
                   value={(selectedNode as ImageNode).fit || 'cover'}
                   onValueChange={(val: 'cover' | 'contain' | 'fill') =>
@@ -444,27 +504,39 @@ export function DocumentInspector({
           >
             <div className="flex flex-col gap-3 text-xs">
               <div className="flex items-center justify-between">
-                <Label className="text-[11px] font-medium text-muted-foreground">Fixed Size</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Fixed Size
+                </Label>
                 <div className="flex w-24 items-center gap-1 rounded-md border border-border/70 px-2 py-0.5 bg-background">
                   <Input
                     type="number"
                     min={0}
                     value={(selectedNode as SpacerNode).size ?? 16}
-                    onChange={(e) => handleUpdate({ size: Math.max(0, Number(e.target.value)) })}
+                    onChange={(e) =>
+                      handleUpdate({
+                        size: Math.max(0, Number(e.target.value)),
+                      })
+                    }
                     className="h-5 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
                   />
                   <span className="text-[10px] text-muted-foreground">pt</span>
                 </div>
               </div>
               <div className="flex items-center justify-between">
-                <Label className="text-[11px] font-medium text-muted-foreground">Flex Grow</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Flex Grow
+                </Label>
                 <div className="flex w-24 items-center gap-1 rounded-md border border-border/70 px-2 py-0.5 bg-background">
                   <Input
                     type="number"
                     min={0}
                     step={0.5}
                     value={(selectedNode as SpacerNode).flex ?? 0}
-                    onChange={(e) => handleUpdate({ flex: Math.max(0, Number(e.target.value)) })}
+                    onChange={(e) =>
+                      handleUpdate({
+                        flex: Math.max(0, Number(e.target.value)),
+                      })
+                    }
                     className="h-5 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
                   />
                 </div>
@@ -481,9 +553,13 @@ export function DocumentInspector({
           >
             <div className="flex flex-col gap-3 text-xs">
               <div className="flex items-center justify-between">
-                <Label className="text-[11px] font-medium text-muted-foreground">Orientation</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Orientation
+                </Label>
                 <Select
-                  value={(selectedNode as DividerNode).orientation || 'horizontal'}
+                  value={
+                    (selectedNode as DividerNode).orientation || 'horizontal'
+                  }
                   onValueChange={(val: 'horizontal' | 'vertical') =>
                     handleUpdate({ orientation: val })
                   }
@@ -498,14 +574,20 @@ export function DocumentInspector({
                 </Select>
               </div>
               <div className="flex items-center justify-between">
-                <Label className="text-[11px] font-medium text-muted-foreground">Thickness</Label>
+                <Label className="text-[11px] font-medium text-muted-foreground">
+                  Thickness
+                </Label>
                 <div className="flex w-24 items-center gap-1 rounded-md border border-border/70 px-2 py-0.5 bg-background">
                   <Input
                     type="number"
                     min={1}
                     max={20}
                     value={(selectedNode as DividerNode).thickness ?? 1}
-                    onChange={(e) => handleUpdate({ thickness: Math.max(1, Number(e.target.value)) })}
+                    onChange={(e) =>
+                      handleUpdate({
+                        thickness: Math.max(1, Number(e.target.value)),
+                      })
+                    }
                     className="h-5 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
                   />
                   <span className="text-[10px] text-muted-foreground">pt</span>
@@ -516,7 +598,9 @@ export function DocumentInspector({
                 value={(selectedNode as DividerNode).color}
                 tokens={tokens}
                 type="color"
-                onChange={(val: StyleValue<string>) => handleUpdate({ color: val })}
+                onChange={(val: StyleValue<string>) =>
+                  handleUpdate({ color: val })
+                }
               />
             </div>
           </InspectorSection>
@@ -525,9 +609,12 @@ export function DocumentInspector({
         {/* Page Break Info */}
         {selectedNode.type === 'page-break' && (
           <div className="p-3 text-xs text-muted-foreground leading-relaxed">
-            <Badge variant="secondary" className="mb-2">Forced Page Break</Badge>
+            <Badge variant="secondary" className="mb-2">
+              Forced Page Break
+            </Badge>
             <p>
-              This node breaks the document layout flow, pushing all subsequent sibling nodes onto the next physical page in the PDF compiler.
+              This node breaks the document layout flow, pushing all subsequent
+              sibling nodes onto the next physical page in the PDF compiler.
             </p>
           </div>
         )}

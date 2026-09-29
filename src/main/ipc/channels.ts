@@ -806,6 +806,30 @@ export interface IpcChannels {
   };
   /** Broadcast when any take changes, created, updated or deleted. */
   'studio:changed': void;
+
+  // ── Studio Copilot (Autonomous Video Director Agent) ─────────────────────
+  /** Run one studio copilot turn. Streams back over `studio-copilot:stream-*`. */
+  'studio-copilot:chat': {
+    req: {
+      messages: UIMessage[];
+      context: {
+        takeId: string;
+        projectId?: string;
+        currentTimeMs?: number;
+      };
+    };
+    res: void;
+  };
+  'studio-copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'studio-copilot:stream-done': { runId: string };
+  'studio-copilot:stream-error': { error: string };
+  'studio-copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
 }
 
 export type ChannelName = keyof IpcChannels;

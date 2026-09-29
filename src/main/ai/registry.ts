@@ -64,7 +64,11 @@ export const PROVIDERS: ProviderConfig[] = [
     name: 'Google Gemini (free tier)',
     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     apiKeyEnvs: ['GEMINI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'],
-    freeModels: ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'],
+    freeModels: [
+      'gemini-3.8-flash',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-flash',
+    ],
     note: 'Flash models are the free-tier workhorses; Pro tiers are billed.',
   },
   {

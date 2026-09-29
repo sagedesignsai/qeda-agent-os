@@ -44,7 +44,10 @@ export const BLOCK_TYPES: readonly BlockType[] = [
 
 /** Narrows an unknown value to a BlockType. Use when validating IPC input. */
 export function isBlockType(value: unknown): value is BlockType {
-  return typeof value === 'string' && (BLOCK_TYPES as readonly string[]).includes(value);
+  return (
+    typeof value === 'string' &&
+    (BLOCK_TYPES as readonly string[]).includes(value)
+  );
 }
 
 export interface Block {
@@ -92,9 +95,12 @@ const TODO_RE = /^(?:[-*+]\s+)?\[( |x|X)\]\s*(.*)$/;
 /** A whole line that is a single markdown image: `![alt](url)` (optional title). */
 export const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
 
-function classify(
-  line: string,
-): { type: BlockType; text: string; checked?: boolean; language?: string } | null {
+function classify(line: string): {
+  type: BlockType;
+  text: string;
+  checked?: boolean;
+  language?: string;
+} | null {
   const trimmed = line.trim();
 
   if (trimmed === '---' || trimmed === '***' || trimmed === '___') {
@@ -108,13 +114,18 @@ function classify(
   if (heading) return { type: HEADING_PREFIX[heading[1]], text: heading[2] };
 
   // Only an empty '#' is a bare heading marker; otherwise treat as text.
-  if (/^#{1,3}$/.test(trimmed)) return { type: HEADING_PREFIX[trimmed], text: '' };
+  if (/^#{1,3}$/.test(trimmed))
+    return { type: HEADING_PREFIX[trimmed], text: '' };
 
   if (IMAGE_RE.test(trimmed)) return { type: 'image', text: trimmed };
 
   const todo = TODO_RE.exec(trimmed);
   if (todo) {
-    return { type: 'todo', text: todo[2], checked: todo[1].toLowerCase() === 'x' };
+    return {
+      type: 'todo',
+      text: todo[2],
+      checked: todo[1].toLowerCase() === 'x',
+    };
   }
 
   if (/^[-*+]\s+/.test(trimmed)) {
@@ -184,7 +195,12 @@ export function parseMarkdownToBlocks(markdown: string): Block[] {
     if (info.type === 'code') {
       // Opening fence without body handled above; a bare '```' classify hit
       // cannot happen because the fence branch already consumed it.
-      blocks.push({ id: newBlockId(), type: 'code', text: '', language: undefined });
+      blocks.push({
+        id: newBlockId(),
+        type: 'code',
+        text: '',
+        language: undefined,
+      });
       i += 1;
       continue;
     }
@@ -252,7 +268,9 @@ export function serializeBlocksToMarkdown(blocks: Block[]): string {
     out.push(serializeBlock(block));
 
     const listy = (b?: Block) =>
-      b?.type === 'bulleted-list' || b?.type === 'numbered-list' || b?.type === 'todo';
+      b?.type === 'bulleted-list' ||
+      b?.type === 'numbered-list' ||
+      b?.type === 'todo';
 
     if (i < blocks.length - 1) {
       const isListItem = listy(block) && listy(blocks[i + 1]);
@@ -265,12 +283,24 @@ export function serializeBlocksToMarkdown(blocks: Block[]): string {
 
 // ─── Transforms (immutable — every helper returns a new array) ───────────────
 
-export function updateBlock(blocks: Block[], id: string, patch: Partial<Block>): Block[] {
+export function updateBlock(
+  blocks: Block[],
+  id: string,
+  patch: Partial<Block>,
+): Block[] {
   return blocks.map((b) => (b.id === id ? { ...b, ...patch } : b));
 }
 
-export function insertBlockAfter(blocks: Block[], afterId: string | null, block?: Block): { blocks: Block[]; id: string } {
-  const fresh = block ?? { id: newBlockId(), type: 'paragraph' as const, text: '' };
+export function insertBlockAfter(
+  blocks: Block[],
+  afterId: string | null,
+  block?: Block,
+): { blocks: Block[]; id: string } {
+  const fresh = block ?? {
+    id: newBlockId(),
+    type: 'paragraph' as const,
+    text: '',
+  };
   if (afterId === null) {
     return { blocks: [fresh, ...blocks], id: fresh.id };
   }
@@ -289,7 +319,10 @@ export function removeBlock(blocks: Block[], id: string): Block[] {
 }
 
 /** Enter on a todo/list row splits it; on any row starts a fresh paragraph. */
-export function splitBlock(blocks: Block[], id: string): { blocks: Block[]; newId: string } {
+export function splitBlock(
+  blocks: Block[],
+  id: string,
+): { blocks: Block[]; newId: string } {
   const index = blocks.findIndex((b) => b.id === id);
   if (index < 0) return { blocks, newId: id };
 
@@ -312,9 +345,19 @@ export function splitBlock(blocks: Block[], id: string): { blocks: Block[]; newI
  * Tab / Shift-Tab behaviour: cycle heading ↔ indented paragraph. Code and
  * divider rows are structural and do not participate.
  */
-export function indentBlock(blocks: Block[], id: string, direction: 1 | -1): Block[] {
+export function indentBlock(
+  blocks: Block[],
+  id: string,
+  direction: 1 | -1,
+): Block[] {
   return blocks.map((b) => {
-    if (b.id !== id || b.type === 'code' || b.type === 'image' || b.type === 'divider') return b;
+    if (
+      b.id !== id ||
+      b.type === 'code' ||
+      b.type === 'image' ||
+      b.type === 'divider'
+    )
+      return b;
     if (direction === 1) {
       if (b.type === 'paragraph') return { ...b, type: 'heading3' as const };
       if (b.type === 'heading3') return { ...b, type: 'heading2' as const };
@@ -341,7 +384,11 @@ export function moveBlock(blocks: Block[], id: string, delta: -1 | 1): Block[] {
   return next;
 }
 
-export function setBlockType(blocks: Block[], id: string, type: BlockType): Block[] {
+export function setBlockType(
+  blocks: Block[],
+  id: string,
+  type: BlockType,
+): Block[] {
   return blocks.map((b) => {
     if (b.id !== id) return b;
     const next: Block = { ...b, type };
@@ -421,7 +468,9 @@ export function insertParsedBlocksAt(
 }
 
 /** Extract the alt text and URL from a markdown image block's text. */
-export function parseImageMarkdown(text: string): { alt: string; url: string } | null {
+export function parseImageMarkdown(
+  text: string,
+): { alt: string; url: string } | null {
   const match = IMAGE_RE.exec(text.trim());
   if (!match) return null;
   return { alt: match[1] ?? '', url: match[2] };
@@ -455,7 +504,12 @@ export function extractLinks(text: string): ExtractedLink[] {
 
   for (const match of text.matchAll(WIKI_LINK_RE)) {
     const name = match[1].trim();
-    if (name) links.push({ label: match[2]?.trim() || name, target: `wiki:${name}`, kind: 'doc' });
+    if (name)
+      links.push({
+        label: match[2]?.trim() || name,
+        target: `wiki:${name}`,
+        kind: 'doc',
+      });
   }
 
   return links;
@@ -484,7 +538,9 @@ export function extractOutline(blocks: Block[]): BlockOutline[] {
 
 /** All links found across a block list (backlink/graph building blocks). */
 export function extractDocLinks(blocks: Block[]): ExtractedLink[] {
-  return blocks.flatMap((b) => (CONTAINER_BLOCK_TYPES.has(b.type) ? extractLinks(b.text) : []));
+  return blocks.flatMap((b) =>
+    CONTAINER_BLOCK_TYPES.has(b.type) ? extractLinks(b.text) : [],
+  );
 }
 
 export function extractDocTags(blocks: Block[]): string[] {

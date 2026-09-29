@@ -28,6 +28,7 @@ import { toast } from 'sonner';
 interface StudioMediaTabProps {
   takes: StudioTakeSummary[];
   onAddClip: (clip: ContentItemPayload) => void;
+  onNewRecording?: () => void;
 }
 
 interface ImportedAsset {
@@ -46,7 +47,11 @@ function formatDuration(ms: number): string {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function StudioMediaTab({ takes, onAddClip }: StudioMediaTabProps) {
+export function StudioMediaTab({
+  takes,
+  onAddClip,
+  onNewRecording,
+}: StudioMediaTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [importedAssets, setImportedAssets] = useState<ImportedAsset[]>([]);
   const [isImporting, setIsImporting] = useState(false);
@@ -134,6 +139,30 @@ export function StudioMediaTab({ takes, onAddClip }: StudioMediaTabProps) {
           className="h-8 pl-8 text-xs bg-secondary/30 border-border/40 focus-visible:ring-1"
         />
       </div>
+
+      {/* Quick Action: Record Take */}
+      {onNewRecording && (
+        <button
+          type="button"
+          onClick={onNewRecording}
+          className="flex items-center justify-between px-3 py-2 border border-rose-500/30 hover:border-rose-500/60 rounded-lg bg-rose-500/5 hover:bg-rose-500/10 transition-colors text-left cursor-pointer group shrink-0"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+            <div>
+              <div className="text-xs font-medium text-foreground group-hover:text-rose-400 transition-colors">
+                Record New Take
+              </div>
+              <div className="text-[10px] text-muted-foreground">
+                Capture screen or application window
+              </div>
+            </div>
+          </div>
+          <span className="text-[10px] font-medium text-rose-400 px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
+            REC
+          </span>
+        </button>
+      )}
 
       {/* Import Drop Zone */}
       <div

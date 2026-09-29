@@ -195,7 +195,8 @@ export function MessageList({
         // ── User turn: Capped-height prompt capsule with hover actions ────────
         if (message.role === 'user') {
           const textPart = message.parts.find((p) => p.type === 'text');
-          const text = textPart && 'text' in textPart ? String(textPart.text) : '';
+          const text =
+            textPart && 'text' in textPart ? String(textPart.text) : '';
           const rawDate = (message as { createdAt?: unknown }).createdAt;
           const createdAt =
             typeof rawDate === 'number'
@@ -218,7 +219,10 @@ export function MessageList({
 
         // ── Assistant turn: Unboxed, document-style layout ─────────────────────
         return (
-          <div key={message.id} className="flex w-full flex-col gap-2.5 text-sm">
+          <div
+            key={message.id}
+            className="flex w-full flex-col gap-2.5 text-sm"
+          >
             {message.parts.map((part, i) => {
               // ── Text part ──────────────────────────────────────────────────
               if (part.type === 'text') {
@@ -299,7 +303,11 @@ export function MessageList({
                         <ConfirmationAction
                           variant="default"
                           onClick={() =>
-                            onApproval({ approvalId, toolCallId, approved: true })
+                            onApproval({
+                              approvalId,
+                              toolCallId,
+                              approved: true,
+                            })
                           }
                         >
                           Approve

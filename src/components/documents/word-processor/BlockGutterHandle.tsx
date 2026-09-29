@@ -121,7 +121,10 @@ export function BlockGutterHandle({
             <ChevronDownIcon className="mr-2 h-3.5 w-3.5" />
             <span>Move Down</span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onDelete} className="text-rose-500 focus:text-rose-500">
+          <DropdownMenuItem
+            onClick={onDelete}
+            className="text-rose-500 focus:text-rose-500"
+          >
             <Trash2Icon className="mr-2 h-3.5 w-3.5" />
             <span>Delete Block</span>
           </DropdownMenuItem>

@@ -25,14 +25,11 @@ import { applyMigrations } from '../main/db/schema';
 import { createProject } from '../main/db/projects';
 import { repoTools } from '../main/tools/repo';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 /** Invoke a tool the way the SDK does: `execute(input, options)`. */
 function run(tool: unknown, input: unknown): Promise<any> {
-  return (tool as { execute: (i: unknown, o: unknown) => Promise<any> }).execute(
-    input,
-    { toolCallId: 'test', messages: [] },
-  );
+  return (
+    tool as { execute: (i: unknown, o: unknown) => Promise<any> }
+  ).execute(input, { toolCallId: 'test', messages: [] });
 }
 
 let db: Database.Database;
@@ -71,7 +68,9 @@ beforeEach(() => {
   applyMigrations(db);
   useTestDatabase(db);
 
-  repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-repo-')));
+  repo = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-repo-')),
+  );
   git(['init', '-b', 'main']);
   write('README.md', '# Fixture\n\nalpha beta gamma\n');
   write('src/app.ts', 'export const needle = 1;\n');
@@ -137,7 +136,9 @@ describe('gitStatus', () => {
   });
 
   it('errors when the configured path is not a git repository', async () => {
-    const plain = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-plain-')));
+    const plain = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-plain-')),
+    );
     try {
       const p = makeProject('Plain', plain);
       const result = await run(repoTools.gitStatus, { projectId: p });
@@ -165,10 +166,16 @@ describe('gitLog', () => {
     git(['add', '-A']);
     git(['commit', '-m', 'touch readme']);
 
-    const scoped = await run(repoTools.gitLog, { projectId, file: 'README.md' });
+    const scoped = await run(repoTools.gitLog, {
+      projectId,
+      file: 'README.md',
+    });
     expect(scoped.count).toBe(2);
 
-    const other = await run(repoTools.gitLog, { projectId, file: 'src/app.ts' });
+    const other = await run(repoTools.gitLog, {
+      projectId,
+      file: 'src/app.ts',
+    });
     expect(other.count).toBe(1);
     expect(other.commits[0].subject).toBe('initial commit');
   });
@@ -180,7 +187,9 @@ describe('gitDiffStat', () => {
     const result = await run(repoTools.gitDiffStat, { projectId });
     expect(result.success).toBe(true);
     expect(result.changedFileCount).toBe(1);
-    const file = result.files.find((f: { file: string }) => f.file.endsWith('app.ts'));
+    const file = result.files.find((f: { file: string }) =>
+      f.file.endsWith('app.ts'),
+    );
     expect(file.added).toBe(1);
   });
 
@@ -189,7 +198,10 @@ describe('gitDiffStat', () => {
     git(['add', '-A']);
     git(['commit', '-m', 'second']);
 
-    const result = await run(repoTools.gitDiffStat, { projectId, ref: 'HEAD~1' });
+    const result = await run(repoTools.gitDiffStat, {
+      projectId,
+      ref: 'HEAD~1',
+    });
     expect(result.ref).toBe('HEAD~1');
     expect(result.changedFileCount).toBeGreaterThan(0);
   });
@@ -197,7 +209,10 @@ describe('gitDiffStat', () => {
 
 describe('grepSearch', () => {
   it('finds matches and groups them by file with line numbers', async () => {
-    const result = await run(repoTools.grepSearch, { projectId, pattern: 'needle' });
+    const result = await run(repoTools.grepSearch, {
+      projectId,
+      pattern: 'needle',
+    });
     expect(result.success).toBe(true);
     expect(result.matchCount).toBe(2);
     expect(result.truncated).toBe(false);
@@ -225,7 +240,11 @@ describe('grepSearch', () => {
   it('reports truncation rather than silently capping', async () => {
     for (let i = 0; i < 10; i++) write(`many/f${i}.ts`, `needle ${i}\n`);
 
-    const result = await run(repoTools.grepSearch, { projectId, pattern: 'needle', maxMatches: 3 });
+    const result = await run(repoTools.grepSearch, {
+      projectId,
+      pattern: 'needle',
+      maxMatches: 3,
+    });
     expect(result.matchCount).toBe(3);
     // A capped result must never read as exhaustive.
     expect(result.truncated).toBe(true);
@@ -234,25 +253,42 @@ describe('grepSearch', () => {
 
   it('truncates long lines instead of emitting them whole', async () => {
     write('long.txt', `${'x'.repeat(5_000)}needle\n`);
-    const result = await run(repoTools.grepSearch, { projectId, pattern: 'needle' });
+    const result = await run(repoTools.grepSearch, {
+      projectId,
+      pattern: 'needle',
+    });
     const hit = result.results[0].matches[0];
     expect(hit.text.length).toBeLessThanOrEqual(240);
   });
 
   it('skips binary files', async () => {
-    fs.writeFileSync(path.join(repo, 'blob.bin'), Buffer.from([0x00, 0x01, 0x00]));
-    const result = await run(repoTools.grepSearch, { projectId, pattern: 'needle' });
+    fs.writeFileSync(
+      path.join(repo, 'blob.bin'),
+      Buffer.from([0x00, 0x01, 0x00]),
+    );
+    const result = await run(repoTools.grepSearch, {
+      projectId,
+      pattern: 'needle',
+    });
     expect(result.success).toBe(true);
     expect(result.matchCount).toBe(2);
   });
 
   it('refuses to follow a symlink out of the project tree', async () => {
-    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-outside-')));
+    const outside = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-outside-')),
+    );
     try {
-      fs.writeFileSync(path.join(outside, 'secret.txt'), 'needle in a secret file\n');
+      fs.writeFileSync(
+        path.join(outside, 'secret.txt'),
+        'needle in a secret file\n',
+      );
       fs.symlinkSync(outside, path.join(repo, 'escape'));
 
-      const result = await run(repoTools.grepSearch, { projectId, pattern: 'needle' });
+      const result = await run(repoTools.grepSearch, {
+        projectId,
+        pattern: 'needle',
+      });
       expect(result.success).toBe(true);
       // The secret is outside the project tree and must not be reachable.
       expect(result.matchCount).toBe(2);
@@ -262,7 +298,10 @@ describe('grepSearch', () => {
   });
 
   it('returns no matches rather than failing when there are none', async () => {
-    const result = await run(repoTools.grepSearch, { projectId, pattern: 'zzz-absent' });
+    const result = await run(repoTools.grepSearch, {
+      projectId,
+      pattern: 'zzz-absent',
+    });
     expect(result.success).toBe(true);
     expect(result.matchCount).toBe(0);
     expect(result.truncated).toBe(false);

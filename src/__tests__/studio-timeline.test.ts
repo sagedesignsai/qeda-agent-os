@@ -262,4 +262,27 @@ describe('Studio Multi-Track Timeline Engine', () => {
     unsubGeneral();
     unsubTime();
   });
+
+  it('finds and updates clips non-destructively with payload merging', () => {
+    const tracks = convertTakeToTracks(sampleTakeWithCuts);
+    timelineStore.setTracksAndDuration(tracks, sampleTakeWithCuts.durationMs);
+
+    const firstVideoClip = tracks.find((t) => t.type === 'video')!.clips[0];
+
+    const found = timelineStore.findClip(firstVideoClip.id);
+    expect(found).not.toBeNull();
+    expect(found!.clip.id).toBe(firstVideoClip.id);
+    expect(found!.track.type).toBe('video');
+
+    // Update clip payload and properties
+    timelineStore.updateClip(firstVideoClip.id, {
+      name: 'Updated Intro Clip',
+      payload: { speed: 1.5, volume: 0.8 },
+    });
+
+    const updated = timelineStore.findClip(firstVideoClip.id);
+    expect(updated!.clip.name).toBe('Updated Intro Clip');
+    expect(updated!.clip.payload?.speed).toBe(1.5);
+    expect(updated!.clip.payload?.volume).toBe(0.8);
+  });
 });

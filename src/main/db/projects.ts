@@ -87,9 +87,8 @@ export function listProjects(opts?: {
 /** A single project by id. */
 export function getProject(id: string): Project | null {
   return (
-    (getDb()
-      .prepare(`SELECT * FROM projects WHERE id = ?`)
-      .get(id) as Project | undefined) ?? null
+    (getDb().prepare(`SELECT * FROM projects WHERE id = ?`).get(id) as
+      Project | undefined) ?? null
   );
 }
 
@@ -271,8 +270,12 @@ export function deleteProject(id: string): boolean {
       INBOX_PROJECT_ID,
       id,
     );
-    db.prepare(`UPDATE task_blocks SET project_id = NULL WHERE project_id = ?`).run(id);
-    db.prepare(`UPDATE sessions SET project_id = NULL WHERE project_id = ?`).run(id);
+    db.prepare(
+      `UPDATE task_blocks SET project_id = NULL WHERE project_id = ?`,
+    ).run(id);
+    db.prepare(
+      `UPDATE sessions SET project_id = NULL WHERE project_id = ?`,
+    ).run(id);
     db.prepare(
       `UPDATE terminal_sessions SET project_id = NULL WHERE project_id = ?`,
     ).run(id);

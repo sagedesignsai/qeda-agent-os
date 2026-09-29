@@ -29,9 +29,8 @@ export interface UseFocusAudioReturn {
 
 export function useFocusAudio(): UseFocusAudioReturn {
   const engineRef = useRef<FocusAudioEngine | null>(null);
-  const [config, setConfigState] = useState<FocusSoundConfig>(
-    DEFAULT_SOUND_CONFIG,
-  );
+  const [config, setConfigState] =
+    useState<FocusSoundConfig>(DEFAULT_SOUND_CONFIG);
   const [playing, setPlaying] = useState(false);
 
   const engine = useCallback((): FocusAudioEngine => {

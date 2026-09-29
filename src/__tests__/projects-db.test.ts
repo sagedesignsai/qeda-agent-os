@@ -13,7 +13,11 @@ import { applyMigrations, INBOX_PROJECT_ID } from '../main/db/schema';
 import { createTask, listTasks, updateTask } from '../main/db/tasks';
 import { createBlock, listBlocks } from '../main/db/task-blocks';
 import { createFocusSession, startOfDay } from '../main/db/focus-sessions';
-import { createSession, listSessions, updateSessionProject } from '../main/db/sessions';
+import {
+  createSession,
+  listSessions,
+  updateSessionProject,
+} from '../main/db/sessions';
 import {
   createTerminalSession,
   listTerminalSessions,
@@ -58,7 +62,11 @@ describe('projects data layer', () => {
     const b = createProject({ name: 'Taxes', status: 'paused' });
 
     // Newest projects sort after the Inbox (-1).
-    expect(listProjects().map((p) => p.id)).toEqual([INBOX_PROJECT_ID, a.id, b.id]);
+    expect(listProjects().map((p) => p.id)).toEqual([
+      INBOX_PROJECT_ID,
+      a.id,
+      b.id,
+    ]);
 
     // Status filter narrows.
     const paused = listProjects({ status: 'paused' });
@@ -75,7 +83,10 @@ describe('projects data layer', () => {
     const project = createProject({ name: 'Side quest' });
 
     const inboxTask = createTask({ title: 'Unsorted thought' });
-    const projectTask = createTask({ title: 'Do the thing', project_id: project.id });
+    const projectTask = createTask({
+      title: 'Do the thing',
+      project_id: project.id,
+    });
 
     expect(inboxTask.project_id).toBe(INBOX_PROJECT_ID);
     expect(projectTask.project_id).toBe(project.id);
@@ -91,8 +102,16 @@ describe('projects data layer', () => {
     const now = Math.floor(Date.now() / 1000);
     const yesterday = now - 90_000;
 
-    const done = createTask({ title: 'done', project_id: project.id, status: 'done' });
-    const active = createTask({ title: 'active', project_id: project.id, status: 'active' });
+    const done = createTask({
+      title: 'done',
+      project_id: project.id,
+      status: 'done',
+    });
+    const active = createTask({
+      title: 'active',
+      project_id: project.id,
+      status: 'active',
+    });
     createTask({ title: 'backlog', project_id: project.id, status: 'backlog' });
     // Overdue: not done, due before now.
     updateTask(active.id, { due_at: yesterday });
@@ -200,8 +219,8 @@ describe('projects data layer', () => {
     expect(listSessions({ projectId: project.id })).toHaveLength(0);
 
     const terminal = createTerminalSession({ project_id: project.id });
-    expect(listTerminalSessions({ projectId: project.id }).map((s) => s.id)).toEqual(
-      [terminal.id],
-    );
+    expect(
+      listTerminalSessions({ projectId: project.id }).map((s) => s.id),
+    ).toEqual([terminal.id]);
   });
 });

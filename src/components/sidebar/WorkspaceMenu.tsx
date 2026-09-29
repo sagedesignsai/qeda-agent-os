@@ -228,7 +228,10 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <SidebarMenuAction showOnHover aria-label="Notebook actions">
+                      <SidebarMenuAction
+                        showOnHover
+                        aria-label="Notebook actions"
+                      >
                         <MoreHorizontalIcon />
                       </SidebarMenuAction>
                     </DropdownMenuTrigger>
@@ -291,13 +294,17 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" side="right">
                           <DropdownMenuItem
-                            onSelect={() => void createPage(notebook.id, page.id)}
+                            onSelect={() =>
+                              void createPage(notebook.id, page.id)
+                            }
                           >
                             <PlusIcon className="mr-2 h-3.5 w-3.5" />
                             <span>Add sub-page</span>
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onSelect={() => void renamePage(page.id, page.title)}
+                            onSelect={() =>
+                              void renamePage(page.id, page.title)
+                            }
                           >
                             <PencilIcon className="mr-2 h-3.5 w-3.5" />
                             <span>Rename</span>

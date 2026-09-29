@@ -80,16 +80,16 @@ export function listFocusSessions(opts?: {
   }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   return getDb()
-    .prepare(
-      `SELECT * FROM focus_sessions ${clause} ORDER BY started_at DESC`,
-    )
+    .prepare(`SELECT * FROM focus_sessions ${clause} ORDER BY started_at DESC`)
     .all(...values) as FocusSession[];
 }
 
 /**
  * Aggregate focus stats. `now` is injectable so tests stay deterministic.
  */
-export function getFocusStats(now: number = Math.floor(Date.now() / 1000)): FocusStats {
+export function getFocusStats(
+  now: number = Math.floor(Date.now() / 1000),
+): FocusStats {
   const db = getDb();
 
   const todayStart = startOfDay(now);
@@ -189,9 +189,7 @@ export function createFocusSession(opts: {
       opts.ended_at ?? now,
     );
 
-  return (
-    getDb()
-      .prepare(`SELECT * FROM focus_sessions WHERE id = ?`)
-      .get(id) as FocusSession
-  );
+  return getDb()
+    .prepare(`SELECT * FROM focus_sessions WHERE id = ?`)
+    .get(id) as FocusSession;
 }

@@ -134,7 +134,8 @@ export function EmbeddingsView() {
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Leave empty to fall back to <code className="font-mono">EMBEDDING_PROVIDER</code>.
+          Leave empty to fall back to{' '}
+          <code className="font-mono">EMBEDDING_PROVIDER</code>.
         </p>
       </div>
 
@@ -149,9 +150,9 @@ export function EmbeddingsView() {
         />
         <p className="text-xs text-muted-foreground">
           Leave empty to fall back to{' '}
-          <code className="font-mono">EMBEDDING_MODEL</code>. Model lists are not
-          fetched for embeddings, so type the id exactly as the provider spells
-          it.
+          <code className="font-mono">EMBEDDING_MODEL</code>. Model lists are
+          not fetched for embeddings, so type the id exactly as the provider
+          spells it.
         </p>
       </div>
 

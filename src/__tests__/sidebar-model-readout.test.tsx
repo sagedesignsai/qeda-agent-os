@@ -105,7 +105,10 @@ function renderSidebar() {
     <MemoryRouter initialEntries={['/chat']}>
       <TooltipProvider>
         <SidebarProvider>
-          <AppSidebar onOpenCommandPalette={jest.fn()} onOpenSettings={jest.fn()} />
+          <AppSidebar
+            onOpenCommandPalette={jest.fn()}
+            onOpenSettings={jest.fn()}
+          />
         </SidebarProvider>
       </TooltipProvider>
     </MemoryRouter>,
@@ -115,23 +118,30 @@ function renderSidebar() {
 const TEST_TIMEOUT = 20_000;
 
 describe('AppSidebar model readout', () => {
-  it('subscribes to settings:changed so a model change is picked up', async () => {
-    renderSidebar();
+  it(
+    'subscribes to settings:changed so a model change is picked up',
+    async () => {
+      renderSidebar();
 
-    // Initial read.
-    expect(await screen.findByText('old-model')).toBeInTheDocument();
-    expect(listeners.get('settings:changed')).toHaveLength(1);
+      // Initial read.
+      expect(await screen.findByText('old-model')).toBeInTheDocument();
+      expect(listeners.get('settings:changed')).toHaveLength(1);
 
-    // The user switches model in Settings; main saves and broadcasts.
-    currentSettings = { activeProvider: 'openrouter', activeModel: 'new-model' };
-    broadcastSettingsChanged();
+      // The user switches model in Settings; main saves and broadcasts.
+      currentSettings = {
+        activeProvider: 'openrouter',
+        activeModel: 'new-model',
+      };
+      broadcastSettingsChanged();
 
-    await waitFor(() => {
-      expect(screen.getByText('new-model')).toBeInTheDocument();
-    });
-    expect(screen.queryByText('old-model')).not.toBeInTheDocument();
-    // The provider half of the readout refreshes too. The span renders the
-    // provider plus a literal colon, so match the full string.
-    expect(screen.getByText('openrouter:')).toBeInTheDocument();
-  }, TEST_TIMEOUT);
+      await waitFor(() => {
+        expect(screen.getByText('new-model')).toBeInTheDocument();
+      });
+      expect(screen.queryByText('old-model')).not.toBeInTheDocument();
+      // The provider half of the readout refreshes too. The span renders the
+      // provider plus a literal colon, so match the full string.
+      expect(screen.getByText('openrouter:')).toBeInTheDocument();
+    },
+    TEST_TIMEOUT,
+  );
 });

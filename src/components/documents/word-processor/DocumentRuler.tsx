@@ -49,10 +49,16 @@ export function DocumentRuler({
       const deltaPt = deltaPx / ptToPx;
 
       if (type === 'left') {
-        const nextLeft = Math.max(18, Math.min(144, Math.round(initialMargin + deltaPt)));
+        const nextLeft = Math.max(
+          18,
+          Math.min(144, Math.round(initialMargin + deltaPt)),
+        );
         onUpdateMargins({ left: nextLeft });
       } else {
-        const nextRight = Math.max(18, Math.min(144, Math.round(initialMargin - deltaPt)));
+        const nextRight = Math.max(
+          18,
+          Math.min(144, Math.round(initialMargin - deltaPt)),
+        );
         onUpdateMargins({ right: nextRight });
       }
     };
@@ -106,7 +112,9 @@ export function DocumentRuler({
         {/* Left Margin Slider Marker */}
         <div
           className={`absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize z-10 flex flex-col items-center justify-center transition-colors group ${
-            activeDrag === 'left' ? 'text-primary' : 'text-zinc-500 hover:text-primary'
+            activeDrag === 'left'
+              ? 'text-primary'
+              : 'text-zinc-500 hover:text-primary'
           }`}
           style={{ left: `${leftPx}px` }}
           onMouseDown={(e) => handleMouseDown('left', e)}
@@ -120,7 +128,9 @@ export function DocumentRuler({
         {/* Right Margin Slider Marker */}
         <div
           className={`absolute top-0 bottom-0 w-2 -ml-1 cursor-ew-resize z-10 flex flex-col items-center justify-center transition-colors group ${
-            activeDrag === 'right' ? 'text-primary' : 'text-zinc-500 hover:text-primary'
+            activeDrag === 'right'
+              ? 'text-primary'
+              : 'text-zinc-500 hover:text-primary'
           }`}
           style={{ right: `${rightPx}px` }}
           onMouseDown={(e) => handleMouseDown('right', e)}

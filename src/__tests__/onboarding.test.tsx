@@ -82,86 +82,119 @@ beforeEach(() => {
 const TEST_TIMEOUT = 20_000;
 
 describe('OnboardingDialog', () => {
-  it('starts on the welcome step and advances to the project step', async () => {
-    render(
-      <OnboardingDialog open onClose={() => {}} onOpenProject={() => {}} />,
-    );
+  it(
+    'starts on the welcome step and advances to the project step',
+    async () => {
+      render(
+        <OnboardingDialog open onClose={() => {}} onOpenProject={() => {}} />,
+      );
 
-    expect(await screen.findByText(/Welcome to Qeda/i)).toBeInTheDocument();
+      expect(await screen.findByText(/Welcome to Qeda/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Get started/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Get started/i }));
 
-    expect(await screen.findByText(/Name your project/i)).toBeInTheDocument();
-    // Exact match, so the dialog title "Name your project" is not picked up too.
-    expect(screen.getByLabelText('Name')).toBeInTheDocument();
-  }, TEST_TIMEOUT);
+      expect(await screen.findByText(/Name your project/i)).toBeInTheDocument();
+      // Exact match, so the dialog title "Name your project" is not picked up too.
+      expect(screen.getByLabelText('Name')).toBeInTheDocument();
+    },
+    TEST_TIMEOUT,
+  );
 
-  it('persists completion when skipped', async () => {
-    const onClose = jest.fn();
-    render(
-      <OnboardingDialog open onClose={onClose} onOpenProject={() => {}} />,
-    );
+  it(
+    'persists completion when skipped',
+    async () => {
+      const onClose = jest.fn();
+      render(
+        <OnboardingDialog open onClose={onClose} onOpenProject={() => {}} />,
+      );
 
-    fireEvent.click(await screen.findByRole('button', { name: /Skip for now/i }));
+      fireEvent.click(
+        await screen.findByRole('button', { name: /Skip for now/i }),
+      );
 
-    await waitFor(() => {
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('settings:save', {
+          onboardingCompleted: true,
+        });
+      });
+      expect(onClose).toHaveBeenCalled();
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'creates the project and reaches the ready step',
+    async () => {
+      const onOpenProject = jest.fn();
+      render(
+        <OnboardingDialog
+          open
+          onClose={() => {}}
+          onOpenProject={onOpenProject}
+        />,
+      );
+
+      fireEvent.click(
+        await screen.findByRole('button', { name: /Get started/i }),
+      );
+      fireEvent.change(await screen.findByLabelText('Name'), {
+        target: { value: 'Ship onboarding' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: /Continue/i }));
+
+      // First-task step: leave the task empty and just create the project.
+      expect(await screen.findByText(/first step/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Create project$/i }));
+
+      expect(await screen.findByText(/set up/i)).toBeInTheDocument();
+      expect(invoke).toHaveBeenCalledWith(
+        'projects:create',
+        expect.objectContaining({ name: 'Ship onboarding' }),
+      );
+      // No task was entered, so nothing should have been created.
+      expect(invoke).not.toHaveBeenCalledWith(
+        'tasks:create',
+        expect.anything(),
+      );
       expect(invoke).toHaveBeenCalledWith('settings:save', {
         onboardingCompleted: true,
       });
-    });
-    expect(onClose).toHaveBeenCalled();
-  }, TEST_TIMEOUT);
 
-  it('creates the project and reaches the ready step', async () => {
-    const onOpenProject = jest.fn();
-    render(
-      <OnboardingDialog open onClose={() => {}} onOpenProject={onOpenProject} />,
-    );
+      fireEvent.click(screen.getByRole('button', { name: /Open project/i }));
+      expect(onOpenProject).toHaveBeenCalledWith('project-1');
+    },
+    TEST_TIMEOUT,
+  );
 
-    fireEvent.click(await screen.findByRole('button', { name: /Get started/i }));
-    fireEvent.change(await screen.findByLabelText('Name'), {
-      target: { value: 'Ship onboarding' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Continue/i }));
+  it(
+    'selects a directory via native dialog and infers project name if blank',
+    async () => {
+      render(
+        <OnboardingDialog open onClose={() => {}} onOpenProject={() => {}} />,
+      );
 
-    // First-task step: leave the task empty and just create the project.
-    expect(await screen.findByText(/first step/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Create project$/i }));
+      fireEvent.click(
+        await screen.findByRole('button', { name: /Get started/i }),
+      );
+      expect(
+        await screen.findByRole('button', { name: /Browse…/i }),
+      ).toBeInTheDocument();
 
-    expect(await screen.findByText(/set up/i)).toBeInTheDocument();
-    expect(invoke).toHaveBeenCalledWith(
-      'projects:create',
-      expect.objectContaining({ name: 'Ship onboarding' }),
-    );
-    // No task was entered, so nothing should have been created.
-    expect(invoke).not.toHaveBeenCalledWith('tasks:create', expect.anything());
-    expect(invoke).toHaveBeenCalledWith('settings:save', {
-      onboardingCompleted: true,
-    });
+      fireEvent.click(screen.getByRole('button', { name: /Browse…/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Open project/i }));
-    expect(onOpenProject).toHaveBeenCalledWith('project-1');
-  }, TEST_TIMEOUT);
-
-  it('selects a directory via native dialog and infers project name if blank', async () => {
-    render(
-      <OnboardingDialog open onClose={() => {}} onOpenProject={() => {}} />,
-    );
-
-    fireEvent.click(await screen.findByRole('button', { name: /Get started/i }));
-    expect(await screen.findByRole('button', { name: /Browse…/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Browse…/i }));
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('dialog:open-directory', {
-        title: 'Select Project Directory',
+      await waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith('dialog:open-directory', {
+          title: 'Select Project Directory',
+        });
       });
-    });
 
-    await waitFor(() => {
-      expect(screen.getByDisplayValue('/home/user/awesome-project')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('awesome-project')).toBeInTheDocument();
-    });
-  }, TEST_TIMEOUT);
+      await waitFor(() => {
+        expect(
+          screen.getByDisplayValue('/home/user/awesome-project'),
+        ).toBeInTheDocument();
+        expect(screen.getByDisplayValue('awesome-project')).toBeInTheDocument();
+      });
+    },
+    TEST_TIMEOUT,
+  );
 });

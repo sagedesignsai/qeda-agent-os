@@ -46,9 +46,9 @@ describe('focus-audio generators', () => {
 describe('FocusAudioEngine without Web Audio', () => {
   beforeEach(() => {
     // jsdom has no Web Audio implementation — make that explicit and safe.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     delete (window as any).AudioContext;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     delete (window as any).webkitAudioContext;
   });
 

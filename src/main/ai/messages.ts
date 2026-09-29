@@ -51,7 +51,9 @@ export function sanitizeUIMessages(messages: UIMessage[]): UIMessage[] {
 /**
  * Ensure no reasoning parts remain in ModelMessage assistant content arrays.
  */
-export function sanitizeModelMessages(messages: ModelMessage[]): ModelMessage[] {
+export function sanitizeModelMessages(
+  messages: ModelMessage[],
+): ModelMessage[] {
   return messages.map((msg) => {
     if (msg.role !== 'assistant') {
       return msg;

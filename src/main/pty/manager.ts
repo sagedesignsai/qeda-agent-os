@@ -37,7 +37,7 @@ import {
 
 // node-pty is a native module — import type separately to avoid bundler issues.
 // The actual require happens at runtime inside the main process.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+
 const pty = require('node-pty') as typeof import('node-pty');
 
 type IPty = import('node-pty').IPty;
@@ -124,7 +124,9 @@ export class PtyManager {
 
     const shellBasename = path.basename(targetShell).toLowerCase();
     let spawnArgs: string[] = [];
-    const spawnEnv: Record<string, string> = { ...(process.env as Record<string, string>) };
+    const spawnEnv: Record<string, string> = {
+      ...(process.env as Record<string, string>),
+    };
 
     const useIntegration = opts.enableShellIntegration ?? true;
 
@@ -169,7 +171,8 @@ export class PtyManager {
             } catch {}
 
             const branchSuffix = branch ? ` (${branch})` : '';
-            const shortCmd = command.length > 25 ? `${command.slice(0, 22)}…` : command;
+            const shortCmd =
+              command.length > 25 ? `${command.slice(0, 22)}…` : command;
             const title = `${shortCmd} · ${folder || 'terminal'}${branchSuffix}`;
 
             const session = createTerminalSession({
@@ -196,7 +199,10 @@ export class PtyManager {
               this.window.webContents.send('terminal:sessions-changed');
             }
           } catch (err) {
-            console.warn('[PtyManager] Could not auto-create session on command start:', err);
+            console.warn(
+              '[PtyManager] Could not auto-create session on command start:',
+              err,
+            );
           }
         }
 
@@ -298,7 +304,10 @@ export class PtyManager {
       if (clean.length > 0) {
         entry.outputBuffer.push(clean);
         entry.totalOutputBytes += clean.length;
-        while (entry.totalOutputBytes > 120_000 && entry.outputBuffer.length > 1) {
+        while (
+          entry.totalOutputBytes > 120_000 &&
+          entry.outputBuffer.length > 1
+        ) {
           const removed = entry.outputBuffer.shift()!;
           entry.totalOutputBytes -= removed.length;
         }
@@ -315,7 +324,9 @@ export class PtyManager {
       if (sid) {
         this.sessionPtys.delete(sid);
         try {
-          updateTerminalSession(sid, { status: exitCode === 0 ? 'done' : 'error' });
+          updateTerminalSession(sid, {
+            status: exitCode === 0 ? 'done' : 'error',
+          });
           if (!this.window.isDestroyed()) {
             this.window.webContents.send('terminal:session-status', {
               sessionId: sid,
@@ -444,15 +455,15 @@ export function registerPtyHandlers(
 
   ipcMain.handle(
     'pty:resize',
-    (_e, { ptyId, cols, rows }: { ptyId: string; cols: number; rows: number }) => {
+    (
+      _e,
+      { ptyId, cols, rows }: { ptyId: string; cols: number; rows: number },
+    ) => {
       manager!.resize(ptyId, cols, rows);
     },
   );
 
-  ipcMain.handle(
-    'pty:kill',
-    (_e, { ptyId }: { ptyId: string }) => {
-      manager!.kill(ptyId);
-    },
-  );
+  ipcMain.handle('pty:kill', (_e, { ptyId }: { ptyId: string }) => {
+    manager!.kill(ptyId);
+  });
 }

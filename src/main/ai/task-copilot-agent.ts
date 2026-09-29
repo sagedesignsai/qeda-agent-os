@@ -162,7 +162,10 @@ const copilotApproval = createApprovalPolicy(copilotToolPolicies);
  * so the UI can never disagree with the gate.
  */
 export function isRiskyCopilotTool(toolName: string): boolean {
-  return copilotApproval({ toolCall: { toolName, dynamic: false } }) === 'user-approval';
+  return (
+    copilotApproval({ toolCall: { toolName, dynamic: false } }) ===
+    'user-approval'
+  );
 }
 
 // ─── Agent factory ────────────────────────────────────────────────────────────
@@ -181,7 +184,6 @@ export function createTaskCopilotAgent(opts?: {
   const model = resolveModel(providerId, modelId);
 
   return new ToolLoopAgent({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     model: model as any,
     instructions: buildInstructions(opts?.activeProject),
     tools: copilotTools,

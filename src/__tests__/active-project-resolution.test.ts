@@ -22,10 +22,10 @@ jest.mock('../main/ai/settings', () => ({
   getRawSettings: jest.fn(() => ({ activeProjectId: 'proj-default' })),
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const settingsMock = require('../main/ai/settings') as { getRawSettings: jest.Mock };
+const settingsMock = require('../main/ai/settings') as {
+  getRawSettings: jest.Mock;
+};
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const { resolveActiveProjectId } = require('../main/ai/project-context') as {
   resolveActiveProjectId: (scoped?: string | null) => string | null;
 };

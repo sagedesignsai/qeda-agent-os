@@ -54,7 +54,9 @@ const Hex = z
   });
 
 /** Semantic design-token name. Closed, derived from the token value map. */
-export const TokenNameSchema = z.enum(TOKEN_NAMES as [TokenName, ...TokenName[]]);
+export const TokenNameSchema = z.enum(
+  TOKEN_NAMES as [TokenName, ...TokenName[]],
+);
 
 /** Cross-axis alignment within a line. */
 export const AlignSchema = z.enum(['left', 'center', 'right']);
@@ -150,18 +152,21 @@ export const BackgroundSchema = z.discriminatedUnion('kind', [
  * is the classic tracking-pixel channel. An exported image has no business
  * doing any of that.
  */
-export const ImageSrcSchema = z.string().min(1).superRefine((src, ctx) => {
-  const isDataImage = /^data:image\/[a-z0-9.+-]+[;,]/i.test(src);
-  const isWindowsPath = /^[A-Za-z]:[\\/]/.test(src);
-  const isPosixAbsolute = src.startsWith('/') && !src.startsWith('//');
-  if (isDataImage || isWindowsPath || isPosixAbsolute) return;
-  ctx.addIssue({
-    code: 'custom',
-    message:
-      'Image source must be a `data:image/…` URI or an absolute local filesystem path. ' +
-      'Remote (`http:`/`https:`/`//`) sources are rejected: they make exports nondeterministic and remote images are a tracking channel.',
+export const ImageSrcSchema = z
+  .string()
+  .min(1)
+  .superRefine((src, ctx) => {
+    const isDataImage = /^data:image\/[a-z0-9.+-]+[;,]/i.test(src);
+    const isWindowsPath = /^[A-Za-z]:[\\/]/.test(src);
+    const isPosixAbsolute = src.startsWith('/') && !src.startsWith('//');
+    if (isDataImage || isWindowsPath || isPosixAbsolute) return;
+    ctx.addIssue({
+      code: 'custom',
+      message:
+        'Image source must be a `data:image/…` URI or an absolute local filesystem path. ' +
+        'Remote (`http:`/`https:`/`//`) sources are rejected: they make exports nondeterministic and remote images are a tracking channel.',
+    });
   });
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Node union
@@ -223,11 +228,7 @@ export interface GroupNode {
 
 /** The closed node union. Exactly five kinds, no more. */
 export type StudioNode =
-  | FrameNode
-  | TextNode
-  | ImageNode
-  | ShapeNode
-  | GroupNode;
+  FrameNode | TextNode | ImageNode | ShapeNode | GroupNode;
 
 export const FrameSchema = z.object({
   kind: z.literal('frame'),
@@ -319,10 +320,19 @@ export function safeParseDoc(input: unknown) {
 // Type-only constructors: they exist so the presets below stay readable. They
 // add no defaults — a preset is a complete, explicit document, and nothing is
 // inferred at runtime.
-const frame = (p: Omit<FrameNode, 'kind'>): FrameNode => ({ kind: 'frame', ...p });
+const frame = (p: Omit<FrameNode, 'kind'>): FrameNode => ({
+  kind: 'frame',
+  ...p,
+});
 const text = (p: Omit<TextNode, 'kind'>): TextNode => ({ kind: 'text', ...p });
-const shape = (p: Omit<ShapeNode, 'kind'>): ShapeNode => ({ kind: 'shape', ...p });
-const group = (p: Omit<GroupNode, 'kind'>): GroupNode => ({ kind: 'group', ...p });
+const shape = (p: Omit<ShapeNode, 'kind'>): ShapeNode => ({
+  kind: 'shape',
+  ...p,
+});
+const group = (p: Omit<GroupNode, 'kind'>): GroupNode => ({
+  kind: 'group',
+  ...p,
+});
 
 /**
  * Ready-made documents, all built from the token system. These are real

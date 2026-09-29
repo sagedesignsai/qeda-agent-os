@@ -18,7 +18,10 @@ let integrationDir: string | null = null;
 
 export function getIntegrationDir(): string {
   if (!integrationDir) {
-    integrationDir = path.join(os.tmpdir(), `vellum-shell-integration-${process.pid}`);
+    integrationDir = path.join(
+      os.tmpdir(),
+      `vellum-shell-integration-${process.pid}`,
+    );
     fs.mkdirSync(integrationDir, { recursive: true });
   }
   return integrationDir;

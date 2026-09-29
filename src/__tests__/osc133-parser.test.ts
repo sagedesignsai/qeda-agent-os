@@ -12,7 +12,8 @@ import { Osc133Parser, type ParsedBlockEvent } from '../main/pty/osc133-parser';
 describe('Osc133Parser', () => {
   it('strips OSC 133 control sequences from terminal output', () => {
     const parser = new Osc133Parser();
-    const raw = '\x1b]133;A\x07user@box:~$ \x1b]133;B\x07ls\x1b]133;C\x07file1.txt\nfile2.txt\n\x1b]133;D;0\x07';
+    const raw =
+      '\x1b]133;A\x07user@box:~$ \x1b]133;B\x07ls\x1b]133;C\x07file1.txt\nfile2.txt\n\x1b]133;D;0\x07';
     const clean = parser.feed(raw);
     expect(clean).toBe('user@box:~$ lsfile1.txt\nfile2.txt\n');
   });
@@ -46,7 +47,9 @@ describe('Osc133Parser', () => {
       onCommandEnd: (evt) => events.push(evt),
     });
 
-    parser.feed('\x1b]133;A\x07$ \x1b]133;B\x07false\x1b]133;C\x07\x1b]133;D;1\x07');
+    parser.feed(
+      '\x1b]133;A\x07$ \x1b]133;B\x07false\x1b]133;C\x07\x1b]133;D;1\x07',
+    );
 
     expect(events).toHaveLength(1);
     expect(events[0].exitCode).toBe(1);
@@ -89,7 +92,9 @@ describe('Osc133Parser', () => {
       onCommandEnd: (evt) => events.push(evt),
     });
 
-    parser.feed('\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\pwd\x1b]133;C\x1b\\/home\n\x1b]133;D;0\x1b\\');
+    parser.feed(
+      '\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\pwd\x1b]133;C\x1b\\/home\n\x1b]133;D;0\x1b\\',
+    );
     expect(events).toHaveLength(1);
     expect(events[0].command).toBe('pwd');
     expect(events[0].output).toBe('/home\n');

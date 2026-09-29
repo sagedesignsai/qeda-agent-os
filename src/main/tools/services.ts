@@ -30,10 +30,20 @@ import {
 import { firecrawlScrape } from '../services/scrape.js';
 import { context7Docs } from '../services/docs.js';
 import { unsplashSearch } from '../services/images.js';
-import { synthesizeSpeech, deepgramTranscribe, TTS_PROVIDERS } from '../services/speech.js';
+import {
+  synthesizeSpeech,
+  deepgramTranscribe,
+  TTS_PROVIDERS,
+} from '../services/speech.js';
 
 /** Preference order used when the caller asks for `provider: 'auto'`. */
-const AUTO_SEARCH_ORDER: SearchProvider[] = ['tavily', 'exa', 'serper', 'brave', 'firecrawl'];
+const AUTO_SEARCH_ORDER: SearchProvider[] = [
+  'tavily',
+  'exa',
+  'serper',
+  'brave',
+  'firecrawl',
+];
 
 function pickAutoProvider(): SearchProvider | null {
   for (const provider of AUTO_SEARCH_ORDER) {
@@ -62,20 +72,47 @@ export const advancedSearchTool = tool({
   description:
     'Search the web with the best configured provider (Tavily, Exa, Serper/Google, Brave or Firecrawl). Returns normalized { title, url, snippet, provider } results, plus a synthesized answer when one is available. Prefer this over the basic webSearch when you want Google results, published dates, or a direct answer.',
   inputSchema: z.object({
-    query: z.string().describe('The search query. Be specific; add the current year for recent topics.'),
+    query: z
+      .string()
+      .describe(
+        'The search query. Be specific; add the current year for recent topics.',
+      ),
     provider: z
       .enum(['auto', ...SEARCH_PROVIDERS] as [string, ...string[]])
       .default('auto')
-      .describe('Which search backend to use. "auto" picks the first configured provider.'),
-    count: z.number().int().min(1).max(20).default(6).describe('Maximum number of results.'),
+      .describe(
+        'Which search backend to use. "auto" picks the first configured provider.',
+      ),
+    count: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(6)
+      .describe('Maximum number of results.'),
     includeAnswer: z
       .boolean()
       .default(false)
-      .describe('Ask for a synthesized answer where the provider supports it (Tavily/Serper).'),
-    includeDomains: z.array(z.string()).optional().describe('Restrict results to these domains.'),
-    excludeDomains: z.array(z.string()).optional().describe('Exclude these domains.'),
+      .describe(
+        'Ask for a synthesized answer where the provider supports it (Tavily/Serper).',
+      ),
+    includeDomains: z
+      .array(z.string())
+      .optional()
+      .describe('Restrict results to these domains.'),
+    excludeDomains: z
+      .array(z.string())
+      .optional()
+      .describe('Exclude these domains.'),
   }),
-  execute: async ({ query, provider, count, includeAnswer, includeDomains, excludeDomains }) => {
+  execute: async ({
+    query,
+    provider,
+    count,
+    includeAnswer,
+    includeDomains,
+    excludeDomains,
+  }) => {
     try {
       const chosen: SearchProvider | null =
         provider === 'auto' ? pickAutoProvider() : (provider as SearchProvider);
@@ -119,14 +156,24 @@ export const scrapePageTool = tool({
     'Render a web page (including JavaScript-heavy docs sites) and return clean markdown. Use after a search to read a specific source in full. Requires the Firecrawl key.',
   inputSchema: z.object({
     url: z.string().url().describe('The http(s) URL to scrape.'),
-    maxChars: z.number().int().min(1_000).max(80_000).default(24_000).describe('Maximum markdown characters to return.'),
+    maxChars: z
+      .number()
+      .int()
+      .min(1_000)
+      .max(80_000)
+      .default(24_000)
+      .describe('Maximum markdown characters to return.'),
   }),
   execute: async ({ url, maxChars }) => {
     try {
       const resolved = resolveService('firecrawl');
       if (!resolved.ok) return { success: false, error: resolved.error };
 
-      const result = await firecrawlScrape({ url, maxChars, apiKey: resolved.value.apiKey });
+      const result = await firecrawlScrape({
+        url,
+        maxChars,
+        apiKey: resolved.value.apiKey,
+      });
       return { success: true, ...result };
     } catch (err) {
       return { success: false, error: errorMessage(err) };
@@ -140,13 +187,18 @@ export const libraryDocsTool = tool({
   description:
     'Look up up-to-date, version-specific documentation and code snippets for a software library (e.g. "Jules API", "Godot 4 CharacterBody2D", "Next.js middleware"). Use this before writing API or framework code so the notebook cites real, current APIs. Requires the Context7 key.',
   inputSchema: z.object({
-    query: z.string().describe('What you are trying to do, as a natural-language question.'),
+    query: z
+      .string()
+      .describe('What you are trying to do, as a natural-language question.'),
     library: z
       .array(z.string())
       .max(4)
       .optional()
       .describe('Library hints, e.g. ["godot"] or ["/vercel/next.js"]. Max 4.'),
-    language: z.string().optional().describe('Programming language preference, e.g. "gdscript".'),
+    language: z
+      .string()
+      .optional()
+      .describe('Programming language preference, e.g. "gdscript".'),
     version: z.string().optional().describe('Version constraint, e.g. "4.3".'),
   }),
   execute: async ({ query, library, language, version }) => {
@@ -174,8 +226,18 @@ export const findImagesTool = tool({
   description:
     'Find stock photos for a notebook or page — cover images, section artwork, illustrative photos. Returns image URLs plus attribution. Requires the Unsplash access key.',
   inputSchema: z.object({
-    query: z.string().describe('What the image should depict, e.g. "2.5d platformer game scene".'),
-    count: z.number().int().min(1).max(30).default(6).describe('How many images to return.'),
+    query: z
+      .string()
+      .describe(
+        'What the image should depict, e.g. "2.5d platformer game scene".',
+      ),
+    count: z
+      .number()
+      .int()
+      .min(1)
+      .max(30)
+      .default(6)
+      .describe('How many images to return.'),
     orientation: z
       .enum(['landscape', 'portrait', 'squarish'])
       .optional()
@@ -210,7 +272,10 @@ export const textToSpeechTool = tool({
       .enum(['elevenlabs', 'deepgram', 'cartesia'] as [string, ...string[]])
       .default('elevenlabs')
       .describe('Which speech provider to use.'),
-    voice: z.string().optional().describe('Provider-specific voice id or model name.'),
+    voice: z
+      .string()
+      .optional()
+      .describe('Provider-specific voice id or model name.'),
   }),
   execute: async ({ text, provider, voice }) => {
     try {
@@ -244,8 +309,15 @@ export const transcribeAudioTool = tool({
   description:
     'Transcribe a local audio file to text (Deepgram Nova). Useful for turning a recorded meeting or voice note into a page. Requires the Deepgram key.',
   inputSchema: z.object({
-    filePath: z.string().describe('Absolute path to a local audio file (mp3, wav, m4a, ogg, flac, webm).'),
-    model: z.string().optional().describe('Deepgram model id (default nova-3).'),
+    filePath: z
+      .string()
+      .describe(
+        'Absolute path to a local audio file (mp3, wav, m4a, ogg, flac, webm).',
+      ),
+    model: z
+      .string()
+      .optional()
+      .describe('Deepgram model id (default nova-3).'),
   }),
   execute: async ({ filePath, model }) => {
     try {
@@ -256,11 +328,15 @@ export const transcribeAudioTool = tool({
       try {
         audio = await fs.readFile(filePath);
       } catch (err) {
-        return { success: false, error: `Could not read ${filePath}: ${errorMessage(err)}` };
+        return {
+          success: false,
+          error: `Could not read ${filePath}: ${errorMessage(err)}`,
+        };
       }
 
       const contentType =
-        CONTENT_TYPE_BY_EXT[path.extname(filePath).toLowerCase()] ?? 'audio/mpeg';
+        CONTENT_TYPE_BY_EXT[path.extname(filePath).toLowerCase()] ??
+        'audio/mpeg';
 
       const { text } = await deepgramTranscribe({
         apiKey: resolved.value.apiKey,

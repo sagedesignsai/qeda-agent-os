@@ -16,7 +16,11 @@ import { Input } from '@/components/ui/input';
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
 import { Shimmer } from '@/components/ai-elements/shimmer';
 import { toast } from 'sonner';
-import type { PdfBlock, ParagraphBlock, HeadingBlock } from '@/lib/pdf-studio/types';
+import type {
+  PdfBlock,
+  ParagraphBlock,
+  HeadingBlock,
+} from '@/lib/pdf-studio/types';
 
 interface InlineAiPromptProps {
   block: PdfBlock | null;
@@ -84,10 +88,20 @@ export function InlineAiPrompt({
 
       if (res && res.block) {
         const generated = res.block as Record<string, unknown>;
-        if (block.type === 'paragraph' && typeof generated.content === 'string') {
-          onUpdateBlock(block.id, { content: generated.content } as Partial<ParagraphBlock>);
-        } else if (block.type === 'heading' && typeof generated.text === 'string') {
-          onUpdateBlock(block.id, { text: generated.text } as Partial<HeadingBlock>);
+        if (
+          block.type === 'paragraph' &&
+          typeof generated.content === 'string'
+        ) {
+          onUpdateBlock(block.id, {
+            content: generated.content,
+          } as Partial<ParagraphBlock>);
+        } else if (
+          block.type === 'heading' &&
+          typeof generated.text === 'string'
+        ) {
+          onUpdateBlock(block.id, {
+            text: generated.text,
+          } as Partial<HeadingBlock>);
         } else {
           onUpdateBlock(block.id, res.block as Partial<PdfBlock>);
         }

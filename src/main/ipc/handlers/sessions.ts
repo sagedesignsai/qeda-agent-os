@@ -41,12 +41,17 @@ export function registerSessionsHandlers({
   ipcMain.handle(
     'sessions:list',
     (_e, req: { projectId?: string | null } | void) =>
-      listSessions(req?.projectId !== undefined ? { projectId: req.projectId } : undefined),
+      listSessions(
+        req?.projectId !== undefined ? { projectId: req.projectId } : undefined,
+      ),
   );
 
   ipcMain.handle(
     'sessions:create',
-    (_e, { title, projectId }: { title?: string; projectId?: string | null }) => {
+    (
+      _e,
+      { title, projectId }: { title?: string; projectId?: string | null },
+    ) => {
       const session = createSession(title, projectId ?? null);
       broadcastSessionsChanged();
       return session;
@@ -69,10 +74,13 @@ export function registerSessionsHandlers({
     return removed;
   });
 
-  ipcMain.handle('sessions:rename', (_e, { id, title }: { id: string; title: string }) => {
-    updateSessionTitle(id, title);
-    broadcastSessionsChanged();
-  });
+  ipcMain.handle(
+    'sessions:rename',
+    (_e, { id, title }: { id: string; title: string }) => {
+      updateSessionTitle(id, title);
+      broadcastSessionsChanged();
+    },
+  );
 
   ipcMain.handle('sessions:messages', (_e, { id }: { id: string }) =>
     loadMessages(id),
@@ -86,7 +94,10 @@ export function registerSessionsHandlers({
   // the recents list does not display (it shows titles and recency, not bodies).
   ipcMain.handle(
     'sessions:save-messages',
-    (_e, { sessionId, messages }: { sessionId: string; messages: UIMessage[] }) => {
+    (
+      _e,
+      { sessionId, messages }: { sessionId: string; messages: UIMessage[] },
+    ) => {
       if (!sessionId || !Array.isArray(messages)) return;
       for (const message of messages) {
         if (message?.id && Array.isArray(message.parts)) {
@@ -95,5 +106,4 @@ export function registerSessionsHandlers({
       }
     },
   );
-
 }

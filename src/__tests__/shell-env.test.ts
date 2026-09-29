@@ -57,7 +57,9 @@ describe('shell-env helpers', () => {
     });
 
     it('parses multiple exports in a single line with quotes', () => {
-      const parsed = parseExportCommand('export PORT="8080" NODE_ENV=production');
+      const parsed = parseExportCommand(
+        'export PORT="8080" NODE_ENV=production',
+      );
       expect(parsed).toEqual({ PORT: '8080', NODE_ENV: 'production' });
     });
 
@@ -107,7 +109,9 @@ describe('shell-env helpers', () => {
 
     it('allows non-interactive commands without flags', () => {
       expect(isInteractiveCommand('git status')).toBe(false);
-      expect(isInteractiveCommand('git commit -m "feat: new feature"')).toBe(false);
+      expect(isInteractiveCommand('git commit -m "feat: new feature"')).toBe(
+        false,
+      );
       expect(isInteractiveCommand('npm init -y')).toBe(false);
       expect(isInteractiveCommand('npm run dev')).toBe(false);
       expect(isInteractiveCommand('python script.py')).toBe(false);

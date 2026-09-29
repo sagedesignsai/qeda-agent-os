@@ -8,14 +8,24 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 
-import { ipcMain, dialog, BrowserWindow, type IpcMainInvokeEvent } from 'electron';
+import {
+  ipcMain,
+  dialog,
+  BrowserWindow,
+  type IpcMainInvokeEvent,
+} from 'electron';
 import { allTools, requiresApproval } from '../../tools/index.js';
 
-export function registerToolsHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
+export function registerToolsHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
   ipcMain.handle('tools:list', () => {
     return Object.entries(allTools).map(([name, t]) => ({
       name,
-      description: typeof t.description === 'function' ? 'Tool' : (t.description ?? ''),
+      description:
+        typeof t.description === 'function' ? 'Tool' : (t.description ?? ''),
       requiresApproval: requiresApproval(name),
     }));
   });
@@ -24,9 +34,11 @@ export function registerToolsHandlers({ mainWindow }: { mainWindow: BrowserWindo
     'tools:execute',
     async (
       event: IpcMainInvokeEvent,
-      { toolName, params }: { toolName: string; params: Record<string, unknown> },
+      {
+        toolName,
+        params,
+      }: { toolName: string; params: Record<string, unknown> },
     ) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const targetTool = (allTools as Record<string, any>)[toolName];
       if (!targetTool) {
         throw new Error(`Tool not found: ${toolName}`);
@@ -50,12 +62,15 @@ export function registerToolsHandlers({ mainWindow }: { mainWindow: BrowserWindo
           },
         );
         if (response !== 1) {
-          return { success: false, denied: true, error: 'Execution cancelled by user.' };
+          return {
+            success: false,
+            denied: true,
+            error: 'Execution cancelled by user.',
+          };
         }
       }
 
       return await targetTool.execute(params, { messages: [] });
     },
   );
-
 }

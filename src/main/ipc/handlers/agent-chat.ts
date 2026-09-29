@@ -10,14 +10,21 @@
 
 import { type UIMessage } from 'ai';
 import { ipcMain, type BrowserWindow } from 'electron';
-import { describeFallbackReason, isOutputChunk, isRetryableProviderError } from '../../ai/fallback';
+import {
+  describeFallbackReason,
+  isOutputChunk,
+  isRetryableProviderError,
+} from '../../ai/fallback';
 import { prepareModelMessages } from '../../ai/messages';
 import { resolveModelChain } from '../../ai/provider';
 import { type ChatContext } from '../channels';
-import { getAgent } from '../agent-runtime';
-import { detectMode } from '../agent-runtime';
+import { getAgent, detectMode } from '../agent-runtime';
 
-export function registerAgentChatHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
+export function registerAgentChatHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
   ipcMain.handle(
     'agent:chat',
     async (
@@ -60,8 +67,10 @@ export function registerAgentChatHandlers({ mainWindow }: { mainWindow: BrowserW
 
           try {
             const agent = getAgent(target, mode, context);
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (agent as any).stream({ messages: modelMessages });
+
+            const result = await (agent as any).stream({
+              messages: modelMessages,
+            });
 
             // `fullStream` reports provider failures as an `error` part rather
             // than throwing, so capture it and let the catch block decide.
@@ -73,7 +82,10 @@ export function registerAgentChatHandlers({ mainWindow }: { mainWindow: BrowserW
                 break;
               }
               if (isOutputChunk(chunk?.type)) emitted = true;
-              mainWindow.webContents.send('agent:stream-chunk', JSON.stringify(chunk));
+              mainWindow.webContents.send(
+                'agent:stream-chunk',
+                JSON.stringify(chunk),
+              );
             }
 
             if (streamError) throw streamError;
@@ -111,5 +123,4 @@ export function registerAgentChatHandlers({ mainWindow }: { mainWindow: BrowserW
       }
     },
   );
-
 }

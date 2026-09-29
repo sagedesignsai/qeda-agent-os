@@ -46,7 +46,13 @@ interface UnsplashResponse {
     alt_description?: string | null;
     width?: number;
     height?: number;
-    urls?: { raw?: string; full?: string; regular?: string; small?: string; thumb?: string };
+    urls?: {
+      raw?: string;
+      full?: string;
+      regular?: string;
+      small?: string;
+      thumb?: string;
+    };
     links?: { html?: string };
     user?: { name?: string; links?: { html?: string } };
   }>;

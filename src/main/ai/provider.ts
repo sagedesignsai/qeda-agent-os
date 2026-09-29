@@ -15,7 +15,12 @@ import { createGateway } from '@ai-sdk/gateway';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import type { LanguageModel } from 'ai';
 import { getSettings, type AppSettings } from './settings';
-import { PROVIDERS, getProvider, envApiKey, type ProviderConfig } from './registry';
+import {
+  PROVIDERS,
+  getProvider,
+  envApiKey,
+  type ProviderConfig,
+} from './registry';
 import { resolveChain, type ModelTarget } from './fallback';
 
 export { PROVIDERS, type ProviderConfig };
@@ -42,7 +47,10 @@ export function resolveApiKey(
 }
 
 /** Resolve the base URL, allowing a per-provider override from Settings. */
-function resolveBaseURL(providerId: string, settings: AppSettings): string | undefined {
+function resolveBaseURL(
+  providerId: string,
+  settings: AppSettings,
+): string | undefined {
   const fromSettings = settings.providers?.[providerId]?.baseURL;
   if (fromSettings && fromSettings.trim()) return fromSettings.trim();
   return getProvider(providerId)?.baseURL;
@@ -54,7 +62,10 @@ function resolveBaseURL(providerId: string, settings: AppSettings): string | und
  * @param providerId – a registry id such as "groq" or "openrouter"
  * @param modelId    – provider-specific model id, e.g. "qwen/qwen3.8-27b:free"
  */
-export function resolveModel(providerId: string, modelId: string): LanguageModel {
+export function resolveModel(
+  providerId: string,
+  modelId: string,
+): LanguageModel {
   const settings = getSettings();
   const provider = getProvider(providerId);
 
@@ -139,7 +150,9 @@ export interface ProviderModelList {
  * Model catalogs change constantly, so the live list is authoritative and the
  * curated `freeModels` are only a fallback. Free models are sorted first.
  */
-export async function listProviderModels(providerId: string): Promise<ProviderModelList> {
+export async function listProviderModels(
+  providerId: string,
+): Promise<ProviderModelList> {
   const provider = getProvider(providerId);
   const suggestions = provider?.freeModels ?? [];
 
@@ -189,7 +202,9 @@ export async function listProviderModels(providerId: string): Promise<ProviderMo
     }
 
     // Surface the curated free models first, then everything else.
-    const free = ids.filter((id) => suggestions.includes(id) || id.endsWith(':free'));
+    const free = ids.filter(
+      (id) => suggestions.includes(id) || id.endsWith(':free'),
+    );
     const rest = ids.filter((id) => !free.includes(id)).sort();
 
     return { models: [...new Set([...free, ...rest])] };

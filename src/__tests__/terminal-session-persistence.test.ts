@@ -90,10 +90,17 @@ describe('terminal session persistence', () => {
 
     const fetched = getTerminalSession(session.id);
     expect(fetched?.env).toBeDefined();
-    expect(JSON.parse(fetched!.env!)).toEqual({ PORT: '3000', NODE_ENV: 'development' });
+    expect(JSON.parse(fetched!.env!)).toEqual({
+      PORT: '3000',
+      NODE_ENV: 'development',
+    });
 
     updateTerminalSession(session.id, {
-      env: JSON.stringify({ PORT: '3000', NODE_ENV: 'production', API_KEY: 'secret-xyz' }),
+      env: JSON.stringify({
+        PORT: '3000',
+        NODE_ENV: 'production',
+        API_KEY: 'secret-xyz',
+      }),
     });
 
     const updated = getTerminalSession(session.id);

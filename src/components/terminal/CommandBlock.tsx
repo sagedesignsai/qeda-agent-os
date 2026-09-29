@@ -101,7 +101,10 @@ const Ctx = createContext<CommandBlockCtx | null>(null);
 
 const useBlock = () => {
   const ctx = useContext(Ctx);
-  if (!ctx) throw new Error('CommandBlock sub-components must be inside <CommandBlock>');
+  if (!ctx)
+    throw new Error(
+      'CommandBlock sub-components must be inside <CommandBlock>',
+    );
   return ctx;
 };
 
@@ -138,7 +141,15 @@ const STATUS_META = {
     color: 'text-muted-foreground',
     ring: 'border-border bg-muted/30',
   },
-} satisfies Record<TerminalBlock['status'], { icon: React.ComponentType<{ className?: string }>; label: string; color: string; ring: string }>;
+} satisfies Record<
+  TerminalBlock['status'],
+  {
+    icon: React.ComponentType<{ className?: string }>;
+    label: string;
+    color: string;
+    ring: string;
+  }
+>;
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 
@@ -261,7 +272,10 @@ export function CommandBlockHeader({ className }: { className?: string }) {
   const { block, onRerun, onStop, isSearchOpen, setIsSearchOpen } = useBlock();
   const meta = STATUS_META[block.status];
   const StatusIcon = meta.icon;
-  const canRerun = Boolean(onRerun) && block.status !== 'pending' && block.status !== 'running';
+  const canRerun =
+    Boolean(onRerun) &&
+    block.status !== 'pending' &&
+    block.status !== 'running';
   const hasOutput = Boolean(block.output && block.output.length > 0);
 
   return (
@@ -283,7 +297,9 @@ export function CommandBlockHeader({ className }: { className?: string }) {
       {/* Command */}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="shrink-0 text-muted-foreground/75">$</span>
-        <span className="truncate text-foreground font-mono">{block.command || '…'}</span>
+        <span className="truncate text-foreground font-mono">
+          {block.command || '…'}
+        </span>
       </div>
 
       {/* Running pulse badge & Stop action button (Pillar 1 & 4) */}
@@ -306,7 +322,10 @@ export function CommandBlockHeader({ className }: { className?: string }) {
               aria-label="Stop running command"
             >
               <SquareIcon className="size-2.5 fill-current" />
-              Stop <kbd className="ml-0.5 rounded bg-rose-800/80 px-1 py-0.2 font-mono text-[9px]">^C</kbd>
+              Stop{' '}
+              <kbd className="ml-0.5 rounded bg-rose-800/80 px-1 py-0.2 font-mono text-[9px]">
+                ^C
+              </kbd>
             </Button>
           )}
         </div>
@@ -447,7 +466,10 @@ export function CommandBlockFilterBar({ className }: { className?: string }) {
   const q = searchQuery.trim().toLowerCase();
   const matchCount = q
     ? rawLines.filter((l) =>
-        l.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').toLowerCase().includes(q),
+        l
+          .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+          .toLowerCase()
+          .includes(q),
       ).length
     : rawLines.length;
 
@@ -483,7 +505,9 @@ export function CommandBlockFilterBar({ className }: { className?: string }) {
         variant="ghost"
         className={cn(
           'h-5 px-1.5 text-[10px] font-sans shrink-0',
-          filterMode ? 'bg-accent text-accent-foreground' : 'text-muted-foreground',
+          filterMode
+            ? 'bg-accent text-accent-foreground'
+            : 'text-muted-foreground',
         )}
         onClick={() => setFilterMode((v) => !v)}
         title={filterMode ? 'Showing filtered lines only' : 'Showing all lines'}
@@ -585,17 +609,23 @@ function renderGitDiff(text: string) {
 // ─── Output ───────────────────────────────────────────────────────────────────
 
 export function CommandBlockOutput({ className }: { className?: string }) {
-  const { block, isSearchOpen, searchQuery, filterMode, onRunInShell } = useBlock();
+  const { block, isSearchOpen, searchQuery, filterMode, onRunInShell } =
+    useBlock();
   const containerRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
 
   const output = block.output;
   const hasOutput = output && output.length > 0;
   const isVisible =
-    block.status === 'running' || block.status === 'done' || block.status === 'error';
+    block.status === 'running' ||
+    block.status === 'done' ||
+    block.status === 'error';
 
   // Detected dev server URLs (e.g. Next.js, Vite, Express on localhost:3000)
-  const detectedUrls = useMemo(() => extractLocalhostUrls(output || ''), [output]);
+  const detectedUrls = useMemo(
+    () => extractLocalhostUrls(output || ''),
+    [output],
+  );
 
   const handleOpenUrl = (url: string) => {
     void window.electron.ipc.invoke('terminal:open-url', { url });
@@ -606,12 +636,17 @@ export function CommandBlockOutput({ className }: { className?: string }) {
   const handleBlockScroll = useCallback(() => {
     if (!containerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    userScrolledBlockUpRef.current = scrollHeight - scrollTop - clientHeight > 40;
+    userScrolledBlockUpRef.current =
+      scrollHeight - scrollTop - clientHeight > 40;
   }, []);
 
   // Auto-scroll to latest output while command is running unless user scrolled up
   useEffect(() => {
-    if (block.status === 'running' && containerRef.current && !userScrolledBlockUpRef.current) {
+    if (
+      block.status === 'running' &&
+      containerRef.current &&
+      !userScrolledBlockUpRef.current
+    ) {
       requestAnimationFrame(() => {
         if (containerRef.current && !userScrolledBlockUpRef.current) {
           containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -621,7 +656,8 @@ export function CommandBlockOutput({ className }: { className?: string }) {
   }, [block.status, output]);
 
   // In-block line filtering (Warp Pillar 1)
-  const isFilteringActive = isSearchOpen && searchQuery.trim().length > 0 && filterMode;
+  const isFilteringActive =
+    isSearchOpen && searchQuery.trim().length > 0 && filterMode;
 
   const displayOutput = useMemo(() => {
     if (!hasOutput || !isFilteringActive) return output;
@@ -649,7 +685,9 @@ export function CommandBlockOutput({ className }: { className?: string }) {
 
   const lineCount = hasOutput ? output.split('\n').length : 0;
   const canFold =
-    !isFilteringActive && block.status !== 'running' && lineCount > FOLD_THRESHOLD;
+    !isFilteringActive &&
+    block.status !== 'running' &&
+    lineCount > FOLD_THRESHOLD;
   const collapsed = canFold && !expanded;
 
   if (!isVisible && !hasOutput) return null;
@@ -664,7 +702,9 @@ export function CommandBlockOutput({ className }: { className?: string }) {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/25 bg-amber-500/10 px-4 py-2">
           <div className="flex items-center gap-1.5 font-sans text-[11px] font-medium text-amber-300">
             <AlertTriangleIcon className="size-3.5 text-amber-400 shrink-0" />
-            <span>This command requires interactive TTY input (prompts/keybindings)</span>
+            <span>
+              This command requires interactive TTY input (prompts/keybindings)
+            </span>
           </div>
           {onRunInShell && (
             <Button
@@ -749,7 +789,10 @@ export function CommandBlockOutput({ className }: { className?: string }) {
           )}
         >
           <ChevronDownIcon
-            className={cn('size-3 transition-transform', expanded && 'rotate-180')}
+            className={cn(
+              'size-3 transition-transform',
+              expanded && 'rotate-180',
+            )}
           />
           {collapsed ? `Show all ${lineCount} lines` : 'Collapse output'}
         </button>
@@ -907,7 +950,9 @@ export function CommandBlockFooter({ className }: { className?: string }) {
             onClick={onExplain}
             disabled={isExplaining}
           >
-            <LightbulbIcon className={cn('size-3', isExplaining && 'animate-pulse')} />
+            <LightbulbIcon
+              className={cn('size-3', isExplaining && 'animate-pulse')}
+            />
             {block.explanation ? 'Re-explain' : 'Explain'}
           </Button>
         )}
@@ -975,8 +1020,14 @@ export function CommandBlockSkipped({ className }: { className?: string }) {
   if (block.status !== 'skipped') return null;
 
   return (
-    <div className={cn('px-4 py-2.5 font-sans text-xs text-muted-foreground/60', className)}>
-      Command skipped: <code className="text-muted-foreground/75">{block.command}</code>
+    <div
+      className={cn(
+        'px-4 py-2.5 font-sans text-xs text-muted-foreground/60',
+        className,
+      )}
+    >
+      Command skipped:{' '}
+      <code className="text-muted-foreground/75">{block.command}</code>
     </div>
   );
 }
@@ -988,7 +1039,12 @@ export interface AgentSummaryProps extends HTMLMotionProps<'div'> {
   isLoading?: boolean;
 }
 
-export function AgentSummary({ summary, isLoading, className, ...props }: AgentSummaryProps) {
+export function AgentSummary({
+  summary,
+  isLoading,
+  className,
+  ...props
+}: AgentSummaryProps) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}

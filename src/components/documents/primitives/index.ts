@@ -5,6 +5,10 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-export { PrimitiveNodeRenderer, computeFlexStyles, buildTokenMap } from './PrimitiveNodeRenderer';
+export {
+  PrimitiveNodeRenderer,
+  computeFlexStyles,
+  buildTokenMap,
+} from './PrimitiveNodeRenderer';
 export { NodeBreadcrumb, findNodePath } from './NodeBreadcrumb';
 export { DynamicLucideIcon } from './DynamicLucideIcon';

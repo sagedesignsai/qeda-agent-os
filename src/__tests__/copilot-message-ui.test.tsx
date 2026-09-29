@@ -44,7 +44,9 @@ describe('Agent-focused MessageList & ToolCard UI patterns', () => {
     );
 
     // Text content is visible
-    expect(screen.getByText('Break down my project into milestones')).toBeInTheDocument();
+    expect(
+      screen.getByText('Break down my project into milestones'),
+    ).toBeInTheDocument();
 
     // Copy button exists and functions
     const copyButton = screen.getByTitle('Copy prompt');
@@ -58,7 +60,9 @@ describe('Agent-focused MessageList & ToolCard UI patterns', () => {
     const retryButton = screen.getByTitle('Retry / edit prompt');
     expect(retryButton).toBeInTheDocument();
     fireEvent.click(retryButton);
-    expect(onRetry).toHaveBeenCalledWith('Break down my project into milestones');
+    expect(onRetry).toHaveBeenCalledWith(
+      'Break down my project into milestones',
+    );
   });
 
   it('renders reasoning in a compact single-line accordion that toggles on click', () => {
@@ -66,7 +70,10 @@ describe('Agent-focused MessageList & ToolCard UI patterns', () => {
       id: 'msg-2',
       role: 'assistant',
       parts: [
-        { type: 'reasoning', text: 'Analyzing existing tasks and calendar blocks.' },
+        {
+          type: 'reasoning',
+          text: 'Analyzing existing tasks and calendar blocks.',
+        },
         { type: 'text', text: 'Here is your plan for the day.' },
       ],
     };

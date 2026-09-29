@@ -41,7 +41,6 @@ export function getDb(): Database.Database {
   // If the binary isn't present (e.g. first dev run without rebuild),
   // RAG features degrade gracefully; other features are unaffected.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { getLoadablePath } = require('sqlite-vec') as {
       getLoadablePath: () => string;
     };

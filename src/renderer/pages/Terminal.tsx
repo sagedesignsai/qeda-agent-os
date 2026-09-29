@@ -51,7 +51,10 @@ import {
 } from '@/components/terminal/CommandBlock';
 import { TerminalGoalInput } from '@/components/terminal/TerminalGoalInput';
 import { TerminalWelcome } from '@/components/terminal/TerminalWelcome';
-import { XtermPane, type XtermPaneHandle } from '@/components/terminal/XtermPane';
+import {
+  XtermPane,
+  type XtermPaneHandle,
+} from '@/components/terminal/XtermPane';
 import { useTerminalSession } from '@/hooks/use-terminal-session';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
@@ -103,17 +106,35 @@ function ModeSwitcher({ mode, onChange, disabled }: ModeSwitcherProps) {
 
 function StatusBadge({ status }: { status: string }) {
   const configs: Record<string, { label: string; cls: string }> = {
-    idle:    { label: 'idle',    cls: 'bg-muted text-muted-foreground border-border' },
-    running: { label: 'running', cls: 'bg-sky-900/60 text-sky-300 border-sky-700/40 animate-pulse' },
-    done:    { label: 'done',    cls: 'bg-emerald-900/60 text-emerald-300 border-emerald-700/40' },
-    error:   { label: 'error',   cls: 'bg-rose-900/60 text-rose-300 border-rose-700/40' },
-    shell:   { label: 'shell',   cls: 'bg-violet-900/60 text-violet-300 border-violet-700/40' },
+    idle: {
+      label: 'idle',
+      cls: 'bg-muted text-muted-foreground border-border',
+    },
+    running: {
+      label: 'running',
+      cls: 'bg-sky-900/60 text-sky-300 border-sky-700/40 animate-pulse',
+    },
+    done: {
+      label: 'done',
+      cls: 'bg-emerald-900/60 text-emerald-300 border-emerald-700/40',
+    },
+    error: {
+      label: 'error',
+      cls: 'bg-rose-900/60 text-rose-300 border-rose-700/40',
+    },
+    shell: {
+      label: 'shell',
+      cls: 'bg-violet-900/60 text-violet-300 border-violet-700/40',
+    },
   };
   const cfg = configs[status] ?? configs.idle;
   return (
     <Badge
       variant="outline"
-      className={cn('h-5 border font-mono text-[10px] uppercase tracking-wide', cfg.cls)}
+      className={cn(
+        'h-5 border font-mono text-[10px] uppercase tracking-wide',
+        cfg.cls,
+      )}
     >
       {cfg.label}
     </Badge>
@@ -134,7 +155,7 @@ export default function Terminal() {
     withScope,
   } = useProjectScope();
   const bottomRef = useRef<HTMLDivElement>(null);
-  const xtermRef  = useRef<XtermPaneHandle>(null);
+  const xtermRef = useRef<XtermPaneHandle>(null);
 
   const [mode, setMode] = useState<TerminalMode>('agent');
   const [shellExited, setShellExited] = useState(false);
@@ -166,13 +187,19 @@ export default function Terminal() {
   }, []);
 
   // Context info: cwd & git branch for Warp-style rich prompt (Pillar 2)
-  const [contextInfo, setContextInfo] = useState<{ cwd?: string; gitBranch?: string | null }>({});
+  const [contextInfo, setContextInfo] = useState<{
+    cwd?: string;
+    gitBranch?: string | null;
+  }>({});
 
   const refreshContext = useCallback((targetCwd?: string) => {
     void window.electron.ipc
-      .invoke<{ cwd: string; gitBranch: string | null }>('terminal:get-context-info', {
-        cwd: targetCwd,
-      })
+      .invoke<{ cwd: string; gitBranch: string | null }>(
+        'terminal:get-context-info',
+        {
+          cwd: targetCwd,
+        },
+      )
       .then((info) => setContextInfo(info))
       .catch(() => {});
   }, []);
@@ -209,7 +236,9 @@ export default function Terminal() {
       return;
     }
     void window.electron.ipc
-      .invoke<{ id: string; cwd?: string } | null>('terminal:session-get', { id: sessionId })
+      .invoke<{ id: string; cwd?: string } | null>('terminal:session-get', {
+        id: sessionId,
+      })
       .then((data) => {
         if (data?.cwd) {
           setSessionCwd(data.cwd);
@@ -236,7 +265,8 @@ export default function Terminal() {
 
   const handleScroll = useCallback(() => {
     if (!scrollContainerRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const { scrollTop, scrollHeight, clientHeight } =
+      scrollContainerRef.current;
     userScrolledUpRef.current = scrollHeight - scrollTop - clientHeight > 80;
   }, []);
 
@@ -249,7 +279,8 @@ export default function Terminal() {
     if (scrollContainerRef.current && !userScrolledUpRef.current) {
       requestAnimationFrame(() => {
         if (scrollContainerRef.current && !userScrolledUpRef.current) {
-          scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+          scrollContainerRef.current.scrollTop =
+            scrollContainerRef.current.scrollHeight;
         }
       });
     }
@@ -289,11 +320,16 @@ export default function Terminal() {
       }
 
       try {
-        const folder = contextInfo.cwd ? contextInfo.cwd.split('/').filter(Boolean).pop() || '' : '';
-        const branchSuffix = contextInfo.gitBranch ? ` (${contextInfo.gitBranch})` : '';
+        const folder = contextInfo.cwd
+          ? contextInfo.cwd.split('/').filter(Boolean).pop() || ''
+          : '';
+        const branchSuffix = contextInfo.gitBranch
+          ? ` (${contextInfo.gitBranch})`
+          : '';
         const contextSuffix = folder ? ` · ${folder}${branchSuffix}` : '';
         const cmdText = intent.kind === 'command' ? intent.command : input;
-        const shortCmd = cmdText.length > 25 ? `${cmdText.slice(0, 22)}…` : cmdText;
+        const shortCmd =
+          cmdText.length > 25 ? `${cmdText.slice(0, 22)}…` : cmdText;
         const title = `${shortCmd}${contextSuffix}`;
 
         const session = await window.electron.ipc.invoke<{ id: string }>(
@@ -313,7 +349,16 @@ export default function Terminal() {
         toast.error('Could not create terminal session');
       }
     },
-    [sessionId, navigate, runGoal, runCommand, contextInfo, project, projectId, withScope],
+    [
+      sessionId,
+      navigate,
+      runGoal,
+      runCommand,
+      contextInfo,
+      project,
+      projectId,
+      withScope,
+    ],
   );
 
   useEffect(() => {
@@ -327,12 +372,16 @@ export default function Terminal() {
   }, [sessionId, runGoal, runCommand]);
 
   const hasBlocks = blocks.length > 0;
-  const isDone    = status === 'done' || status === 'error';
+  const isDone = status === 'done' || status === 'error';
   const isRunning = status === 'running';
 
-  const runningBlock = useMemo(() => blocks.find((b) => b.status === 'running'), [blocks]);
+  const runningBlock = useMemo(
+    () => blocks.find((b) => b.status === 'running'),
+    [blocks],
+  );
   const runningUrls = useMemo(
-    () => (runningBlock?.output ? extractLocalhostUrls(runningBlock.output) : []),
+    () =>
+      runningBlock?.output ? extractLocalhostUrls(runningBlock.output) : [],
     [runningBlock?.output],
   );
 
@@ -381,7 +430,11 @@ export default function Terminal() {
                 {runningUrls.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => void window.electron.ipc.invoke('terminal:open-url', { url: runningUrls[0] })}
+                    onClick={() =>
+                      void window.electron.ipc.invoke('terminal:open-url', {
+                        url: runningUrls[0],
+                      })
+                    }
                     className="inline-flex items-center gap-1 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-mono text-sky-200 hover:bg-sky-500/30 transition-colors cursor-pointer"
                     title={`Open ${runningUrls[0]}`}
                   >
@@ -414,10 +467,18 @@ export default function Terminal() {
 
       {/* ── Content area ────────────────────────────────────────────────────── */}
       <div className="relative flex-1 min-h-0 overflow-hidden">
-
         {/* ── Agent Mode ──────────────────────────────────────────────────── */}
-        <div className={cn('flex h-full flex-col min-h-0', mode !== 'agent' && 'hidden')}>
-          <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto">
+        <div
+          className={cn(
+            'flex h-full flex-col min-h-0',
+            mode !== 'agent' && 'hidden',
+          )}
+        >
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 min-h-0 overflow-y-auto"
+          >
             <div className="mx-auto max-w-3xl px-4 py-6">
               <AnimatePresence initial={false}>
                 {!hasBlocks && !isRunning ? (
@@ -549,7 +610,6 @@ export default function Terminal() {
             </div>
           )}
         </div>
-
       </div>
     </div>
   );

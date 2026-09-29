@@ -52,8 +52,13 @@ describe('buildNotebookPrompt', () => {
   });
 
   it('omits the audience line when none is given and includes it when present', () => {
-    expect(buildNotebookPrompt({ topic: 'x' })).not.toContain('Intended reader:');
-    const withAudience = buildNotebookPrompt({ topic: 'x', audience: 'beginners' });
+    expect(buildNotebookPrompt({ topic: 'x' })).not.toContain(
+      'Intended reader:',
+    );
+    const withAudience = buildNotebookPrompt({
+      topic: 'x',
+      audience: 'beginners',
+    });
     expect(withAudience).toContain('Intended reader: beginners');
   });
 

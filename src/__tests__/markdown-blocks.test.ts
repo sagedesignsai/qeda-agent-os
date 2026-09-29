@@ -64,7 +64,9 @@ describe('parseMarkdownToBlocks', () => {
   });
 
   it('keeps markdown-looking lines inside code fences as code', () => {
-    const blocks = parseMarkdownToBlocks('```\n# not a heading\n> not a quote\n```');
+    const blocks = parseMarkdownToBlocks(
+      '```\n# not a heading\n> not a quote\n```',
+    );
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe('code');
     expect(blocks[0].text).toBe('# not a heading\n> not a quote');
@@ -173,7 +175,9 @@ describe('block transforms', () => {
 
 describe('link and tag extraction', () => {
   it('extracts markdown links and classifies them', () => {
-    const links = extractLinks('See [docs](https://example.com) and [note](doc:abc-123).');
+    const links = extractLinks(
+      'See [docs](https://example.com) and [note](doc:abc-123).',
+    );
     expect(links).toEqual([
       { label: 'docs', target: 'https://example.com', kind: 'web' },
       { label: 'note', target: 'doc:abc-123', kind: 'doc' },
@@ -182,20 +186,28 @@ describe('link and tag extraction', () => {
 
   it('extracts wiki links', () => {
     const links = extractLinks('Link to [[Meeting Notes]] and [[Page|alias]].');
-    expect(links.map((l) => l.target)).toEqual(['wiki:Meeting Notes', 'wiki:Page']);
+    expect(links.map((l) => l.target)).toEqual([
+      'wiki:Meeting Notes',
+      'wiki:Page',
+    ]);
     expect(links[1].label).toBe('alias');
   });
 
   it('extracts tags without heading anchors', () => {
-    expect(extractTags('value #alpha and #beta/gamma but not # heading')).toEqual([
-      'alpha',
-      'beta/gamma',
-    ]);
+    expect(
+      extractTags('value #alpha and #beta/gamma but not # heading'),
+    ).toEqual(['alpha', 'beta/gamma']);
   });
 
   it('extracts outline, doc links and doc tags from blocks', () => {
     const blocks = parseMarkdownToBlocks(
-      ['# Plan', '', 'Research [x](https://x.example) #research', '', 'See [[Other Page]]'].join('\n'),
+      [
+        '# Plan',
+        '',
+        'Research [x](https://x.example) #research',
+        '',
+        'See [[Other Page]]',
+      ].join('\n'),
     );
     expect(extractOutline(blocks).map((h) => h.text)).toEqual(['Plan']);
     expect(extractDocLinks(blocks)).toHaveLength(2);
@@ -205,7 +217,9 @@ describe('link and tag extraction', () => {
 
 describe('image blocks', () => {
   it('parses a standalone markdown image into an image block', () => {
-    const blocks = parseMarkdownToBlocks('![A screenshot](https://img.example/a.png)');
+    const blocks = parseMarkdownToBlocks(
+      '![A screenshot](https://img.example/a.png)',
+    );
     expect(blocks).toHaveLength(1);
     expect(blocks[0].type).toBe('image');
     expect(blocks[0].text).toBe('![A screenshot](https://img.example/a.png)');
@@ -224,10 +238,13 @@ describe('image blocks', () => {
       url: 'https://x.example/y.png',
     });
     // An image embedded in a sentence is not a standalone image block.
-    expect(parseImageMarkdown('see ![Alt](https://x.example/y.png) for more')).toBeNull();
-    expect(parseMarkdownToBlocks('see ![Alt](https://x.example/y.png) for more')[0].type).toBe(
-      'paragraph',
-    );
+    expect(
+      parseImageMarkdown('see ![Alt](https://x.example/y.png) for more'),
+    ).toBeNull();
+    expect(
+      parseMarkdownToBlocks('see ![Alt](https://x.example/y.png) for more')[0]
+        .type,
+    ).toBe('paragraph');
   });
 
   it('does not treat image URLs as backlinks or tags', () => {
@@ -254,9 +271,18 @@ describe('markdown paste handling', () => {
 
   it('replaces an empty paragraph with the pasted blocks', () => {
     const blocks = parseMarkdownToBlocks('');
-    const result = insertParsedBlocksAt(blocks, blocks[0].id, '# Title\n\nBody', 0, 0);
+    const result = insertParsedBlocksAt(
+      blocks,
+      blocks[0].id,
+      '# Title\n\nBody',
+      0,
+      0,
+    );
     expect(result).not.toBeNull();
-    expect(result!.blocks.map((b) => b.type)).toEqual(['heading1', 'paragraph']);
+    expect(result!.blocks.map((b) => b.type)).toEqual([
+      'heading1',
+      'paragraph',
+    ]);
     expect(result!.blocks[0].text).toBe('Title');
     expect(result!.focusId).toBe(result!.blocks[0].id);
   });
@@ -266,8 +292,15 @@ describe('markdown paste handling', () => {
     const startedAt = blocks[0].id;
     const result = insertParsedBlocksAt(blocks, startedAt, '## Section', 7, 7)!;
     expect(result.blocks).toHaveLength(2);
-    expect(result.blocks[0]).toMatchObject({ id: startedAt, type: 'paragraph', text: 'Intro: ' });
-    expect(result.blocks[1]).toMatchObject({ type: 'heading2', text: 'Section' });
+    expect(result.blocks[0]).toMatchObject({
+      id: startedAt,
+      type: 'paragraph',
+      text: 'Intro: ',
+    });
+    expect(result.blocks[1]).toMatchObject({
+      type: 'heading2',
+      text: 'Section',
+    });
   });
 
   it('rejoins trailing text as a paragraph when the paste ends in a block', () => {
@@ -286,12 +319,17 @@ describe('markdown paste handling', () => {
     const blocks = parseMarkdownToBlocks('AB');
     const [first] = blocks;
     const result = insertParsedBlocksAt(blocks, first.id, '# H\n\nTail', 1, 1)!;
-    expect(result.blocks[2]).toMatchObject({ type: 'paragraph', text: 'TailB' });
+    expect(result.blocks[2]).toMatchObject({
+      type: 'paragraph',
+      text: 'TailB',
+    });
   });
 
   it('returns null for non-block pastes, code blocks and missing blocks', () => {
     const prose = parseMarkdownToBlocks('hello');
-    expect(insertParsedBlocksAt(prose, prose[0].id, 'plain words', 5, 5)).toBeNull();
+    expect(
+      insertParsedBlocksAt(prose, prose[0].id, 'plain words', 5, 5),
+    ).toBeNull();
 
     const code = parseMarkdownToBlocks('```\nlet x = 1\n```');
     expect(insertParsedBlocksAt(code, code[0].id, '# H', 0, 0)).toBeNull();
@@ -301,7 +339,13 @@ describe('markdown paste handling', () => {
 
   it('gives inserted blocks fresh ids', () => {
     const blocks = parseMarkdownToBlocks('');
-    const result = insertParsedBlocksAt(blocks, blocks[0].id, '# A\n\nB\n\nC', 0, 0)!;
+    const result = insertParsedBlocksAt(
+      blocks,
+      blocks[0].id,
+      '# A\n\nB\n\nC',
+      0,
+      0,
+    )!;
     const ids = result.blocks.map((b) => b.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).not.toContain(blocks[0].id);

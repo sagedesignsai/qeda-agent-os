@@ -320,8 +320,8 @@ function WelcomeStep() {
         </div>
         <DialogTitle className="text-xl">Welcome to Qeda</DialogTitle>
         <DialogDescription>
-          Qeda organises work around <strong>projects</strong> — an outcome,
-          its tasks, the repo you build it in, and the docs that describe it.
+          Qeda organises work around <strong>projects</strong> — an outcome, its
+          tasks, the repo you build it in, and the docs that describe it.
           Let&apos;s set up your first one. It takes about thirty seconds.
         </DialogDescription>
       </DialogHeader>
@@ -460,7 +460,8 @@ function ProjectStep({
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Terminal sessions and agents in this project will run from this folder.
+            Terminal sessions and agents in this project will run from this
+            folder.
           </p>
         </div>
 
@@ -502,8 +503,8 @@ function FirstTaskStep({
       <DialogHeader>
         <DialogTitle>What&apos;s the first step?</DialogTitle>
         <DialogDescription>
-          One concrete task for <strong>{projectName || 'your project'}</strong>.
-          Skip this if you&apos;d rather start empty.
+          One concrete task for <strong>{projectName || 'your project'}</strong>
+          . Skip this if you&apos;d rather start empty.
         </DialogDescription>
       </DialogHeader>
 
@@ -573,8 +574,8 @@ function ReadyStep({ projectName }: { projectName: string }) {
         <DialogTitle>You&apos;re set up</DialogTitle>
         <DialogDescription>
           <strong>{projectName || 'Your project'}</strong> is ready. Tasks, time
-          blocks, terminal sessions, and chats you create from here can all point
-          back at it — and the Inbox is always there for quick capture.
+          blocks, terminal sessions, and chats you create from here can all
+          point back at it — and the Inbox is always there for quick capture.
         </DialogDescription>
       </DialogHeader>
     </>

@@ -29,8 +29,10 @@ import { cn } from '@/lib/utils';
 
 type Output = Record<string, unknown>;
 
-const asArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
-const asString = (value: unknown): string => (typeof value === 'string' ? value : '');
+const asArray = <T,>(value: unknown): T[] =>
+  Array.isArray(value) ? (value as T[]) : [];
+const asString = (value: unknown): string =>
+  typeof value === 'string' ? value : '';
 const asNumber = (value: unknown): number | undefined =>
   typeof value === 'number' ? value : undefined;
 
@@ -44,7 +46,12 @@ function CardShell({
   className?: string;
 }) {
   return (
-    <div className={cn('overflow-hidden rounded-lg border bg-card text-sm', className)}>
+    <div
+      className={cn(
+        'overflow-hidden rounded-lg border bg-card text-sm',
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -63,7 +70,9 @@ function CardHeader({
     <div className="flex items-center gap-2 border-b bg-muted/30 px-3 py-2">
       <span className="text-muted-foreground">{icon}</span>
       <span className="font-medium">{label}</span>
-      {meta && <span className="ml-auto flex items-center gap-1.5">{meta}</span>}
+      {meta && (
+        <span className="ml-auto flex items-center gap-1.5">{meta}</span>
+      )}
     </div>
   );
 }
@@ -123,7 +132,9 @@ export function SearchResultsCard({ output }: { output: Output }) {
                 rel="noreferrer"
                 className="group flex items-start gap-1.5 text-xs font-medium text-primary hover:underline"
               >
-                <span className="line-clamp-1">{result.title || result.url}</span>
+                <span className="line-clamp-1">
+                  {result.title || result.url}
+                </span>
                 <ExternalLinkIcon className="mt-0.5 h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
               </a>
               {result.snippet && (
@@ -164,7 +175,9 @@ export function ScrapeCard({ output }: { output: Output }) {
         }
       />
       <div className="px-3 py-2">
-        <div className="text-xs font-medium text-foreground">{title || url}</div>
+        <div className="text-xs font-medium text-foreground">
+          {title || url}
+        </div>
         <a
           href={url}
           target="_blank"
@@ -229,7 +242,9 @@ export function DocsCard({ output }: { output: Output }) {
         {codeSnippets.map((snippet, index) => (
           <div key={`${snippet.title ?? index}-${index}`} className="px-3 py-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium">{snippet.title || 'Snippet'}</span>
+              <span className="text-xs font-medium">
+                {snippet.title || 'Snippet'}
+              </span>
               {snippet.language && (
                 <Badge variant="secondary" className="font-mono text-[10px]">
                   {snippet.language}
@@ -237,7 +252,9 @@ export function DocsCard({ output }: { output: Output }) {
               )}
             </div>
             {snippet.description && (
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{snippet.description}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {snippet.description}
+              </p>
             )}
             {snippet.code && (
               <pre className="mt-1.5 max-h-64 overflow-auto rounded bg-muted p-2 text-[11px] leading-relaxed">
@@ -259,7 +276,9 @@ export function DocsCard({ output }: { output: Output }) {
           </div>
         ))}
         {codeSnippets.length === 0 && infoSnippets.length === 0 && (
-          <p className="px-3 py-3 text-xs text-muted-foreground">No documentation found.</p>
+          <p className="px-3 py-3 text-xs text-muted-foreground">
+            No documentation found.
+          </p>
         )}
       </div>
     </CardShell>
@@ -294,7 +313,9 @@ export function ImageGridCard({ output }: { output: Output }) {
         }
       />
       {images.length === 0 ? (
-        <p className="px-3 py-3 text-xs text-muted-foreground">No images found.</p>
+        <p className="px-3 py-3 text-xs text-muted-foreground">
+          No images found.
+        </p>
       ) : (
         <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-3">
           {images.map((image, index) => (
@@ -368,13 +389,20 @@ export function TranscriptCard({ output }: { output: Output }) {
   const filePath = asString(output.filePath);
   return (
     <CardShell>
-      <CardHeader icon={<FileTextIcon className="h-3.5 w-3.5" />} label="Transcription" />
+      <CardHeader
+        icon={<FileTextIcon className="h-3.5 w-3.5" />}
+        label="Transcription"
+      />
       <div className="px-3 py-2">
         {filePath && (
-          <div className="mb-1 truncate text-[10px] text-muted-foreground">{filePath}</div>
+          <div className="mb-1 truncate text-[10px] text-muted-foreground">
+            {filePath}
+          </div>
         )}
         <p className="whitespace-pre-wrap text-xs">
-          {text || <span className="text-muted-foreground">No speech detected.</span>}
+          {text || (
+            <span className="text-muted-foreground">No speech detected.</span>
+          )}
         </p>
       </div>
     </CardShell>
@@ -413,8 +441,13 @@ export function GitStatusCard({ output }: { output: Output }) {
         label={branch}
         meta={
           <>
-            <Badge variant={clean ? 'secondary' : 'outline'} className="gap-1 text-[10px]">
-              {clean ? 'clean' : `${asNumber(output.changedFileCount) ?? changes.length} changed`}
+            <Badge
+              variant={clean ? 'secondary' : 'outline'}
+              className="gap-1 text-[10px]"
+            >
+              {clean
+                ? 'clean'
+                : `${asNumber(output.changedFileCount) ?? changes.length} changed`}
             </Badge>
             {ahead > 0 && (
               <Badge variant="secondary" className="text-[10px]">
@@ -435,7 +468,9 @@ export function GitStatusCard({ output }: { output: Output }) {
           {truncated && <span>list truncated</span>}
         </div>
       )}
-      {changes.length > 0 && <ChangeList changes={changes} truncated={truncated} />}
+      {changes.length > 0 && (
+        <ChangeList changes={changes} truncated={truncated} />
+      )}
     </CardShell>
   );
 }
@@ -455,7 +490,11 @@ function ChangeList({
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-1 px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
       >
-        {open ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
+        {open ? (
+          <ChevronDownIcon className="size-3" />
+        ) : (
+          <ChevronRightIcon className="size-3" />
+        )}
         {open ? 'Hide' : 'Show'} changed files
         {truncated && <span className="ml-1 opacity-70">(partial)</span>}
       </button>
@@ -506,7 +545,10 @@ export function GitLogCard({ output }: { output: Output }) {
       ) : (
         <ul className="divide-y">
           {commits.map((c) => (
-            <li key={c.sha} className="flex items-start gap-2 px-3 py-1.5 text-[11px]">
+            <li
+              key={c.sha}
+              className="flex items-start gap-2 px-3 py-1.5 text-[11px]"
+            >
               <span className="shrink-0 font-mono text-muted-foreground">
                 {c.sha?.slice(0, 7)}
               </span>
@@ -527,9 +569,11 @@ export function GitLogCard({ output }: { output: Output }) {
 
 /** `gitDiffStat` — what changed, as per-file counts. */
 export function DiffStatCard({ output }: { output: Output }) {
-  const files = asArray<{ file?: string; added?: number | null; removed?: number | null }>(
-    output.files,
-  );
+  const files = asArray<{
+    file?: string;
+    added?: number | null;
+    removed?: number | null;
+  }>(output.files);
   const truncated = output.filesTruncated === true;
   const added = asNumber(output.totalAdded) ?? 0;
   const removed = asNumber(output.totalRemoved) ?? 0;
@@ -547,11 +591,16 @@ export function DiffStatCard({ output }: { output: Output }) {
         }
       />
       {files.length === 0 ? (
-        <p className="px-3 py-2 text-[11px] text-muted-foreground">No changes.</p>
+        <p className="px-3 py-2 text-[11px] text-muted-foreground">
+          No changes.
+        </p>
       ) : (
         <ul className="max-h-56 overflow-auto border-t px-3 py-1.5 font-mono text-[11px]">
           {files.map((f, i) => (
-            <li key={`${f.file}-${i}`} className="flex items-center gap-2 py-px">
+            <li
+              key={`${f.file}-${i}`}
+              className="flex items-center gap-2 py-px"
+            >
               <span className="min-w-0 flex-1 truncate">{f.file}</span>
               {/* Binary files report null rather than a count. */}
               <span className="shrink-0 text-emerald-500">
@@ -598,18 +647,24 @@ export function GrepResultsCard({ output }: { output: Output }) {
         label={pattern ? `“${pattern}”` : 'Search'}
         meta={
           <Badge variant="secondary" className="gap-1 text-[10px]">
-            {total} in {asNumber(output.filesWithMatches) ?? results.length} file
-            {(asNumber(output.filesWithMatches) ?? results.length) === 1 ? '' : 's'}
+            {total} in {asNumber(output.filesWithMatches) ?? results.length}{' '}
+            file
+            {(asNumber(output.filesWithMatches) ?? results.length) === 1
+              ? ''
+              : 's'}
           </Badge>
         }
       />
       {truncated && (
         <div className="border-b bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-600 dark:text-amber-500">
-          {asString(output.truncatedReason) || 'Results truncated'} — this is not the full set.
+          {asString(output.truncatedReason) || 'Results truncated'} — this is
+          not the full set.
         </div>
       )}
       {results.length === 0 ? (
-        <p className="px-3 py-2 text-[11px] text-muted-foreground">No matches.</p>
+        <p className="px-3 py-2 text-[11px] text-muted-foreground">
+          No matches.
+        </p>
       ) : (
         <ul className="max-h-72 divide-y overflow-auto">
           {results.map((f) => (
@@ -618,14 +673,16 @@ export function GrepResultsCard({ output }: { output: Output }) {
                 {f.file}
               </div>
               <ul className="mt-0.5 font-mono text-[11px]">
-                {asArray<{ line?: number; text?: string }>(f.matches).map((m, i) => (
-                  <li key={i} className="flex gap-2 py-px">
-                    <span className="w-10 shrink-0 text-right text-muted-foreground/70">
-                      {m.line}
-                    </span>
-                    <span className="min-w-0 flex-1 break-all">{m.text}</span>
-                  </li>
-                ))}
+                {asArray<{ line?: number; text?: string }>(f.matches).map(
+                  (m, i) => (
+                    <li key={i} className="flex gap-2 py-px">
+                      <span className="w-10 shrink-0 text-right text-muted-foreground/70">
+                        {m.line}
+                      </span>
+                      <span className="min-w-0 flex-1 break-all">{m.text}</span>
+                    </li>
+                  ),
+                )}
               </ul>
             </li>
           ))}

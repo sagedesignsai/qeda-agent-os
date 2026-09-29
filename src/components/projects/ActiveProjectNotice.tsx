@@ -57,10 +57,18 @@ export interface ActiveProjectNoticeProps {
 function useResolvedState(overrides: ActiveProjectNoticeProps) {
   const scope = useProjectScope();
   return {
-    id: overrides.projectId !== undefined ? overrides.projectId : scope.activeProjectId,
-    name: overrides.projectName !== undefined ? overrides.projectName : scope.activeProjectName,
+    id:
+      overrides.projectId !== undefined
+        ? overrides.projectId
+        : scope.activeProjectId,
+    name:
+      overrides.projectName !== undefined
+        ? overrides.projectName
+        : scope.activeProjectName,
     defaulted:
-      overrides.isDefaulted !== undefined ? overrides.isDefaulted : scope.isActiveProjectDefaulted,
+      overrides.isDefaulted !== undefined
+        ? overrides.isDefaulted
+        : scope.isActiveProjectDefaulted,
   };
 }
 
@@ -88,8 +96,8 @@ export function ActiveProjectNotice({
           </p>
           {!compact && (
             <p className="text-[11px] leading-snug text-amber-700/80 dark:text-amber-500/70">
-              The copilot can still plan and break down tasks, but it cannot read
-              your code, files, or repository until a project is active.
+              The copilot can still plan and break down tasks, but it cannot
+              read your code, files, or repository until a project is active.
             </p>
           )}
           <Link
@@ -113,7 +121,9 @@ export function ActiveProjectNotice({
         'flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground',
         className,
       )}
-      title={defaulted ? 'Restored from your last session' : 'Scoped to this project'}
+      title={
+        defaulted ? 'Restored from your last session' : 'Scoped to this project'
+      }
     >
       <Icon className="size-3 shrink-0" />
       <span className="shrink-0">

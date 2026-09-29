@@ -55,10 +55,16 @@ export const PROJECT_STATUS_META: Record<
   ProjectStatus,
   { label: string; className: string }
 > = {
-  active: { label: 'Active', className: 'text-emerald-400 border-emerald-500/40' },
+  active: {
+    label: 'Active',
+    className: 'text-emerald-400 border-emerald-500/40',
+  },
   paused: { label: 'Paused', className: 'text-amber-400 border-amber-500/40' },
   done: { label: 'Done', className: 'text-sky-400 border-sky-500/40' },
-  archived: { label: 'Archived', className: 'text-zinc-400 border-zinc-500/40' },
+  archived: {
+    label: 'Archived',
+    className: 'text-zinc-400 border-zinc-500/40',
+  },
 };
 
 interface ProjectCardProps {
@@ -88,9 +94,7 @@ export function ProjectCard({
       : 0;
 
   const deadline =
-    project.deadline !== null
-      ? new Date(project.deadline * 1000)
-      : null;
+    project.deadline !== null ? new Date(project.deadline * 1000) : null;
   const overdueDeadline = deadline !== null && deadline.getTime() < Date.now();
   const isInbox = project.id === 'inbox';
 
@@ -131,7 +135,10 @@ export function ProjectCard({
             <span className="truncate text-sm font-medium">{project.name}</span>
             <Badge
               variant="outline"
-              className={cn('shrink-0 text-[10px] font-normal', status.className)}
+              className={cn(
+                'shrink-0 text-[10px] font-normal',
+                status.className,
+              )}
             >
               {status.label}
             </Badge>

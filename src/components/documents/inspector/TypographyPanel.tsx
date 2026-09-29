@@ -59,7 +59,11 @@ const FONT_WEIGHTS = [
   { value: '800', label: '800 - Extra Bold' },
 ];
 
-export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps) {
+export function TypographyPanel({
+  node,
+  tokens,
+  onChange,
+}: TypographyPanelProps) {
   const fontFamilyValue =
     typeof node.fontFamily === 'string'
       ? node.fontFamily
@@ -70,7 +74,9 @@ export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps
       {/* Font Family & Weight */}
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] font-medium text-muted-foreground">Family</Label>
+          <Label className="text-[11px] font-medium text-muted-foreground">
+            Family
+          </Label>
           <Select
             value={fontFamilyValue}
             onValueChange={(val) => onChange({ fontFamily: val })}
@@ -89,7 +95,9 @@ export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps
         </div>
 
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] font-medium text-muted-foreground">Weight</Label>
+          <Label className="text-[11px] font-medium text-muted-foreground">
+            Weight
+          </Label>
           <Select
             value={String(node.fontWeight ?? (node.bold ? 700 : 400))}
             onValueChange={(val) => {
@@ -117,14 +125,18 @@ export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps
       {/* Font Size, Line Height, Letter Spacing */}
       <div className="grid grid-cols-3 gap-2">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] font-medium text-muted-foreground">Size</Label>
+          <Label className="text-[11px] font-medium text-muted-foreground">
+            Size
+          </Label>
           <div className="flex items-center rounded-md border border-border/70 px-2 py-0.5 bg-background">
             <Input
               type="number"
               min={6}
               max={120}
               value={node.fontSize ?? 11}
-              onChange={(e) => onChange({ fontSize: Math.max(6, Number(e.target.value)) })}
+              onChange={(e) =>
+                onChange({ fontSize: Math.max(6, Number(e.target.value)) })
+              }
               className="h-6 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
             />
             <span className="ml-1 text-[10px] text-muted-foreground">pt</span>
@@ -132,7 +144,9 @@ export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps
         </div>
 
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] font-medium text-muted-foreground">Line H</Label>
+          <Label className="text-[11px] font-medium text-muted-foreground">
+            Line H
+          </Label>
           <div className="flex items-center rounded-md border border-border/70 px-2 py-0.5 bg-background">
             <Input
               type="number"
@@ -147,13 +161,17 @@ export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps
         </div>
 
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] font-medium text-muted-foreground">Spacing</Label>
+          <Label className="text-[11px] font-medium text-muted-foreground">
+            Spacing
+          </Label>
           <div className="flex items-center rounded-md border border-border/70 px-2 py-0.5 bg-background">
             <Input
               type="number"
               step={0.2}
               value={node.letterSpacing ?? 0}
-              onChange={(e) => onChange({ letterSpacing: Number(e.target.value) })}
+              onChange={(e) =>
+                onChange({ letterSpacing: Number(e.target.value) })
+              }
               className="h-6 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
             />
           </div>
@@ -169,7 +187,9 @@ export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps
             variant={node.bold ? 'secondary' : 'ghost'}
             size="icon"
             className="h-6 w-6 rounded-xs cursor-pointer"
-            onClick={() => onChange({ bold: !node.bold, fontWeight: !node.bold ? 700 : 400 })}
+            onClick={() =>
+              onChange({ bold: !node.bold, fontWeight: !node.bold ? 700 : 400 })
+            }
             title="Bold"
           >
             <BoldIcon className="h-3 w-3" />
@@ -210,7 +230,9 @@ export function TypographyPanel({ node, tokens, onChange }: TypographyPanelProps
         <div className="flex items-center rounded-md border border-border/70 bg-muted/30 p-0.5">
           <Button
             type="button"
-            variant={node.align === 'left' || !node.align ? 'secondary' : 'ghost'}
+            variant={
+              node.align === 'left' || !node.align ? 'secondary' : 'ghost'
+            }
             size="icon"
             className="h-6 w-6 rounded-xs cursor-pointer"
             onClick={() => onChange({ align: 'left' })}

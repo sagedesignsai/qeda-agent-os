@@ -11,7 +11,11 @@
 import Database from 'better-sqlite3';
 import { applyMigrations } from '../main/db/schema';
 import { useTestDatabase } from '../main/db/client';
-import { createNotebook, createPagesForNotebook, listPages } from '../main/db/workspace';
+import {
+  createNotebook,
+  createPagesForNotebook,
+  listPages,
+} from '../main/db/workspace';
 
 let db: Database.Database;
 
@@ -37,7 +41,8 @@ describe('createPagesForNotebook', () => {
       },
       {
         title: 'Getting Started',
-        markdown: '# Getting Started\n\nInstall Godot.\n\n```gdscript\nextends Node2D\n```',
+        markdown:
+          '# Getting Started\n\nInstall Godot.\n\n```gdscript\nextends Node2D\n```',
         parentTitle: 'Overview',
       },
       {
@@ -73,7 +78,10 @@ describe('createPagesForNotebook', () => {
     expect(overview).toBeDefined();
 
     const body = db
-      .prepare<[string], { type: string; text: string; language: string | null }>(
+      .prepare<
+        [string],
+        { type: string; text: string; language: string | null }
+      >(
         'SELECT type, text, language FROM blocks WHERE page_id = ? ORDER BY position',
       )
       .all(section.pageId);

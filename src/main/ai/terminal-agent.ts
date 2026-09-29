@@ -388,8 +388,11 @@ export async function executeDirectCommand({
   if (emitTimer) clearTimeout(emitTimer);
 
   // 0 is normal success; 130 is SIGINT (user Ctrl+C) which is a clean stop
-  const finalStatus: TerminalBlock['status'] =
-    timedOut ? 'error' : exitCode === 0 || exitCode === 130 ? 'done' : 'error';
+  const finalStatus: TerminalBlock['status'] = timedOut
+    ? 'error'
+    : exitCode === 0 || exitCode === 130
+      ? 'done'
+      : 'error';
   const finalOutput = timedOut ? `${output}\n[Command timed out]` : output;
 
   updateBlock(block.id, {
@@ -428,16 +431,18 @@ export async function executeDirectCommand({
  * Build the terminal-specific tool set with the approval gate wired in.
  * Each tool call goes through the block → propose → approval → execute cycle.
  */
-function buildTerminalTools(
-  sessionId: string,
-  emitter: TerminalAgentEmitter,
-) {
+function buildTerminalTools(sessionId: string, emitter: TerminalAgentEmitter) {
   const runShell = tool({
     description:
       'Run a shell command. Each call will be shown to the user for approval before executing. Use the `thought` field to explain WHY you are running this command.',
     inputSchema: z.object({
-      command: z.string().describe('The shell command to run (passed to sh -c).'),
-      cwd: z.string().optional().describe('Working directory. Defaults to home.'),
+      command: z
+        .string()
+        .describe('The shell command to run (passed to sh -c).'),
+      cwd: z
+        .string()
+        .optional()
+        .describe('Working directory. Defaults to home.'),
       thought: z
         .string()
         .describe('1–2 sentences explaining what this command does and why.'),
@@ -509,11 +514,12 @@ function buildTerminalTools(
 
       if (emitTimer) clearTimeout(emitTimer);
 
-      const finalStatus: TerminalBlock['status'] =
-        timedOut ? 'error' : exitCode === 0 ? 'done' : 'error';
-      const finalOutput = timedOut
-        ? `${output}\n[Command timed out]`
-        : output;
+      const finalStatus: TerminalBlock['status'] = timedOut
+        ? 'error'
+        : exitCode === 0
+          ? 'done'
+          : 'error';
+      const finalOutput = timedOut ? `${output}\n[Command timed out]` : output;
 
       updateBlock(block.id, {
         status: finalStatus,
@@ -563,7 +569,8 @@ function buildTerminalTools(
   });
 
   const listDirTool = tool({
-    description: 'List files and directories at a path. Does not require approval.',
+    description:
+      'List files and directories at a path. Does not require approval.',
     inputSchema: z.object({
       path: z.string().describe('Directory path to list.'),
     }),
@@ -580,7 +587,11 @@ function buildTerminalTools(
                 size: s.size,
               };
             } catch {
-              return { name: e.name, type: e.isDirectory() ? 'dir' : 'file', size: 0 };
+              return {
+                name: e.name,
+                type: e.isDirectory() ? 'dir' : 'file',
+                size: 0,
+              };
             }
           }),
         );
@@ -624,7 +635,6 @@ export async function runGoal({
     const tools = buildTerminalTools(sessionId, emitter);
 
     const result = await generateText({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       model: model as any,
       system: TERMINAL_AGENT_INSTRUCTIONS,
       prompt: goal,
@@ -686,7 +696,6 @@ export async function explainBlock(blockId: string): Promise<string> {
   ].filter(Boolean);
 
   const result = await generateText({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     model: model as any,
     system:
       'You are a terminal expert. Explain shell command output in plain language. Be concise (2–4 sentences). Focus on what the output means, not the command syntax.',
@@ -724,7 +733,6 @@ export async function suggestFix(
   const context = precedingContext(block);
 
   const result = await generateText({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     model: model as any,
     system: [
       'You are a shell debugging expert. A command failed; diagnose why and propose a fix.',

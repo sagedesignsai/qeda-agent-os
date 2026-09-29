@@ -80,7 +80,11 @@ export const chatApprovalPolicy = createApprovalPolicy(chatToolPolicies);
  * so it is not one the user should be able to fire silently.
  */
 export function requiresApproval(toolName: string): boolean {
-  const decision = chatApprovalPolicy({ toolCall: { toolName, dynamic: false } });
-  return decision === 'user-approval'
-    || (typeof decision === 'object' && decision.type === 'denied');
+  const decision = chatApprovalPolicy({
+    toolCall: { toolName, dynamic: false },
+  });
+  return (
+    decision === 'user-approval' ||
+    (typeof decision === 'object' && decision.type === 'denied')
+  );
 }

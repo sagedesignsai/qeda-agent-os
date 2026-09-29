@@ -12,7 +12,14 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+} from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,7 +54,12 @@ interface ToolItem {
    * `key` must match the tool's Zod inputSchema field name exactly – a
    * mismatch fails validation in the main process.
    */
-  defaultParam: { key: string; label: string; placeholder: string; defaultValue: string };
+  defaultParam: {
+    key: string;
+    label: string;
+    placeholder: string;
+    defaultValue: string;
+  };
 }
 
 export default function Tools() {
@@ -58,12 +70,15 @@ export default function Tools() {
   const [lastSuccess, setLastSuccess] = useState<boolean | null>(null);
   // Approval flags come from the main process so this page can never disagree
   // with the real `toolApprovalPolicy`.
-  const [approvalFlags, setApprovalFlags] = useState<Record<string, boolean>>({});
+  const [approvalFlags, setApprovalFlags] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const tools: ToolItem[] = [
     {
       name: 'runShell',
-      description: 'Execute shell commands in the workspace with real-time output and exit codes.',
+      description:
+        'Execute shell commands in the workspace with real-time output and exit codes.',
       requiresApproval: true,
       category: 'Terminal',
       defaultParam: {
@@ -75,7 +90,8 @@ export default function Tools() {
     },
     {
       name: 'listDir',
-      description: 'List contents of a directory including file sizes and subdirectories.',
+      description:
+        'List contents of a directory including file sizes and subdirectories.',
       requiresApproval: false,
       category: 'Filesystem',
       defaultParam: {
@@ -87,7 +103,8 @@ export default function Tools() {
     },
     {
       name: 'readFile',
-      description: 'Read UTF-8 content of a file within the workspace with line count limits.',
+      description:
+        'Read UTF-8 content of a file within the workspace with line count limits.',
       requiresApproval: false,
       category: 'Filesystem',
       defaultParam: {
@@ -99,7 +116,8 @@ export default function Tools() {
     },
     {
       name: 'readClipboard',
-      description: 'Read the current text content from the operating system clipboard.',
+      description:
+        'Read the current text content from the operating system clipboard.',
       requiresApproval: false,
       category: 'Clipboard',
       defaultParam: {
@@ -111,7 +129,8 @@ export default function Tools() {
     },
     {
       name: 'writeClipboard',
-      description: 'Write text to the operating system clipboard. Requires user approval.',
+      description:
+        'Write text to the operating system clipboard. Requires user approval.',
       requiresApproval: true,
       category: 'Clipboard',
       defaultParam: {
@@ -123,7 +142,8 @@ export default function Tools() {
     },
     {
       name: 'searchDocs',
-      description: 'Semantic search over the documents indexed in the local vector store.',
+      description:
+        'Semantic search over the documents indexed in the local vector store.',
       requiresApproval: false,
       category: 'RAG',
       defaultParam: {
@@ -135,7 +155,8 @@ export default function Tools() {
     },
     {
       name: 'listIndexed',
-      description: 'List every file path currently held in the local document index.',
+      description:
+        'List every file path currently held in the local document index.',
       requiresApproval: false,
       category: 'RAG',
       defaultParam: {
@@ -187,10 +208,13 @@ export default function Tools() {
         params[currentTool.defaultParam.key] = paramValue;
       }
 
-      const res = await window.electron.ipc.invoke<Record<string, unknown>>('tools:execute', {
-        toolName: currentTool.name,
-        params,
-      });
+      const res = await window.electron.ipc.invoke<Record<string, unknown>>(
+        'tools:execute',
+        {
+          toolName: currentTool.name,
+          params,
+        },
+      );
 
       setOutputResult(JSON.stringify(res, null, 2));
       setLastSuccess(true);
@@ -215,8 +239,12 @@ export default function Tools() {
               <Code2Icon className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-foreground">Registered Tools</h2>
-              <p className="text-[11px] text-muted-foreground">Native device capabilities</p>
+              <h2 className="text-sm font-semibold text-foreground">
+                Registered Tools
+              </h2>
+              <p className="text-[11px] text-muted-foreground">
+                Native device capabilities
+              </p>
             </div>
           </div>
         </div>
@@ -246,7 +274,9 @@ export default function Tools() {
                       {t.requiresApproval ? 'Approval' : 'Auto'}
                     </Badge>
                   </div>
-                  <p className="text-[11px] line-clamp-2 leading-relaxed opacity-80">{t.description}</p>
+                  <p className="text-[11px] line-clamp-2 leading-relaxed opacity-80">
+                    {t.description}
+                  </p>
                 </div>
               );
             })}
@@ -263,14 +293,26 @@ export default function Tools() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    {currentTool.category === 'Terminal' && <TerminalIcon className="h-4 w-4" />}
-                    {currentTool.category === 'Filesystem' && <FolderIcon className="h-4 w-4" />}
-                    {currentTool.category === 'Clipboard' && <ClipboardIcon className="h-4 w-4" />}
-                    {currentTool.category === 'RAG' && <FileSearchIcon className="h-4 w-4" />}
+                    {currentTool.category === 'Terminal' && (
+                      <TerminalIcon className="h-4 w-4" />
+                    )}
+                    {currentTool.category === 'Filesystem' && (
+                      <FolderIcon className="h-4 w-4" />
+                    )}
+                    {currentTool.category === 'Clipboard' && (
+                      <ClipboardIcon className="h-4 w-4" />
+                    )}
+                    {currentTool.category === 'RAG' && (
+                      <FileSearchIcon className="h-4 w-4" />
+                    )}
                   </div>
                   <div>
-                    <CardTitle className="text-base font-mono">{currentTool.name}</CardTitle>
-                    <CardDescription className="text-xs">{currentTool.description}</CardDescription>
+                    <CardTitle className="text-base font-mono">
+                      {currentTool.name}
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      {currentTool.description}
+                    </CardDescription>
                   </div>
                 </div>
 
@@ -286,7 +328,10 @@ export default function Tools() {
                       <span>Requires Approval</span>
                     </Badge>
                   ) : (
-                    <Badge variant="secondary" className="text-xs gap-1 text-emerald-600 dark:text-emerald-400">
+                    <Badge
+                      variant="secondary"
+                      className="text-xs gap-1 text-emerald-600 dark:text-emerald-400"
+                    >
                       <ShieldCheckIcon className="h-3 w-3" />
                       <span>Autonomous Execution</span>
                     </Badge>
@@ -327,7 +372,8 @@ export default function Tools() {
               {currentTool.defaultParam.key === 'none' && (
                 <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
                   <span className="text-xs text-muted-foreground">
-                    This tool reads system state without requiring input arguments.
+                    This tool reads system state without requiring input
+                    arguments.
                   </span>
                   <Button
                     onClick={handleExecute}
@@ -367,9 +413,16 @@ export default function Tools() {
               )}
             </div>
 
-            <Terminal output={outputResult || '// Press "Execute" to run the tool and inspect live output.'}>
+            <Terminal
+              output={
+                outputResult ||
+                '// Press "Execute" to run the tool and inspect live output.'
+              }
+            >
               <TerminalHeader>
-                <TerminalTitle>$ {currentTool.name}({paramValue || ''})</TerminalTitle>
+                <TerminalTitle>
+                  $ {currentTool.name}({paramValue || ''})
+                </TerminalTitle>
               </TerminalHeader>
               <TerminalContent />
             </Terminal>

@@ -73,7 +73,9 @@ function cleanSnippet(raw: string): string {
  * Run one web search. Throws `BraveSearchError` on HTTP/network failure with a
  * message that is safe to show to the user (429 = quota exhausted, 401 = bad key).
  */
-export async function braveWebSearch(options: BraveSearchOptions): Promise<WebResult[]> {
+export async function braveWebSearch(
+  options: BraveSearchOptions,
+): Promise<WebResult[]> {
   const {
     query,
     count = 5,

@@ -86,12 +86,18 @@ describe('pages and blocks', () => {
   it('savePageBlocks persists blocks and markdown', () => {
     const notebook = createNotebook('N');
     const page = createPage(notebook.id, 'P');
-    const blocks = parseMarkdownToBlocks('# Heading\n\nBody text.\n\n- [ ] todo');
+    const blocks = parseMarkdownToBlocks(
+      '# Heading\n\nBody text.\n\n- [ ] todo',
+    );
 
     savePageBlocks(page.id, blocks, { title: 'P' });
 
     const loaded = loadPageBlocks(page.id);
-    expect(loaded.map((b) => b.type)).toEqual(['heading1', 'paragraph', 'todo']);
+    expect(loaded.map((b) => b.type)).toEqual([
+      'heading1',
+      'paragraph',
+      'todo',
+    ]);
     expect(loaded[2].checked).toBe(false);
     expect(loadPageMarkdown(page.id)).toContain('# Heading');
   });
@@ -107,8 +113,14 @@ describe('pages and blocks', () => {
 
   it('deletePage cascades and removes the FTS row', () => {
     const notebook = createNotebook('N');
-    const page = createPageWithBlocks(notebook.id, 'To delete', parseMarkdownToBlocks('abc #tag'));
-    savePageBlocks(page.id, parseMarkdownToBlocks('findme-xyz'), { skipVersion: true });
+    const page = createPageWithBlocks(
+      notebook.id,
+      'To delete',
+      parseMarkdownToBlocks('abc #tag'),
+    );
+    savePageBlocks(page.id, parseMarkdownToBlocks('findme-xyz'), {
+      skipVersion: true,
+    });
     expect(searchPages('findme-xyz')).toHaveLength(1);
 
     deletePage(page.id);
@@ -122,15 +134,25 @@ describe('FTS search', () => {
     expect(buildFtsQuery('hello world')).toBe('"hello"* AND "world"*');
     // Punctuation-bearing tokens are dropped; only quoted word fragments
     // survive, so FTS5 MATCH operators can never be injected.
-    expect(buildFtsQuery('" DROP TABLE pages; --')).toBe('"DROP"* AND "TABLE"*');
+    expect(buildFtsQuery('" DROP TABLE pages; --')).toBe(
+      '"DROP"* AND "TABLE"*',
+    );
     expect(buildFtsQuery('hello OR 1=1 --')).toBe('"hello"* AND "OR"*');
     expect(buildFtsQuery('a ! @')).toBe('');
   });
 
   it('finds pages by title and body with snippets', () => {
     const notebook = createNotebook('N');
-    const alpha = createPageWithBlocks(notebook.id, 'Alpha Page', parseMarkdownToBlocks('quantum tunnelling basics'));
-    createPageWithBlocks(notebook.id, 'Beta Page', parseMarkdownToBlocks('nothing relevant here'));
+    const alpha = createPageWithBlocks(
+      notebook.id,
+      'Alpha Page',
+      parseMarkdownToBlocks('quantum tunnelling basics'),
+    );
+    createPageWithBlocks(
+      notebook.id,
+      'Beta Page',
+      parseMarkdownToBlocks('nothing relevant here'),
+    );
 
     const byTitle = searchPages('alpha');
     expect(byTitle.map((h) => h.page_id)).toContain(alpha.id);
@@ -144,8 +166,16 @@ describe('FTS search', () => {
 describe('backlinks, tags, related', () => {
   it('resolves wiki links into backlink edges', () => {
     const notebook = createNotebook('N');
-    const target = createPageWithBlocks(notebook.id, 'Target', parseMarkdownToBlocks('content'));
-    const source = createPageWithBlocks(notebook.id, 'Source', parseMarkdownToBlocks('See [[Target]] here'));
+    const target = createPageWithBlocks(
+      notebook.id,
+      'Target',
+      parseMarkdownToBlocks('content'),
+    );
+    const source = createPageWithBlocks(
+      notebook.id,
+      'Source',
+      parseMarkdownToBlocks('See [[Target]] here'),
+    );
 
     expect(listBacklinks(target.id).map((p) => p.id)).toContain(source.id);
     expect(listOutgoingLinks(source.id).map((p) => p.id)).toContain(target.id);
@@ -153,16 +183,36 @@ describe('backlinks, tags, related', () => {
 
   it('resolves doc: links by page id', () => {
     const notebook = createNotebook('N');
-    const target = createPageWithBlocks(notebook.id, 'T', parseMarkdownToBlocks('x'));
-    createPageWithBlocks(notebook.id, 'S', parseMarkdownToBlocks(`[ref](doc:${target.id})`));
+    const target = createPageWithBlocks(
+      notebook.id,
+      'T',
+      parseMarkdownToBlocks('x'),
+    );
+    createPageWithBlocks(
+      notebook.id,
+      'S',
+      parseMarkdownToBlocks(`[ref](doc:${target.id})`),
+    );
     expect(listBacklinks(target.id)).toHaveLength(1);
   });
 
   it('extracts #tags and computes related pages', () => {
     const notebook = createNotebook('N');
-    const a = createPageWithBlocks(notebook.id, 'A', parseMarkdownToBlocks('stuff #energetics'));
-    const b = createPageWithBlocks(notebook.id, 'B', parseMarkdownToBlocks('other #energetics'));
-    createPageWithBlocks(notebook.id, 'C', parseMarkdownToBlocks('none #other-tag'));
+    const a = createPageWithBlocks(
+      notebook.id,
+      'A',
+      parseMarkdownToBlocks('stuff #energetics'),
+    );
+    const b = createPageWithBlocks(
+      notebook.id,
+      'B',
+      parseMarkdownToBlocks('other #energetics'),
+    );
+    createPageWithBlocks(
+      notebook.id,
+      'C',
+      parseMarkdownToBlocks('none #other-tag'),
+    );
 
     expect(listPageTags(a.id)).toEqual(['energetics']);
     expect(listTags().map((t) => t.name)).toContain('energetics');
@@ -178,8 +228,12 @@ describe('versions', () => {
     const notebook = createNotebook('N');
     const page = createPage(notebook.id, 'P');
 
-    savePageBlocks(page.id, parseMarkdownToBlocks('version one'), { title: 'P' });
-    savePageBlocks(page.id, parseMarkdownToBlocks('version two'), { title: 'P' });
+    savePageBlocks(page.id, parseMarkdownToBlocks('version one'), {
+      title: 'P',
+    });
+    savePageBlocks(page.id, parseMarkdownToBlocks('version two'), {
+      title: 'P',
+    });
 
     const versions = listPageVersions(page.id);
     expect(versions).toHaveLength(2);
@@ -201,14 +255,39 @@ describe('research store', () => {
       notebookId: notebook.id,
     });
 
-    const s1 = addResearchSource({ runId: run.id, url: 'https://a.example', title: 'A' });
-    addResearchSource({ runId: run.id, url: 'https://a.example', title: 'A dup' }); // deduped
-    const s2 = addResearchSource({ runId: run.id, pageId: page.id, kind: 'page', title: 'Internal' });
+    const s1 = addResearchSource({
+      runId: run.id,
+      url: 'https://a.example',
+      title: 'A',
+    });
+    addResearchSource({
+      runId: run.id,
+      url: 'https://a.example',
+      title: 'A dup',
+    }); // deduped
+    const s2 = addResearchSource({
+      runId: run.id,
+      pageId: page.id,
+      kind: 'page',
+      title: 'Internal',
+    });
 
-    addResearchEvidence({ runId: run.id, sourceId: s1.id, quote: 'X is important', note: 'core claim' });
-    addResearchEvidence({ runId: run.id, sourceId: s2.id, quote: 'See our notes' });
+    addResearchEvidence({
+      runId: run.id,
+      sourceId: s1.id,
+      quote: 'X is important',
+      note: 'core claim',
+    });
+    addResearchEvidence({
+      runId: run.id,
+      sourceId: s2.id,
+      quote: 'See our notes',
+    });
 
-    updateResearchRun(run.id, { status: 'completed', report: '## Findings\nX matters.' });
+    updateResearchRun(run.id, {
+      status: 'completed',
+      report: '## Findings\nX matters.',
+    });
 
     const trace = getResearchTrace(run.id)!;
     expect(trace.run.status).toBe('completed');

@@ -26,11 +26,7 @@ export interface TerminalSession {
 }
 
 export type TerminalBlockStatus =
-  | 'pending'
-  | 'running'
-  | 'done'
-  | 'error'
-  | 'skipped';
+  'pending' | 'running' | 'done' | 'error' | 'skipped';
 
 export interface TerminalBlock {
   id: string;
@@ -68,9 +64,8 @@ export function listTerminalSessions(opts?: {
 /** Fetch a single session by id, or null when not found. */
 export function getTerminalSession(id: string): TerminalSession | null {
   return (
-    (getDb()
-      .prepare(`SELECT * FROM terminal_sessions WHERE id = ?`)
-      .get(id) as TerminalSession | undefined) ?? null
+    (getDb().prepare(`SELECT * FROM terminal_sessions WHERE id = ?`).get(id) as
+      TerminalSession | undefined) ?? null
   );
 }
 
@@ -116,12 +111,30 @@ export function updateTerminalSession(
   const sets: string[] = ['updated_at = ?'];
   const values: unknown[] = [now];
 
-  if (patch.title  !== undefined) { sets.push('title = ?');  values.push(patch.title); }
-  if (patch.goal   !== undefined) { sets.push('goal = ?');   values.push(patch.goal); }
-  if (patch.status !== undefined) { sets.push('status = ?'); values.push(patch.status); }
-  if (patch.cwd    !== undefined) { sets.push('cwd = ?');    values.push(patch.cwd); }
-  if (patch.env    !== undefined) { sets.push('env = ?');    values.push(patch.env); }
-  if (patch.project_id !== undefined) { sets.push('project_id = ?'); values.push(patch.project_id); }
+  if (patch.title !== undefined) {
+    sets.push('title = ?');
+    values.push(patch.title);
+  }
+  if (patch.goal !== undefined) {
+    sets.push('goal = ?');
+    values.push(patch.goal);
+  }
+  if (patch.status !== undefined) {
+    sets.push('status = ?');
+    values.push(patch.status);
+  }
+  if (patch.cwd !== undefined) {
+    sets.push('cwd = ?');
+    values.push(patch.cwd);
+  }
+  if (patch.env !== undefined) {
+    sets.push('env = ?');
+    values.push(patch.env);
+  }
+  if (patch.project_id !== undefined) {
+    sets.push('project_id = ?');
+    values.push(patch.project_id);
+  }
 
   values.push(id);
   getDb()
@@ -139,9 +152,8 @@ export function deleteTerminalSession(id: string): void {
 /** Fetch a single block by id, or null when not found. */
 export function getBlock(id: string): TerminalBlock | null {
   return (
-    (getDb()
-      .prepare(`SELECT * FROM terminal_blocks WHERE id = ?`)
-      .get(id) as TerminalBlock | undefined) ?? null
+    (getDb().prepare(`SELECT * FROM terminal_blocks WHERE id = ?`).get(id) as
+      TerminalBlock | undefined) ?? null
   );
 }
 
@@ -198,7 +210,12 @@ export function updateBlock(
   patch: Partial<
     Pick<
       TerminalBlock,
-      'status' | 'output' | 'exit_code' | 'explanation' | 'command' | 'duration_ms'
+      | 'status'
+      | 'output'
+      | 'exit_code'
+      | 'explanation'
+      | 'command'
+      | 'duration_ms'
     >
   >,
 ): void {

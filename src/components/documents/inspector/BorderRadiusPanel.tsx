@@ -73,7 +73,10 @@ export function BorderRadiusPanel({
     });
   };
 
-  const handleCornerRadiusChange = (corner: keyof NodeCornerRadius, val: number) => {
+  const handleCornerRadiusChange = (
+    corner: keyof NodeCornerRadius,
+    val: number,
+  ) => {
     onChangeRadius({
       ...currentRadius,
       [corner]: Math.max(0, val),
@@ -91,7 +94,10 @@ export function BorderRadiusPanel({
     });
   };
 
-  const handleSideBorderChange = (side: 'topWidth' | 'rightWidth' | 'bottomWidth' | 'leftWidth', val: number) => {
+  const handleSideBorderChange = (
+    side: 'topWidth' | 'rightWidth' | 'bottomWidth' | 'leftWidth',
+    val: number,
+  ) => {
     onChangeBorder({
       ...currentBorder,
       [side]: Math.max(0, val),
@@ -112,7 +118,9 @@ export function BorderRadiusPanel({
             variant="ghost"
             size="icon"
             className={`h-5 w-5 cursor-pointer ${
-              individualRadius ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+              individualRadius
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
             onClick={() => setIndividualRadius(!individualRadius)}
             title={individualRadius ? 'Uniform radius' : 'Individual corners'}
@@ -123,13 +131,17 @@ export function BorderRadiusPanel({
 
         {!individualRadius ? (
           <div className="flex items-center gap-2 rounded-md border border-border/70 px-2.5 py-1 bg-background">
-            <span className="text-[10px] text-muted-foreground">All Corners</span>
+            <span className="text-[10px] text-muted-foreground">
+              All Corners
+            </span>
             <Input
               type="number"
               min={0}
               max={999}
               value={currentRadius.topLeft}
-              onChange={(e) => handleUniformRadiusChange(Number(e.target.value))}
+              onChange={(e) =>
+                handleUniformRadiusChange(Number(e.target.value))
+              }
               className="h-5 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
             />
             <span className="text-[10px] text-muted-foreground">pt</span>
@@ -146,13 +158,18 @@ export function BorderRadiusPanel({
                 key={key}
                 className="flex items-center gap-1.5 rounded-md border border-border/70 px-2 py-1 bg-background"
               >
-                <span className="text-[10px] text-muted-foreground font-mono">{label}</span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {label}
+                </span>
                 <Input
                   type="number"
                   min={0}
                   value={currentRadius[key as keyof NodeCornerRadius]}
                   onChange={(e) =>
-                    handleCornerRadiusChange(key as keyof NodeCornerRadius, Number(e.target.value))
+                    handleCornerRadiusChange(
+                      key as keyof NodeCornerRadius,
+                      Number(e.target.value),
+                    )
                   }
                   className="h-5 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
                 />
@@ -175,10 +192,14 @@ export function BorderRadiusPanel({
             variant="ghost"
             size="icon"
             className={`h-5 w-5 cursor-pointer ${
-              individualBorder ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+              individualBorder
+                ? 'text-primary'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
             onClick={() => setIndividualBorder(!individualBorder)}
-            title={individualBorder ? 'Uniform border width' : 'Individual sides'}
+            title={
+              individualBorder ? 'Uniform border width' : 'Individual sides'
+            }
           >
             <SlidersIcon className="h-3 w-3" />
           </Button>
@@ -210,7 +231,9 @@ export function BorderRadiusPanel({
                 min={0}
                 max={20}
                 value={currentBorder.topWidth}
-                onChange={(e) => handleUniformBorderChange(Number(e.target.value))}
+                onChange={(e) =>
+                  handleUniformBorderChange(Number(e.target.value))
+                }
                 className="h-5 border-0 p-0 text-right text-xs focus-visible:ring-0 shadow-none font-mono"
               />
               <span className="text-[10px] text-muted-foreground">pt</span>
@@ -230,14 +253,17 @@ export function BorderRadiusPanel({
                 key={key}
                 className="flex items-center gap-1.5 rounded-md border border-border/70 px-2 py-1 bg-background"
               >
-                <span className="text-[10px] text-muted-foreground font-mono">{label}</span>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {label}
+                </span>
                 <Input
                   type="number"
                   min={0}
                   value={currentBorder[key as keyof NodeBorder] as number}
                   onChange={(e) =>
                     handleSideBorderChange(
-                      key as 'topWidth' | 'rightWidth' | 'bottomWidth' | 'leftWidth',
+                      key as
+                        'topWidth' | 'rightWidth' | 'bottomWidth' | 'leftWidth',
                       Number(e.target.value),
                     )
                   }

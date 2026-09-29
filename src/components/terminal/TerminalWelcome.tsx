@@ -73,9 +73,12 @@ export function TerminalWelcome({ className }: TerminalWelcomeProps) {
           />
         </div>
         <div>
-          <h2 className="font-semibold text-foreground">Qeda Agentic Terminal</h2>
+          <h2 className="font-semibold text-foreground">
+            Qeda Agentic Terminal
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground/75">
-            Describe a goal. The agent plans, approves, and completes the commands.
+            Describe a goal. The agent plans, approves, and completes the
+            commands.
           </p>
         </div>
       </motion.div>

@@ -13,7 +13,11 @@ import { context7Docs } from '../main/services/docs';
 import { unsplashSearch } from '../main/services/images';
 import { synthesizeSpeech, deepgramTranscribe } from '../main/services/speech';
 import { ServiceHttpError } from '../main/services/http';
-import { getService, envServiceKey, servicesByCategory } from '../main/services/registry';
+import {
+  getService,
+  envServiceKey,
+  servicesByCategory,
+} from '../main/services/registry';
 
 // ─── Fake fetch helpers ───────────────────────────────────────────────────────
 
@@ -71,7 +75,12 @@ describe('searchWithProvider', () => {
       jsonResponse({
         answer: 'Messi plays for Inter Miami.',
         results: [
-          { title: 'Messi', url: 'https://example.com/a', content: 'Forward', score: 0.9 },
+          {
+            title: 'Messi',
+            url: 'https://example.com/a',
+            content: 'Forward',
+            score: 0.9,
+          },
           { title: 'no url', content: 'skipped' },
         ],
       }),
@@ -105,8 +114,18 @@ describe('searchWithProvider', () => {
       jsonResponse({
         answerBox: { answer: '42' },
         organic: [
-          { title: 'A', link: 'https://a.example', snippet: 'first', position: 1 },
-          { title: 'B', link: 'https://b.example', snippet: 'second', position: 2 },
+          {
+            title: 'A',
+            link: 'https://a.example',
+            snippet: 'first',
+            position: 1,
+          },
+          {
+            title: 'B',
+            link: 'https://b.example',
+            snippet: 'second',
+            position: 2,
+          },
         ],
       }),
       calls,
@@ -119,19 +138,33 @@ describe('searchWithProvider', () => {
     });
 
     expect(response.answer).toBe('42');
-    expect(response.results.map((r) => r.url)).toEqual(['https://a.example', 'https://b.example']);
+    expect(response.results.map((r) => r.url)).toEqual([
+      'https://a.example',
+      'https://b.example',
+    ]);
     expect(header(calls[0].init, 'x-api-key')).toBe('serper-key');
   });
 
   it('maps Exa results', async () => {
     const fetchImpl = recorder(
       jsonResponse({
-        results: [{ title: 'Paper', url: 'https://arxiv.org/abs/1', text: 'Abstract…', publishedDate: '2024-01-01' }],
+        results: [
+          {
+            title: 'Paper',
+            url: 'https://arxiv.org/abs/1',
+            text: 'Abstract…',
+            publishedDate: '2024-01-01',
+          },
+        ],
       }),
       [],
     );
 
-    const response = await searchWithProvider('exa', { query: 'llm', apiKey: 'exa-key', fetchImpl });
+    const response = await searchWithProvider('exa', {
+      query: 'llm',
+      apiKey: 'exa-key',
+      fetchImpl,
+    });
     expect(response.results[0]).toMatchObject({
       title: 'Paper',
       url: 'https://arxiv.org/abs/1',
@@ -144,7 +177,15 @@ describe('searchWithProvider', () => {
     const fetchImpl = recorder(
       jsonResponse({
         success: true,
-        data: { web: [{ title: 'Docs', url: 'https://docs.example', description: 'How to' }] },
+        data: {
+          web: [
+            {
+              title: 'Docs',
+              url: 'https://docs.example',
+              description: 'How to',
+            },
+          ],
+        },
       }),
       [],
     );
@@ -154,11 +195,17 @@ describe('searchWithProvider', () => {
       apiKey: 'fc-key',
       fetchImpl,
     });
-    expect(response.results[0]).toMatchObject({ url: 'https://docs.example', provider: 'firecrawl' });
+    expect(response.results[0]).toMatchObject({
+      url: 'https://docs.example',
+      provider: 'firecrawl',
+    });
   });
 
   it('translates a 401 into a key message', async () => {
-    const fetchImpl = recorder(errorResponse(401, { detail: { error: 'Unauthorized' } }), []);
+    const fetchImpl = recorder(
+      errorResponse(401, { detail: { error: 'Unauthorized' } }),
+      [],
+    );
     await expect(
       searchWithProvider('tavily', { query: 'x', apiKey: 'bad', fetchImpl }),
     ).rejects.toThrow(/rejected the API key/);
@@ -189,7 +236,10 @@ describe('firecrawlScrape', () => {
   });
 
   it('surfaces a failed scrape as an error', async () => {
-    const fetchImpl = recorder(jsonResponse({ success: false, error: 'Blocked' }), []);
+    const fetchImpl = recorder(
+      jsonResponse({ success: false, error: 'Blocked' }),
+      [],
+    );
     await expect(
       firecrawlScrape({ url: 'https://example.com', apiKey: 'key', fetchImpl }),
     ).rejects.toThrow(/Blocked/);
@@ -208,10 +258,14 @@ describe('context7Docs', () => {
             codeTitle: 'State',
             codeDescription: 'How to use state',
             codeLanguage: 'TypeScript',
-            codeList: [{ language: 'typescript', code: 'const [x] = useState()' }],
+            codeList: [
+              { language: 'typescript', code: 'const [x] = useState()' },
+            ],
           },
         ],
-        infoSnippets: [{ breadcrumb: 'Hooks', content: 'useState returns a tuple' }],
+        infoSnippets: [
+          { breadcrumb: 'Hooks', content: 'useState returns a tuple' },
+        ],
       }),
       calls,
     );
@@ -243,9 +297,15 @@ describe('unsplashSearch', () => {
           {
             id: 'abc',
             alt_description: 'A cat',
-            urls: { regular: 'https://img/regular', thumb: 'https://img/thumb' },
+            urls: {
+              regular: 'https://img/regular',
+              thumb: 'https://img/thumb',
+            },
             links: { html: 'https://unsplash.com/photos/abc' },
-            user: { name: 'Jane', links: { html: 'https://unsplash.com/@jane' } },
+            user: {
+              name: 'Jane',
+              links: { html: 'https://unsplash.com/@jane' },
+            },
             width: 100,
             height: 200,
           },
@@ -254,7 +314,11 @@ describe('unsplashSearch', () => {
       calls,
     );
 
-    const result = await unsplashSearch({ query: 'cat', apiKey: 'acc', fetchImpl });
+    const result = await unsplashSearch({
+      query: 'cat',
+      apiKey: 'acc',
+      fetchImpl,
+    });
     expect(result.total).toBe(100);
     expect(result.images[0]).toMatchObject({
       id: 'abc',
@@ -272,7 +336,10 @@ describe('unsplashSearch', () => {
 describe('synthesizeSpeech', () => {
   it('posts to ElevenLabs with the voice and returns audio bytes', async () => {
     const calls: Call[] = [];
-    const fetchImpl = recorder(binaryResponse(new Uint8Array([1, 2, 3]), 'audio/mpeg'), calls);
+    const fetchImpl = recorder(
+      binaryResponse(new Uint8Array([1, 2, 3]), 'audio/mpeg'),
+      calls,
+    );
 
     const audio = await synthesizeSpeech({
       provider: 'elevenlabs',
@@ -289,18 +356,34 @@ describe('synthesizeSpeech', () => {
 
   it('posts to Deepgram with Token auth', async () => {
     const calls: Call[] = [];
-    const fetchImpl = recorder(binaryResponse(new Uint8Array([9]), 'audio/mpeg'), calls);
+    const fetchImpl = recorder(
+      binaryResponse(new Uint8Array([9]), 'audio/mpeg'),
+      calls,
+    );
 
-    await synthesizeSpeech({ provider: 'deepgram', text: 'hi', apiKey: 'dg', fetchImpl });
+    await synthesizeSpeech({
+      provider: 'deepgram',
+      text: 'hi',
+      apiKey: 'dg',
+      fetchImpl,
+    });
     expect(calls[0].url).toContain('api.deepgram.com/v1/speak');
     expect(header(calls[0].init, 'authorization')).toBe('Token dg');
   });
 
   it('posts to Cartesia with its API version header', async () => {
     const calls: Call[] = [];
-    const fetchImpl = recorder(binaryResponse(new Uint8Array([7]), 'audio/mpeg'), calls);
+    const fetchImpl = recorder(
+      binaryResponse(new Uint8Array([7]), 'audio/mpeg'),
+      calls,
+    );
 
-    await synthesizeSpeech({ provider: 'cartesia', text: 'hi', apiKey: 'ct', fetchImpl });
+    await synthesizeSpeech({
+      provider: 'cartesia',
+      text: 'hi',
+      apiKey: 'ct',
+      fetchImpl,
+    });
     expect(calls[0].url).toBe('https://api.cartesia.ai/tts/bytes');
     expect(header(calls[0].init, 'cartesia-version')).toBe('2024-06-10');
   });
@@ -310,7 +393,11 @@ describe('deepgramTranscribe', () => {
   it('sends raw audio and extracts the transcript', async () => {
     const calls: Call[] = [];
     const fetchImpl = recorder(
-      jsonResponse({ results: { channels: [{ alternatives: [{ transcript: 'hello world' }] }] } }),
+      jsonResponse({
+        results: {
+          channels: [{ alternatives: [{ transcript: 'hello world' }] }],
+        },
+      }),
       calls,
     );
 

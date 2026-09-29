@@ -78,7 +78,9 @@ export function TerminalHistoryDialog({
       setSelectedIndex((prev) => (prev + 1) % filtered.length);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex((prev) => (prev - 1 + filtered.length) % filtered.length);
+      setSelectedIndex(
+        (prev) => (prev - 1 + filtered.length) % filtered.length,
+      );
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const target = filtered[selectedIndex];
@@ -174,8 +176,22 @@ export function TerminalHistoryDialog({
         </ScrollArea>
 
         <div className="border-t border-border/60 bg-muted/20 px-3 py-1.5 flex items-center justify-between text-[10px] font-sans text-muted-foreground/75">
-          <span>Press <kbd className="font-mono text-[9px] bg-muted px-1 rounded">Enter</kbd> to insert, <kbd className="font-mono text-[9px] bg-muted px-1 rounded">Shift+Enter</kbd> to run</span>
-          <span><kbd className="font-mono text-[9px] bg-muted px-1 rounded">↑</kbd> <kbd className="font-mono text-[9px] bg-muted px-1 rounded">↓</kbd> navigate</span>
+          <span>
+            Press{' '}
+            <kbd className="font-mono text-[9px] bg-muted px-1 rounded">
+              Enter
+            </kbd>{' '}
+            to insert,{' '}
+            <kbd className="font-mono text-[9px] bg-muted px-1 rounded">
+              Shift+Enter
+            </kbd>{' '}
+            to run
+          </span>
+          <span>
+            <kbd className="font-mono text-[9px] bg-muted px-1 rounded">↑</kbd>{' '}
+            <kbd className="font-mono text-[9px] bg-muted px-1 rounded">↓</kbd>{' '}
+            navigate
+          </span>
         </div>
       </DialogContent>
     </Dialog>
