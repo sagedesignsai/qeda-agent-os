@@ -781,10 +781,28 @@ export interface IpcChannels {
     req: { path: string };
     res: boolean;
   };
-  /** Retrieve video as base64 data URL for player rendering. */
+  /** Retrieve video or media file as base64 data URL for player rendering. */
   'studio:read-video-data': {
-    req: { takeId: string };
+    req: { takeId?: string; filePath?: string };
     res: string | null;
+  };
+  /** Create a fresh blank studio showcase project with canvas styling and empty tracks. */
+  'studio:create-blank-take': {
+    req: { projectId?: string | null; title?: string } | void;
+    res: StudioTake;
+  };
+  /** Open native OS file picker to import video/audio/image assets. */
+  'studio:import-media': {
+    req?: { types?: ('video' | 'audio' | 'image')[] };
+    res: {
+      canceled: boolean;
+      files: Array<{
+        name: string;
+        path: string;
+        sizeBytes: number;
+        type: 'video' | 'audio' | 'image';
+      }>;
+    };
   };
   /** Broadcast when any take changes, created, updated or deleted. */
   'studio:changed': void;

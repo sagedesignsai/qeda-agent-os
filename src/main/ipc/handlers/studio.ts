@@ -532,15 +532,123 @@ export function registerStudioHandlers({
 
   ipcMain.handle(
     'studio:read-video-data',
-    async (_e, { takeId }: { takeId: string }): Promise<string | null> => {
+    async (
+      _e,
+      req: { takeId?: string; filePath?: string },
+    ): Promise<string | null> => {
       try {
-        const take = getStudioTake(takeId);
-        if (!take || !take.videoPath) return null;
-        const buffer = await fs.readFile(take.videoPath);
-        return `data:video/webm;base64,${buffer.toString('base64')}`;
+        let p = req.filePath;
+        if (!p && req.takeId) {
+          const take = getStudioTake(req.takeId);
+          p = take?.videoPath;
+        }
+        if (!p) return null;
+        const buffer = await fs.readFile(p);
+        const ext = path.extname(p).toLowerCase().replace('.', '');
+        let mime = 'video/webm';
+        if (ext === 'mp4') mime = 'video/mp4';
+        else if (ext === 'mov') mime = 'video/quicktime';
+        else if (ext === 'mp3') mime = 'audio/mpeg';
+        else if (ext === 'wav') mime = 'audio/wav';
+        else if (ext === 'png') mime = 'image/png';
+        else if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+        else if (ext === 'webp') mime = 'image/webp';
+        return `data:${mime};base64,${buffer.toString('base64')}`;
       } catch {
         return null;
       }
+    },
+  );
+
+  ipcMain.handle(
+    'studio:create-blank-take',
+    async (
+      _e,
+      req?: { projectId?: string | null; title?: string },
+    ): Promise<StudioTake> => {
+      const id = nanoid();
+      const takeDir = getStudioDir(id);
+      await fs.mkdir(takeDir, { recursive: true });
+
+      const dateStr = new Date().toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      });
+      const saved = saveStudioTake({
+        id,
+        projectId: req?.projectId ?? null,
+        title: req?.title || `Blank Project (${dateStr})`,
+        sourceType: 'screen',
+        sourceName: 'Blank Canvas',
+        durationMs: 10000,
+        videoPath: '',
+        styling: DEFAULT_STUDIO_STYLING,
+        cuts: [],
+        zooms: [],
+        captions: [],
+      });
+
+      broadcastChanged();
+      return saved;
+    },
+  );
+
+  ipcMain.handle(
+    'studio:import-media',
+    async (
+      _e,
+      req?: { types?: ('video' | 'audio' | 'image')[] },
+    ): Promise<{
+      canceled: boolean;
+      files: Array<{
+        name: string;
+        path: string;
+        sizeBytes: number;
+        type: 'video' | 'audio' | 'image';
+      }>;
+    }> => {
+      const types = req?.types ?? ['video', 'audio', 'image'];
+      const extensions: string[] = [];
+      if (types.includes('video')) extensions.push('mp4', 'webm', 'mov', 'mkv');
+      if (types.includes('audio'))
+        extensions.push('mp3', 'wav', 'aac', 'ogg', 'm4a');
+      if (types.includes('image'))
+        extensions.push('png', 'jpg', 'jpeg', 'webp', 'gif', 'svg');
+
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Import Media Assets',
+        buttonLabel: 'Import Assets',
+        properties: ['openFile', 'multiSelections'],
+        filters: [{ name: 'Media Files', extensions }],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { canceled: true, files: [] };
+      }
+
+      const files = await Promise.all(
+        result.filePaths.map(async (filePath) => {
+          const stats = await fs.stat(filePath);
+          const ext = path.extname(filePath).toLowerCase().replace('.', '');
+          let mediaType: 'video' | 'audio' | 'image' = 'video';
+          if (['mp3', 'wav', 'aac', 'ogg', 'm4a'].includes(ext)) {
+            mediaType = 'audio';
+          } else if (
+            ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)
+          ) {
+            mediaType = 'image';
+          }
+
+          return {
+            name: path.basename(filePath),
+            path: filePath,
+            sizeBytes: stats.size,
+            type: mediaType,
+          };
+        }),
+      );
+
+      return { canceled: false, files };
     },
   );
 

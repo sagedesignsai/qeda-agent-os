@@ -17,8 +17,6 @@ import {
   getStudioTake,
   saveStudioTake,
   deleteStudioTake,
-  DEFAULT_STUDIO_STYLING,
-  type StudioTake,
 } from '../main/db/studio-store';
 
 describe('Showcase Studio Database Store', () => {
@@ -28,7 +26,6 @@ describe('Showcase Studio Database Store', () => {
     db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
     applyMigrations(db);
-    // @ts-expect-error test harness pattern per AGENTS.md
     useTestDatabase(db);
   });
 

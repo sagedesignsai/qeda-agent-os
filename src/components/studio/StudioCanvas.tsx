@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
+import { FilmIcon } from 'lucide-react';
 import type {
   StudioStyling,
   StudioZoom,
@@ -78,7 +79,7 @@ export function StudioCanvas({
     if (!video || !videoLoaded) return;
 
     const diff = Math.abs(video.currentTime * 1000 - currentTimeMs);
-    if (diff > 250) {
+    if (diff > 80) {
       video.currentTime = currentTimeMs / 1000;
     }
   }, [currentTimeMs, videoLoaded]);
@@ -346,12 +347,31 @@ export function StudioCanvas({
         className="w-full h-full object-contain pointer-events-none select-none"
       />
 
-      {/* Placeholder when no video loaded */}
+      {/* Sleek Canvas View when no video is loaded (Blank Canvas mode) */}
       {!videoUrl && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground/60 p-6 text-center">
-          <p className="text-sm">
-            No take selected. Record or select a take to preview.
-          </p>
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center"
+          style={{
+            background: styling.background.includes('gradient')
+              ? styling.background
+              : styling.background || '#090a0f',
+          }}
+        >
+          <div className="w-full max-w-md p-8 rounded-2xl border-2 border-dashed border-border/40 bg-black/40 backdrop-blur-md flex flex-col items-center gap-3 shadow-2xl">
+            <div className="p-3 rounded-full bg-primary/10 border border-primary/20 text-primary">
+              <FilmIcon className="w-6 h-6" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <h3 className="text-sm font-semibold text-foreground">
+                Blank Showcase Canvas
+              </h3>
+              <p className="text-xs text-muted-foreground/80 max-w-xs">
+                Drag media or click{' '}
+                <span className="text-primary font-bold">+</span> in the Content
+                Panel on the left to add video, text, effects, or audio.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

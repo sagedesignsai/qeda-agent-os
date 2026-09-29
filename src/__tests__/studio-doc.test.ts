@@ -42,7 +42,10 @@ function frameDoc(overrides: Partial<StudioDoc> = {}): StudioDoc {
   return { ...baseFrame, ...overrides };
 }
 
-const textNode = (content: string, overrides: Record<string, unknown> = {}) => ({
+const textNode = (
+  content: string,
+  overrides: Record<string, unknown> = {},
+) => ({
   kind: 'text',
   content,
   size: 48,
@@ -130,10 +133,7 @@ describe('Studio document schema', () => {
           background: {
             kind: 'linear-gradient',
             angle: 90,
-            stops: [
-              { offset: 0 },
-              { token: 'card', offset: 1 },
-            ],
+            stops: [{ offset: 0 }, { token: 'card', offset: 1 }],
           },
         }),
       ).success,
@@ -166,7 +166,9 @@ describe('compileDoc', () => {
 
   it('escapes text content, including quotes and ampersands', () => {
     const html = compileDoc(
-      frameDoc({ children: [textNode('<script>alert(1)</script> & "x"')] as never }),
+      frameDoc({
+        children: [textNode('<script>alert(1)</script> & "x"')] as never,
+      }),
     );
     expect(html).not.toContain('<script>');
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
@@ -176,7 +178,9 @@ describe('compileDoc', () => {
 
   it('escapes a text node that tries to close its own element', () => {
     const html = compileDoc(
-      frameDoc({ children: [textNode('</div><script>alert(1)</script>')] as never }),
+      frameDoc({
+        children: [textNode('</div><script>alert(1)</script>')] as never,
+      }),
     );
     expect(html).not.toContain('</div><script>');
   });
@@ -191,9 +195,9 @@ describe('compileDoc', () => {
     const html = compileDoc(frameDoc());
     expect(html).toContain('Content-Security-Policy');
     expect(html).toContain("default-src 'none'");
-    expect(html).toContain("img-src data: file:");
+    expect(html).toContain('img-src data: file:');
     expect(html).toContain("style-src 'unsafe-inline'");
-    expect(html).toContain("font-src data:");
+    expect(html).toContain('font-src data:');
   });
 
   it('contains no remote reference at all', () => {
@@ -281,7 +285,9 @@ describe('docOutline', () => {
       frameDoc({ children: [textNode('Hello', { size: 48 })] as never }),
     );
     expect(outline).toContain('frame 400x200');
-    expect(outline).toContain('text "Hello" (size 48, weight 400, token/primary)');
+    expect(outline).toContain(
+      'text "Hello" (size 48, weight 400, token/primary)',
+    );
   });
 
   it('collapses multi-line text onto one outline line', () => {

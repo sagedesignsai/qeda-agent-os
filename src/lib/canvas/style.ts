@@ -76,10 +76,11 @@ export function num(n: number): string {
  */
 function transformOf(
   rotate: number | undefined,
-  scale: number | undefined,
+  scale?: number,
 ): string | undefined {
   const parts: string[] = [];
-  if (rotate !== undefined && rotate !== 0) parts.push(`rotate(${num(rotate)}deg)`);
+  if (rotate !== undefined && rotate !== 0)
+    parts.push(`rotate(${num(rotate)}deg)`);
   if (scale !== undefined && scale !== 1) parts.push(`scale(${num(scale)})`);
   return parts.length > 0 ? parts.join(' ') : undefined;
 }
@@ -152,7 +153,8 @@ export function nodeStyle(node: CanvasNode): Record<string, string> {
       d['border-radius'] = px(node.style.radius);
     }
     if (node.style.stroke !== undefined) {
-      d['border'] = `${px(node.style.strokeWidth ?? 1)} solid ${node.style.stroke}`;
+      d['border'] =
+        `${px(node.style.strokeWidth ?? 1)} solid ${node.style.stroke}`;
     }
     if (node.style.shadow !== undefined) {
       d['box-shadow'] = node.style.shadow;
@@ -241,9 +243,7 @@ export function nodeBounds(node: CanvasNode): Bounds {
  * wins" when a node is listed twice; that rule belongs to the caller, not
  * here). Purely derived — this value is never written back to a document.
  */
-export function groupBounds(
-  members: readonly CanvasNode[],
-): Bounds | null {
+export function groupBounds(members: readonly CanvasNode[]): Bounds | null {
   if (members.length === 0) return null;
   let b = nodeBounds(members[0] as CanvasNode);
   for (let i = 1; i < members.length; i += 1) {
@@ -252,7 +252,14 @@ export function groupBounds(
     const y0 = Math.min(b.y, n.y);
     const x1 = Math.max(b.x + b.w, n.x + n.w);
     const y1 = Math.max(b.y + b.h, n.y + n.h);
-    b = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+    b = {
+      x: x0,
+      y: y0,
+      w: x1 - x0,
+      h: y1 - y0,
+      cx: (x0 + x1) / 2,
+      cy: (y0 + y1) / 2,
+    };
   }
   return b;
 }

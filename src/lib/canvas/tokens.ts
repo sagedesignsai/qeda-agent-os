@@ -88,12 +88,14 @@ export function tokenVarName(name: TokenName): string {
 export const FONT_STACK =
   "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif";
 
-/** The monospace stack, for code-ish text nodes. Same rationale as `FONT_STACK`. */
+/**
+ * The monospace stack. Not referenced by any node in v1 — the schema has no
+ * per-node font-family field, because "which typeface" is a Phase 2+ question
+ * and adding a field now would be a field to migrate later. Declared here so a
+ * future phase has one place to point at.
+ */
 export const MONO_STACK =
   "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
 
 /** The custom property holding the default font stack. */
 export const FONT_VAR = '--canvas-font';
-
-/** The custom property holding the monospace stack. */
-export const MONO_VAR = '--canvas-font-mono';

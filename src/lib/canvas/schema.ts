@@ -109,7 +109,7 @@ export const cssColorLiteral = z
  * the token names is a real CSS colour keyword, so a literal can never be
  * silently reinterpreted.
  */
-export const ColorRef = z
+export const ColorRefSchema = z
   .union([
     z.enum(TOKEN_NAMES).transform((name) => `var(${tokenVarName(name)})`),
     cssColorLiteral,
@@ -118,7 +118,7 @@ export const ColorRef = z
     'a semantic token name, or a CSS colour literal; compiles to a CSS colour',
   );
 
-export type ColorRef = z.infer<typeof ColorRef>;
+export type ColorRef = z.infer<typeof ColorRefSchema>;
 
 /**
  * A CSS `box-shadow` shorthand, validated by allow-list for the same reason as
@@ -129,12 +129,12 @@ export type ColorRef = z.infer<typeof ColorRef>;
  */
 const SHADOW = /^[a-zA-Z0-9 ,.%#()/-]+$/;
 
-export const NodeStyle = z
+export const NodeStyleSchema = z
   .object({
     /** Corner radius in px. Ignored on `ellipse`, which is always fully round. */
     radius: z.number().gte(0).finite().optional(),
     /** Outline colour. Same rules as `ColorRef`. */
-    stroke: ColorRef.optional(),
+    stroke: ColorRefSchema.optional(),
     /** Outline width in px. Only meaningful alongside `stroke`. */
     strokeWidth: z.number().gte(0).max(512).optional(),
     /** CSS `box-shadow` shorthand, allow-listed by `SHADOW`. */
@@ -143,7 +143,7 @@ export const NodeStyle = z
   .strict()
   .describe('genuinely shared paint; fill/colour stay kind-specific');
 
-export type NodeStyle = z.infer<typeof NodeStyle>;
+export type NodeStyle = z.infer<typeof NodeStyleSchema>;
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify';
 export type TextFit = 'none' | 'shrink' | 'clip';
@@ -193,52 +193,58 @@ const nodeBase = z.object({
   /** Hidden nodes are not emitted at all. */
   visible: z.boolean().default(true),
 
-  style: NodeStyle.optional(),
+  style: NodeStyleSchema.optional(),
 });
 
-export const TextNode = nodeBase.extend({
-  kind: z.literal('text'),
-  /** Verbatim content. Newlines are honoured; the emitter sets `white-space`. */
-  content: z.string().max(20_000),
-  fontSize: z.number().gt(0).max(2000),
-  /** CSS font-weight. Bounded to real weights rather than left open. */
-  fontWeight: z.number().int().min(100).max(900),
-  color: ColorRef,
-  align: z.enum(['left', 'center', 'right', 'justify']).optional(),
-  /** Unitless multiplier, as in CSS. */
-  lineHeight: z.number().gt(0).max(10).optional(),
-  /**
-   * How content behaves when the box cannot grow. `none` = overflow is
-   * visible; `clip` = `overflow:hidden`; `shrink` is RESERVED — see
-   * `style.ts`, which currently degrades it to clipping because true
-   * shrink-to-fit needs measurement, and measurement is Phase 2's job.
-   */
-  fit: z.enum(['none', 'shrink', 'clip']).optional(),
-}).strict();
+export const TextNodeSchema = nodeBase
+  .extend({
+    kind: z.literal('text'),
+    /** Verbatim content. Newlines are honoured; the emitter sets `white-space`. */
+    content: z.string().max(20_000),
+    fontSize: z.number().gt(0).max(2000),
+    /** CSS font-weight. Bounded to real weights rather than left open. */
+    fontWeight: z.number().int().min(100).max(900),
+    color: ColorRefSchema,
+    align: z.enum(['left', 'center', 'right', 'justify']).optional(),
+    /** Unitless multiplier, as in CSS. */
+    lineHeight: z.number().gt(0).max(10).optional(),
+    /**
+     * How content behaves when the box cannot grow. `none` = overflow is
+     * visible; `clip` = `overflow:hidden`; `shrink` is RESERVED — see
+     * `style.ts`, which currently degrades it to clipping because true
+     * shrink-to-fit needs measurement, and measurement is Phase 2's job.
+     */
+    fit: z.enum(['none', 'shrink', 'clip']).optional(),
+  })
+  .strict();
 
-export const ShapeNode = nodeBase.extend({
-  kind: z.literal('shape'),
-  shape: z.enum(['rect', 'ellipse', 'line']),
-  /** Background. Present even when fully transparent: absence is not a state. */
-  fill: ColorRef,
-  // `h` is deliberately re-declared as REQUIRED here. `nodeBase` has it
-  // optional for text; narrowing it per-kind is exactly what makes decision 2
-  // enforceable rather than aspirational.
-  h: z.number().gt(0).finite(),
-}).strict();
+export const ShapeNodeSchema = nodeBase
+  .extend({
+    kind: z.literal('shape'),
+    shape: z.enum(['rect', 'ellipse', 'line']),
+    /** Background. Present even when fully transparent: absence is not a state. */
+    fill: ColorRefSchema,
+    // `h` is deliberately re-declared as REQUIRED here. `nodeBase` has it
+    // optional for text; narrowing it per-kind is exactly what makes decision 2
+    // enforceable rather than aspirational.
+    h: z.number().gt(0).finite(),
+  })
+  .strict();
 
-export const ImageNode = nodeBase.extend({
-  kind: z.literal('image'),
-  /**
-   * Images are referenced, never inlined. The document stores an asset id, so
-   * the bytes live in one place and a document stays small; resolution to a
-   * `data:` URI happens at compile time (see `compile.ts`), which is the only
-   * place a URI is allowed to exist.
-   */
-  src: z.object({ kind: z.literal('asset'), assetId: id() }).strict(),
-  fit: z.enum(['cover', 'contain']).optional(),
-  h: z.number().gt(0).finite(),
-}).strict();
+export const ImageNodeSchema = nodeBase
+  .extend({
+    kind: z.literal('image'),
+    /**
+     * Images are referenced, never inlined. The document stores an asset id, so
+     * the bytes live in one place and a document stays small; resolution to a
+     * `data:` URI happens at compile time (see `compile.ts`), which is the only
+     * place a URI is allowed to exist.
+     */
+    src: z.object({ kind: z.literal('asset'), assetId: id() }).strict(),
+    fit: z.enum(['cover', 'contain']).optional(),
+    h: z.number().gt(0).finite(),
+  })
+  .strict();
 
 /**
  * The closed union of everything a page can contain. `discriminatedUnion` on
@@ -246,16 +252,16 @@ export const ImageNode = nodeBase.extend({
  * TypeScript narrow on the same key — for free, provided no schema above is
  * annotated with its own inferred type.
  */
-export const CanvasNode = z.discriminatedUnion('kind', [
-  TextNode,
-  ShapeNode,
-  ImageNode,
+export const CanvasNodeSchema = z.discriminatedUnion('kind', [
+  TextNodeSchema,
+  ShapeNodeSchema,
+  ImageNodeSchema,
 ]);
 
-export type CanvasNode = z.infer<typeof CanvasNode>;
-export type TextNode = z.infer<typeof TextNode>;
-export type ShapeNode = z.infer<typeof ShapeNode>;
-export type ImageNode = z.infer<typeof ImageNode>;
+export type CanvasNode = z.infer<typeof CanvasNodeSchema>;
+export type TextNode = z.infer<typeof TextNodeSchema>;
+export type ShapeNode = z.infer<typeof ShapeNodeSchema>;
+export type ImageNode = z.infer<typeof ImageNodeSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Groups
@@ -270,7 +276,7 @@ export type ImageNode = z.infer<typeof ImageNode>;
  * group→node migration would inherit an unreconcilable disagreement between
  * the two copies. The test `rejects x/y/w/h on a Group` is the guard.
  */
-export const CanvasGroup = z
+export const CanvasGroupSchema = z
   .object({
     id: id(),
     label: z.string().max(120).optional(),
@@ -299,7 +305,7 @@ export const CanvasGroup = z
   })
   .strict();
 
-export type CanvasGroup = z.infer<typeof CanvasGroup>;
+export type CanvasGroup = z.infer<typeof CanvasGroupSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Page and document
@@ -313,42 +319,42 @@ export type CanvasGroup = z.infer<typeof CanvasGroup>;
  *
  * Array order in `nodes` is the paint order. See decision 1.
  */
-export const Page = z
+export const PageSchema = z
   .object({
     id: id(),
     name: z.string().max(120).optional(),
     /** Overrides the document background for this page only. */
-    background: ColorRef.optional(),
-    nodes: z.array(CanvasNode),
+    background: ColorRefSchema.optional(),
+    nodes: z.array(CanvasNodeSchema),
     /** Required (not defaulted) so membership is always explicit. */
-    groups: z.array(CanvasGroup),
+    groups: z.array(CanvasGroupSchema),
   })
   .strict();
 
-export type Page = z.infer<typeof Page>;
+export type Page = z.infer<typeof PageSchema>;
 
 /** The document root. `width`/`height` are the canvas, in px. */
-export const Doc = z
+export const DocSchema = z
   .object({
     id: id(),
     name: z.string().max(200),
     width: z.number().gt(0).max(20_000),
     height: z.number().gt(0).max(20_000),
     /** The default page background; a page may override it. */
-    background: ColorRef,
-    pages: z.array(Page).min(1),
+    background: ColorRefSchema,
+    pages: z.array(PageSchema).min(1),
   })
   .strict();
 
-export type Doc = z.infer<typeof Doc>;
+export type Doc = z.infer<typeof DocSchema>;
 
 /**
  * The *input* side of `Doc`, which differs from `Doc` only where a field has a
  * default (`locked`, `visible`). Presets and LLM drafts are typed against this
  * so they can omit defaulted fields and still type-check.
  */
-export type DocInput = z.input<typeof Doc>;
-export type PageInput = z.input<typeof Page>;
+export type DocInput = z.input<typeof DocSchema>;
+export type PageInput = z.input<typeof PageSchema>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry points
@@ -356,10 +362,10 @@ export type PageInput = z.input<typeof Page>;
 
 /** Parse a document, throwing on failure. Use at trusted boundaries. */
 export function parseDoc(value: unknown): Doc {
-  return Doc.parse(value);
+  return DocSchema.parse(value);
 }
 
 /** Parse a document, returning a discriminated result. Use at untrusted input. */
 export function safeParseDoc(value: unknown) {
-  return Doc.safeParse(value);
+  return DocSchema.safeParse(value);
 }

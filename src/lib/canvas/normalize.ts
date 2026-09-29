@@ -88,7 +88,9 @@ function toNumber(value: unknown, path: string): number {
 function ratio(value: unknown, path: string, lo: number, hi: number): number {
   const n = toNumber(value, path);
   if (!Number.isFinite(n)) {
-    throw new Error(`canvas: non-finite number at ${path} (got ${String(value)})`);
+    throw new Error(
+      `canvas: non-finite number at ${path} (got ${String(value)})`,
+    );
   }
   return round(clamp(n, lo, hi));
 }
@@ -108,7 +110,9 @@ function reqLen(value: unknown, path: string): number {
 function optStr(value: unknown, path: string): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string') {
-    throw new Error(`canvas: expected a string at ${path}, got ${typeof value}`);
+    throw new Error(
+      `canvas: expected a string at ${path}, got ${typeof value}`,
+    );
   }
   return value;
 }
@@ -254,7 +258,8 @@ function normalizeNode(n: unknown, index: number): CanvasNode {
 }
 
 function srcAssetId(src: unknown): unknown {
-  if (src && typeof src === 'object') return (src as Record<string, unknown>)['assetId'];
+  if (src && typeof src === 'object')
+    return (src as Record<string, unknown>)['assetId'];
   return undefined;
 }
 

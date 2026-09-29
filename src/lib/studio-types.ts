@@ -80,6 +80,7 @@ export interface StudioTake {
   captions: StudioCaption[];
   styling: StudioStyling;
   socialKit: StudioSocialKit | null;
+  fileSizeBytes?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -96,6 +97,7 @@ export interface StudioTakeSummary {
   videoPath: string;
   cutCount: number;
   zoomCount: number;
+  fileSizeBytes?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -111,3 +113,176 @@ export const DEFAULT_STUDIO_STYLING: StudioStyling = {
   showCaptions: true,
   captionStyle: 'karaoke',
 };
+
+// ── Multi-Track Timeline Domain Models ────────────────────────────────────────
+
+export type TrackType = 'effects' | 'captions' | 'video' | 'audio';
+
+export interface TimelineClip {
+  id: string;
+  trackId: string;
+  name: string;
+  startMs: number;
+  durationMs: number;
+  sourceStartMs: number;
+  sourceDurationMs: number;
+  color?: string;
+  payload?: {
+    scale?: number;
+    targetX?: number;
+    targetY?: number;
+    text?: string;
+    volume?: number;
+    reason?: string;
+  };
+}
+
+export interface TimelineTrack {
+  id: string;
+  type: TrackType;
+  name: string;
+  locked: boolean;
+  visible: boolean;
+  muted?: boolean;
+  clips: TimelineClip[];
+}
+
+export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
+  const duration = Math.max(take.durationMs, 4000);
+
+  // 1. Effects track (Kinetic zooms)
+  const effectClips: TimelineClip[] = (take.zooms || []).map((z) => ({
+    id: z.id,
+    trackId: 'track-effects',
+    name: `Zoom ${z.scale}x`,
+    startMs: z.startMs,
+    durationMs: Math.max(z.endMs - z.startMs, 500),
+    sourceStartMs: z.startMs,
+    sourceDurationMs: z.endMs - z.startMs,
+    color: '#8b5cf6',
+    payload: {
+      scale: z.scale,
+      targetX: z.targetX,
+      targetY: z.targetY,
+    },
+  }));
+
+  // 2. Captions track
+  const captionClips: TimelineClip[] = (take.captions || []).map((c) => ({
+    id: c.id,
+    trackId: 'track-captions',
+    name: c.text,
+    startMs: c.startMs,
+    durationMs: Math.max(c.endMs - c.startMs, 500),
+    sourceStartMs: c.startMs,
+    sourceDurationMs: c.endMs - c.startMs,
+    color: '#14b8a6',
+    payload: {
+      text: c.text,
+    },
+  }));
+
+  // 3. Video track (Single clip or sliced by cuts)
+  const cuts = take.cuts || [];
+  const videoClips: TimelineClip[] = [];
+
+  if (cuts.length === 0) {
+    videoClips.push({
+      id: `${take.id}-video-0`,
+      trackId: 'track-video',
+      name: take.title,
+      startMs: 0,
+      durationMs: duration,
+      sourceStartMs: 0,
+      sourceDurationMs: duration,
+      color: '#334155',
+    });
+  } else {
+    // Generate clips between cuts
+    const sortedCuts = [...cuts].sort((a, b) => a.startMs - b.startMs);
+    let currentMs = 0;
+    let clipIndex = 0;
+
+    for (const cut of sortedCuts) {
+      if (cut.startMs > currentMs) {
+        const segDuration = cut.startMs - currentMs;
+        videoClips.push({
+          id: `${take.id}-video-${clipIndex++}`,
+          trackId: 'track-video',
+          name: `${take.title} [${clipIndex}]`,
+          startMs: currentMs,
+          durationMs: segDuration,
+          sourceStartMs: currentMs,
+          sourceDurationMs: segDuration,
+          color: '#334155',
+        });
+      }
+      currentMs = cut.endMs;
+    }
+
+    if (currentMs < duration) {
+      const segDuration = duration - currentMs;
+      videoClips.push({
+        id: `${take.id}-video-${clipIndex++}`,
+        trackId: 'track-video',
+        name: `${take.title} [${clipIndex}]`,
+        startMs: currentMs,
+        durationMs: segDuration,
+        sourceStartMs: currentMs,
+        sourceDurationMs: segDuration,
+        color: '#334155',
+      });
+    }
+  }
+
+  // 4. Audio track
+  const audioClips: TimelineClip[] = videoClips.map((vc, i) => ({
+    id: `${take.id}-audio-${i}`,
+    trackId: 'track-audio',
+    name: 'Microphone & System Audio',
+    startMs: vc.startMs,
+    durationMs: vc.durationMs,
+    sourceStartMs: vc.sourceStartMs,
+    sourceDurationMs: vc.sourceDurationMs,
+    color: '#0284c7',
+    payload: {
+      volume: 1.0,
+    },
+  }));
+
+  return [
+    {
+      id: 'track-effects',
+      type: 'effects',
+      name: 'Kinetic Zooms',
+      locked: false,
+      visible: true,
+      clips: effectClips,
+    },
+    {
+      id: 'track-captions',
+      type: 'captions',
+      name: 'Subtitles',
+      locked: false,
+      visible: true,
+      clips: captionClips,
+    },
+    {
+      id: 'track-video',
+      type: 'video',
+      name: 'Primary Video',
+      locked: false,
+      visible: true,
+      clips: videoClips,
+    },
+    {
+      id: 'track-audio',
+      type: 'audio',
+      name: 'Audio Waveform',
+      locked: false,
+      visible: true,
+      muted: false,
+      clips: audioClips,
+    },
+  ];
+}

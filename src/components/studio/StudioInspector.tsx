@@ -17,6 +17,7 @@ import {
   DownloadIcon,
   RefreshCwIcon,
   PlusIcon,
+  XIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -34,6 +35,7 @@ interface StudioInspectorProps {
   onGenerateSocialKit: () => void;
   onExportVideo: (format: 'mp4' | 'gif') => void;
   onAddZoomAtPlayhead?: () => void;
+  onToggleCollapse?: () => void;
 }
 
 const BG_PRESETS = [
@@ -73,15 +75,27 @@ export function StudioInspector({
   onGenerateSocialKit,
   onExportVideo,
   onAddZoomAtPlayhead,
+  onToggleCollapse,
 }: StudioInspectorProps) {
   return (
-    <div className="w-80 flex flex-col h-full bg-card/40 backdrop-blur-md border-l border-border/40 select-none overflow-y-auto">
+    <div className="w-full flex flex-col h-full bg-card/40 backdrop-blur-md select-none overflow-y-auto">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="p-4 border-b border-border/30 flex items-center justify-between">
+      <div className="p-3 px-4 border-b border-border/30 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <SlidersIcon className="w-4 h-4 text-primary" />
-          <h3 className="font-semibold text-sm">Studio Inspector</h3>
+          <h3 className="font-semibold text-xs">Studio Inspector</h3>
         </div>
+        {onToggleCollapse && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleCollapse}
+            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+            title="Collapse inspector"
+          >
+            <XIcon className="w-3.5 h-3.5" />
+          </Button>
+        )}
       </div>
 
       {/* ── Quick Magic Draft Action ────────────────────────────────────────── */}
@@ -211,11 +225,11 @@ export function StudioInspector({
             <div className="flex justify-between items-center text-xs">
               <Label className="text-muted-foreground">Zoom Intensity</Label>
               <span className="font-mono text-muted-foreground">
-                {styling.zoomIntensity.toFixed(1)}x
+                {(styling.zoomIntensity ?? 1.5).toFixed(1)}x
               </span>
             </div>
             <Slider
-              value={[styling.zoomIntensity]}
+              value={[styling.zoomIntensity ?? 1.5]}
               min={1.1}
               max={2.4}
               step={0.1}
