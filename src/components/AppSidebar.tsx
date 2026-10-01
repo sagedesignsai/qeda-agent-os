@@ -37,6 +37,7 @@ import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ChatMenu } from '@/components/sidebar/ChatMenu';
 import { ProjectsMenu } from '@/components/sidebar/ProjectsMenu';
 import { DocumentsMenu } from '@/components/sidebar/DocumentsMenu';
+import { WorkspaceMenu } from '@/components/sidebar/WorkspaceMenu';
 import { QedaLogomark } from '@/components/QedaLogo';
 import {
   DropdownMenu,
@@ -58,6 +59,7 @@ import {
   ChevronsUpDownIcon,
   CheckIcon,
   FileTextIcon,
+  NotebookIcon,
   VideoIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -88,6 +90,7 @@ interface AppSidebarProps {
 const NAV_ITEMS = [
   { to: '/projects', label: 'Projects', icon: FolderKanbanIcon },
   { to: '/tasks', label: 'Tasks', icon: CheckSquareIcon },
+  { to: '/workspace', label: 'Knowledge', icon: NotebookIcon },
   { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
@@ -97,10 +100,19 @@ const NAV_ITEMS = [
 /** Which section submenu a pathname belongs to, if any. */
 function sectionOf(
   pathname: string,
-): 'chat' | 'terminal' | 'projects' | 'documents' | null {
+):
+  | 'chat'
+  | 'terminal'
+  | 'projects'
+  | 'documents'
+  | 'workspace'
+  | null {
   if (pathname === '/chat' || pathname.startsWith('/chat/')) return 'chat';
   if (pathname === '/projects' || pathname.startsWith('/projects/')) {
     return 'projects';
+  }
+  if (pathname === '/workspace' || pathname.startsWith('/workspace/')) {
+    return 'workspace';
   }
   if (pathname === '/documents' || pathname.startsWith('/documents/')) {
     return 'documents';
@@ -377,6 +389,10 @@ export function AppSidebar({
 
       {view === 'projects' && (
         <ProjectsMenu onBack={() => setShowMainAt(location.pathname)} />
+      )}
+
+      {view === 'workspace' && (
+        <WorkspaceMenu onBack={() => setShowMainAt(location.pathname)} />
       )}
 
       {view === 'documents' && (

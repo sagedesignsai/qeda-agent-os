@@ -99,12 +99,13 @@ src/
 └── renderer/              # App shell, router, and views (Chat, Workspace, Terminal, Tasks, Projects)
 ```
 
-**Routes:** `/chat` Agent Chat & Research · `/workspace` Notebooks & Docs · `/terminal` Agent & Shell PTY · `/tasks` Tasks & Focus · `/projects` Project Hub
+**Routes:** `/chat` Agent Chat & Research · `/workspace` Knowledge (notebooks & pages) · `/terminal` Agent & Shell PTY · `/tasks` Tasks & Focus · `/projects` Project Hub
 
 ### The agent loop
 
 `createDesktopAgent()` builds a `ToolLoopAgent` with the shared `allTools`
-registry and a step budget of 30. A chat turn is always **stateless**: the
+registry and a per-mode step budget (40 chat / 60 research / 120 notebook —
+see `STEP_BUDGETS`). A chat turn is always **stateless**: the
 renderer sends the full `UIMessage[]` to main, main converts it with
 `convertToModelMessages`, streams, and forwards every `fullStream` chunk back
 over the `agent:stream-chunk` event.

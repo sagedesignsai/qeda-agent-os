@@ -59,7 +59,7 @@ export default function Workspace() {
     notebooks.find((n) => n.id === contextNotebookId) ?? null;
 
   const crumbs: PageCrumb[] = [
-    { label: 'Workspace', to: '/workspace' },
+    { label: 'Knowledge', to: '/workspace' },
     ...(activeNotebook
       ? [{ label: activeNotebook.title, to: `/workspace/${activeNotebook.id}` }]
       : []),

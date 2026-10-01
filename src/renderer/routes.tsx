@@ -8,7 +8,7 @@
  *     ├── /                         – redirects to /chat
  *     ├── /chat                     – Chat index (starts a fresh session)
  *     │     └── /chat/:sessionId    – a specific conversation
- *     ├── /workspace                – Workspace index (no page selected)
+ *     ├── /workspace                – Knowledge index (no page selected)
  *     │     ├── /workspace/:notebookId
  *     │     └── /workspace/:notebookId/:pageId
  *     └── *                         – redirects to /chat
@@ -25,6 +25,7 @@ import Tasks from './pages/Tasks';
 import Projects from './pages/Projects';
 import Documents from './pages/Documents';
 import Studio from './pages/Studio';
+import Workspace from './pages/Workspace';
 
 export const routes: RouteObject[] = [
   {
@@ -74,8 +75,14 @@ export const routes: RouteObject[] = [
         ],
       },
 
-      { path: 'workspace/*', element: <Navigate to="/documents" replace /> },
-      { path: 'workspace', element: <Navigate to="/documents" replace /> },
+      {
+        path: 'workspace',
+        children: [
+          { index: true, element: <Workspace /> },
+          { path: ':notebookId', element: <Workspace /> },
+          { path: ':notebookId/:pageId', element: <Workspace /> },
+        ],
+      },
 
       { path: '*', element: <Navigate to="/projects" replace /> },
     ],

@@ -125,7 +125,14 @@ describe('AppSidebar model readout', () => {
 
       // Initial read.
       expect(await screen.findByText('old-model')).toBeInTheDocument();
-      expect(listeners.get('settings:changed')).toHaveLength(1);
+      // At least one subscriber, not exactly one: this broadcast now has three
+      // (the sidebar footer, plus `useProjectScope` — which both AppSidebar and
+      // ChatMenu call, and which refreshes the active project on a settings
+      // change). Pinning the count made this fail for a reason that has nothing
+      // to do with what the test is guarding.
+      expect(
+        listeners.get('settings:changed')?.length ?? 0,
+      ).toBeGreaterThanOrEqual(1);
 
       // The user switches model in Settings; main saves and broadcasts.
       currentSettings = {

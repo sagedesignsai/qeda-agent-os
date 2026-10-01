@@ -195,8 +195,11 @@ export function ToolCard({
       !(output as { success: boolean }).success);
 
   // ── Purpose-built service tool cards (search, docs, images, audio, …) ────────
+  // `input` is passed through as well: the research tools carry their
+  // human-readable payload there (the question, the quote) rather than in the
+  // result, which is only an id.
   if (isDone && !isError) {
-    const specialized = renderSpecializedTool(toolName, output);
+    const specialized = renderSpecializedTool(toolName, output, input);
     if (specialized) return <>{specialized}</>;
   }
 

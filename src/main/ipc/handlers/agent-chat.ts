@@ -17,7 +17,7 @@ import {
 } from '../../ai/fallback';
 import { prepareModelMessages } from '../../ai/messages';
 import { resolveModelChain } from '../../ai/provider';
-import { type ChatContext } from '../channels';
+import { type AgentIntent, type ChatContext } from '../channels';
 import { getAgent, detectMode } from '../agent-runtime';
 
 export function registerAgentChatHandlers({
@@ -33,7 +33,13 @@ export function registerAgentChatHandlers({
         sessionId,
         messages,
         context,
-      }: { sessionId: string; messages: UIMessage[]; context?: ChatContext },
+        intent,
+      }: {
+        sessionId: string;
+        messages: UIMessage[];
+        context?: ChatContext;
+        intent?: AgentIntent;
+      },
     ) => {
       const fail = (err: unknown) => {
         if (mainWindow.isDestroyed()) return;
@@ -47,7 +53,9 @@ export function registerAgentChatHandlers({
         // attempt – sanitizing reasoning parts so providers like Groq do not reject them.
         const modelMessages = await prepareModelMessages(messages);
 
-        const mode = detectMode(messages);
+        // A declared intent always wins. The heuristic stays as the fallback
+        // for free-form chat, where nothing knows the mode but the wording.
+        const mode = intent ?? detectMode(messages);
         const chain = resolveModelChain();
         if (chain.length === 0) {
           throw new Error(

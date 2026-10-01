@@ -121,7 +121,13 @@ export function GenerateNotebookDialog({
       const prompt = buildNotebookPrompt({ topic: trimmed, depth, audience });
       reset();
       onOpenChange(false);
-      navigate(`/chat/${session.id}`, { state: { initialPrompt: prompt } });
+      // `intent` is declared rather than inferred. The agent used to pick
+      // notebook mode by regex-matching the prompt text above, which made this
+      // one string a single point of failure — reword it and the whole
+      // generation protocol silently never fires.
+      navigate(`/chat/${session.id}`, {
+        state: { initialPrompt: prompt, intent: 'notebook' as const },
+      });
     } catch (err) {
       toast.error(
         `Failed to start notebook generation: ${err instanceof Error ? err.message : String(err)}`,

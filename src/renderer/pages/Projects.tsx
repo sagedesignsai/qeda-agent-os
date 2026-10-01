@@ -308,7 +308,13 @@ export default function Projects() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
+        density="dense"
         crumbs={[{ label: 'Projects' }]}
+        subtitle={
+          active.length > 0
+            ? `${active.length} active${archived.length > 0 ? ` · ${archived.length} archived` : ''}`
+            : undefined
+        }
         actions={
           <Button
             size="sm"

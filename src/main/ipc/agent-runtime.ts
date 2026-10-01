@@ -23,8 +23,15 @@ import { type ChatContext } from './channels';
 /** One cached agent per provider/model pair, for the duration of the session. */
 const agentCache = new Map<string, ReturnType<typeof createDesktopAgent>>();
 
-/** The turn's operating mode, inferred from the user's latest message. */
-type AgentMode = 'chat' | 'research' | 'notebook';
+/**
+ * The turn's operating mode, inferred from the user's latest message.
+ *
+ * This is a *fallback* only — a caller that knows what it wants sends an
+ * explicit `intent` on the `agent:chat` payload (see `AgentIntent` in
+ * `ipc/channels.ts`), and that wins. Inference is kept for free-form chat,
+ * where the wording is the only signal there is.
+ */
+export type AgentMode = 'chat' | 'research' | 'notebook';
 
 function cacheKey(
   target: ModelTarget,
@@ -75,6 +82,9 @@ export function getAgent(
       researchMode: mode !== 'chat',
       notebookMode: mode === 'notebook',
       context: resolved as WorkspaceContext | undefined,
+      // The mode also sizes the step budget, so it must reach the factory —
+      // `cacheKey` already keys on it, which keeps the two in step.
+      mode,
     });
     agentCache.set(key, agent);
   }

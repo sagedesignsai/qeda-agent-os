@@ -23,12 +23,17 @@ import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
-import type { ChatContext, DownloadResourceResult } from '../../main/ipc/channels';
+import type { ChatContext, AgentIntent, DownloadResourceResult } from '../../main/ipc/channels';
 
 export interface ChatLocationState {
   chatContext?: ChatContext;
   /** A prompt to auto-send once this chat's session is bound (notebook dialog). */
   initialPrompt?: string;
+  /**
+   * Declares the turn's operating mode. Set by surfaces that already know
+   * they are, so the notebook protocol does not depend on prompt wording.
+   */
+  intent?: AgentIntent;
 }
 
 interface SessionSummary {
@@ -80,6 +85,17 @@ export default function Chat() {
   const [creating, setCreating] = useState(false);
   // Guards the one-shot auto-send of an `initialPrompt` handed over via state.
   const initialPromptSentRef = useRef(false);
+  // Held in state rather than read off `location.state`, because the auto-send
+  // effect clears that state to avoid a replay on remount — and the mode has to
+  // survive the clear so the follow-up turns are covered too.
+  //
+  // The lazy initializer is load-bearing, not stylistic: the intent has to be
+  // correct on the FIRST render, because the one-shot auto-send effect below
+  // fires in that same commit. Reading it via an effect would leave the
+  // generating turn with no intent — i.e. exactly the turn that needs it.
+  const [intent, setIntent] = useState<AgentIntent | undefined>(
+    () => (location.state as ChatLocationState | null)?.intent,
+  );
 
   // A page can hand over chat context via navigate('/chat', { state }).
   useEffect(() => {
@@ -87,6 +103,7 @@ export default function Chat() {
     if (state?.chatContext) {
       setChatContext((prev) => ({ ...prev, ...state.chatContext }));
     }
+    if (state?.intent) setIntent(state.intent);
   }, [location.state]);
 
   // Keep the breadcrumb title in sync with the active session.
@@ -121,6 +138,7 @@ export default function Chat() {
     sessionId: sessionId ?? '',
     initialMessages: [],
     context: chatContext,
+    intent,
   });
 
   // Auto-scroll to bottom on new messages.

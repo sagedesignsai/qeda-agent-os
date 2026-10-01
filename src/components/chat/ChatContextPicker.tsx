@@ -85,7 +85,7 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
           </div>
           {notebooks.length === 0 && (
             <p className="px-1 py-2 text-xs text-muted-foreground">
-              No notebooks yet — create one in the Workspace tab.
+              No notebooks yet — create one in the Knowledge tab.
             </p>
           )}
           <div className="max-h-64 space-y-1 overflow-y-auto">

@@ -12,6 +12,7 @@
 
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import { SidebarProvider } from '../components/ui/sidebar';
 import { TooltipProvider } from '../components/ui/tooltip';
 import { StudioContentPanel } from '../components/studio/content/StudioContentPanel';
 import { StudioProjectsView } from '../components/studio/projects/StudioProjectsView';
@@ -38,6 +39,17 @@ describe('Studio Content Panel & Blank Project Flow', () => {
   ];
 
   beforeAll(() => {
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }) as MediaQueryList);
+
     window.HTMLMediaElement.prototype.play = jest
       .fn()
       .mockImplementation(() => Promise.resolve());
@@ -215,15 +227,17 @@ describe('Studio Content Panel & Blank Project Flow', () => {
     const onNewBlankProject = jest.fn();
 
     render(
-      <StudioProjectsView
-        takes={mockTakes}
-        onOpenTake={jest.fn()}
-        onNewRecording={jest.fn()}
-        onNewBlankProject={onNewBlankProject}
-        onRenameTake={jest.fn()}
-        onQuickExport={jest.fn()}
-        onDeleteTake={jest.fn()}
-      />,
+      <SidebarProvider>
+        <StudioProjectsView
+          takes={mockTakes}
+          onOpenTake={jest.fn()}
+          onNewRecording={jest.fn()}
+          onNewBlankProject={onNewBlankProject}
+          onRenameTake={jest.fn()}
+          onQuickExport={jest.fn()}
+          onDeleteTake={jest.fn()}
+        />
+      </SidebarProvider>,
     );
 
     const blankBtn = screen.getByRole('button', { name: /Blank Project/i });

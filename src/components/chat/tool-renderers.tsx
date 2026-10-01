@@ -19,12 +19,21 @@ import {
   SearchIcon,
   FileTextIcon,
   BookOpenIcon,
+  BookIcon,
   AudioLinesIcon,
   QuoteIcon,
   GitBranchIcon,
   HistoryIcon,
   FileDiffIcon,
+  FlaskConicalIcon,
+  ListChecksIcon,
 } from 'lucide-react';
+import {
+  Sources,
+  SourcesTrigger,
+  SourcesContent,
+  Source,
+} from '@/components/ai-elements/sources';
 import { cn } from '@/lib/utils';
 
 type Output = Record<string, unknown>;
@@ -692,6 +701,178 @@ export function GrepResultsCard({ output }: { output: Output }) {
   );
 }
 
+// ─── Research tools (tools/workspace.ts) ──────────────────────────────────────
+
+/**
+ * The four research tools invert the service tools above: their meaningful text
+ * is in the **input**, not the output.
+ *
+ * `startResearchRun` returns only `{ runId }`, `recordSource` and
+ * `recordEvidence` return only a new id, and the report itself is an *input* to
+ * `completeResearchRun`. So these renderers read the input and use the output
+ * only to confirm the call landed — which is why `renderSpecializedTool` now
+ * takes the input as well.
+ */
+
+/** `startResearchRun` — the question being investigated. */
+export function ResearchRunCard({ input }: { input: Output }) {
+  const question = asString(input.question);
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<FlaskConicalIcon className="h-3.5 w-3.5" />}
+        label="Research run started"
+      />
+      <div className="px-3 py-2">
+        <p className="text-xs text-foreground/90">
+          {question || 'Untitled investigation'}
+        </p>
+      </div>
+    </CardShell>
+  );
+}
+
+/** `recordSource` — a source added to the run's audit trail. */
+export function ResearchSourceCard({ input }: { input: Output }) {
+  const url = asString(input.url);
+  const title = asString(input.title);
+  const kind = asString(input.kind) || 'web';
+  const snippet = asString(input.snippet);
+
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<BookOpenIcon className="h-3.5 w-3.5" />}
+        label={title || url || 'Source recorded'}
+        meta={
+          <Badge variant="secondary" className="text-xs">
+            {kind}
+          </Badge>
+        }
+      />
+      {snippet && (
+        <p className="line-clamp-2 px-3 py-1.5 text-[11px] text-muted-foreground">
+          {snippet}
+        </p>
+      )}
+      {url && (
+        <div className="truncate border-t px-3 py-1.5">
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] text-primary hover:underline"
+          >
+            {url}
+          </a>
+        </div>
+      )}
+    </CardShell>
+  );
+}
+
+/** `recordEvidence` — the exact quote lifted from a source. */
+export function ResearchEvidenceCard({ input }: { input: Output }) {
+  const quote = asString(input.quote);
+  const note = asString(input.note);
+
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<QuoteIcon className="h-3.5 w-3.5" />}
+        label="Evidence recorded"
+      />
+      {quote && (
+        <div className="px-3 py-2">
+          <p className="border-l-2 border-primary/40 pl-2 text-[11px] leading-relaxed text-foreground/80 italic">
+            {quote}
+          </p>
+        </div>
+      )}
+      {note && (
+        <p className="px-3 pb-2 text-[11px] text-muted-foreground">{note}</p>
+      )}
+    </CardShell>
+  );
+}
+
+interface CitationView {
+  n?: number;
+  title?: string;
+  url?: string | null;
+}
+
+/**
+ * `completeResearchRun` — the payoff, and the reason the run was worth recording.
+ *
+ * Renders the run's numbered citation list as the collapsible Sources panel, so
+ * a `[1]`/`[2]` marker in the report is resolvable back to its source. This is
+ * the same panel the ai-elements Response pattern uses, for the same reason.
+ *
+ * A citation may have no `url` — `research_sources` covers workspace pages and
+ * local files as well as web URLs. An anchor with an `undefined` href looks
+ * exactly like a working link, so those render as plain rows instead.
+ */
+export function ResearchCitationsCard({ output }: { output: Output }) {
+  const citations = asArray<CitationView>(output.citations);
+  const status = asString(output.status) || 'completed';
+  const finished = status === 'completed';
+
+  return (
+    <div className="not-prose w-full rounded-lg border bg-card p-3 text-sm">
+      <div className="flex items-center gap-2">
+        <ListChecksIcon
+          className={cn(
+            'h-3.5 w-3.5',
+            finished ? 'text-emerald-500' : 'text-amber-500',
+          )}
+        />
+        <span className="text-xs font-medium">
+          {finished ? 'Research complete' : `Research ${status}`}
+        </span>
+      </div>
+
+      {/*
+        The citation list is collapsed by default — the same shape the
+        ai-elements Response pattern uses, and it keeps a 20-source
+        investigation from swamping the conversation it belongs to. The trigger
+        carries the count, so the header above does not repeat it.
+      */}
+      {citations.length > 0 && (
+        <Sources className="mt-2 mb-0">
+          <SourcesTrigger count={citations.length}>
+            <p className="font-medium">Sources ({citations.length})</p>
+            <ChevronDownIcon className="h-4 w-4" />
+          </SourcesTrigger>
+          <SourcesContent className="max-h-72 w-full overflow-y-auto">
+            {citations.map((citation, index) => {
+              const label = `${citation.n ?? index + 1}. ${
+                citation.title || citation.url || 'Untitled source'
+              }`;
+              return citation.url ? (
+                <Source
+                  key={`${citation.url}-${index}`}
+                  href={citation.url}
+                  title={label}
+                  className="min-w-0 hover:underline"
+                />
+              ) : (
+                <span
+                  key={`${label}-${index}`}
+                  className="flex items-center gap-2 text-muted-foreground"
+                >
+                  <BookIcon className="h-4 w-4 shrink-0" />
+                  <span className="block truncate font-medium">{label}</span>
+                </span>
+              );
+            })}
+          </SourcesContent>
+        </Sources>
+      )}
+    </div>
+  );
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /** Tool names that have a purpose-built renderer. */
@@ -706,12 +887,24 @@ export const SPECIALIZED_TOOLS = new Set([
   'gitLog',
   'gitDiffStat',
   'grepSearch',
+  'startResearchRun',
+  'recordSource',
+  'recordEvidence',
+  'completeResearchRun',
 ]);
 
-/** Render the specialized card for a tool, or null when it has none. */
+/**
+ * Render the specialized card for a tool, or null when it has none.
+ *
+ * `input` is optional because the service tools above are fully described by
+ * their output; the research tools are the reverse and read it. Every field is
+ * read defensively either way — a partial output must degrade to an empty card,
+ * never a crash.
+ */
 export function renderSpecializedTool(
   toolName: string,
   output: unknown,
+  input: Record<string, unknown> = {},
 ): ReactNode | null {
   if (!SPECIALIZED_TOOLS.has(toolName)) return null;
   const data = (output ?? {}) as Output;
@@ -719,6 +912,17 @@ export function renderSpecializedTool(
   if (isFailed(data)) return null;
 
   switch (toolName) {
+    case 'startResearchRun':
+      return <ResearchRunCard input={input} />;
+    case 'recordSource':
+      return <ResearchSourceCard input={input} />;
+    case 'recordEvidence':
+      return <ResearchEvidenceCard input={input} />;
+    case 'completeResearchRun':
+      // Nothing to draw without a citation list; fall back to the raw card.
+      return asArray(data.citations).length > 0 ? (
+        <ResearchCitationsCard output={data} />
+      ) : null;
     case 'advancedSearch':
       return <SearchResultsCard output={data} />;
     case 'scrapePage':

@@ -12,6 +12,7 @@
 
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import { SidebarProvider } from '../components/ui/sidebar';
 import { TooltipProvider } from '../components/ui/tooltip';
 import { StudioProjectsView } from '../components/studio/projects/StudioProjectsView';
 import { StudioProjectCard } from '../components/studio/projects/StudioProjectCard';
@@ -55,6 +56,17 @@ describe('StudioProjectsView & Components', () => {
   ];
 
   beforeAll(() => {
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }) as MediaQueryList);
+
     window.HTMLMediaElement.prototype.play = jest
       .fn()
       .mockImplementation(() => Promise.resolve());
@@ -84,17 +96,22 @@ describe('StudioProjectsView & Components', () => {
     const onNewRecording = jest.fn();
 
     render(
-      <StudioProjectsView
-        takes={mockTakes}
-        onOpenTake={onOpenTake}
-        onNewRecording={onNewRecording}
-        onRenameTake={jest.fn()}
-        onQuickExport={jest.fn()}
-        onDeleteTake={jest.fn()}
-      />,
+      <SidebarProvider>
+        <StudioProjectsView
+          takes={mockTakes}
+          onOpenTake={onOpenTake}
+          onNewRecording={onNewRecording}
+          onRenameTake={jest.fn()}
+          onQuickExport={jest.fn()}
+          onDeleteTake={jest.fn()}
+        />
+      </SidebarProvider>,
     );
 
     expect(screen.getByText('Studio Projects')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Toggle Sidebar' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('2 projects')).toBeInTheDocument();
 
     expect(screen.getByText('Demo Release v1.0')).toBeInTheDocument();
@@ -113,14 +130,16 @@ describe('StudioProjectsView & Components', () => {
 
   it('switches to List view mode on toggle and persists in localStorage', () => {
     render(
-      <StudioProjectsView
-        takes={mockTakes}
-        onOpenTake={jest.fn()}
-        onNewRecording={jest.fn()}
-        onRenameTake={jest.fn()}
-        onQuickExport={jest.fn()}
-        onDeleteTake={jest.fn()}
-      />,
+      <SidebarProvider>
+        <StudioProjectsView
+          takes={mockTakes}
+          onOpenTake={jest.fn()}
+          onNewRecording={jest.fn()}
+          onRenameTake={jest.fn()}
+          onQuickExport={jest.fn()}
+          onDeleteTake={jest.fn()}
+        />
+      </SidebarProvider>,
     );
 
     const listBtn = screen.getByTitle('List view');
@@ -136,14 +155,16 @@ describe('StudioProjectsView & Components', () => {
 
   it('filters projects based on live search query', () => {
     render(
-      <StudioProjectsView
-        takes={mockTakes}
-        onOpenTake={jest.fn()}
-        onNewRecording={jest.fn()}
-        onRenameTake={jest.fn()}
-        onQuickExport={jest.fn()}
-        onDeleteTake={jest.fn()}
-      />,
+      <SidebarProvider>
+        <StudioProjectsView
+          takes={mockTakes}
+          onOpenTake={jest.fn()}
+          onNewRecording={jest.fn()}
+          onRenameTake={jest.fn()}
+          onQuickExport={jest.fn()}
+          onDeleteTake={jest.fn()}
+        />
+      </SidebarProvider>,
     );
 
     const searchInput = screen.getByPlaceholderText('Search projects...');
@@ -174,14 +195,16 @@ describe('StudioProjectsView & Components', () => {
     const onNewRecording = jest.fn();
 
     render(
-      <StudioProjectsView
-        takes={[]}
-        onOpenTake={jest.fn()}
-        onNewRecording={onNewRecording}
-        onRenameTake={jest.fn()}
-        onQuickExport={jest.fn()}
-        onDeleteTake={jest.fn()}
-      />,
+      <SidebarProvider>
+        <StudioProjectsView
+          takes={[]}
+          onOpenTake={jest.fn()}
+          onNewRecording={onNewRecording}
+          onRenameTake={jest.fn()}
+          onQuickExport={jest.fn()}
+          onDeleteTake={jest.fn()}
+        />
+      </SidebarProvider>,
     );
 
     expect(screen.getByText('No Studio Projects Yet')).toBeInTheDocument();

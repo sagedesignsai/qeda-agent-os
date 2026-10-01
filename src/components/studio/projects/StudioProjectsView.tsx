@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   AlertDialog,
@@ -101,9 +102,10 @@ export function StudioProjectsView({
     <TooltipProvider>
       <div className="flex flex-col h-full w-full bg-background overflow-hidden select-none">
         {/* ── Minimalist Top Toolbar ─────────────────────────────────────────── */}
-        <div className="h-14 border-b border-border/40 px-6 flex items-center justify-between bg-card/30 backdrop-blur-md shrink-0 gap-4">
+        <div className="border-b border-border/40 bg-card/30 px-6 py-4 backdrop-blur-md shrink-0">
           {/* Left: Section Title & Count Badge */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            <SidebarTrigger className="-ml-1 shrink-0 text-muted-foreground" />
             <div className="flex items-center gap-2">
               <div className="h-7 w-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
                 <VideoIcon className="w-4 h-4" />
@@ -119,78 +121,82 @@ export function StudioProjectsView({
           </div>
 
           {/* Right: Search, Grid/List Switcher & New Recording Button */}
-          <div className="flex items-center gap-2.5">
-            {/* Live Search Input */}
-            <div className="relative w-48 sm:w-64">
-              <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search projects..."
-                className="h-8 pl-8 pr-7 text-xs bg-secondary/30 border-border/40 focus:bg-background"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <XIcon className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Live Search Input */}
+              <div className="relative w-full sm:w-64">
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search projects..."
+                  className="h-8 pl-8 pr-7 text-xs bg-secondary/30 border-border/40 focus:bg-background"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <XIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
 
-            {/* Segmented View Mode Toggle: Grid vs List */}
-            <div className="flex items-center p-0.5 rounded-lg border border-border/40 bg-secondary/30 text-muted-foreground">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`h-7 w-7 rounded-md ${
-                  viewMode === 'grid'
-                    ? 'bg-background text-foreground shadow-xs font-medium'
-                    : 'hover:text-foreground'
-                }`}
-                onClick={() => handleToggleViewMode('grid')}
-                title="Grid view"
-              >
-                <LayoutGridIcon className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`h-7 w-7 rounded-md ${
-                  viewMode === 'list'
-                    ? 'bg-background text-foreground shadow-xs font-medium'
-                    : 'hover:text-foreground'
-                }`}
-                onClick={() => handleToggleViewMode('list')}
-                title="List view"
-              >
-                <ListIcon className="w-3.5 h-3.5" />
-              </Button>
+              {/* Segmented View Mode Toggle: Grid vs List */}
+              <div className="flex items-center p-0.5 rounded-lg border border-border/40 bg-secondary/30 text-muted-foreground">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 rounded-md ${
+                    viewMode === 'grid'
+                      ? 'bg-background text-foreground shadow-xs font-medium'
+                      : 'hover:text-foreground'
+                  }`}
+                  onClick={() => handleToggleViewMode('grid')}
+                  title="Grid view"
+                >
+                  <LayoutGridIcon className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 rounded-md ${
+                    viewMode === 'list'
+                      ? 'bg-background text-foreground shadow-xs font-medium'
+                      : 'hover:text-foreground'
+                  }`}
+                  onClick={() => handleToggleViewMode('list')}
+                  title="List view"
+                >
+                  <ListIcon className="w-3.5 h-3.5" />
+                </Button>
+              </div>
             </div>
 
             {/* Secondary CTA: Blank Project */}
-            {onNewBlankProject && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onNewBlankProject}
-                className="h-8 gap-1.5 px-3 text-xs font-medium border-border/60 hover:bg-accent/40"
-              >
-                <PlusIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>Blank Project</span>
-              </Button>
-            )}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {onNewBlankProject && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onNewBlankProject}
+                  className="h-9 gap-2 px-3 text-xs font-medium border-border/60 hover:bg-accent/40"
+                >
+                  <PlusIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>Blank Project</span>
+                </Button>
+              )}
 
-            {/* Primary CTA: New Recording */}
-            <Button
-              size="sm"
-              onClick={onNewRecording}
-              className="h-8 gap-1.5 px-3 text-xs font-medium bg-gradient-to-r from-indigo-500 to-primary hover:from-indigo-600 hover:to-primary/90 text-white shadow-sm"
-            >
-              <VideoIcon className="w-3.5 h-3.5" />
-              <span>New Recording</span>
-            </Button>
+              {/* Primary CTA: New Recording */}
+              <Button
+                size="sm"
+                onClick={onNewRecording}
+                className="h-9 gap-2 px-3 text-xs font-medium bg-gradient-to-r from-indigo-500 to-primary hover:from-indigo-600 hover:to-primary/90 text-white shadow-sm"
+              >
+                <VideoIcon className="w-3.5 h-3.5" />
+                <span>New Recording</span>
+              </Button>
+            </div>
           </div>
         </div>
 

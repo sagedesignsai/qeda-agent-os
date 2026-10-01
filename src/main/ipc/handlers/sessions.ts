@@ -28,9 +28,9 @@ export function registerSessionsHandlers({
   /**
    * Tell the renderer a session row changed.
    *
-   * The sidebar's recents list and the Sessions page are two surfaces reading the
-   * same rows. Without this, deleting a conversation leaves it in the sidebar
-   * until something forces a remount.
+   * The rail reads sessions in two places — the main menu's recents list and
+   * the ChatMenu conversation list. Without this, deleting a conversation
+   * leaves it on screen until something forces a remount.
    */
   const broadcastSessionsChanged = () => {
     if (!mainWindow.isDestroyed()) {

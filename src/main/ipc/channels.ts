@@ -120,6 +120,20 @@ export type ChatContext = {
   projectId?: string;
 };
 
+/**
+ * The turn's operating mode, declared by the caller.
+ *
+ * WHY THIS IS A PAYLOAD FIELD AND NOT A GUESS: the mode used to come from
+ * `detectMode()`, a regex over the latest user message. That made a single
+ * wording decision a point of failure — rephrase the generated prompt and the
+ * notebook protocol silently never fires, and a follow-up turn ("now do the
+ * same for Redis") carries no mode keyword at all, so it degrades to a plain
+ * chat. A surface that *knows* it is generating a notebook now says so.
+ *
+ * Omit it for free-form chat and the heuristic still applies as a fallback.
+ */
+export type AgentIntent = 'chat' | 'research' | 'notebook';
+
 export interface IpcChannels {
   // Session management
   'sessions:list': {
@@ -145,10 +159,10 @@ export interface IpcChannels {
   /**
    * A session was created, renamed, deleted, or moved between projects.
    *
-   * Needed because the sidebar's recents list and the Sessions page are two
-   * surfaces reading the same rows; without this the sidebar keeps showing a
-   * conversation that was deleted until something forces a remount. Same
-   * broadcast shape as `projects:changed`.
+   * Needed because the rail reads sessions in two places — the main menu's
+   * recents list and the ChatMenu conversation list — and both show the same
+   * rows; without this a deleted conversation stays on screen until something
+   * forces a remount. Same broadcast shape as `projects:changed`.
    */
   'sessions:changed': void;
 
@@ -281,7 +295,16 @@ export interface IpcChannels {
 
   // ── Agent chat (streaming via IPC event emitter) ──────────────────────────
   'agent:chat': {
-    req: { sessionId: string; messages: UIMessage[]; context?: ChatContext };
+    req: {
+      sessionId: string;
+      messages: UIMessage[];
+      context?: ChatContext;
+      /**
+       * Declared operating mode. Omitted for free-form chat, where the
+       * main-side heuristic still infers one from the message text.
+       */
+      intent?: AgentIntent;
+    };
     res: void;
   };
 

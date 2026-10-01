@@ -4,8 +4,8 @@
  * The ADHD focus system: a *doing* surface (Today) and a *planning* surface
  * (Board), plus an AI copilot that removes the activation barrier.
  *
- *   ┌─ PageHeader ────────────────────────────────────────────────────────────┐
- *   │  Backlog · Active · Done                              [Brain dump] [+]  │
+ *   ┌─ PageHeader (dense, one row) ───────────────────────────────────────────┐
+ *   │  Tasks                                    [Level] [⋯] [New task]        │
  *   ├─ Tabs: Today | Board ───────────────────────────────────────────────────┤
  *   │  Today  → focus stats, time blocks, "Plan my day"                       │
  *   │  Board  → the three-column kanban                                       │
@@ -34,6 +34,7 @@ import {
   PencilIcon,
   Loader2Icon,
   Minimize2Icon,
+  MoreHorizontalIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
@@ -60,7 +61,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { HeaderTab, HeaderTabStrip } from '@/components/HeaderTabStrip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { BrainDumpDialog } from '@/components/tasks/BrainDumpDialog';
@@ -86,6 +88,7 @@ import {
   type UseFocusTimerReturn,
 } from '@/hooks/use-focus-timer';
 import { useProjectScope } from '@/hooks/use-project-scope';
+import { useTaskDrag } from '@/hooks/use-task-drag';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useGamification } from '@/hooks/use-gamification';
 import { HeaderLevelChip } from '@/components/gamification/HeaderLevelChip';
@@ -100,7 +103,7 @@ import {
   getNextBestMove,
   type TaskRecommendation,
 } from '@/lib/task-recommendations';
-import { XP_REWARDS } from '@/lib/gamification';
+import { XP_REWARDS, xpForTaskPriority } from '@/lib/gamification';
 import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
@@ -148,6 +151,13 @@ interface TaskCardProps {
   onOpenSteps: (task: Task) => void;
   onSchedule: (task: Task) => void;
   onEdit: (task: Task) => void;
+  /** In-flight drag source; dims the card while it is being dragged. */
+  isDragging?: boolean;
+  /**
+   * HTML5 drag source props from `useTaskDrag`. Typed loosely because
+   * `motion.div` narrows the DOM drag handlers to its own element type.
+   */
+  dragProps?: Record<string, unknown>;
 }
 
 function TaskCard({
@@ -159,9 +169,14 @@ function TaskCard({
   onOpenSteps,
   onSchedule,
   onEdit,
+  isDragging = false,
+  dragProps,
 }: TaskCardProps) {
   const pm = PRIORITY_META[task.priority as Priority];
   const sm = STATUS_META[task.status];
+  // Render-time clock read: the label is only as fresh as the last re-render.
+  // Acceptable for a board that re-renders on any task mutation, but it does
+  // mean a card left open across midnight can show a stale "overdue".
   const isOverdue =
     task.due_at !== null &&
     task.due_at !== undefined &&
@@ -175,17 +190,20 @@ function TaskCard({
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.15 }}
+      {...dragProps}
       className={cn(
-        'group rounded-lg border border-l-2 bg-card px-3 py-2.5 shadow-sm',
+        'group rounded-md border border-l-2 bg-card px-2.5 py-2 shadow-xs',
         pm.border,
         'border-border/60',
+        'cursor-grab transition-opacity active:cursor-grabbing',
+        isDragging && 'opacity-40',
       )}
     >
       {/* Title row */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-1.5">
         <p
           className={cn(
-            'text-sm font-medium leading-snug text-card-foreground',
+            'line-clamp-2 text-xs font-medium leading-snug text-card-foreground',
             task.status === 'done' && 'text-muted-foreground line-through',
           )}
         >
@@ -197,7 +215,8 @@ function TaskCard({
             <Button
               variant="ghost"
               size="icon"
-              className="size-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+              aria-label={`Task actions for ${task.title}`}
+              className="size-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
             >
               <ChevronDownIcon className="size-3" />
             </Button>
@@ -245,13 +264,13 @@ function TaskCard({
 
       {/* Description snippet */}
       {task.description && (
-        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+        <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
           {task.description}
         </p>
       )}
 
       {/* Metadata row */}
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <Badge
           variant="outline"
           className={cn(
@@ -266,6 +285,7 @@ function TaskCard({
           <button
             type="button"
             onClick={() => onOpenSteps(task)}
+            aria-label={`Breakdown steps for ${task.title}`}
             className="flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground"
           >
             <CheckIcon className="size-2.5" />
@@ -281,7 +301,10 @@ function TaskCard({
         )}
 
         {task.pomodoro_count > 0 && (
-          <span className="text-[10px] text-muted-foreground">
+          <span
+            className="text-[10px] text-muted-foreground"
+            title={`${task.pomodoro_count} pomodoros completed`}
+          >
             🍅 ×{task.pomodoro_count}
           </span>
         )}
@@ -301,12 +324,13 @@ function TaskCard({
         )}
       </div>
 
-      {/* Focus button (visible on hover) */}
+      {/* Focus button. Hover-revealed, but `focus-visible` keeps it reachable
+          by keyboard — a hover-only control is invisible to tab navigation. */}
       {task.status !== 'done' && (
         <Button
           size="sm"
           variant="ghost"
-          className="mt-2 h-6 w-full gap-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+          className="mt-1.5 h-5 w-full gap-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           onClick={() => onFocus(task)}
         >
           <FocusIcon className="size-3" />
@@ -375,12 +399,7 @@ function FocusMode({
     }
   };
 
-  const xpReward =
-    task.priority === 1
-      ? XP_REWARDS.TASK_HIGH
-      : task.priority === 2
-        ? XP_REWARDS.TASK_MED
-        : XP_REWARDS.TASK_LOW;
+  const xpReward = xpForTaskPriority(task.priority);
 
   return (
     <motion.div
@@ -601,6 +620,20 @@ interface ColumnProps {
   onEdit: (task: Task) => void;
   onStartFlow?: (task: Task, event: React.MouseEvent) => void;
   onShuffle?: () => void;
+  /** True while a drag hovers this column. */
+  isDropTarget?: boolean;
+  getCardProps: (taskId: string) => {
+    draggable: true;
+    onDragStart: (e: React.DragEvent) => void;
+    onDragEnd: () => void;
+  };
+  isDragging: (taskId: string) => boolean;
+  dropProps: {
+    onDragOver: (e: React.DragEvent) => void;
+    onDragEnter: (e: React.DragEvent) => void;
+    onDragLeave: (e: React.DragEvent) => void;
+    onDrop: (e: React.DragEvent) => void;
+  };
 }
 
 function Column({
@@ -616,16 +649,28 @@ function Column({
   onEdit,
   onStartFlow,
   onShuffle,
+  isDropTarget = false,
+  getCardProps,
+  isDragging,
+  dropProps,
 }: ColumnProps) {
   const meta = STATUS_META[status];
   const StatusIcon = meta.icon;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-2">
+    <div
+      data-slot="board-column"
+      data-status={status}
+      {...dropProps}
+      className={cn(
+        'flex min-w-0 flex-1 flex-col gap-1.5 rounded-md transition-colors',
+        isDropTarget && 'bg-accent/40 ring-1 ring-primary/40',
+      )}
+    >
       {/* Column header */}
       <div className="flex items-center gap-1.5 px-1">
         <StatusIcon className="size-3.5 text-muted-foreground" />
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {meta.label}
         </span>
         <Badge
@@ -638,7 +683,7 @@ function Column({
 
       {/* Cards */}
       <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-2 pr-1 pb-4">
+        <div className="flex min-h-full flex-col gap-1.5 pr-1 pb-4">
           <AnimatePresence initial={false}>
             {tasks.map((task) => (
               <TaskCard
@@ -651,6 +696,8 @@ function Column({
                 onOpenSteps={onOpenSteps}
                 onSchedule={onSchedule}
                 onEdit={onEdit}
+                isDragging={isDragging(task.id)}
+                dragProps={getCardProps(task.id)}
               />
             ))}
             {tasks.length === 0 &&
@@ -668,9 +715,11 @@ function Column({
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
-                  className="rounded-lg border border-dashed border-border/40 py-8 text-center"
+                  className="rounded-md border border-dashed border-border/40 py-6 text-center"
                 >
-                  <p className="text-xs text-muted-foreground/50">Empty</p>
+                  <p className="text-[10px] text-muted-foreground/50">
+                    {isDropTarget ? 'Drop here' : 'Empty'}
+                  </p>
                 </motion.div>
               ))}
           </AnimatePresence>
@@ -823,34 +872,6 @@ export default function Tasks() {
     setTaskDialogOpen(true);
   };
 
-  const handleMove = async (id: string, to: Status) => {
-    const target = tasks.find((t) => t.id === id);
-    if (to === 'done' && target && target.status !== 'done') {
-      const xp =
-        target.priority === 1
-          ? XP_REWARDS.TASK_HIGH
-          : target.priority === 2
-            ? XP_REWARDS.TASK_MED
-            : XP_REWARDS.TASK_LOW;
-      void gamification.awardXp(xp, `task_p${target.priority}`, id);
-      triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
-    }
-    if (to === 'done' && focusedTask?.id === id) {
-      focusTimer.pause();
-      setFocusDisplayMode('closed');
-      setFocusedTask(null);
-    }
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status: to } : t)),
-    );
-    try {
-      await window.electron.ipc.invoke('tasks:update', { id, status: to });
-    } catch {
-      toast.error('Could not update task');
-      void load();
-    }
-  };
-
   const handleDelete = async (id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     try {
@@ -860,15 +881,6 @@ export default function Tasks() {
       void load();
     }
   };
-
-  const handleStartFlow = useCallback(
-    (task: Task, e: React.MouseEvent) => {
-      triggerParticleBurst(e.clientX, e.clientY);
-      void handleMove(task.id, 'active');
-      startFocus(task);
-    },
-    [handleMove, startFocus],
-  );
 
   const handlePhaseComplete = useCallback(
     async (info: PhaseCompleteInfo & { taskId: string }) => {
@@ -941,6 +953,60 @@ export default function Tasks() {
     onPhaseComplete: handleTimerPhase,
   });
 
+  // Declared after `focusTimer` because completing the focused task has to pause
+  // it. Ordering, not a ref, is what breaks the cycle here.
+  const handleMove = useCallback(
+    async (id: string, to: Status) => {
+      const target = tasks.find((t) => t.id === id);
+      // Dropping a card back where it came from is a no-op, not an XP event.
+      if (!target || target.status === to) return;
+
+      if (to === 'done') {
+        void gamification.awardXp(
+          xpForTaskPriority(target.priority),
+          `task_p${target.priority}`,
+          id,
+        );
+        triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
+        // Completing the task you are focused on must end the session, or the
+        // timer keeps running against a finished task.
+        if (focusedTask?.id === id) {
+          focusTimer.pause();
+          setFocusDisplayMode('closed');
+          setFocusedTask(null);
+        }
+      }
+      setTasks((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, status: to } : t)),
+      );
+      try {
+        await window.electron.ipc.invoke('tasks:update', { id, status: to });
+      } catch {
+        toast.error('Could not update task');
+        void load();
+      }
+    },
+    [tasks, focusedTask, focusTimer, gamification, load],
+  );
+
+  const handleStartFlow = useCallback(
+    (task: Task, e: React.MouseEvent) => {
+      triggerParticleBurst(e.clientX, e.clientY);
+      void handleMove(task.id, 'active');
+      startFocus(task);
+    },
+    [handleMove, startFocus],
+  );
+
+  /** Burst at the click, then mark done. Shared by every "complete" affordance. */
+  const handleComplete = useCallback(
+    (task: Task, e: React.MouseEvent) => {
+      triggerParticleBurst(e.clientX, e.clientY);
+      void handleMove(task.id, 'done');
+    },
+    [handleMove],
+  );
+
   const handlePrioritize = async () => {
     setIsPrioritizing(true);
     try {
@@ -967,110 +1033,150 @@ export default function Tasks() {
     setStepsOpen(true);
   };
 
-  const openSchedule = (task: Task | null) => {
-    setScheduleTaskId(task?.id ?? null);
+  // Always takes a task: every caller is a card's "Block time" menu item. The
+  // old `Task | null` signature implied a standalone-block path that no caller
+  // used, and the dialog still supports blank blocks via its own "custom" option.
+  const openSchedule = (task: Task) => {
+    setScheduleTaskId(task.id);
     setScheduleOpen(true);
   };
 
-  const tasksByStatus = (status: Status) =>
-    tasks.filter((t) => t.status === status);
+  // Memoised per status: `Column` re-renders on every parent render, and an
+  // unmemoised filter handed each card a fresh `tasks` array identity, defeating
+  // the `motion.div layout` animation on drag.
+  const tasksByStatus = useMemo(
+    () =>
+      COLUMNS.reduce<Record<Status, Task[]>>(
+        (acc, status) => {
+          acc[status] = tasks.filter((t) => t.status === status);
+          return acc;
+        },
+        { backlog: [], active: [], done: [] },
+      ),
+    [tasks],
+  );
 
   const openTasks = useMemo(
     () => tasks.filter((t) => t.status !== 'done'),
     [tasks],
   );
 
+  const drag = useTaskDrag({
+    onDrop: (taskId: string, to: Status) => void handleMove(taskId, to),
+  });
+
   return (
     <div className="flex h-full flex-col">
-      <PageHeader
-        crumbs={[
-          { label: 'Tasks' },
-          ...(projectName ? [{ label: projectName }] : []),
-        ]}
-        actions={
-          <div className="flex items-center gap-2">
-            <HeaderLevelChip
-              state={gamification.state}
-              loading={gamification.loading}
-            />
-            <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => setCopilotOpen(true)}
-            >
-              <BotIcon className="size-3 text-primary" />
-              Copilot
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => setBrainDumpOpen(true)}
-            >
-              <BrainIcon className="size-3 text-violet-500" />
-              Brain dump
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => void handlePrioritize()}
-              disabled={isPrioritizing || tasks.length === 0}
-            >
-              {isPrioritizing ? (
-                <Loader2Icon className="size-3 animate-spin" />
-              ) : (
-                <SparklesIcon className="size-3" />
-              )}
-              Prioritize
-            </Button>
-            <Button
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              onClick={openCreate}
-            >
-              <PlusIcon className="size-3" />
-              New task
-            </Button>
-          </div>
-        }
-      />
-
+      {/* The Tabs root wraps the header because the Today/Board switcher lives
+          in the header's `nav` slot, and Radix requires TabsList to descend
+          from its Tabs context. */}
       <Tabs
         value={view}
         onValueChange={(v) => setView(v as 'today' | 'board')}
         className="min-h-0 flex-1 gap-0"
       >
-        <div className="flex items-center justify-between border-b border-border/60 px-4 pt-3">
-          <TabsList>
-            <TabsTrigger value="today" className="gap-1.5">
-              <FocusIcon className="size-3.5" />
-              Today
-            </TabsTrigger>
-            <TabsTrigger value="board" className="gap-1.5">
-              <CircleDashedIcon className="size-3.5" />
-              Board
-            </TabsTrigger>
-          </TabsList>
-
-          {view === 'board' && (
-            <Button
-              size="sm"
-              variant={singleLens ? 'default' : 'outline'}
-              className={cn(
-                'h-7 gap-1.5 text-xs',
-                singleLens &&
-                  'bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400',
+        <PageHeader
+          density="dense"
+          crumbs={[{ label: 'Tasks' }]}
+          nav={
+            <HeaderTabStrip>
+              <HeaderTab value="today">
+                <FocusIcon />
+                Today
+              </HeaderTab>
+              <HeaderTab value="board">
+                <CircleDashedIcon />
+                Board
+              </HeaderTab>
+            </HeaderTabStrip>
+          }
+          meta={
+            <>
+              <HeaderLevelChip
+                state={gamification.state}
+                loading={gamification.loading}
+              />
+              <ProjectScopeChip
+                name={projectName}
+                onClear={clearProjectScope}
+              />
+            </>
+          }
+          actions={
+            <>
+              {/* Board-only: a view modifier, so it sits with the other
+                  header actions now that the tab strip is gone. */}
+              {view === 'board' && (
+                <Button
+                  size="sm"
+                  variant={singleLens ? 'default' : 'outline'}
+                  className={cn(
+                    'h-7 gap-1.5 text-xs',
+                    singleLens &&
+                      'bg-amber-500 font-semibold text-zinc-950 hover:bg-amber-400',
+                  )}
+                  onClick={() => setSingleLens(!singleLens)}
+                >
+                  <BrainIcon className="size-3.5" />
+                  {singleLens ? 'Show All Columns' : 'Single-Task Lens'}
+                </Button>
               )}
-              onClick={() => setSingleLens(!singleLens)}
-            >
-              <BrainIcon className="size-3.5" />
-              {singleLens ? 'Show All Columns' : 'Single-Task Lens'}
-            </Button>
-          )}
-        </div>
+
+              {/* The dense row only has room for the primary action, so the
+                  three secondary commands collapse into an overflow menu. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 w-7 px-0 text-xs"
+                    aria-label="More task actions"
+                  >
+                    <MoreHorizontalIcon className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44 text-xs">
+                  <DropdownMenuItem
+                    className="gap-2 text-xs"
+                    onSelect={() => setCopilotOpen(true)}
+                  >
+                    <BotIcon className="size-3.5 text-primary" />
+                    Copilot
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2 text-xs"
+                    onSelect={() => setBrainDumpOpen(true)}
+                  >
+                    <BrainIcon className="size-3.5 text-violet-500" />
+                    Brain dump
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="gap-2 text-xs"
+                    disabled={isPrioritizing || tasks.length === 0}
+                    onSelect={() => void handlePrioritize()}
+                  >
+                    {isPrioritizing ? (
+                      <Loader2Icon className="size-3.5 animate-spin" />
+                    ) : (
+                      <SparklesIcon className="size-3.5" />
+                    )}
+                    Prioritize
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Button
+                size="sm"
+                className="h-7 gap-1.5 px-2.5 text-xs"
+                onClick={openCreate}
+              >
+                <PlusIcon className="size-3" />
+                New task
+              </Button>
+            </>
+          }
+        />
 
         <TabsContent value="today" className="min-h-0 overflow-hidden">
           <TodayTimeline
@@ -1105,12 +1211,12 @@ export default function Tasks() {
               onExit={() => setSingleLens(false)}
             />
           ) : (
-            <div className="flex h-full min-h-0 gap-3 overflow-hidden p-4">
+            <div className="flex h-full min-h-0 gap-2 overflow-hidden p-3">
               {COLUMNS.map((status) => (
                 <Column
                   key={status}
                   status={status}
-                  tasks={tasksByStatus(status)}
+                  tasks={tasksByStatus[status]}
                   stepProgress={stepProgress}
                   recommendation={status === 'active' ? recommendation : null}
                   onMove={handleMove}
@@ -1121,6 +1227,10 @@ export default function Tasks() {
                   onEdit={openEdit}
                   onStartFlow={handleStartFlow}
                   onShuffle={() => setShuffleIndex((prev) => prev + 1)}
+                  isDropTarget={drag.overColumn === status}
+                  getCardProps={drag.getCardProps}
+                  isDragging={drag.isDragging}
+                  dropProps={drag.getColumnProps(status)}
                 />
               ))}
             </div>
@@ -1158,6 +1268,7 @@ export default function Tasks() {
         onOpenChange={setScheduleOpen}
         tasks={openTasks}
         presetTaskId={scheduleTaskId}
+        projectId={projectId}
         onSaved={() => undefined}
       />
 
@@ -1183,10 +1294,7 @@ export default function Tasks() {
               setFocusedTask(null);
               focusTimer.pause();
             }}
-            onComplete={(task, e) => {
-              triggerParticleBurst(e.clientX, e.clientY);
-              void handleMove(task.id, 'done');
-            }}
+            onComplete={handleComplete}
           />
         )}
       </AnimatePresence>
@@ -1216,10 +1324,7 @@ export default function Tasks() {
               setFocusedTask(null);
               focusTimer.pause();
             }}
-            onCompleteTask={(task, e) => {
-              triggerParticleBurst(e.clientX, e.clientY);
-              void handleMove(task.id, 'done');
-            }}
+            onCompleteTask={handleComplete}
           />
         )}
       </AnimatePresence>

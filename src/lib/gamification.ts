@@ -80,3 +80,16 @@ export function getRankTitle(level: number): string {
   if (level <= 14) return 'Flow Master';
   return 'Zen Operator';
 }
+
+/**
+ * XP for completing a task of the given priority.
+ *
+ * Lives here rather than being inlined because four surfaces display this
+ * number (the board card, the two launchpads, and the focus bar) and each one
+ * previously carried its own copy of the ternary.
+ */
+export function xpForTaskPriority(priority: number): number {
+  if (priority === 1) return XP_REWARDS.TASK_HIGH;
+  if (priority === 2) return XP_REWARDS.TASK_MED;
+  return XP_REWARDS.TASK_LOW;
+}

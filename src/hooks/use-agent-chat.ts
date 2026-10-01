@@ -24,6 +24,7 @@
 import type { UIMessage } from 'ai';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIpcEvent } from './use-ipc';
+import type { AgentIntent } from '../main/ipc/channels';
 
 export type AgentStatus = 'ready' | 'streaming' | 'error';
 
@@ -79,6 +80,14 @@ export interface UseAgentChatOptions {
   };
   /** Channel names for this agent. Defaults to the main chat's. */
   transport?: AgentTransport;
+  /**
+   * Declared operating mode for every turn this hook runs.
+   *
+   * Set it when the surface *knows* it is doing research or generating a
+   * notebook — the dialog does, via the prompt it hands over. Leave it
+   * undefined for free-form chat and main infers the mode from the wording.
+   */
+  intent?: AgentIntent;
   /** Persist the rebuilt conversation on completion (default true). */
   persist?: boolean;
   /** Load any persisted conversation for `sessionId` (default true). */
@@ -247,6 +256,7 @@ export function useAgentChat({
   initialMessages = [],
   context,
   transport = DEFAULT_AGENT_TRANSPORT,
+  intent,
   persist = true,
   hydrate = true,
 }: UseAgentChatOptions): UseAgentChatReturn {
@@ -261,12 +271,19 @@ export function useAgentChat({
   const messagesRef = useRef<UIMessage[]>(initialMessages);
   const sessionIdRef = useRef(sessionId);
   const contextRef = useRef(context);
+  // Mirrored the same way: `runTurn` is a `useCallback` bound to the transport,
+  // so a bare `intent` in its closure would go stale on the second turn.
+  const intentRef = useRef(intent);
   const streamingRef = useRef(false);
 
   // Keep the context ref current without re-binding IPC listeners.
   useEffect(() => {
     contextRef.current = context;
   }, [context]);
+
+  useEffect(() => {
+    intentRef.current = intent;
+  }, [intent]);
 
   /** Update state and the mirror ref together, synchronously. */
   const commitMessages = useCallback(
@@ -305,7 +322,8 @@ export function useAgentChat({
 
       if (!persist) return;
       // Persist the reconstructed conversation so it survives a restart and
-      // shows up on the Sessions page. Upserts are keyed by message id.
+      // shows up in the rail's conversation list. Upserts are keyed by message
+      // id.
       const current = messagesRef.current;
       const activeSession = sessionIdRef.current;
       if (!activeSession || current.length === 0) return;
@@ -357,6 +375,8 @@ export function useAgentChat({
         sessionId: sessionIdRef.current,
         messages: messagesRef.current,
         context: contextRef.current,
+        // Omitted entirely when unset, so main's heuristic stays the fallback.
+        ...(intentRef.current ? { intent: intentRef.current } : {}),
       })
       .catch(failTurn);
   }, [failTurn, transport.invokeChannel]);

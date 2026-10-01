@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeftIcon,
@@ -55,6 +55,15 @@ export function SingleTaskLens({
     });
 
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Completing the current task shrinks `openTasks`, which leaves the index
+  // pointing past the end. Without this clamp the lens renders "Clear Horizon!
+  // No open tasks left" while work remains, purely because the index ran out.
+  useEffect(() => {
+    if (currentIndex > openTasks.length - 1) {
+      setCurrentIndex(Math.max(0, openTasks.length - 1));
+    }
+  }, [currentIndex, openTasks.length]);
 
   const task = openTasks[currentIndex] ?? null;
   const progress = task ? stepProgress[task.id] : undefined;

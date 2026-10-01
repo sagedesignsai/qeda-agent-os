@@ -70,6 +70,34 @@ const MOCK_AUDIO: UseFocusAudioReturn = {
 };
 
 describe('SingleTaskLens', () => {
+  it('clamps the cursor when completing a task shrinks the list', () => {
+    // Advancing to the *last* task and then completing it leaves the index past
+    // the end of `openTasks`. Without a clamp the lens falls through to
+    // "Clear Horizon! No open tasks left" while a task is still outstanding.
+    const props = {
+      stepProgress: {},
+      onFocus: jest.fn(),
+      onOpenSteps: jest.fn(),
+      onComplete: jest.fn(),
+      onExit: jest.fn(),
+    };
+
+    const { rerender } = render(
+      <SingleTaskLens tasks={MOCK_TASKS} {...props} />,
+    );
+
+    // Page forward to the final task.
+    fireEvent.click(screen.getByText(/Next Task/));
+    expect(document.body.textContent).toMatch(/2 of 2/);
+
+    // Completing it removes it from the open list, leaving only task-1.
+    rerender(<SingleTaskLens tasks={[MOCK_TASKS[0]]} {...props} />);
+
+    expect(screen.queryByText('Clear Horizon!')).toBeNull();
+    expect(document.body.textContent).toMatch(/1 of 1/);
+    expect(screen.getByText('Write executive summary')).toBeInTheDocument();
+  });
+
   it('renders the highest priority active task without peripheral distraction', () => {
     const onFocus = jest.fn();
     const onOpenSteps = jest.fn();

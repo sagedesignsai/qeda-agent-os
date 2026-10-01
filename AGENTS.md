@@ -43,7 +43,7 @@ So most shared code lives *outside* the renderer directory:
 
 | Path | Reality |
 | --- | --- |
-| `src/renderer/pages/` | Route-level views (Chat, Tasks, Projects, Terminal, Workspace, Sessions, Tools) |
+| `src/renderer/pages/` | Route-level views (Chat, Tasks, Projects, Terminal, Workspace, Tools) |
 | `src/renderer/components/` | **Only `AppLayout.tsx`.** Everything else is `src/components/*` |
 | `src/components/` | All components: `ui/` (61 shadcn files), `ai-elements/`, plus feature dirs |
 | `src/hooks/` | Shared hooks — renderer, but not under `src/renderer/` |

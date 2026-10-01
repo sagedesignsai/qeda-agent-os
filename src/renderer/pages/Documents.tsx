@@ -18,6 +18,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { PlusIcon, FileTextIcon } from 'lucide-react';
 import { PageHeader, type PageCrumb } from '@/components/PageHeader';
+import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useDocuments, useDocumentEditor } from '@/hooks/use-documents';
 import { WordProcessor } from '@/components/documents/word-processor';
@@ -27,7 +28,11 @@ import { DOCUMENT_TEMPLATES } from '@/lib/pdf-studio/templates';
 export default function Documents() {
   const navigate = useNavigate();
   const { documentId } = useParams<{ documentId?: string }>();
-  const { activeProjectId, activeProjectName } = useProjectScope();
+  const {
+    activeProjectId,
+    activeProjectName,
+    clear: clearProjectScope,
+  } = useProjectScope();
 
   const {
     documents,
@@ -65,17 +70,10 @@ export default function Documents() {
     }
   };
 
-  const crumbs: PageCrumb[] = [
-    { label: 'Documents', to: '/documents' },
-    ...(activeProjectName
-      ? [
-          {
-            label: activeProjectName,
-            to: `/documents?projectId=${activeProjectId}`,
-          },
-        ]
-      : []),
-  ];
+  // The dense header promotes the trailing crumb to the heading, so a project
+  // crumb here would replace "Documents" as the page title. Scope is carried by
+  // ProjectScopeChip in `meta` instead.
+  const crumbs: PageCrumb[] = [{ label: 'Documents', to: '/documents' }];
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
@@ -103,7 +101,14 @@ export default function Documents() {
         <>
           {/* Top Application Bar for Template Gallery / Empty State */}
           <PageHeader
+            density="dense"
             crumbs={crumbs}
+            meta={
+              <ProjectScopeChip
+                name={activeProjectName}
+                onClear={clearProjectScope}
+              />
+            }
             actions={
               <Button
                 variant="default"

@@ -164,6 +164,40 @@ function renderContextBlock(context: WorkspaceContext | undefined): string {
   return sections.join('\n\n');
 }
 
+// ─── Step budget ───────────────────────────────────────────────────────────────
+
+/**
+ * Tool-loop step ceilings, per mode.
+ *
+ * The budget is a property of the *job*, not of the agent: the chat agent runs
+ * the same loop for a one-line question and for an 8–12 section researched
+ * notebook, and those cannot share a ceiling.
+ *
+ * A deep notebook is roughly 6–8 steps per section (two searches, a fetch, a
+ * `recordSource`, a `recordEvidence`, a `libraryDocs`, sometimes `findImages`)
+ * across 8–12 sections, which is 50–70 steps before the notebook is even
+ * written — so a single 40-step ceiling truncated the generation mid-document.
+ * Notebook mode therefore gets a ceiling sized for the protocol, and ordinary
+ * chat keeps the tight one that stops a runaway loop early.
+ *
+ * This is a stopgap, not the architecture. The real fix is a resumable run
+ * engine where each section is its own step row, so a long job survives a
+ * crash and does not need a larger ceiling at all. Until that exists, the
+ * larger budget is what makes `deep` mode work.
+ */
+export const STEP_BUDGETS = {
+  chat: 40,
+  research: 60,
+  notebook: 120,
+} as const;
+
+/** Ceiling for a mode, defaulting to the chat budget for anything unknown. */
+export function stepBudgetFor(
+  mode: 'chat' | 'research' | 'notebook' | undefined,
+): number {
+  return STEP_BUDGETS[mode ?? 'chat'] ?? STEP_BUDGETS.chat;
+}
+
 // ─── Agent factory ────────────────────────────────────────────────────────────
 
 export interface CreateAgentOptions {
@@ -174,6 +208,11 @@ export interface CreateAgentOptions {
   notebookMode?: boolean;
   /** Bind the turn to a page or notebook. */
   context?: WorkspaceContext;
+  /**
+   * The declared operating mode, which sizes the step budget. Defaults to
+   * `notebook` when `notebookMode` is set so the two cannot disagree.
+   */
+  mode?: 'chat' | 'research' | 'notebook';
 }
 
 /**
@@ -187,6 +226,11 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
   const providerId = options.target?.providerId ?? settings.activeProvider;
   const modelId = options.target?.modelId ?? settings.activeModel;
   const model = resolveModel(providerId, modelId);
+
+  // Notebook mode implies a larger budget, so derive the effective mode rather
+  // than trusting the caller to pass both consistently.
+  const mode =
+    options.mode ?? (options.notebookMode ? 'notebook' : 'chat');
 
   const instructions = [
     BASE_INSTRUCTIONS,
@@ -205,7 +249,7 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
     // Derived from tools/policies/chat.ts rather than a hand-maintained name map.
     // The Tools page calls the same policy, so manual execution cannot bypass it.
     toolApproval: chatApprovalPolicy,
-    stopWhen: isStepCount(40),
+    stopWhen: isStepCount(stepBudgetFor(mode)),
   });
 }
 
