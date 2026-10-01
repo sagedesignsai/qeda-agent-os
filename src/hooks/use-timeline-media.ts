@@ -145,6 +145,8 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         try {
           const bitmap = await createImageBitmap(canvas);
+          const slot = Math.floor(timeSec / intervalSec);
+          resultMap.set(slot, bitmap);
           resultMap.set(Math.floor(timeSec * 1000), bitmap);
         } catch {
           // ignore bitmap error

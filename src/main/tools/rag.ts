@@ -9,24 +9,34 @@
  *   listIndexed – list all indexed file paths
  *   removeFromIndex – remove a file's chunks from the index
  *
- * Embedding model is resolved from settings, defaulting to the gateway.
+ * Embeddings are configured separately from the chat model — most free chat
+ * providers (Groq, OpenRouter's free tier) serve no embeddings endpoint, so
+ * inheriting the active chat provider would fail confusingly. See
+ * ai/embedding-config.ts for the resolution order and the width contract; this
+ * module only does the SDK calls and the sqlite-vec work.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { tool, embed, embedMany } from 'ai';
+import type { EmbeddingModel } from 'ai';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { getDb } from '../db/client.js';
+import { getDb, getEmbeddingDim } from '../db/client.js';
 import { getSettings } from '../ai/settings.js';
-import { resolveModel } from '../ai/provider.js';
+import { resolveEmbeddingModel, resolveApiKey } from '../ai/provider.js';
+import { getProvider } from '../ai/registry.js';
+import {
+  assertEmbeddingWidth,
+  embeddingProviderOptions,
+  resolveEmbeddingConfig,
+  type ResolvedEmbeddingConfig,
+} from '../ai/embedding-config.js';
 
 // ─── Embedding helper ─────────────────────────────────────────────────────────
 
-/**
- * Simple character-based chunker. Splits on paragraph breaks up to `maxChars`.
- */
+/** Simple character-based chunker. Splits on paragraph breaks up to `maxChars`. */
 function chunkText(text: string, maxChars = 1500): string[] {
   const paragraphs = text.split(/\n{2,}/);
   const chunks: string[] = [];
@@ -43,25 +53,80 @@ function chunkText(text: string, maxChars = 1500): string[] {
   return chunks;
 }
 
-export function getEmbeddingModel() {
+/** True when this provider has a key in Settings or the environment. */
+function hasProviderKey(providerId: string): boolean {
+  const provider = getProvider(providerId);
+  if (!provider) return false;
+  if (!provider.apiKeyEnvs?.length) return true; // keyless, e.g. a local Ollama
+  if (resolveApiKey(providerId)) return true;
+  return false;
+}
+
+export interface EmbeddingContext {
+  model: EmbeddingModel;
+  config: ResolvedEmbeddingConfig;
+  /** Width the local index was created with; vectors must match it. */
+  tableDim: number;
+  /** Present only for models that honour an explicit width. */
+  providerOptions?: Record<string, Record<string, number>>;
+}
+
+/**
+ * Everything an embedding call needs, resolved once per tool invocation.
+ *
+ * `resolveEmbeddingModel` is used rather than the chat resolver: `embed()`
+ * calls `doEmbed` on what it is handed, and a LanguageModel has no such method,
+ * so passing one back from the chat path fails at runtime regardless of how
+ * correct the configuration is.
+ */
+export function getEmbeddingContext(): EmbeddingContext {
   const settings = getSettings();
 
-  // Embeddings are configured separately from the chat model: most free chat
-  // providers (Groq, OpenRouter's free tier) do not serve an embeddings
-  // endpoint, so inheriting the active chat provider would fail confusingly.
-  const providerId =
-    settings.embeddingProvider ?? process.env.EMBEDDING_PROVIDER ?? '';
-  const modelId = settings.embeddingModel ?? process.env.EMBEDDING_MODEL ?? '';
+  const config = resolveEmbeddingConfig({
+    settingsProvider: settings.embeddingProvider,
+    settingsModel: settings.embeddingModel,
+    envProvider: process.env.EMBEDDING_PROVIDER,
+    envModel: process.env.EMBEDDING_MODEL,
+    hasKey: hasProviderKey,
+  });
 
-  if (!providerId || !modelId) {
-    throw new Error(
-      'RAG embeddings are not configured. Set EMBEDDING_PROVIDER and ' +
-        'EMBEDDING_MODEL to an OpenAI-compatible embeddings endpoint ' +
-        'before indexing or searching documents.',
-    );
+  const tableDim = getEmbeddingDim();
+  const providerOptions = embeddingProviderOptions(config, tableDim);
+
+  return {
+    model: resolveEmbeddingModel(config.provider, config.model),
+    config,
+    tableDim,
+    ...(providerOptions ? { providerOptions } : {}),
+  };
+}
+
+/**
+ * Fail before writing rather than after.
+ *
+ * The `vec0` table is created at a fixed width and cannot be resized, so a
+ * wrong-width vector is not a recoverable insert — it is a corrupt index. Check
+ * the first vector of every operation and report the real numbers.
+ */
+export function assertEmbeddingFits(
+  ctx: EmbeddingContext,
+  actual: number,
+): void {
+  assertEmbeddingWidth({
+    provider: ctx.config.provider,
+    model: ctx.config.model,
+    actual,
+    tableDim: ctx.tableDim,
+  });
+}
+
+/** Shape the error an agent sees, so configuration problems read as such. */
+function ragError(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.name === 'EmbeddingWidthError') return err.message;
+    if (err.name === 'EmbeddingNotConfiguredError') return err.message;
   }
-
-  return resolveModel(providerId, modelId);
+  return String(err);
 }
 
 // ─── Tools ────────────────────────────────────────────────────────────────────
@@ -105,10 +170,21 @@ export const indexFileTool = tool({
       }
 
       // Embed all chunks in one batch call.
-      const model = getEmbeddingModel() as Parameters<
-        typeof embedMany
-      >[0]['model'];
-      const { embeddings } = await embedMany({ model, values: chunks });
+      const ctx = getEmbeddingContext();
+      const { embeddings } = await embedMany({
+        model: ctx.model,
+        values: chunks,
+        ...(ctx.providerOptions
+          ? { providerOptions: ctx.providerOptions }
+          : {}),
+      });
+
+      // Check the width BEFORE inserting anything: the vec table cannot be
+      // resized, so a mismatch discovered here is recoverable and one
+      // discovered by sqlite-vec later is not.
+      if (embeddings.length > 0) {
+        assertEmbeddingFits(ctx, embeddings[0].length);
+      }
 
       // Insert chunks + vectors.
       const insertChunk = db.prepare(
@@ -134,9 +210,11 @@ export const indexFileTool = tool({
         success: true,
         path: resolved,
         chunksIndexed: chunks.length,
+        model: `${ctx.config.provider}/${ctx.config.model}`,
+        dimensions: ctx.tableDim,
       };
     } catch (err) {
-      return { success: false, error: String(err) };
+      return { success: false, error: ragError(err) };
     }
   },
 });
@@ -157,8 +235,18 @@ export const searchDocsTool = tool({
   execute: async ({ query, topK }) => {
     const db = getDb();
     try {
-      const model = getEmbeddingModel() as Parameters<typeof embed>[0]['model'];
-      const { embedding } = await embed({ model, value: query });
+      const ctx = getEmbeddingContext();
+      const { embedding } = await embed({
+        model: ctx.model,
+        value: query,
+        ...(ctx.providerOptions
+          ? { providerOptions: ctx.providerOptions }
+          : {}),
+      });
+
+      // A query vector of the wrong width cannot be compared against anything,
+      // and sqlite-vec reports that as an opaque failure deep in the KNN.
+      assertEmbeddingFits(ctx, embedding.length);
 
       const vecBuffer = Buffer.from(new Float32Array(embedding).buffer);
 
@@ -209,7 +297,7 @@ export const searchDocsTool = tool({
 
       return { success: true, results: formatted };
     } catch (err) {
-      return { success: false, error: String(err) };
+      return { success: false, error: ragError(err) };
     }
   },
 });
@@ -227,7 +315,7 @@ export const listIndexedTool = tool({
         .all();
       return { success: true, indexedFiles: files };
     } catch (err) {
-      return { success: false, error: String(err) };
+      return { success: false, error: ragError(err) };
     }
   },
 });
@@ -260,7 +348,7 @@ export const removeFromIndexTool = tool({
 
       return { success: true, path: resolved, chunksRemoved: ids.length };
     } catch (err) {
-      return { success: false, error: String(err) };
+      return { success: false, error: ragError(err) };
     }
   },
 });

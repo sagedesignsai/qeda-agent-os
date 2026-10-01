@@ -70,6 +70,10 @@ export type {
 };
 export { DEFAULT_STUDIO_STYLING };
 
+import type { SerperImage, ImageFormatFilter } from '../services/serper.js';
+import type { DownloadResourceResult } from '../services/downloader.js';
+export type { SerperImage, ImageFormatFilter, DownloadResourceResult };
+
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
   name: string;
@@ -151,9 +155,8 @@ export interface IpcChannels {
   // Settings
   'settings:get': {
     req: void;
-    res: Omit<AppSettings, 'providers' | 'braveApiKey' | 'serviceKeys'> & {
+    res: Omit<AppSettings, 'providers' | 'serviceKeys'> & {
       providers: Record<string, { apiKey?: boolean; baseURL?: string }>;
-      braveApiKeySet: boolean;
       /** Which external services have a key set (never the value itself). */
       serviceKeysSet: Record<string, boolean>;
       /** True once first-launch onboarding has been finished or skipped. */
@@ -196,6 +199,33 @@ export interface IpcChannels {
   // External services (search, scrape, docs, images, speech)
   /** Status of each registered external service, including whether a key is set. */
   'services:list': { req: void; res: ServiceStatus[] };
+
+  // ── Serper Resource Search & Download ───────────────────────────────────────
+  'serper:search-images': {
+    req: {
+      query: string;
+      count?: number;
+      formatFilter?: ImageFormatFilter;
+      country?: string;
+    };
+    res: {
+      success: boolean;
+      total: number;
+      images: SerperImage[];
+      error?: string;
+    };
+  };
+  'serper:download-asset': {
+    req: {
+      url: string;
+      projectId?: string;
+      studioTakeId?: string;
+      filename?: string;
+      targetFolder?: string;
+      overwrite?: boolean;
+    };
+    res: DownloadResourceResult;
+  };
 
   // Tools
   'tools:list': { req: void; res: ToolInfo[] };

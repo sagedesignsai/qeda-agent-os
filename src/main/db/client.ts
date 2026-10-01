@@ -17,6 +17,19 @@ import { applyMigrations, CREATE_EMBEDDINGS } from './schema.js';
 // Embedding dimension – override with env var when using non-1536 models.
 const EMBEDDING_DIM = Number(process.env.EMBEDDING_DIM ?? 1536);
 
+/**
+ * The width the vector index was created with.
+ *
+ * Read once, here, when the database is first opened — and the `vec0` table is
+ * created at that width, which makes it immutable for the life of the file.
+ * RAG compares this against the vectors a model actually returns
+ * (see ai/embedding-config.ts) so a mismatch is reported as configuration rather
+ * than discovered as a corrupt index during a query.
+ */
+export function getEmbeddingDim(): number {
+  return EMBEDDING_DIM;
+}
+
 let _db: Database.Database | null = null;
 
 /**

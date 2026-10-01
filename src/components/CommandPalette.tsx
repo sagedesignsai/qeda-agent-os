@@ -26,24 +26,23 @@ import {
 } from '@/components/ui/command';
 import {
   MessageSquareIcon,
-  NotebookIcon,
   PlusIcon,
   MoonIcon,
   SunIcon,
   SettingsIcon,
   FileTextIcon,
-  SparklesIcon,
-  NotebookPenIcon,
+  FolderKanbanIcon,
+  CheckSquareIcon,
+  VideoIcon,
+  TerminalIcon,
 } from 'lucide-react';
-import { useGenerateNotebook } from '@/components/GenerateNotebookDialog';
-
 interface SessionLite {
   id: string;
   title: string;
 }
 
-interface PageHit {
-  page_id: string;
+interface DocLite {
+  id: string;
   title: string;
 }
 
@@ -59,21 +58,25 @@ export function CommandPalette({
   onOpenSettings,
 }: CommandPaletteProps) {
   const navigate = useNavigate();
-  const { open: openGenerateNotebook } = useGenerateNotebook();
   const { resolvedTheme, setTheme } = useTheme();
   const [query, setQuery] = useState('');
   const [sessions, setSessions] = useState<SessionLite[]>([]);
-  const [pages, setPages] = useState<PageHit[]>([]);
+  const [docs, setDocs] = useState<DocLite[]>([]);
 
-  // Load recent sessions whenever the palette opens.
+  // Load recent sessions and documents whenever the palette opens.
   useEffect(() => {
     if (!open) return undefined;
     let cancelled = false;
     void (async () => {
       try {
-        const data =
-          await window.electron.ipc.invoke<SessionLite[]>('sessions:list');
-        if (!cancelled) setSessions((data ?? []).slice(0, 6));
+        const [sessionData, docData] = await Promise.all([
+          window.electron.ipc.invoke<SessionLite[]>('sessions:list'),
+          window.electron.ipc.invoke<DocLite[]>('documents:list'),
+        ]);
+        if (!cancelled) {
+          setSessions((sessionData ?? []).slice(0, 6));
+          setDocs(docData ?? []);
+        }
       } catch {
         // Best-effort.
       }
@@ -82,30 +85,6 @@ export function CommandPalette({
       cancelled = true;
     };
   }, [open]);
-
-  // Debounced page search. Results are only rendered while the query is long
-  // enough, so stale hits are never surfaced.
-  useEffect(() => {
-    if (!open || query.trim().length < 2) return undefined;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void (async () => {
-        try {
-          const hits = await window.electron.ipc.invoke<PageHit[]>(
-            'pages:search',
-            { query },
-          );
-          if (!cancelled) setPages(hits ?? []);
-        } catch {
-          if (!cancelled) setPages([]);
-        }
-      })();
-    }, 180);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query, open]);
 
   const close = () => onOpenChange(false);
 
@@ -120,18 +99,12 @@ export function CommandPalette({
     close();
   };
 
-  const openPage = async (pageId: string) => {
-    try {
-      const detail = await window.electron.ipc.invoke<{
-        page: { notebook_id: string };
-      }>('pages:get', { id: pageId });
-      navigate(`/workspace/${detail.page.notebook_id}/${pageId}`);
-    } catch {
-      navigate('/workspace');
-    }
-  };
-
-  const showPages = query.trim().length >= 2;
+  const matchingDocs =
+    query.trim().length >= 2
+      ? docs.filter((d) =>
+          d.title.toLowerCase().includes(query.trim().toLowerCase()),
+        )
+      : [];
 
   return (
     <CommandDialog open={open} onOpenChange={handleOpenChange}>
@@ -145,40 +118,52 @@ export function CommandPalette({
           <CommandEmpty>No results found.</CommandEmpty>
 
           <CommandGroup heading="Navigation">
-            <CommandItem onSelect={() => run(() => navigate('/chat'))}>
-              <MessageSquareIcon />
-              <span>Chat &amp; Research</span>
+            <CommandItem onSelect={() => run(() => navigate('/projects'))}>
+              <FolderKanbanIcon />
+              <span>Projects</span>
               <CommandShortcut>⌘1</CommandShortcut>
+            </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/tasks'))}>
+              <CheckSquareIcon />
+              <span>Tasks &amp; Focus</span>
+              <CommandShortcut>⌘2</CommandShortcut>
             </CommandItem>
             <CommandItem onSelect={() => run(() => navigate('/documents'))}>
               <FileTextIcon />
               <span>Documents Studio</span>
               <CommandShortcut>⌘3</CommandShortcut>
             </CommandItem>
-            <CommandItem onSelect={() => run(() => navigate('/workspace'))}>
-              <NotebookIcon />
-              <span>Workspace</span>
-              <CommandShortcut>⌘2</CommandShortcut>
+            <CommandItem onSelect={() => run(() => navigate('/studio'))}>
+              <VideoIcon />
+              <span>Showcase Studio</span>
+              <CommandShortcut>⌘4</CommandShortcut>
+            </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/terminal'))}>
+              <TerminalIcon />
+              <span>Terminal</span>
+              <CommandShortcut>⌘5</CommandShortcut>
+            </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/chat'))}>
+              <MessageSquareIcon />
+              <span>Chat &amp; Research</span>
+              <CommandShortcut>⌘6</CommandShortcut>
             </CommandItem>
           </CommandGroup>
 
           <CommandSeparator />
 
           <CommandGroup heading="Actions">
-            <CommandItem
-              value="generate notebook tutorial guide paper research"
-              onSelect={() => run(() => openGenerateNotebook())}
-            >
-              <NotebookPenIcon />
-              <span>Generate notebook…</span>
+            <CommandItem onSelect={() => run(() => navigate('/projects'))}>
+              <PlusIcon />
+              <span>New project…</span>
+            </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/documents'))}>
+              <FileTextIcon />
+              <span>New document</span>
             </CommandItem>
             <CommandItem onSelect={() => run(() => navigate('/chat'))}>
               <PlusIcon />
               <span>New chat</span>
-            </CommandItem>
-            <CommandItem onSelect={() => run(() => navigate('/workspace'))}>
-              <FileTextIcon />
-              <span>New page</span>
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -217,18 +202,18 @@ export function CommandPalette({
             </>
           )}
 
-          {showPages && pages.length > 0 && (
+          {matchingDocs.length > 0 && (
             <>
               <CommandSeparator />
-              <CommandGroup heading="Pages">
-                {pages.map((page) => (
+              <CommandGroup heading="Documents">
+                {matchingDocs.map((doc) => (
                   <CommandItem
-                    key={page.page_id}
-                    value={`page ${page.title} ${page.page_id}`}
-                    onSelect={() => run(() => openPage(page.page_id))}
+                    key={doc.id}
+                    value={`doc ${doc.title} ${doc.id}`}
+                    onSelect={() => run(() => navigate(`/documents/${doc.id}`))}
                   >
-                    <SparklesIcon className="text-primary" />
-                    <span className="truncate">{page.title}</span>
+                    <FileTextIcon className="text-primary" />
+                    <span className="truncate">{doc.title || 'Untitled'}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>

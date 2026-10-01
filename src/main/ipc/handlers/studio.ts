@@ -506,6 +506,22 @@ export function registerStudioHandlers({
       const take = getStudioTake(takeId);
       if (!take) return { ok: false, error: 'Take not found' };
 
+      if (!take.videoPath) {
+        return {
+          ok: false,
+          error: 'No video asset has been added to this showcase project yet.',
+        };
+      }
+
+      try {
+        await fs.access(take.videoPath);
+      } catch {
+        return {
+          ok: false,
+          error: `Source video file was not found on disk at: ${take.videoPath}`,
+        };
+      }
+
       const defaultName = `${take.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${format}`;
       const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
         title: `Export Showcase (${format.toUpperCase()})`,

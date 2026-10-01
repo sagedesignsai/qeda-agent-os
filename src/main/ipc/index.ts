@@ -67,6 +67,7 @@ import { registerNotificationsHandlers } from './handlers/notifications';
 import { registerDocumentsHandlers } from './handlers/documents';
 import { registerStudioHandlers } from './handlers/studio';
 import { registerStudioCopilotHandlers } from './handlers/studio-copilot';
+import { registerSerperHandlers } from './handlers/serper';
 
 /**
  * Register every request/response handler.
@@ -91,4 +92,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerDocumentsHandlers({ mainWindow });
   registerStudioHandlers({ mainWindow });
   registerStudioCopilotHandlers({ mainWindow });
+  registerSerperHandlers({ mainWindow });
 }

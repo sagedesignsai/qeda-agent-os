@@ -20,6 +20,8 @@ module.exports = {
     '^use-stick-to-bottom$': '<rootDir>/.erb/mocks/useStickToBottomMock.js',
     '^@react-pdf/renderer$': '<rootDir>/.erb/mocks/reactPdfMock.js',
     '^electron$': '<rootDir>/.erb/mocks/electronMock.js',
+    '^@ai-sdk/(.*)$': '<rootDir>/.erb/mocks/aiMock.js',
+    '^ai$': '<rootDir>/.erb/mocks/aiMock.js',
     '\\.svg\\?react$': '<rootDir>/.erb/mocks/svgComponentMock.js',
     '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$':
       '<rootDir>/.erb/mocks/fileMock.js',

@@ -4,7 +4,7 @@
  * Small fetch helpers shared by the external-service clients.
  *
  * Every client takes an injectable `fetchImpl` so it can be unit-tested without
- * network access (same convention as tools/brave-search.ts). Failures are
+ * network access (same convention as every client in this folder). Failures are
  * normalised into `ServiceHttpError` with a message that is safe to show the
  * user (401/403 → key problem, 429 → rate limit, 402 → plan/credit limit).
  * ─────────────────────────────────────────────────────────────────────────────

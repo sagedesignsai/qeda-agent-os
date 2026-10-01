@@ -2,10 +2,10 @@
  * tools/services.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Agent tools for the external knowledge services. These complement the
- * built-in Brave `webSearch`/`fetchUrl` pair:
+ * built-in `webSearch`/`fetchUrl` pair:
  *
  *   advancedSearch – pick the best configured search backend (Tavily / Exa /
- *                    Serper / Brave / Firecrawl) with one normalized result shape
+ *                    Serper / Firecrawl) with one normalized result shape
  *   scrapePage     – render a page to clean markdown (Firecrawl)
  *   libraryDocs    – version-specific library docs + code (Context7)
  *   findImages     – cover art / photos (Unsplash)
@@ -21,8 +21,9 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { resolveService, resolveServiceKey } from '../services/keys.js';
+import { resolveService, resolveSearchCandidates } from '../services/keys.js';
 import {
+  searchAuto,
   searchWithProvider,
   SEARCH_PROVIDERS,
   type SearchProvider,
@@ -36,21 +37,9 @@ import {
   TTS_PROVIDERS,
 } from '../services/speech.js';
 
-/** Preference order used when the caller asks for `provider: 'auto'`. */
-const AUTO_SEARCH_ORDER: SearchProvider[] = [
-  'tavily',
-  'exa',
-  'serper',
-  'brave',
-  'firecrawl',
-];
-
-function pickAutoProvider(): SearchProvider | null {
-  for (const provider of AUTO_SEARCH_ORDER) {
-    if (resolveServiceKey(provider)) return provider;
-  }
-  return null;
-}
+/** The message every search tool shares when the user has no key at all. */
+const NO_SEARCH_PROVIDER =
+  'No search provider is configured. Add a key for Tavily, Exa, Serper or Firecrawl in Settings.';
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -70,7 +59,7 @@ const CONTENT_TYPE_BY_EXT: Record<string, string> = {
 
 export const advancedSearchTool = tool({
   description:
-    'Search the web with the best configured provider (Tavily, Exa, Serper/Google, Brave or Firecrawl). Returns normalized { title, url, snippet, provider } results, plus a synthesized answer when one is available. Prefer this over the basic webSearch when you want Google results, published dates, or a direct answer.',
+    'Search the web with the best configured provider (Tavily, Exa, Serper/Google or Firecrawl). Returns normalized { title, url, snippet, provider } results, plus a synthesized answer when one is available. Prefer this over the basic webSearch when you want Google results, published dates, or a direct answer.',
   inputSchema: z.object({
     query: z
       .string()
@@ -114,26 +103,41 @@ export const advancedSearchTool = tool({
     excludeDomains,
   }) => {
     try {
-      const chosen: SearchProvider | null =
-        provider === 'auto' ? pickAutoProvider() : (provider as SearchProvider);
-      if (!chosen) {
+      const shared = {
+        query,
+        count,
+        includeAnswer,
+        ...(includeDomains?.length ? { includeDomains } : {}),
+        ...(excludeDomains?.length ? { excludeDomains } : {}),
+      };
+
+      // `auto` means "whatever the user has", and it falls through on failure:
+      // a rate-limited first choice should not cost the turn its search.
+      if (provider === 'auto') {
+        const candidates = resolveSearchCandidates();
+        if (candidates.length === 0) {
+          return { success: false, error: NO_SEARCH_PROVIDER };
+        }
+        const response = await searchAuto(candidates, shared);
         return {
-          success: false,
-          error:
-            'No search provider is configured. Add a key for Tavily, Exa, Serper, Brave or Firecrawl in Settings.',
+          success: true,
+          provider: response.provider,
+          query,
+          ...(response.answer ? { answer: response.answer } : {}),
+          results: response.results,
         };
       }
 
+      // An explicitly named provider is a deliberate instruction: use exactly
+      // that one, and report its error instead of silently substituting
+      // another vendor's results.
+      const chosen = provider as SearchProvider;
       const resolved = resolveService(chosen);
       if (!resolved.ok) return { success: false, error: resolved.error };
 
       const response = await searchWithProvider(chosen, {
-        query,
-        count,
-        includeAnswer,
+        ...shared,
         apiKey: resolved.value.apiKey,
-        ...(includeDomains?.length ? { includeDomains } : {}),
-        ...(excludeDomains?.length ? { excludeDomains } : {}),
       });
 
       return {

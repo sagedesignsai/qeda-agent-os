@@ -18,6 +18,24 @@ import {
   type ServiceCategory,
   type ServiceConfig,
 } from './registry';
+import {
+  AUTO_SEARCH_ORDER,
+  type SearchCandidate,
+  type SearchProvider,
+} from './search.js';
+
+/**
+ * The key a service has in the encrypted Settings store, or ''.
+ *
+ * Note the absence of a legacy-field escape hatch here: Brave Search used to
+ * have a dedicated `braveApiKey` settings field alongside the `serviceKeys` map,
+ * which meant the two could disagree. Brave has since been removed, and the
+ * general rule is simply "the map, or nothing".
+ */
+function settingsServiceKey(id: string): string {
+  const fromMap = getSettings().serviceKeys?.[id];
+  return fromMap && fromMap.trim() ? fromMap.trim() : '';
+}
 
 export interface ServiceStatus {
   id: string;
@@ -33,8 +51,8 @@ export interface ServiceStatus {
 
 /** Resolve the key for a service: encrypted Settings first, then environment. */
 export function resolveServiceKey(id: string): string {
-  const fromSettings = getSettings().serviceKeys?.[id];
-  if (fromSettings && fromSettings.trim()) return fromSettings.trim();
+  const fromSettings = settingsServiceKey(id);
+  if (fromSettings) return fromSettings;
   const service = getService(id);
   if (service) {
     const fromEnv = envServiceKey(service);
@@ -46,8 +64,7 @@ export function resolveServiceKey(id: string): string {
 /** Status of every registered service, for the Settings UI. */
 export function listServiceStatuses(): ServiceStatus[] {
   return SERVICES.map((service) => {
-    const fromSettings = getSettings().serviceKeys?.[service.id];
-    const hasSettings = Boolean(fromSettings && fromSettings.trim());
+    const hasSettings = Boolean(settingsServiceKey(service.id));
     const hasEnv = Boolean(envServiceKey(service));
     return {
       id: service.id,
@@ -84,4 +101,23 @@ export function resolveService(
     };
   }
   return { ok: true, value: { service, apiKey } };
+}
+
+/**
+ * Every search provider that currently has a usable key, in preference order.
+ *
+ * This is what lets a caller say "search the web" without naming a provider.
+ * The returned list is empty when the user has configured none, which the
+ * caller must report as an actionable setup message rather than as an error
+ * from a provider that was never called.
+ */
+export function resolveSearchCandidates(
+  order: SearchProvider[] = AUTO_SEARCH_ORDER,
+): SearchCandidate[] {
+  const candidates: SearchCandidate[] = [];
+  for (const provider of order) {
+    const apiKey = resolveServiceKey(provider);
+    if (apiKey) candidates.push({ provider, apiKey });
+  }
+  return candidates;
 }

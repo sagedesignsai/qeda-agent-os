@@ -45,8 +45,6 @@ export interface AppSettings {
   /** Optional override for RAG embedding model. */
   embeddingProvider?: string;
   embeddingModel?: string;
-  /** Brave Search API key (source discovery for deep research). Encrypted at rest. */
-  braveApiKey?: string;
   /**
    * External-service API keys (Tavily, Firecrawl, Context7, Unsplash, speech…),
    * keyed by service id from services/registry.ts. Encrypted at rest; the
@@ -133,17 +131,6 @@ export function getSettings(): AppSettings {
 
   const decrypted: AppSettings = JSON.parse(JSON.stringify(raw));
 
-  // Decrypt the Brave Search key.
-  if (typeof decrypted.braveApiKey === 'string' && decrypted.braveApiKey) {
-    try {
-      decrypted.braveApiKey = safeStorage.decryptString(
-        Buffer.from(decrypted.braveApiKey, 'base64'),
-      );
-    } catch {
-      decrypted.braveApiKey = undefined;
-    }
-  }
-
   // Decrypt external-service keys.
   if (decrypted.serviceKeys) {
     for (const [id, value] of Object.entries(decrypted.serviceKeys)) {
@@ -201,12 +188,6 @@ export function saveSettings(settings: AppSettings): void {
   const toWrite: AppSettings = JSON.parse(JSON.stringify(settings));
 
   if (safeStorage.isEncryptionAvailable()) {
-    if (typeof toWrite.braveApiKey === 'string' && toWrite.braveApiKey) {
-      toWrite.braveApiKey = safeStorage
-        .encryptString(toWrite.braveApiKey)
-        .toString('base64');
-    }
-
     if (toWrite.serviceKeys) {
       for (const [id, value] of Object.entries(toWrite.serviceKeys)) {
         if (typeof value === 'string' && value) {

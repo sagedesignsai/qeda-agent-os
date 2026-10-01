@@ -24,7 +24,10 @@ interface TimelineCanvasViewportProps {
   videoUrl: string | null;
   trackHeight?: number;
   rulerHeight?: number;
+  onSeek?: (ms: number) => void;
   onTogglePlay?: () => void;
+  onScrollYChange?: (scrollY: number) => void;
+  containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 type DragMode =
@@ -51,9 +54,13 @@ export function TimelineCanvasViewport({
   videoUrl,
   trackHeight = 48,
   rulerHeight = 28,
+  onSeek,
   onTogglePlay,
+  onScrollYChange,
+  containerRef: externalContainerRef,
 }: TimelineCanvasViewportProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const internalContainerRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = externalContainerRef || internalContainerRef;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // General timeline state subscription (only re-renders on structural mutations: zoom, tool, clips)
@@ -72,7 +79,9 @@ export function TimelineCanvasViewport({
 
   // Mutable refs for high-frequency 60fps tracking without React renders
   const scrollLeftRef = useRef(0);
+  const scrollYRef = useRef(0);
   const viewportWidthRef = useRef(800);
+  const viewportHeightRef = useRef(300);
   const currentTimeMsRef = useRef(timelineStore.getState().currentTimeMs);
   const snapLineMsRef = useRef<number | null>(null);
   const hoverBladeXRef = useRef<number | null>(null);
@@ -138,6 +147,7 @@ export function TimelineCanvasViewport({
     const width = canvas.width / dpr;
     const height = canvas.height / dpr;
     const scrollX = scrollLeftRef.current;
+    const scrollY = scrollYRef.current;
     const currentTimeMs = currentTimeMsRef.current;
     const snapLineMs = snapLineMsRef.current;
 
@@ -210,9 +220,15 @@ export function TimelineCanvasViewport({
       }
     }
 
-    // 3. Track Lanes Background & Boundaries
+    // 3. Track Lanes Background & Boundaries (Clipped to track area below ruler)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, rulerHeight, width, Math.max(0, height - rulerHeight));
+    ctx.clip();
+
     tracks.forEach((track, index) => {
-      const trackY = rulerHeight + index * trackHeight;
+      const trackY = rulerHeight + index * trackHeight - scrollY;
+      if (trackY + trackHeight < rulerHeight || trackY > height) return;
 
       // Alternating lane backgrounds
       ctx.fillStyle = index % 2 === 0 ? '#0a0e17' : '#0d121e';
@@ -237,7 +253,8 @@ export function TimelineCanvasViewport({
     tracks.forEach((track, trackIndex) => {
       if (!track.visible) return;
 
-      const trackY = rulerHeight + trackIndex * trackHeight;
+      const trackY = rulerHeight + trackIndex * trackHeight - scrollY;
+      if (trackY + trackHeight < rulerHeight || trackY > height) return;
       const clipY = trackY + 4;
       const clipH = trackHeight - 8;
 
@@ -314,29 +331,22 @@ export function TimelineCanvasViewport({
           ctx.fillStyle = '#1e293b'; // Slate 800
           ctx.fillRect(clipX, clipY, clipW, clipH);
 
-          // Filmstrip frame tiles
+          // Filmstrip frame tiles with viewport frustum culling
           const tileWidth = 64; // ~64px wide thumbnail cells
           const totalTiles = Math.ceil(clipW / tileWidth);
 
-          for (let i = 0; i < totalTiles; i++) {
+          // Only render tiles visible within [0, width]
+          const minTileIndex = Math.max(0, Math.floor((-clipX) / tileWidth));
+          const maxTileIndex = Math.min(totalTiles, Math.ceil((width - clipX) / tileWidth));
+
+          for (let i = minTileIndex; i < maxTileIndex; i++) {
             const tileX = clipX + i * tileWidth;
             const tileTimeMs =
               clip.sourceStartMs + (i * tileWidth) / zoomPxPerMs;
-            const keyframeSec = Math.floor(tileTimeMs / 1500) * 1.5;
+            const slot = Math.floor(tileTimeMs / 1500);
 
-            // Search thumbnail cache
-            let bmp: ImageBitmap | undefined;
-            if (thumbnails.has(keyframeSec)) {
-              bmp = thumbnails.get(keyframeSec);
-            } else {
-              // Approximate closest bitmap
-              for (const [sec, b] of thumbnails.entries()) {
-                if (Math.abs(sec - keyframeSec) < 1.6) {
-                  bmp = b;
-                  break;
-                }
-              }
-            }
+            // Direct O(1) thumbnail lookup
+            const bmp = thumbnails.get(slot) || thumbnails.get(Math.floor(tileTimeMs / 1500) * 1500);
 
             if (bmp) {
               const drawW = Math.min(tileWidth, clipX + clipW - tileX);
@@ -380,24 +390,37 @@ export function TimelineCanvasViewport({
             const centerY = clipY + clipH / 2;
             const maxAmp = clipH / 2 - 3;
 
-            // Step across pixels for waveform bars
+            // Viewport frustum culling for waveform bars
             const barWidth = 2;
             const barGap = 1;
             const stepPx = barWidth + barGap;
 
-            ctx.fillStyle = '#38bdf8'; // Sky-400
+            const startX = Math.max(clipX, 0);
+            const endX = Math.min(clipX + clipW, width);
 
-            for (let bx = clipX; bx < clipX + clipW; bx += stepPx) {
-              const progressAlongClip = (bx - clipX) / clipW;
-              const mediaTimeMs =
-                clip.sourceStartMs + progressAlongClip * clip.durationMs;
-              const peakIdx = Math.floor(
-                (mediaTimeMs / durationMs) * audioPeaks.length,
-              );
-              const amp = audioPeaks[peakIdx] ?? 0.1;
+            if (startX < endX) {
+              ctx.fillStyle = '#38bdf8'; // Sky-400
+              ctx.beginPath();
 
-              const barH = Math.max(2, amp * maxAmp);
-              ctx.fillRect(bx, centerY - barH, barWidth, barH * 2);
+              const firstOffset = (startX - clipX) % stepPx;
+              const firstBx =
+                startX + (firstOffset === 0 ? 0 : stepPx - firstOffset);
+
+              for (let bx = firstBx; bx < endX; bx += stepPx) {
+                const progressAlongClip = (bx - clipX) / clipW;
+                const mediaTimeMs =
+                  clip.sourceStartMs + progressAlongClip * clip.durationMs;
+                const peakIdx = Math.floor(
+                  (mediaTimeMs / durationMs) * audioPeaks.length,
+                );
+                const amp = audioPeaks[peakIdx] ?? 0.1;
+
+                const barH = Math.max(2, amp * maxAmp);
+                ctx.rect(bx, centerY - barH, barWidth, barH * 2);
+              }
+
+              // Single batched draw call for all visible bars
+              ctx.fill();
             }
           } else {
             // Placeholder line if audio is still decoding
@@ -482,12 +505,14 @@ export function TimelineCanvasViewport({
         ctx.shadowColor = '#06b6d4';
         ctx.shadowBlur = 8;
         ctx.beginPath();
-        ctx.moveTo(snapX, 0);
+        ctx.moveTo(snapX, rulerHeight);
         ctx.lineTo(snapX, height);
         ctx.stroke();
         ctx.restore();
       }
     }
+
+    ctx.restore(); // Restore tracks area clip
 
     // 7. Playhead Needle & Scrubber Head (Red / Blue modern needle)
     const playheadX = currentTimeMs * zoomPxPerMs - scrollX;
@@ -586,13 +611,15 @@ export function TimelineCanvasViewport({
       const rect = container.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
       const w = rect.width;
-      const h = totalHeight;
+      const h = Math.max(100, Math.floor(rect.height));
 
       viewportWidthRef.current = w;
+      viewportHeightRef.current = h;
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
+      canvas.style.marginBottom = `-${h}px`;
 
       renderCanvas();
     };
@@ -608,13 +635,27 @@ export function TimelineCanvasViewport({
     }
 
     return () => ro?.disconnect();
-  }, [totalHeight, renderCanvas]);
+  }, [totalHeight, renderCanvas, containerRef]);
 
-  // ── Native Horizontal Scroll Synchronization ──────────────────────────────
+  // ── Native Horizontal & Vertical Scroll Synchronization ───────────────────
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     scrollLeftRef.current = e.currentTarget.scrollLeft;
+    const currentScrollY = e.currentTarget.scrollTop;
+    scrollYRef.current = currentScrollY;
     timelineStore.setScrollTimeMs(scrollLeftRef.current / zoomPxPerMs);
+    onScrollYChange?.(currentScrollY);
     renderCanvas();
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    // Zoom in/out with Ctrl / Cmd + Wheel
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const zoomDelta = e.deltaY < 0 ? 1.15 : 0.87;
+      const currentZoom = timelineStore.getState().zoomPxPerMs;
+      const newZoom = Math.max(0.01, Math.min(0.5, currentZoom * zoomDelta));
+      timelineStore.setZoomPxPerMs(newZoom);
+    }
   };
 
   // ── Hit-Testing Engine ────────────────────────────────────────────────────
@@ -632,8 +673,10 @@ export function TimelineCanvasViewport({
         return { type: 'ruler' as const, pointerX, pointerY };
       }
 
-      // 2. Which track is it in?
-      const trackIndex = Math.floor((pointerY - rulerHeight) / trackHeight);
+      // 2. Which track is it in? (Account for vertical track scroll)
+      const trackIndex = Math.floor(
+        (pointerY - rulerHeight + scrollYRef.current) / trackHeight,
+      );
       if (trackIndex < 0 || trackIndex >= tracks.length) {
         return { type: 'empty' as const, pointerX, pointerY };
       }
@@ -704,6 +747,7 @@ export function TimelineCanvasViewport({
       const { snappedMs, didSnap } = findSnapTarget(clickTimeMs);
       snapLineMsRef.current = didSnap ? snappedMs : null;
       timelineStore.seek(snappedMs, true);
+      onSeek?.(snappedMs);
       dragModeRef.current = { type: 'scrub_ruler' };
       renderCanvas();
       return;
@@ -717,8 +761,9 @@ export function TimelineCanvasViewport({
         return;
       }
 
-      // Select clip
+      // Select clip & record snapshot for undo
       timelineStore.setSelectedClipId(hit.clip.id);
+      timelineStore.recordSnapshot();
 
       // Start clip move drag
       const pointerTimeMs = (hit.pointerX + scrollX) / zoomPxPerMs;
@@ -736,6 +781,7 @@ export function TimelineCanvasViewport({
       if (activeTool === 'blade') return;
 
       timelineStore.setSelectedClipId(hit.clip.id);
+      timelineStore.recordSnapshot();
       dragModeRef.current = {
         type: 'trim_edge',
         trackId: hit.track.id,
@@ -776,6 +822,7 @@ export function TimelineCanvasViewport({
       const { snappedMs, didSnap } = findSnapTarget(rawTimeMs);
       snapLineMsRef.current = didSnap ? snappedMs : null;
       timelineStore.seek(snappedMs, false);
+      onSeek?.(snappedMs);
       renderCanvas();
       return;
     }
@@ -841,9 +888,15 @@ export function TimelineCanvasViewport({
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    const wasDragging =
+      dragModeRef.current.type === 'move_clip' ||
+      dragModeRef.current.type === 'trim_edge';
     dragModeRef.current = { type: 'none' };
     snapLineMsRef.current = null;
     timelineStore.setSnapLine(null);
+    if (wasDragging) {
+      timelineStore.commitTrackChange();
+    }
     renderCanvas();
   };
 
@@ -854,7 +907,7 @@ export function TimelineCanvasViewport({
     }
   };
 
-  // ── Keyboard Shortcuts (V, C, Space, Del, Cmd+B) ──────────────────────────
+  // ── Keyboard Shortcuts (V, C, Space, Del, Cmd+B, Undo/Redo, Arrows, Home/End, JKL) ──
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in an input
@@ -862,7 +915,20 @@ export function TimelineCanvasViewport({
         return;
       }
 
-      if (e.code === 'KeyV') {
+      const isZ = e.code === 'KeyZ' || e.key?.toLowerCase() === 'z';
+      const isY = e.code === 'KeyY' || e.key?.toLowerCase() === 'y';
+
+      if ((e.metaKey || e.ctrlKey) && isZ) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          timelineStore.redo();
+        } else {
+          timelineStore.undo();
+        }
+      } else if ((e.metaKey || e.ctrlKey) && isY) {
+        e.preventDefault();
+        timelineStore.redo();
+      } else if (e.code === 'KeyV') {
         timelineStore.setActiveTool('select');
       } else if (e.code === 'KeyC') {
         timelineStore.setActiveTool(
@@ -876,6 +942,45 @@ export function TimelineCanvasViewport({
       } else if ((e.metaKey || e.ctrlKey) && e.code === 'KeyB') {
         e.preventDefault();
         timelineStore.splitAtPlayhead();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        const step = e.shiftKey ? 1000 : 50;
+        const current = timelineStore.getState().currentTimeMs;
+        const target = Math.max(0, current - step);
+        timelineStore.seek(target, true);
+        onSeek?.(target);
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        const step = e.shiftKey ? 1000 : 50;
+        const state = timelineStore.getState();
+        const target = Math.min(state.durationMs, state.currentTimeMs + step);
+        timelineStore.seek(target, true);
+        onSeek?.(target);
+      } else if (e.code === 'Home') {
+        e.preventDefault();
+        timelineStore.seek(0, true);
+        onSeek?.(0);
+      } else if (e.code === 'End') {
+        e.preventDefault();
+        const dur = timelineStore.getState().durationMs;
+        timelineStore.seek(dur, true);
+        onSeek?.(dur);
+      } else if (e.code === 'KeyJ') {
+        e.preventDefault();
+        const current = timelineStore.getState().currentTimeMs;
+        const target = Math.max(0, current - 1000);
+        timelineStore.seek(target, true);
+        onSeek?.(target);
+      } else if (e.code === 'KeyK') {
+        e.preventDefault();
+        if (timelineStore.getState().isPlaying) {
+          onTogglePlay?.();
+        }
+      } else if (e.code === 'KeyL') {
+        e.preventDefault();
+        if (!timelineStore.getState().isPlaying) {
+          onTogglePlay?.();
+        }
       }
     };
 
@@ -887,17 +992,9 @@ export function TimelineCanvasViewport({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="relative flex-1 h-full overflow-x-auto overflow-y-hidden bg-[#080c14] select-none scrollbar-thin scrollbar-thumb-border/40 scrollbar-track-transparent"
+      onWheel={handleWheel}
+      className="relative flex-1 h-full overflow-x-auto overflow-y-auto bg-[#080c14] select-none scrollbar-thin scrollbar-thumb-border/40 scrollbar-track-transparent"
     >
-      {/* Virtual Content Scroll Spacer */}
-      <div
-        style={{
-          width: `${totalTimelineWidth}px`,
-          height: `${totalHeight}px`,
-          pointerEvents: 'none',
-        }}
-      />
-
       {/* Hardware Accelerated Viewport Canvas */}
       <canvas
         ref={canvasRef}
@@ -905,7 +1002,19 @@ export function TimelineCanvasViewport({
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
-        className="sticky left-0 top-0 block touch-none z-10"
+        className="sticky left-0 top-0 block touch-none z-10 pointer-events-auto"
+        style={{
+          marginBottom: `-${viewportHeightRef.current || 300}px`,
+        }}
+      />
+
+      {/* Virtual Content Scroll Spacer */}
+      <div
+        style={{
+          width: `${totalTimelineWidth}px`,
+          height: `${totalHeight}px`,
+          pointerEvents: 'none',
+        }}
       />
     </div>
   );

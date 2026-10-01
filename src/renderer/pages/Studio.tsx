@@ -11,7 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import {
   VideoIcon,
@@ -56,7 +56,13 @@ import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
 import { StudioContentPanel } from '@/components/studio/content/StudioContentPanel';
 import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
 import type { ContentItemPayload } from '@/components/studio/content/items/ContentCardItem';
-import type { StudioTake } from '@/lib/studio-types';
+import {
+  extractZoomsFromTracks,
+  extractCaptionsFromTracks,
+  extractCutsFromTracks,
+  type StudioTake,
+  type TimelineTrack,
+} from '@/lib/studio-types';
 import { toast } from 'sonner';
 
 export default function Studio() {
@@ -77,6 +83,8 @@ export default function Studio() {
     stopRecording,
     updateStyling,
     updateZooms,
+    updateCaptions,
+    updateCuts,
     generateSocialKit,
     exportVideo,
     deleteTake,
@@ -172,7 +180,26 @@ export default function Studio() {
     return () => {
       cancelled = true;
     };
-  }, [activeTake?.id]);
+  }, [activeTake?.id, activeTake?.videoPath]);
+
+  // Synchronize timeline track structural edits (zooms, captions, cuts) back to active take
+  const handleTimelineTracksChange = useCallback(
+    (tracks: TimelineTrack[]) => {
+      if (!activeTake) return;
+      const updatedZooms = extractZoomsFromTracks(tracks);
+      const updatedCaptions = extractCaptionsFromTracks(tracks);
+      const updatedCuts = extractCutsFromTracks(
+        tracks,
+        durationMs || activeTake.durationMs,
+      );
+
+      // Real-time synchronization: update activeTake and persist
+      updateZooms(updatedZooms);
+      updateCaptions(updatedCaptions);
+      updateCuts(updatedCuts);
+    },
+    [activeTake, durationMs, updateZooms, updateCaptions, updateCuts],
+  );
 
   const handleTitleSubmit = async () => {
     setIsEditingTitle(false);
@@ -341,12 +368,7 @@ export default function Studio() {
         endMs: newClip.startMs + newClip.durationMs,
         text: clipPayload.payload.text,
       };
-      const updatedCaptions = [...activeTake.captions, caption];
-      await window.electron.ipc.invoke('studio:save-take', {
-        id: activeTake.id,
-        captions: updatedCaptions,
-      });
-      await loadTake(activeTake.id);
+      updateCaptions([...activeTake.captions, caption]);
     }
 
     // If it's a video file and current take is blank, load it into canvas
@@ -361,6 +383,7 @@ export default function Studio() {
           videoPath: clipPayload.payload.filePath,
           durationMs: clipPayload.durationMs,
         });
+        setDurationMs(clipPayload.durationMs);
         await loadTake(activeTake.id);
       }
     }
@@ -400,33 +423,33 @@ export default function Studio() {
       ) : activeTake ? (
         /* ── Full Showcase Studio Editor ───────────────────────────────────── */
         <>
-          {/* ── Top Header Bar ─────────────────────────────────────────────────── */}
-          <header className="h-14 border-b border-border/40 px-4 flex items-center justify-between bg-card/40 backdrop-blur-md shrink-0">
-            <div className="flex items-center gap-3">
+          {/* ── Top Header Bar (Dense h-10) ─────────────────────────────────────── */}
+          <header className="h-10 border-b border-border/40 px-3 flex items-center justify-between bg-card/50 backdrop-blur-md shrink-0 select-none">
+            <div className="flex items-center gap-2.5">
               {/* Back to All Projects */}
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground -ml-1"
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground -ml-1 px-2"
                 onClick={() => navigate('/studio')}
               >
-                <ChevronLeftIcon className="w-4 h-4" />
+                <ChevronLeftIcon className="w-3.5 h-3.5" />
                 <span>All Projects</span>
               </Button>
 
-              <div className="h-4 w-[1px] bg-border/60" />
+              <div className="h-3.5 w-[1px] bg-border/60" />
 
               {/* Logo / Title */}
-              <div className="flex items-center gap-2">
-                <div className="h-7 w-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
-                  <VideoIcon className="w-4 h-4" />
+              <div className="flex items-center gap-1.5">
+                <div className="h-6 w-6 rounded-md bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
+                  <VideoIcon className="w-3.5 h-3.5" />
                 </div>
-                <span className="font-semibold text-sm tracking-tight hidden sm:inline">
+                <span className="font-semibold text-xs tracking-tight hidden sm:inline">
                   Showcase Studio
                 </span>
               </div>
 
-              <div className="h-4 w-[1px] bg-border/60" />
+              <div className="h-3.5 w-[1px] bg-border/60" />
 
               {/* Takes Selector Dropdown */}
               <DropdownMenu>
@@ -434,13 +457,13 @@ export default function Studio() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-2 max-w-[220px] text-xs font-normal"
+                    className="h-7 gap-1.5 max-w-[200px] text-xs font-normal px-2.5"
                   >
-                    <LayersIcon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <LayersIcon className="w-3 h-3 text-muted-foreground shrink-0" />
                     <span className="truncate">
                       {activeTake ? activeTake.title : 'Select a Take'}
                     </span>
-                    <ChevronDownIcon className="w-3.5 h-3.5 opacity-50 shrink-0" />
+                    <ChevronDownIcon className="w-3 h-3 opacity-50 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
@@ -483,7 +506,7 @@ export default function Studio() {
 
               {/* Project Badge if Scoped */}
               {projectName && (
-                <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary text-secondary-foreground border border-border/50">
+                <div className="hidden md:flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50">
                   <FolderKanbanIcon className="w-3 h-3 text-primary" />
                   <span className="truncate max-w-[120px]">{projectName}</span>
                 </div>
@@ -491,14 +514,14 @@ export default function Studio() {
             </div>
 
             {/* Action Controls */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {activeTake && (
                 <>
                   {/* Left content panel toggle */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={`h-8 w-8 text-muted-foreground hover:text-foreground ${!contentPanelCollapsed ? 'text-primary bg-primary/10' : ''}`}
+                    className={`h-7 w-7 text-muted-foreground hover:text-foreground ${!contentPanelCollapsed ? 'text-primary bg-primary/10' : ''}`}
                     onClick={toggleLeftPanel}
                     title={
                       contentPanelCollapsed
@@ -506,14 +529,14 @@ export default function Studio() {
                         : 'Hide Content Library'
                     }
                   >
-                    <PanelLeftIcon className="w-4 h-4" />
+                    <PanelLeftIcon className="w-3.5 h-3.5" />
                   </Button>
 
                   {/* Right inspector toggle */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={`h-8 w-8 text-muted-foreground hover:text-foreground ${!inspectorCollapsed ? 'text-primary bg-primary/10' : ''}`}
+                    className={`h-7 w-7 text-muted-foreground hover:text-foreground ${!inspectorCollapsed ? 'text-primary bg-primary/10' : ''}`}
                     onClick={toggleRightPanel}
                     title={
                       inspectorCollapsed
@@ -521,15 +544,15 @@ export default function Studio() {
                         : 'Hide Studio Inspector'
                     }
                   >
-                    <PanelRightIcon className="w-4 h-4" />
+                    <PanelRightIcon className="w-3.5 h-3.5" />
                   </Button>
 
-                  <div className="h-4 w-[1px] bg-border/60 mx-1" />
+                  <div className="h-3.5 w-[1px] bg-border/60 mx-0.5" />
 
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer shadow-2xs font-medium"
+                    className="h-7 gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer font-medium px-2.5"
                     onClick={() => setSourcePickerOpen(true)}
                     title="Record a new screen or window take"
                   >
@@ -540,61 +563,49 @@ export default function Studio() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 cursor-pointer shadow-2xs font-medium"
+                    className="h-7 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 cursor-pointer font-medium px-2.5"
                     onClick={() => {
                       setCopilotInitialPrompt(null);
                       setCopilotOpen(true);
                     }}
                     title="Open Studio AI Copilot Director"
                   >
-                    <SparklesIcon className="w-3.5 h-3.5 text-indigo-400" />
+                    <SparklesIcon className="w-3 h-3 text-indigo-400" />
                     <span className="hidden sm:inline">AI Director</span>
                   </Button>
 
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 text-xs"
+                    className="h-7 gap-1.5 text-xs px-2.5"
                     onClick={handleOpenSocialKit}
                     disabled={isGeneratingSocialKit}
                   >
-                    <Share2Icon className="w-3.5 h-3.5 text-indigo-400" />
+                    <Share2Icon className="w-3 h-3 text-indigo-400" />
                     <span className="hidden sm:inline">Release Kit</span>
                   </Button>
 
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 text-xs"
+                    className="h-7 gap-1.5 text-xs px-2.5"
                     onClick={() => exportVideo('mp4')}
                   >
-                    <DownloadIcon className="w-3.5 h-3.5" />
+                    <DownloadIcon className="w-3 h-3" />
                     <span className="hidden sm:inline">Export</span>
                   </Button>
 
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
                     onClick={() => activeTake && deleteTake(activeTake.id)}
                     title="Delete Take"
                   >
-                    <Trash2Icon className="w-4 h-4" />
+                    <Trash2Icon className="w-3.5 h-3.5" />
                   </Button>
-
-                  <div className="h-4 w-[1px] bg-border/60 mx-1" />
                 </>
               )}
-
-              <Button
-                variant="default"
-                size="sm"
-                className="h-8 gap-1.5 bg-gradient-to-r from-indigo-500 to-primary hover:from-indigo-600 hover:to-primary/90 text-white shadow-md text-xs font-medium"
-                onClick={() => setSourcePickerOpen(true)}
-              >
-                <VideoIcon className="w-3.5 h-3.5" />
-                Record Showcase
-              </Button>
             </div>
           </header>
 
@@ -650,7 +661,7 @@ export default function Studio() {
                   maxSize="80%"
                   className="flex flex-col overflow-hidden min-w-0"
                 >
-                  <main className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden items-center justify-between gap-3 h-full w-full">
+                  <main className="flex-1 flex flex-col p-2 md:p-3 overflow-hidden items-center justify-between gap-2 h-full w-full">
                     {/* Editable Title Bar */}
                     <div className="w-full flex items-center justify-between px-2 shrink-0">
                       {isEditingTitle ? (
@@ -700,6 +711,7 @@ export default function Studio() {
                         zooms={activeTake.zooms}
                         captions={activeTake.captions}
                         currentTimeMs={currentTimeMs}
+                        durationMs={durationMs || activeTake.durationMs}
                         isPlaying={isPlaying}
                         onTimeUpdate={(ms) => {
                           timelineStore.seek(ms, false);
@@ -750,7 +762,7 @@ export default function Studio() {
               defaultSize="35%"
               minSize="20%"
               maxSize="55%"
-              className="p-2.5 bg-background/50 flex flex-col min-h-0 overflow-hidden"
+              className="p-0 bg-background flex flex-col min-h-0 overflow-hidden"
             >
               <StudioCanvasTimeline
                 activeTake={activeTake}
@@ -763,6 +775,7 @@ export default function Studio() {
                   timelineStore.seek(ms, false);
                 }}
                 onTogglePlay={() => setIsPlaying((prev) => !prev)}
+                onTracksChange={handleTimelineTracksChange}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

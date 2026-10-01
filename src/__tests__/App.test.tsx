@@ -80,10 +80,10 @@ describe('App', () => {
 
       expect(await screen.findByText('Qeda')).toBeInTheDocument();
       expect(
-        screen.getByRole('link', { name: /Chat & Research/ }),
+        screen.getAllByRole('link', { name: /Projects/ })[0],
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('link', { name: /Workspace/ }),
+        screen.getByRole('link', { name: /Documents/ }),
       ).toBeInTheDocument();
     },
     APP_TEST_TIMEOUT,

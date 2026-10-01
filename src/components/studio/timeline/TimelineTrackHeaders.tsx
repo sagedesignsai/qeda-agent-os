@@ -32,6 +32,8 @@ import type { TrackType } from '@/lib/studio-types';
 interface TimelineTrackHeadersProps {
   trackHeight?: number;
   rulerHeight?: number;
+  scrollY?: number;
+  onWheel?: (e: React.WheelEvent) => void;
 }
 
 function getTrackIcon(type: TrackType) {
@@ -50,110 +52,120 @@ function getTrackIcon(type: TrackType) {
 export function TimelineTrackHeaders({
   trackHeight = 48,
   rulerHeight = 28,
+  scrollY = 0,
+  onWheel,
 }: TimelineTrackHeadersProps) {
   const tracks = useTimelineTracks();
 
   return (
-    <div className="w-48 shrink-0 flex flex-col bg-card/60 border-r border-border/40 select-none">
-      {/* ── Ruler Header Spacer ────────────────────────────────────────────── */}
+    <div
+      onWheel={onWheel}
+      className="w-48 shrink-0 flex flex-col bg-card/60 border-r border-border/40 select-none overflow-hidden"
+    >
+      {/* ── Ruler Header Spacer (Always Fixed at Top) ────────────────────── */}
       <div
         style={{ height: `${rulerHeight}px` }}
-        className="w-full flex items-center px-3 border-b border-border/40 bg-secondary/30 text-[11px] font-medium text-muted-foreground"
+        className="w-full flex items-center px-3 border-b border-border/40 bg-secondary/30 text-[11px] font-medium text-muted-foreground shrink-0 z-10"
       >
         <span>Tracks</span>
       </div>
 
-      {/* ── Track Header Rows ──────────────────────────────────────────────── */}
-      <div className="flex flex-col">
-        {tracks.map((track) => (
-          <div
-            key={track.id}
-            style={{ height: `${trackHeight}px` }}
-            className={`flex items-center justify-between px-2.5 border-b border-border/30 transition-colors ${
-              track.locked
-                ? 'bg-secondary/40 opacity-70'
-                : 'bg-transparent hover:bg-secondary/20'
-            }`}
-          >
-            {/* Title & Icon */}
-            <div className="flex items-center gap-1.5 min-w-0">
-              {getTrackIcon(track.type)}
-              <span className="text-xs font-medium truncate text-foreground/90">
-                {track.name}
-              </span>
-            </div>
+      {/* ── Track Header Rows (Synchronized Smooth Slide) ──────────────────── */}
+      <div className="flex-1 overflow-hidden relative">
+        <div
+          style={{ transform: `translateY(-${scrollY}px)` }}
+          className="flex flex-col will-change-transform"
+        >
+          {tracks.map((track) => (
+            <div
+              key={track.id}
+              style={{ height: `${trackHeight}px` }}
+              className={`flex items-center justify-between px-2.5 border-b border-border/30 transition-colors ${
+                track.locked
+                  ? 'bg-secondary/40 opacity-70'
+                  : 'bg-transparent hover:bg-secondary/20'
+              }`}
+            >
+              {/* Title & Icon */}
+              <div className="flex items-center gap-1.5 min-w-0">
+                {getTrackIcon(track.type)}
+                <span className="text-xs font-medium truncate text-foreground/90">
+                  {track.name}
+                </span>
+              </div>
 
-            {/* Track Control Buttons (Lock, Eye, Mute) */}
-            <div className="flex items-center gap-0.5 shrink-0">
-              {/* Lock Toggle */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                    onClick={() => timelineStore.toggleTrackLock(track.id)}
-                  >
-                    {track.locked ? (
-                      <LockIcon className="w-3 h-3 text-amber-400" />
-                    ) : (
-                      <UnlockIcon className="w-3 h-3 opacity-40 hover:opacity-100" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {track.locked ? 'Unlock Track' : 'Lock Track'}
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Visibility Toggle */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                    onClick={() =>
-                      timelineStore.toggleTrackVisibility(track.id)
-                    }
-                  >
-                    {track.visible ? (
-                      <EyeIcon className="w-3 h-3 opacity-70 hover:opacity-100" />
-                    ) : (
-                      <EyeOffIcon className="w-3 h-3 text-rose-400" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {track.visible ? 'Hide Track' : 'Show Track'}
-                </TooltipContent>
-              </Tooltip>
-
-              {/* Mute Toggle (Audio only) */}
-              {track.type === 'audio' && (
+              {/* Track Control Buttons (Lock, Eye, Mute) */}
+              <div className="flex items-center gap-0.5 shrink-0">
+                {/* Lock Toggle */}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                      onClick={() => timelineStore.toggleTrackMute(track.id)}
+                      onClick={() => timelineStore.toggleTrackLock(track.id)}
                     >
-                      {track.muted ? (
-                        <VolumeXIcon className="w-3 h-3 text-rose-400" />
+                      {track.locked ? (
+                        <LockIcon className="w-3 h-3 text-amber-400" />
                       ) : (
-                        <Volume2Icon className="w-3 h-3 text-sky-400" />
+                        <UnlockIcon className="w-3 h-3 opacity-40 hover:opacity-100" />
                       )}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    {track.muted ? 'Unmute Audio' : 'Mute Audio'}
+                    {track.locked ? 'Unlock Track' : 'Lock Track'}
                   </TooltipContent>
                 </Tooltip>
-              )}
+
+                {/* Visibility Toggle */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                      onClick={() =>
+                        timelineStore.toggleTrackVisibility(track.id)
+                      }
+                    >
+                      {track.visible ? (
+                        <EyeIcon className="w-3 h-3 opacity-70 hover:opacity-100" />
+                      ) : (
+                        <EyeOffIcon className="w-3 h-3 text-rose-400" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {track.visible ? 'Hide Track' : 'Show Track'}
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* Mute Toggle (Audio only) */}
+                {track.type === 'audio' && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        onClick={() => timelineStore.toggleTrackMute(track.id)}
+                      >
+                        {track.muted ? (
+                          <VolumeXIcon className="w-3 h-3 text-rose-400" />
+                        ) : (
+                          <Volume2Icon className="w-3 h-3 text-sky-400" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {track.muted ? 'Unmute Audio' : 'Mute Audio'}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );

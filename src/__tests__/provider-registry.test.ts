@@ -50,6 +50,16 @@ describe('provider registry', () => {
     );
     expect(getProvider('nope')).toBeUndefined();
   });
+
+  it('registers OpenCode Zen with no curated free models', () => {
+    const zen = getProvider('opencode');
+    expect(zen?.baseURL).toBe('https://opencode.ai/zen/v1');
+    expect(zen?.apiKeyEnvs).toEqual(['OPENCODE_ZEN_API_KEY']);
+    // Zen rejects its `-free` models outside the OpenCode client (HTTP 403
+    // FreeTierError), so curating them would make the picker and
+    // `pickDefaultProvider` recommend a model that cannot run.
+    expect(zen?.freeModels).toEqual([]);
+  });
 });
 
 describe('pickDefaultProvider', () => {
@@ -102,5 +112,22 @@ describe('pickDefaultProvider', () => {
 
     process.env.GROQ_API_KEY = 'real-key';
     expect(envApiKey(getProvider('groq')!)).toBe('real-key');
+  });
+
+  it('never auto-selects a provider whose catalog has no curated model', () => {
+    process.env.GROQ_API_KEY = 'test-key';
+    process.env.OPENCODE_ZEN_API_KEY = 'test-key';
+
+    // Groq has a curated free model, so it wins even though Zen is also keyed.
+    expect(pickDefaultProvider()).toEqual({
+      provider: 'groq',
+      model: 'openai/gpt-oss-120b',
+    });
+
+    // With only Zen keyed the provider is still selected — but without a model,
+    // because none of Zen's models can be recommended for free use and the user
+    // must choose one from the live list.
+    delete process.env.GROQ_API_KEY;
+    expect(pickDefaultProvider()).toEqual({ provider: 'opencode', model: '' });
   });
 });

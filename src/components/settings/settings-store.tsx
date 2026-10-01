@@ -28,7 +28,6 @@ export interface SettingsSnapshot {
   activeProvider: string;
   activeModel: string;
   fallbackEnabled: boolean;
-  braveApiKeySet: boolean;
   /** RAG embedding endpoint + model; empty means "fall back to the environment". */
   embeddingProvider: string;
   embeddingModel: string;
@@ -38,7 +37,6 @@ const EMPTY: SettingsSnapshot = {
   activeProvider: '',
   activeModel: '',
   fallbackEnabled: true,
-  braveApiKeySet: false,
   embeddingProvider: '',
   embeddingModel: '',
 };

@@ -83,6 +83,16 @@ export const chatToolPolicies: ToolPolicyMap = {
   textToSpeech: t('cost', 'not-applicable', 'Same rationale as findImages.'),
   transcribeAudio: t('cost', 'not-applicable', 'Same rationale as findImages.'),
 
+  // ── Resources (Serper images / scholar / patents & downloader) ──────────────
+  searchImages: t('network'),
+  searchScholar: t('network'),
+  searchPatents: t('network'),
+  downloadResource: t(
+    'write-local',
+    'not-applicable',
+    'Auto-approved when downloading non-executable media/assets into the project directory.',
+  ),
+
   // ── Workspace ──────────────────────────────────────────────────────────────
   listPages: t('read'),
   getPage: t('read'),

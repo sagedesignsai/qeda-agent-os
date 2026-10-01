@@ -89,6 +89,23 @@ export const PROVIDERS: ProviderConfig[] = [
     note: 'Trial keys are free but rate-limited and not licensed for production.',
   },
   {
+    id: 'opencode',
+    name: 'OpenCode Zen',
+    baseURL: 'https://opencode.ai/zen/v1',
+    apiKeyEnvs: ['OPENCODE_ZEN_API_KEY'],
+    /*
+     * Deliberately empty: Zen's catalogue includes models whose ids end in
+     * `-free`, but Zen answers a free-tier call from anywhere other than its
+     * own client with HTTP 403 `FreeTierError: OpenCode's free tier can only be
+     * used from within OpenCode` (verified against the live endpoint). Listing
+     * them as curated free models would make `pickDefaultProvider` — and the
+     * model picker — recommend something that cannot run. Paid Zen models do
+     * work with this base URL, so the live /models lookup is the way in.
+     */
+    freeModels: [],
+    note: 'One key for curated coding models (GPT-5.x, Claude, Gemini, Grok, Kimi). Zen free-tier models only run inside the OpenCode client, so this needs credits — pick a model from the live list.',
+  },
+  {
     id: 'gateway',
     name: 'AI Gateway (multi-provider)',
     apiKeyEnvs: ['AI_GATEWAY_API_KEY'],

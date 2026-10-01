@@ -12,7 +12,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FilmIcon } from 'lucide-react';
 import type {
   StudioStyling,
@@ -26,6 +26,7 @@ interface StudioCanvasProps {
   zooms: StudioZoom[];
   captions: StudioCaption[];
   currentTimeMs: number;
+  durationMs?: number;
   isPlaying: boolean;
   onTimeUpdate?: (ms: number) => void;
   onDurationChange?: (ms: number) => void;
@@ -37,12 +38,113 @@ function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
+// Parse CSS linear-gradient string and construct a CanvasGradient
+function parseLinearGradient(
+  ctx: CanvasRenderingContext2D,
+  bgString: string,
+  cw: number,
+  ch: number,
+): CanvasGradient {
+  const match = bgString.match(/linear-gradient\s*\((.+)\)/i);
+  if (!match) {
+    const fallback = ctx.createLinearGradient(0, 0, cw, ch);
+    fallback.addColorStop(0, '#111827');
+    fallback.addColorStop(1, '#030712');
+    return fallback;
+  }
+
+  const rawArgs = match[1];
+  const parts: string[] = [];
+  let current = '';
+  let parenDepth = 0;
+  for (let i = 0; i < rawArgs.length; i++) {
+    const char = rawArgs[i];
+    if (char === '(') parenDepth++;
+    else if (char === ')') parenDepth--;
+    if (char === ',' && parenDepth === 0) {
+      parts.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  if (current.trim()) parts.push(current.trim());
+
+  let angleDeg = 135;
+  let stopParts = parts;
+
+  if (parts.length > 0 && /deg$/i.test(parts[0])) {
+    angleDeg = parseFloat(parts[0]) || 135;
+    stopParts = parts.slice(1);
+  } else if (parts.length > 0 && /^to\s+/i.test(parts[0])) {
+    const toDir = parts[0].toLowerCase();
+    if (toDir.includes('bottom') && toDir.includes('right')) angleDeg = 135;
+    else if (toDir.includes('bottom') && toDir.includes('left')) angleDeg = 225;
+    else if (toDir.includes('top') && toDir.includes('right')) angleDeg = 45;
+    else if (toDir.includes('top') && toDir.includes('left')) angleDeg = 315;
+    else if (toDir.includes('bottom')) angleDeg = 180;
+    else if (toDir.includes('right')) angleDeg = 90;
+    else if (toDir.includes('top')) angleDeg = 0;
+    else if (toDir.includes('left')) angleDeg = 270;
+    stopParts = parts.slice(1);
+  }
+
+  // Calculate coordinates from angle
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  const cx = cw / 2;
+  const cy = ch / 2;
+  const length = Math.abs(cw * Math.cos(rad)) + Math.abs(ch * Math.sin(rad));
+  const halfLen = length / 2;
+  const x0 = cx - Math.cos(rad) * halfLen;
+  const y0 = cy - Math.sin(rad) * halfLen;
+  const x1 = cx + Math.cos(rad) * halfLen;
+  const y1 = cy + Math.sin(rad) * halfLen;
+
+  const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+
+  const parsedStops: { color: string; offset: number | null }[] = [];
+  stopParts.forEach((part) => {
+    const pctMatch = part.match(/(.*?)\s+(\d+(?:\.\d+)?)%/);
+    if (pctMatch) {
+      parsedStops.push({
+        color: pctMatch[1].trim(),
+        offset: Math.min(1, Math.max(0, parseFloat(pctMatch[2]) / 100)),
+      });
+    } else {
+      parsedStops.push({
+        color: part.trim(),
+        offset: null,
+      });
+    }
+  });
+
+  const n = parsedStops.length;
+  if (n === 0) {
+    grad.addColorStop(0, '#111827');
+    grad.addColorStop(1, '#030712');
+    return grad;
+  }
+
+  parsedStops.forEach((stop, idx) => {
+    const offset =
+      stop.offset !== null ? stop.offset : n === 1 ? 0 : idx / (n - 1);
+    try {
+      grad.addColorStop(offset, stop.color);
+    } catch {
+      // Fallback in case of an invalid color format
+    }
+  });
+
+  return grad;
+}
+
 export function StudioCanvas({
   videoUrl,
   styling,
   zooms,
   captions,
   currentTimeMs,
+  durationMs,
   isPlaying,
   onTimeUpdate,
   onDurationChange,
@@ -52,6 +154,21 @@ export function StudioCanvas({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  // Dynamic canvas bitmap dimensions based on aspect ratio
+  const canvasDims = useMemo(() => {
+    switch (styling.aspectRatio) {
+      case '9:16':
+        return { w: 1080, h: 1920 };
+      case '1:1':
+        return { w: 1080, h: 1080 };
+      case '4:3':
+        return { w: 1440, h: 1080 };
+      case '16:9':
+      default:
+        return { w: 1920, h: 1080 };
+    }
+  }, [styling.aspectRatio]);
+
   // Smooth camera state
   const cameraStateRef = useRef({
     scale: 1,
@@ -60,6 +177,51 @@ export function StudioCanvas({
   });
 
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const lastEmittedTimeRef = useRef(0);
+  const currentTimeRef = useRef(currentTimeMs);
+  useEffect(() => {
+    currentTimeRef.current = currentTimeMs;
+  }, [currentTimeMs]);
+
+  const bgGradCacheRef = useRef<{
+    bg: string;
+    cw: number;
+    ch: number;
+    val: CanvasGradient | string;
+  } | null>(null);
+  const glowGradCacheRef = useRef<{
+    cw: number;
+    ch: number;
+    val: CanvasGradient;
+  } | null>(null);
+
+  // Delta-clock playback loop when playing without a video source (blank showcase)
+  useEffect(() => {
+    if (!isPlaying || videoUrl) return;
+
+    let animId: number;
+    let lastTick = performance.now();
+
+    const tick = (now: number) => {
+      const delta = now - lastTick;
+      lastTick = now;
+      const targetDuration = durationMs || 30000;
+      const nextTime = currentTimeRef.current + delta;
+
+      if (nextTime >= targetDuration) {
+        currentTimeRef.current = targetDuration;
+        onTimeUpdate?.(targetDuration);
+        onEnded?.();
+      } else {
+        currentTimeRef.current = nextTime;
+        onTimeUpdate?.(nextTime);
+        animId = requestAnimationFrame(tick);
+      }
+    };
+
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [isPlaying, videoUrl, durationMs, onTimeUpdate, onEnded]);
 
   // Synchronize play / pause with video element
   useEffect(() => {
@@ -73,16 +235,18 @@ export function StudioCanvas({
     }
   }, [isPlaying, videoLoaded]);
 
-  // Synchronize seek from parent
+  // Synchronize seek from parent (bypassed during smooth playback to prevent decoder stutter)
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !videoLoaded) return;
 
     const diff = Math.abs(video.currentTime * 1000 - currentTimeMs);
-    if (diff > 80) {
+    if (!isPlaying && diff > 50) {
+      video.currentTime = currentTimeMs / 1000;
+    } else if (isPlaying && diff > 400) {
       video.currentTime = currentTimeMs / 1000;
     }
-  }, [currentTimeMs, videoLoaded]);
+  }, [currentTimeMs, videoLoaded, isPlaying]);
 
   // Main 60fps render loop
   useEffect(() => {
@@ -105,6 +269,12 @@ export function StudioCanvas({
       const cw = canvas.width;
       const ch = canvas.height;
       const timeMs = video.currentTime * 1000;
+
+      // 60fps playhead synchronization
+      if (isPlaying && Math.abs(timeMs - lastEmittedTimeRef.current) >= 16) {
+        lastEmittedTimeRef.current = timeMs;
+        onTimeUpdate?.(timeMs);
+      }
 
       // ── 1. Calculate Active Zoom Target ─────────────────────────────────────
       let targetScale = 1.0;
@@ -148,60 +318,80 @@ export function StudioCanvas({
       cam.scale += (targetScale - cam.scale) * smoothFactor;
       cam.panX += (targetPanX - cam.panX) * smoothFactor;
       cam.panY += (targetPanY - cam.panY) * smoothFactor;
-
-      // ── 2. Draw Background ──────────────────────────────────────────────────
+      // ── 2. Draw Background (Cached Gradients) ───────────────────────────────
       ctx.clearRect(0, 0, cw, ch);
 
-      // Create gradient or solid background
-      if (styling.background.includes('gradient')) {
-        const bgGrad = ctx.createLinearGradient(0, 0, cw, ch);
-        bgGrad.addColorStop(0, '#111827');
-        bgGrad.addColorStop(0.5, '#1e1b4b');
-        bgGrad.addColorStop(1, '#030712');
-        ctx.fillStyle = bgGrad;
-      } else {
-        ctx.fillStyle = styling.background || '#090a0f';
+      let bgStyle = bgGradCacheRef.current;
+      if (
+        !bgStyle ||
+        bgStyle.bg !== styling.background ||
+        bgStyle.cw !== cw ||
+        bgStyle.ch !== ch
+      ) {
+        const val =
+          styling.background && styling.background.includes('gradient')
+            ? parseLinearGradient(ctx, styling.background, cw, ch)
+            : styling.background || '#090a0f';
+        bgStyle = { bg: styling.background, cw, ch, val };
+        bgGradCacheRef.current = bgStyle;
       }
+      ctx.fillStyle = bgStyle.val;
       ctx.fillRect(0, 0, cw, ch);
 
-      // Subtle ambient radial glow behind the window
-      const glow = ctx.createRadialGradient(
-        cw * 0.5,
-        ch * 0.5,
-        100,
-        cw * 0.5,
-        ch * 0.5,
-        cw * 0.65,
-      );
-      glow.addColorStop(0, 'rgba(99, 102, 241, 0.18)');
-      glow.addColorStop(1, 'rgba(99, 102, 241, 0)');
-      ctx.fillStyle = glow;
+      let glowStyle = glowGradCacheRef.current;
+      if (!glowStyle || glowStyle.cw !== cw || glowStyle.ch !== ch) {
+        const glow = ctx.createRadialGradient(
+          cw * 0.5,
+          ch * 0.5,
+          100,
+          cw * 0.5,
+          ch * 0.5,
+          cw * 0.65,
+        );
+        glow.addColorStop(0, 'rgba(99, 102, 241, 0.18)');
+        glow.addColorStop(1, 'rgba(99, 102, 241, 0)');
+        glowStyle = { cw, ch, val: glow };
+        glowGradCacheRef.current = glowStyle;
+      }
+      ctx.fillStyle = glowStyle.val;
       ctx.fillRect(0, 0, cw, ch);
 
       // ── 3. Window Container Bounds & Shadows ────────────────────────────────
       const pad = (styling.padding / 100) * Math.min(cw, ch) * 0.85;
-      const winW = cw - pad * 2;
-      const winH = ch - pad * 2;
-      const winX = pad;
-      const winY = pad;
+      const maxWinW = Math.max(10, cw - pad * 2);
+      const maxWinH = Math.max(10, ch - pad * 2);
+
+      const headerH = 26;
+      const vw = video.videoWidth || 1920;
+      const vh = video.videoHeight || 1080;
+      const videoAspect = vw / vh;
+
+      // Fit content inside maxWinW x (maxWinH - headerH) preserving the video content aspect ratio
+      let contentW = maxWinW;
+      let contentH = contentW / videoAspect;
+      if (contentH + headerH > maxWinH) {
+        contentH = Math.max(10, maxWinH - headerH);
+        contentW = contentH * videoAspect;
+      }
+      const winW = contentW;
+      const winH = contentH + headerH;
+      const winX = (cw - winW) / 2;
+      const winY = (ch - winH) / 2;
       const radius = styling.borderRadius;
 
-      ctx.save();
+      if (pad > 8) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+        ctx.shadowBlur = 24;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 14;
 
-      // Draw drop shadow
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
-      ctx.shadowBlur = 48;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 24;
-
-      // Rounded path for window
-      ctx.beginPath();
-      ctx.roundRect(winX, winY, winW, winH, radius);
-      ctx.fillStyle = '#0f1117';
-      ctx.fill();
-
-      // Reset shadow for inner contents
-      ctx.restore();
+        ctx.beginPath();
+        ctx.roundRect(winX, winY, winW, winH, radius);
+        ctx.fillStyle = '#0f1117';
+        ctx.fill();
+        ctx.restore();
+      }
 
       // Clip inside window
       ctx.save();
@@ -210,9 +400,6 @@ export function StudioCanvas({
       ctx.clip();
 
       // ── 4. Draw Zoomed & Panned Video Frame ──────────────────────────────────
-      const vw = video.videoWidth || 1920;
-      const vh = video.videoHeight || 1080;
-
       // Calculate video source crop based on camera zoom & pan
       const cropW = vw / cam.scale;
       const cropH = vh / cam.scale;
@@ -225,7 +412,19 @@ export function StudioCanvas({
         Math.min(vh - cropH, cam.panY * vh - cropH / 2),
       );
 
-      ctx.drawImage(video, cropX, cropY, cropW, cropH, winX, winY, winW, winH);
+      // Render content cleanly beneath the window header bar
+      const contentY = winY + headerH;
+      ctx.drawImage(
+        video,
+        cropX,
+        cropY,
+        cropW,
+        cropH,
+        winX,
+        contentY,
+        winW,
+        contentH,
+      );
 
       // Window border overlay
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
@@ -233,12 +432,11 @@ export function StudioCanvas({
       ctx.stroke();
 
       // ── 5. Window Header Bar & Traffic Dots ─────────────────────────────────
-      const headerH = 26;
-      ctx.fillStyle = 'rgba(15, 17, 23, 0.65)';
+      ctx.fillStyle = 'rgba(15, 17, 23, 0.75)';
       ctx.fillRect(winX, winY, winW, headerH);
 
       // Subtle header separator
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.beginPath();
       ctx.moveTo(winX, winY + headerH);
       ctx.lineTo(winX + winW, winY + headerH);
@@ -263,24 +461,28 @@ export function StudioCanvas({
 
         if (activeCap) {
           const capText = activeCap.text;
-          ctx.font = '600 16px Inter, system-ui, sans-serif';
+          const fontSize = Math.max(18, Math.round(Math.min(cw, ch) * 0.032));
+          ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
           const textMetrics = ctx.measureText(capText);
-          const badgeW = textMetrics.width + 36;
-          const badgeH = 34;
+          const horizPad = Math.round(fontSize * 1.1);
+          const vertPad = Math.round(fontSize * 0.45);
+          const badgeW = textMetrics.width + horizPad * 2;
+          const badgeH = fontSize + vertPad * 2;
           const badgeX = winX + (winW - badgeW) / 2;
-          const badgeY = winY + winH - 46;
+          const bottomOffset = Math.round(Math.min(cw, ch) * 0.04);
+          const badgeY = winY + winH - badgeH - bottomOffset;
 
           // Capsule pill background
           ctx.save();
-          ctx.fillStyle = 'rgba(10, 10, 15, 0.85)';
+          ctx.fillStyle = 'rgba(10, 10, 15, 0.88)';
           ctx.beginPath();
-          ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 17);
+          ctx.roundRect(badgeX, badgeY, badgeW, badgeH, badgeH / 2);
           ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+          ctx.lineWidth = 1.5;
           ctx.stroke();
 
-          // Render text with word highlights if available
+          // Render text with crisp styling
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillStyle = '#ffffff';
@@ -296,7 +498,7 @@ export function StudioCanvas({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [styling, zooms, captions]);
+  }, [styling, zooms, captions, isPlaying, onTimeUpdate]);
 
   // Aspect ratio styling for outer canvas container
   const aspectClass =
@@ -342,8 +544,8 @@ export function StudioCanvas({
       {/* Render Canvas */}
       <canvas
         ref={canvasRef}
-        width={1920}
-        height={1080}
+        width={canvasDims.w}
+        height={canvasDims.h}
         className="w-full h-full object-contain pointer-events-none select-none"
       />
 

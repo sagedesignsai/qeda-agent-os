@@ -13,20 +13,20 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useMemo, useState } from 'react';
+import { createElement, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { motion } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
 import {
+  FileTextIcon,
   FolderPlusIcon,
   InboxIcon,
   Loader2Icon,
-  MessageSquarePlusIcon,
-  NotebookIcon,
   PlusIcon,
   TargetIcon,
   TerminalIcon,
   Trash2Icon,
+  VideoIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -148,7 +148,6 @@ export default function Projects() {
     }
 
     const { project } = selected;
-    const Icon = projectIcon(project.icon);
     const status = PROJECT_STATUS_META[project.status];
     const pct =
       selected.taskTotal > 0
@@ -164,7 +163,9 @@ export default function Projects() {
           ]}
           title={
             <span className="inline-flex items-center gap-2">
-              <Icon className="size-4 text-muted-foreground" />
+              {createElement(projectIcon(project.icon), {
+                className: 'size-4 text-muted-foreground',
+              })}
               {project.name}
             </span>
           }
@@ -261,19 +262,19 @@ export default function Projects() {
                 label="Tasks"
               />
               <Shortcut
+                to={`/documents?projectId=${project.id}`}
+                icon={FileTextIcon}
+                label="Documents"
+              />
+              <Shortcut
+                to={`/studio?projectId=${project.id}`}
+                icon={VideoIcon}
+                label="Studio"
+              />
+              <Shortcut
                 to={`/terminal?project=${project.id}`}
                 icon={TerminalIcon}
                 label="Terminal"
-              />
-              <Shortcut
-                to={`/workspace${project.notebook_id ? `/${project.notebook_id}` : ''}`}
-                icon={NotebookIcon}
-                label="Docs"
-              />
-              <Shortcut
-                to={`/chat?project=${project.id}`}
-                icon={MessageSquarePlusIcon}
-                label="New chat"
               />
             </div>
           </div>
@@ -349,8 +350,8 @@ export default function Projects() {
                     rollup={rollup}
                     onOpen={(id) => navigate(`/projects/${id}`)}
                     onEdit={openEdit}
-                    onArchive={(id, archived) =>
-                      void handleArchive(id, archived)
+                    onArchive={(id, isArchived) =>
+                      void handleArchive(id, isArchived)
                     }
                     onDelete={(id) =>
                       setPendingDelete(

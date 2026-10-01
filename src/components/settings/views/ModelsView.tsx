@@ -59,7 +59,6 @@ export function ModelsView() {
   const [activeProvider, setActiveProvider] = useState('');
   const [activeModel, setActiveModel] = useState('');
   const [fallbackEnabled, setFallbackEnabled] = useState(true);
-  const [braveApiKey, setBraveApiKey] = useState('');
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [serviceKeys, setServiceKeys] = useState<Record<string, string>>({});
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
@@ -160,8 +159,6 @@ export function ModelsView() {
         activeModel: activeModel.trim(),
         fallbackEnabled,
         providers: providerSettings,
-        // Only send the Brave key when the user typed one; empty means keep.
-        ...(braveApiKey.trim() ? { braveApiKey: braveApiKey.trim() } : {}),
         ...(Object.keys(serviceKeyPayload).length
           ? { serviceKeys: serviceKeyPayload }
           : {}),
@@ -171,7 +168,6 @@ export function ModelsView() {
       // inputs rather than leaving a secret sitting in component state.
       setApiKeys({});
       setServiceKeys({});
-      setBraveApiKey('');
 
       toast.success(
         'Saved. The agent uses the new model on your next message.',
@@ -304,41 +300,6 @@ export function ModelsView() {
 
       <Separator />
 
-      {/* Web research */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="brave-key" className="text-sm">
-            Brave Search API key
-          </Label>
-          {snapshot.braveApiKeySet && (
-            <Badge variant="secondary" className="gap-1 text-xs">
-              <CheckCircleIcon className="size-3 text-green-500" /> Saved
-            </Badge>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Powers web research (source discovery). Get a free key at
-          brave.com/search/api — free tier: 1 query/second, 2,000/month.
-        </p>
-        <div className="relative">
-          <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-          <Input
-            id="brave-key"
-            type="password"
-            className="pl-8 text-sm"
-            placeholder={
-              snapshot.braveApiKeySet
-                ? '••••••••••••••••'
-                : 'Enter Brave Search API key…'
-            }
-            value={braveApiKey}
-            onChange={(e) => setBraveApiKey(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <Separator />
-
       {/* External services */}
       <div className="space-y-3">
         <Label>External services</Label>
@@ -348,10 +309,8 @@ export function ModelsView() {
         </p>
 
         {SERVICE_CATEGORIES.map((category) => {
-          // Brave has its own dedicated field above.
           const list = services.filter(
-            (service) =>
-              service.category === category.id && service.id !== 'brave',
+            (service) => service.category === category.id,
           );
           if (list.length === 0) return null;
           return (

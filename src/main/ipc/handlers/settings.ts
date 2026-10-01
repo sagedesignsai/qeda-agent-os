@@ -51,7 +51,6 @@ export function registerSettingsHandlers({
       activeModel: s.activeModel,
       fallbackEnabled: s.fallbackEnabled !== false,
       onboardingCompleted: s.onboardingCompleted === true,
-      braveApiKeySet: Boolean(s.braveApiKey),
       // RAG embeddings are configured separately from the chat model. These are
       // plain (unencrypted) ids, so they are safe to hand to the renderer — see
       // tools/rag.ts, which falls back to the environment when they are unset.
@@ -92,13 +91,6 @@ export function registerSettingsHandlers({
       ...incoming,
       providers: { ...current.providers, ...(incoming.providers ?? {}) },
     };
-    // Brave key is only replaced when the renderer sends a new one; an empty
-    // string clears it, an absent field leaves the stored value untouched.
-    if (typeof incoming.braveApiKey === 'string') {
-      merged.braveApiKey = incoming.braveApiKey.trim() || undefined;
-    } else {
-      merged.braveApiKey = current.braveApiKey;
-    }
     // External-service keys: merge per service. A non-empty value replaces the
     // stored key; an empty string clears it. Absent services are untouched.
     if (incoming.serviceKeys) {

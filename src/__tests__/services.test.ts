@@ -7,12 +7,13 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { searchWithProvider } from '../main/services/search';
+import { searchWithProvider, searchAuto } from '../main/services/search';
 import { firecrawlScrape } from '../main/services/scrape';
 import { context7Docs } from '../main/services/docs';
 import { unsplashSearch } from '../main/services/images';
 import { synthesizeSpeech, deepgramTranscribe } from '../main/services/speech';
 import { ServiceHttpError } from '../main/services/http';
+import { resolveSearchCandidates } from '../main/services/keys';
 import {
   getService,
   envServiceKey,
@@ -209,6 +210,160 @@ describe('searchWithProvider', () => {
     await expect(
       searchWithProvider('tavily', { query: 'x', apiKey: 'bad', fetchImpl }),
     ).rejects.toThrow(/rejected the API key/);
+  });
+});
+
+// ─── searchAuto ───────────────────────────────────────────────────────────────
+
+describe('searchAuto', () => {
+  it('answers with the first candidate and reports no attempts', async () => {
+    const calls: Call[] = [];
+    const fetchImpl = recorder(
+      jsonResponse({
+        results: [{ title: 'hit', url: 'https://a.test/x', content: 'body' }],
+      }),
+      calls,
+    );
+
+    const response = await searchAuto(
+      [
+        { provider: 'tavily', apiKey: 'k1' },
+        { provider: 'exa', apiKey: 'k2' },
+      ],
+      { query: 'q', fetchImpl },
+    );
+
+    expect(response.provider).toBe('tavily');
+    expect(response.attempted).toEqual([]);
+    expect(response.results).toHaveLength(1);
+    // The second provider must not be called at all.
+    expect(calls).toHaveLength(1);
+  });
+
+  it('falls through to the next provider when one is rate limited', async () => {
+    const calls: Call[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      if (url.includes('tavily')) {
+        return errorResponse(429, { error: 'rate limit' });
+      }
+      return jsonResponse({
+        results: [{ title: 'exa hit', url: 'https://b.test/y', text: 'body' }],
+      });
+    }) as unknown as typeof fetch;
+
+    const response = await searchAuto(
+      [
+        { provider: 'tavily', apiKey: 'k1' },
+        { provider: 'exa', apiKey: 'k2' },
+      ],
+      { query: 'q', fetchImpl },
+    );
+
+    expect(response.provider).toBe('exa');
+    expect(response.attempted).toEqual(['tavily']);
+    expect(response.results[0].url).toBe('https://b.test/y');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('treats an empty result set as a soft failure', async () => {
+    const fetchImpl = (async (url: string) => {
+      if (url.includes('tavily')) return jsonResponse({ results: [] });
+      return jsonResponse({
+        organic: [
+          { title: 'serper hit', link: 'https://c.test/z', snippet: 's' },
+        ],
+      });
+    }) as unknown as typeof fetch;
+
+    const response = await searchAuto(
+      [
+        { provider: 'tavily', apiKey: 'k1' },
+        { provider: 'serper', apiKey: 'k2' },
+      ],
+      { query: 'q', fetchImpl },
+    );
+
+    expect(response.provider).toBe('serper');
+    expect(response.attempted).toEqual(['tavily']);
+    expect(response.results[0].title).toBe('serper hit');
+  });
+
+  it('reports the last error and every provider it tried', async () => {
+    const calls: Call[] = [];
+    const fetchImpl = recorder(errorResponse(401, { error: 'bad key' }), calls);
+
+    await expect(
+      searchAuto(
+        [
+          { provider: 'tavily', apiKey: 'k1' },
+          { provider: 'exa', apiKey: 'k2' },
+        ],
+        { query: 'q', fetchImpl },
+      ),
+    ).rejects.toThrow(/tried tavily, exa/);
+    // The message is the real provider failure, not a generic one.
+    await expect(
+      searchAuto([{ provider: 'tavily', apiKey: 'k1' }], {
+        query: 'q',
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/rejected the API key/);
+  });
+
+  it('refuses to search when nothing is configured', async () => {
+    await expect(searchAuto([], { query: 'q' })).rejects.toThrow(
+      /No search provider is configured/,
+    );
+  });
+});
+
+describe('resolveSearchCandidates', () => {
+  const ENV_NAMES = [
+    'TAVILY_API_KEY',
+    'EXA_API_KEY',
+    'EXA_API_KEY_2',
+    'SERPER_API_KEY',
+    'FIRECRAWL_API_KEY',
+  ];
+  const saved = new Map<string, string | undefined>();
+
+  beforeEach(() => {
+    saved.clear();
+    for (const name of ENV_NAMES) {
+      saved.set(name, process.env[name]);
+      delete process.env[name];
+    }
+  });
+
+  afterEach(() => {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  });
+
+  it('returns nothing when no search key is set', () => {
+    expect(resolveSearchCandidates()).toEqual([]);
+  });
+
+  it('orders configured providers by the shared preference order', () => {
+    process.env.SERPER_API_KEY = 'serper-key';
+    process.env.FIRECRAWL_API_KEY = 'firecrawl-key';
+    process.env.TAVILY_API_KEY = 'tavily-key';
+
+    expect(resolveSearchCandidates()).toEqual([
+      { provider: 'tavily', apiKey: 'tavily-key' },
+      { provider: 'serper', apiKey: 'serper-key' },
+      { provider: 'firecrawl', apiKey: 'firecrawl-key' },
+    ]);
+  });
+
+  it('uses the fallback env name for the second Exa key', () => {
+    process.env.EXA_API_KEY_2 = 'exa-backup';
+    expect(resolveSearchCandidates()).toEqual([
+      { provider: 'exa', apiKey: 'exa-backup' },
+    ]);
   });
 });
 

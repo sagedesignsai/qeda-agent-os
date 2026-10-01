@@ -35,7 +35,6 @@ import {
 } from '@/components/ui/sidebar';
 import { ThemeToggle } from '@/components/chat/ThemeToggle';
 import { ChatMenu } from '@/components/sidebar/ChatMenu';
-import { WorkspaceMenu } from '@/components/sidebar/WorkspaceMenu';
 import { ProjectsMenu } from '@/components/sidebar/ProjectsMenu';
 import { DocumentsMenu } from '@/components/sidebar/DocumentsMenu';
 import { QedaLogomark } from '@/components/QedaLogo';
@@ -49,7 +48,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   MessageSquareIcon,
-  NotebookIcon,
   SettingsIcon,
   SearchIcon,
   PlusIcon,
@@ -88,28 +86,24 @@ interface AppSidebarProps {
 }
 
 const NAV_ITEMS = [
-  { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },
   { to: '/projects', label: 'Projects', icon: FolderKanbanIcon },
-  { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
-  { to: '/documents', label: 'Documents', icon: FileTextIcon },
-  { to: '/workspace', label: 'Workspace', icon: NotebookIcon },
-  { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
   { to: '/tasks', label: 'Tasks', icon: CheckSquareIcon },
+  { to: '/documents', label: 'Documents', icon: FileTextIcon },
+  { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
+  { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
+  { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },
 ];
 
 /** Which section submenu a pathname belongs to, if any. */
 function sectionOf(
   pathname: string,
-): 'chat' | 'workspace' | 'terminal' | 'projects' | 'documents' | null {
+): 'chat' | 'terminal' | 'projects' | 'documents' | null {
   if (pathname === '/chat' || pathname.startsWith('/chat/')) return 'chat';
   if (pathname === '/projects' || pathname.startsWith('/projects/')) {
     return 'projects';
   }
   if (pathname === '/documents' || pathname.startsWith('/documents/')) {
     return 'documents';
-  }
-  if (pathname === '/workspace' || pathname.startsWith('/workspace/')) {
-    return 'workspace';
   }
   if (pathname === '/terminal' || pathname.startsWith('/terminal/'))
     return 'terminal';
@@ -255,7 +249,7 @@ export function AppSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link
-                to="/chat"
+                to="/projects"
                 onClick={() => setShowMainAt(null)}
                 className="group/brand"
               >
@@ -375,10 +369,6 @@ export function AppSidebar({
 
       {view === 'chat' && (
         <ChatMenu onBack={() => setShowMainAt(location.pathname)} />
-      )}
-
-      {view === 'workspace' && (
-        <WorkspaceMenu onBack={() => setShowMainAt(location.pathname)} />
       )}
 
       {view === 'terminal' && (

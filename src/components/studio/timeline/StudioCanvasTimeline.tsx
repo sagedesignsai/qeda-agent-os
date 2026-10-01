@@ -11,12 +11,16 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { timelineStore } from '@/hooks/use-timeline-store';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineTrackHeaders } from './TimelineTrackHeaders';
 import { TimelineCanvasViewport } from './TimelineCanvasViewport';
-import { convertTakeToTracks, type StudioTake } from '@/lib/studio-types';
+import {
+  convertTakeToTracks,
+  type StudioTake,
+  type TimelineTrack,
+} from '@/lib/studio-types';
 import { toast } from 'sonner';
 
 interface StudioCanvasTimelineProps {
@@ -27,6 +31,7 @@ interface StudioCanvasTimelineProps {
   isPlaying: boolean;
   onSeek: (ms: number) => void;
   onTogglePlay: () => void;
+  onTracksChange?: (tracks: TimelineTrack[]) => void;
 }
 
 const TRACK_HEIGHT = 48;
@@ -40,8 +45,21 @@ export function StudioCanvasTimeline({
   isPlaying,
   onSeek,
   onTogglePlay,
+  onTracksChange,
 }: StudioCanvasTimelineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewportContainerRef = useRef<HTMLDivElement | null>(null);
+  const [scrollY, setScrollY] = useState(0);
+
+  // Take sync tracking to prevent feedback loops between timeline edits and parent state
+  const currentTakeIdRef = useRef<string | null>(null);
+  const lastSyncTimestampRef = useRef<number>(0);
+
+  const handleTrackHeadersWheel = (e: React.WheelEvent) => {
+    if (viewportContainerRef.current) {
+      viewportContainerRef.current.scrollTop += e.deltaY;
+    }
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/x-qeda-studio-clip')) {
@@ -76,18 +94,41 @@ export function StudioCanvasTimeline({
     timelineStore.setPlaying(isPlaying);
   }, [isPlaying]);
 
-  // Sync active take tracks to timeline store when take changes
+  // Sync active take tracks to timeline store when activeTake changes externally or takeId changes
   useEffect(() => {
-    if (activeTake) {
+    if (!activeTake) return;
+    const isNewTake = activeTake.id !== currentTakeIdRef.current;
+    const isExternalUpdate =
+      activeTake.updatedAt &&
+      activeTake.updatedAt > lastSyncTimestampRef.current + 800;
+
+    if (isNewTake || isExternalUpdate) {
+      currentTakeIdRef.current = activeTake.id;
+      lastSyncTimestampRef.current = activeTake.updatedAt || Date.now();
       const tracks = convertTakeToTracks(activeTake);
-      timelineStore.setTracksAndDuration(tracks, activeTake.durationMs);
+      timelineStore.setTracksAndDuration(
+        tracks,
+        activeTake.durationMs,
+        isNewTake,
+      );
     }
   }, [activeTake]);
 
-  // Listen to store time changes and notify parent player (onSeek) when user scrubs
+  // Subscribe to track changes from timelineStore and notify parent for domain persistence
+  useEffect(() => {
+    return timelineStore.subscribeTracks((tracks) => {
+      lastSyncTimestampRef.current = Date.now();
+      onTracksChange?.(tracks);
+    });
+  }, [onTracksChange]);
+
+  // Listen to store time changes and notify parent player (onSeek) only when paused (user scrub/seek)
   useEffect(() => {
     return timelineStore.subscribeTime((timeMs) => {
-      // If currentTimeMs has drifted by more than 80ms from store, notify parent player
+      // Never forward playhead updates back to parent player during active playback
+      // (prevents continuous decoder buffer flushing and audio/video stutter)
+      if (timelineStore.getState().isPlaying) return;
+
       if (Math.abs(timeMs - currentTimeMs) > 80) {
         onSeek(timeMs);
       }
@@ -111,7 +152,7 @@ export function StudioCanvasTimeline({
       ref={containerRef}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      className="w-full h-full flex flex-col rounded-xl bg-card/75 backdrop-blur-md border border-border/50 shadow-2xl overflow-hidden select-none"
+      className="w-full h-full flex flex-col bg-background/95 border-t border-border/40 overflow-hidden select-none"
     >
       {/* ── Top Toolbar ────────────────────────────────────────────────────── */}
       <TimelineToolbar
@@ -127,6 +168,8 @@ export function StudioCanvasTimeline({
         <TimelineTrackHeaders
           trackHeight={TRACK_HEIGHT}
           rulerHeight={RULER_HEIGHT}
+          scrollY={scrollY}
+          onWheel={handleTrackHeadersWheel}
         />
 
         {/* 60fps Hardware-Accelerated Canvas Viewport */}
@@ -134,7 +177,10 @@ export function StudioCanvasTimeline({
           videoUrl={videoUrl}
           trackHeight={TRACK_HEIGHT}
           rulerHeight={RULER_HEIGHT}
+          onSeek={onSeek}
           onTogglePlay={onTogglePlay}
+          onScrollYChange={setScrollY}
+          containerRef={viewportContainerRef}
         />
       </div>
     </div>

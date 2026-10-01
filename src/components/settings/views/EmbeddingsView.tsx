@@ -21,7 +21,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,8 +35,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { CheckCircleIcon, InfoIcon } from 'lucide-react';
+import { CheckCircleIcon, InfoIcon, WandIcon } from 'lucide-react';
 import type { ProviderInfo } from '../../../main/ipc/channels';
+// Pure data + rules (no `ai`, no Electron), so the renderer can import it
+// directly rather than round-tripping over IPC for a static list.
+import { availableEmbeddingConfigs } from '../../../main/ai/embedding-config';
 import { useSettingsStore } from '../settings-store';
 
 export function EmbeddingsView() {
@@ -69,6 +72,27 @@ export function EmbeddingsView() {
 
   // An empty stored value means "not configured here" — the env var wins.
   const usingEnv = !snapshot?.embeddingProvider && !snapshot?.embeddingModel;
+
+  /**
+   * Curated models whose provider the user has already keyed.
+   *
+   * This is the part that makes the feature usable: without a hint, the only
+   * way to find out which model ids exist is to read the provider's docs, and
+   * the previous suggestion shipped in .env.example pointed at a model that
+   * had been retired.
+   */
+  const suggestions = useMemo(
+    () =>
+      availableEmbeddingConfigs((id) =>
+        providers.some((p) => p.id === id && p.apiKeySet),
+      ),
+    [providers],
+  );
+
+  const clearOverride = () => {
+    setProvider('');
+    setModel('');
+  };
 
   const handleSave = async () => {
     try {
@@ -155,6 +179,73 @@ export function EmbeddingsView() {
           spells it.
         </p>
       </div>
+
+      <Separator />
+
+      {suggestions.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Recommended for your keys</Label>
+            {!usingEnv && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={clearOverride}
+              >
+                Use automatic selection
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Leave both fields empty and the app uses the best of these by
+            itself. Each one is checked against this machine&apos;s index width
+            before anything is written.
+          </p>
+          <div className="space-y-2">
+            {suggestions.map((config) => {
+              const selected =
+                provider === config.provider && model === config.model;
+              return (
+                <button
+                  key={`${config.provider}/${config.model}`}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => {
+                    setProvider(config.provider);
+                    setModel(config.model);
+                  }}
+                  className={`flex w-full items-start justify-between gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    selected
+                      ? 'border-primary bg-muted'
+                      : 'border-border/60 bg-muted/40 hover:bg-muted'
+                  }`}
+                >
+                  <span className="min-w-0 space-y-0.5">
+                    <span className="flex items-center gap-1.5 font-mono text-xs">
+                      {config.model}
+                      {config.requestDim && (
+                        <Badge
+                          variant="secondary"
+                          className="gap-1 text-[10px]"
+                        >
+                          <WandIcon className="size-3" /> fits any index
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
+                      {config.note}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                    {config.dim ? `${config.dim} dims` : 'width checked'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <Separator />
 

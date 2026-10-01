@@ -56,14 +56,6 @@ export const SERVICES: ServiceConfig[] = [
     docsUrl: 'https://serper.dev',
   },
   {
-    id: 'brave',
-    name: 'Brave Search',
-    category: 'search',
-    apiKeyEnvs: ['BRAVE_API_KEY'],
-    note: 'Independent web index. Free tier: 1 query/second, 2,000 queries/month.',
-    docsUrl: 'https://brave.com/search/api',
-  },
-  {
     id: 'firecrawl',
     name: 'Firecrawl',
     category: 'scrape',

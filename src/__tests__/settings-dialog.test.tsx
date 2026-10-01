@@ -53,7 +53,6 @@ const invoke = jest.fn((channel: string) => {
         activeProvider: 'groq',
         activeModel: 'openai/gpt-oss-120b',
         fallbackEnabled: true,
-        braveApiKeySet: true,
         embeddingProvider: '',
         embeddingModel: '',
       });
@@ -68,7 +67,17 @@ const invoke = jest.fn((channel: string) => {
         },
       ]);
     case 'services:list':
-      return Promise.resolve([]);
+      return Promise.resolve([
+        {
+          id: 'tavily',
+          name: 'Tavily',
+          category: 'search',
+          configured: false,
+          source: null,
+          note: '',
+          docsUrl: 'https://docs.tavily.com',
+        },
+      ]);
     case 'providers:models':
       return Promise.resolve({ models: ['openai/gpt-oss-120b'] });
     default:
@@ -155,8 +164,8 @@ describe('SettingsDialog', () => {
     async () => {
       renderDialog();
 
-      const brave = await screen.findByLabelText('Brave Search API key');
-      fireEvent.change(brave, { target: { value: 'typed-but-not-saved' } });
+      const tavily = await screen.findByLabelText('Tavily');
+      fireEvent.change(tavily, { target: { value: 'typed-but-not-saved' } });
 
       // Leave and come back.
       fireEvent.click(screen.getByRole('button', { name: 'Appearance' }));
@@ -166,7 +175,7 @@ describe('SettingsDialog', () => {
       fireEvent.click(screen.getByRole('button', { name: 'AI & Models' }));
 
       await waitFor(() => {
-        expect(screen.getByLabelText('Brave Search API key')).toHaveValue(
+        expect(screen.getByLabelText('Tavily')).toHaveValue(
           'typed-but-not-saved',
         );
       });
@@ -179,7 +188,7 @@ describe('SettingsDialog', () => {
     async () => {
       renderDialog();
 
-      await screen.findByLabelText('Brave Search API key');
+      await screen.findByLabelText('Tavily');
       fireEvent.click(panel('models').getByRole('button', { name: /^Save$/ }));
 
       await waitFor(() => {
@@ -194,7 +203,6 @@ describe('SettingsDialog', () => {
       });
       // …but the untouched key fields are not part of the payload at all. Sending
       // an empty string would clear the encrypted key on disk.
-      expect(payload).not.toHaveProperty('braveApiKey');
       expect(payload).not.toHaveProperty('serviceKeys');
     },
     TEST_TIMEOUT,

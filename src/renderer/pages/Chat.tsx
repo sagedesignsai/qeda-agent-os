@@ -18,11 +18,12 @@ import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2Icon, AlertCircleIcon, XIcon } from 'lucide-react';
+import { Trash2Icon, AlertCircleIcon, XIcon, GlobeIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
-import type { ChatContext } from '../../main/ipc/channels';
+import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
+import type { ChatContext, DownloadResourceResult } from '../../main/ipc/channels';
 
 export interface ChatLocationState {
   chatContext?: ChatContext;
@@ -46,6 +47,18 @@ export default function Chat() {
     withScope,
   } = useProjectScope();
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [sessionTitle, setSessionTitle] = useState('');
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+  const [chatContext, setChatContext] = useState<ChatContext | undefined>(
+    undefined,
+  );
+
+  const handleAssetDownloaded = (res: DownloadResourceResult) => {
+    if (!res.fileName) return;
+    toast.success(`Asset downloaded: ${res.fileName}`);
+  };
+
   // The chat agent receives the active project so its answers can assume this
   // is the current context of work. Merged, so a handover context (page/notebook)
   // and the URL scope coexist.
@@ -53,15 +66,11 @@ export default function Chat() {
     setChatContext((prev) => {
       if (projectId) return { ...prev, projectId };
       if (!prev?.projectId) return prev;
-      const { projectId: _dropped, ...rest } = prev;
-      return Object.keys(rest).length ? (rest as ChatContext) : undefined;
+      const copy = { ...prev };
+      delete copy.projectId;
+      return Object.keys(copy).length ? (copy as ChatContext) : undefined;
     });
   }, [projectId]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [sessionTitle, setSessionTitle] = useState('');
-  const [chatContext, setChatContext] = useState<ChatContext | undefined>(
-    undefined,
-  );
   // A message typed before a session exists is queued here and sent once the
   // session created for it has been bound to the route.
   const pendingSendRef = useRef<string | null>(null);
@@ -222,6 +231,16 @@ export default function Chat() {
                 })
               }
             />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAssetModalOpen(true)}
+              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground border-border/60"
+              title="Search and download web assets via Serper"
+            >
+              <GlobeIcon className="h-3.5 w-3.5 text-primary" />
+              <span className="hidden sm:inline">Web Assets</span>
+            </Button>
             {messages.length > 0 && (
               <Button
                 variant="ghost"
@@ -300,6 +319,13 @@ export default function Chat() {
           </div>
         </div>
       )}
+
+      <AssetSearchDialog
+        open={isAssetModalOpen}
+        onOpenChange={setIsAssetModalOpen}
+        projectId={projectId}
+        onAssetDownloaded={handleAssetDownloaded}
+      />
     </div>
   );
 }

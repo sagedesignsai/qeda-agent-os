@@ -8,21 +8,24 @@
  * Every adapter takes an injectable `fetchImpl`, so parsing is unit-testable
  * without network access. Missing keys are handled by the caller (services/keys
  * resolve before we get here), never by silently returning nothing.
+ *
+ * `searchAuto` is the reason this module has no favourite provider: no single
+ * backend is guaranteed to have a key (the app ships with four), so a caller
+ * that wants "a search" hands over every configured candidate in preference
+ * order and this walks them. That is what keeps `webSearch` working on a
+ * machine whose only key is, say, Tavily.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { braveWebSearch } from '../tools/brave-search.js';
-import { requestJson } from './http.js';
+import { requestJson, ServiceHttpError } from './http.js';
 
-export type SearchProvider =
-  'tavily' | 'exa' | 'serper' | 'firecrawl' | 'brave';
+export type SearchProvider = 'tavily' | 'exa' | 'serper' | 'firecrawl';
 
 export const SEARCH_PROVIDERS: SearchProvider[] = [
   'tavily',
   'exa',
   'serper',
   'firecrawl',
-  'brave',
 ];
 
 export interface SourceResult {
@@ -51,6 +54,31 @@ export interface SearchResponse {
   results: SourceResult[];
   /** Present when the provider produced a synthesized answer. */
   answer?: string;
+}
+
+/**
+ * Preference order for "the best configured provider". Deliberately a data
+ * value in this module rather than a literal in each tool: `webSearch` and
+ * `advancedSearch` must agree, and they used to keep separate copies of it.
+ */
+export const AUTO_SEARCH_ORDER: SearchProvider[] = [
+  'tavily',
+  'exa',
+  'serper',
+  'firecrawl',
+];
+
+/** A provider and the key to call it with (see services/keys.ts). */
+export interface SearchCandidate {
+  provider: SearchProvider;
+  apiKey: string;
+}
+
+export interface AutoSearchResult extends SearchResponse {
+  /** Which candidate actually answered. */
+  provider: SearchProvider;
+  /** Candidates that were tried and produced nothing, in order. */
+  attempted: SearchProvider[];
 }
 
 function clampCount(count: number | undefined): number {
@@ -250,26 +278,6 @@ async function firecrawlSearch(req: SearchRequest): Promise<SearchResponse> {
   };
 }
 
-// ─── Brave (existing client) ──────────────────────────────────────────────────
-
-async function braveSearch(req: SearchRequest): Promise<SearchResponse> {
-  const results = await braveWebSearch({
-    query: req.query,
-    count: clampCount(req.count),
-    apiKey: req.apiKey,
-    ...(req.fetchImpl ? { fetchImpl: req.fetchImpl } : {}),
-  });
-  return {
-    results: results.map((r) => ({
-      title: r.title,
-      url: r.url,
-      snippet: r.snippet,
-      provider: 'brave' as const,
-      ...(r.age ? { publishedDate: r.age } : {}),
-    })),
-  };
-}
-
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /** Run one search against the named provider. Throws `ServiceHttpError` on failure. */
@@ -286,7 +294,71 @@ export async function searchWithProvider(
       return serperSearch(req);
     case 'firecrawl':
       return firecrawlSearch(req);
-    case 'brave':
-      return braveSearch(req);
   }
+}
+
+// ─── Auto selection with fallback ─────────────────────────────────────────────
+
+/**
+ * Search with the first candidate that answers.
+ *
+ * Walks `candidates` in order and returns the first non-empty result set. Two
+ * kinds of failure fall through to the next candidate, and both are real:
+ *
+ *  • a thrown error — a rate limit (429), an exhausted credit balance (402) or
+ *    a key that was revoked in the provider's dashboard, none of which should
+ *    cost the user their search when a second key is configured;
+ *  • an empty result set — a 200 with no results is not an answer, and the
+ *    provider that follows may well have them.
+ *
+ * The last error is re-thrown (with the attempted providers named) only once
+ * every candidate has been tried, so the message the user sees is the real
+ * reason the search failed rather than a generic "search failed".
+ */
+export async function searchAuto(
+  candidates: SearchCandidate[],
+  req: Omit<SearchRequest, 'apiKey'>,
+): Promise<AutoSearchResult> {
+  if (candidates.length === 0) {
+    throw new Error('No search provider is configured.');
+  }
+
+  const tried: SearchProvider[] = [];
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    tried.push(candidate.provider);
+    try {
+      const response = await searchWithProvider(candidate.provider, {
+        ...req,
+        apiKey: candidate.apiKey,
+      });
+      if (response.results.length > 0) {
+        return {
+          ...response,
+          provider: candidate.provider,
+          // Every candidate before this one is one that produced nothing.
+          attempted: tried.slice(0, -1),
+        };
+      }
+      lastError = new ServiceHttpError(
+        candidate.provider,
+        `${candidate.provider} returned no results.`,
+      );
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  const detail = tried.length > 1 ? ` (tried ${tried.join(', ')})` : '';
+  if (lastError instanceof ServiceHttpError) {
+    throw new ServiceHttpError(
+      lastError.service,
+      `${lastError.message}${detail}`,
+      lastError.status,
+    );
+  }
+  throw new Error(
+    `${lastError instanceof Error ? lastError.message : String(lastError)}${detail}`,
+  );
 }

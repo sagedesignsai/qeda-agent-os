@@ -3,8 +3,16 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Web research tool definitions for the Vellum agent.
  *
- *   webSearch – discover sources via the Brave Search API
+ *   webSearch – discover sources through whichever search backend the user has
+ *               configured (Tavily / Exa / Serper / Firecrawl)
  *   fetchUrl  – read a page's text content (HTML → readable text)
+ *
+ * webSearch deliberately names no provider. It once called a single vendor
+ * directly, which meant a machine configured with any *other* key — the common
+ * case — got "no API key configured" from the tool the system prompt tells the
+ * model to reach for first. It now asks services/keys.ts for every configured
+ * candidate and lets searchAuto walk them, so the tool's failure modes are "you
+ * configured nothing" (actionable) instead of "you configured the wrong vendor".
  *
  * fetchUrl is deliberately a text extractor, not a renderer: it strips
  * scripts/styles/tags and collapses whitespace so an LLM can consume the page.
@@ -14,24 +22,19 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
-import { braveWebSearch, BraveSearchError } from './brave-search.js';
+import { searchAuto } from '../services/search.js';
+import { resolveSearchCandidates } from '../services/keys.js';
 import { htmlToText, extractTitle } from './html-text.js';
-import { getSettings } from '../ai/settings.js';
-import { envApiKey } from '../ai/registry.js';
 
-/** Resolve the Brave key: encrypted Settings store first, then environment. */
-function resolveBraveKey(): string {
-  const fromSettings = getSettings().braveApiKey;
-  if (fromSettings && fromSettings.trim()) return fromSettings.trim();
-  const fromEnv = process.env.BRAVE_API_KEY;
-  return fromEnv?.trim() ?? '';
-}
+/** Shown when the user has no search key at all — a setup step, not a failure. */
+const NO_PROVIDER =
+  'No web search provider is configured. Add a key for Tavily, Exa, Serper or Firecrawl in Settings, or set one of those variables in .env.local.';
 
 // ─── webSearch ────────────────────────────────────────────────────────────────
 
 export const webSearchTool = tool({
   description:
-    'Search the public web for sources. Returns a list of results with title, URL and snippet. Use it to discover candidate sources before reading them with fetchUrl.',
+    'Search the public web for sources. Returns a list of results with title, URL, snippet and the provider that answered. Use it to discover candidate sources before reading them with fetchUrl.',
   inputSchema: z.object({
     query: z
       .string()
@@ -48,18 +51,23 @@ export const webSearchTool = tool({
   }),
   execute: async ({ query, count }) => {
     try {
-      const results = await braveWebSearch({
+      const candidates = resolveSearchCandidates();
+      if (candidates.length === 0) {
+        return { success: false, error: NO_PROVIDER };
+      }
+
+      const response = await searchAuto(candidates, { query, count });
+      return {
+        success: true,
         query,
-        count,
-        apiKey: resolveBraveKey(),
-      });
-      return { success: true, query, results };
+        provider: response.provider,
+        results: response.results,
+      };
     } catch (err) {
-      const message =
-        err instanceof BraveSearchError
-          ? err.message
-          : `Web search failed: ${err instanceof Error ? err.message : String(err)}`;
-      return { success: false, error: message };
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   },
 });

@@ -14,7 +14,7 @@ import { tool, embedMany, embed } from 'ai';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../db/client.js';
-import { getEmbeddingModel } from './rag.js';
+import { getEmbeddingContext, assertEmbeddingFits } from './rag.js';
 import { getPage, loadPageMarkdown, type Page } from '../db/workspace.js';
 
 /** Stable pseudo-path so page chunks can be cleaned up by path prefix. */
@@ -69,8 +69,15 @@ export async function indexPageIntoRag(
   if (current.trim()) chunks.push(current.trim());
   if (chunks.length === 0) return { chunksIndexed: 0 };
 
-  const model = getEmbeddingModel() as Parameters<typeof embedMany>[0]['model'];
-  const { embeddings } = await embedMany({ model, values: chunks });
+  const ctx = getEmbeddingContext();
+  const { embeddings } = await embedMany({
+    model: ctx.model,
+    values: chunks,
+    ...(ctx.providerOptions ? { providerOptions: ctx.providerOptions } : {}),
+  });
+  // Width is checked before the insert, for the same reason as indexFile: the
+  // vec table is fixed-width and a wrong-width write is not recoverable.
+  if (embeddings.length > 0) assertEmbeddingFits(ctx, embeddings[0].length);
 
   const indexPath = pageIndexPath(page.id);
   const insertChunk = db.prepare(
@@ -96,8 +103,13 @@ export async function indexPageIntoRag(
 /** Semantic search restricted to workspace pages (post-filter by path prefix). */
 export async function searchWorkspaceRag(query: string, topK = 5) {
   const db = getDb();
-  const model = getEmbeddingModel() as Parameters<typeof embed>[0]['model'];
-  const { embedding } = await embed({ model, value: query });
+  const ctx = getEmbeddingContext();
+  const { embedding } = await embed({
+    model: ctx.model,
+    value: query,
+    ...(ctx.providerOptions ? { providerOptions: ctx.providerOptions } : {}),
+  });
+  assertEmbeddingFits(ctx, embedding.length);
   const vecBuffer = Buffer.from(new Float32Array(embedding).buffer);
 
   // Over-fetch so the page filter doesn't starve results.

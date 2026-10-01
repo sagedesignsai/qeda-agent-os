@@ -20,7 +20,6 @@
 import { Navigate, type RouteObject } from 'react-router';
 import { AppLayout } from './components/AppLayout';
 import Chat from './pages/Chat';
-import Workspace from './pages/Workspace';
 import Terminal from './pages/Terminal';
 import Tasks from './pages/Tasks';
 import Projects from './pages/Projects';
@@ -31,13 +30,23 @@ export const routes: RouteObject[] = [
   {
     element: <AppLayout />,
     children: [
-      { index: true, element: <Navigate to="/chat" replace /> },
+      { index: true, element: <Navigate to="/projects" replace /> },
 
       {
-        path: 'chat',
+        path: 'projects',
         children: [
-          { index: true, element: <Chat /> },
-          { path: ':sessionId', element: <Chat /> },
+          { index: true, element: <Projects /> },
+          { path: ':projectId', element: <Projects /> },
+        ],
+      },
+
+      { path: 'tasks', element: <Tasks /> },
+
+      {
+        path: 'documents',
+        children: [
+          { index: true, element: <Documents /> },
+          { path: ':documentId', element: <Documents /> },
         ],
       },
 
@@ -50,23 +59,6 @@ export const routes: RouteObject[] = [
       },
 
       {
-        path: 'documents',
-        children: [
-          { index: true, element: <Documents /> },
-          { path: ':documentId', element: <Documents /> },
-        ],
-      },
-
-      {
-        path: 'workspace',
-        children: [
-          { index: true, element: <Workspace /> },
-          { path: ':notebookId', element: <Workspace /> },
-          { path: ':notebookId/:pageId', element: <Workspace /> },
-        ],
-      },
-
-      {
         path: 'terminal',
         children: [
           { index: true, element: <Terminal /> },
@@ -74,17 +66,18 @@ export const routes: RouteObject[] = [
         ],
       },
 
-      { path: 'tasks', element: <Tasks /> },
-
       {
-        path: 'projects',
+        path: 'chat',
         children: [
-          { index: true, element: <Projects /> },
-          { path: ':projectId', element: <Projects /> },
+          { index: true, element: <Chat /> },
+          { path: ':sessionId', element: <Chat /> },
         ],
       },
 
-      { path: '*', element: <Navigate to="/chat" replace /> },
+      { path: 'workspace/*', element: <Navigate to="/documents" replace /> },
+      { path: 'workspace', element: <Navigate to="/documents" replace /> },
+
+      { path: '*', element: <Navigate to="/projects" replace /> },
     ],
   },
 ];

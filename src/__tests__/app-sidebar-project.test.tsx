@@ -158,7 +158,7 @@ describe('AppSidebar Active Project Indicator', () => {
     renderSidebar('/chat');
 
     await waitFor(() => {
-      expect(screen.getByText('All Projects')).toBeInTheDocument();
+      expect(screen.getByText(/All Projects|No project/)).toBeInTheDocument();
     });
     // Check that selected model is also rendered right after
     expect(

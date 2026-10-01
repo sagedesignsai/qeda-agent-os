@@ -74,7 +74,7 @@ export function StudioInspector({
       className="w-full flex flex-col h-full bg-card/40 backdrop-blur-md select-none overflow-y-auto"
     >
       {/* ── Inspector Master Header ─────────────────────────────────────────── */}
-      <div className="p-3 px-4 border-b border-border/40 flex items-center justify-between sticky top-0 bg-card/90 backdrop-blur-md z-10">
+      <div className="h-10 px-3 border-b border-border/40 flex items-center justify-between sticky top-0 bg-card/90 backdrop-blur-md z-10 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <SlidersIcon className="w-4 h-4 text-primary shrink-0" />
           <h2 className="font-semibold text-xs text-foreground truncate">

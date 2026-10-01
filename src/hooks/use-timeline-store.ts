@@ -53,6 +53,11 @@ class TimelineStore {
 
   private listeners = new Set<TimelineListener>();
   private timeListeners = new Set<(timeMs: number) => void>();
+  private trackChangeListeners = new Set<(tracks: TimelineTrack[]) => void>();
+
+  // Undo / Redo history stacks (max 50 states)
+  private undoStack: TimelineTrack[][] = [];
+  private redoStack: TimelineTrack[][] = [];
 
   getState = (): TimelineState => {
     return this.state;
@@ -73,6 +78,14 @@ class TimelineStore {
     };
   };
 
+  // Track change subscription strictly for domain take sync (persisting zooms, captions, cuts)
+  subscribeTracks = (listener: (tracks: TimelineTrack[]) => void) => {
+    this.trackChangeListeners.add(listener);
+    return () => {
+      this.trackChangeListeners.delete(listener);
+    };
+  };
+
   private notify() {
     this.listeners.forEach((l) => l());
   }
@@ -80,6 +93,75 @@ class TimelineStore {
   private notifyTime(timeMs: number) {
     this.timeListeners.forEach((l) => l(timeMs));
   }
+
+  private notifyTracks(tracks: TimelineTrack[]) {
+    this.trackChangeListeners.forEach((l) => l(tracks));
+  }
+
+  // ── Undo / Redo Management ────────────────────────────────────────────────
+
+  recordSnapshot = () => {
+    try {
+      const snapshot: TimelineTrack[] = JSON.parse(
+        JSON.stringify(this.state.tracks),
+      );
+      this.undoStack.push(snapshot);
+      if (this.undoStack.length > 50) {
+        this.undoStack.shift();
+      }
+      this.redoStack = [];
+      this.notify();
+    } catch {
+      // Ignore
+    }
+  };
+
+  commitTrackChange = () => {
+    this.notifyTracks(this.state.tracks);
+  };
+
+  canUndo = (): boolean => this.undoStack.length > 0;
+  canRedo = (): boolean => this.redoStack.length > 0;
+
+  undo = () => {
+    if (this.undoStack.length === 0) return;
+    try {
+      const currentSnapshot: TimelineTrack[] = JSON.parse(
+        JSON.stringify(this.state.tracks),
+      );
+      this.redoStack.push(currentSnapshot);
+      const previousTracks = this.undoStack.pop()!;
+      this.state = {
+        ...this.state,
+        tracks: previousTracks,
+        selectedClipId: null,
+      };
+      this.notify();
+      this.notifyTracks(previousTracks);
+    } catch {
+      // Ignore
+    }
+  };
+
+  redo = () => {
+    if (this.redoStack.length === 0) return;
+    try {
+      const currentSnapshot: TimelineTrack[] = JSON.parse(
+        JSON.stringify(this.state.tracks),
+      );
+      this.undoStack.push(currentSnapshot);
+      const nextTracks = this.redoStack.pop()!;
+      this.state = {
+        ...this.state,
+        tracks: nextTracks,
+        selectedClipId: null,
+      };
+      this.notify();
+      this.notifyTracks(nextTracks);
+    } catch {
+      // Ignore
+    }
+  };
 
   // ── High Frequency Time Updates (Bypasses general React re-renders) ───────
 
@@ -144,12 +226,20 @@ class TimelineStore {
 
   // ── Load Tracks ───────────────────────────────────────────────────────────
 
-  setTracksAndDuration = (tracks: TimelineTrack[], durationMs: number) => {
+  setTracksAndDuration = (
+    tracks: TimelineTrack[],
+    durationMs: number,
+    resetHistory = true,
+  ) => {
     this.state = {
       ...this.state,
       tracks,
       durationMs: Math.max(durationMs, 1000),
     };
+    if (resetHistory) {
+      this.undoStack = [];
+      this.redoStack = [];
+    }
     this.notify();
   };
 
@@ -223,6 +313,7 @@ class TimelineStore {
     const updatedClips = [...track.clips];
     updatedClips.splice(clipIndex, 1, firstClip, secondClip);
 
+    this.recordSnapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -231,6 +322,7 @@ class TimelineStore {
       selectedClipId: secondClip.id,
     };
     this.notify();
+    this.commitTrackChange();
     return true;
   };
 
@@ -328,6 +420,7 @@ class TimelineStore {
     const selectedId = this.state.selectedClipId;
     if (!selectedId) return;
 
+    this.recordSnapshot();
     this.state = {
       ...this.state,
       selectedClipId: null,
@@ -337,6 +430,7 @@ class TimelineStore {
       })),
     };
     this.notify();
+    this.commitTrackChange();
   };
 
   findClip = (
@@ -363,6 +457,7 @@ class TimelineStore {
       targetTrackId = found.track.id;
     }
 
+    this.recordSnapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -389,6 +484,7 @@ class TimelineStore {
       ),
     };
     this.notify();
+    this.commitTrackChange();
   };
 
   addClip = (
@@ -445,6 +541,7 @@ class TimelineStore {
     const clipEnd = newClip.startMs + newClip.durationMs;
     const newDuration = Math.max(this.state.durationMs, clipEnd + 1000);
 
+    this.recordSnapshot();
     this.state = {
       ...this.state,
       durationMs: newDuration,
@@ -462,6 +559,7 @@ class TimelineStore {
     };
 
     this.notify();
+    this.commitTrackChange();
     return newClip;
   };
 }
@@ -487,12 +585,16 @@ export function useTimelineTools() {
     snappingEnabled: state.snappingEnabled,
     zoomPxPerMs: state.zoomPxPerMs,
     selectedClipId: state.selectedClipId,
+    canUndo: timelineStore.canUndo(),
+    canRedo: timelineStore.canRedo(),
     setActiveTool: timelineStore.setActiveTool,
     toggleSnapping: timelineStore.toggleSnapping,
     setZoomPxPerMs: timelineStore.setZoomPxPerMs,
     splitAtPlayhead: timelineStore.splitAtPlayhead,
     deleteSelectedClip: timelineStore.deleteSelectedClip,
     updateClip: timelineStore.updateClip,
+    undo: timelineStore.undo,
+    redo: timelineStore.redo,
   };
 }
 

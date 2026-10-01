@@ -16,6 +16,7 @@ import {
   ImageIcon,
   SearchIcon,
   FilmIcon,
+  GlobeIcon,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
@@ -24,6 +25,8 @@ import {
 } from '../items/ContentCardItem';
 import type { StudioTakeSummary } from '@/lib/studio-types';
 import { toast } from 'sonner';
+import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
+import type { DownloadResourceResult } from '@/main/ipc/channels';
 
 interface StudioMediaTabProps {
   takes: StudioTakeSummary[];
@@ -55,6 +58,20 @@ export function StudioMediaTab({
   const [searchQuery, setSearchQuery] = useState('');
   const [importedAssets, setImportedAssets] = useState<ImportedAsset[]>([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+
+  const handleAssetDownloaded = (res: DownloadResourceResult) => {
+    if (!res.filePath || !res.fileName) return;
+    const newAsset: ImportedAsset = {
+      id: Math.random().toString(36).slice(2, 9),
+      name: res.fileName,
+      path: res.filePath,
+      type: 'image',
+      sizeBytes: res.sizeBytes ?? 0,
+      durationMs: 5000,
+    };
+    setImportedAssets((prev) => [newAsset, ...prev]);
+  };
 
   const handleOpenNativePicker = async () => {
     setIsImporting(true);
@@ -128,7 +145,7 @@ export function StudioMediaTab({
   );
 
   return (
-    <div className="flex flex-col h-full gap-3 overflow-y-auto pr-1">
+    <div className="flex flex-col h-full gap-3 overflow-y-auto overflow-x-hidden pr-1">
       {/* Search Input */}
       <div className="relative shrink-0">
         <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -186,6 +203,30 @@ export function StudioMediaTab({
           Drop MP4, WebM, MOV, MP3, PNG or click to browse
         </span>
       </div>
+
+      {/* Online Resource Search (Serper) */}
+      <button
+        type="button"
+        onClick={() => setIsSearchModalOpen(true)}
+        className="flex items-center justify-between px-3 py-2 border border-primary/30 hover:border-primary/60 rounded-lg bg-primary/5 hover:bg-primary/10 transition-colors text-left cursor-pointer group shrink-0"
+      >
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 rounded-md bg-primary/20 text-primary">
+            <GlobeIcon className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
+              Search Web Assets
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              Find transparent PNGs, mockups & SVGs via Serper
+            </div>
+          </div>
+        </div>
+        <span className="text-[10px] font-medium text-primary px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
+          SERPER
+        </span>
+      </button>
 
       {/* Imported Media Section */}
       {filteredImported.length > 0 && (
@@ -263,6 +304,12 @@ export function StudioMediaTab({
           </div>
         )}
       </div>
+
+      <AssetSearchDialog
+        open={isSearchModalOpen}
+        onOpenChange={setIsSearchModalOpen}
+        onAssetDownloaded={handleAssetDownloaded}
+      />
     </div>
   );
 }

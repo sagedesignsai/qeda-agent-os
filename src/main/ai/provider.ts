@@ -8,12 +8,19 @@
  * Provider definitions live in registry.ts. Credentials are read from
  * Electron's encrypted store first (see ai/settings.ts), then from the
  * environment, so a `.env.local` alone is enough to get running.
+ *
+ * Chat and embeddings resolve through the SAME construction path, deliberately.
+ * They used to share only `resolveModel`, which returned a `LanguageModel` for
+ * both — so `tools/rag.ts` handed `embed()` a chat model and every RAG tool
+ * failed at runtime even when correctly configured. The two now differ only in
+ * which factory method they call: `provider(modelId)` vs
+ * `provider.embeddingModel(modelId)`.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { createGateway } from '@ai-sdk/gateway';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import type { LanguageModel } from 'ai';
+import type { EmbeddingModel, LanguageModel } from 'ai';
 import { getSettings, type AppSettings } from './settings';
 import {
   PROVIDERS,
@@ -28,6 +35,63 @@ export { PROVIDERS, type ProviderConfig };
 /** True when this provider needs an API key (i.e. it is not local). */
 function requiresApiKey(provider: ProviderConfig): boolean {
   return (provider.apiKeyEnvs?.length ?? 0) > 0;
+}
+
+/** Validate the provider id, naming the alternatives rather than failing bare. */
+function requireProvider(providerId: string): ProviderConfig {
+  const provider = getProvider(providerId);
+  if (!provider) {
+    throw new Error(
+      `Unknown provider "${providerId}". Known providers: ${PROVIDERS.map((p) => p.id).join(', ')}.`,
+    );
+  }
+  return provider;
+}
+
+/**
+ * Resolve the API key, or explain which variable would fix it.
+ *
+ * Settings win over the environment so an explicit key in the UI is honoured.
+ * Returns undefined for keyless providers such as a local Ollama.
+ */
+function requireApiKey(
+  providerId: string,
+  provider: ProviderConfig,
+  settings: AppSettings,
+): string | undefined {
+  const apiKey = resolveApiKey(providerId, settings);
+  if (!apiKey && requiresApiKey(provider)) {
+    const env = provider.apiKeyEnvs?.[0] ?? 'API key';
+    throw new Error(
+      `No API key for "${provider.name}". Add one in Settings or set ${env}.`,
+    );
+  }
+  return apiKey;
+}
+
+/**
+ * Build the OpenAI-compatible provider handle for an id.
+ *
+ * Shared by chat and embeddings so the two cannot drift again: the only thing
+ * that should differ between them is which factory method is called on the
+ * result, not how the base URL and credentials were assembled.
+ */
+function openAICompatible(
+  providerId: string,
+  settings: AppSettings,
+  apiKey: string | undefined,
+) {
+  const baseURL = resolveBaseURL(providerId, settings);
+  if (!baseURL) {
+    throw new Error(`Provider "${providerId}" has no base URL configured.`);
+  }
+  return createOpenAICompatible({
+    name: providerId,
+    baseURL,
+    // apiKey is optional so a local Ollama server works without one.
+    ...(apiKey ? { apiKey } : {}),
+    includeUsage: true,
+  });
 }
 
 /**
@@ -67,26 +131,15 @@ export function resolveModel(
   modelId: string,
 ): LanguageModel {
   const settings = getSettings();
-  const provider = getProvider(providerId);
+  const provider = requireProvider(providerId);
 
-  if (!provider) {
-    throw new Error(
-      `Unknown provider "${providerId}". Known providers: ${PROVIDERS.map((p) => p.id).join(', ')}.`,
-    );
-  }
   if (!modelId) {
     throw new Error(
       `No model selected for provider "${providerId}". Pick one in Settings.`,
     );
   }
 
-  const apiKey = resolveApiKey(providerId, settings);
-  if (!apiKey && requiresApiKey(provider)) {
-    const env = provider.apiKeyEnvs?.[0] ?? 'API key';
-    throw new Error(
-      `No API key for "${provider.name}". Add one in Settings or set ${env}.`,
-    );
-  }
+  const apiKey = requireApiKey(providerId, provider, settings);
 
   // ── AI Gateway ──────────────────────────────────────────────────────────────
   if (providerId === 'gateway') {
@@ -95,20 +148,50 @@ export function resolveModel(
   }
 
   // ── OpenAI-compatible (every other provider) ────────────────────────────────
-  const baseURL = resolveBaseURL(providerId, settings);
-  if (!baseURL) {
-    throw new Error(`Provider "${providerId}" has no base URL configured.`);
+  return openAICompatible(
+    providerId,
+    settings,
+    apiKey,
+  )(modelId) as unknown as LanguageModel;
+}
+
+/**
+ * Resolve an EmbeddingModel for the given provider + model id.
+ *
+ * This is the one thing `tools/rag.ts` needs and could not previously get: it
+ * used to call `resolveModel`, which hands back a chat model. `embed()` and
+ * `embedMany()` call `doEmbed` on what they are given, and a chat model has no
+ * such method — so every RAG tool threw a TypeError instead of indexing
+ * anything, no matter how correct the configuration was.
+ */
+export function resolveEmbeddingModel(
+  providerId: string,
+  modelId: string,
+): EmbeddingModel {
+  const settings = getSettings();
+  const provider = requireProvider(providerId);
+
+  if (!modelId) {
+    throw new Error(
+      `No embedding model selected for provider "${providerId}". ` +
+        'Pick one in Settings → Embeddings.',
+    );
   }
 
-  const compat = createOpenAICompatible({
-    name: providerId,
-    baseURL,
-    // apiKey is optional so a local Ollama server works without one.
-    ...(apiKey ? { apiKey } : {}),
-    includeUsage: true,
-  });
+  const apiKey = requireApiKey(providerId, provider, settings);
 
-  return compat(modelId) as unknown as LanguageModel;
+  if (providerId === 'gateway') {
+    const gateway = createGateway({ apiKey });
+    // The gateway's embedding factory is typed to its own model id union; the
+    // cast is the same one resolveModel already makes for chat.
+    return gateway.embeddingModel(modelId) as unknown as EmbeddingModel;
+  }
+
+  // `.embeddingModel(...)` is the whole point of this function: calling the
+  // provider as a function would hand back a chat model again.
+  return openAICompatible(providerId, settings, apiKey).embeddingModel(
+    modelId,
+  ) as EmbeddingModel;
 }
 
 /**

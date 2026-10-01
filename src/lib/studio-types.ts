@@ -287,3 +287,75 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     },
   ];
 }
+
+/**
+ * Extracts kinetic zoom keyframes from timeline tracks.
+ */
+export function extractZoomsFromTracks(tracks: TimelineTrack[]): StudioZoom[] {
+  const effectsTrack = tracks.find((t) => t.type === 'effects');
+  if (!effectsTrack) return [];
+
+  return effectsTrack.clips.map((c) => ({
+    id: c.id,
+    startMs: Math.round(c.startMs),
+    endMs: Math.round(c.startMs + c.durationMs),
+    scale: typeof c.payload?.scale === 'number' ? c.payload.scale : 1.5,
+    targetX: typeof c.payload?.targetX === 'number' ? c.payload.targetX : 0.5,
+    targetY: typeof c.payload?.targetY === 'number' ? c.payload.targetY : 0.5,
+  }));
+}
+
+/**
+ * Extracts synchronized captions/subtitles from timeline tracks.
+ */
+export function extractCaptionsFromTracks(
+  tracks: TimelineTrack[],
+): StudioCaption[] {
+  const captionsTrack = tracks.find((t) => t.type === 'captions');
+  if (!captionsTrack) return [];
+
+  return captionsTrack.clips.map((c) => ({
+    id: c.id,
+    startMs: Math.round(c.startMs),
+    endMs: Math.round(c.startMs + c.durationMs),
+    text: c.payload?.text || c.name,
+  }));
+}
+
+/**
+ * Extracts cuts/silence pruning gaps from video clips on the primary video track.
+ */
+export function extractCutsFromTracks(
+  tracks: TimelineTrack[],
+  totalDurationMs: number,
+): StudioCut[] {
+  const videoTrack = tracks.find((t) => t.type === 'video');
+  if (!videoTrack || videoTrack.clips.length === 0) return [];
+
+  const sorted = [...videoTrack.clips].sort((a, b) => a.startMs - b.startMs);
+  const cuts: StudioCut[] = [];
+  let currentMs = 0;
+
+  for (const clip of sorted) {
+    if (clip.startMs > currentMs + 50) {
+      cuts.push({
+        id: `cut-${Math.round(currentMs)}-${Math.round(clip.startMs)}`,
+        startMs: Math.round(currentMs),
+        endMs: Math.round(clip.startMs),
+        reason: 'manual',
+      });
+    }
+    currentMs = clip.startMs + clip.durationMs;
+  }
+
+  if (totalDurationMs > currentMs + 50) {
+    cuts.push({
+      id: `cut-${Math.round(currentMs)}-${Math.round(totalDurationMs)}`,
+      startMs: Math.round(currentMs),
+      endMs: Math.round(totalDurationMs),
+      reason: 'manual',
+    });
+  }
+
+  return cuts;
+}

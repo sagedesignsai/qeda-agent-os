@@ -23,6 +23,7 @@ export { workspaceTools } from './workspace.js';
 export { repoTools } from './repo.js';
 export { indexPageTool } from './workspace-rag.js';
 export { serviceTools } from './services.js';
+export { resourceTools } from './resources.js';
 
 export {
   createApprovalPolicy,
@@ -47,6 +48,7 @@ import { workspaceTools } from './workspace.js';
 import { repoTools } from './repo.js';
 import { indexPageTool } from './workspace-rag.js';
 import { serviceTools } from './services.js';
+import { resourceTools } from './resources.js';
 
 import { createApprovalPolicy } from './capability.js';
 import { chatToolPolicies } from './policies/chat.js';
@@ -61,6 +63,7 @@ export const allTools = {
   ...workspaceTools,
   ...serviceTools,
   ...repoTools,
+  ...resourceTools,
   indexPage: indexPageTool,
 };
 
