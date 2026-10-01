@@ -120,11 +120,72 @@ data: {"id":"evt_0f7b2c087001…","type":"server.connected","data":{}}
 ```
 
 - The spec exposes only `V2EventEncoded` = `{ type: "string", contentMediaType: … }`
-  — **an encoded string with no enum of event names**. The schema is therefore
-  not a usable taxonomy.
-- **The full event list is still the main open item.** Idle, only
-  `server.connected` (+ `: heartbeat`) was observed. Enumerate by running a real
-  session against a throwaway repo and capturing the stream.
+  — an encoded string with no enum of event names. The schema is **not** a usable
+  taxonomy; the list below came from a live capture.
+
+### Event envelope
+
+Every event shares this shape:
+
+```
+{ id: "evt_…", created: <ms epoch>, type: "<name>",
+  location?: { directory }, data: { … },
+  durable?: { aggregateID, seq, version } }
+```
+
+`durable` marks events that are persisted to the session aggregate (playback /
+resume); the others are ephemeral. `location.directory` is present on nearly all
+of them and confirms §3.
+
+### The full taxonomy — 23 types (captured from one real run)
+
+Counts from a single `“add a JSDoc comment”` run (4 steps, 3 tool calls):
+
+| Event | × | Renders as |
+| --- | --- | --- |
+| `server.connected` | 1 | — |
+| `session.created` | 1 | run setup |
+| `session.inbox.enqueued` / `.delivered` | 1 / 1 | prompt accepted / picked up |
+| `session.execution.started` | 1 | **run begin** |
+| `session.instructions.updated` | 1 | — |
+| `project.updated` | 1 | repo/vcs detected |
+| `skill.updated` | 4 | — |
+| `session.step.started` / `.streamed` / `.ended` | 4 each | step boundaries (`agent`, `model`, `finish`, `cost`) |
+| `session.reasoning.started` / `.delta` / `.ended` | 4 / 21 / 4 | `reasoning-delta` from `.delta` |
+| `session.text.started` / `.delta` / `.ended` | 1 / 3 / 1 | `text-delta` from `.delta` |
+| `session.tool.input.started` / `.ended` | 3 / 3 | `tool-input-start` |
+| `session.tool.called` | 3 | `tool-call` (`id`, `name`, `input`) |
+| `session.tool.success` | 3 | `tool-result` |
+| `session.usage.updated` | 4 | cost/token readout |
+| `session.execution.succeeded` | 1 | **run end** |
+
+### Mapping onto Qeda's existing chunk shapes
+
+The whole point of the translation layer, now answerable directly:
+
+| v2 event | Qeda `TextStreamPart` chunk | Notes |
+| --- | --- | --- |
+| `session.text.delta` | `text-delta` | `data.{assistantMessageID, ordinal, delta}` |
+| `session.reasoning.delta` | `reasoning-delta` | same shape |
+| `session.tool.input.started` | `tool-input-start` | `data.id` is a `call_…` id; `data.name` the tool |
+| `session.tool.called` | `tool-call` | `data.input` is the parsed args |
+| `session.tool.success` | `tool-result` | `data.content` is an array of parts |
+| `session.execution.started` | *(turn begins)* | |
+| `session.execution.succeeded` / `.failed` | *(turn ends)* → `agent:stream-done` / `-error` | **.failed is inferred, not observed** |
+| `session.reasoning.*` / `text.started` / `text.ended` / `step.*` / `usage.updated` | dropped | lifecycle; the reducer ignores unknown types anyway |
+
+Two consequences worth carrying into the design:
+
+- **`session.execution.succeeded` is the completion signal.** Do not poll
+  `Session.Info.time.idle` — the execution event is authoritative and immediate.
+- **The tool-call id is `data.id`, a `call_…` string, shared across
+  `input.started` → `called` → `success`.** That is the stable key the reducer
+  needs for `toolCallId`, so tool cards will pair correctly.
+
+**Not observed** (every tool succeeded and the run was short): a tool failure
+ event and `session.execution.failed`. Both almost certainly exist; capture them
+ with a run that edits nothing and a run that errors. The permission-request
+ event was also not exercised, because the default policy did not prompt.
 
 ---
 
@@ -145,8 +206,15 @@ Response: `{ data: Session.Inbox.User }`.
 - There is an **inbox** concept (`Session.Inbox.*` — User, Synthetic, Compaction,
   Move). Submission appears to go into an inbox with `delivery`/`resume`
   semantics rather than a blocking call.
-- There is **no `prompt_async`** path. Async-ness comes from `delivery`/`resume` +
-  the inbox + `/api/event`.
+- **`POST /prompt` is already non-blocking — no `prompt_async` is needed.**
+  Verified: it returned immediately with the inbox item
+  `{ data: { id: "msg_…", sessionID, time, type: "user", payload: { text },
+  delivery: "steer" } }`, while the agent went on to run for ~30s in the
+  background. Completion arrives on the event stream, not in the response.
+- `Session.Inbox.Delivery` = `"steer" | "queue"` — steer interrupts/redirects the
+  current run, queue defers until it finishes. This is the mechanism for
+  "wait, also do X" mid-run, and it is why Qeda should not re-implement
+  queueing itself.
 - Related: `/api/session/{id}/generate`, `/api/experimental/session/{id}/wait`,
   and **`POST /api/session/{id}/interrupt`** (the v2 equivalent of v1's `abort`).
 
@@ -163,6 +231,17 @@ FileDiff.Info = { file: string, patch: string,
 **`patch` is a unified-diff string.** So the viewer renders patch text (parse the
 hunks; colour with `shiki`, already a dependency) rather than mapping structured
 hunks. This resolves R5 in `vibe-coding-surface.md`: a viewer, not a differ.
+
+Observed live, after the probe agent added a JSDoc comment:
+
+```json
+{"data":[{"file":"greet.js",
+  "patch":"diff --git a/greet.js b/greet.js\nindex f904fd3..ea590c4 100644\n--- a/greet.js\n+++ b/greet.js\n@@ -1,3 +1,6 @@\n+/**\n+ * Returns a greeting for the given name.\n+ */\n export function greet(name) {\n   return \"hi \" + name;\n }\n",
+  "additions":3,"deletions":0,"status":"modified"}]}
+```
+
+It is a standard `git diff` patch — the viewer can reuse an existing unified-diff
+parser, and `status` is the `added` / `deleted` / `modified` enum.
 
 Repo-level state is also available: `/api/vcs/diff`, `/api/vcs/status`,
 `/api/vcs/branch`, `/api/vcs/base`.
@@ -245,8 +324,9 @@ If SDK ergonomics are wanted later, revisit only once a v2 SDK ships.
 
 ## 8. Open items (the probe could not settle these)
 
-1. **The event taxonomy.** Still the biggest gap — only `server.connected` was
-   observed. Needs a real session in a throwaway repo.
+1. ~~**The event taxonomy.**~~ **Resolved** — 23 types captured and mapped in §4.
+   Remaining gaps within it: the tool-failure event, `session.execution.failed`,
+   and the permission-request event (none were exercised).
 2. **`Session.Revert.snapshot`** — is it a restorable checkpoint?
 3. **Prompt async semantics** — how `delivery` / `resume` / the inbox interact,
    and which event signals completion.

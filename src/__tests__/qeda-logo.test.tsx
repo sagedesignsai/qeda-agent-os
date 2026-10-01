@@ -7,7 +7,11 @@
 
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { QedaLogo, QedaLogomark } from '../components/QedaLogo';
+import {
+  QedaLogo,
+  QedaLogoAnimated,
+  QedaLogomark,
+} from '../components/QedaLogo';
 
 describe('QedaLogo and QedaLogomark', () => {
   it('renders the logomark svg with default accessibility attributes', () => {
@@ -15,6 +19,21 @@ describe('QedaLogo and QedaLogomark', () => {
     const svg = screen.getByRole('img', { name: /Qeda Logomark/i });
     expect(svg).toBeInTheDocument();
     expect(svg).toHaveAttribute('viewBox', '0 0 70.891411 91.762123');
+  });
+
+  it('renders the sequential draw animation as a reusable logomark', () => {
+    const { container } = render(
+      <QedaLogoAnimated drawDurationMs={3200} drawLoop />,
+    );
+    const svg = screen.getByRole('img', { name: /Qeda Logomark/i });
+    const paths = container.querySelectorAll('path');
+
+    expect(svg).toHaveClass('qeda-logo-draw', 'qeda-logo-draw--loop');
+    expect(svg).toHaveStyle({ '--qeda-logo-duration': '3200ms' });
+    expect(paths[0]).toHaveClass('qeda-logo-draw__ring');
+    expect(paths[1]).toHaveClass('qeda-logo-draw__bolt');
+    expect(paths[0]).toHaveAttribute('pathLength', '1');
+    expect(paths[1]).toHaveAttribute('pathLength', '1');
   });
 
   it('renders the full logo with name and default subtitle', () => {

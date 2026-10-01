@@ -24,6 +24,7 @@
 
 import React from 'react';
 import { cn } from '@/lib/utils';
+import './qeda-logo.css';
 
 export type QedaLogoSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 export type QedaLogoVariant = 'mark' | 'full' | 'wordmark';
@@ -41,7 +42,15 @@ export interface QedaLogomarkProps extends React.SVGProps<SVGSVGElement> {
   glow?: boolean | string;
   /** Animate the bolt with a subtle hover effect */
   animated?: boolean;
+  /** Draw the ring, then trace and fill the bolt on mount */
+  draw?: boolean;
+  /** Total draw animation duration in milliseconds */
+  drawDurationMs?: number;
+  /** Repeat the draw animation */
+  drawLoop?: boolean;
 }
+
+export type QedaLogoAnimatedProps = Omit<QedaLogomarkProps, 'draw'>;
 
 export interface QedaLogoProps extends Omit<
   React.HTMLAttributes<HTMLDivElement>,
@@ -95,6 +104,9 @@ export function QedaLogomark({
   boltColor,
   glow = false,
   animated = false,
+  draw = false,
+  drawDurationMs = 2400,
+  drawLoop = false,
   className,
   style,
   ...props
@@ -119,6 +131,9 @@ export function QedaLogomark({
             : 'drop-shadow(0 0 10px rgba(56, 189, 248, 0.4))',
       }
     : undefined;
+  const drawStyle = draw
+    ? ({ '--qeda-logo-duration': `${drawDurationMs}ms` } as React.CSSProperties)
+    : undefined;
 
   return (
     <svg
@@ -132,9 +147,11 @@ export function QedaLogomark({
         'shrink-0 transition-transform duration-200 select-none',
         sizeConfig?.class,
         animated && 'group-hover:scale-105',
+        draw && 'qeda-logo-draw',
+        drawLoop && 'qeda-logo-draw--loop',
         className,
       )}
-      style={{ ...glowStyle, ...style }}
+      style={{ ...glowStyle, ...drawStyle, ...style }}
       {...props}
     >
       <g transform="translate(-67.642249,-97.588516)">
@@ -142,7 +159,14 @@ export function QedaLogomark({
         <path
           d={RING_PATH}
           fill={ringColor ?? 'currentColor'}
-          className={cn('transition-colors', ringClassName)}
+          className={cn(
+            'transition-colors',
+            draw && 'qeda-logo-draw__ring',
+            ringClassName,
+          )}
+          pathLength={draw ? 1 : undefined}
+          stroke={draw ? (ringColor ?? 'currentColor') : undefined}
+          strokeWidth={draw ? 1.4 : undefined}
         />
         {/* Lightning Bolt tail (The dynamic completion finish) */}
         <path
@@ -150,14 +174,22 @@ export function QedaLogomark({
           fill={boltColor ?? 'currentColor'}
           className={cn(
             'transition-colors',
+            draw && 'qeda-logo-draw__bolt',
             animated &&
               'transition-transform duration-300 group-hover:translate-x-0.5 group-hover:translate-y-0.5',
             boltClassName,
           )}
+          pathLength={draw ? 1 : undefined}
+          stroke={draw ? (boltColor ?? 'currentColor') : undefined}
+          strokeWidth={draw ? 1.4 : undefined}
         />
       </g>
     </svg>
   );
+}
+
+export function QedaLogoAnimated(props: QedaLogoAnimatedProps) {
+  return <QedaLogomark {...props} draw />;
 }
 
 /**

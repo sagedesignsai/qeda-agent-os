@@ -319,7 +319,7 @@ Flat `src/__tests__/`, jsdom, `isolatedModules`.
 | # | Risk | Status after the probe |
 | --- | --- | --- |
 | R1 | CLI/SDK major-version skew | **Resolved — no v2 SDK exists.** `@opencode-ai/sdk` is v1 (`1.18.34`); use a thin client over `/api/*` typed from `/openapi.json`. |
-| R2 | Bus event taxonomy unenumerated | **Still open — the main gap.** Only `server.connected` observed. Needs a live session. |
+| R2 | Bus event taxonomy unenumerated | **Resolved.** 23 types captured from a real run and mapped to Qeda's chunk shapes — `docs/opencode-v2-protocol.md` §4. Outstanding within it: the tool-failure, `session.execution.failed`, and permission-request events (none were exercised). |
 | R3 | `revert` semantics | **Partly resolved.** It is staged (`stage` → `commit` \| `DELETE`). Whether `Session.Revert.snapshot` is a restorable checkpoint is **[verify]** and decides how much git checkpointing is still needed. |
 | R4 | Directory-scoped server | **Resolved, inverted.** v2 sessions carry `location.directory` and can be moved — one server serves many repos. |
 | R5 | No diff renderer exists | **Resolved in shape.** `FileDiff.Info.patch` is a unified-diff string — viewer, not differ. |
@@ -329,7 +329,7 @@ Flat `src/__tests__/`, jsdom, `isolatedModules`.
 | R9 | Long autonomous runs | Open. Timeout / interrupt / cost; the run must survive a slow model without hanging the UI. |
 | R10 | Bundling ESM SDK into CJS main | **Eliminated** — no SDK dependency. |
 | **R11** | **We do not own the server process** | A **background service** runs already. The app must **attach**, never kill or restart it out from under the user (`opencode service status` to discover). |
-| **R12** | **ACP vs HTTP API fork** | `opencode acp` is an Agent Client Protocol server — purpose-built for agent clients. Genuine alternative to `/api/*`; needs a decision. |
+| **R12** | ACP vs HTTP API fork | **Decided: `/api/*`.** The review loop needs `diff`, `vcs/*`, staged `revert` and `worktree`, which are HTTP-only. `opencode acp` stays a note for a future *generic* agent client, not this product. |
 
 **Decisions still open:** commit-on-keep vs. leave-changes-staged; whether to
 require a clean tree or auto-checkpoint a dirty one; and whether the Code page
@@ -340,9 +340,9 @@ pins one session per project or allows many.
 ## 12. Milestones
 
 1. ~~**Probe the protocol.**~~ **Done** — see `docs/opencode-v2-protocol.md`;
-   retired R1/R4/R5/R6/R10. **Still outstanding in this step:** capture the
-   `/api/event` taxonomy across a real session (R2), and decide **R12** — build on
-   `opencode acp` or on `/api/*`.
+   retired R1/R2/R4/R5/R6/R10 and settled **R12** in favour of `/api/*`. The run
+   completed end to end at **cost 0** on `longcat-2.5-preview-free`, and the diff
+   came back as a unified-diff patch string.
 2. **Main domain.** `client.ts` (a thin `/api` client — **no npm SDK**) +
    `session-map.ts` + the `opencode_session_id` migration. Attach to the ambient
    service; do not spawn or stop it.

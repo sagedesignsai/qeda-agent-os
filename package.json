@@ -42,6 +42,7 @@
     "theme:terminal": "node scripts/tokenize-terminal.mjs",
     "theme:terminal:write": "node scripts/tokenize-terminal.mjs --write",
     "package": "npm run build && electron-builder build --publish never",
+    "package:appimage": "npm run build && electron-builder --linux AppImage --publish never",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "start": "electron-vite dev --watch",
     "test": "jest",
@@ -218,6 +219,7 @@
       "target": [
         "AppImage"
       ],
+      "icon": "assets/icons",
       "category": "Development"
     },
     "directories": {

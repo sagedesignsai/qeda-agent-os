@@ -172,3 +172,21 @@ export function incrementPomodoro(id: string): void {
 export function deleteTask(id: string): void {
   getDb().prepare(`DELETE FROM tasks WHERE id = ?`).run(id);
 }
+
+/**
+ * Count unfinished tasks due by the end of today (local time) — the number
+ * behind the dock badge. `due_at` is a unix-epoch second, like the table's
+ * `created_at` default.
+ */
+export function countDueToday(): number {
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  return (
+    getDb()
+      .prepare(
+        `SELECT COUNT(*) AS n FROM tasks
+         WHERE status != 'done' AND due_at IS NOT NULL AND due_at <= ?`,
+      )
+      .get(Math.floor(endOfToday.getTime() / 1000)) as { n: number }
+  ).n;
+}

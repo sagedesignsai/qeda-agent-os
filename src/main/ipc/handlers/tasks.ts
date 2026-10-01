@@ -9,7 +9,7 @@
  */
 
 import { isStepCount } from 'ai';
-import { ipcMain } from 'electron';
+import { ipcMain, powerSaveBlocker } from 'electron';
 import { getSettings } from '../../ai/settings';
 import {
   createFocusSession,
@@ -36,6 +36,15 @@ import {
   listTasks,
   updateTask,
 } from '../../db/tasks';
+import { refreshBadge } from '../../os-integration';
+
+/**
+ * A running focus session holds a power-save blocker so OS throttling
+ * (macOS App Nap, Windows efficiency mode) can't stall the countdown.
+ * The renderer toggles it from the timer's `running` state; the handle is
+ * held across calls and released on the matching disable.
+ */
+let focusPowerBlockerId: number | null = null;
 
 export function registerTasksHandlers(): void {
   // ── ADHD task manager ─────────────────────────────────────────────────────
@@ -54,19 +63,32 @@ export function registerTasksHandlers(): void {
     ) => listTasks({ status, projectId }),
   );
 
-  ipcMain.handle('tasks:create', (_e, req: Parameters<typeof createTask>[0]) =>
-    createTask(req),
+  ipcMain.handle(
+    'tasks:create',
+    (_e, req: Parameters<typeof createTask>[0]) => {
+      const task = createTask(req);
+      refreshBadge();
+      return task;
+    },
   );
 
   ipcMain.handle(
     'tasks:update',
-    (_e, { id, ...patch }: { id: string } & Parameters<typeof updateTask>[1]) =>
-      updateTask(id, patch),
+    (
+      _e,
+      { id, ...patch }: { id: string } & Parameters<typeof updateTask>[1],
+    ) => {
+      const task = updateTask(id, patch);
+      refreshBadge();
+      return task;
+    },
   );
 
-  ipcMain.handle('tasks:delete', (_e, { id }: { id: string }) =>
-    deleteTask(id),
-  );
+  ipcMain.handle('tasks:delete', (_e, { id }: { id: string }) => {
+    const result = deleteTask(id);
+    refreshBadge();
+    return result;
+  });
 
   ipcMain.handle('tasks:increment-pomodoro', (_e, { id }: { id: string }) =>
     incrementPomodoro(id),
@@ -180,4 +202,19 @@ export function registerTasksHandlers(): void {
   );
 
   ipcMain.handle('focus:stats', () => getFocusStats());
+
+  // ── Focus system · native power integration ───────────────────────────────
+
+  ipcMain.handle(
+    'focus:set-power-blocker',
+    (_e, { enabled }: { enabled: boolean }) => {
+      if (enabled && focusPowerBlockerId === null) {
+        focusPowerBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+      } else if (!enabled && focusPowerBlockerId !== null) {
+        powerSaveBlocker.stop(focusPowerBlockerId);
+        focusPowerBlockerId = null;
+      }
+      return { active: focusPowerBlockerId !== null };
+    },
+  );
 }

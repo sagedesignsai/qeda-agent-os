@@ -12,7 +12,7 @@
  */
 
 import { promises as fs } from 'node:fs';
-import { ipcMain, dialog, BrowserWindow } from 'electron';
+import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
 import { nanoid } from 'nanoid';
 import { generateObject } from 'ai';
 import { z } from 'zod';
@@ -124,6 +124,7 @@ export function registerDocumentsHandlers({
           await fs.writeFile(result.filePath, content, 'utf-8');
         }
 
+        shell.showItemInFolder(result.filePath);
         return { ok: true, filePath: result.filePath };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

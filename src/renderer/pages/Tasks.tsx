@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
 import {
@@ -750,6 +750,26 @@ export default function Tasks() {
   /** Set when the dialog is editing an existing task; null = create. */
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [brainDumpOpen, setBrainDumpOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Quick capture entry points (tray, File menu, global shortcut) land on
+  // /tasks?capture=1 to open the brain-dump dialog directly. Derived during
+  // render (no effect); the param is stripped when the dialog closes so a
+  // plain visit to /tasks never re-opens it.
+  const captureRequested = searchParams.get('capture') === '1';
+  const closeBrainDump = useCallback(() => {
+    setBrainDumpOpen(false);
+    if (captureRequested) {
+      setSearchParams(
+        (prev) => {
+          prev.delete('capture');
+          return prev;
+        },
+        { replace: true },
+      );
+    }
+  }, [captureRequested, setSearchParams]);
+
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
     string | null
@@ -952,6 +972,31 @@ export default function Tasks() {
     breakMins: preset.break,
     onPhaseComplete: handleTimerPhase,
   });
+
+  // Native power integration: hold a power-save blocker while a session runs
+  // so OS throttling can't stall the countdown, and pause cleanly when the OS
+  // suspends — intervals don't fire asleep, so the phase would otherwise
+  // silently resume mid-countdown on wake. The unmount cleanup releases the
+  // blocker; the toggle effect must not, because cleanup of the *previous*
+  // running state runs after the new effect has enabled it.
+  useEffect(() => {
+    void window.electron.ipc.invoke('focus:set-power-blocker', {
+      enabled: focusTimer.state.running,
+    });
+  }, [focusTimer.state.running]);
+  useEffect(
+    () => () => {
+      void window.electron.ipc.invoke('focus:set-power-blocker', {
+        enabled: false,
+      });
+    },
+    [],
+  );
+  useEffect(() => {
+    const { pause } = focusTimer;
+    const cleanup = window.electron.ipc.on('power:suspended', () => pause());
+    return cleanup;
+  }, [focusTimer]);
 
   // Declared after `focusTimer` because completing the focused task has to pause
   // it. Ordering, not a ref, is what breaks the cycle here.
@@ -1249,8 +1294,10 @@ export default function Tasks() {
       />
 
       <BrainDumpDialog
-        open={brainDumpOpen}
-        onOpenChange={setBrainDumpOpen}
+        open={brainDumpOpen || captureRequested}
+        onOpenChange={(open) =>
+          open ? setBrainDumpOpen(true) : closeBrainDump()
+        }
         onCreated={(created) => setTasks((prev) => [...created, ...prev])}
       />
 

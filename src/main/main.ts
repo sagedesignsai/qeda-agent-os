@@ -9,7 +9,7 @@
  * `./release/app/dist/main/main.js` using electron-vite.
  */
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, nativeTheme, shell, ipcMain } from 'electron';
 import log from 'electron-log';
 // Imported first so provider keys from .env.local are in process.env before any
 // module reads them during app startup.
@@ -17,13 +17,59 @@ import { loadEnvironment } from './env';
 import { getDb, closeDb } from './db/client.js';
 import { registerIpcHandlers } from './ipc/index.js';
 import { registerPtyHandlers } from './pty/manager.js';
-import MenuBuilder from './menu';
+import MenuBuilder, { attachContentContextMenu } from './menu';
 import { resolveHtmlPath } from './util';
 import startAutoUpdates from './updates';
+import { loadWindowState, trackWindowState } from './window-state';
+import { createTray, destroyTray } from './tray';
+import {
+  acquireSingleInstanceLock,
+  applyAppIdentity,
+  navigateTo,
+  refreshBadge,
+  refreshRecentProjects,
+  registerDeepLinkClient,
+  registerGlobalShortcuts,
+  registerPowerMonitor,
+  resolveDeepLinkPath,
+  shutdownOsIntegration,
+} from './os-integration';
 
 let mainWindow: BrowserWindow | null = null;
+/** A deep link that arrived before the window existed; flushed after first paint. */
+let pendingDeepLink: string | null = null;
 
 loadEnvironment();
+
+// Identity must be applied before any Notification is created: on Windows the
+// AppUserModelID decides whether toasts are attributed to Qeda or fail.
+applyAppIdentity();
+
+// A second process would share vellum.db with the running one — better-sqlite3
+// is not built for that. Hand over to the existing instance instead.
+const handleDeepLinkUrl = (url: string): void => {
+  const target = resolveDeepLinkPath(url);
+  if (!target) return;
+  if (mainWindow) {
+    navigateTo(mainWindow, target);
+  } else {
+    pendingDeepLink = target;
+  }
+};
+
+if (!acquireSingleInstanceLock(handleDeepLinkUrl)) {
+  app.quit();
+} else {
+  // macOS delivers deep links via open-url; Windows/Linux re-invoke the
+  // executable, which the lock converts into this event (with argv).
+  registerDeepLinkClient(handleDeepLinkUrl);
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 // Headless CI containers and servers have no usable GPU, and Chromium aborts
 // the whole app ("GPU process isn't usable. Goodbye.") when it tries to start
@@ -53,31 +99,42 @@ const installExtensions = async () => {
   }).catch(console.log);
 };
 
+const RESOURCES_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'assets')
+  : path.join(app.getAppPath(), 'assets');
+
+const getAssetPath = (...paths: string[]): string => {
+  return path.join(RESOURCES_PATH, ...paths);
+};
+
 const createWindow = async () => {
   if (isDebug) {
     await installExtensions();
   }
 
-  const RESOURCES_PATH = app.isPackaged
-    ? path.join(process.resourcesPath, 'assets')
-    : path.join(app.getAppPath(), 'assets');
-
-  const getAssetPath = (...paths: string[]): string => {
-    return path.join(RESOURCES_PATH, ...paths);
-  };
-
+  const state = loadWindowState();
+  // Match the theme the renderer will start in (next-themes follows the OS)
+  // so the first paint never flashes the wrong color.
   mainWindow = new BrowserWindow({
     show: false,
     title: 'Qeda',
-    width: 1024,
-    height: 728,
-    // Matches the dark theme background so the first paint never flashes white.
-    backgroundColor: '#0e0f14',
+    width: state.width,
+    height: state.height,
+    x: state.x,
+    y: state.y,
+    minWidth: 900,
+    minHeight: 600,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0e0f14' : '#f4f4f5',
     icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
     },
   });
+
+  // Restoring a window that was maximized when closed.
+  if (state.maximized) {
+    mainWindow.maximize();
+  }
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) {
@@ -94,8 +151,17 @@ const createWindow = async () => {
     mainWindow = null;
   });
 
+  trackWindowState(mainWindow);
+
   const menuBuilder = new MenuBuilder(mainWindow);
   menuBuilder.buildMenu();
+
+  // Right-click: edit roles, spelling suggestions, links (dev adds Inspect).
+  attachContentContextMenu(mainWindow);
+
+  // Native spellchecking for the word processor, chat, and capture inputs;
+  // suggestions surface through the context menu above.
+  mainWindow.webContents.session.setSpellCheckerEnabled(true);
 
   // Open urls in the user's browser
   mainWindow.webContents.setWindowOpenHandler((edata) => {
@@ -108,6 +174,11 @@ const createWindow = async () => {
   registerPtyHandlers(ipcMain, mainWindow);
 
   await mainWindow.loadURL(resolveHtmlPath('index.html'));
+
+  if (pendingDeepLink && mainWindow) {
+    navigateTo(mainWindow, pendingDeepLink);
+    pendingDeepLink = null;
+  }
 };
 
 /**
@@ -120,6 +191,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  shutdownOsIntegration();
+  destroyTray();
 });
 
 app.on('quit', () => {
@@ -148,6 +224,21 @@ app
       log.error('Failed to initialize database', e);
     }
     await createWindow();
+
+    // OS presence: tray icon, global quick capture, suspend events, badge,
+    // and recent-project quick access. The shortcut/power accessors re-read
+    // the module-level window because it can be recreated (macOS activate).
+    if (!mainWindow) {
+      throw new Error('Main window was not created');
+    }
+    createTray(mainWindow, getAssetPath('icons', '24x24.png'));
+    registerGlobalShortcuts(() => mainWindow);
+    registerPowerMonitor(() => mainWindow);
+    refreshBadge();
+    refreshRecentProjects((target) => {
+      if (mainWindow) navigateTo(mainWindow, target);
+    });
+
     startAutoUpdates();
     app.on('activate', onActivate);
   })

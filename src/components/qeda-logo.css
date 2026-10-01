@@ -1,0 +1,82 @@
+.qeda-logo-draw__ring,
+.qeda-logo-draw__bolt {
+  stroke-dasharray: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.qeda-logo-draw__ring {
+  animation: qeda-logo-ring var(--qeda-logo-duration, 2400ms) ease-in-out both;
+}
+
+.qeda-logo-draw__bolt {
+  animation: qeda-logo-bolt var(--qeda-logo-duration, 2400ms) ease-in-out both;
+}
+
+.qeda-logo-draw--loop .qeda-logo-draw__ring,
+.qeda-logo-draw--loop .qeda-logo-draw__bolt {
+  animation-direction: alternate;
+  animation-iteration-count: infinite;
+}
+
+@keyframes qeda-logo-ring {
+  0% {
+    stroke-dashoffset: 1;
+    stroke-opacity: 1;
+    fill-opacity: 0;
+  }
+
+  42% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 1;
+    fill-opacity: 0;
+  }
+
+  52% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 0;
+    fill-opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 0;
+    fill-opacity: 1;
+  }
+}
+
+@keyframes qeda-logo-bolt {
+  0%,
+  42% {
+    stroke-dashoffset: 1;
+    stroke-opacity: 1;
+    fill-opacity: 0;
+  }
+
+  78% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 1;
+    fill-opacity: 0;
+  }
+
+  88% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 0;
+    fill-opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    stroke-opacity: 0;
+    fill-opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qeda-logo-draw__ring,
+  .qeda-logo-draw__bolt {
+    animation: none;
+    stroke: none;
+    fill-opacity: 1;
+  }
+}

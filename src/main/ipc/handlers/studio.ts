@@ -539,6 +539,7 @@ export function registerStudioHandlers({
       try {
         // If webm requested or source is webm, copy or write
         await fs.copyFile(take.videoPath, filePath);
+        shell.showItemInFolder(filePath);
         return { ok: true, filePath };
       } catch (err) {
         return { ok: false, error: (err as Error).message };

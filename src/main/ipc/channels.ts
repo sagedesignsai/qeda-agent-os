@@ -588,7 +588,13 @@ export interface IpcChannels {
 
   // ── Native Reminders & OS Notifications ─────────────────────────────────────
   'notifications:notify': {
-    req: { title: string; body: string; silent?: boolean };
+    req: {
+      title: string;
+      body: string;
+      silent?: boolean;
+      /** Renderer path to open when the notification is clicked (just shows the window if absent). */
+      navigateTo?: string;
+    };
     res: boolean;
   };
 
@@ -882,6 +888,17 @@ export interface IpcChannels {
     toProvider: string;
     toModel: string;
     reason: string;
+  };
+
+  // ── Native shell integration ────────────────────────────────────────────────
+  /** Navigate the app router to a path. Sent by tray, menu, notifications, deep links. */
+  'ui:navigate': { path: string };
+  /** The OS is suspending — long-running timers (focus) should pause cleanly. */
+  'power:suspended': void;
+  /** Hold or release a power-save blocker so OS throttling can't stall a focus session. */
+  'focus:set-power-blocker': {
+    req: { enabled: boolean };
+    res: { active: boolean };
   };
 }
 
