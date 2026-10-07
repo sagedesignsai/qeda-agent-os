@@ -13,8 +13,9 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
+import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { PlusIcon, FileTextIcon } from 'lucide-react';
 import { PageHeader, type PageCrumb } from '@/components/PageHeader';
@@ -34,11 +35,7 @@ export default function Documents() {
     clear: clearProjectScope,
   } = useProjectScope();
 
-  const {
-    documents,
-    loading: listLoading,
-    createFromTemplate,
-  } = useDocuments(activeProjectId);
+  const { documents, createFromTemplate } = useDocuments(activeProjectId);
 
   const {
     doc,
@@ -56,12 +53,11 @@ export default function Documents() {
 
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
 
-  // Auto-navigate to first available document if on /documents index and items exist
-  useEffect(() => {
-    if (!documentId && !listLoading && documents.length > 0) {
-      navigate(`/documents/${documents[0].id}`, { replace: true });
-    }
-  }, [documentId, listLoading, documents, navigate]);
+  // Note: this route deliberately does *not* auto-open the most recent document.
+  // It used to navigate to `documents[0]`, which is `ORDER BY updated_at DESC` —
+  // so visiting /documents silently dropped you into your last edit and the
+  // gallery below could never render unless you had zero documents. /documents
+  // is now a real landing page, matching how Projects handles its index.
 
   const handleSelectTemplate = async (templateId: string) => {
     const id = await createFromTemplate(templateId, activeProjectId);
@@ -101,7 +97,6 @@ export default function Documents() {
         <>
           {/* Top Application Bar for Template Gallery / Empty State */}
           <PageHeader
-            density="dense"
             crumbs={crumbs}
             meta={
               <ProjectScopeChip
@@ -135,6 +130,48 @@ export default function Documents() {
               and resumes with live paper-sheet canvas, office formatting
               ribbon, and AI drafting.
             </p>
+
+            {/* Recent documents. Without this the templates below are the only
+                way back into an existing document from this route — the
+                sidebar is the other, but a landing page that hides your own
+                work behind a "new document" grid is a dead end. */}
+            {documents.length > 0 && (
+              <div className="w-full max-w-3xl text-left">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Recent
+                </h3>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {documents.slice(0, 6).map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => navigate(`/documents/${d.id}`)}
+                      className="group flex items-center gap-2.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-left transition-all hover:border-primary hover:bg-muted/30 cursor-pointer"
+                    >
+                      <FileTextIcon className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-medium text-foreground">
+                          {d.title}
+                        </span>
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          Edited{' '}
+                          {formatDistanceToNow(new Date(d.updatedAt), {
+                            addSuffix: true,
+                          })}
+                          {d.projectName ? ` · ${d.projectName}` : ''}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {documents.length > 6 && (
+                  <p className="mt-2 text-[10px] text-muted-foreground">
+                    Showing the 6 most recent. All documents are listed in the
+                    sidebar.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl w-full text-left">
               {DOCUMENT_TEMPLATES.map((tmpl) => (

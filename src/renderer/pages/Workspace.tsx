@@ -119,7 +119,7 @@ export default function Workspace() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 gap-1.5 text-xs text-muted-foreground"
+                      className="h-7 shrink-0 gap-1.5 text-xs text-muted-foreground"
                       onClick={() => handleChatWithContext(detail.page.id)}
                     >
                       <MessageSquareIcon className="h-3.5 w-3.5" />
@@ -130,7 +130,7 @@ export default function Workspace() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-7 gap-1.5 text-xs text-muted-foreground"
+                      className="h-7 shrink-0 gap-1.5 text-xs text-muted-foreground"
                       onClick={() => void handleCreatePage(notebookId)}
                     >
                       <PlusIcon className="h-3.5 w-3.5" />
@@ -142,7 +142,7 @@ export default function Workspace() {
                       <Button
                         variant={infoOpen ? 'secondary' : 'ghost'}
                         size="icon"
-                        className="h-7 w-7 text-muted-foreground"
+                        className="h-7 w-7 shrink-0 text-muted-foreground"
                         onClick={() => setInfoOpen((v) => !v)}
                         aria-label="Toggle info panel"
                       >

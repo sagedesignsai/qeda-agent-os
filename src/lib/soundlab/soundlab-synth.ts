@@ -47,6 +47,10 @@ export function schedulePolyNote(
   gain.gain.linearRampToValueAtTime(0, endSec);
 
   osc.connect(gain).connect(bus);
+  osc.onended = () => {
+    osc.disconnect();
+    gain.disconnect();
+  };
   osc.start(startSec);
   osc.stop(endSec + 0.05);
 }

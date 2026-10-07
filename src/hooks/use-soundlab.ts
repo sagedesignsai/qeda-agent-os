@@ -41,7 +41,7 @@ export interface UseSoundLabReturn {
 
 let engineSingleton: SoundLabEngine | null = null;
 
-function getEngine(): SoundLabEngine {
+export function getEngine(): SoundLabEngine {
   if (!engineSingleton) engineSingleton = new SoundLabEngine();
   return engineSingleton;
 }
@@ -306,5 +306,3 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
     reloadSession,
   };
 }
-
-export { getEngine };

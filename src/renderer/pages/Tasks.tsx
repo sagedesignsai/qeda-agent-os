@@ -34,7 +34,6 @@ import {
   PencilIcon,
   Loader2Icon,
   Minimize2Icon,
-  MoreHorizontalIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
@@ -49,6 +48,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -378,7 +378,10 @@ function FocusMode({
   const ringColor = state.phase === 'break' ? '#34d399' : '#f59e0b';
 
   const handleStart = useCallback(() => {
-    if (!audio.playing && (audio.config.noise || audio.config.toneMode !== 'off')) {
+    if (
+      !audio.playing &&
+      (audio.config.noise || audio.config.toneMode !== 'off')
+    ) {
       void audio.start();
     }
     timer.start();
@@ -1121,7 +1124,6 @@ export default function Tasks() {
         className="min-h-0 flex-1 gap-0"
       >
         <PageHeader
-          density="dense"
           crumbs={[{ label: 'Tasks' }]}
           nav={
             <HeaderTabStrip>
@@ -1167,49 +1169,34 @@ export default function Tasks() {
                 </Button>
               )}
 
-              {/* The dense row only has room for the primary action, so the
+              {/* The single row only has room for the primary action, so the
                   three secondary commands collapse into an overflow menu. */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 w-7 px-0 text-xs"
-                    aria-label="More task actions"
-                  >
-                    <MoreHorizontalIcon className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44 text-xs">
-                  <DropdownMenuItem
-                    className="gap-2 text-xs"
-                    onSelect={() => setCopilotOpen(true)}
-                  >
-                    <BotIcon className="size-3.5 text-primary" />
-                    Copilot
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="gap-2 text-xs"
-                    onSelect={() => setBrainDumpOpen(true)}
-                  >
-                    <BrainIcon className="size-3.5 text-violet-500" />
-                    Brain dump
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="gap-2 text-xs"
-                    disabled={isPrioritizing || tasks.length === 0}
-                    onSelect={() => void handlePrioritize()}
-                  >
-                    {isPrioritizing ? (
+              <OverflowMenu
+                label="More task actions"
+                items={[
+                  {
+                    label: 'Copilot',
+                    icon: <BotIcon className="size-3.5 text-primary" />,
+                    onSelect: () => setCopilotOpen(true),
+                  },
+                  {
+                    label: 'Brain dump',
+                    icon: <BrainIcon className="size-3.5 text-violet-500" />,
+                    onSelect: () => setBrainDumpOpen(true),
+                  },
+                  {
+                    label: 'Prioritize',
+                    icon: isPrioritizing ? (
                       <Loader2Icon className="size-3.5 animate-spin" />
                     ) : (
                       <SparklesIcon className="size-3.5" />
-                    )}
-                    Prioritize
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    ),
+                    disabled: isPrioritizing || tasks.length === 0,
+                    onSelect: () => void handlePrioritize(),
+                    separatorBefore: true,
+                  },
+                ]}
+              />
 
               <Button
                 size="sm"

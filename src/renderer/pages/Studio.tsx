@@ -21,7 +21,6 @@ import {
   Share2Icon,
   DownloadIcon,
   ChevronDownIcon,
-  ChevronLeftIcon,
   LayersIcon,
   PanelLeft as PanelLeftIcon,
   PanelRight as PanelRightIcon,
@@ -34,8 +33,11 @@ import {
 } from '@/components/ui/resizable';
 import type { PanelImperativeHandle } from 'react-resizable-panels';
 import { useDefaultLayout } from 'react-resizable-panels';
+import { OverflowMenu } from '@/components/OverflowMenu';
+import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -424,44 +426,40 @@ export default function Studio() {
         /* ── Full Showcase Studio Editor ───────────────────────────────────── */
         <>
           {/* ── Top Header Bar (Dense h-10) ─────────────────────────────────────── */}
-          <header className="h-10 border-b border-border/40 px-3 flex items-center justify-between bg-card/50 backdrop-blur-md shrink-0 select-none">
-            <div className="flex items-center gap-2.5">
-              {/* Back to All Projects */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground -ml-1 px-2"
-                onClick={() => navigate('/studio')}
-              >
-                <ChevronLeftIcon className="w-3.5 h-3.5" />
-                <span>All Projects</span>
-              </Button>
-
-              <div className="h-3.5 w-[1px] bg-border/60" />
-
-              {/* Logo / Title */}
-              <div className="flex items-center gap-1.5">
-                <div className="h-6 w-6 rounded-md bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
-                  <VideoIcon className="w-3.5 h-3.5" />
-                </div>
-                <span className="font-semibold text-xs tracking-tight hidden sm:inline">
-                  Showcase Studio
+          <PageHeader
+            className="select-none"
+            crumbs={[
+              { label: 'Showcase Studio', to: '/studio' },
+              { label: activeTake ? activeTake.title : 'No take selected' },
+            ]}
+            title={
+              <span className="inline-flex items-center gap-2">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/20 text-primary">
+                  <VideoIcon className="size-3" />
                 </span>
-              </div>
-
-              <div className="h-3.5 w-[1px] bg-border/60" />
-
-              {/* Takes Selector Dropdown */}
+                <span className="truncate">
+                  {activeTake ? activeTake.title : 'Showcase Studio'}
+                </span>
+              </span>
+            }
+            nav={
+              /* Takes Selector Dropdown — this is the editor's view
+                   switcher, so it belongs in `nav` rather than the action
+                   cluster. */
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 gap-1.5 max-w-[200px] text-xs font-normal px-2.5"
+                    className="h-7 shrink-0 gap-1.5 px-2.5 text-xs font-normal"
+                    aria-label="Switch take"
                   >
                     <LayersIcon className="w-3 h-3 text-muted-foreground shrink-0" />
-                    <span className="truncate">
-                      {activeTake ? activeTake.title : 'Select a Take'}
+                    {/* Deliberately not the take title — the heading beside it
+                        already says that. This is the switcher for *other*
+                        takes, so it names the set instead. */}
+                    <span className="hidden sm:inline">
+                      {takes.length === 1 ? '1 take' : `${takes.length} takes`}
                     </span>
                     <ChevronDownIcon className="w-3 h-3 opacity-50 shrink-0" />
                   </Button>
@@ -503,25 +501,27 @@ export default function Studio() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              {/* Project Badge if Scoped */}
-              {projectName && (
-                <div className="hidden md:flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-secondary text-secondary-foreground border border-border/50">
-                  <FolderKanbanIcon className="w-3 h-3 text-primary" />
-                  <span className="truncate max-w-[120px]">{projectName}</span>
+            }
+            meta={
+              projectName && (
+                <div className="hidden items-center gap-1 rounded-full border border-border/50 bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground lg:flex">
+                  <FolderKanbanIcon className="size-3 shrink-0 text-primary" />
+                  <span className="max-w-[120px] truncate">{projectName}</span>
                 </div>
-              )}
-            </div>
-
-            {/* Action Controls */}
-            <div className="flex items-center gap-1.5">
-              {activeTake && (
+              )
+            }
+            actions={
+              activeTake && (
                 <>
-                  {/* Left content panel toggle */}
+                  {/* Panel toggles are view state, not commands — icon-only
+                      keeps them cheap in the row. */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={`h-7 w-7 text-muted-foreground hover:text-foreground ${!contentPanelCollapsed ? 'text-primary bg-primary/10' : ''}`}
+                    className={cn(
+                      'size-7 shrink-0 text-muted-foreground hover:text-foreground',
+                      !contentPanelCollapsed && 'bg-primary/10 text-primary',
+                    )}
                     onClick={toggleLeftPanel}
                     title={
                       contentPanelCollapsed
@@ -532,11 +532,13 @@ export default function Studio() {
                     <PanelLeftIcon className="w-3.5 h-3.5" />
                   </Button>
 
-                  {/* Right inspector toggle */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    className={`h-7 w-7 text-muted-foreground hover:text-foreground ${!inspectorCollapsed ? 'text-primary bg-primary/10' : ''}`}
+                    className={cn(
+                      'size-7 shrink-0 text-muted-foreground hover:text-foreground',
+                      !inspectorCollapsed && 'bg-primary/10 text-primary',
+                    )}
                     onClick={toggleRightPanel}
                     title={
                       inspectorCollapsed
@@ -547,67 +549,62 @@ export default function Studio() {
                     <PanelRightIcon className="w-3.5 h-3.5" />
                   </Button>
 
-                  <div className="h-3.5 w-[1px] bg-border/60 mx-0.5" />
+                  <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border/60" />
 
+                  {/* Recording is the primary command; labels drop below sm
+                      so the row survives a narrow window. */}
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-7 gap-1.5 text-xs border-rose-500/30 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 cursor-pointer font-medium px-2.5"
+                    className="h-7 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
                     onClick={() => setSourcePickerOpen(true)}
                     title="Record a new screen or window take"
                   >
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                    <span className="size-2 shrink-0 animate-pulse rounded-full bg-rose-500" />
                     <span className="hidden sm:inline">Record Take</span>
                   </Button>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs border-indigo-500/40 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 cursor-pointer font-medium px-2.5"
-                    onClick={() => {
-                      setCopilotInitialPrompt(null);
-                      setCopilotOpen(true);
-                    }}
-                    title="Open Studio AI Copilot Director"
-                  >
-                    <SparklesIcon className="w-3 h-3 text-indigo-400" />
-                    <span className="hidden sm:inline">AI Director</span>
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs px-2.5"
-                    onClick={handleOpenSocialKit}
-                    disabled={isGeneratingSocialKit}
-                  >
-                    <Share2Icon className="w-3 h-3 text-indigo-400" />
-                    <span className="hidden sm:inline">Release Kit</span>
-                  </Button>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 text-xs px-2.5"
-                    onClick={() => exportVideo('mp4')}
-                  >
-                    <DownloadIcon className="w-3 h-3" />
-                    <span className="hidden sm:inline">Export</span>
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => activeTake && deleteTake(activeTake.id)}
-                    title="Delete Take"
-                  >
-                    <Trash2Icon className="w-3.5 h-3.5" />
-                  </Button>
+                  {/* Three secondary commands plus delete collapse into one
+                      overflow menu rather than six inline buttons. */}
+                  <OverflowMenu
+                    label="More studio actions"
+                    items={[
+                      {
+                        label: 'AI Director',
+                        icon: (
+                          <SparklesIcon className="size-3.5 text-indigo-400" />
+                        ),
+                        onSelect: () => {
+                          setCopilotInitialPrompt(null);
+                          setCopilotOpen(true);
+                        },
+                      },
+                      {
+                        label: 'Release Kit',
+                        icon: (
+                          <Share2Icon className="size-3.5 text-indigo-400" />
+                        ),
+                        disabled: isGeneratingSocialKit,
+                        onSelect: handleOpenSocialKit,
+                      },
+                      {
+                        label: 'Export MP4',
+                        icon: <DownloadIcon className="size-3.5" />,
+                        onSelect: () => void exportVideo('mp4'),
+                      },
+                      {
+                        label: 'Delete take',
+                        icon: <Trash2Icon className="size-3.5" />,
+                        destructive: true,
+                        separatorBefore: true,
+                        onSelect: () => void deleteTake(activeTake.id),
+                      },
+                    ]}
+                  />
                 </>
-              )}
-            </div>
-          </header>
+              )
+            }
+          />
 
           {/* ── Resizable Layout: Top Workspace (Left Library | Center Canvas | Right Inspector) + Bottom Full-Width Timeline ── */}
           <ResizablePanelGroup

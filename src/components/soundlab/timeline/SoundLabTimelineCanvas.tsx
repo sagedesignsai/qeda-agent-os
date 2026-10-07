@@ -13,6 +13,7 @@ import {
   useSoundLabState,
   useSoundLabTracks,
 } from '@/hooks/use-soundlab-store';
+import { getEngine } from '@/hooks/use-soundlab';
 import type { SoundLabTrack, SoundLabClip } from '@/lib/soundlab-types';
 
 const RULER_H = 24;
@@ -206,6 +207,8 @@ export function SoundLabTimelineCanvas({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playheadRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const scrollBeatRef = useRef(scrollBeat);
+  const lastFollowScrollRef = useRef<number | null>(null);
   const tracksRef = useRef<SoundLabTrack[]>([]);
   const stateRef = useRef(soundLabStore.getState());
 
@@ -217,7 +220,8 @@ export function SoundLabTimelineCanvas({
   useEffect(() => {
     tracksRef.current = tracks;
     stateRef.current = soundLabStore.getState();
-  }, [tracks, selectedClipId, session]);
+    scrollBeatRef.current = scrollBeat;
+  }, [tracks, selectedClipId, session, scrollBeat]);
 
   // Canvas height = ruler + one lane per track
   const canvasH = RULER_H + Math.max(tracks.length, 4) * LANE_H;
@@ -266,6 +270,32 @@ export function SoundLabTimelineCanvas({
   // RAF loop
   useEffect(() => {
     const loop = () => {
+      const audioClockBeat = getEngine().getPlayheadBeat();
+      if (audioClockBeat !== null) {
+        playheadRef.current = audioClockBeat;
+        const canvas = canvasRef.current;
+        const viewport = canvas?.closest<HTMLElement>(
+          '[data-slot="scroll-area-viewport"]',
+        );
+        const visibleBeats =
+          (viewport?.clientWidth ?? canvas?.clientWidth ?? 0) / pxPerBeat;
+        const currentScroll = scrollBeatRef.current;
+        if (
+          visibleBeats > 0 &&
+          audioClockBeat > currentScroll + visibleBeats * 0.8
+        ) {
+          const nextScroll = Math.max(0, audioClockBeat - visibleBeats * 0.2);
+          if (
+            lastFollowScrollRef.current === null ||
+            Math.abs(nextScroll - lastFollowScrollRef.current) > 0.25
+          ) {
+            lastFollowScrollRef.current = nextScroll;
+            onScrollBeatChange(
+              Math.min(nextScroll, Math.max(0, totalBeats - visibleBeats)),
+            );
+          }
+        }
+      }
       draw();
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -273,7 +303,7 @@ export function SoundLabTimelineCanvas({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [draw]);
+  }, [draw, onScrollBeatChange, pxPerBeat, totalBeats]);
 
   // ── Interaction: click to place / select clip ─────────────────────────────
 
@@ -285,6 +315,17 @@ export function SoundLabTimelineCanvas({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const clickBeat = snapTimelineBeat(pxToBeat(x, pxPerBeat, scrollBeat));
+      if (y < RULER_H) {
+        const seekBeat = Math.max(0, Math.min(totalBeats, clickBeat));
+        const engine = getEngine();
+        soundLabStore.seek(seekBeat, true);
+        if (engine.isPlaying) {
+          void engine
+            .seekToBeat(seekBeat)
+            .then((actualBeat) => soundLabStore.seek(actualBeat, true));
+        }
+        return;
+      }
       const trackIdx = Math.floor((y - RULER_H) / LANE_H);
       if (trackIdx < 0 || trackIdx >= tracksRef.current.length) return;
 
@@ -326,7 +367,7 @@ export function SoundLabTimelineCanvas({
         soundLabStore.addClip(track.id, newClip);
       }
     },
-    [pxPerBeat, scrollBeat],
+    [pxPerBeat, scrollBeat, totalBeats],
   );
 
   // ── Scroll ────────────────────────────────────────────────────────────────
@@ -336,6 +377,7 @@ export function SoundLabTimelineCanvas({
       e.preventDefault();
       const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
       const newScroll = Math.max(0, scrollBeat + delta / pxPerBeat);
+      lastFollowScrollRef.current = null;
       onScrollBeatChange(Math.min(newScroll, totalBeats - 1));
     },
     [pxPerBeat, scrollBeat, totalBeats, onScrollBeatChange],

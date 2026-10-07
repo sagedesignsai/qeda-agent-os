@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -164,34 +165,40 @@ export default function Projects() {
           title={
             <span className="inline-flex items-center gap-2">
               {createElement(projectIcon(project.icon), {
-                className: 'size-4 text-muted-foreground',
+                className: 'size-4 shrink-0 text-muted-foreground',
               })}
-              {project.name}
+              <span className="truncate">{project.name}</span>
             </span>
           }
           subtitle={project.description || undefined}
           actions={
-            <div className="flex items-center gap-1.5">
+            <>
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 gap-1.5 text-xs"
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
                 onClick={() => openEdit(selected)}
               >
                 Edit
               </Button>
-              {project.id !== 'inbox' && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 gap-1.5 text-xs text-rose-400 hover:text-rose-300"
-                  onClick={() => setPendingDelete(selected)}
-                >
-                  <Trash2Icon className="size-3" />
-                  Delete
-                </Button>
-              )}
-            </div>
+              {/* Delete is destructive and infrequent, so it drops into the
+                  overflow rather than sitting next to Edit on every screen. */}
+              <OverflowMenu
+                label="More project actions"
+                items={
+                  project.id !== 'inbox'
+                    ? [
+                        {
+                          label: 'Delete',
+                          icon: <Trash2Icon className="size-3.5" />,
+                          destructive: true,
+                          onSelect: () => setPendingDelete(selected),
+                        },
+                      ]
+                    : []
+                }
+              />
+            </>
           }
         />
 
@@ -308,7 +315,6 @@ export default function Projects() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader
-        density="dense"
         crumbs={[{ label: 'Projects' }]}
         subtitle={
           active.length > 0

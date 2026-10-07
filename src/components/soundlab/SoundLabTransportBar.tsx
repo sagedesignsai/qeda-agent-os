@@ -51,17 +51,26 @@ interface BeatCounterProps {
   className?: string;
 }
 
-/** Reads playhead via subscribeTime to avoid React re-renders during playback. */
+/** Reads the audio clock directly so the counter stays aligned with the playhead. */
 function BeatCounter({ className }: BeatCounterProps) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    return soundLabStore.subscribeTime((beat) => {
-      if (ref.current) {
-        const bar = Math.floor(beat / 4) + 1;
-        const step = (Math.floor(beat) % 4) + 1;
-        ref.current.textContent = `${String(bar).padStart(3, '0')}:${step}`;
+    let animationFrame = 0;
+    let previousLabel = '';
+    const update = () => {
+      const beat =
+        getEngine().getPlayheadBeat() ?? soundLabStore.getState().playheadBeat;
+      const bar = Math.floor(beat / 4) + 1;
+      const step = (Math.floor(beat) % 4) + 1;
+      const label = `${String(bar).padStart(3, '0')}:${step}`;
+      if (ref.current && label !== previousLabel) {
+        ref.current.textContent = label;
+        previousLabel = label;
       }
-    });
+      animationFrame = requestAnimationFrame(update);
+    };
+    animationFrame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(animationFrame);
   }, []);
   return (
     <span
@@ -200,14 +209,14 @@ export function SoundLabTransportBar({
         </Tooltip>
       </div>
 
-      <Separator orientation="vertical" className="h-5" />
+      <Separator orientation="vertical" />
 
       {/* Beat counter */}
       <div className="flex items-center gap-1.5 rounded-md border border-border/40 bg-background/60 px-2 py-0.5">
         <BeatCounter />
       </div>
 
-      <Separator orientation="vertical" className="h-5" />
+      <Separator orientation="vertical" />
 
       {/* BPM */}
       <div className="flex items-center gap-1.5">
@@ -229,7 +238,7 @@ export function SoundLabTransportBar({
         />
       </div>
 
-      <Separator orientation="vertical" className="h-5" />
+      <Separator orientation="vertical" />
 
       {/* Key */}
       <div className="flex items-center gap-1.5">
@@ -253,7 +262,7 @@ export function SoundLabTransportBar({
         </Select>
       </div>
 
-      <Separator orientation="vertical" className="h-5" />
+      <Separator orientation="vertical" />
 
       {/* Play mode toggle */}
       <div className="flex items-center gap-1.5">
@@ -363,7 +372,7 @@ export function SoundLabTransportBar({
 
       {onToggleCopilot && (
         <>
-          <Separator orientation="vertical" className="h-5" />
+          <Separator orientation="vertical" />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

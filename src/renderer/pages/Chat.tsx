@@ -14,8 +14,8 @@ import { MessageList } from '@/components/chat/MessageList';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatWelcome } from '@/components/chat/ChatWelcome';
 import { ChatContextPicker } from '@/components/chat/ChatContextPicker';
+import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Trash2Icon, AlertCircleIcon, XIcon, GlobeIcon } from 'lucide-react';
@@ -23,7 +23,11 @@ import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
-import type { ChatContext, AgentIntent, DownloadResourceResult } from '../../main/ipc/channels';
+import type {
+  ChatContext,
+  AgentIntent,
+  DownloadResourceResult,
+} from '../../main/ipc/channels';
 
 export interface ChatLocationState {
   chatContext?: ChatContext;
@@ -225,7 +229,7 @@ export default function Chat() {
           ...(projectName ? [{ label: projectName }] : []),
           { label: sessionTitle || 'New conversation' },
         ]}
-        actions={
+        meta={
           <>
             <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             {messages.length > 0 && (
@@ -236,6 +240,10 @@ export default function Chat() {
                 {messages.length} {messages.length === 1 ? 'msg' : 'msgs'}
               </Badge>
             )}
+          </>
+        }
+        actions={
+          <>
             <ChatContextPicker
               value={chatContext}
               onChange={(ctx) =>
@@ -249,28 +257,27 @@ export default function Chat() {
                 })
               }
             />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAssetModalOpen(true)}
-              className="h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground border-border/60"
-              title="Search and download web assets via Serper"
-            >
-              <GlobeIcon className="h-3.5 w-3.5 text-primary" />
-              <span className="hidden sm:inline">Web Assets</span>
-            </Button>
-            {messages.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearMessages}
-                className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
-                title="Clear messages in view"
-              >
-                <Trash2Icon className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Clear</span>
-              </Button>
-            )}
+            {/* The context picker is this screen's primary control, so it keeps
+                an inline trigger; the rest are situational and collapse. */}
+            <OverflowMenu
+              label="More chat actions"
+              items={[
+                {
+                  label: 'Web assets',
+                  icon: <GlobeIcon className="size-3.5 text-primary" />,
+                  onSelect: () => setIsAssetModalOpen(true),
+                },
+                {
+                  label: 'Clear messages',
+                  icon: <Trash2Icon className="size-3.5" />,
+                  destructive: true,
+                  // Nothing to clear on an empty conversation.
+                  disabled: messages.length === 0,
+                  onSelect: clearMessages,
+                  separatorBefore: true,
+                },
+              ]}
+            />
           </>
         }
       />

@@ -19,16 +19,9 @@ import type {
   SoundLabTrackConfig,
   DrumVoice,
 } from './soundlab-types';
-import {
-  getAudioCtorSafe,
-  secondsToBeat,
-} from './soundlab/soundlab-math';
-import {
-  TrackMixer,
-} from './soundlab/soundlab-mixer';
-import {
-  LookaheadScheduler,
-} from './soundlab/soundlab-scheduler';
+import { getAudioCtorSafe, secondsToBeat } from './soundlab/soundlab-math';
+import { TrackMixer } from './soundlab/soundlab-mixer';
+import { LookaheadScheduler } from './soundlab/soundlab-scheduler';
 import {
   startEntrainmentTrack,
   stopEntrainmentTrack,
@@ -36,10 +29,7 @@ import {
   startNoiseTrack,
   type EntrainmentNodes,
 } from './soundlab/soundlab-entrainment';
-import {
-  scheduleDrumHit,
-  playDrumPreview,
-} from './soundlab/soundlab-drums';
+import { scheduleDrumHit, playDrumPreview } from './soundlab/soundlab-drums';
 
 // ── Re-export all math and modular symbols for full backward compatibility ───
 export * from './soundlab';
@@ -67,6 +57,30 @@ export class SoundLabEngine {
 
   get isPlaying(): boolean {
     return this._isPlaying;
+  }
+
+  /** Read transport position from the audio clock for smooth animation-frame UI. */
+  getPlayheadBeat(): number | null {
+    if (!this.ctx || !this._isPlaying || !this.session) return null;
+    const absoluteBeat =
+      this.scheduler.playStartBeat +
+      secondsToBeat(
+        this.ctx.currentTime - this.scheduler.playStartSec,
+        this.bpm,
+      );
+    return this.scheduler.transportBeat(
+      this.session,
+      this.durationBeats,
+      absoluteBeat,
+    );
+  }
+
+  /** Seek, restarting queued audio when necessary to avoid stale scheduled notes. */
+  async seekToBeat(beat: number): Promise<number> {
+    const target = Math.max(0, Math.min(this.durationBeats, beat));
+    if (!this._isPlaying || !this.session) return target;
+    await this.start(this.session, this._onBeatUpdate, this._onStop, target);
+    return this.getPlayheadBeat() ?? target;
   }
 
   ensureCtx(): AudioContext | null {
@@ -127,12 +141,18 @@ export class SoundLabEngine {
     );
     if (this.scheduler.scheduledUntilSec >= scheduleUntil) return;
 
+    // If the renderer was busy, skip stale scheduling time instead of
+    // launching a backlog of events late in a burst.
+    const scheduleFrom = Math.max(
+      this.scheduler.scheduledUntilSec,
+      ctx.currentTime,
+    );
     this.scheduler.scheduleWindow(
       ctx,
       this.session,
       this.bpm,
       this.durationBeats,
-      this.scheduler.scheduledUntilSec,
+      scheduleFrom,
       scheduleUntil,
       this.mixer,
     );
@@ -195,6 +215,7 @@ export class SoundLabEngine {
     this.mixer.applyTrackMix(ctx);
 
     this.scheduler.playStartSec = ctx.currentTime;
+    this.scheduler.resetAutomationCache();
     this.scheduler.playStartBeat = Math.max(
       0,
       Math.min(session.durationBeats, fromBeat),

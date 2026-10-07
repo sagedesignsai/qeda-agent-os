@@ -7,7 +7,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback } from 'react';
+import { Fragment, useCallback } from 'react';
 import { soundLabStore } from '@/hooks/use-soundlab-store';
 import type { SoundLabTrack, SoundLabPattern } from '@/lib/soundlab-types';
 import { DRUM_VOICES, DRUM_VOICE_META } from '@/lib/soundlab-types';
@@ -44,7 +44,7 @@ export function StepSequencer({ track, pattern }: StepSequencerProps) {
     (voiceIdx: number) => {
       if (!track || !pattern) return;
       const newData = stepData.map((row, vi) =>
-        vi === voiceIdx ? Array(STEPS).fill(false) as boolean[] : [...row],
+        vi === voiceIdx ? (Array(STEPS).fill(false) as boolean[]) : [...row],
       );
       soundLabStore.updatePattern(track.id, pattern.id, { stepData: newData });
     },
@@ -73,39 +73,53 @@ export function StepSequencer({ track, pattern }: StepSequencerProps) {
           Step Sequencer
         </span>
         <span className="text-[10px] text-muted-foreground/60">—</span>
-        <span className="text-[10px] font-mono text-muted-foreground/80">{pattern.name}</span>
-        <span className="ml-2 text-[10px] text-muted-foreground/50">16 steps</span>
+        <span className="text-[10px] font-mono text-muted-foreground/80">
+          {pattern.name}
+        </span>
+        <span className="ml-2 text-[10px] text-muted-foreground/50">
+          16 steps · 4 beats
+        </span>
       </div>
 
       {/* Grid */}
-      <div className="flex flex-1 flex-col justify-center gap-1.5 overflow-auto px-4 py-3">
+      <div
+        className="grid min-h-0 flex-1 gap-x-1 gap-y-2 overflow-auto px-4 py-3"
+        style={{
+          gridTemplateColumns: '4.5rem repeat(16, minmax(0, 1fr))',
+          gridTemplateRows: '1.25rem repeat(4, minmax(2.5rem, 1fr))',
+        }}
+      >
         {/* Step number header */}
-        <div className="flex items-center gap-0.5">
-          <div className="w-16 shrink-0" />
-          {Array.from({ length: STEPS }, (_, i) => (
-            <div
-              key={i}
-              className={cn(
-                'flex-1 text-center text-[9px] font-mono',
-                i % 4 === 0 ? 'text-muted-foreground' : 'text-muted-foreground/30',
-              )}
-            >
-              {i % 4 === 0 ? i / 4 + 1 : '·'}
-            </div>
-          ))}
-        </div>
+        <div />
+        {Array.from({ length: STEPS }, (_, i) => (
+          <div
+            key={i}
+            className={cn(
+              'flex items-center justify-center border-b text-[9px] font-mono',
+              i % 4 === 0
+                ? 'border-primary/30 text-foreground'
+                : 'border-border/30 text-muted-foreground/40',
+              i % 8 >= 4 && 'bg-muted/5',
+            )}
+          >
+            {i % 4 === 0 ? i / 4 + 1 : '·'}
+          </div>
+        ))}
 
         {/* Voice rows */}
         {DRUM_VOICES.map((voice, vi) => {
           const meta = DRUM_VOICE_META[voice];
           return (
-            <div key={voice} className="flex items-center gap-0.5">
-              {/* Voice label */}
+            <Fragment key={voice}>
               <button
-                className="w-16 shrink-0 pr-1 text-right text-[10px] font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                className="flex min-w-0 items-center justify-end gap-1.5 pr-2 text-right text-[10px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => clearVoice(vi)}
                 title={`Clear ${meta.label}`}
               >
+                <span
+                  className="size-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: meta.color }}
+                />
                 {meta.label}
               </button>
 
@@ -117,21 +131,33 @@ export function StepSequencer({ track, pattern }: StepSequencerProps) {
                   <button
                     key={si}
                     className={cn(
-                      'flex-1 h-8 rounded-sm border transition-all duration-75',
-                      'hover:opacity-90 active:scale-95',
-                      groupStart && 'ml-0.5',
+                      'h-full min-h-10 min-w-0 rounded-md border transition-[background-color,border-color,box-shadow,transform] duration-100',
+                      'hover:brightness-125 active:scale-[0.98]',
+                      groupStart && 'border-l-2',
                       active
-                        ? 'border-transparent shadow-sm'
-                        : 'border-border/30 bg-card/40 hover:bg-card/70',
+                        ? 'border-transparent shadow-sm ring-1 ring-white/10'
+                        : cn(
+                            'border-border/40 hover:border-border/80',
+                            si % 8 >= 4 ? 'bg-muted/20' : 'bg-card/50',
+                          ),
                     )}
-                    style={active ? { background: meta.color, borderColor: meta.color } : undefined}
+                    style={
+                      active
+                        ? {
+                            backgroundColor: meta.color,
+                            borderColor: meta.color,
+                          }
+                        : groupStart
+                          ? { borderLeftColor: `${meta.color}55` }
+                          : undefined
+                    }
                     onClick={() => toggleStep(vi, si)}
                     aria-label={`${meta.label} step ${si + 1} ${active ? 'on' : 'off'}`}
                     aria-pressed={active}
                   />
                 );
               })}
-            </div>
+            </Fragment>
           );
         })}
       </div>

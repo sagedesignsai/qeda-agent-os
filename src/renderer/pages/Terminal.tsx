@@ -415,11 +415,15 @@ export default function Terminal() {
           { label: 'Terminal' },
           ...(projectName ? [{ label: projectName }] : []),
         ]}
+        meta={
+          <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
+        }
         actions={
-          <div className="flex items-center gap-2">
-            <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
+          <>
+            {/* Long-running service readout: hides below lg so it never squeezes
+                the mode switcher on a narrow window. */}
             {runningBlock && (
-              <div className="flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1 text-xs text-sky-200">
+              <div className="hidden items-center gap-2 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1 text-xs text-sky-200 lg:flex">
                 <span className="size-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                 <span
                   className="font-mono text-[11px] font-medium text-sky-300 truncate max-w-[140px]"
@@ -455,13 +459,15 @@ export default function Terminal() {
                 </Button>
               </div>
             )}
+            {/* Mode is the primary control, so it stays inline as the nav slot
+                rather than an action — see the `nav` contract in PageHeader. */}
             <ModeSwitcher
               mode={mode}
               onChange={handleModeChange}
               disabled={isRunning}
             />
             <StatusBadge status={mode === 'shell' ? 'shell' : status} />
-          </div>
+          </>
         }
       />
 

@@ -12,6 +12,25 @@
 
 import type { DrumVoice } from '../soundlab-types';
 
+const noiseBufferByContext = new WeakMap<AudioContext, AudioBuffer>();
+
+/** Reuse a randomized noise bed so each scheduled hit avoids sample filling. */
+function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
+  let buffer = noiseBufferByContext.get(ctx);
+  if (!buffer) {
+    const length = ctx.sampleRate;
+    buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    noiseBufferByContext.set(ctx, buffer);
+  }
+  return buffer;
+}
+
+function randomNoiseOffset(buffer: AudioBuffer, duration: number): number {
+  return Math.random() * Math.max(0, buffer.duration - duration);
+}
+
 export function scheduleKick(ctx: AudioContext, time: number, bus: GainNode): void {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -21,23 +40,28 @@ export function scheduleKick(ctx: AudioContext, time: number, bus: GainNode): vo
   gain.gain.setValueAtTime(1.0, time);
   gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.5);
   osc.connect(gain).connect(bus);
+  osc.onended = () => {
+    osc.disconnect();
+    gain.disconnect();
+  };
   osc.start(time);
   osc.stop(time + 0.55);
 }
 
 export function scheduleSnare(ctx: AudioContext, time: number, bus: GainNode): void {
   // Noise burst
-  const length = Math.floor(ctx.sampleRate * 0.2);
-  const buf = ctx.createBuffer(1, length, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  const noiseBuffer = getNoiseBuffer(ctx);
   const noise = ctx.createBufferSource();
-  noise.buffer = buf;
+  noise.buffer = noiseBuffer;
   const ng = ctx.createGain();
   ng.gain.setValueAtTime(0.7, time);
   ng.gain.exponentialRampToValueAtTime(0.0001, time + 0.2);
   noise.connect(ng).connect(bus);
-  noise.start(time);
+  noise.onended = () => {
+    noise.disconnect();
+    ng.disconnect();
+  };
+  noise.start(time, randomNoiseOffset(noiseBuffer, 0.2));
   noise.stop(time + 0.2);
 
   // Body tone
@@ -47,6 +71,10 @@ export function scheduleSnare(ctx: AudioContext, time: number, bus: GainNode): v
   og.gain.setValueAtTime(0.5, time);
   og.gain.exponentialRampToValueAtTime(0.0001, time + 0.1);
   osc.connect(og).connect(bus);
+  osc.onended = () => {
+    osc.disconnect();
+    og.disconnect();
+  };
   osc.start(time);
   osc.stop(time + 0.15);
 }
@@ -58,12 +86,9 @@ export function scheduleHihat(
   open = false,
 ): void {
   const dur = open ? 0.3 : 0.05;
-  const length = Math.floor(ctx.sampleRate * dur);
-  const buf = ctx.createBuffer(1, length, ctx.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  const noiseBuffer = getNoiseBuffer(ctx);
   const noise = ctx.createBufferSource();
-  noise.buffer = buf;
+  noise.buffer = noiseBuffer;
   const filter = ctx.createBiquadFilter();
   filter.type = 'highpass';
   filter.frequency.value = 8000;
@@ -71,24 +96,30 @@ export function scheduleHihat(
   gain.gain.setValueAtTime(0.4, time);
   gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
   noise.connect(filter).connect(gain).connect(bus);
-  noise.start(time);
+  noise.onended = () => {
+    noise.disconnect();
+    filter.disconnect();
+    gain.disconnect();
+  };
+  noise.start(time, randomNoiseOffset(noiseBuffer, dur));
   noise.stop(time + dur + 0.01);
 }
 
 export function scheduleClap(ctx: AudioContext, time: number, bus: GainNode): void {
   for (let i = 0; i < 3; i++) {
     const t = time + i * 0.008;
-    const length = Math.floor(ctx.sampleRate * 0.05);
-    const buf = ctx.createBuffer(1, length, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let j = 0; j < length; j++) data[j] = Math.random() * 2 - 1;
+    const noiseBuffer = getNoiseBuffer(ctx);
     const noise = ctx.createBufferSource();
-    noise.buffer = buf;
+    noise.buffer = noiseBuffer;
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.6 - i * 0.15, t);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.08);
     noise.connect(gain).connect(bus);
-    noise.start(t);
+    noise.onended = () => {
+      noise.disconnect();
+      gain.disconnect();
+    };
+    noise.start(t, randomNoiseOffset(noiseBuffer, 0.1));
     noise.stop(t + 0.1);
   }
 }

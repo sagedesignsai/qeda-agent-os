@@ -37,12 +37,16 @@ export interface SchedulerCallbacks {
 
 export class LookaheadScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
+  private lastAutomationValues = new Map<string, number>();
 
   scheduledUntilSec = 0;
   playStartSec = 0;
   playStartBeat = 0;
 
-  hasActiveLoop(session: SoundLabSessionWithTracks | null, durationBeats: number): boolean {
+  hasActiveLoop(
+    session: SoundLabSessionWithTracks | null,
+    durationBeats: number,
+  ): boolean {
     return Boolean(
       session?.loopEnabled &&
       Number.isFinite(session.loopStartBeat) &&
@@ -53,11 +57,11 @@ export class LookaheadScheduler {
     );
   }
 
-  getLoopEndBeat(session: SoundLabSessionWithTracks | null, durationBeats: number): number {
-    return Math.min(
-      session?.loopEndBeat ?? durationBeats,
-      durationBeats,
-    );
+  getLoopEndBeat(
+    session: SoundLabSessionWithTracks | null,
+    durationBeats: number,
+  ): number {
+    return Math.min(session?.loopEndBeat ?? durationBeats, durationBeats);
   }
 
   transportBeat(
@@ -65,18 +69,17 @@ export class LookaheadScheduler {
     durationBeats: number,
     absoluteBeat: number,
   ): number {
-    if (!this.hasActiveLoop(session, durationBeats) || !session) return absoluteBeat;
+    if (!this.hasActiveLoop(session, durationBeats) || !session)
+      return absoluteBeat;
     const start = session.loopStartBeat;
     const end = this.getLoopEndBeat(session, durationBeats);
     const length = end - start;
-    if (absoluteBeat < end) return absoluteBeat;
+    const beatEpsilon = 1e-9;
+    if (absoluteBeat < end - beatEpsilon) return absoluteBeat;
     return start + ((absoluteBeat - start) % length);
   }
 
-  start(
-    onTick: () => void,
-    intervalMs = 25,
-  ): void {
+  start(onTick: () => void, intervalMs = 25): void {
     this.stop();
     this.timer = setInterval(onTick, intervalMs);
   }
@@ -86,6 +89,10 @@ export class LookaheadScheduler {
       clearInterval(this.timer);
       this.timer = null;
     }
+  }
+
+  resetAutomationCache(): void {
+    this.lastAutomationValues.clear();
   }
 
   scheduleWindow(
@@ -98,22 +105,30 @@ export class LookaheadScheduler {
     mixer: TrackMixer,
   ): void {
     let segmentStartSec = fromSec;
+    let boundaryRetryCount = 0;
     while (segmentStartSec < toSec) {
       const absoluteBeat =
         this.playStartBeat +
         secondsToBeat(segmentStartSec - this.playStartSec, bpm);
-      const segmentBeat = this.transportBeat(session, durationBeats, absoluteBeat);
+      const segmentBeat = this.transportBeat(
+        session,
+        durationBeats,
+        absoluteBeat,
+      );
       const loops = this.hasActiveLoop(session, durationBeats);
-      const boundaryBeat = loops ? this.getLoopEndBeat(session, durationBeats) : durationBeats;
+      const boundaryBeat = loops
+        ? this.getLoopEndBeat(session, durationBeats)
+        : durationBeats;
       const remainingBeats = Math.max(0, boundaryBeat - segmentBeat);
-      const boundarySec =
-        segmentStartSec + beatToSeconds(remainingBeats, bpm);
+      const boundarySec = segmentStartSec + beatToSeconds(remainingBeats, bpm);
       const segmentEndSec = Math.min(toSec, boundarySec);
       if (segmentEndSec <= segmentStartSec) {
         if (!loops) return;
+        if (++boundaryRetryCount > 16) return;
         segmentStartSec += 0.000001;
         continue;
       }
+      boundaryRetryCount = 0;
       const segmentEndBeat =
         segmentBeat + secondsToBeat(segmentEndSec - segmentStartSec, bpm);
 
@@ -132,8 +147,7 @@ export class LookaheadScheduler {
           );
           if (!pattern) continue;
           const clipStartSec =
-            segmentStartSec +
-            beatToSeconds(clip.startBeat - segmentBeat, bpm);
+            segmentStartSec + beatToSeconds(clip.startBeat - segmentBeat, bpm);
           if (track.type === 'drums') {
             this.scheduleDrumSteps(
               ctx,
@@ -180,8 +194,15 @@ export class LookaheadScheduler {
     if (patternDurSec <= 0) return;
 
     for (const note of pattern.notes) {
-      let loopOffset = 0;
-      while (loopOffset < clip.durationBeats) {
+      let loopOffset =
+        Math.max(
+          0,
+          Math.floor(
+            (fromSec - clipStartSec - beatToSeconds(note.startBeat, bpm)) /
+              patternDurSec,
+          ),
+        ) * pattern.lengthBeats;
+      while (note.startBeat + loopOffset < clip.durationBeats) {
         const noteAbsStartSec =
           clipStartSec + beatToSeconds(note.startBeat + loopOffset, bpm);
         const noteAbsEndSec =
@@ -205,7 +226,13 @@ export class LookaheadScheduler {
     bus: GainNode,
     bpm: number,
   ): void {
-    if (!pattern.stepData?.length) return;
+    if (
+      !pattern.stepData?.length ||
+      !Number.isFinite(pattern.lengthBeats) ||
+      pattern.lengthBeats <= 0
+    ) {
+      return;
+    }
     const voices: DrumVoice[] = ['kick', 'snare', 'hihat', 'clap'];
     const stepsPerBeat = 4; // 16 steps over 4 beats
 
@@ -219,10 +246,16 @@ export class LookaheadScheduler {
       for (let step = 0; step < 16; step++) {
         if (!steps[step]) continue;
         const stepBeat = step / stepsPerBeat;
-        let loopOffset = 0;
-        while (loopOffset < clip.durationBeats) {
-          const t =
-            clipStartSec + beatToSeconds(stepBeat + loopOffset, bpm);
+        let loopOffset =
+          Math.max(
+            0,
+            Math.floor(
+              (fromSec - clipStartSec - beatToSeconds(stepBeat, bpm)) /
+                beatToSeconds(pattern.lengthBeats, bpm),
+            ),
+          ) * pattern.lengthBeats;
+        while (stepBeat + loopOffset < clip.durationBeats) {
+          const t = clipStartSec + beatToSeconds(stepBeat + loopOffset, bpm);
           if (t >= toSec) break;
           if (t >= fromSec) {
             scheduleDrumHit(ctx, voices[voiceIdx], t, bus);
@@ -246,6 +279,16 @@ export class LookaheadScheduler {
       for (const lane of track.automation) {
         const value = interpolateAutomation(lane.points, beat);
         if (value === null) continue;
+        const cacheKey = `${track.id}:${lane.id}:${lane.parameterId}`;
+        const lastValue = this.lastAutomationValues.get(cacheKey);
+        const threshold = lane.parameterId.includes('Hz') ? 0.05 : 0.002;
+        if (
+          lastValue !== undefined &&
+          Math.abs(value - lastValue) < threshold
+        ) {
+          continue;
+        }
+        this.lastAutomationValues.set(cacheKey, value);
 
         if (lane.parameterId === 'track.volume') {
           const settings = mixer.trackSettings.get(track.id);
