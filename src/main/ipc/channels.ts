@@ -583,27 +583,6 @@ export interface IpcChannels {
     res: FocusSession[];
   };
   'focus:stats': { req: void; res: FocusStats };
-  /** Generate a bounded, validated focus soundscape recipe from a natural-language brief. */
-  'focus:compose-soundscape': {
-    req: { prompt: string };
-    res: {
-      title: string;
-      rationale: string;
-      config: {
-        noise: 'white' | 'pink' | 'brown' | null;
-        noiseVolume: number;
-        clip: 'forest' | 'rain' | 'waves' | null;
-        clipVolume: number;
-        toneMode: 'off' | 'binaural' | 'isochronic';
-        carrierHz: number;
-        beatHz: number;
-        toneVolume: number;
-        pulseDepth: number;
-        masterVolume: number;
-      };
-    };
-  };
-
   // ── Gamification & Dopamine System ──────────────────────────────────────────
   'gamification:get-state': { req: void; res: GamificationState };
   'gamification:award-xp': {

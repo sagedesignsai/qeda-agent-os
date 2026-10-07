@@ -20,7 +20,6 @@ import {
   SparklesIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -50,18 +49,22 @@ import {
 // ── Template icons ────────────────────────────────────────────────────────────
 
 const TEMPLATE_ICONS = {
-  'deep-focus':      MusicIcon,
-  'creative-flow':   SparklesIcon,
+  'deep-focus': MusicIcon,
+  'creative-flow': SparklesIcon,
   'sleep-induction': MoonIcon,
-  'high-cognition':  FlameIcon,
-  'blank':           ZapIcon,
+  'high-cognition': FlameIcon,
+  blank: ZapIcon,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(ts: number): string {
   const d = new Date(ts < 1e11 ? ts * 1000 : ts);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function BandPill({ band }: { band: BrainwaveBand }) {
@@ -69,9 +72,13 @@ function BandPill({ band }: { band: BrainwaveBand }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-      style={{ background: `${meta.color}22`, color: meta.color, border: `1px solid ${meta.color}44` }}
+      style={{
+        background: `${meta.color}22`,
+        color: meta.color,
+        border: `1px solid ${meta.color}44`,
+      }}
     >
-      {meta.label} · {meta.hz} Hz
+      {meta.hz} Hz modulation
     </span>
   );
 }
@@ -94,13 +101,15 @@ function TemplateDialog({ open, onClose, onSelect }: TemplateDialogProps) {
             New SoundLab Session
           </DialogTitle>
           <DialogDescription>
-            Choose a brain state goal or start from scratch.
+            Choose a sound-design starting point or start from scratch. Presets
+            are creative starting points, not clinical guidance.
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-1 gap-3 px-6 pb-6 sm:grid-cols-2 lg:grid-cols-3">
           {SESSION_TEMPLATES.map((tpl) => {
-            const Icon = TEMPLATE_ICONS[tpl.id as keyof typeof TEMPLATE_ICONS] ?? ZapIcon;
+            const Icon =
+              TEMPLATE_ICONS[tpl.id as keyof typeof TEMPLATE_ICONS] ?? ZapIcon;
             const meta = BRAINWAVE_BAND_META[tpl.band];
             return (
               <button
@@ -129,7 +138,10 @@ function TemplateDialog({ open, onClose, onSelect }: TemplateDialogProps) {
                   {tpl.id !== 'blank' && (
                     <span
                       className="rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest"
-                      style={{ background: `${meta.color}22`, color: meta.color }}
+                      style={{
+                        background: `${meta.color}22`,
+                        color: meta.color,
+                      }}
                     >
                       {tpl.bpm} BPM
                     </span>
@@ -137,15 +149,15 @@ function TemplateDialog({ open, onClose, onSelect }: TemplateDialogProps) {
                 </div>
 
                 <div>
-                  <p className="text-sm font-semibold text-foreground">{tpl.label}</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {tpl.label}
+                  </p>
                   <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
                     {tpl.description}
                   </p>
                 </div>
 
-                {tpl.id !== 'blank' && (
-                  <BandPill band={tpl.band} />
-                )}
+                {tpl.id !== 'blank' && <BandPill band={tpl.band} />}
               </button>
             );
           })}
@@ -169,7 +181,15 @@ function SessionCard({ session, onOpen, onDelete }: SessionCardProps) {
   return (
     <div
       className="group relative flex flex-col gap-3 rounded-xl border border-border/50 bg-card/50 p-4 cursor-pointer hover:border-border hover:bg-card/80 hover:shadow-md transition-all duration-150"
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
     >
       {/* Top accent */}
       <div
@@ -183,9 +203,14 @@ function SessionCard({ session, onOpen, onDelete }: SessionCardProps) {
             className="flex size-7 shrink-0 items-center justify-center rounded-md"
             style={{ background: `${meta.color}22` }}
           >
-            <BrainCircuitIcon className="size-3.5" style={{ color: meta.color }} />
+            <BrainCircuitIcon
+              className="size-3.5"
+              style={{ color: meta.color }}
+            />
           </div>
-          <p className="truncate text-sm font-medium text-foreground">{session.title}</p>
+          <p className="truncate text-sm font-medium text-foreground">
+            {session.title}
+          </p>
         </div>
 
         <AlertDialog>
@@ -201,9 +226,12 @@ function SessionCard({ session, onOpen, onDelete }: SessionCardProps) {
           </AlertDialogTrigger>
           <AlertDialogContent onClick={(e) => e.stopPropagation()}>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete "{session.title}"?</AlertDialogTitle>
+              <AlertDialogTitle>
+                Delete &quot;{session.title}&quot;?
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                This removes the session and all its tracks. This cannot be undone.
+                This removes the session and all its tracks. This cannot be
+                undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -221,7 +249,9 @@ function SessionCard({ session, onOpen, onDelete }: SessionCardProps) {
 
       <div className="flex items-center justify-between gap-2">
         <BandPill band={session.targetBand} />
-        <span className="text-[10px] text-muted-foreground font-mono">{session.bpm} BPM</span>
+        <span className="text-[10px] text-muted-foreground font-mono">
+          {session.bpm} BPM
+        </span>
       </div>
 
       <div className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
@@ -236,7 +266,11 @@ function SessionCard({ session, onOpen, onDelete }: SessionCardProps) {
 
 interface SoundLabSessionLibraryProps {
   sessions: SoundLabSession[];
-  onCreate: (templateId: string, band: BrainwaveBand, bpm: number) => Promise<string>;
+  onCreate: (
+    templateId: string,
+    band: BrainwaveBand,
+    bpm: number,
+  ) => Promise<string>;
   onDelete: (id: string) => Promise<void>;
 }
 
@@ -275,7 +309,9 @@ export function SoundLabSessionLibrary({
               <BrainCircuitIcon className="size-6 text-violet-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-foreground">SoundLab</h1>
+              <h1 className="text-xl font-bold tracking-tight text-foreground">
+                SoundLab
+              </h1>
               <p className="text-sm text-muted-foreground">
                 Brain entrainment DAW · Compose · Experiment · Flow
               </p>
@@ -301,7 +337,9 @@ export function SoundLabSessionLibrary({
               <BrainCircuitIcon className="size-7 text-muted-foreground/50" />
             </div>
             <div>
-              <p className="text-sm font-medium text-foreground">No sessions yet</p>
+              <p className="text-sm font-medium text-foreground">
+                No sessions yet
+              </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Create your first entrainment session to get started
               </p>

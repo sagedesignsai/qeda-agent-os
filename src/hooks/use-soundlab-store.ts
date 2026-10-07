@@ -63,6 +63,8 @@ class SoundLabStore {
   // Undo / Redo — snapshot tracks only (patterns + clips), max 50 states
   private undoStack: SoundLabTrack[][] = [];
   private redoStack: SoundLabTrack[][] = [];
+  private undoGroupActive = false;
+  private undoGroupCaptured = false;
 
   // ── Subscriptions ─────────────────────────────────────────────────────────
 
@@ -90,25 +92,53 @@ class SoundLabStore {
   // ── Undo / Redo ───────────────────────────────────────────────────────────
 
   private snapshot() {
-    this.undoStack.push(JSON.parse(JSON.stringify(this.state.tracks)) as SoundLabTrack[]);
+    if (this.undoGroupActive && this.undoGroupCaptured) return;
+    this.undoStack.push(
+      JSON.parse(JSON.stringify(this.state.tracks)) as SoundLabTrack[],
+    );
     if (this.undoStack.length > 50) this.undoStack.shift();
     this.redoStack = [];
+    if (this.undoGroupActive) this.undoGroupCaptured = true;
   }
+
+  beginUndoGroup = (): void => {
+    if (this.undoGroupActive) return;
+    this.undoGroupActive = true;
+    this.undoGroupCaptured = false;
+    this.snapshot();
+  };
+
+  endUndoGroup = (): void => {
+    this.undoGroupActive = false;
+    this.undoGroupCaptured = false;
+  };
 
   canUndo = (): boolean => this.undoStack.length > 0;
   canRedo = (): boolean => this.redoStack.length > 0;
 
   undo = (): void => {
     if (!this.undoStack.length) return;
-    this.redoStack.push(JSON.parse(JSON.stringify(this.state.tracks)) as SoundLabTrack[]);
-    this.state = { ...this.state, tracks: this.undoStack.pop()!, selectedClipId: null };
+    this.redoStack.push(
+      JSON.parse(JSON.stringify(this.state.tracks)) as SoundLabTrack[],
+    );
+    this.state = {
+      ...this.state,
+      tracks: this.undoStack.pop()!,
+      selectedClipId: null,
+    };
     this.notify();
   };
 
   redo = (): void => {
     if (!this.redoStack.length) return;
-    this.undoStack.push(JSON.parse(JSON.stringify(this.state.tracks)) as SoundLabTrack[]);
-    this.state = { ...this.state, tracks: this.redoStack.pop()!, selectedClipId: null };
+    this.undoStack.push(
+      JSON.parse(JSON.stringify(this.state.tracks)) as SoundLabTrack[],
+    );
+    this.state = {
+      ...this.state,
+      tracks: this.redoStack.pop()!,
+      selectedClipId: null,
+    };
     this.notify();
   };
 
@@ -128,12 +158,32 @@ class SoundLabStore {
     };
     this.undoStack = [];
     this.redoStack = [];
+    this.undoGroupActive = false;
+    this.undoGroupCaptured = false;
+    this.notify();
+  };
+
+  /**
+   * Sync session updates from disk or Copilot without resetting playback position
+   * or active selections, while pushing a snapshot to the undo stack.
+   */
+  syncSession = (data: SoundLabSessionWithTracks): void => {
+    const { tracks, ...session } = data;
+    this.snapshot();
+    this.state = {
+      ...this.state,
+      session,
+      tracks,
+    };
     this.notify();
   };
 
   setSession = (patch: Partial<SoundLabSession>): void => {
     if (!this.state.session) return;
-    this.state = { ...this.state, session: { ...this.state.session, ...patch } };
+    this.state = {
+      ...this.state,
+      session: { ...this.state.session, ...patch },
+    };
     this.notify();
   };
 
@@ -148,7 +198,7 @@ class SoundLabStore {
   seek = (beat: number, forceGeneral = false): void => {
     const max = this.state.session?.durationBeats ?? 64;
     const clamped = Math.max(0, Math.min(max, beat));
-    this.state.playheadBeat = clamped;
+    this.state = { ...this.state, playheadBeat: clamped };
     this.notifyTime(clamped);
     if (forceGeneral) this.notify();
   };
@@ -195,6 +245,7 @@ class SoundLabStore {
   };
 
   updateTrack = (id: string, patch: Partial<SoundLabTrack>): void => {
+    this.snapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -240,6 +291,7 @@ class SoundLabStore {
     patternId: string,
     patch: Partial<SoundLabPattern>,
   ): void => {
+    this.snapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -272,7 +324,6 @@ class SoundLabStore {
   // ── Notes (inside patterns) ───────────────────────────────────────────────
 
   addNote = (trackId: string, patternId: string, note: SoundLabNote): void => {
-    this.snapshot();
     this.updatePattern(trackId, patternId, {
       notes: [
         ...(this.state.tracks
@@ -293,7 +344,9 @@ class SoundLabStore {
     const pattern = track?.patterns.find((p) => p.id === patternId);
     if (!pattern) return;
     this.updatePattern(trackId, patternId, {
-      notes: pattern.notes.map((n) => (n.id === noteId ? { ...n, ...patch } : n)),
+      notes: pattern.notes.map((n) =>
+        n.id === noteId ? { ...n, ...patch } : n,
+      ),
     });
   };
 
@@ -301,7 +354,6 @@ class SoundLabStore {
     const track = this.state.tracks.find((t) => t.id === trackId);
     const pattern = track?.patterns.find((p) => p.id === patternId);
     if (!pattern) return;
-    this.snapshot();
     this.updatePattern(trackId, patternId, {
       notes: pattern.notes.filter((n) => n.id !== noteId),
     });
@@ -317,7 +369,9 @@ class SoundLabStore {
         t.id === trackId
           ? {
               ...t,
-              clips: [...t.clips, clip].sort((a, b) => a.startBeat - b.startBeat),
+              clips: [...t.clips, clip].sort(
+                (a, b) => a.startBeat - b.startBeat,
+              ),
             }
           : t,
       ),
@@ -326,14 +380,21 @@ class SoundLabStore {
     this.notify();
   };
 
-  updateClip = (trackId: string, clipId: string, patch: Partial<SoundLabClip>): void => {
+  updateClip = (
+    trackId: string,
+    clipId: string,
+    patch: Partial<SoundLabClip>,
+  ): void => {
+    this.snapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
         t.id === trackId
           ? {
               ...t,
-              clips: t.clips.map((c) => (c.id === clipId ? { ...c, ...patch } : c)),
+              clips: t.clips.map((c) =>
+                c.id === clipId ? { ...c, ...patch } : c,
+              ),
             }
           : t,
       ),
@@ -387,12 +448,11 @@ class SoundLabStore {
   // ── Automation ────────────────────────────────────────────────────────────
 
   addAutomationLane = (trackId: string, lane: SoundLabAutomationLane): void => {
+    this.snapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
-        t.id === trackId
-          ? { ...t, automation: [...t.automation, lane] }
-          : t,
+        t.id === trackId ? { ...t, automation: [...t.automation, lane] } : t,
       ),
     };
     this.notify();
@@ -403,6 +463,7 @@ class SoundLabStore {
     laneId: string,
     patch: Partial<SoundLabAutomationLane>,
   ): void => {
+    this.snapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -446,6 +507,7 @@ class SoundLabStore {
   };
 
   removeAutomationLane = (trackId: string, laneId: string): void => {
+    this.snapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -481,7 +543,10 @@ export function useSelectedTrack(): SoundLabTrack | null {
   return tracks.find((t) => t.id === selectedTrackId) ?? null;
 }
 
-export function useSelectedPattern(): { track: SoundLabTrack; pattern: SoundLabPattern } | null {
+export function useSelectedPattern(): {
+  track: SoundLabTrack;
+  pattern: SoundLabPattern;
+} | null {
   const { tracks, selectedPatternId } = useSoundLabState();
   for (const track of tracks) {
     const pattern = track.patterns.find((p) => p.id === selectedPatternId);

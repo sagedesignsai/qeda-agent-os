@@ -35,6 +35,7 @@ import { SoundLabTimeline } from '@/components/soundlab/timeline/SoundLabTimelin
 import { SoundLabSessionLibrary } from '@/components/soundlab/SoundLabSessionLibrary';
 import { PianoRollCanvas } from '@/components/soundlab/pianoroll/PianoRollCanvas';
 import { StepSequencer } from '@/components/soundlab/pianoroll/StepSequencer';
+import { SoundLabCopilotSheet } from '@/components/soundlab/copilot';
 
 // ── Bottom drawer tab type ────────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ type DrawerTab = 'pianoroll' | 'stepseq';
 
 export default function SoundLab() {
   const { sessionId } = useParams<{ sessionId?: string }>();
-  const { saveStatus, sessions, createSession, deleteSession, play, pause, stop } =
+  const { saveStatus, sessions, createSession, deleteSession, play, pause, stop, reloadSession } =
     useSoundLab(sessionId);
 
   const state = useSoundLabState();
@@ -53,6 +54,9 @@ export default function SoundLab() {
   // Bottom drawer state
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('pianoroll');
+
+  // Copilot sheet state
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   // ── Keyboard shortcuts ───────────────────────────────────────────────────
 
@@ -124,6 +128,8 @@ export default function SoundLab() {
         onPlay={play}
         onPause={pause}
         onStop={stop}
+        copilotOpen={copilotOpen}
+        onToggleCopilot={() => setCopilotOpen((o) => !o)}
       />
 
       {/* Main three-panel body */}
@@ -144,7 +150,7 @@ export default function SoundLab() {
             <ResizablePanelGroup orientation="vertical">
 
               {/* Timeline */}
-              <ResizablePanel defaultSize={drawerOpen ? "60%" : "100%"} minSize={"30"}>
+              <ResizablePanel defaultSize={drawerOpen ? "60%" : "100%"} minSize={"30%"}>
                 <SoundLabTimeline />
               </ResizablePanel>
 
@@ -218,6 +224,17 @@ export default function SoundLab() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+
+      {/* Copilot assistant sliding sheet */}
+      {state.session && (
+        <SoundLabCopilotSheet
+          open={copilotOpen}
+          onOpenChange={setCopilotOpen}
+          activeSession={state.session}
+          currentBeat={state.playheadBeat}
+          onChanged={() => void reloadSession()}
+        />
+      )}
     </div>
   );
 }

@@ -56,11 +56,14 @@ const MOCK_AUDIO: UseFocusAudioReturn = {
   config: {
     noise: 'brown',
     noiseVolume: 0.5,
-    // `binaural` is the on/off flag; the beat character comes from `beatHz`.
-    binaural: true,
+    toneMode: 'binaural',
     carrierHz: 200,
     beatHz: 10,
-    binauralVolume: 0.3,
+    toneVolume: 0.3,
+    clip: null,
+    clipVolume: 0.3,
+    pulseDepth: 0.8,
+    masterVolume: 0.75,
   },
   playing: false,
   start: jest.fn().mockResolvedValue(undefined),

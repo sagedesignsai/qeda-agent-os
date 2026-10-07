@@ -15,45 +15,63 @@ import {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
   useState,
   type MouseEvent,
 } from 'react';
-import { soundLabStore, useSoundLabState } from '@/hooks/use-soundlab-store';
-import type { SoundLabTrack, SoundLabPattern, SoundLabNote } from '@/lib/soundlab-types';
+import { soundLabStore } from '@/hooks/use-soundlab-store';
+import type {
+  SoundLabTrack,
+  SoundLabPattern,
+  SoundLabNote,
+} from '@/lib/soundlab-types';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
-const PIANO_W = 52;        // Width of the keyboard strip
-const NOTE_H  = 12;        // Height of one pitch row (px)
-const VELOCITY_H = 48;     // Velocity editor height
-const RULER_H = 20;        // Beat ruler height
-const TOTAL_PITCHES = 72;  // C1 (24) → C7 (96)
-const MIDI_MIN = 24;       // C1
-const MIDI_MAX = 95;       // B6
+const PIANO_W = 52; // Width of the keyboard strip
+const NOTE_H = 12; // Height of one pitch row (px)
+const VELOCITY_H = 48; // Velocity editor height
+const RULER_H = 20; // Beat ruler height
+const TOTAL_PITCHES = 72; // C1 (24) → C7 (96)
+const MIDI_MIN = 24; // C1
+const MIDI_MAX = 95; // B6
 
 // ── Pitch helpers ─────────────────────────────────────────────────────────────
 
-const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_NAMES = [
+  'C',
+  'C#',
+  'D',
+  'D#',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'A#',
+  'B',
+];
 const isBlack = (pitch: number) => [1, 3, 6, 8, 10].includes(pitch % 12);
-const noteName = (pitch: number) => `${NOTE_NAMES[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
+const noteName = (pitch: number) =>
+  `${NOTE_NAMES[pitch % 12]}${Math.floor(pitch / 12) - 1}`;
 
-function pitchToY(pitch: number): number {
+export function pitchToY(pitch: number): number {
   // pitch 95 (B6) → y=0, pitch 24 (C1) → y=max
   return (MIDI_MAX - pitch) * NOTE_H;
 }
 
-function yToPitch(y: number): number {
+export function yToPitch(y: number): number {
   return Math.round(MIDI_MAX - y / NOTE_H);
 }
 
 // ── Beat math ─────────────────────────────────────────────────────────────────
 
-type Snap = '1/4' | '1/8' | '1/16';
+export type Snap = '1/4' | '1/8' | '1/16';
 
-function snapBeat(beat: number, snap: Snap): number {
+export function snapPianoRollBeat(beat: number, snap: Snap): number {
   const div = snap === '1/4' ? 4 : snap === '1/8' ? 8 : 16;
   return Math.round(beat * div) / div;
 }
@@ -92,14 +110,20 @@ function drawPianoRoll(
   const beatEnd = Math.ceil(scrollBeat + visibleBeats);
   for (let b = beatStart; b <= beatEnd; b++) {
     const x = PIANO_W + (b - scrollBeat) * pxPerBeat;
-    ctx.fillStyle = b % 4 === 0 ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
+    ctx.fillStyle =
+      b % 4 === 0 ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
     ctx.fillRect(x, RULER_H, 1, h - RULER_H - VELOCITY_H);
   }
 
   // Pattern length boundary
   const patternEndX = PIANO_W + (patternBeats - scrollBeat) * pxPerBeat;
   ctx.fillStyle = 'rgba(99,102,241,0.15)';
-  ctx.fillRect(PIANO_W, RULER_H, Math.max(0, patternEndX - PIANO_W), h - RULER_H - VELOCITY_H);
+  ctx.fillRect(
+    PIANO_W,
+    RULER_H,
+    Math.max(0, patternEndX - PIANO_W),
+    h - RULER_H - VELOCITY_H,
+  );
 
   // Beat ruler
   ctx.fillStyle = '#111113';
@@ -121,7 +145,18 @@ function drawPianoRoll(
 
     ctx.fillStyle = isSelected ? '#818cf8' : '#6366f1';
     ctx.beginPath();
-    (ctx as CanvasRenderingContext2D & { roundRect?: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect?.(x, y + 1, nw, NOTE_H - 2, 2) ?? ctx.rect(x, y + 1, nw, NOTE_H - 2);
+    (
+      ctx as CanvasRenderingContext2D & {
+        roundRect?: (
+          x: number,
+          y: number,
+          w: number,
+          h: number,
+          r: number,
+        ) => void;
+      }
+    ).roundRect?.(x, y + 1, nw, NOTE_H - 2, 2) ??
+      ctx.rect(x, y + 1, nw, NOTE_H - 2);
     ctx.fill();
 
     // Resize handle
@@ -158,7 +193,12 @@ function drawPianoRoll(
     const barH = Math.round(note.velocity * (VELOCITY_H - 6));
     const isSelected = note.id === selectedNoteId;
     ctx.fillStyle = isSelected ? '#818cf8' : '#4f46e5';
-    ctx.fillRect(x, velY + VELOCITY_H - barH - 3, Math.max(3, pxPerBeat * note.durationBeats - 2), barH);
+    ctx.fillRect(
+      x,
+      velY + VELOCITY_H - barH - 3,
+      Math.max(3, pxPerBeat * note.durationBeats - 2),
+      barH,
+    );
   }
 }
 
@@ -188,9 +228,7 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
   const [scrollBeat, setScrollBeat] = useState(0);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const dragRef = useRef<DragState | null>(null);
-  const { tracks } = useSoundLabState();
-
-  const notes = pattern?.notes ?? [];
+  const notes = useMemo(() => pattern?.notes ?? [], [pattern?.notes]);
   const patternBeats = pattern?.lengthBeats ?? 8;
   const canvasH = RULER_H + TOTAL_PITCHES * NOTE_H + VELOCITY_H;
 
@@ -201,7 +239,16 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    drawPianoRoll(ctx, canvas.width, canvas.height, pxPerBeat, scrollBeat, notes, selectedNoteId, patternBeats);
+    drawPianoRoll(
+      ctx,
+      canvas.width,
+      canvas.height,
+      pxPerBeat,
+      scrollBeat,
+      notes,
+      selectedNoteId,
+      patternBeats,
+    );
   }, [notes, pxPerBeat, scrollBeat, selectedNoteId, patternBeats]);
 
   useEffect(() => {
@@ -210,124 +257,178 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
 
   // ── Hit-test helpers ─────────────────────────────────────────────────────
 
-  const hitNote = useCallback((x: number, y: number): { note: SoundLabNote; resize: boolean } | null => {
-    if (!pattern) return null;
-    for (const note of [...notes].reverse()) {
-      const nx = PIANO_W + (note.startBeat - scrollBeat) * pxPerBeat;
-      const ny = RULER_H + pitchToY(note.pitch);
-      const nw = Math.max(4, note.durationBeats * pxPerBeat - 1);
-      if (x >= nx && x <= nx + nw && y >= ny && y <= ny + NOTE_H) {
-        const resize = x >= nx + nw - 6;
-        return { note, resize };
+  const hitNote = useCallback(
+    (x: number, y: number): { note: SoundLabNote; resize: boolean } | null => {
+      if (!pattern) return null;
+      for (const note of [...notes].reverse()) {
+        const nx = PIANO_W + (note.startBeat - scrollBeat) * pxPerBeat;
+        const ny = RULER_H + pitchToY(note.pitch);
+        const nw = Math.max(4, note.durationBeats * pxPerBeat - 1);
+        if (x >= nx && x <= nx + nw && y >= ny && y <= ny + NOTE_H) {
+          const resize = x >= nx + nw - 6;
+          return { note, resize };
+        }
       }
-    }
-    return null;
-  }, [notes, pxPerBeat, scrollBeat, pattern]);
+      return null;
+    },
+    [notes, pxPerBeat, scrollBeat, pattern],
+  );
 
-  const hitVelocityBar = useCallback((x: number, y: number): SoundLabNote | null => {
-    if (!pattern) return null;
-    const velY = canvasH - VELOCITY_H;
-    if (y < velY) return null;
-    for (const note of notes) {
-      const nx = PIANO_W + (note.startBeat - scrollBeat) * pxPerBeat;
-      const nw = Math.max(3, note.durationBeats * pxPerBeat - 2);
-      if (x >= nx && x <= nx + nw) return note;
-    }
-    return null;
-  }, [notes, pxPerBeat, scrollBeat, pattern, canvasH]);
+  const hitVelocityBar = useCallback(
+    (x: number, y: number): SoundLabNote | null => {
+      if (!pattern) return null;
+      const velY = canvasH - VELOCITY_H;
+      if (y < velY) return null;
+      for (const note of notes) {
+        const nx = PIANO_W + (note.startBeat - scrollBeat) * pxPerBeat;
+        const nw = Math.max(3, note.durationBeats * pxPerBeat - 2);
+        if (x >= nx && x <= nx + nw) return note;
+      }
+      return null;
+    },
+    [notes, pxPerBeat, scrollBeat, pattern, canvasH],
+  );
 
   // ── Mouse events ─────────────────────────────────────────────────────────
 
-  const handleMouseDown = useCallback((e: MouseEvent<HTMLCanvasElement>) => {
-    if (!track || !pattern) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+  const handleMouseDown = useCallback(
+    (e: MouseEvent<HTMLCanvasElement>) => {
+      if (!track || !pattern) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
 
-    // Velocity strip drag
-    const velNote = hitVelocityBar(x, y);
-    if (velNote) {
-      dragRef.current = {
-        mode: 'velocity',
-        noteId: velNote.id,
-        startX: x,
-        startY: y,
-        origStartBeat: velNote.startBeat,
-        origDuration: velNote.durationBeats,
-        origVelocity: velNote.velocity,
-      };
-      return;
-    }
+      // Velocity strip drag
+      const velNote = hitVelocityBar(x, y);
+      if (velNote) {
+        dragRef.current = {
+          mode: 'velocity',
+          noteId: velNote.id,
+          startX: x,
+          startY: y,
+          origStartBeat: velNote.startBeat,
+          origDuration: velNote.durationBeats,
+          origVelocity: velNote.velocity,
+        };
+        return;
+      }
 
-    // Note hit
-    const hit = hitNote(x, y);
-    if (hit) {
-      setSelectedNoteId(hit.note.id);
-      dragRef.current = {
-        mode: hit.resize ? 'resize' : 'move',
-        noteId: hit.note.id,
-        startX: x,
-        startY: y,
-        origStartBeat: hit.note.startBeat,
-        origDuration: hit.note.durationBeats,
-        origVelocity: hit.note.velocity,
-      };
-      return;
-    }
+      // Note hit
+      const hit = hitNote(x, y);
+      if (hit) {
+        setSelectedNoteId(hit.note.id);
+        dragRef.current = {
+          mode: hit.resize ? 'resize' : 'move',
+          noteId: hit.note.id,
+          startX: x,
+          startY: y,
+          origStartBeat: hit.note.startBeat,
+          origDuration: hit.note.durationBeats,
+          origVelocity: hit.note.velocity,
+        };
+        return;
+      }
 
-    // Add note on empty space (not in velocity strip or piano keyboard)
-    if (x > PIANO_W && y > RULER_H && y < canvasH - VELOCITY_H) {
-      const beat = snapBeat(Math.max(0, (x - PIANO_W) / pxPerBeat + scrollBeat), snap);
-      const pitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, yToPitch(y - RULER_H)));
-      const dur = defaultDuration(snap);
-      const note: SoundLabNote = {
-        id: `n-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
-        pitch,
-        startBeat: beat,
-        durationBeats: dur,
-        velocity: 0.8,
-      };
-      soundLabStore.addNote(track.id, pattern.id, note);
-      setSelectedNoteId(note.id);
-    }
-  }, [track, pattern, hitNote, hitVelocityBar, pxPerBeat, scrollBeat, snap, canvasH]);
+      // Add note on empty space (not in velocity strip or piano keyboard)
+      if (x > PIANO_W && y > RULER_H && y < canvasH - VELOCITY_H) {
+        const beat = snapPianoRollBeat(
+          Math.max(0, (x - PIANO_W) / pxPerBeat + scrollBeat),
+          snap,
+        );
+        const pitch = Math.max(
+          MIDI_MIN,
+          Math.min(MIDI_MAX, yToPitch(y - RULER_H)),
+        );
+        const dur = defaultDuration(snap);
+        const note: SoundLabNote = {
+          id: `n-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`,
+          pitch,
+          startBeat: beat,
+          durationBeats: dur,
+          velocity: 0.8,
+        };
+        soundLabStore.addNote(track.id, pattern.id, note);
+        setSelectedNoteId(note.id);
+      }
+    },
+    [
+      track,
+      pattern,
+      hitNote,
+      hitVelocityBar,
+      pxPerBeat,
+      scrollBeat,
+      snap,
+      canvasH,
+    ],
+  );
 
-  const handleMouseMove = useCallback((e: MouseEvent<HTMLCanvasElement>) => {
-    const drag = dragRef.current;
-    if (!drag || !track || !pattern) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const dx = (x - drag.startX) / pxPerBeat;
-    const dy = y - drag.startY;
+  const handleMouseMove = useCallback(
+    (e: MouseEvent<HTMLCanvasElement>) => {
+      const drag = dragRef.current;
+      if (!drag || !track || !pattern) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const dx = (x - drag.startX) / pxPerBeat;
+      const dy = y - drag.startY;
 
-    if (drag.mode === 'move') {
-      const newBeat = snapBeat(Math.max(0, drag.origStartBeat + dx), snap);
-      const newPitch = Math.max(MIDI_MIN, Math.min(MIDI_MAX, yToPitch(drag.startY - RULER_H) - Math.round(dy / NOTE_H)));
-      soundLabStore.updateNote(track.id, pattern.id, drag.noteId, { startBeat: newBeat, pitch: newPitch });
-    } else if (drag.mode === 'resize') {
-      const newDur = Math.max(defaultDuration(snap), snapBeat(drag.origDuration + dx, snap));
-      soundLabStore.updateNote(track.id, pattern.id, drag.noteId, { durationBeats: newDur });
-    } else if (drag.mode === 'velocity') {
-      const velY = canvasH - VELOCITY_H;
-      const fraction = Math.max(0, Math.min(1, (canvasH - 3 - y) / (VELOCITY_H - 6)));
-      soundLabStore.updateNote(track.id, pattern.id, drag.noteId, { velocity: fraction });
-    }
-  }, [track, pattern, pxPerBeat, snap, canvasH]);
+      if (drag.mode === 'move') {
+        const newBeat = snapPianoRollBeat(
+          Math.max(0, drag.origStartBeat + dx),
+          snap,
+        );
+        const newPitch = Math.max(
+          MIDI_MIN,
+          Math.min(
+            MIDI_MAX,
+            yToPitch(drag.startY - RULER_H) - Math.round(dy / NOTE_H),
+          ),
+        );
+        soundLabStore.updateNote(track.id, pattern.id, drag.noteId, {
+          startBeat: newBeat,
+          pitch: newPitch,
+        });
+      } else if (drag.mode === 'resize') {
+        const newDur = Math.max(
+          defaultDuration(snap),
+          snapPianoRollBeat(drag.origDuration + dx, snap),
+        );
+        soundLabStore.updateNote(track.id, pattern.id, drag.noteId, {
+          durationBeats: newDur,
+        });
+      } else if (drag.mode === 'velocity') {
+        const fraction = Math.max(
+          0,
+          Math.min(1, (canvasH - 3 - y) / (VELOCITY_H - 6)),
+        );
+        soundLabStore.updateNote(track.id, pattern.id, drag.noteId, {
+          velocity: fraction,
+        });
+      }
+    },
+    [track, pattern, pxPerBeat, snap, canvasH],
+  );
 
   const handleMouseUp = useCallback(() => {
     dragRef.current = null;
+    soundLabStore.endUndoGroup();
   }, []);
 
   // ── Delete key ───────────────────────────────────────────────────────────
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.code === 'Backspace' || e.code === 'Delete') && selectedNoteId && track && pattern) {
+      if (
+        (e.code === 'Backspace' || e.code === 'Delete') &&
+        selectedNoteId &&
+        track &&
+        pattern
+      ) {
         e.preventDefault();
         soundLabStore.removeNote(track.id, pattern.id, selectedNoteId);
         setSelectedNoteId(null);
@@ -339,11 +440,14 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
 
   // ── Scroll ───────────────────────────────────────────────────────────────
 
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
-    setScrollBeat((b) => Math.max(0, b + delta / pxPerBeat));
-  }, [pxPerBeat]);
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+      setScrollBeat((b) => Math.max(0, b + delta / pxPerBeat));
+    },
+    [pxPerBeat],
+  );
 
   // ── Canvas width ──────────────────────────────────────────────────────────
 
@@ -366,7 +470,8 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
     return (
       <div className="flex h-full items-center justify-center">
         <p className="text-sm text-muted-foreground">
-          Piano Roll is for instrument tracks. Use Step Sequencer for drum tracks.
+          Piano Roll is for instrument tracks. Use Step Sequencer for drum
+          tracks.
         </p>
       </div>
     );
@@ -380,7 +485,9 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
           Piano Roll
         </span>
         <span className="text-[10px] text-muted-foreground/60">—</span>
-        <span className="text-[10px] text-muted-foreground/80 font-mono">{pattern.name}</span>
+        <span className="text-[10px] text-muted-foreground/80 font-mono">
+          {pattern.name}
+        </span>
         <div className="flex-1" />
         <span className="text-[10px] text-muted-foreground mr-1">Snap</span>
         <ToggleGroup
@@ -390,7 +497,11 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
           size="sm"
         >
           {(['1/4', '1/8', '1/16'] as Snap[]).map((s) => (
-            <ToggleGroupItem key={s} value={s} className="h-5 px-1.5 text-[10px]">
+            <ToggleGroupItem
+              key={s}
+              value={s}
+              className="h-5 px-1.5 text-[10px]"
+            >
               {s}
             </ToggleGroupItem>
           ))}
@@ -406,8 +517,10 @@ export function PianoRollCanvas({ track, pattern }: PianoRollCanvasProps) {
           className="block cursor-crosshair"
           style={{ height: canvasH }}
           onMouseDown={handleMouseDown}
+          onPointerDown={() => soundLabStore.beginUndoGroup()}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onPointerUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
           onWheel={handleWheel}
         />

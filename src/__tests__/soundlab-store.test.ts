@@ -82,11 +82,18 @@ describe('SoundLabStore', () => {
 
     it('updates track volume, pan and mute without breaking undo', () => {
       const trackId = soundLabStore.getState().tracks[0].id;
+      const originalVolume = soundLabStore.getState().tracks[0].volume;
       soundLabStore.updateTrack(trackId, { volume: 0.5, muted: true });
 
-      const updated = soundLabStore.getState().tracks.find((t) => t.id === trackId);
+      const updated = soundLabStore
+        .getState()
+        .tracks.find((t) => t.id === trackId);
       expect(updated?.volume).toBe(0.5);
       expect(updated?.muted).toBe(true);
+      soundLabStore.undo();
+      expect(
+        soundLabStore.getState().tracks.find((t) => t.id === trackId)?.volume,
+      ).toBe(originalVolume);
     });
   });
 
@@ -156,7 +163,9 @@ describe('SoundLabStore', () => {
       const unsubGeneral = soundLabStore.subscribe(generalListener);
       const unsubTime = soundLabStore.subscribeTime(timeListener);
 
+      const previousSnapshot = soundLabStore.getState();
       soundLabStore.seek(16.5);
+      expect(soundLabStore.getState()).not.toBe(previousSnapshot);
       expect(timeListener).toHaveBeenCalledWith(16.5);
       expect(generalListener).not.toHaveBeenCalled();
 
@@ -166,6 +175,20 @@ describe('SoundLabStore', () => {
 
       unsubGeneral();
       unsubTime();
+    });
+
+    it('coalesces grouped edits into a single undo step', () => {
+      const trackId = soundLabStore.getState().tracks[0].id;
+      const originalVolume = soundLabStore.getState().tracks[0].volume;
+      soundLabStore.beginUndoGroup();
+      soundLabStore.updateTrack(trackId, { volume: 0.6 });
+      soundLabStore.updateTrack(trackId, { volume: 0.4 });
+      soundLabStore.endUndoGroup();
+      soundLabStore.undo();
+      expect(
+        soundLabStore.getState().tracks.find((t) => t.id === trackId)?.volume,
+      ).toBe(originalVolume);
+      expect(soundLabStore.canUndo()).toBe(false);
     });
 
     it('toggles isPlaying and playMode', () => {

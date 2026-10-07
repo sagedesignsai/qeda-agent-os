@@ -21,6 +21,16 @@ import type {
   PdfDocument,
   PdfBlock,
   BlockType,
+  HeadingBlock,
+  ParagraphBlock,
+  ColumnsBlock,
+  TableBlock,
+  CalloutBlock,
+  MetricsBlock,
+  DividerBlock,
+  PageBreakBlock,
+  SignatureBlock,
+  ImageBlock,
   DocumentTheme,
   PageSize,
   PageOrientation,
@@ -297,7 +307,11 @@ export function useDocumentEditor(documentId: string | null) {
   );
 
   const addBlock = useCallback(
-    (type: BlockType, index?: number, initialData?: Partial<PdfBlock>) => {
+    <T extends BlockType>(
+      type: T,
+      index?: number,
+      initialData?: Partial<Extract<PdfBlock, { type: T }>>,
+    ) => {
       if (!doc) return;
       const id = nanoid();
       let newBlock: PdfBlock;
@@ -310,7 +324,7 @@ export function useDocumentEditor(documentId: string | null) {
             level: 2,
             text: 'Section Heading',
             marginBottom: 8,
-            ...initialData,
+            ...(initialData as Partial<HeadingBlock>),
           };
           break;
         case 'paragraph':
@@ -321,7 +335,7 @@ export function useDocumentEditor(documentId: string | null) {
             fontSize: 10,
             lineHeight: 1.45,
             marginBottom: 6,
-            ...initialData,
+            ...(initialData as Partial<ParagraphBlock>),
           };
           break;
         case 'columns':
@@ -358,7 +372,7 @@ export function useDocumentEditor(documentId: string | null) {
               },
             ],
             marginBottom: 8,
-            ...initialData,
+            ...(initialData as Partial<ColumnsBlock>),
           };
           break;
         case 'table':
@@ -377,7 +391,7 @@ export function useDocumentEditor(documentId: string | null) {
             striped: true,
             showBorders: true,
             marginBottom: 10,
-            ...initialData,
+            ...(initialData as Partial<TableBlock>),
           };
           break;
         case 'callout':
@@ -388,7 +402,7 @@ export function useDocumentEditor(documentId: string | null) {
             title: 'Important Note',
             text: 'Highlight crucial requirements or executive takeaways in this box.',
             marginBottom: 8,
-            ...initialData,
+            ...(initialData as Partial<CalloutBlock>),
           };
           break;
         case 'metrics':
@@ -411,7 +425,7 @@ export function useDocumentEditor(documentId: string | null) {
               },
             ],
             marginBottom: 8,
-            ...initialData,
+            ...(initialData as Partial<MetricsBlock>),
           };
           break;
         case 'divider':
@@ -420,14 +434,14 @@ export function useDocumentEditor(documentId: string | null) {
             type: 'divider',
             thickness: 0.5,
             spacing: 8,
-            ...initialData,
+            ...(initialData as Partial<DividerBlock>),
           };
           break;
         case 'page-break':
           newBlock = {
             id,
             type: 'page-break',
-            ...initialData,
+            ...(initialData as Partial<PageBreakBlock>),
           };
           break;
         case 'signature':
@@ -439,7 +453,7 @@ export function useDocumentEditor(documentId: string | null) {
             role: 'Director of Operations',
             company: 'Acme Inc.',
             date: new Date().toLocaleDateString(),
-            ...initialData,
+            ...(initialData as Partial<SignatureBlock>),
           };
           break;
         case 'image':
@@ -450,7 +464,7 @@ export function useDocumentEditor(documentId: string | null) {
             width: 200,
             height: 100,
             align: 'center',
-            ...initialData,
+            ...(initialData as Partial<ImageBlock>),
           };
           break;
       }

@@ -19,10 +19,15 @@ import {
   CheckCircleIcon,
   LoaderIcon,
   AlertCircleIcon,
+  SparklesIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Select,
@@ -32,8 +37,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { soundLabStore, useSoundLabSession, useSoundLabState } from '@/hooks/use-soundlab-store';
-import { BRAINWAVE_BAND_META, BRAINWAVE_BANDS, type BrainwaveBand } from '@/lib/soundlab-types';
+import {
+  soundLabStore,
+  useSoundLabSession,
+  useSoundLabState,
+} from '@/hooks/use-soundlab-store';
+import { getEngine } from '@/hooks/use-soundlab';
 import type { SaveStatus } from '@/hooks/use-soundlab';
 
 const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -48,7 +57,7 @@ function BeatCounter({ className }: BeatCounterProps) {
   useEffect(() => {
     return soundLabStore.subscribeTime((beat) => {
       if (ref.current) {
-        const bar  = Math.floor(beat / 4) + 1;
+        const bar = Math.floor(beat / 4) + 1;
         const step = (Math.floor(beat) % 4) + 1;
         ref.current.textContent = `${String(bar).padStart(3, '0')}:${step}`;
       }
@@ -98,6 +107,8 @@ interface SoundLabTransportBarProps {
   onPlay: () => Promise<void>;
   onPause: () => void;
   onStop: () => void;
+  copilotOpen?: boolean;
+  onToggleCopilot?: () => void;
 }
 
 export function SoundLabTransportBar({
@@ -105,6 +116,8 @@ export function SoundLabTransportBar({
   onPlay,
   onPause,
   onStop,
+  copilotOpen,
+  onToggleCopilot,
 }: SoundLabTransportBarProps) {
   const session = useSoundLabSession();
   const { isPlaying, playMode } = useSoundLabState();
@@ -135,18 +148,19 @@ export function SoundLabTransportBar({
       if (e.key.toLowerCase() === 'l') {
         soundLabStore.setPlayMode(playMode === 'song' ? 'pattern' : 'song');
       }
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        onToggleCopilot?.();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onPlay, onStop, playMode]);
+  }, [onPlay, onStop, onToggleCopilot, playMode]);
 
   if (!session) return null;
 
-  const bandMeta = BRAINWAVE_BAND_META[session.targetBand];
-
   return (
     <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-card/80 px-3 backdrop-blur-sm">
-
       {/* Transport buttons */}
       <div className="flex items-center gap-1">
         <Tooltip>
@@ -155,9 +169,13 @@ export function SoundLabTransportBar({
               size="icon"
               variant="ghost"
               className={cn('size-7', isPlaying && 'text-emerald-400')}
-              onClick={() => void onPlay()}
+              onClick={() => (isPlaying ? onPause() : void onPlay())}
             >
-              {isPlaying ? <PauseIcon className="size-3.5" /> : <PlayIcon className="size-3.5" />}
+              {isPlaying ? (
+                <PauseIcon className="size-3.5" />
+              ) : (
+                <PlayIcon className="size-3.5" />
+              )}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
@@ -167,11 +185,18 @@ export function SoundLabTransportBar({
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="icon" variant="ghost" className="size-7" onClick={onStop}>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              onClick={onStop}
+            >
               <SquareIcon className="size-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">Stop (Esc)</TooltipContent>
+          <TooltipContent side="bottom" className="text-xs">
+            Stop (Esc)
+          </TooltipContent>
         </Tooltip>
       </div>
 
@@ -194,7 +219,12 @@ export function SoundLabTransportBar({
           min={40}
           max={220}
           value={session.bpm}
-          onChange={(e) => soundLabStore.setBpm(Number(e.target.value))}
+          onChange={(e) => {
+            const bpm = Number(e.target.value);
+            if (!Number.isFinite(bpm)) return;
+            soundLabStore.setBpm(bpm);
+            getEngine().updateBpm(bpm);
+          }}
           className="w-14 rounded border border-border/40 bg-background/60 px-1.5 py-0.5 text-center text-xs font-mono text-foreground tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>
@@ -225,75 +255,72 @@ export function SoundLabTransportBar({
 
       <Separator orientation="vertical" className="h-5" />
 
-      {/* Target band */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Band
-        </span>
-        <Select
-          value={session.targetBand}
-          onValueChange={(v) => soundLabStore.setTargetBand(v as BrainwaveBand)}
-        >
-          <SelectTrigger
-            className="h-6 w-28 border px-2 py-0 text-xs font-semibold"
-            style={{
-              borderColor: `${bandMeta.color}44`,
-              background: `${bandMeta.color}18`,
-              color: bandMeta.color,
-            }}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {BRAINWAVE_BANDS.map((b) => {
-              const m = BRAINWAVE_BAND_META[b];
-              return (
-                <SelectItem key={b} value={b} className="text-xs">
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="inline-block size-2 rounded-full"
-                      style={{ background: m.color }}
-                    />
-                    {m.label} · {m.hz} Hz
-                  </span>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Separator orientation="vertical" className="h-5" />
-
       {/* Play mode toggle */}
       <div className="flex items-center gap-1.5">
         <ToggleGroup
           type="single"
           value={playMode}
-          onValueChange={(v) => v && soundLabStore.setPlayMode(v as 'song' | 'pattern')}
+          onValueChange={(v) =>
+            v && soundLabStore.setPlayMode(v as 'song' | 'pattern')
+          }
           spacing={0}
           size="sm"
         >
           <Tooltip>
             <TooltipTrigger asChild>
-              <ToggleGroupItem value="song" variant="outline" className="h-6 px-2 text-[10px]">
+              <ToggleGroupItem
+                value="song"
+                variant="outline"
+                className="h-6 px-2 text-[10px]"
+              >
                 <LayoutGridIcon className="size-3 mr-1" />
                 Song
               </ToggleGroupItem>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">Song mode (L)</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">
+              Song mode (L)
+            </TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <ToggleGroupItem value="pattern" variant="outline" className="h-6 px-2 text-[10px]">
+              <ToggleGroupItem
+                value="pattern"
+                variant="outline"
+                className="h-6 px-2 text-[10px]"
+              >
                 <RepeatIcon className="size-3 mr-1" />
                 Pattern
               </ToggleGroupItem>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">Pattern mode (L)</TooltipContent>
+            <TooltipContent side="bottom" className="text-xs">
+              Pattern mode (L)
+            </TooltipContent>
           </Tooltip>
         </ToggleGroup>
       </div>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant={session.loopEnabled ? 'secondary' : 'ghost'}
+            className={cn(
+              'h-6 gap-1 px-2 text-[10px]',
+              session.loopEnabled && 'text-primary',
+            )}
+            aria-pressed={session.loopEnabled}
+            onClick={() => soundLabStore.toggleLoop()}
+          >
+            <RepeatIcon className="size-3" />
+            Loop
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          {session.loopEnabled
+            ? `Looping beats ${session.loopStartBeat}–${session.loopEndBeat}`
+            : `Enable loop for beats ${session.loopStartBeat}–${session.loopEndBeat}`}
+        </TooltipContent>
+      </Tooltip>
 
       {/* Spacer */}
       <div className="flex-1" />
@@ -312,7 +339,9 @@ export function SoundLabTransportBar({
               <Undo2Icon className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">Undo (⌘Z)</TooltipContent>
+          <TooltipContent side="bottom" className="text-xs">
+            Undo (⌘Z)
+          </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -326,9 +355,38 @@ export function SoundLabTransportBar({
               <Redo2Icon className="size-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">Redo (⌘Y)</TooltipContent>
+          <TooltipContent side="bottom" className="text-xs">
+            Redo (⌘Y)
+          </TooltipContent>
         </Tooltip>
       </div>
+
+      {onToggleCopilot && (
+        <>
+          <Separator orientation="vertical" className="h-5" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant={copilotOpen ? 'default' : 'outline'}
+                className={cn(
+                  'h-7 gap-1.5 px-2.5 text-xs font-medium cursor-pointer transition-all',
+                  copilotOpen
+                    ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-xs'
+                    : 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 hover:text-white',
+                )}
+                onClick={onToggleCopilot}
+              >
+                <SparklesIcon className="size-3.5 text-violet-400" />
+                <span>Copilot</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              AI Neuro-Acoustic Producer (⌘K)
+            </TooltipContent>
+          </Tooltip>
+        </>
+      )}
 
       <SaveDot status={saveStatus} />
     </div>

@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { soundLabStore, useSoundLabState } from './use-soundlab-store';
 import { SoundLabEngine } from '@/lib/soundlab-engine';
-import { buildDefaultTracks } from '@/lib/soundlab-types';
+import { buildDefaultTracks, SESSION_TEMPLATES } from '@/lib/soundlab-types';
 import type {
   SoundLabSessionWithTracks,
   SoundLabSession,
@@ -26,12 +26,17 @@ export interface UseSoundLabReturn {
   loading: boolean;
   saveStatus: SaveStatus;
   sessions: SoundLabSession[];
-  createSession: (templateId: string, band: BrainwaveBand, bpm: number) => Promise<string>;
+  createSession: (
+    templateId: string,
+    band: BrainwaveBand,
+    bpm: number,
+  ) => Promise<string>;
   deleteSession: (id: string) => Promise<void>;
   play: () => Promise<void>;
   pause: () => void;
   stop: () => void;
   saveNow: () => Promise<void>;
+  reloadSession: () => Promise<void>;
 }
 
 let engineSingleton: SoundLabEngine | null = null;
@@ -62,6 +67,25 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
     }
   }, []);
 
+  // ── Reload/sync session from disk / copilot ──────────────────────────────
+
+  const reloadSession = useCallback(async () => {
+    if (!sessionId) {
+      void loadList();
+      return;
+    }
+    try {
+      const data =
+        await window.electron.ipc.invoke<SoundLabSessionWithTracks | null>(
+          'soundlab:get',
+          { id: sessionId },
+        );
+      if (data) soundLabStore.syncSession(data);
+    } catch {
+      // ignore
+    }
+  }, [sessionId, loadList]);
+
   // ── Load a specific session ───────────────────────────────────────────────
 
   useEffect(() => {
@@ -72,16 +96,24 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
     setLoading(true);
     void (async () => {
       try {
-        const data = await window.electron.ipc.invoke<SoundLabSessionWithTracks | null>(
-          'soundlab:get',
-          { id: sessionId },
-        );
+        const data =
+          await window.electron.ipc.invoke<SoundLabSessionWithTracks | null>(
+            'soundlab:get',
+            { id: sessionId },
+          );
         if (data) soundLabStore.loadSession(data);
       } finally {
         setLoading(false);
       }
     })();
   }, [sessionId, loadList]);
+
+  useEffect(() => {
+    const off = window.electron.ipc.on('soundlab:changed', () => {
+      void loadList();
+    });
+    return off;
+  }, [loadList]);
 
   // ── Autosave on store changes (1s debounce) ───────────────────────────────
 
@@ -105,7 +137,12 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.tracks, state.session]);
+
+  useEffect(() => {
+    if (!engineSingleton?.isPlaying) return;
+    const data = soundLabStore.getSessionWithTracks();
+    if (data) engineSingleton.updateSession(data);
   }, [state.tracks, state.session]);
 
   // ── Dispose engine on unmount ─────────────────────────────────────────────
@@ -120,24 +157,72 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
   // ── Transport ─────────────────────────────────────────────────────────────
 
   const play = useCallback(async () => {
-    const data = soundLabStore.getSessionWithTracks();
-    if (!data) return;
+    const storedData = soundLabStore.getSessionWithTracks();
+    if (!storedData) return;
     const engine = getEngine();
     if (engine.isPlaying) {
+      const beat = soundLabStore.getState().playheadBeat;
       engine.stop();
+      soundLabStore.seek(beat, true);
       soundLabStore.setPlaying(false);
       return;
+    }
+    const currentState = soundLabStore.getState();
+    let data = storedData;
+    let fromBeat = currentState.playheadBeat;
+    if (currentState.playMode === 'pattern') {
+      const selectedTrack = currentState.tracks.find(
+        (track) => track.id === currentState.selectedTrackId,
+      );
+      const track = selectedTrack?.patterns.length
+        ? selectedTrack
+        : currentState.tracks.find((item) => item.patterns.length > 0);
+      const pattern =
+        track?.patterns.find(
+          (item) => item.id === currentState.selectedPatternId,
+        ) ?? track?.patterns[0];
+      if (track && pattern) {
+        data = {
+          ...storedData,
+          durationBeats: pattern.lengthBeats,
+          loopEnabled: true,
+          loopStartBeat: 0,
+          loopEndBeat: pattern.lengthBeats,
+          tracks: storedData.tracks.map((item) => ({
+            ...item,
+            clips:
+              item.id === track.id
+                ? [
+                    {
+                      id: `preview-${pattern.id}`,
+                      trackId: item.id,
+                      patternId: pattern.id,
+                      startBeat: 0,
+                      durationBeats: pattern.lengthBeats,
+                    },
+                  ]
+                : [],
+          })),
+        };
+        fromBeat = 0;
+      }
     }
     await engine.start(
       data,
       (beat) => soundLabStore.seek(beat),
-      () => { soundLabStore.setPlaying(false); soundLabStore.seek(0, true); },
+      () => {
+        soundLabStore.setPlaying(false);
+        soundLabStore.seek(0, true);
+      },
+      fromBeat >= data.durationBeats ? 0 : fromBeat,
     );
-    soundLabStore.setPlaying(true);
+    soundLabStore.setPlaying(engine.isPlaying);
   }, []);
 
   const pause = useCallback(() => {
+    const beat = soundLabStore.getState().playheadBeat;
     getEngine().stop();
+    soundLabStore.seek(beat, true);
     soundLabStore.setPlaying(false);
   }, []);
 
@@ -150,13 +235,25 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
   // ── Session management ────────────────────────────────────────────────────
 
   const createSession = useCallback(
-    async (templateId: string, band: BrainwaveBand, bpm: number): Promise<string> => {
+    async (
+      templateId: string,
+      band: BrainwaveBand,
+      bpm: number,
+    ): Promise<string> => {
       const id = `sl-${Date.now().toString(36)}`;
       const now = Math.floor(Date.now() / 1000);
+      const matchedTemplate = SESSION_TEMPLATES.find(
+        (t) => t.id === templateId,
+      );
+      const title =
+        templateId === 'blank'
+          ? 'Untitled Session'
+          : (matchedTemplate?.label ?? 'Untitled Session');
+
       const newSession: SoundLabSessionWithTracks = {
         id,
         projectId: null,
-        title: templateId === 'blank' ? 'Untitled Session' : `${band.charAt(0).toUpperCase() + band.slice(1)} Session`,
+        title,
         bpm,
         keySignature: 'C',
         targetBand: band,
@@ -166,7 +263,7 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
         loopEndBeat: 32,
         createdAt: now,
         updatedAt: now,
-        tracks: buildDefaultTracks(id, band),
+        tracks: buildDefaultTracks(id, band, templateId),
       };
       await window.electron.ipc.invoke('soundlab:save', newSession);
       await loadList();
@@ -206,6 +303,7 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
     pause,
     stop,
     saveNow,
+    reloadSession,
   };
 }
 

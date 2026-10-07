@@ -9,39 +9,54 @@ import { TrackCard } from './TrackCard';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Slider } from '@/components/ui/slider';
 import { soundLabStore } from '@/hooks/use-soundlab-store';
+import { getEngine } from '@/hooks/use-soundlab';
 import {
-  BRAINWAVE_BAND_META,
-  BRAINWAVE_BANDS,
   ENTRAINMENT_MODE_META,
   type EntrainmentMode,
-  type BrainwaveBand,
   type SoundLabTrack,
 } from '@/lib/soundlab-types';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
-const MODES: EntrainmentMode[] = ['binaural', 'isochronic', 'monaural', 'am-embed'];
+const MODES: EntrainmentMode[] = [
+  'binaural',
+  'isochronic',
+  'monaural',
+  'am-embed',
+];
 const MODE_SHORT: Record<EntrainmentMode, string> = {
-  binaural:   'BIN',
+  binaural: 'BIN',
   isochronic: 'ISO',
-  monaural:   'MON',
+  monaural: 'MON',
   'am-embed': 'AME',
 };
+const RATE_PRESETS = [2.5, 6, 10, 18, 40] as const;
 
-interface Props { track: SoundLabTrack; isSelected: boolean }
+interface Props {
+  track: SoundLabTrack;
+  isSelected: boolean;
+}
 
 export function EntrainmentTrackCard({ track, isSelected }: Props) {
   const cfg = track.config;
 
-  const update = (patch: Partial<typeof cfg>) =>
-    soundLabStore.updateTrack(track.id, { config: { ...cfg, ...patch } });
-
-  const band = cfg.targetBand ?? 'alpha';
-  const bandMeta = BRAINWAVE_BAND_META[band];
+  const update = (patch: Partial<typeof cfg>) => {
+    const nextConfig = { ...cfg, ...patch };
+    soundLabStore.updateTrack(track.id, { config: nextConfig });
+    getEngine().updateEntrainmentTrack(track.id, nextConfig);
+  };
 
   return (
     <TrackCard track={track} isSelected={isSelected}>
       {/* Mode pills */}
-      <div className="pl-1.5" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="pl-1.5"
+        role="presentation"
+        onClick={(e) => e.stopPropagation()}
+      >
         <ToggleGroup
           type="single"
           value={cfg.mode ?? 'binaural'}
@@ -62,48 +77,52 @@ export function EntrainmentTrackCard({ track, isSelected }: Props) {
                 </ToggleGroupItem>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs max-w-40">
-                <p className="font-semibold">{ENTRAINMENT_MODE_META[m].label}</p>
-                <p className="text-muted-foreground">{ENTRAINMENT_MODE_META[m].hint}</p>
+                <p className="font-semibold">
+                  {ENTRAINMENT_MODE_META[m].label}
+                </p>
+                <p className="text-muted-foreground">
+                  {ENTRAINMENT_MODE_META[m].hint}
+                </p>
               </TooltipContent>
             </Tooltip>
           ))}
         </ToggleGroup>
       </div>
 
-      {/* Band selector */}
-      <div className="pl-1.5" onClick={(e) => e.stopPropagation()}>
+      {/* Physical modulation-rate presets; deliberately avoid brain-state labels. */}
+      <div
+        className="pl-1.5"
+        role="presentation"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="mb-1 block text-[9px] text-muted-foreground">
+          Rate presets · Hz
+        </span>
         <ToggleGroup
           type="single"
-          value={band}
+          value={String(cfg.beatHz ?? 10)}
           onValueChange={(v) => {
             if (!v) return;
-            const b = v as BrainwaveBand;
-            update({ targetBand: b, beatHz: BRAINWAVE_BAND_META[b].hz });
+            update({ beatHz: Number(v) });
           }}
           spacing={0}
           size="sm"
           className="w-full"
         >
-          {BRAINWAVE_BANDS.map((b) => {
-            const m = BRAINWAVE_BAND_META[b];
+          {RATE_PRESETS.map((rate) => {
             return (
-              <Tooltip key={b}>
+              <Tooltip key={rate}>
                 <TooltipTrigger asChild>
                   <ToggleGroupItem
-                    value={b}
+                    value={String(rate)}
                     variant="outline"
                     className="flex-1 h-5 text-[9px] font-semibold"
-                    style={
-                      band === b
-                        ? { background: `${m.color}22`, color: m.color, borderColor: `${m.color}44` }
-                        : undefined
-                    }
                   >
-                    {m.label[0]}
+                    {rate}
                   </ToggleGroupItem>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">
-                  {m.label} · {m.hz} Hz · {m.hint}
+                  Set modulation rate to {rate} Hz
                 </TooltipContent>
               </Tooltip>
             );
@@ -112,8 +131,14 @@ export function EntrainmentTrackCard({ track, isSelected }: Props) {
       </div>
 
       {/* Carrier Hz slider */}
-      <div className="flex items-center gap-2 pl-1.5" onClick={(e) => e.stopPropagation()}>
-        <span className="w-8 shrink-0 text-[9px] text-muted-foreground">Carr.</span>
+      <div
+        className="flex items-center gap-2 pl-1.5"
+        role="presentation"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="w-8 shrink-0 text-[9px] text-muted-foreground">
+          Carr.
+        </span>
         <Slider
           value={[cfg.carrierHz ?? 220]}
           onValueChange={([v]) => update({ carrierHz: v })}
@@ -128,10 +153,16 @@ export function EntrainmentTrackCard({ track, isSelected }: Props) {
       </div>
 
       {/* Beat Hz display */}
-      <div className="flex items-center gap-2 pl-1.5" onClick={(e) => e.stopPropagation()}>
-        <span className="w-8 shrink-0 text-[9px] text-muted-foreground">Beat</span>
+      <div
+        className="flex items-center gap-2 pl-1.5"
+        role="presentation"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="w-8 shrink-0 text-[9px] text-muted-foreground">
+          Beat
+        </span>
         <Slider
-          value={[cfg.beatHz ?? bandMeta.hz]}
+          value={[cfg.beatHz ?? 10]}
           onValueChange={([v]) => update({ beatHz: v })}
           min={0.5}
           max={40}
@@ -140,9 +171,9 @@ export function EntrainmentTrackCard({ track, isSelected }: Props) {
         />
         <span
           className="w-8 text-right text-[9px] tabular-nums font-bold font-mono"
-          style={{ color: bandMeta.color }}
+          style={{ color: 'var(--primary)' }}
         >
-          {(cfg.beatHz ?? bandMeta.hz).toFixed(1)}Hz
+          {(cfg.beatHz ?? 10).toFixed(1)}Hz
         </span>
       </div>
     </TrackCard>

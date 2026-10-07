@@ -28,6 +28,7 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
     }
 
     let cancelled = false;
+    let audioCtx: AudioContext | null = null;
     setIsExtractingWaveform(true);
 
     void (async () => {
@@ -39,28 +40,32 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
           window.AudioContext ||
           (window as unknown as { webkitAudioContext: typeof AudioContext })
             .webkitAudioContext;
-        const audioCtx = new AudioCtx();
+        audioCtx = new AudioCtx();
 
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
         const rawData = audioBuffer.getChannelData(0); // Left channel
 
         // Target: ~80 peaks per second of duration
         const durationSec = audioBuffer.duration;
-        const totalPeaks = Math.max(100, Math.floor(durationSec * 80));
-        const blockSize = Math.floor(rawData.length / totalPeaks);
+        const totalPeaks = Math.max(
+          1,
+          Math.min(rawData.length || 1, Math.floor(durationSec * 80)),
+        );
 
         const peaks = new Float32Array(totalPeaks);
 
         for (let i = 0; i < totalPeaks; i++) {
-          const start = i * blockSize;
+          const start = Math.floor((i * rawData.length) / totalPeaks);
+          const end = Math.max(
+            start + 1,
+            Math.floor(((i + 1) * rawData.length) / totalPeaks),
+          );
           let sum = 0;
-          for (let j = 0; j < blockSize; j++) {
-            sum += Math.abs(rawData[start + j] || 0);
+          for (let j = start; j < end; j++) {
+            sum += Math.abs(rawData[j] || 0);
           }
-          peaks[i] = Math.min(1.0, (sum / blockSize) * 2.5); // Boost visual amplitude
+          peaks[i] = Math.min(1.0, (sum / (end - start)) * 2.5); // Boost visual amplitude
         }
-
-        audioCtx.close();
 
         if (!cancelled) {
           setAudioPeaks(peaks);
@@ -68,18 +73,17 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
       } catch (err) {
         console.warn('Could not extract audio waveform from media:', err);
         if (!cancelled) {
-          // Generate realistic procedural fallback peaks if audio track is silent/unextractable
-          const totalFallback = Math.max(
-            100,
-            Math.floor((durationMs / 1000) * 80),
-          );
-          const fallback = new Float32Array(totalFallback);
-          for (let i = 0; i < totalFallback; i++) {
-            fallback[i] = 0.25 + 0.35 * Math.sin(i * 0.1) * Math.cos(i * 0.05);
-          }
-          setAudioPeaks(fallback);
+          // Do not fabricate a plausible-looking waveform for failed/silent media.
+          setAudioPeaks(null);
         }
       } finally {
+        if (audioCtx && audioCtx.state !== 'closed') {
+          try {
+            await audioCtx.close();
+          } catch {
+            // Context may already have closed during navigation.
+          }
+        }
         if (!cancelled) {
           setIsExtractingWaveform(false);
         }

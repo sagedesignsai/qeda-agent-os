@@ -32,13 +32,16 @@ interface SfxPreset {
 
 // Lightweight Web Audio API synthesizer for instant zero-dependency sound previews
 function playSynthSound(type: 'whoosh' | 'pop' | 'chime' | 'click' | 'ding') {
+  let context: AudioContext | null = null;
   try {
     const AudioCtx =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext })
         .webkitAudioContext;
     const ctx = new AudioCtx();
+    context = ctx;
     const now = ctx.currentTime;
+    const sources: AudioScheduledSourceNode[] = [];
 
     if (type === 'click') {
       const osc = ctx.createOscillator();
@@ -52,6 +55,7 @@ function playSynthSound(type: 'whoosh' | 'pop' | 'chime' | 'click' | 'ding') {
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.05);
+      sources.push(osc);
     } else if (type === 'pop') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -64,6 +68,7 @@ function playSynthSound(type: 'whoosh' | 'pop' | 'chime' | 'click' | 'ding') {
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.12);
+      sources.push(osc);
     } else if (type === 'whoosh') {
       const bufferSize = ctx.sampleRate * 0.3;
       const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
@@ -87,6 +92,7 @@ function playSynthSound(type: 'whoosh' | 'pop' | 'chime' | 'click' | 'ding') {
       gain.connect(ctx.destination);
       noise.start(now);
       noise.stop(now + 0.3);
+      sources.push(noise);
     } else if (type === 'chime' || type === 'ding') {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -98,8 +104,17 @@ function playSynthSound(type: 'whoosh' | 'pop' | 'chime' | 'click' | 'ding') {
       gain.connect(ctx.destination);
       osc.start(now);
       osc.stop(now + 0.8);
+      sources.push(osc);
+    }
+    let remaining = sources.length;
+    for (const source of sources) {
+      source.onended = () => {
+        remaining -= 1;
+        if (remaining === 0) void ctx.close();
+      };
     }
   } catch {
+    if (context && context.state !== 'closed') void context.close();
     // Ignore audio context errors in restricted test environments
   }
 }

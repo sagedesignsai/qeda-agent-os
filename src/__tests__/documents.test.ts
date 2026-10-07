@@ -172,7 +172,7 @@ describe('React-PDF Renderer Compilation', () => {
   it('compiles a document tree into a valid PDF binary blob', async () => {
     const doc = createExecutiveProposal();
     const element = React.createElement(PdfDocumentView, { doc });
-    const instance = pdf(element);
+    const instance = pdf(element as any);
     const blob = await instance.toBlob();
 
     expect(blob).toBeDefined();
@@ -258,7 +258,7 @@ describe('PDF Studio Text Elements & Rich Inline Capabilities', () => {
     ];
 
     const element = React.createElement(PdfDocumentView, { doc: baseDoc });
-    const instance = pdf(element);
+    const instance = pdf(element as any);
     const blob = await instance.toBlob();
 
     expect(blob).toBeDefined();

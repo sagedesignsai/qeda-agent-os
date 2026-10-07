@@ -10,7 +10,11 @@ import { useState } from 'react';
 import { Trash2Icon, VolumeXIcon, Volume2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { soundLabStore } from '@/hooks/use-soundlab-store';
 import type { SoundLabTrack } from '@/lib/soundlab-types';
@@ -23,7 +27,12 @@ interface TrackCardProps {
   className?: string;
 }
 
-export function TrackCard({ track, isSelected, children, className }: TrackCardProps) {
+export function TrackCard({
+  track,
+  isSelected,
+  children,
+  className,
+}: TrackCardProps) {
   const [editing, setEditing] = useState(false);
   const [nameVal, setNameVal] = useState(track.name);
 
@@ -44,7 +53,9 @@ export function TrackCard({ track, isSelected, children, className }: TrackCardP
   };
 
   const toggleSolo = () => {
-    soundLabStore.updateTrack(track.id, { solo: !track.solo });
+    const next = !track.solo;
+    soundLabStore.updateTrack(track.id, { solo: next });
+    getEngine().updateTrackSolo(track.id, next);
   };
 
   const handleVolume = (val: number[]) => {
@@ -64,6 +75,14 @@ export function TrackCard({ track, isSelected, children, className }: TrackCardP
         className,
       )}
       onClick={() => soundLabStore.setSelectedTrack(track.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          soundLabStore.setSelectedTrack(track.id);
+        }
+      }}
     >
       {/* Color strip */}
       <div
@@ -82,13 +101,15 @@ export function TrackCard({ track, isSelected, children, className }: TrackCardP
         {/* Editable name */}
         {editing ? (
           <input
-            autoFocus
             value={nameVal}
             onChange={(e) => setNameVal(e.target.value)}
             onBlur={commitName}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commitName();
-              if (e.key === 'Escape') { setEditing(false); setNameVal(track.name); }
+              if (e.key === 'Escape') {
+                setEditing(false);
+                setNameVal(track.name);
+              }
             }}
             className="min-w-0 flex-1 rounded border border-ring/50 bg-background px-1.5 py-0 text-xs text-foreground focus:outline-none"
             onClick={(e) => e.stopPropagation()}
@@ -96,7 +117,10 @@ export function TrackCard({ track, isSelected, children, className }: TrackCardP
         ) : (
           <span
             className="flex-1 truncate text-xs font-medium text-foreground"
-            onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditing(true);
+            }}
             title={track.name}
           >
             {track.name}
@@ -115,9 +139,16 @@ export function TrackCard({ track, isSelected, children, className }: TrackCardP
                   ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
                   : 'text-muted-foreground hover:text-foreground',
               )}
-              onClick={(e) => { e.stopPropagation(); toggleMute(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleMute();
+              }}
             >
-              {track.muted ? <VolumeXIcon className="size-3" /> : <Volume2Icon className="size-3" />}
+              {track.muted ? (
+                <VolumeXIcon className="size-3" />
+              ) : (
+                <Volume2Icon className="size-3" />
+              )}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="right" className="text-xs">
@@ -136,12 +167,17 @@ export function TrackCard({ track, isSelected, children, className }: TrackCardP
                   ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30'
                   : 'text-muted-foreground hover:text-foreground',
               )}
-              onClick={(e) => { e.stopPropagation(); toggleSolo(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSolo();
+              }}
             >
               S
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right" className="text-xs">Solo</TooltipContent>
+          <TooltipContent side="right" className="text-xs">
+            Solo
+          </TooltipContent>
         </Tooltip>
 
         {/* Delete */}
@@ -159,16 +195,50 @@ export function TrackCard({ track, isSelected, children, className }: TrackCardP
               <Trash2Icon className="size-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right" className="text-xs">Remove track</TooltipContent>
+          <TooltipContent side="right" className="text-xs">
+            Remove track
+          </TooltipContent>
         </Tooltip>
+      </div>
+
+      <div className="flex items-center gap-2 pl-1.5">
+        <span className="w-5 shrink-0 text-[9px] text-muted-foreground">
+          Pan
+        </span>
+        <Slider
+          value={[Math.round((track.pan + 1) * 50)]}
+          onValueChange={([value]) => {
+            const pan = (value ?? 50) / 50 - 1;
+            soundLabStore.updateTrack(track.id, { pan });
+            getEngine().updateTrackPan(track.id, pan);
+          }}
+          onPointerDown={() => soundLabStore.beginUndoGroup()}
+          onPointerUp={() => soundLabStore.endUndoGroup()}
+          min={0}
+          max={100}
+          step={1}
+          className="flex-1"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <span className="w-6 text-right text-[9px] tabular-nums text-muted-foreground">
+          {track.pan === 0
+            ? 'C'
+            : track.pan < 0
+              ? `L${Math.round(-track.pan * 100)}`
+              : `R${Math.round(track.pan * 100)}`}
+        </span>
       </div>
 
       {/* Volume slider */}
       <div className="flex items-center gap-2 pl-1.5">
-        <span className="w-5 shrink-0 text-[9px] text-muted-foreground">Vol</span>
+        <span className="w-5 shrink-0 text-[9px] text-muted-foreground">
+          Vol
+        </span>
         <Slider
           value={[Math.round(track.volume * 100)]}
           onValueChange={handleVolume}
+          onPointerDown={() => soundLabStore.beginUndoGroup()}
+          onPointerUp={() => soundLabStore.endUndoGroup()}
           max={100}
           step={1}
           className="flex-1"

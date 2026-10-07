@@ -17,7 +17,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { soundLabStore, useSoundLabTracks, useSoundLabState } from '@/hooks/use-soundlab-store';
+import {
+  soundLabStore,
+  useSoundLabTracks,
+  useSoundLabState,
+} from '@/hooks/use-soundlab-store';
 import { InstrumentTrackCard } from './InstrumentTrackCard';
 import { EntrainmentTrackCard } from './EntrainmentTrackCard';
 import { DrumTrackCard } from './DrumTrackCard';
@@ -30,8 +34,14 @@ function nanoid6() {
 }
 
 const TRACK_COLORS = [
-  '#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b',
-  '#ef4444', '#10b981', '#f472b6', '#64748b',
+  '#6366f1',
+  '#8b5cf6',
+  '#06b6d4',
+  '#f59e0b',
+  '#ef4444',
+  '#10b981',
+  '#f472b6',
+  '#64748b',
 ];
 
 function nextColor(tracks: SoundLabTrack[]): string {
@@ -63,18 +73,54 @@ export function InstrumentRack() {
     let track: SoundLabTrack;
     switch (type) {
       case 'instrument':
-        track = { ...base, type, name: 'Instrument', config: { preset: 'warm-pad', waveform: 'triangle', attack: 0.3, decay: 0.2, sustain: 0.7, release: 0.5 } };
+        track = {
+          ...base,
+          type,
+          name: 'Instrument',
+          config: {
+            preset: 'warm-pad',
+            waveform: 'triangle',
+            attack: 0.3,
+            decay: 0.2,
+            sustain: 0.7,
+            release: 0.5,
+          },
+        };
         break;
       case 'entrainment': {
         const band = session.targetBand;
-        track = { ...base, type, name: `${BRAINWAVE_BAND_META[band].label} Entrainment`, color: BRAINWAVE_BAND_META[band].color, config: { mode: 'binaural', targetBand: band, carrierHz: 220, beatHz: BRAINWAVE_BAND_META[band].hz, amDepth: 0.8 } };
+        track = {
+          ...base,
+          type,
+          name: `Entrainment ${BRAINWAVE_BAND_META[band].hz} Hz`,
+          color: BRAINWAVE_BAND_META[band].color,
+          config: {
+            mode: 'binaural',
+            targetBand: band,
+            carrierHz: 220,
+            beatHz: BRAINWAVE_BAND_META[band].hz,
+            amDepth: 0.8,
+          },
+        };
         break;
       }
       case 'drums':
-        track = { ...base, type, name: '808 Drums', color: '#ef4444', config: {} };
+        track = {
+          ...base,
+          type,
+          name: '808 Drums',
+          color: '#ef4444',
+          config: {},
+        };
         break;
       case 'noise':
-        track = { ...base, type, name: 'Brown Noise', color: '#78716c', config: { noiseType: 'brown' } };
+        track = {
+          ...base,
+          type,
+          name: 'Brown Noise',
+          color: '#78716c',
+          config: { noiseType: 'brown' },
+        };
         break;
     }
 
@@ -90,7 +136,11 @@ export function InstrumentRack() {
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" className="size-6 text-muted-foreground hover:text-foreground">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 text-muted-foreground hover:text-foreground"
+            >
               <PlusIcon className="size-3.5" />
             </Button>
           </DropdownMenuTrigger>
@@ -99,19 +149,31 @@ export function InstrumentRack() {
               Add Track
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={() => addTrack('instrument')}>
+            <DropdownMenuItem
+              className="text-xs gap-2 cursor-pointer"
+              onClick={() => addTrack('instrument')}
+            >
               <span className="size-2 rounded-full bg-indigo-400" />
               Instrument
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={() => addTrack('entrainment')}>
+            <DropdownMenuItem
+              className="text-xs gap-2 cursor-pointer"
+              onClick={() => addTrack('entrainment')}
+            >
               <span className="size-2 rounded-full bg-cyan-400" />
               Entrainment
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={() => addTrack('drums')}>
+            <DropdownMenuItem
+              className="text-xs gap-2 cursor-pointer"
+              onClick={() => addTrack('drums')}
+            >
               <span className="size-2 rounded-full bg-red-400" />
               Drum Machine
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-xs gap-2 cursor-pointer" onClick={() => addTrack('noise')}>
+            <DropdownMenuItem
+              className="text-xs gap-2 cursor-pointer"
+              onClick={() => addTrack('noise')}
+            >
               <span className="size-2 rounded-full bg-stone-400" />
               Noise
             </DropdownMenuItem>
@@ -131,10 +193,38 @@ export function InstrumentRack() {
             const isSelected = track.id === selectedTrackId;
             const card = (() => {
               switch (track.type) {
-                case 'instrument':  return <InstrumentTrackCard  key={track.id} track={track} isSelected={isSelected} />;
-                case 'entrainment': return <EntrainmentTrackCard key={track.id} track={track} isSelected={isSelected} />;
-                case 'drums':       return <DrumTrackCard        key={track.id} track={track} isSelected={isSelected} />;
-                case 'noise':       return <NoiseTrackCard       key={track.id} track={track} isSelected={isSelected} />;
+                case 'instrument':
+                  return (
+                    <InstrumentTrackCard
+                      key={track.id}
+                      track={track}
+                      isSelected={isSelected}
+                    />
+                  );
+                case 'entrainment':
+                  return (
+                    <EntrainmentTrackCard
+                      key={track.id}
+                      track={track}
+                      isSelected={isSelected}
+                    />
+                  );
+                case 'drums':
+                  return (
+                    <DrumTrackCard
+                      key={track.id}
+                      track={track}
+                      isSelected={isSelected}
+                    />
+                  );
+                case 'noise':
+                  return (
+                    <NoiseTrackCard
+                      key={track.id}
+                      track={track}
+                      isSelected={isSelected}
+                    />
+                  );
               }
             })();
 

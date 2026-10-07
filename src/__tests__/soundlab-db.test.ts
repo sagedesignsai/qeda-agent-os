@@ -21,7 +21,9 @@ import {
 import type { SoundLabSessionWithTracks } from '../lib/soundlab-types';
 import { buildDefaultTracks } from '../lib/soundlab-types';
 
-function makeSession(overrides: Partial<SoundLabSessionWithTracks> = {}): SoundLabSessionWithTracks {
+function makeSession(
+  overrides: Partial<SoundLabSessionWithTracks> = {},
+): SoundLabSessionWithTracks {
   const id = `test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   return {
     id,
@@ -58,7 +60,7 @@ describe('soundlab schema', () => {
 
   it('creates soundlab_sessions table', () => {
     const cols = db
-      .prepare("PRAGMA table_info(soundlab_sessions)")
+      .prepare('PRAGMA table_info(soundlab_sessions)')
       .all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).toContain('id');
@@ -70,7 +72,7 @@ describe('soundlab schema', () => {
 
   it('creates soundlab_tracks table', () => {
     const cols = db
-      .prepare("PRAGMA table_info(soundlab_tracks)")
+      .prepare('PRAGMA table_info(soundlab_tracks)')
       .all() as Array<{ name: string }>;
     const names = cols.map((c) => c.name);
     expect(names).toContain('id');
@@ -87,7 +89,7 @@ describe('soundlab schema', () => {
 
   it('soundlab_tracks has FK to soundlab_sessions', () => {
     const fks = db
-      .prepare("PRAGMA foreign_key_list(soundlab_tracks)")
+      .prepare('PRAGMA foreign_key_list(soundlab_tracks)')
       .all() as Array<{ table: string; from: string }>;
     const sessionFk = fks.find((f) => f.table === 'soundlab_sessions');
     expect(sessionFk).toBeDefined();
@@ -135,7 +137,15 @@ describe('soundlab CRUD', () => {
         trackId: session.tracks[0].id,
         name: 'Chord Loop',
         lengthBeats: 8,
-        notes: [{ id: 'n-1', pitch: 60, startBeat: 0, durationBeats: 1, velocity: 0.8 }],
+        notes: [
+          {
+            id: 'n-1',
+            pitch: 60,
+            startBeat: 0,
+            durationBeats: 1,
+            velocity: 0.8,
+          },
+        ],
       },
     ];
     saveSoundLabSession(session);

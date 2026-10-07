@@ -7,7 +7,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { TooltipProvider } from '../components/ui/tooltip';
 import { SoundLabTransportBar } from '../components/soundlab/SoundLabTransportBar';
@@ -15,7 +15,10 @@ import { SoundLabSessionLibrary } from '../components/soundlab/SoundLabSessionLi
 import { EntrainmentTrackCard } from '../components/soundlab/EntrainmentTrackCard';
 import { soundLabStore } from '../hooks/use-soundlab-store';
 import { buildDefaultTracks } from '../lib/soundlab-types';
-import type { SoundLabSessionWithTracks, SoundLabTrack } from '../lib/soundlab-types';
+import type {
+  SoundLabSessionWithTracks,
+  SoundLabTrack,
+} from '../lib/soundlab-types';
 
 beforeAll(() => {
   global.ResizeObserver = class {
@@ -91,6 +94,28 @@ describe('SoundLabTransportBar', () => {
     fireEvent.click(buttons[0]);
     expect(onPlay).toHaveBeenCalled();
   });
+
+  it('toggles the configured loop region from the transport', () => {
+    render(
+      <TooltipProvider>
+        <SoundLabTransportBar
+          saveStatus="idle"
+          onPlay={jest.fn()}
+          onPause={jest.fn()}
+          onStop={jest.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const loopButton = screen.getByRole('button', { name: 'Loop' });
+    expect(loopButton).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(loopButton);
+    expect(soundLabStore.getState().session?.loopEnabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Loop' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
 });
 
 describe('SoundLabSessionLibrary', () => {
@@ -145,8 +170,10 @@ describe('SoundLabSessionLibrary', () => {
     );
 
     fireEvent.click(screen.getByText('New Session'));
-    expect(screen.getByText('Choose a brain state goal or start from scratch.')).toBeInTheDocument();
-    expect(screen.getByText('Deep Focus')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Choose a sound-design starting point/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Soft Focus')).toBeInTheDocument();
   });
 });
 
@@ -164,7 +191,7 @@ describe('EntrainmentTrackCard', () => {
     color: '#8b5cf6',
     config: {
       mode: 'binaural',
-      band: 'alpha',
+      targetBand: 'alpha',
       carrierHz: 210,
       beatHz: 10,
       amDepth: 0.8,

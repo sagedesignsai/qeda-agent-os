@@ -33,7 +33,6 @@ import type {
   SoundLabAutomationPoint,
   SoundLabAutomationLane,
   AutomationParameterId,
-  BrainwaveBand,
   EntrainmentMode,
   SoundLabClip,
 } from '../../lib/soundlab-types.js';
@@ -53,7 +52,7 @@ export function createSoundLabCopilotTools({
 
   const getSessionDetails = tool({
     description:
-      'Inspect the active SoundLab session: BPM, key signature, target brainwave band, ' +
+      'Inspect the active SoundLab session: BPM, key signature, modulation settings, ' +
       'all tracks with their type, config, patterns, clips, and automation lanes. ' +
       'Always call this first to ground subsequent edits in real session state.',
     inputSchema: z.object({
@@ -78,7 +77,6 @@ export function createSoundLabCopilotTools({
           title: session.title,
           bpm: session.bpm,
           keySignature: session.keySignature,
-          targetBand: session.targetBand,
           durationBeats: session.durationBeats,
           loopEnabled: session.loopEnabled,
           loopStartBeat: session.loopStartBeat,
@@ -119,17 +117,10 @@ export function createSoundLabCopilotTools({
 
   const tuneEntrainment = tool({
     description:
-      'Adjust the entrainment engine on a track: brainwave band, carrier frequency, ' +
-      'beat frequency, entrainment mode, and AM modulation depth. ' +
-      'Use scientifically resonant carriers such as 432 Hz (Solfeggio), 136.1 Hz (Earth tone), ' +
-      '216 Hz (octave of 108 Hz), or 528 Hz (DNA repair). ' +
-      'Beat Hz must match the chosen band: Delta 0.5–4, Theta 4–8, Alpha 8–13, Beta 13–30, Gamma 30–100.',
+      'Adjust an entrainment track using physical audio settings: carrier frequency, modulation rate, mode, and AM depth. ' +
+      'Treat these as sound-design parameters; do not imply a particular mental-state or clinical effect.',
     inputSchema: z.object({
       trackId: z.string().describe('ID of the entrainment track to tune'),
-      targetBand: z
-        .enum(['delta', 'theta', 'alpha', 'beta', 'gamma'])
-        .optional()
-        .describe('Desired brainwave band'),
       carrierHz: z
         .number()
         .min(40)
@@ -141,7 +132,7 @@ export function createSoundLabCopilotTools({
         .min(0.5)
         .max(100)
         .optional()
-        .describe('Entrainment beat frequency in Hz matching the target band'),
+        .describe('Modulation rate in Hz'),
       mode: z
         .enum(['binaural', 'isochronic', 'monaural', 'am-embed'])
         .optional()
@@ -154,17 +145,11 @@ export function createSoundLabCopilotTools({
         .describe(
           'AM modulation depth 0–1 (isochronic / monaural / am-embed only)',
         ),
-      volume: z
-        .number()
-        .min(0)
-        .max(1)
-        .optional()
-        .describe('Track volume 0–1'),
+      volume: z.number().min(0).max(1).optional().describe('Track volume 0–1'),
       sessionId: z.string().optional(),
     }),
     execute: async ({
       trackId,
-      targetBand,
       carrierHz,
       beatHz,
       mode,
@@ -182,7 +167,6 @@ export function createSoundLabCopilotTools({
       const track = session.tracks[trackIdx];
       const updatedConfig = {
         ...track.config,
-        ...(targetBand !== undefined && { targetBand: targetBand as BrainwaveBand }),
         ...(carrierHz !== undefined && { carrierHz }),
         ...(beatHz !== undefined && { beatHz }),
         ...(mode !== undefined && { mode: mode as EntrainmentMode }),
@@ -205,9 +189,9 @@ export function createSoundLabCopilotTools({
         success: true,
         trackId,
         updatedConfig,
-        note: `Entrainment track "${track.name}" tuned: ` +
+        note:
+          `Entrainment track "${track.name}" tuned: ` +
           [
-            targetBand && `band=${targetBand}`,
             carrierHz && `carrier=${carrierHz}Hz`,
             beatHz && `beat=${beatHz}Hz`,
             mode && `mode=${mode}`,
@@ -260,10 +244,18 @@ export function createSoundLabCopilotTools({
       replaceExisting: z
         .boolean()
         .default(true)
-        .describe('If true, clears existing notes before writing; false appends'),
+        .describe(
+          'If true, clears existing notes before writing; false appends',
+        ),
       sessionId: z.string().optional(),
     }),
-    execute: async ({ trackId, patternId, notes, replaceExisting, sessionId }) => {
+    execute: async ({
+      trackId,
+      patternId,
+      notes,
+      replaceExisting,
+      sessionId,
+    }) => {
       const session = getSoundLabSession(sessionId ?? activeSessionId);
       if (!session) return { success: false, error: 'Session not found' };
 
@@ -391,7 +383,9 @@ export function createSoundLabCopilotTools({
             durationBeats: z
               .number()
               .positive()
-              .describe('Clip duration in beats (may be shorter than pattern for trim)'),
+              .describe(
+                'Clip duration in beats (may be shorter than pattern for trim)',
+              ),
           }),
         )
         .min(1)
@@ -454,16 +448,8 @@ export function createSoundLabCopilotTools({
       trackId: z.string().describe('Track to configure'),
       eq: z
         .object({
-          lowGain: z
-            .number()
-            .min(-18)
-            .max(18)
-            .describe('Low-shelf gain in dB'),
-          midGain: z
-            .number()
-            .min(-18)
-            .max(18)
-            .describe('Mid-peak gain in dB'),
+          lowGain: z.number().min(-18).max(18).describe('Low-shelf gain in dB'),
+          midGain: z.number().min(-18).max(18).describe('Mid-peak gain in dB'),
           highGain: z
             .number()
             .min(-18)
@@ -479,11 +465,7 @@ export function createSoundLabCopilotTools({
         .describe('3-band EQ settings'),
       reverb: z
         .object({
-          wet: z
-            .number()
-            .min(0)
-            .max(1)
-            .describe('Reverb wet level 0–1'),
+          wet: z.number().min(0).max(1).describe('Reverb wet level 0–1'),
           decay: z
             .number()
             .min(0.1)
@@ -494,21 +476,13 @@ export function createSoundLabCopilotTools({
         .describe('Convolution reverb settings'),
       delay: z
         .object({
-          timeMs: z
-            .number()
-            .min(10)
-            .max(2000)
-            .describe('Delay time in ms'),
+          timeMs: z.number().min(10).max(2000).describe('Delay time in ms'),
           feedback: z
             .number()
             .min(0)
             .max(0.95)
             .describe('Delay feedback 0–0.95'),
-          wet: z
-            .number()
-            .min(0)
-            .max(1)
-            .describe('Delay wet level 0–1'),
+          wet: z.number().min(0).max(1).describe('Delay wet level 0–1'),
         })
         .optional()
         .describe('Stereo delay settings'),
@@ -536,11 +510,7 @@ export function createSoundLabCopilotTools({
       saveSoundLabSession({ ...session, tracks: updatedTracks });
       notify();
 
-      const applied = [
-        eq && 'EQ',
-        reverb && 'Reverb',
-        delay && 'Delay',
-      ]
+      const applied = [eq && 'EQ', reverb && 'Reverb', delay && 'Delay']
         .filter(Boolean)
         .join(', ');
 
@@ -559,9 +529,9 @@ export function createSoundLabCopilotTools({
     description:
       'Insert automation points on a track lane to create dynamic sweeps and ramps. ' +
       'Supported parameters: entrainment.beatHz, entrainment.carrierHz, entrainment.depth, ' +
-      'track.volume, track.pan, filter.cutoff. ' +
+      'track.volume, track.pan. ' +
       'Use for gentle volume fade-ins, entrainment beat-Hz ramps across a session, ' +
-      'or filter sweeps that build tension.',
+      'or stereo movement across the arrangement.',
     inputSchema: z.object({
       trackId: z.string().describe('Track that owns the automation lane'),
       parameterId: z
@@ -571,7 +541,6 @@ export function createSoundLabCopilotTools({
           'entrainment.depth',
           'track.volume',
           'track.pan',
-          'filter.cutoff',
         ])
         .describe('Parameter to automate'),
       points: z
@@ -585,7 +554,7 @@ export function createSoundLabCopilotTools({
               .number()
               .describe(
                 'Normalised parameter value in its native range ' +
-                  '(Hz for Hz params, 0–1 for volume/depth/pan, Hz for filter.cutoff)',
+                  '(Hz for Hz params, 0–1 for volume/depth, -1..1 for pan)',
               ),
           }),
         )

@@ -665,12 +665,6 @@ export function applyMigrations(db: {
           'ALTER TABLE studio_takes ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
         );
       }
-
-      // soundlab_sessions — placeholder guards for future columns
-      columnsOf('soundlab_sessions'); // ensures table is reachable
-
-      // soundlab_tracks — placeholder guards for future columns
-      columnsOf('soundlab_tracks'); // ensures table is reachable
     } catch {
       // Table might not exist yet or running in raw exec mock
     }

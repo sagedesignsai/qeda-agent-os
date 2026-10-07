@@ -7,26 +7,37 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { soundLabStore, useSoundLabState, useSoundLabTracks } from '@/hooks/use-soundlab-store';
+import { useEffect, useRef, useCallback } from 'react';
+import {
+  soundLabStore,
+  useSoundLabState,
+  useSoundLabTracks,
+} from '@/hooks/use-soundlab-store';
 import type { SoundLabTrack, SoundLabClip } from '@/lib/soundlab-types';
-import { BRAINWAVE_BAND_META } from '@/lib/soundlab-types';
 
 const RULER_H = 24;
-const LANE_H  = 44;
+const LANE_H = 44;
 const SNAP_SUBDIVISIONS = 4; // snap to quarter-beat
 
 // ── Coordinate helpers ────────────────────────────────────────────────────────
 
-function beatToPx(beat: number, pxPerBeat: number, scrollBeat: number): number {
+export function beatToPx(
+  beat: number,
+  pxPerBeat: number,
+  scrollBeat: number,
+): number {
   return (beat - scrollBeat) * pxPerBeat;
 }
 
-function pxToBeat(px: number, pxPerBeat: number, scrollBeat: number): number {
+export function pxToBeat(
+  px: number,
+  pxPerBeat: number,
+  scrollBeat: number,
+): number {
   return px / pxPerBeat + scrollBeat;
 }
 
-function snapBeat(beat: number): number {
+export function snapTimelineBeat(beat: number): number {
   return Math.round(beat * SNAP_SUBDIVISIONS) / SNAP_SUBDIVISIONS;
 }
 
@@ -51,6 +62,7 @@ function drawFrame(
   scrollBeat: number,
   playheadBeat: number,
   selectedClipId: string | null,
+  loopRegion: { enabled: boolean; start: number; end: number },
   theme: { bg: string; border: string; text: string; ruler: string },
 ) {
   ctx2d.clearRect(0, 0, w, h);
@@ -63,10 +75,24 @@ function drawFrame(
   ctx2d.fillStyle = theme.ruler;
   ctx2d.fillRect(0, 0, w, RULER_H);
 
+  if (loopRegion.enabled) {
+    const loopX = beatToPx(loopRegion.start, pxPerBeat, scrollBeat);
+    const loopEndX = beatToPx(loopRegion.end, pxPerBeat, scrollBeat);
+    ctx2d.fillStyle = 'rgba(34,197,94,0.08)';
+    ctx2d.fillRect(loopX, RULER_H, loopEndX - loopX, h - RULER_H);
+    ctx2d.strokeStyle = 'rgba(34,197,94,0.55)';
+    ctx2d.lineWidth = 1;
+    for (const x of [loopX, loopEndX]) {
+      ctx2d.beginPath();
+      ctx2d.moveTo(x, 0);
+      ctx2d.lineTo(x, h);
+      ctx2d.stroke();
+    }
+  }
+
   // Beat / bar grid lines + ruler labels
-  const totalBeats = durationBeats;
   const startBeat = Math.floor(scrollBeat);
-  const endBeat   = Math.ceil(pxToBeat(w, pxPerBeat, scrollBeat));
+  const endBeat = Math.ceil(pxToBeat(w, pxPerBeat, scrollBeat));
 
   ctx2d.font = '9px monospace';
   ctx2d.textBaseline = 'middle';
@@ -75,7 +101,9 @@ function drawFrame(
     const x = beatToPx(b, pxPerBeat, scrollBeat);
     const isBar = b % 4 === 0;
 
-    ctx2d.strokeStyle = isBar ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.04)';
+    ctx2d.strokeStyle = isBar
+      ? 'rgba(255,255,255,0.12)'
+      : 'rgba(255,255,255,0.04)';
     ctx2d.lineWidth = isBar ? 1 : 0.5;
     ctx2d.beginPath();
     ctx2d.moveTo(x, RULER_H);
@@ -93,7 +121,8 @@ function drawFrame(
     const y = RULER_H + ti * LANE_H;
 
     // Lane bg
-    ctx2d.fillStyle = ti % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.04)';
+    ctx2d.fillStyle =
+      ti % 2 === 0 ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.04)';
     ctx2d.fillRect(0, y, w, LANE_H);
 
     // Lane bottom border
@@ -116,7 +145,12 @@ function drawFrame(
       // Clip body
       ctx2d.fillStyle = hexToRgba(color, isSelected ? 0.55 : 0.35);
       ctx2d.beginPath();
-      (ctx2d as CanvasRenderingContext2D & { roundRect?: (...a: unknown[]) => void }).roundRect?.(cx, y + 3, Math.max(4, cw - 1), LANE_H - 6, 4) ?? ctx2d.rect(cx, y + 3, Math.max(4, cw - 1), LANE_H - 6);
+      (
+        ctx2d as CanvasRenderingContext2D & {
+          roundRect?: (...a: unknown[]) => void;
+        }
+      ).roundRect?.(cx, y + 3, Math.max(4, cw - 1), LANE_H - 6, 4) ??
+        ctx2d.rect(cx, y + 3, Math.max(4, cw - 1), LANE_H - 6);
       ctx2d.fill();
 
       // Clip border
@@ -178,9 +212,12 @@ export function SoundLabTimelineCanvas({
   const tracks = useSoundLabTracks();
   const { selectedClipId, session } = useSoundLabState();
   const totalBeats = session?.durationBeats ?? 128;
+  const canvasW = Math.max(800, Math.ceil(totalBeats * pxPerBeat));
 
-  tracksRef.current = tracks;
-  stateRef.current = soundLabStore.getState();
+  useEffect(() => {
+    tracksRef.current = tracks;
+    stateRef.current = soundLabStore.getState();
+  }, [tracks, selectedClipId, session]);
 
   // Canvas height = ruler + one lane per track
   const canvasH = RULER_H + Math.max(tracks.length, 4) * LANE_H;
@@ -196,13 +233,20 @@ export function SoundLabTimelineCanvas({
     const h = canvas.height;
 
     drawFrame(
-      ctx2d, w, h,
+      ctx2d,
+      w,
+      h,
       tracksRef.current,
       totalBeats,
       pxPerBeat,
       scrollBeat,
       playheadRef.current,
       stateRef.current.selectedClipId,
+      {
+        enabled: Boolean(stateRef.current.session?.loopEnabled),
+        start: stateRef.current.session?.loopStartBeat ?? 0,
+        end: stateRef.current.session?.loopEndBeat ?? 0,
+      },
       {
         bg: '#09090b',
         border: 'rgba(255,255,255,0.06)',
@@ -221,9 +265,14 @@ export function SoundLabTimelineCanvas({
 
   // RAF loop
   useEffect(() => {
-    const loop = () => { draw(); rafRef.current = requestAnimationFrame(loop); };
+    const loop = () => {
+      draw();
+      rafRef.current = requestAnimationFrame(loop);
+    };
     rafRef.current = requestAnimationFrame(loop);
-    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
   }, [draw]);
 
   // ── Interaction: click to place / select clip ─────────────────────────────
@@ -235,7 +284,7 @@ export function SoundLabTimelineCanvas({
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
-      const clickBeat = snapBeat(pxToBeat(x, pxPerBeat, scrollBeat));
+      const clickBeat = snapTimelineBeat(pxToBeat(x, pxPerBeat, scrollBeat));
       const trackIdx = Math.floor((y - RULER_H) / LANE_H);
       if (trackIdx < 0 || trackIdx >= tracksRef.current.length) return;
 
@@ -244,7 +293,9 @@ export function SoundLabTimelineCanvas({
 
       // Check if we clicked an existing clip
       const hit = track.clips.find(
-        (c) => clickBeat >= c.startBeat && clickBeat <= c.startBeat + c.durationBeats,
+        (c) =>
+          clickBeat >= c.startBeat &&
+          clickBeat <= c.startBeat + c.durationBeats,
       );
 
       if (hit) {
@@ -293,10 +344,10 @@ export function SoundLabTimelineCanvas({
   return (
     <canvas
       ref={canvasRef}
-      width={800}
+      width={canvasW}
       height={canvasH}
-      className="w-full cursor-crosshair"
-      style={{ height: canvasH, display: 'block' }}
+      className="cursor-crosshair"
+      style={{ width: canvasW, height: canvasH, display: 'block' }}
       onClick={handleClick}
       onWheel={handleWheel}
     />

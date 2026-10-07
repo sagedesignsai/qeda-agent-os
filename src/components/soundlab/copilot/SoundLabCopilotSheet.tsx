@@ -81,16 +81,18 @@ const SUGGESTIONS = [
       'Apply a deep reverb (wet 0.7, decay 4 s) and shimmer delay (350 ms, feedback 0.3, wet 0.25) to the ambient pad track.',
   },
   {
-    icon: <SlidersHorizontalIcon className="w-3.5 h-3.5 text-rose-400 shrink-0" />,
+    icon: (
+      <SlidersHorizontalIcon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+    ),
     label: 'Arrange Full Timeline',
     prompt:
       'Arrange the current session into a full 64-beat structure: pad from beat 0, drums enter at beat 8, entrainment always on. Create clips for every active track.',
   },
   {
     icon: <ZapIcon className="w-3.5 h-3.5 text-yellow-400 shrink-0" />,
-    label: 'Peak Gamma Session',
+    label: 'Fast Modulation Experiment',
     prompt:
-      'Rebuild this session for peak cognitive performance: 128 BPM, 40 Hz Gamma AM-embed entrainment at 40 Hz carrier, driving 808 drum pattern, bright chord progression.',
+      'Create a 128 BPM arrangement with 40 Hz amplitude modulation on the melodic bus, a driving 808 drum pattern, and a bright chord progression. Treat this as a sound-design experiment, not a cognitive-performance preset.',
   },
 ];
 
@@ -205,9 +207,12 @@ export function SoundLabCopilotSheet({
               <Badge
                 variant="outline"
                 className="h-4 text-[9px] px-1.5 font-normal border-border/60 shrink-0"
-                style={{ color: bandMeta.color, borderColor: `${bandMeta.color}40` }}
+                style={{
+                  color: bandMeta.color,
+                  borderColor: `${bandMeta.color}40`,
+                }}
               >
-                {bandMeta.label} {bandMeta.hz} Hz
+                {bandMeta.hz} Hz modulation
               </Badge>
             </div>
 
