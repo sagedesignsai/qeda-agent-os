@@ -27,7 +27,14 @@ import type { Task } from '../db/tasks.js';
 import type { TaskStep, StepProgress } from '../db/task-steps.js';
 import type { TaskBlock, TaskBlockWithTask } from '../db/task-blocks.js';
 import type { FocusSession, FocusStats } from '../db/focus-sessions.js';
-import type { Project, ProjectStatus, ProjectRollup } from '../db/projects.js';
+import type {
+  Project,
+  ProjectStatus,
+  ProjectRollup,
+  ProjectOverview,
+  ProjectFocusDay,
+  ProjectLinkedCounts,
+} from '../db/projects.js';
 import type { GamificationState } from '../../lib/gamification.js';
 import type { PdfDocumentRecord, PdfDocumentSummary } from '../db/documents.js';
 import type {
@@ -54,7 +61,14 @@ export type { Task };
 export type { TaskStep, StepProgress };
 export type { TaskBlock, TaskBlockWithTask };
 export type { FocusSession, FocusStats };
-export type { Project, ProjectStatus, ProjectRollup };
+export type {
+  Project,
+  ProjectStatus,
+  ProjectRollup,
+  ProjectOverview,
+  ProjectFocusDay,
+  ProjectLinkedCounts,
+};
 export type { GamificationState };
 export type { PdfDocumentRecord, PdfDocumentSummary };
 export type {
@@ -80,7 +94,10 @@ export type { SoundLabSession, SoundLabSessionWithTracks, SoundLabTrack };
 import type { SerperImage, ImageFormatFilter } from '../services/serper.js';
 import type { DownloadResourceResult } from '../services/downloader.js';
 export type { SerperImage, ImageFormatFilter, DownloadResourceResult };
-import type { BuilderConnectionStatus } from '../../lib/builder-types.js';
+import type {
+  BuilderConnectionStatus,
+  BuilderModelOption,
+} from '../../lib/builder-types.js';
 import type {
   BuilderSessionEvent,
   BuilderSessionStart,
@@ -100,6 +117,7 @@ export type {
 export type {
   BuilderConnectionStatus,
   BuilderConnectionState,
+  BuilderModelOption,
 } from '../../lib/builder-types.js';
 export type {
   BuilderSessionEvent,
@@ -215,6 +233,16 @@ export interface IpcChannels {
   'builder:session-state': { req: void; res: BuilderSessionState };
   /** Submit one coding prompt to the active session. Streams over `builder:session-event`. */
   'builder:prompt': { req: { text: string }; res: void };
+  /** Available models and the active session's model, from its OpenCode project. */
+  'builder:models': {
+    req: void;
+    res: { models: BuilderModelOption[]; selected: BuilderModelOption | null };
+  };
+  /** Change the active session's model for subsequent turns. */
+  'builder:model-select': {
+    req: { providerID: string; modelID: string };
+    res: void;
+  };
   /** Abort the in-flight coding turn (the kill switch). */
   'builder:abort': { req: void; res: void };
   /** Submit a response to a Builder-owned permission request. */
@@ -611,6 +639,14 @@ export interface IpcChannels {
     res: ProjectRollup[];
   };
   'projects:get': { req: { id: string }; res: Project | null };
+  /**
+   * The project detail page in one read: rollup, trailing focus trend, recent
+   * tasks, and adjacent-work counts. `days` defaults to 14 in main.
+   */
+  'projects:overview': {
+    req: { id: string; days?: number };
+    res: ProjectOverview | null;
+  };
   'projects:create': {
     req: {
       name: string;
@@ -643,6 +679,8 @@ export interface IpcChannels {
   };
   /** Delete a project; its tasks are re-homed to the Inbox. */
   'projects:delete': { req: { id: string }; res: boolean };
+  /** Persist a manual project order, e.g. after a drag. `sort_order` = index. */
+  'projects:reorder': { req: { orderedIds: string[] }; res: void };
   /** A project was created/updated/deleted — re-fetch.
    *  Declared as an event (no req/res). */
   'projects:changed': void;

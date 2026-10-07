@@ -4,6 +4,12 @@
  * Renders OpenCode v2's typed, keyed interactive forms. Values stay in the
  * renderer until the user submits or cancels; validation follows each field's
  * declared constraints and never submits hidden/invalid values speculatively.
+ *
+ * TYPE
+ * ────
+ * Field prose is `text-sm` and the `Input`/`Textarea` controls inherit it, so a
+ * form reads at the same weight as the conversation around it rather than a step
+ * below it.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -94,11 +100,11 @@ export function BuilderFormCard({
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold tracking-tight">{form.title}</h3>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+          <p className="mt-0.5 text-sm text-muted-foreground">
             OpenCode needs a little more information to continue.
           </p>
         </div>
-        <span className="rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Input needed
         </span>
       </div>
@@ -346,12 +352,12 @@ function FormFieldView({
       )}
       {control}
       {field.description && (
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           {field.description}
         </p>
       )}
       {error && (
-        <p id={`${id}-error`} className="text-[10px] text-destructive">
+        <p id={`${id}-error`} className="text-xs text-destructive">
           {error}
         </p>
       )}
@@ -378,7 +384,7 @@ function OptionRadio({
       <span className="min-w-0">
         <span className="block text-xs font-medium">{option.label}</span>
         {option.description && (
-          <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+          <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
             {option.description}
           </span>
         )}
@@ -430,7 +436,7 @@ function OptionChecklist({
             <span className="min-w-0">
               <span className="block text-xs font-medium">{option.label}</span>
               {option.description && (
-                <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+                <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                   {option.description}
                 </span>
               )}

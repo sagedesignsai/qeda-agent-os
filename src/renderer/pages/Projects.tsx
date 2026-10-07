@@ -16,12 +16,13 @@
 import { createElement, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { motion } from 'motion/react';
-import { formatDistanceToNow } from 'date-fns';
 import {
   FileTextIcon,
   FolderPlusIcon,
   HammerIcon,
   InboxIcon,
+  LayoutGridIcon,
+  ListIcon,
   Loader2Icon,
   PlusIcon,
   TargetIcon,
@@ -33,6 +34,7 @@ import { toast } from 'sonner';
 
 import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -52,19 +54,60 @@ import {
   PROJECT_STATUS_META,
 } from '@/components/projects/ProjectCard';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
+import { ProjectListRow } from '@/components/projects/ProjectListRow';
+import { ProjectOverviewPanel } from '@/components/projects/ProjectOverviewPanel';
+import {
+  Table,
+  TableBody,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   useProjects,
   type CreateProjectInput,
   type UpdateProjectPatch,
 } from '@/hooks/use-projects';
+import { useProjectOverview } from '@/hooks/use-project-overview';
+import { useProjectDrag } from '@/hooks/use-project-drag';
 import { formatFocusDuration } from '@/components/tasks/FocusStatsStrip';
 import type { ProjectRollup } from '@/main/ipc/channels';
+
+const VIEW_STORAGE_KEY = 'qeda.projects.view';
+
+type ProjectView = 'grid' | 'list';
+
+/** Persisted grid/list preference; "grid" when storage is unavailable. */
+function readProjectView(): ProjectView {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === 'list' ? 'list' : 'grid';
+  } catch {
+    return 'grid';
+  }
+}
 
 export default function Projects() {
   const { projectId } = useParams<{ projectId?: string }>();
   const navigate = useNavigate();
-  const { rollups, loading, createProject, updateProject, deleteProject } =
-    useProjects();
+  const {
+    rollups,
+    loading,
+    createProject,
+    updateProject,
+    deleteProject,
+    reorder,
+  } = useProjects();
+
+  const [view, setView] = useState<ProjectView>(readProjectView);
+
+  const changeView = (next: ProjectView) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // A preference that cannot persist is not worth failing over.
+    }
+  };
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProjectRollup | null>(null);
@@ -76,6 +119,22 @@ export default function Projects() {
     () => rollups.find((r) => r.project.id === projectId) ?? null,
     [rollups, projectId],
   );
+
+  // Drag reorder only applies to the non-archived grid/list, so the id array
+  // must match exactly what is rendered or drops land in the wrong slot.
+  const activeIds = useMemo(
+    () =>
+      rollups
+        .filter((r) => r.project.status !== 'archived')
+        .map((r) => r.project.id),
+    [rollups],
+  );
+
+  const drag = useProjectDrag({ ids: activeIds, onReorder: reorder });
+
+  // Detail-page read. Called unconditionally so hook order never changes
+  // between the list and detail branches.
+  const { overview, loading: overviewLoading } = useProjectOverview(projectId);
 
   const openCreate = () => {
     setEditing(null);
@@ -212,17 +271,6 @@ export default function Projects() {
               >
                 {status.label}
               </Badge>
-              {project.deadline !== null && (
-                <Badge
-                  variant="outline"
-                  className="gap-1 text-[10px] font-normal"
-                >
-                  <TargetIcon className="size-3" />
-                  {formatDistanceToNow(new Date(project.deadline * 1000), {
-                    addSuffix: true,
-                  })}
-                </Badge>
-              )}
               {project.repo_path && (
                 <Badge
                   variant="outline"
@@ -290,6 +338,12 @@ export default function Projects() {
                 label="Terminal"
               />
             </div>
+
+            {/* Trend, recent tasks, and adjacent work — one read. */}
+            <ProjectOverviewPanel
+              overview={overview}
+              loading={overviewLoading}
+            />
           </div>
         </div>
 
@@ -328,14 +382,37 @@ export default function Projects() {
             : undefined
         }
         actions={
-          <Button
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            onClick={openCreate}
-          >
-            <PlusIcon className="size-3" />
-            New project
-          </Button>
+          <>
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+              {(
+                [
+                  { id: 'grid', icon: LayoutGridIcon, label: 'Grid view' },
+                  { id: 'list', icon: ListIcon, label: 'List view' },
+                ] as const
+              ).map(({ id, icon: Icon, label }) => (
+                <Button
+                  key={id}
+                  size="sm"
+                  variant={view === id ? 'secondary' : 'ghost'}
+                  className="size-6 p-0"
+                  aria-label={label}
+                  aria-pressed={view === id}
+                  title={label}
+                  onClick={() => changeView(id)}
+                >
+                  <Icon className="size-3.5" />
+                </Button>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              className="h-7 gap-1.5 text-xs"
+              onClick={openCreate}
+            >
+              <PlusIcon className="size-3" />
+              New project
+            </Button>
+          </>
         }
       />
 
@@ -356,30 +433,83 @@ export default function Projects() {
           />
         ) : (
           <div className="mx-auto flex max-w-5xl flex-col gap-6">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {active.map((rollup, index) => (
-                <motion.div
-                  key={rollup.project.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: Math.min(index * 0.03, 0.3) }}
-                >
-                  <ProjectCard
-                    rollup={rollup}
-                    onOpen={(id) => navigate(`/projects/${id}`)}
-                    onEdit={openEdit}
-                    onArchive={(id, isArchived) =>
-                      void handleArchive(id, isArchived)
-                    }
-                    onDelete={(id) =>
-                      setPendingDelete(
-                        rollups.find((r) => r.project.id === id) ?? null,
-                      )
-                    }
-                  />
-                </motion.div>
-              ))}
-            </div>
+            {view === 'list' ? (
+              <div className="overflow-hidden rounded-xl border bg-card/20">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Progress</TableHead>
+                      <TableHead>Overdue</TableHead>
+                      <TableHead>Focus</TableHead>
+                      <TableHead />
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {active.map((rollup) => (
+                      <ProjectListRow
+                        key={rollup.project.id}
+                        rollup={rollup}
+                        onOpen={(id) => navigate(`/projects/${id}`)}
+                        onEdit={openEdit}
+                        onArchive={(id, isArchived) =>
+                          void handleArchive(id, isArchived)
+                        }
+                        onDelete={(id) =>
+                          setPendingDelete(
+                            rollups.find((r) => r.project.id === id) ?? null,
+                          )
+                        }
+                        dragHandleProps={drag.getItemProps(rollup.project.id)}
+                        dropProps={drag.getDropProps(rollup.project.id)}
+                        dragging={drag.isDragging(rollup.project.id)}
+                        over={drag.isOver(rollup.project.id)}
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {active.map((rollup, index) => (
+                  // Plain div owns the native drag handlers — Framer Motion's
+                  // `onDragStart` means something else, so the animation lives
+                  // on an inner wrapper instead of the draggable node.
+                  <div
+                    key={rollup.project.id}
+                    {...drag.getItemProps(rollup.project.id)}
+                    {...drag.getDropProps(rollup.project.id)}
+                    className={cn(
+                      'rounded-xl',
+                      drag.isDragging(rollup.project.id) && 'opacity-40',
+                      drag.isOver(rollup.project.id) &&
+                        'ring-2 ring-primary/40 ring-offset-2',
+                    )}
+                  >
+                    <motion.div
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: Math.min(index * 0.03, 0.3) }}
+                    >
+                      <ProjectCard
+                        rollup={rollup}
+                        onOpen={(id) => navigate(`/projects/${id}`)}
+                        onEdit={openEdit}
+                        onArchive={(id, isArchived) =>
+                          void handleArchive(id, isArchived)
+                        }
+                        onDelete={(id) =>
+                          setPendingDelete(
+                            rollups.find((r) => r.project.id === id) ?? null,
+                          )
+                        }
+                      />
+                    </motion.div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {archived.length > 0 && (
               <div className="space-y-3">

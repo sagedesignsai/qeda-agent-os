@@ -37,6 +37,8 @@ const MOCK_PROJECTS: ProjectRollup[] = [
     focusSecToday: 1200,
     focusSecTotal: 3600,
     blocksToday: 1,
+    lastActivityAt: null,
+    nextDueAt: null,
   },
   {
     project: {
@@ -61,6 +63,8 @@ const MOCK_PROJECTS: ProjectRollup[] = [
     focusSecToday: 0,
     focusSecTotal: 1800,
     blocksToday: 0,
+    lastActivityAt: null,
+    nextDueAt: null,
   },
 ];
 

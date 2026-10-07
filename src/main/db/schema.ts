@@ -495,6 +495,30 @@ CREATE TABLE IF NOT EXISTS soundlab_tracks (
 CREATE INDEX IF NOT EXISTS idx_soundlab_tracks_session ON soundlab_tracks(session_id, sort_order ASC);
 `;
 
+/**
+ * Builder session persistence.
+ *
+ * One row per app window — there is only ever one active Builder session at a
+ * time, so we use a fixed singleton id ('active') rather than accumulating
+ * history. The row is upserted on session-create and deleted on session-stop.
+ *
+ * `opencode_session_id` is the OpenCode v2 session id needed to re-subscribe
+ * to the event stream after an app restart. `worktree_path` is the isolated
+ * worktree (may be NULL when isolation was not available).
+ */
+export const CREATE_BUILDER_SESSIONS = `
+CREATE TABLE IF NOT EXISTS builder_sessions (
+  id                  TEXT PRIMARY KEY NOT NULL DEFAULT 'active',
+  opencode_session_id TEXT NOT NULL,
+  title               TEXT NOT NULL DEFAULT '',
+  repo_directory      TEXT NOT NULL,
+  worktree_path       TEXT,
+  workspace_name      TEXT NOT NULL DEFAULT '',
+  branch              TEXT,
+  created_at          INTEGER NOT NULL DEFAULT (unixepoch())
+);
+`;
+
 /** DDL applied in order; every statement must be idempotent. */
 export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SESSIONS,
@@ -524,6 +548,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_STUDIO_TAKES,
   CREATE_SOUNDLAB_SESSIONS,
   CREATE_SOUNDLAB_TRACKS,
+  CREATE_BUILDER_SESSIONS,
 ];
 
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────

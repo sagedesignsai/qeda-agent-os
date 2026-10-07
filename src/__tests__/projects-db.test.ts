@@ -30,6 +30,8 @@ import {
   deleteProject,
   projectRollup,
   listProjectRollups,
+  projectOverview,
+  reorderProjects,
   countProjectTasks,
 } from '../main/db/projects';
 
@@ -145,12 +147,76 @@ describe('projects data layer', () => {
     expect(rollup.taskActive).toBe(1);
     expect(rollup.taskBacklog).toBe(1);
     expect(rollup.overdue).toBe(1);
+    // The soonest open due date is the active task's (there is only one).
+    expect(rollup.nextDueAt).toBe(yesterday);
     expect(rollup.blocksToday).toBe(1);
     expect(rollup.focusSecToday).toBe(600);
     expect(rollup.focusSecTotal).toBe(900);
+    // Creating tasks/sessions counts as activity.
+    expect(rollup.lastActivityAt).not.toBeNull();
 
     const all = listProjectRollups({ now });
     expect(all.map((r) => r.project.id)).toContain(project.id);
+  });
+
+  it('persists a manual order via sort_order', () => {
+    const a = createProject({ name: 'A' });
+    const b = createProject({ name: 'B' });
+    const c = createProject({ name: 'C' });
+
+    reorderProjects([c.id, a.id, b.id]);
+
+    // Inbox keeps sort_order -1 and stays first; the rest follow the new order.
+    expect(listProjects().map((p) => p.id)).toEqual([
+      INBOX_PROJECT_ID,
+      c.id,
+      a.id,
+      b.id,
+    ]);
+  });
+
+  it('reports an overview with a trailing trend, recent tasks, and linked work', () => {
+    const project = createProject({ name: 'Overview' });
+    const now = Math.floor(Date.now() / 1000);
+
+    const task = createTask({
+      title: 'Ship',
+      project_id: project.id,
+      status: 'active',
+    });
+    createTask({ title: 'Second', project_id: project.id });
+
+    createFocusSession({
+      task_id: task.id,
+      kind: 'work',
+      actual_sec: 600,
+      started_at: startOfDay(now) + 60,
+    });
+
+    // Adjacent work, inserted directly — only the counts matter here.
+    db.prepare(
+      `INSERT INTO documents (id, project_id, title, data_json) VALUES ('d1', ?, 'Doc', '{}')`,
+    ).run(project.id);
+    db.prepare(
+      `INSERT INTO terminal_sessions (id, project_id) VALUES ('t1', ?)`,
+    ).run(project.id);
+
+    const overview = projectOverview(project.id, { now, days: 14 })!;
+    expect(overview.project.id).toBe(project.id);
+    expect(overview.focusByDay).toHaveLength(14);
+    // The single session lands in today's (last) bucket.
+    expect(overview.focusByDay[13].sec).toBe(600);
+    expect(overview.focusByDay.reduce((sum, d) => sum + d.sec, 0)).toBe(600);
+    expect(overview.recentTasks.map((t) => t.title).sort()).toEqual([
+      'Second',
+      'Ship',
+    ]);
+    expect(overview.linked.documents).toBe(1);
+    expect(overview.linked.terminalSessions).toBe(1);
+    expect(overview.linked.studioTakes).toBe(0);
+    expect(overview.linked.chatSessions).toBe(0);
+
+    expect(projectOverview('does-not-exist')).toBeNull();
   });
 
   it('re-homes tasks to the Inbox when a project is deleted', () => {

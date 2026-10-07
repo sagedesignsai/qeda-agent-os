@@ -16,7 +16,8 @@
 import { nanoid } from 'nanoid';
 import { getDb } from './client.js';
 import { INBOX_PROJECT_ID } from './schema.js';
-import { startOfDay } from './focus-sessions.js';
+import { dayKey, startOfDay } from './focus-sessions.js';
+import type { Task } from './tasks.js';
 
 export { INBOX_PROJECT_ID };
 
@@ -31,7 +32,11 @@ export interface Project {
   status: ProjectStatus;
   color: string;
   icon: string;
-  /** Unix epoch seconds; nullable. The horizon the focus system plans against. */
+  /**
+   * Unix epoch seconds; nullable. Retained for compatibility but no longer a
+   * UI affordance: project urgency is derived from task due dates
+   * (`ProjectRollup.nextDueAt`), so this is not set from the app's project UI.
+   */
   deadline: number | null;
   /** Working directory terminal sessions in this project inherit. */
   repo_path: string | null;
@@ -51,12 +56,52 @@ export interface ProjectRollup {
   taskBacklog: number;
   /** Open tasks past their due date. */
   overdue: number;
+  /**
+   * The soonest due date among open tasks, or null when none is scheduled.
+   * This is what makes a project "at risk" — urgency comes from the tasks that
+   * do the work, not a hand-set project deadline.
+   */
+  nextDueAt: number | null;
   /** Seconds of completed-or-attempted work focus applied today. */
   focusSecToday: number;
   /** Total seconds of work focus across the project's life. */
   focusSecTotal: number;
   /** Time blocks scheduled today (project-owned or via one of its tasks). */
   blocksToday: number;
+  /**
+   * Latest sign of life in the project — the newest of a task edit, a focus
+   * session, or a project edit. Null when the project has never seen any.
+   * Drives the "stale" health signal, so it deliberately ignores reordering
+   * (moving a card is not work).
+   */
+  lastActivityAt: number | null;
+}
+
+/** One calendar day of focus, for the project's trailing trend. */
+export interface ProjectFocusDay {
+  /** Local `YYYY-MM-DD`. */
+  day: string;
+  /** Seconds of work focus that started on the day. */
+  sec: number;
+}
+
+/** How much other work is attached to a project. */
+export interface ProjectLinkedCounts {
+  documents: number;
+  studioTakes: number;
+  terminalSessions: number;
+  chatSessions: number;
+}
+
+/** Everything the project detail page needs, in one read. */
+export interface ProjectOverview {
+  project: Project;
+  rollup: ProjectRollup;
+  /** Trailing per-day work focus, oldest first. */
+  focusByDay: ProjectFocusDay[];
+  /** The most recently updated tasks in the project. */
+  recentTasks: Task[];
+  linked: ProjectLinkedCounts;
 }
 
 // ─── Reads ────────────────────────────────────────────────────────────────────
@@ -114,7 +159,9 @@ export function projectRollup(
          COALESCE(SUM(CASE WHEN status = 'backlog' THEN 1 ELSE 0 END), 0) AS backlog,
          COALESCE(SUM(CASE WHEN status != 'done'
                             AND due_at IS NOT NULL
-                            AND due_at < ? THEN 1 ELSE 0 END), 0) AS overdue
+                            AND due_at < ? THEN 1 ELSE 0 END), 0) AS overdue,
+         MIN(CASE WHEN status != 'done' AND due_at IS NOT NULL
+                  THEN due_at END) AS next_due
        FROM tasks WHERE project_id = ?`,
     )
     .get(now, id) as {
@@ -123,6 +170,7 @@ export function projectRollup(
     active: number;
     backlog: number;
     overdue: number;
+    next_due: number | null;
   };
 
   const dayStart = startOfDay(now);
@@ -148,6 +196,21 @@ export function projectRollup(
     )
     .get(id, id, dayStart, dayStart + 86_400) as { n: number };
 
+  const activity = db
+    .prepare(
+      `SELECT MAX(ts) AS last FROM (
+         SELECT MAX(updated_at) AS ts FROM tasks WHERE project_id = ?
+         UNION ALL
+         SELECT MAX(COALESCE(f.ended_at, f.started_at)) AS ts
+           FROM focus_sessions f
+           JOIN tasks t ON t.id = f.task_id
+          WHERE t.project_id = ?
+         UNION ALL
+         SELECT updated_at AS ts FROM projects WHERE id = ?
+       )`,
+    )
+    .get(id, id, id) as { last: number | null };
+
   return {
     project,
     taskTotal: tasks.total,
@@ -155,9 +218,91 @@ export function projectRollup(
     taskActive: tasks.active,
     taskBacklog: tasks.backlog,
     overdue: tasks.overdue,
+    nextDueAt: tasks.next_due ?? null,
     focusSecToday: focus.today,
     focusSecTotal: focus.total,
     blocksToday: blocks.n,
+    lastActivityAt: activity.last ?? null,
+  };
+}
+
+/**
+ * Everything the project detail page renders, resolved in one round-trip:
+ * the rollup, a trailing focus trend, the most recently touched tasks, and the
+ * counts of adjacent work (docs, studio takes, terminals, chats).
+ *
+ * Returns null for an unknown project.
+ */
+export function projectOverview(
+  id: string,
+  opts?: { now?: number; days?: number },
+): ProjectOverview | null {
+  const now = opts?.now ?? Math.floor(Date.now() / 1000);
+  const days = opts?.days ?? 14;
+
+  const project = getProject(id);
+  if (!project) return null;
+  const rollup = projectRollup(id, now);
+  if (!rollup) return null;
+
+  const db = getDb();
+
+  // The trailing window as calendar days ending today. Built with Date so a
+  // DST transition cannot duplicate or skip a day key (adding 86_400s can).
+  const start = new Date(now * 1000);
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - (days - 1));
+  const windowStart = Math.floor(start.getTime() / 1000);
+
+  const focusRows = db
+    .prepare(
+      `SELECT f.started_at AS started_at, f.actual_sec AS actual_sec
+         FROM focus_sessions f
+         JOIN tasks t ON t.id = f.task_id
+        WHERE t.project_id = ? AND f.kind = 'work' AND f.started_at >= ?`,
+    )
+    .all(id, windowStart) as Array<{ started_at: number; actual_sec: number }>;
+
+  const byDay = new Map<string, number>();
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date(now * 1000);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    byDay.set(dayKey(Math.floor(d.getTime() / 1000)), 0);
+  }
+  for (const row of focusRows) {
+    const key = dayKey(row.started_at);
+    byDay.set(key, (byDay.get(key) ?? 0) + row.actual_sec);
+  }
+
+  const recentTasks = db
+    .prepare(
+      `SELECT * FROM tasks WHERE project_id = ? ORDER BY updated_at DESC LIMIT 8`,
+    )
+    .all(id) as Task[];
+
+  const count = (sql: string): number =>
+    (db.prepare(sql).get(id) as { n: number }).n;
+
+  return {
+    project,
+    rollup,
+    focusByDay: [...byDay.entries()].map(([day, sec]) => ({ day, sec })),
+    recentTasks,
+    linked: {
+      documents: count(
+        `SELECT COUNT(*) AS n FROM documents WHERE project_id = ?`,
+      ),
+      studioTakes: count(
+        `SELECT COUNT(*) AS n FROM studio_takes WHERE project_id = ?`,
+      ),
+      terminalSessions: count(
+        `SELECT COUNT(*) AS n FROM terminal_sessions WHERE project_id = ?`,
+      ),
+      chatSessions: count(
+        `SELECT COUNT(*) AS n FROM sessions WHERE project_id = ?`,
+      ),
+    },
   };
 }
 
@@ -252,6 +397,23 @@ export function updateProject(
   getDb()
     .prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`)
     .run(...values);
+}
+
+/**
+ * Persist a manual project order. Writes `sort_order` by array index in one
+ * transaction so a multi-row drag lands atomically — a crash partway through
+ * cannot leave two projects claiming the same slot.
+ *
+ * Deliberately does not touch `updated_at`: moving a card is not work, and
+ * `projectRollup.lastActivityAt` uses it to decide whether a project is stale.
+ */
+export function reorderProjects(orderedIds: string[]): void {
+  const db = getDb();
+  const stmt = db.prepare(`UPDATE projects SET sort_order = ? WHERE id = ?`);
+  const tx = db.transaction(() => {
+    orderedIds.forEach((id, index) => stmt.run(index, id));
+  });
+  tx();
 }
 
 /**

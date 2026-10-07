@@ -15,6 +15,13 @@ export interface BuilderConnectionStatus {
   message: string;
 }
 
+/** A model the active OpenCode project makes available to Builder. */
+export interface BuilderModelOption {
+  providerID: string;
+  id: string;
+  name: string;
+}
+
 /** The app currently integrates against OpenCode's v2 server contract. */
 export function isSupportedOpenCodeVersion(version: string): boolean {
   return /^2\./.test(version);

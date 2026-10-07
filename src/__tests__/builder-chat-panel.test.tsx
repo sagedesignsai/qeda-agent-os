@@ -80,26 +80,27 @@ describe('BuilderChatPanel', () => {
     expect(screen.getByText('Choose a project folder')).toBeInTheDocument();
   });
 
-  it('sets the draft when a quick prompt suggestion is selected', () => {
-    const onPromptChange = jest.fn();
+  it('offers no suggestion chips in the composer footer', () => {
+    // The composer's example chip was removed: it duplicated the starter cards
+    // above it, so the panel now offers each starter prompt from exactly one
+    // place. Asserted by absence so a re-added chip fails here rather than
+    // quietly restoring the duplication.
     render(
       <BuilderChatPanel
-        status={{ state: 'not-running', message: 'No service.' }}
+        status={connected}
         prompt=""
-        onPromptChange={onPromptChange}
+        onPromptChange={jest.fn()}
       />,
     );
 
-    act(() => {
-      fireEvent.click(
-        screen.getByRole('button', {
-          name: 'Create a dashboard with useful data visualizations',
-        }),
-      );
-    });
-    expect(onPromptChange).toHaveBeenCalledWith(
-      'Create a dashboard with useful data visualizations',
-    );
+    expect(
+      screen.queryByRole('button', {
+        name: 'Create a dashboard with useful data visualizations',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Build a polished landing page/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('binds a workspace through the folder picker when the runtime is reachable', () => {

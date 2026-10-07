@@ -50,6 +50,8 @@ export interface UseProjectsReturn {
   createProject: (input: CreateProjectInput) => Promise<Project | null>;
   updateProject: (id: string, patch: UpdateProjectPatch) => Promise<void>;
   deleteProject: (id: string) => Promise<boolean>;
+  /** Persist a manual order (e.g. after a drag). `sort_order` = index. */
+  reorder: (orderedIds: string[]) => Promise<void>;
 }
 
 /** Load projects + rollups and keep them fresh across process broadcasts. */
@@ -113,6 +115,23 @@ export function useProjects(): UseProjectsReturn {
     [refresh],
   );
 
+  const reorder = useCallback(async (orderedIds: string[]): Promise<void> => {
+    // Optimistic: apply the new order locally so the dragged card does not
+    // snap back to its old slot during the round-trip. Main broadcasts
+    // `projects:changed` on success, which reconciles from the database.
+    setRollups((prev) => {
+      const byId = new Map(prev.map((r) => [r.project.id, r]));
+      const moved: ProjectRollup[] = [];
+      for (const id of orderedIds) {
+        const found = byId.get(id);
+        if (found) moved.push(found);
+      }
+      const untouched = prev.filter((r) => !orderedIds.includes(r.project.id));
+      return [...moved, ...untouched];
+    });
+    await window.electron.ipc.invoke('projects:reorder', { orderedIds });
+  }, []);
+
   return {
     projects: rollups.map((r) => r.project),
     rollups,
@@ -122,5 +141,6 @@ export function useProjects(): UseProjectsReturn {
     createProject,
     updateProject,
     deleteProject,
+    reorder,
   };
 }

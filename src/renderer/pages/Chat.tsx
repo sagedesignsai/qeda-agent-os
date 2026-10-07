@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAgentChat } from '@/hooks/use-agent-chat';
 import { MessageList } from '@/components/chat/MessageList';
 import { ChatInput } from '@/components/chat/ChatInput';
@@ -18,11 +18,12 @@ import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2Icon, AlertCircleIcon, XIcon, GlobeIcon } from 'lucide-react';
+import { Trash2Icon, AlertCircleIcon, XIcon, GlobeIcon, CheckSquareIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
+import { useAppStore } from '@/stores/app-store';
 import type {
   ChatContext,
   AgentIntent,
@@ -67,6 +68,26 @@ export default function Chat() {
     if (!res.fileName) return;
     toast.success(`Asset downloaded: ${res.fileName}`);
   };
+
+  const [searchParams] = useSearchParams();
+  const urlTaskId = searchParams.get('task');
+  const focusedTask = useAppStore((s) => s.focusedTask);
+  const setFocusedTaskId = useAppStore((s) => s.setFocusedTaskId);
+
+  // Sync task ID from URL into app store
+  useEffect(() => {
+    if (urlTaskId) {
+      void setFocusedTaskId(urlTaskId);
+    }
+  }, [urlTaskId, setFocusedTaskId]);
+
+  // Sync task into chat context
+  useEffect(() => {
+    const tid = urlTaskId ?? focusedTask?.id;
+    if (tid) {
+      setChatContext((prev) => ({ ...prev, taskId: tid }));
+    }
+  }, [urlTaskId, focusedTask?.id]);
 
   // The chat agent receives the active project so its answers can assume this
   // is the current context of work. Merged, so a handover context (page/notebook)
@@ -232,6 +253,18 @@ export default function Chat() {
         meta={
           <>
             <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
+            {chatContext?.taskId && (
+              <Badge
+                variant="outline"
+                className="h-5 gap-1 border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] text-amber-500 font-medium"
+                title={focusedTask?.title ?? 'Bound to task'}
+              >
+                <CheckSquareIcon className="size-2.5" />
+                <span className="max-w-[120px] truncate">
+                  {focusedTask?.title ? `Task: ${focusedTask.title}` : 'Task context'}
+                </span>
+              </Badge>
+            )}
             {messages.length > 0 && (
               <Badge
                 variant="secondary"

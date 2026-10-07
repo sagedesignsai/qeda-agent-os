@@ -69,7 +69,7 @@ export function BuilderToolCall({
           <ToolInput input={part.input} />
           <ToolOutput output={output} errorText={errorText} />
           {part.state === 'output-denied' && (
-            <p className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+            <p className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
               This action was denied. The agent can continue without it.
             </p>
           )}

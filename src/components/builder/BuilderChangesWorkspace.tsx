@@ -4,18 +4,33 @@
  * Review-first change surface for additions, edits, and removals. It accepts a
  * service-neutral change list and keeps destructive/keep actions visibly gated
  * until real workspace operations are connected.
+ *
+ * THE REVIEW PROMISE LIVES IN THE CONVERSATION, NOT HERE
+ * ─────────────────────────────────────────────────────
+ * This surface used to state the safety promise three times on its own — "A safe
+ * place to review", "Each proposed edit will be visible here before it becomes
+ * part of your project", and a "Nothing applied automatically" pill — while the
+ * canvas footer said a fourth version and the conversation a fifth. The promise
+ * is stated once, under the composer, and this surface earns trust through the
+ * thing that actually makes it true: the diff on the right and the Keep/Discard
+ * decision on the left. The empty state now only says what is *absent*, not what
+ * is guaranteed.
+ *
+ * TYPE
+ * ────
+ * `text-xs` (11px) for the list, counts, and diff; `text-sm` (12px) for prose.
+ * The 8px tier that used to carry file names, parent paths, and count pills is
+ * gone.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useMemo, useState } from 'react';
 import {
-  ArrowDownToLineIcon,
   CheckIcon,
   ChevronRightIcon,
   FileCode2Icon,
   GitCompareArrowsIcon,
   RotateCcwIcon,
-  ShieldCheckIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -63,7 +78,7 @@ export function BuilderChangesWorkspace({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/50 px-3 py-1.5">
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/50 px-3 py-1">
         <Tabs
           value={filter}
           onValueChange={(value) => setFilter(value as ChangeFilter)}
@@ -83,7 +98,7 @@ export function BuilderChangesWorkspace({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 gap-1.5 px-2 text-[10px] text-muted-foreground"
+            className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
             disabled={changes.length === 0 || !onDiscardAll}
             onClick={onDiscardAll}
             title={
@@ -97,7 +112,7 @@ export function BuilderChangesWorkspace({
           </Button>
           <Button
             size="sm"
-            className="h-7 gap-1.5 px-2.5 text-[10px]"
+            className="h-7 gap-1.5 px-2.5 text-xs"
             disabled={changes.length === 0 || !onKeepAll}
             onClick={onKeepAll}
             title={
@@ -114,9 +129,9 @@ export function BuilderChangesWorkspace({
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="flex w-[min(37%,280px)] min-w-[168px] shrink-0 flex-col border-r border-border/60 bg-card/20">
-          <div className="flex h-9 shrink-0 items-center justify-between border-b border-border/40 px-3 text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="flex h-8 shrink-0 items-center justify-between border-b border-border/40 px-3 text-xs uppercase tracking-[0.12em] text-muted-foreground">
             <span>Changed files</span>
-            <span className="font-mono tabular-nums">{changes.length}</span>
+            <span className="tabular-nums">{changes.length}</span>
           </div>
           <div className="min-h-0 flex-1 overflow-auto p-1.5">
             {visibleChanges.length > 0 ? (
@@ -131,16 +146,16 @@ export function BuilderChangesWorkspace({
                 ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center px-3 py-9 text-center">
+              <div className="flex flex-col items-center px-3 py-8 text-center">
                 <div className="mb-2 flex size-8 items-center justify-center rounded-lg border border-border/50 bg-background/70 text-muted-foreground">
                   <GitCompareArrowsIcon className="size-3.5" />
                 </div>
-                <p className="text-[10px] font-medium">
+                <p className="text-sm font-medium">
                   {changes.length === 0
                     ? 'No changes yet'
                     : 'Nothing in this filter'}
                 </p>
-                <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   {changes.length === 0
                     ? 'Edits from your build will be collected here for review.'
                     : 'Choose another change type to see its files.'}
@@ -148,7 +163,7 @@ export function BuilderChangesWorkspace({
               </div>
             )}
           </div>
-          <div className="flex h-7 shrink-0 items-center gap-3 border-t border-border/50 px-2.5 text-[9px] text-muted-foreground">
+          <div className="flex h-7 shrink-0 items-center gap-2 border-t border-border/50 px-2.5 text-xs text-muted-foreground">
             <span className="text-emerald-600 dark:text-emerald-400">
               +{totals.additions}
             </span>
@@ -163,15 +178,15 @@ export function BuilderChangesWorkspace({
         >
           {selectedChange ? (
             <>
-              <div className="flex min-h-9 shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3">
-                <div className="flex min-w-0 items-center gap-1.5 text-[10px]">
+              <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3">
+                <div className="flex min-w-0 items-center gap-1.5 text-xs">
                   <FileCode2Icon className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="truncate font-mono">
                     {selectedChange.path}
                   </span>
                   <ChangeKindBadge kind={selectedChange.kind} />
                 </div>
-                <span className="shrink-0 font-mono text-[9px]">
+                <span className="shrink-0 font-mono text-xs tabular-nums">
                   <span className="text-emerald-600 dark:text-emerald-400">
                     +{selectedChange.additions}
                   </span>
@@ -185,7 +200,7 @@ export function BuilderChangesWorkspace({
                 <DiffView diff={selectedChange.diff} />
               ) : (
                 <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8 text-center">
-                  <p className="max-w-xs text-[10px] leading-relaxed text-muted-foreground">
+                  <p className="max-w-xs text-sm leading-relaxed text-muted-foreground">
                     The diff for this file will appear here when the workspace
                     change data is available.
                   </p>
@@ -193,21 +208,20 @@ export function BuilderChangesWorkspace({
               )}
             </>
           ) : (
+            /* Only says what is absent. The guarantee that nothing lands without
+               a decision is stated once, under the composer. */
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 py-10 text-center">
               <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:radial-gradient(var(--border)_0.65px,transparent_0.65px)] [background-size:15px_15px]" />
               <div className="relative flex max-w-xs flex-col items-center">
-                <div className="mb-4 flex size-12 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground shadow-sm">
-                  <ShieldCheckIcon className="size-5" />
+                <div className="mb-3 flex size-10 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground shadow-sm">
+                  <FileCode2Icon className="size-4" />
                 </div>
-                <h3 className="text-xs font-medium">A safe place to review</h3>
-                <p className="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
-                  Each proposed edit will be visible here before it becomes part
-                  of your project.
+                <h3 className="text-sm font-medium">Nothing to review yet</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                  {changes.length === 0
+                    ? 'Choose a filter above, or run a build — the files it changes show up here with their diffs.'
+                    : 'Choose another change type to see its diff.'}
                 </p>
-                <div className="mt-4 flex items-center gap-1.5 rounded-full border border-border/50 bg-card/70 px-3 py-1.5 text-[9px] text-muted-foreground">
-                  <ArrowDownToLineIcon className="size-3" />
-                  Nothing applied automatically
-                </div>
               </div>
             </div>
           )}
@@ -227,12 +241,9 @@ function FilterTab({
   count: number;
 }) {
   return (
-    <TabsTrigger
-      value={value}
-      className="h-7 flex-none gap-1 px-1.5 text-[10px]"
-    >
+    <TabsTrigger value={value} className="h-7 flex-none gap-1 px-1.5 text-xs">
       {label}
-      <span className="rounded-full bg-muted px-1.5 py-px text-[8px] tabular-nums text-muted-foreground">
+      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-xs leading-none tabular-nums text-muted-foreground">
         {count}
       </span>
     </TabsTrigger>
@@ -262,12 +273,12 @@ function ChangeFileRow({
     >
       <ChangeKindBadge kind={change.kind} compact />
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-mono text-[10px]">{name}</span>
-        <span className="block truncate text-[8px] text-muted-foreground">
+        <span className="block truncate font-mono text-xs">{name}</span>
+        <span className="block truncate text-xs text-muted-foreground">
           {parent || 'root'}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-1 font-mono text-[8px]">
+      <span className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
         <span className="text-emerald-600 dark:text-emerald-400">
           +{change.additions}
         </span>
@@ -290,8 +301,8 @@ function ChangeKindBadge({
     <Badge
       variant="outline"
       className={cn(
-        'h-4 shrink-0 rounded px-1 text-[8px] uppercase',
-        compact && 'size-4 justify-center p-0',
+        'shrink-0 rounded px-1 text-xs uppercase leading-none',
+        compact && 'flex size-4 items-center justify-center p-0',
         kind === 'added' &&
           'border-emerald-500/25 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400',
         kind === 'modified' &&
@@ -307,7 +318,7 @@ function ChangeKindBadge({
 
 function DiffView({ diff }: { diff: string }) {
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-background py-3 font-mono text-[10px] leading-5">
+    <div className="min-h-0 flex-1 overflow-auto bg-background py-3 font-mono text-xs leading-5">
       <pre className="min-w-max">
         {diff.split('\n').map((line, index) => {
           const isAdded = line.startsWith('+') && !line.startsWith('+++');

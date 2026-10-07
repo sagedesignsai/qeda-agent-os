@@ -65,6 +65,8 @@ function makeRollup(project: Project): ProjectRollup {
     focusSecToday: 0,
     focusSecTotal: 0,
     blocksToday: 0,
+    lastActivityAt: null,
+    nextDueAt: null,
   };
 }
 

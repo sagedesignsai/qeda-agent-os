@@ -7,6 +7,7 @@ import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { GenerateNotebookProvider } from '@/components/GenerateNotebookDialog';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
 import { useProjects } from '@/hooks/use-projects';
+import { useAppStore } from '@/stores/app-store';
 
 /** The Inbox is seeded for every install, so it does not count as a project. */
 const INBOX_PROJECT_ID = 'inbox';
@@ -74,6 +75,36 @@ export function AppLayout() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Synchronize the cross-feature app store with IPC change broadcasts
+  useEffect(() => {
+    const unsubTasks = window.electron.ipc.on('tasks:changed', () => {
+      const { focusedTaskId, setFocusedTaskId } = useAppStore.getState();
+      if (focusedTaskId) {
+        void setFocusedTaskId(focusedTaskId);
+      }
+    });
+
+    const unsubTerminal = window.electron.ipc.on(
+      'terminal:goal-done',
+      (data: unknown) => {
+        const payload = data as
+          | { sessionId: string; taskId: string }
+          | undefined;
+        if (payload?.taskId) {
+          const { focusedTask, setFocusedTask } = useAppStore.getState();
+          if (focusedTask?.id === payload.taskId) {
+            setFocusedTask({ ...focusedTask, status: 'done' });
+          }
+        }
+      },
+    );
+
+    return () => {
+      unsubTasks();
+      unsubTerminal();
+    };
   }, []);
 
   return (

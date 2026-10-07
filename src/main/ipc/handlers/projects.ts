@@ -21,6 +21,8 @@ import {
   getProject,
   listProjectRollups,
   listProjects,
+  projectOverview,
+  reorderProjects,
   updateProject,
 } from '../../db/projects';
 
@@ -42,6 +44,12 @@ export function registerProjectsHandlers({
 
   ipcMain.handle('projects:get', (_e, { id }: { id: string }) =>
     getProject(id),
+  );
+
+  ipcMain.handle(
+    'projects:overview',
+    (_e, { id, days }: { id: string; days?: number }) =>
+      projectOverview(id, days !== undefined ? { days } : undefined),
   );
 
   const broadcastProjectsChanged = () => {
@@ -66,6 +74,14 @@ export function registerProjectsHandlers({
       { id, ...patch }: { id: string } & Parameters<typeof updateProject>[1],
     ) => {
       updateProject(id, patch);
+      broadcastProjectsChanged();
+    },
+  );
+
+  ipcMain.handle(
+    'projects:reorder',
+    (_e, { orderedIds }: { orderedIds: string[] }) => {
+      reorderProjects(orderedIds);
       broadcastProjectsChanged();
     },
   );

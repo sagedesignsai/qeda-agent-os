@@ -12,6 +12,15 @@
  * Only pending/streaming/failed calls show the full expandable card, because
  * those require the user's attention. This keeps the feed focused on what
  * matters right now rather than burying it in completed history.
+ *
+ * THE STATUS CARD IS WHERE THE BOUND DIRECTORY LIVES
+ * ──────────────────────────────────────────────────
+ * The composer used to carry its own branch/directory/uncommitted strip, and the
+ * canvas identity bar carries the repository name — three readouts of the same
+ * fact. The absolute path is the one that is not obvious from anywhere else, and
+ * this card is the one the user reads *while a run is happening*, which is
+ * exactly when "which directory is this touching?" matters. So it lives here,
+ * once, next to the run state.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -27,16 +36,12 @@ import {
   SearchIcon,
   ShellIcon,
   TerminalSquareIcon,
-  UserIcon,
   WrenchIcon,
 } from 'lucide-react';
 import { BuilderToolCall } from '@/components/builder/tools/BuilderToolCall';
 import type { ToolPart } from '@/components/ai-elements/tool';
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-} from '@/components/ai-elements/message';
+import { MessageResponse } from '@/components/ai-elements/message';
+import { PromptCapsule } from '@/components/agent-ui/PromptCapsule';
 import { BuilderFormCard } from '@/components/builder/tools/BuilderFormCard';
 import { BuilderPermissionCard } from '@/components/builder/tools/BuilderPermissionCard';
 import { Button } from '@/components/ui/button';
@@ -45,7 +50,7 @@ import type { BuilderSessionEvent } from '@/lib/builder-session';
 import type { BuilderWorkspace } from '@/lib/builder-workspace';
 
 type TimelineItem =
-  | { kind: 'user'; key: string; text: string }
+  | { kind: 'user'; key: string; text: string; createdAt: number }
   | { kind: 'assistant'; key: string; text: string }
   | {
       kind: 'tool';
@@ -90,6 +95,7 @@ export function BuilderActivityFeed({
           kind: 'user',
           key: `user-${event.eventId}`,
           text: event.text,
+          createdAt: event.createdAt,
         });
         continue;
       }
@@ -153,42 +159,53 @@ export function BuilderActivityFeed({
 
   return (
     <div
-      className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-5 sm:px-5"
+      className="mx-auto flex w-full max-w-xl flex-col gap-3.5 px-4 py-5"
       aria-label="Session activity"
     >
-      <div className="flex items-center justify-between gap-2 rounded-lg border border-border/50 bg-card/50 px-3 py-2">
-        <div className="flex items-center gap-2 text-[10px]">
-          {status?.type === 'status' &&
-          (status.status === 'running' || status.status === 'retrying') ? (
-            <CircleDashedIcon className="size-3.5 animate-spin text-primary" />
-          ) : status?.type === 'status' && status.status === 'failed' ? (
-            <AlertCircleIcon className="size-3.5 text-destructive" />
-          ) : (
-            <CheckCircle2Icon className="size-3.5 text-muted-foreground" />
-          )}
-          <span className="font-medium">
-            {status?.type === 'status'
-              ? status.status[0].toUpperCase() + status.status.slice(1)
-              : 'Session ready'}
-          </span>
-          <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
-            <GitBranchIcon className="size-3 shrink-0" />
-            <span className="truncate">
-              {workspace
-                ? `${workspace.name}${workspace.branch ? ` \u00b7 ${workspace.branch}` : ''}`
-                : 'No workspace bound'}
-            </span>
-            {workspace?.dirty && (
-              <span className="shrink-0 text-amber-600 dark:text-amber-400">
-                \u00b7 {workspace.changedFileCount} changed
-              </span>
+      {/* Run state + the one place the bound directory is spelled out. */}
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-border/50 bg-card/50 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1.5 text-xs">
+            {status?.type === 'status' &&
+            (status.status === 'running' || status.status === 'retrying') ? (
+              <CircleDashedIcon className="size-3.5 shrink-0 animate-spin text-primary" />
+            ) : status?.type === 'status' && status.status === 'failed' ? (
+              <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" />
+            ) : (
+              <CheckCircle2Icon className="size-3.5 shrink-0 text-muted-foreground" />
             )}
-          </span>
+            <span className="shrink-0 font-medium">
+              {status?.type === 'status'
+                ? status.status[0].toUpperCase() + status.status.slice(1)
+                : 'Session ready'}
+            </span>
+            <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
+              <GitBranchIcon className="size-3 shrink-0" />
+              <span className="truncate">
+                {workspace
+                  ? `${workspace.name}${workspace.branch ? ` \u00b7 ${workspace.branch}` : ''}`
+                  : 'No workspace bound'}
+              </span>
+              {workspace?.dirty && (
+                <span className="shrink-0 text-amber-600 dark:text-amber-400">
+                  · {workspace.changedFileCount} changed
+                </span>
+              )}
+            </span>
+          </div>
+          {workspace?.directory && (
+            <p
+              className="mt-0.5 truncate pl-5 font-mono text-xs text-muted-foreground/80"
+              title={workspace.directory}
+            >
+              {workspace.directory}
+            </p>
+          )}
         </div>
         <Button
-          size="sm"
+          size="xs"
           variant="ghost"
-          className="h-6 px-2 text-[9px] text-muted-foreground"
+          className="shrink-0 text-xs text-muted-foreground"
           onClick={onDisconnect}
           title="Disconnects the live feed but does not delete the OpenCode session."
         >
@@ -198,7 +215,7 @@ export function BuilderActivityFeed({
       {status?.type === 'status' && status.message && (
         <div
           role="alert"
-          className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-[10px] text-destructive"
+          className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs text-destructive"
         >
           {status.message}
         </div>
@@ -207,41 +224,45 @@ export function BuilderActivityFeed({
       {error && (
         <div
           role="alert"
-          className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-[11px] text-destructive"
+          className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive"
         >
           {error}
         </div>
       )}
 
       {events.length === 0 && (
-        <div className="rounded-xl border border-dashed border-border/70 bg-card/20 px-4 py-8 text-center">
+        <div className="rounded-xl border border-dashed border-border/70 bg-card/20 px-4 py-6 text-center">
           <WrenchIcon className="mx-auto mb-2 size-4 text-muted-foreground" />
-          <p className="text-xs font-medium">Listening for session activity</p>
-          <p className="mx-auto mt-1 max-w-sm text-[10px] leading-relaxed text-muted-foreground">
-            This session is bound to your workspace. Describe what to build and
-            Qeda will ask before it runs anything.
+          <p className="text-sm font-medium">Listening for session activity</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
+            Describe what to build, and Qeda will ask before it runs anything.
           </p>
         </div>
       )}
 
       {messages.map((item) => {
         if (item.kind === 'user') {
+          // Same capsule Chat and the copilots use, so a prompt looks identical
+          // on every agent surface. The old right-aligned primary-tinted bubble
+          // with a "YOU" label was the Builder's private treatment.
           return (
-            <Message key={item.key} from="user" className="max-w-full">
-              <MessageContent className="ml-auto w-fit max-w-full rounded-xl border border-border/50 bg-primary/10 px-3 py-2.5 text-xs leading-relaxed whitespace-pre-wrap">
-                <span className="mb-1 flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                  <UserIcon className="size-3" />
-                  You
-                </span>
-                {item.text}
-              </MessageContent>
-            </Message>
+            <PromptCapsule
+              key={item.key}
+              text={item.text}
+              createdAt={item.createdAt}
+            />
           );
         }
         if (item.kind === 'assistant') {
+          // Unboxed, like Chat. The old bordered card also forced
+          // `whitespace-pre-wrap`, which fights the markdown renderer — Streamdown
+          // wants to own paragraph breaks.
           return (
-            <Message key={item.key} from="assistant" className="max-w-full">
-              <MessageContent className="w-full rounded-xl border border-border/50 bg-card/35 px-3 py-2.5 text-xs leading-relaxed whitespace-pre-wrap">
+            <div
+              key={item.key}
+              className="flex w-full flex-col gap-2.5 text-sm"
+            >
+              <div className="leading-relaxed text-foreground select-text">
                 <MessageResponse
                   isAnimating={
                     status?.type === 'status' &&
@@ -251,8 +272,8 @@ export function BuilderActivityFeed({
                 >
                   {item.text}
                 </MessageResponse>
-              </MessageContent>
-            </Message>
+              </div>
+            </div>
           );
         }
         return (
@@ -292,7 +313,7 @@ export function BuilderActivityFeed({
           <div
             key={event.eventId}
             role="alert"
-            className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-[11px] text-destructive"
+            className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive"
           >
             {event.message}
           </div>
@@ -489,16 +510,14 @@ function CompactToolRow({
   const iconNode = renderToolIcon(name);
 
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-card/30 px-3 py-1.5 text-[11px] text-muted-foreground">
+    <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-card/30 px-3 py-1.5 text-xs text-muted-foreground">
       <CheckCircle2Icon className="size-3 shrink-0 text-emerald-500/70" />
       {iconNode}
       <span className="shrink-0 font-medium text-foreground/70">{label}</span>
       {summary && (
         <>
           <span className="text-muted-foreground/40">&middot;</span>
-          <span className="min-w-0 truncate font-mono text-[10px]">
-            {summary}
-          </span>
+          <span className="min-w-0 truncate font-mono text-xs">{summary}</span>
         </>
       )}
     </div>

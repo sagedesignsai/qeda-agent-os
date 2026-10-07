@@ -4,6 +4,10 @@
  * Presents OpenCode's real permission request as an explicit human decision.
  * The three outcomes map to OpenCode's once / always / reject replies; no
  * permission is silently inferred from a tool's name or presentation state.
+ *
+ * This is the card a user reads under pressure, so its copy is the *largest* type
+ * in the Builder: `text-sm` for the request, `text-xs` only for the action label
+ * and the resource list. It used to run down to 9px.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -59,20 +63,20 @@ export function BuilderPermissionCard({
             <h3 className="text-xs font-semibold">Permission needed</h3>
             <Badge
               variant="outline"
-              className="h-4 gap-1 border-amber-500/25 px-1.5 text-[9px] text-amber-700 dark:text-amber-300"
+              className="h-5 gap-1 border-amber-500/25 px-1.5 text-xs text-amber-700 dark:text-amber-300"
             >
               <Clock3Icon className="size-2.5" />
               Paused
             </Badge>
           </div>
-          <ConfirmationTitle className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">
+          <ConfirmationTitle className="mt-1 block text-sm leading-relaxed text-muted-foreground">
             {request.message || permissionSummary(request.action)}
           </ConfirmationTitle>
         </div>
       </div>
 
       <div className="space-y-2.5 px-3.5 py-3">
-        <div className="flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
           <ShieldCheckIcon className="size-3" />
           {request.action}
         </div>
@@ -80,7 +84,7 @@ export function BuilderPermissionCard({
           {request.resources.map((resource, index) => (
             <code
               key={`${resource}-${index}`}
-              className="block max-h-16 overflow-auto rounded-md border border-border/50 bg-background/70 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-foreground/85"
+              className="block max-h-16 overflow-auto rounded-md border border-border/50 bg-background/70 px-2 py-1.5 font-mono text-xs leading-relaxed text-foreground/85"
             >
               {resource}
             </code>
@@ -92,7 +96,7 @@ export function BuilderPermissionCard({
               type="button"
               variant="ghost"
               size="sm"
-              className="mr-auto h-7 gap-1.5 px-2 text-[10px] text-muted-foreground hover:text-destructive"
+              className="mr-auto h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-destructive"
               disabled={busy}
               onClick={() => onDecision('reject')}
             >
@@ -102,7 +106,7 @@ export function BuilderPermissionCard({
             <ConfirmationAction
               variant="outline"
               size="sm"
-              className="h-7 gap-1.5 px-2.5 text-[10px]"
+              className="h-7 gap-1.5 px-2.5 text-xs"
               disabled={busy}
               onClick={() => onDecision('always')}
               title="Allow this action and save the permission rule in OpenCode."
@@ -112,7 +116,7 @@ export function BuilderPermissionCard({
             </ConfirmationAction>
             <ConfirmationAction
               size="sm"
-              className="h-7 gap-1.5 px-2.5 text-[10px]"
+              className="h-7 gap-1.5 px-2.5 text-xs"
               disabled={busy}
               onClick={() => onDecision('once')}
             >

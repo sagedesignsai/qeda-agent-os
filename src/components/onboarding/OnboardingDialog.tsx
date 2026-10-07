@@ -69,14 +69,6 @@ export interface OnboardingDialogProps {
 
 const STEP_TITLES = ['Welcome', 'Project', 'First task', 'Ready'] as const;
 
-/** `YYYY-MM-DD` for a `<input type="date">` → unix seconds at local midnight. */
-function fromDateInput(value: string): number | null {
-  if (!value) return null;
-  const [y, m, d] = value.split('-').map(Number);
-  if (!y || !m || !d) return null;
-  return Math.floor(new Date(y, m - 1, d).getTime() / 1000);
-}
-
 /** Mark onboarding complete in settings (best-effort). */
 async function persistCompletion(): Promise<void> {
   try {
@@ -98,7 +90,6 @@ export function OnboardingDialog({
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [deadline, setDeadline] = useState('');
   const [repoPath, setRepoPath] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [taskEstimate, setTaskEstimate] = useState<number | null>(45);
@@ -112,7 +103,6 @@ export function OnboardingDialog({
     setStep(0);
     setName('');
     setDescription('');
-    setDeadline('');
     setRepoPath('');
     setTaskTitle('');
     setTaskEstimate(45);
@@ -128,7 +118,6 @@ export function OnboardingDialog({
       const project = await createProject({
         name: name.trim(),
         description: description.trim(),
-        deadline: fromDateInput(deadline),
         repo_path: repoPath.trim() || null,
       });
 
@@ -195,8 +184,6 @@ export function OnboardingDialog({
                 setName={setName}
                 description={description}
                 setDescription={setDescription}
-                deadline={deadline}
-                setDeadline={setDeadline}
                 repoPath={repoPath}
                 setRepoPath={setRepoPath}
               />
@@ -348,8 +335,6 @@ interface ProjectStepProps {
   setName: (v: string) => void;
   description: string;
   setDescription: (v: string) => void;
-  deadline: string;
-  setDeadline: (v: string) => void;
   repoPath: string;
   setRepoPath: (v: string) => void;
 }
@@ -359,8 +344,6 @@ function ProjectStep({
   setName,
   description,
   setDescription,
-  deadline,
-  setDeadline,
   repoPath,
   setRepoPath,
 }: ProjectStepProps) {
@@ -463,16 +446,6 @@ function ProjectStep({
             Terminal sessions and agents in this project will run from this
             folder.
           </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="ob-deadline">Deadline</Label>
-          <Input
-            id="ob-deadline"
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-          />
         </div>
       </div>
     </>

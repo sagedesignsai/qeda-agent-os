@@ -521,7 +521,13 @@ export async function readWorkspaceFileContent(
   try {
     const handle = await fs.open(resolved, 'r');
     try {
-      const { size } = await handle.stat();
+      const stat = await handle.stat();
+      if (!stat.isFile()) {
+        const error = new Error('Path is not a file');
+        Object.assign(error, { code: 'EISDIR' });
+        throw error;
+      }
+      const { size } = stat;
       const readSize = Math.min(size, MAX_FILE_READ_BYTES + 1);
       buf = Buffer.allocUnsafe(readSize);
       const { bytesRead } = await handle.read(buf, 0, readSize, 0);
@@ -534,7 +540,9 @@ export async function readWorkspaceFileContent(
     throw new Error(
       e.code === 'ENOENT'
         ? `File not found: ${filePath}`
-        : `Could not read ${filePath}: ${e.message}`,
+        : e.code === 'EISDIR'
+          ? `Not a file: ${filePath}`
+          : `Could not read ${filePath}: ${e.message}`,
       { cause: error },
     );
   }

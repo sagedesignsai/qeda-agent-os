@@ -14,12 +14,24 @@
  * proves it is a git repo, so the "a run happens only in a folder you chose"
  * guarantee in `main/builder/workspace.ts` is untouched.
  *
- * UNIFIED CANVAS BAR
- * ──────────────────
- * The workspace header (repo name, branch, runtime status, folder picker) is
- * merged into BuilderCanvas's own top toolbar. Builder.tsx no longer renders a
- * separate <BuilderWorkspaceHeader> row — the canvas bar is the one source of
- * truth for workspace identity.
+ * ONE OWNER FOR THE FOLDER PICKER
+ * ──────────────────────────────
+ * `chooseWorkspace` is handed to exactly one component: the chat panel. It gates
+ * sending a prompt, so it belongs beside the Send button it enables rather than
+ * in the canvas chrome, where it was a folder button nobody was looking at while
+ * typing. The canvas still receives `builderSession.workspace` — it renders the
+ * repo name, branch, and dirty count — but no longer owns the action.
+ *
+ * `BuilderWorkspaceHeader`, the standalone header this page once described, is
+ * deleted: it was imported nowhere, and keeping a second identity component
+ * around only invites the two to drift apart again.
+ *
+ * WHAT THIS PAGE CONTRIBUTES
+ * ──────────────────────────
+ * Only the frame: the page header (title + project scope chip), the wide-layout
+ * resizable split, and the compact-width tab switch between canvas and chat. All
+ * of Builder's chrome decisions live inside the two panels, so this file does not
+ * grow a second opinion about them.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -42,12 +54,19 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useBuilderRuntime } from '@/hooks/use-builder-runtime';
 import { useBuilderSession } from '@/hooks/use-builder-session';
+import { useBuilderFiles } from '@/hooks/use-builder-files';
+import { useBuilderModels } from '@/hooks/use-builder-models';
 import { useBuilderWorkspace } from '@/hooks/use-builder-workspace';
 import { useDefaultLayout } from 'react-resizable-panels';
 
 export default function Builder() {
   const runtime = useBuilderRuntime();
   const builderSession = useBuilderSession();
+  const builderFiles = useBuilderFiles(
+    builderSession.session?.id,
+    builderSession.events,
+  );
+  const builderModels = useBuilderModels(builderSession.session?.id);
   const workspace = useBuilderWorkspace();
   const layout = useDefaultLayout({ id: 'qeda-builder-workspace-v1' });
   const { chooseWorkspace: chooseSessionWorkspace } = builderSession;
@@ -116,7 +135,13 @@ export default function Builder() {
       running={builderSession.running}
       sessionError={builderSession.error}
       pendingResponse={builderSession.pendingResponse}
+      models={builderModels.models}
+      selectedModel={builderModels.selected}
+      modelsLoading={builderModels.loading}
+      modelSwitching={builderModels.switching}
+      modelError={builderModels.error}
       onChooseWorkspace={chooseWorkspace}
+      onModelChange={(value) => void builderModels.select(value)}
       onSend={builderSession.sendPrompt}
       onAbort={builderSession.abort}
       onDisconnectSession={builderSession.stopSession}
@@ -148,12 +173,13 @@ export default function Builder() {
       onOpenExternal={preview.openExternal}
       selectedFilePath={workspace.selectedFilePath}
       onSelectFile={workspace.setSelectedFilePath}
-      // Workspace identity (now lives in the canvas bar)
+      files={builderFiles.files}
+      filesLoading={builderFiles.loading}
+      // Workspace identity (name/branch/dirty) lives in the canvas bar; the
+      // folder picker itself lives in the chat panel, next to Send.
       workspace={builderSession.workspace}
       runtimeStatus={runtime.status}
       runtimeLoading={runtime.loading}
-      selecting={builderSession.creating}
-      onSelectWorkspace={chooseWorkspace}
       // Keep / Discard — only available when a session is bound
       onKeepAll={
         builderSession.workspace

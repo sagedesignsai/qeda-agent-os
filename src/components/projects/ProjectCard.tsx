@@ -8,22 +8,36 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { formatDistanceToNow } from 'date-fns';
 import {
   AlertTriangleIcon,
   ArchiveIcon,
+  BriefcaseIcon,
+  BugIcon,
+  BookOpenIcon,
   CalendarClockIcon,
   CheckCircle2Icon,
+  CodeIcon,
+  FlaskConicalIcon,
   FolderIcon,
   FolderKanbanIcon,
+  GlobeIcon,
+  HeartIcon,
   InboxIcon,
+  LightbulbIcon,
   MoreHorizontalIcon,
+  MusicIcon,
+  PaletteIcon,
   PencilIcon,
+  RocketIcon,
   TargetIcon,
   TerminalSquareIcon,
   Trash2Icon,
+  VideoIcon,
+  WrenchIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge';
+import { projectHealth } from '@/lib/projects';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,17 +53,72 @@ import { cn } from '@/lib/utils';
 import { formatFocusDuration } from '@/components/tasks/FocusStatsStrip';
 import type { ProjectRollup, ProjectStatus } from '@/main/ipc/channels';
 
-/** Map the small icon vocabulary stored on a project to lucide components. */
+/**
+ * Map the small icon vocabulary stored on a project to lucide components.
+ * `PROJECT_ICON_NAMES` is the ordered picker vocabulary; the map also accepts
+ * the legacy raw names (`inbox`, `folder`, `target`, `kanban`) so old rows keep
+ * rendering.
+ */
 const ICONS: Record<string, LucideIcon> = {
   inbox: InboxIcon,
   folder: FolderIcon,
   target: TargetIcon,
   kanban: FolderKanbanIcon,
+  rocket: RocketIcon,
+  bug: BugIcon,
+  book: BookOpenIcon,
+  palette: PaletteIcon,
+  music: MusicIcon,
+  video: VideoIcon,
+  terminal: TerminalSquareIcon,
+  flask: FlaskConicalIcon,
+  briefcase: BriefcaseIcon,
+  code: CodeIcon,
+  globe: GlobeIcon,
+  heart: HeartIcon,
+  lightbulb: LightbulbIcon,
+  wrench: WrenchIcon,
 };
+
+/** Ordered names offered by the icon picker. */
+export const PROJECT_ICON_NAMES: readonly string[] = [
+  'folder',
+  'kanban',
+  'target',
+  'inbox',
+  'rocket',
+  'bug',
+  'book',
+  'palette',
+  'music',
+  'video',
+  'terminal',
+  'flask',
+  'briefcase',
+  'code',
+  'globe',
+  'heart',
+  'lightbulb',
+  'wrench',
+];
 
 export function projectIcon(name: string | null | undefined): LucideIcon {
   return (name && ICONS[name]) || FolderKanbanIcon;
 }
+
+/** Preset hex accents offered by the colour picker. */
+export const PROJECT_COLORS: readonly string[] = [
+  '#10b981',
+  '#14b8a6',
+  '#3b82f6',
+  '#6366f1',
+  '#a855f7',
+  '#ec4899',
+  '#ef4444',
+  '#f59e0b',
+  '#eab308',
+  '#84cc16',
+];
 
 export const PROJECT_STATUS_META: Record<
   ProjectStatus,
@@ -93,10 +162,8 @@ export function ProjectCard({
       ? Math.round((rollup.taskDone / rollup.taskTotal) * 100)
       : 0;
 
-  const deadline =
-    project.deadline !== null ? new Date(project.deadline * 1000) : null;
-  const overdueDeadline = deadline !== null && deadline.getTime() < Date.now();
   const isInbox = project.id === 'inbox';
+  const health = projectHealth(rollup);
 
   // A div with the button role, not a <button>: the card contains its own
   // action buttons, and interactive elements may not nest.
@@ -142,6 +209,7 @@ export function ProjectCard({
             >
               {status.label}
             </Badge>
+            <ProjectHealthBadge level={health} />
           </div>
           {project.description && (
             <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
@@ -228,17 +296,6 @@ export function ProjectCard({
           <span className="inline-flex items-center gap-1">
             <CalendarClockIcon className="size-3" />
             {rollup.blocksToday} block{rollup.blocksToday === 1 ? '' : 's'}
-          </span>
-        )}
-        {deadline && (
-          <span
-            className={cn(
-              'inline-flex items-center gap-1',
-              overdueDeadline && 'font-medium text-rose-400',
-            )}
-          >
-            <TargetIcon className="size-3" />
-            {formatDistanceToNow(deadline, { addSuffix: true })}
           </span>
         )}
         {project.repo_path && (
