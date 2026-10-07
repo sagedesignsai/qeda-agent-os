@@ -21,6 +21,7 @@
 
 import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { BuilderWorkspace } from '../../lib/builder-workspace';
@@ -114,7 +115,82 @@ export async function inspectBuilderWorkspace(
     branch: branch && branch !== 'HEAD' ? branch : null,
     dirty: changedFileCount > 0,
     changedFileCount,
+    worktreePath: null,
   };
+}
+
+// ─── Worktree isolation ──────────────────────────────────────────────────────
+
+/**
+ * Create an isolated git worktree for a Builder session.
+ *
+ * The worktree is checked out at HEAD of the current branch so it starts
+ * identical to the source tree. All OpenCode turns run inside this directory;
+ * the source branch is never modified until the user explicitly keeps the
+ * changes via `builder:changes-keep`.
+ *
+ * Returns the absolute path of the new worktree.
+ */
+export async function createBuilderWorktree(
+  repoDirectory: string,
+  sessionId: string,
+): Promise<string> {
+  // Use the OS temp dir so worktrees are outside the repo (git requires the
+  // worktree path to be outside the repo's working tree).
+  const { tmpdir } = await import('node:os');
+  const worktreeDir = path.join(
+    tmpdir(),
+    `qeda-builder-${sessionId.slice(0, 12)}`,
+  );
+
+  // Remove any leftover worktree from a previous crashed session at the same
+  // path before creating a fresh one.
+  try {
+    await fs.rm(worktreeDir, { recursive: true, force: true });
+  } catch {
+    // Best-effort: if removal fails the `git worktree add` below will error
+    // with a clear message.
+  }
+
+  const result = await git(repoDirectory, [
+    'worktree',
+    'add',
+    '--detach',
+    worktreeDir,
+    'HEAD',
+  ]);
+
+  if (!result.success) {
+    throw new Error(
+      `Could not create an isolated workspace for Builder: ${result.stderr ?? 'git worktree add failed'}.`,
+    );
+  }
+
+  return worktreeDir;
+}
+
+/**
+ * Remove the isolated worktree and its directory.
+ *
+ * This is called on session stop and session discard. It is intentionally
+ * best-effort: if the directory is already gone (e.g. the user deleted it
+ * manually) it does not throw.
+ */
+export async function removeBuilderWorktree(
+  repoDirectory: string,
+  worktreePath: string,
+): Promise<void> {
+  // `git worktree remove --force` deregisters the worktree and deletes its
+  // directory. The `--force` flag is needed because Builder's runs leave
+  // uncommitted changes behind.
+  await git(repoDirectory, ['worktree', 'remove', '--force', worktreePath]);
+  // Belt-and-suspenders: remove the directory in case `git worktree remove`
+  // left it behind (e.g. on older git versions).
+  try {
+    await fs.rm(worktreePath, { recursive: true, force: true });
+  } catch {
+    // Already gone — nothing to do.
+  }
 }
 
 // ─── File tree ──────────────────────────────────────────────────────────────
@@ -415,4 +491,185 @@ export async function readWorkspaceChanges(
   );
 
   return changes;
+}
+
+// ─── File content ────────────────────────────────────────────────────────────
+
+const MAX_FILE_READ_BYTES = 512 * 1024;
+
+/**
+ * Read a single file from the active workspace for the code viewer.
+ *
+ * `filePath` is relative to `directory`. Returns the raw text content capped
+ * at 512 KB (binary files are detected by a NUL byte and rejected with a
+ * descriptive message).
+ */
+export async function readWorkspaceFileContent(
+  directory: string,
+  filePath: string,
+): Promise<{ content: string; language?: string; truncated: boolean }> {
+  // Prevent path traversal: resolve and confirm the result is inside directory.
+  const resolved = path.resolve(directory, filePath);
+  if (
+    !resolved.startsWith(path.resolve(directory) + path.sep) &&
+    resolved !== path.resolve(directory)
+  ) {
+    throw new Error(`Access denied: "${filePath}" is outside the workspace.`);
+  }
+
+  let buf: Buffer;
+  try {
+    const handle = await fs.open(resolved, 'r');
+    try {
+      const { size } = await handle.stat();
+      const readSize = Math.min(size, MAX_FILE_READ_BYTES + 1);
+      buf = Buffer.allocUnsafe(readSize);
+      const { bytesRead } = await handle.read(buf, 0, readSize, 0);
+      buf = buf.slice(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    const e = error as NodeJS.ErrnoException;
+    throw new Error(
+      e.code === 'ENOENT'
+        ? `File not found: ${filePath}`
+        : `Could not read ${filePath}: ${e.message}`,
+      { cause: error },
+    );
+  }
+
+  // Binary detection: presence of a NUL byte is a reliable heuristic.
+  if (buf.includes(0)) {
+    throw new Error(`Cannot display binary file: ${filePath}`);
+  }
+
+  const truncated = buf.length > MAX_FILE_READ_BYTES;
+  const content = buf.slice(0, MAX_FILE_READ_BYTES).toString('utf8');
+  return { content, language: languageFromPath(filePath), truncated };
+}
+
+// ─── Keep / Discard ──────────────────────────────────────────────────────────
+
+/**
+ * Apply the worktree's changes to the source repository.
+ *
+ * We take the diff between the worktree's HEAD and its working tree (all the
+ * agent's edits) and apply it to the source repo's working tree with
+ * `git apply`. The user still needs to commit manually — Builder never
+ * commits to the source branch on the user's behalf.
+ *
+ * Returns the list of changed file paths that were applied.
+ */
+export async function applyWorktreeChanges(
+  repoDirectory: string,
+  worktreeDirectory: string,
+): Promise<string[]> {
+  // Produce the diff of everything the agent changed in the worktree.
+  const diffResult = await git(worktreeDirectory, [
+    'diff',
+    'HEAD',
+    '--no-color',
+    '--binary',
+  ]);
+
+  if (!diffResult.success && !diffResult.stdout) {
+    throw new Error(
+      `Could not read the worktree diff: ${diffResult.stderr ?? 'git diff failed'}`,
+    );
+  }
+
+  const diffText = diffResult.stdout.trim();
+  if (!diffText) {
+    // Nothing to apply — worktree is clean.
+    return [];
+  }
+
+  // Also include untracked files: git diff only covers tracked changes.
+  // For untracked files we generate a diff against /dev/null per file.
+  const untrackedResult = await git(worktreeDirectory, [
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+  ]);
+  const untrackedFiles = untrackedResult.success
+    ? untrackedResult.stdout
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+    : [];
+
+  const untrackedDiffs: string[] = [];
+  for (const rel of untrackedFiles) {
+    const ud = await git(worktreeDirectory, [
+      'diff',
+      '--no-index',
+      '--no-color',
+      '--binary',
+      '/dev/null',
+      rel,
+    ]);
+    // diff --no-index exits 1 for differences (that's normal).
+    if (ud.stdout.trim()) untrackedDiffs.push(ud.stdout.trim());
+  }
+
+  const fullDiff = [diffText, ...untrackedDiffs].join('\n');
+
+  // Write the diff to a temp file and pass it to `git apply` by path, because
+  // execFile does not support piping stdin.
+  const tmpPatch = path.join(
+    os.tmpdir(),
+    `qeda-builder-patch-${Date.now()}.patch`,
+  );
+  try {
+    await fs.writeFile(tmpPatch, fullDiff, 'utf8');
+
+    // Apply using --3way so conflicts surface cleanly rather than aborting.
+    const applyResult = await git(repoDirectory, [
+      'apply',
+      '--3way',
+      '--whitespace=fix',
+      '--allow-empty',
+      tmpPatch,
+    ]);
+
+    if (!applyResult.success) {
+      throw new Error(
+        `Failed to apply the worktree changes to your repository: ${applyResult.stderr ?? 'git apply failed'}. You can apply the diff manually from the Changes tab.`,
+      );
+    }
+  } finally {
+    await fs.unlink(tmpPatch).catch(() => undefined);
+  }
+
+  // Return the list of affected paths for the UI to report.
+  const paths = [
+    ...diffText
+      .split('\n')
+      .filter((l) => l.startsWith('diff --git'))
+      .map((l) => l.replace(/^diff --git a\/\S+ b\//, '')),
+    ...untrackedFiles,
+  ];
+  return paths;
+}
+
+/**
+ * Discard all agent changes in the worktree by resetting it to HEAD.
+ *
+ * This does NOT remove the worktree (the session can continue with a fresh
+ * slate). Use `removeBuilderWorktree` to fully tear down.
+ */
+export async function discardWorktreeChanges(
+  worktreeDirectory: string,
+): Promise<void> {
+  // Reset tracked files to HEAD.
+  const resetResult = await git(worktreeDirectory, ['checkout', '--', '.']);
+  if (!resetResult.success) {
+    throw new Error(
+      `Could not discard changes: ${resetResult.stderr ?? 'git checkout failed'}`,
+    );
+  }
+
+  // Remove untracked files the agent created.
+  await git(worktreeDirectory, ['clean', '-fd']);
 }

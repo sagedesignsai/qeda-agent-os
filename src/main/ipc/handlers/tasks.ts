@@ -9,7 +9,7 @@
  */
 
 import { isStepCount } from 'ai';
-import { ipcMain, powerSaveBlocker } from 'electron';
+import { ipcMain, powerSaveBlocker, type BrowserWindow } from 'electron';
 import { getSettings } from '../../ai/settings';
 import {
   createFocusSession,
@@ -46,7 +46,11 @@ import { refreshBadge } from '../../os-integration';
  */
 let focusPowerBlockerId: number | null = null;
 
-export function registerTasksHandlers(): void {
+export function registerTasksHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
   // ── ADHD task manager ─────────────────────────────────────────────────────
 
   ipcMain.handle(
@@ -68,6 +72,7 @@ export function registerTasksHandlers(): void {
     (_e, req: Parameters<typeof createTask>[0]) => {
       const task = createTask(req);
       refreshBadge();
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
       return task;
     },
   );
@@ -80,6 +85,7 @@ export function registerTasksHandlers(): void {
     ) => {
       const task = updateTask(id, patch);
       refreshBadge();
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
       return task;
     },
   );
@@ -87,6 +93,7 @@ export function registerTasksHandlers(): void {
   ipcMain.handle('tasks:delete', (_e, { id }: { id: string }) => {
     const result = deleteTask(id);
     refreshBadge();
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
     return result;
   });
 

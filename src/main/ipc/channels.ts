@@ -160,6 +160,17 @@ export type ChatContext = {
   notebookId?: string;
   /** The project this turn is scoped to, when the surface carries `?project=`. */
   projectId?: string;
+  /**
+   * The task the user is currently focused on, when a surface passes one.
+   * Injected into the agent system prompt so the agent knows what concrete
+   * work is in play without having to call listTasks.
+   */
+  taskId?: string;
+  /**
+   * An in-progress research run, so the agent can continue it rather than
+   * starting a new one.
+   */
+  researchRunId?: string;
 };
 
 /**
@@ -253,6 +264,26 @@ export interface IpcChannels {
    * changes or no session is bound.
    */
   'builder:workspace-changes': { req: void; res: BuilderFileChange[] };
+  /**
+   * Read a single file from the active workspace.
+   * `filePath` is relative to the workspace root. Throws when the path
+   * traverses outside the workspace or the file is binary.
+   */
+  'builder:workspace-file-read': {
+    req: { filePath: string };
+    res: { content: string; language?: string; truncated: boolean };
+  };
+  /**
+   * Apply all agent changes from the worktree to the source repository's
+   * working tree. The user still commits manually. Returns the list of
+   * affected paths.
+   */
+  'builder:changes-keep': { req: void; res: { paths: string[] } };
+  /**
+   * Reset the worktree to HEAD, discarding all agent changes. Does not
+   * remove the worktree — the session can continue.
+   */
+  'builder:changes-discard': { req: void; res: void };
 
   // Session management
   'sessions:list': {
@@ -488,9 +519,23 @@ export interface IpcChannels {
    *   terminal:agent-error      – unrecoverable failure
    */
   'terminal:run-goal': {
-    req: { sessionId: string; goal: string };
+    req: {
+      sessionId: string;
+      goal: string;
+      /**
+       * Optional task to mark `done` when the terminal agent successfully
+       * completes the goal. The handler will call `tasks:changed` so the
+       * Tasks page reflects the update without a manual refresh.
+       */
+      taskId?: string;
+    };
     res: void;
   };
+  /**
+   * The terminal agent completed a goal that was linked to a task.
+   * Carries the now-completed task id so the Tasks page can highlight it.
+   */
+  'terminal:goal-done': { sessionId: string; taskId: string };
   /** Approve a pending command block (runs the command). */
   'terminal:approve': {
     req: { sessionId: string; blockId: string };
@@ -639,6 +684,12 @@ export interface IpcChannels {
     res: void;
   };
   'tasks:delete': { req: { id: string }; res: void };
+  /**
+   * A task was created, updated, or deleted — re-fetch.
+   * Mirrors `projects:changed` and `copilot:changed` so any surface
+   * subscribed to this event stays consistent without polling.
+   */
+  'tasks:changed': void;
   'tasks:increment-pomodoro': { req: { id: string }; res: void };
   /** Ask the agent to suggest a prioritized task order. */
   'tasks:prioritize': {

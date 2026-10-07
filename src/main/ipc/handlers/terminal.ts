@@ -44,7 +44,10 @@ export function registerTerminalHandlers({
    * `terminal:execute-command`, `terminal:rerun-block` and `terminal:run-goal`
    * all emit through an identical channel set — the renderer needs one code path.
    */
-  const makeTerminalEmitter = (currentGoal?: string): TerminalAgentEmitter => ({
+  const makeTerminalEmitter = (
+    currentGoal?: string,
+    linkedTaskId?: string,
+  ): TerminalAgentEmitter => ({
     onBlockProposed(block) {
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('terminal:block-proposed', block);
@@ -98,6 +101,17 @@ export function registerTerminalHandlers({
           status: 'error',
         });
         mainWindow.webContents.send('terminal:sessions-changed');
+      }
+    },
+    onTaskCompleted(sid, taskId) {
+      // Broadcast cross-feature events so the Tasks page refreshes and the
+      // user sees the task move to Done without a manual switch of tabs.
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:goal-done', {
+          sessionId: sid,
+          taskId,
+        });
+        mainWindow.webContents.send('tasks:changed');
       }
     },
   });
@@ -197,7 +211,7 @@ export function registerTerminalHandlers({
 
   ipcMain.handle(
     'terminal:run-goal',
-    (_e, { sessionId, goal }: { sessionId: string; goal: string }) => {
+    (_e, { sessionId, goal, taskId }: { sessionId: string; goal: string; taskId?: string }) => {
       // Update the session with the goal text
       updateTerminalSession(sessionId, { goal, status: 'running' });
 
@@ -211,10 +225,10 @@ export function registerTerminalHandlers({
       }
 
       // Build the emitter — bridges agent events to IPC events
-      const emitter = makeTerminalEmitter(goal);
+      const emitter = makeTerminalEmitter(goal, taskId);
 
       // Fire-and-forget — agent runs async, IPC events carry progress
-      void runGoal({ sessionId, goal, emitter });
+      void runGoal({ sessionId, goal, taskId, emitter });
     },
   );
 

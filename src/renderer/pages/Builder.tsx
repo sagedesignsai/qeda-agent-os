@@ -154,6 +154,17 @@ export default function Builder() {
       runtimeLoading={runtime.loading}
       selecting={builderSession.creating}
       onSelectWorkspace={chooseWorkspace}
+      // Keep / Discard — only available when a session is bound
+      onKeepAll={
+        builderSession.workspace
+          ? () => void window.electron.ipc.invoke('builder:changes-keep')
+          : undefined
+      }
+      onDiscardAll={
+        builderSession.workspace
+          ? () => void window.electron.ipc.invoke('builder:changes-discard')
+          : undefined
+      }
     />
   );
 

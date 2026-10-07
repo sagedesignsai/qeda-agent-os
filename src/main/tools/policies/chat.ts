@@ -112,14 +112,27 @@ export const chatToolPolicies: ToolPolicyMap = {
   gitLog: t('read'),
   gitDiffStat: t('read'),
   grepSearch: t('read'),
-};
 
-// NOTE: the task verbs (listTasks, createTask, addSteps, scheduleBlock,
-// handToTerminal, updateTask, completeTask, deleteTask, assignTaskToProject,
-// moveBlock, deleteBlock, createProject, getTask, getFocusStats, listBlocks,
-// listProjects, createTasks) are deliberately ABSENT.
-//
-// `allTools` does not spread `taskTools` — task management is the copilot's
-// domain and the chat agent has never had those verbs. Classifying tools an
-// agent does not expose would be dead policy, and the §5.2 exhaustiveness test
-// rejects exactly that. Their classification lives in policies/copilot.ts.
+  // ── Task management (tools/tasks.ts) ───────────────────────────────────────
+  // The chat agent can now read tasks and create / complete them so it can
+  // turn research findings into actionable tasks in one turn. Risky mutations
+  // (delete, reassign) are classed destructive → user-approval, matching the
+  // copilot policy. `handToTerminal` is write-local (creates a DB row only).
+  listTasks: t('read'),
+  listProjects: t('read'),
+  getTask: t('read'),
+  getFocusStats: t('read'),
+  listBlocks: t('read'),
+  createTask: t('write-local'),
+  createTasks: t('write-local'),
+  createProject: t('write-local'),
+  addSteps: t('write-local'),
+  scheduleBlock: t('write-local'),
+  handToTerminal: t('write-local'),
+  updateTask: t('destructive'),
+  completeTask: t('destructive'),
+  deleteTask: t('destructive'),
+  assignTaskToProject: t('destructive'),
+  moveBlock: t('destructive'),
+  deleteBlock: t('destructive'),
+};

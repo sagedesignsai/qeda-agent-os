@@ -29,7 +29,16 @@ import {
   connectBuilderRuntime,
   type BuilderRuntime,
 } from '../../builder/client';
-import { inspectBuilderWorkspace } from '../../builder/workspace';
+import {
+  inspectBuilderWorkspace,
+  readWorkspaceFiles,
+  readWorkspaceChanges,
+  readWorkspaceFileContent,
+  createBuilderWorktree,
+  removeBuilderWorktree,
+  applyWorktreeChanges,
+  discardWorktreeChanges,
+} from '../../builder/workspace';
 import { normalizeBuilderSessionEvent } from '../../builder/session-events';
 import { BuilderPreview } from '../../builder/preview';
 import type { BuilderPreviewStatus } from '../../../lib/builder-preview';
@@ -53,6 +62,8 @@ export function registerBuilderHandlers({
   let runtime: BuilderRuntime | null = null;
   let activeSession: BuilderSessionSummary | null = null;
   let activeWorkspace: BuilderWorkspace | null = null;
+  /** Absolute path of the isolated git worktree, or null when not isolated. */
+  let activeWorktreePath: string | null = null;
   let eventController: AbortController | null = null;
   let eventBuffer: BuilderSessionEvent[] = [];
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- written by broadcast/stopActive/prompt/abort to track optimistic state; read path is the renderer's status events
@@ -110,15 +121,25 @@ export function registerBuilderHandlers({
     // The preview belongs to the workspace, so it goes with the session.
     await preview.stop();
     const previous = runtime;
+    const prevWorktree = activeWorktreePath;
+    const prevRepo = activeWorkspace?.directory ?? null;
     runtime = null;
     activeSession = null;
     activeWorkspace = null;
+    activeWorktreePath = null;
     eventBuffer = [];
     running = false;
     if (previous) {
       // dispose() never closes a caller-supplied client, so this only releases
       // the provider wrapper, not the OpenCode connection.
       await previous.provider.dispose().catch(() => undefined);
+    }
+    // Remove the isolated worktree after the session is fully torn down so
+    // any in-flight git operations can complete first.
+    if (prevWorktree && prevRepo) {
+      await removeBuilderWorktree(prevRepo, prevWorktree).catch(
+        () => undefined,
+      );
     }
   };
 
@@ -161,13 +182,43 @@ export function registerBuilderHandlers({
       await stopActive();
       runtime = result.runtime;
 
+      // Create an isolated git worktree so all agent turns run in a copy of
+      // the repo. The source branch is untouched until the user keeps changes.
+      const sessionNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      let worktreePath: string | null = null;
+      try {
+        worktreePath = await createBuilderWorktree(
+          workspace.directory,
+          sessionNonce,
+        );
+      } catch (error) {
+        // Worktree creation failure is non-fatal: fall back to running in the
+        // actual repo directory and surface a visible warning via the session
+        // error channel. This keeps Builder usable in environments where git
+        // worktree is unavailable (e.g. shallow clones).
+        console.warn(
+          '[Builder] Worktree isolation failed, running in repo directly:',
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+
+      // The session runs in the worktree when isolation succeeded, else in the
+      // validated repo root.
+      const sessionDirectory = worktreePath ?? workspace.directory;
+
       let session;
       try {
         session = await runtime.client.session.create({
           title: `Builder · ${workspace.name}`,
-          location: { directory: workspace.directory },
+          location: { directory: sessionDirectory },
         });
       } catch (error) {
+        // Clean up the worktree if the session create failed.
+        if (worktreePath) {
+          await removeBuilderWorktree(workspace.directory, worktreePath).catch(
+            () => undefined,
+          );
+        }
         await stopActive();
         throw error;
       }
@@ -177,8 +228,15 @@ export function registerBuilderHandlers({
         title: session.title ?? `Builder · ${workspace.name}`,
         createdAt: session.time.created,
       };
+
+      const boundWorkspace: BuilderWorkspace = {
+        ...workspace,
+        worktreePath,
+      };
+
       activeSession = summary;
-      activeWorkspace = workspace;
+      activeWorkspace = boundWorkspace;
+      activeWorktreePath = worktreePath;
       eventBuffer = [];
       running = false;
 
@@ -207,7 +265,7 @@ export function registerBuilderHandlers({
         }
       })();
 
-      return { session: summary, workspace };
+      return { session: summary, workspace: boundWorkspace };
     },
   );
 
@@ -303,8 +361,9 @@ export function registerBuilderHandlers({
       import('../../../lib/builder-workspace.js').BuilderFileNode[]
     > => {
       if (!activeWorkspace) return [];
-      const { readWorkspaceFiles } = await import('../../builder/workspace.js');
-      return readWorkspaceFiles(activeWorkspace.directory);
+      return readWorkspaceFiles(
+        activeWorkspace.worktreePath ?? activeWorkspace.directory,
+      );
     },
   );
 
@@ -314,11 +373,44 @@ export function registerBuilderHandlers({
       import('../../../lib/builder-workspace.js').BuilderFileChange[]
     > => {
       if (!activeWorkspace) return [];
-      const { readWorkspaceChanges } =
-        await import('../../builder/workspace.js');
-      return readWorkspaceChanges(activeWorkspace.directory);
+      return readWorkspaceChanges(
+        activeWorkspace.worktreePath ?? activeWorkspace.directory,
+      );
     },
   );
+
+  ipcMain.handle(
+    'builder:workspace-file-read',
+    async (_event, { filePath }: { filePath: string }) => {
+      if (!activeWorkspace) {
+        throw new Error('No active workspace. Choose a project folder first.');
+      }
+      const root = activeWorkspace.worktreePath ?? activeWorkspace.directory;
+      return readWorkspaceFileContent(root, filePath);
+    },
+  );
+
+  ipcMain.handle('builder:changes-keep', async () => {
+    if (!activeWorkspace) {
+      throw new Error('No active workspace to apply changes from.');
+    }
+    const { worktreePath, directory } = activeWorkspace;
+    if (!worktreePath) {
+      // No worktree isolation: the agent ran directly in the repo, so there
+      // is nothing to "apply" — the changes are already there.
+      return { paths: [] };
+    }
+    const paths = await applyWorktreeChanges(directory, worktreePath);
+    return { paths };
+  });
+
+  ipcMain.handle('builder:changes-discard', async () => {
+    if (!activeWorkspace) {
+      throw new Error('No active workspace to discard changes in.');
+    }
+    const root = activeWorkspace.worktreePath ?? activeWorkspace.directory;
+    await discardWorktreeChanges(root);
+  });
 
   ipcMain.handle(
     'builder:permission-reply',

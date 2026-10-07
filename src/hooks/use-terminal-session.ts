@@ -42,7 +42,7 @@ export interface UseTerminalSessionReturn {
   fixes: Record<string, FixSuggestion>;
   /** Block id currently being diagnosed, if any. */
   isFixingId: string | undefined;
-  runGoal: (goal: string) => void;
+  runGoal: (goal: string, taskId?: string) => void;
   runCommand: (command: string) => void;
   rerun: (blockId: string) => void;
   approve: (blockId: string) => void;
@@ -140,12 +140,16 @@ export function useTerminalSession(
   // ── Actions ───────────────────────────────────────────────────────────────
 
   const runGoal = useCallback(
-    (goal: string) => {
+    (goal: string, taskId?: string) => {
       if (!sessionId) return;
       setStatus('running');
       setSummary('');
       setError(undefined);
-      void window.electron.ipc.invoke('terminal:run-goal', { sessionId, goal });
+      void window.electron.ipc.invoke('terminal:run-goal', {
+        sessionId,
+        goal,
+        taskId,
+      });
     },
     [sessionId],
   );

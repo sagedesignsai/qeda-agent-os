@@ -38,13 +38,14 @@ function cacheKey(
   mode: AgentMode,
   context?: ChatContext,
 ): string {
-  // Contexts are additive (page + notebook + project can coexist), so all three
-  // go into the key — otherwise a project-scoped chat would reuse an agent whose
-  // system prompt omits the project, and vice versa.
+  // Contexts are additive (page + notebook + project + task can coexist), so all
+  // go into the key — otherwise a task-scoped chat would reuse an agent whose
+  // system prompt omits the task, and vice versa.
   const parts = [
     context?.pageId ? `p:${context.pageId}` : null,
     context?.notebookId ? `n:${context.notebookId}` : null,
     context?.projectId ? `pr:${context.projectId}` : null,
+    context?.taskId ? `t:${context.taskId}` : null,
   ].filter(Boolean);
   return `${target.providerId}::${target.modelId}::${mode}::${parts.join('|') || '-'}`;
 }

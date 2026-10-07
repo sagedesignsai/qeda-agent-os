@@ -251,14 +251,26 @@ export default function Terminal() {
   // Auto-run goal from ?goal= (set by Tasks "Hand to Agent")
   useEffect(() => {
     const goal = searchParams.get('goal');
+    const taskId = searchParams.get('task');
     if (goal && sessionId && status === 'idle') {
-      // Drop only `goal`; the project scope must survive.
+      // Drop goal and task; the project scope must survive.
       const next = new URLSearchParams(searchParams);
       next.delete('goal');
+      next.delete('task');
       setSearchParams(next, { replace: true });
-      runGoal(decodeURIComponent(goal));
+      runGoal(
+        decodeURIComponent(goal),
+        taskId ? decodeURIComponent(taskId) : undefined,
+      );
     }
   }, [sessionId, searchParams, setSearchParams, status, runGoal]);
+
+  useIpcEvent('terminal:goal-done', (...args: unknown[]) => {
+    const payload = args[0] as { sessionId: string; taskId: string } | undefined;
+    if (payload?.sessionId === sessionId) {
+      toast.success('Linked task marked done!');
+    }
+  });
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const userScrolledUpRef = useRef(false);

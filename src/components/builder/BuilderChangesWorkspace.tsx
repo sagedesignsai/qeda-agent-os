@@ -51,13 +51,6 @@ export function BuilderChangesWorkspace({
   const selectedChange =
     visibleChanges.find((change) => change.path === selectedPath) ??
     visibleChanges[0];
-  const changeCountsByKind = changes.reduce<Record<BuilderChangeKind, number>>(
-    (result, change) => {
-      result[change.kind] += 1;
-      return result;
-    },
-    { added: 0, modified: 0, deleted: 0 },
-  );
   const totals = changes.reduce(
     (result, change) => {
       result[change.kind] += 1;
@@ -93,7 +86,11 @@ export function BuilderChangesWorkspace({
             className="h-7 gap-1.5 px-2 text-[10px] text-muted-foreground"
             disabled={changes.length === 0 || !onDiscardAll}
             onClick={onDiscardAll}
-            title="Discarding files will be available after workspace operations are connected."
+            title={
+              onDiscardAll
+                ? 'Reset the worktree to HEAD — all agent changes are discarded.'
+                : 'Discard is available after a workspace is bound.'
+            }
           >
             <RotateCcwIcon className="size-3" />
             Discard
@@ -103,7 +100,11 @@ export function BuilderChangesWorkspace({
             className="h-7 gap-1.5 px-2.5 text-[10px]"
             disabled={changes.length === 0 || !onKeepAll}
             onClick={onKeepAll}
-            title="Keeping reviewed changes will be available after workspace operations are connected."
+            title={
+              onKeepAll
+                ? 'Apply the worktree changes to your source tree.'
+                : 'Keep is available after a workspace is bound.'
+            }
           >
             <CheckIcon className="size-3" />
             Keep changes

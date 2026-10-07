@@ -41,6 +41,7 @@ import {
   getSessionBlocks,
   type TerminalBlock,
 } from '../db/terminal.js';
+import { updateTask } from '../db/tasks.js';
 import {
   getShellExecutable,
   buildExecutionEnv,
@@ -309,6 +310,12 @@ export interface TerminalAgentEmitter {
   onError(sessionId: string, error: string): void;
   /** Working directory changed (e.g. from direct cd command). */
   onCwdChanged?(newCwd: string): void;
+  /**
+   * The linked task was marked done because the goal completed successfully.
+   * Used by the terminal IPC handler to emit `terminal:goal-done` and
+   * `tasks:changed` so the Tasks page refreshes without polling.
+   */
+  onTaskCompleted?(sessionId: string, taskId: string): void;
 }
 
 // ─── Direct execution (Warp-style) ───────────────────────────────────────────
@@ -611,6 +618,12 @@ export interface RunGoalOptions {
   sessionId: string;
   goal: string;
   emitter: TerminalAgentEmitter;
+  /**
+   * Optional task to mark `done` when the goal completes successfully.
+   * Fires `emitter.onTaskCompleted` so the IPC handler can broadcast
+   * `terminal:goal-done` and `tasks:changed` to the renderer.
+   */
+  taskId?: string;
 }
 
 /**
@@ -622,6 +635,7 @@ export async function runGoal({
   sessionId,
   goal,
   emitter,
+  taskId,
 }: RunGoalOptions): Promise<void> {
   const settings = getSettings();
   const model = resolveModel(
@@ -649,6 +663,17 @@ export async function runGoal({
       status: 'done',
       title: goal.length > 60 ? `${goal.slice(0, 57)}…` : goal,
     });
+
+    // If a task was linked to this goal, auto-complete it now that the
+    // terminal agent has successfully accomplished the work.
+    if (taskId) {
+      try {
+        updateTask(taskId, { status: 'done' });
+        emitter.onTaskCompleted?.(sessionId, taskId);
+      } catch {
+        // Best-effort — a task DB write must never block the terminal summary.
+      }
+    }
 
     emitter.onDone(sessionId, summary);
   } catch (err: unknown) {

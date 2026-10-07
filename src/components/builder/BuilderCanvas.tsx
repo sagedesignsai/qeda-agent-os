@@ -110,6 +110,8 @@ interface BuilderCanvasProps {
   changes?: BuilderFileChange[];
   selectedFilePath?: string;
   onSelectFile?: (path: string) => void;
+  onKeepAll?: () => void;
+  onDiscardAll?: () => void;
   // ── Workspace / runtime identity (merged from old BuilderWorkspaceHeader) ──
   /** The bound workspace, or null when none has been selected. */
   workspace?: BuilderWorkspace | null;
@@ -305,6 +307,8 @@ export function BuilderCanvas({
   changes = [],
   selectedFilePath,
   onSelectFile,
+  onKeepAll,
+  onDiscardAll,
   workspace = null,
   runtimeStatus = null,
   runtimeLoading = false,
@@ -594,7 +598,11 @@ export function BuilderCanvas({
           onSelectFile={onSelectFile}
         />
       ) : (
-        <BuilderChangesWorkspace changes={changes} />
+        <BuilderChangesWorkspace
+          changes={changes}
+          onKeepAll={onKeepAll}
+          onDiscardAll={onDiscardAll}
+        />
       )}
 
       <div className="flex h-7 shrink-0 items-center justify-between border-t border-border/50 bg-background/70 px-3 text-[9px] text-muted-foreground/80">

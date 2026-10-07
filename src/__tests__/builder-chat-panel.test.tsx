@@ -24,6 +24,7 @@ const workspace: BuilderWorkspace = {
   branch: 'main',
   dirty: false,
   changedFileCount: 0,
+  worktreePath: null,
 };
 
 const session = { id: 'ses_1', title: 'Builder · app', createdAt: 1 };
@@ -162,9 +163,7 @@ describe('BuilderChatPanel', () => {
       />,
     );
 
-    expect(
-      screen.getByRole('button', { name: 'Send prompt' }),
-    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeEnabled();
     await submitPrompt();
     expect(onSend).toHaveBeenCalledWith('Add a pricing page');
     expect(onPromptChange).toHaveBeenCalledWith('');

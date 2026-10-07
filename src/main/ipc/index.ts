@@ -88,7 +88,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerAgentChatHandlers({ mainWindow });
   registerTerminalHandlers({ mainWindow });
   registerProjectsHandlers({ mainWindow });
-  registerTasksHandlers();
+  registerTasksHandlers({ mainWindow });
   registerCopilotHandlers({ mainWindow });
   registerGamificationHandlers({ mainWindow });
   registerNotificationsHandlers({ mainWindow });

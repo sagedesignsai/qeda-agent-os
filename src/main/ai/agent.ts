@@ -27,18 +27,21 @@ import {
   listPages,
   type Page,
 } from '../db/workspace';
+import { getTask } from '../db/tasks';
 
 const BASE_INSTRUCTIONS = `
 You are Qeda, an agent OS with full access to the user's local system and knowledge workspace.
 
 ## Capabilities
 - **Knowledge workspace**: list, search, read, create and update pages and notebooks (listPages, findPages, getPage, createNotebook, writeNotebook, writePage, appendToPage, relatedPages).
+- **Task management**: read, create, update and complete tasks (listTasks, getTask, createTask, createTasks, addSteps, updateTask, completeTask, scheduleBlock, handToTerminal). Use these to turn research findings or plans into real tasks — you can do it in the same turn without asking the user to go to another tab.
+- **Projects**: create projects (createProject), list them (listProjects). File tasks into the right project when creating them.
 - **Web research**: discover sources with webSearch (uses whichever search provider is configured), read them with fetchUrl. Prefer advancedSearch when you want Google results, published dates or a direct answer — it names a provider or falls back across all of them — and scrapePage (Firecrawl) to read JavaScript-heavy docs sites as clean markdown.
 - **Up-to-date library docs**: libraryDocs (Context7) returns version-specific documentation and code snippets for a library — always use it before writing API/framework code.
 - **Assets**: findImages (Unsplash) for cover art and illustrations; textToSpeech (ElevenLabs / Deepgram / Cartesia) to narrate a page, transcribeAudio (Deepgram) to turn a local recording into text.
 - **Deep research**: structure investigations with startResearchRun, recordSource, recordEvidence, completeResearchRun.
 - **File System**: read files, list directories, write files (with approval), delete files (with approval).
-- **Shell / Terminal**: execute shell commands (with approval).
+- **Shell / Terminal**: execute shell commands (with approval), or open a dedicated terminal session with handToTerminal.
 - **Clipboard**: read and write the system clipboard.
 - **Semantic search**: searchDocs over indexed files and pages; indexPage puts a page into the vector index.
 
@@ -49,11 +52,13 @@ When the user asks for research, a summary of a topic, or a report:
 3. Read the most promising sources with fetchUrl — or scrapePage when the page needs rendering — and record exact quotes with recordEvidence.
 4. Synthesize a report: findings first, then a "## Sources" section listing every source used. Claims should trace to recorded evidence.
 5. completeResearchRun with the report, then offer to write it into a page with writePage.
+6. After completing research, proactively offer to create tasks from the action items discovered.
 
 ## Guidelines
 - Always describe what you are about to do before calling a tool.
-- For destructive operations (writeFile, deleteFile, runShell), explain the exact impact before requesting approval.
+- For destructive operations (writeFile, deleteFile, runShell, completeTask, deleteTask), explain the exact impact before requesting approval.
 - Prefer findPages over re-deriving knowledge the workspace already contains.
+- Prefer listTasks before creating new tasks — avoid duplicates.
 - Cite sources with URLs whenever you state a non-obvious fact learned from the web.
 - Be concise. Use markdown formatting.
 `.trim();
@@ -113,6 +118,8 @@ export interface WorkspaceContext {
   notebookId?: string;
   /** The project this conversation belongs to, when scoped. */
   projectId?: string;
+  /** The task the user is currently working on — injected into the prompt. */
+  taskId?: string;
 }
 
 /**
@@ -122,7 +129,7 @@ export interface WorkspaceContext {
  * the full text of its five most recently updated pages.
  */
 function renderContextBlock(context: WorkspaceContext | undefined): string {
-  if (!context?.pageId && !context?.notebookId && !context?.projectId)
+  if (!context?.pageId && !context?.notebookId && !context?.projectId && !context?.taskId)
     return '';
 
   const sections: string[] = [
@@ -134,6 +141,30 @@ function renderContextBlock(context: WorkspaceContext | undefined): string {
     if (context.projectId) {
       const projectBlock = renderProjectContext(context);
       if (projectBlock) sections.push(projectBlock.trim());
+    }
+
+    if (context.taskId) {
+      try {
+        const task = getTask(context.taskId);
+        if (task) {
+          sections.push(
+            [
+              '\n## Focused task',
+              `The user is currently working on the task **"${task.title}"** (id: ${task.id}).`,
+              task.description ? `Description: ${task.description}` : '',
+              `Status: ${task.status} | Priority: ${task.priority === 1 ? 'high' : task.priority === 2 ? 'medium' : 'low'}`,
+              task.due_at
+                ? `Due: ${new Date(task.due_at * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
+                : '',
+              'When the user asks to "continue", "work on", or "finish" something, assume they mean this task unless they say otherwise.',
+            ]
+              .filter(Boolean)
+              .join('\n'),
+          );
+        }
+      } catch {
+        // Task read is best-effort — a missing task must not break the turn.
+      }
     }
 
     if (context.pageId) {

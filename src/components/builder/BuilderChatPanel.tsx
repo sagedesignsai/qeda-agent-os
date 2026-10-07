@@ -116,7 +116,10 @@ export function BuilderChatPanel({
 }: BuilderChatPanelProps) {
   const runtimeConnected = status?.state === 'connected';
   const canSend =
-    runtimeConnected && !!session && prompt.trim().length > 0 && !creatingSession;
+    runtimeConnected &&
+    !!session &&
+    prompt.trim().length > 0 &&
+    !creatingSession;
   const blockedReason = !runtimeConnected
     ? status?.state === 'unsupported'
       ? 'Update OpenCode to continue'
