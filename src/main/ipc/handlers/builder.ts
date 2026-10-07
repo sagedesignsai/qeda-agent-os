@@ -25,7 +25,10 @@
  */
 
 import { ipcMain, shell, type BrowserWindow } from 'electron';
-import { connectBuilderRuntime, type BuilderRuntime } from '../../builder/client';
+import {
+  connectBuilderRuntime,
+  type BuilderRuntime,
+} from '../../builder/client';
 import { inspectBuilderWorkspace } from '../../builder/workspace';
 import { normalizeBuilderSessionEvent } from '../../builder/session-events';
 import { BuilderPreview } from '../../builder/preview';
@@ -52,6 +55,7 @@ export function registerBuilderHandlers({
   let activeWorkspace: BuilderWorkspace | null = null;
   let eventController: AbortController | null = null;
   let eventBuffer: BuilderSessionEvent[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- written by broadcast/stopActive/prompt/abort to track optimistic state; read path is the renderer's status events
   let running = false;
   let localEventSeq = 0;
 
@@ -144,7 +148,10 @@ export function registerBuilderHandlers({
 
   ipcMain.handle(
     'builder:session-create',
-    async (_event, { directory }: { directory: string }): Promise<BuilderSessionStart> => {
+    async (
+      _event,
+      { directory }: { directory: string },
+    ): Promise<BuilderSessionStart> => {
       // Validate before touching OpenCode, so a bad folder never creates a
       // session — and never falls back to the ambient default location.
       const workspace = await inspectBuilderWorkspace(directory);
@@ -193,8 +200,7 @@ export function registerBuilderHandlers({
             broadcast(
               localEvent(session.id, {
                 type: 'error',
-                message:
-                  error instanceof Error ? error.message : String(error),
+                message: error instanceof Error ? error.message : String(error),
               }),
             );
           }
@@ -218,9 +224,7 @@ export function registerBuilderHandlers({
       const trimmed = typeof text === 'string' ? text.trim() : '';
       if (!trimmed) throw new Error('Write a prompt before sending.');
 
-      broadcast(
-        localEvent(session.id, { type: 'user-prompt', text: trimmed }),
-      );
+      broadcast(localEvent(session.id, { type: 'user-prompt', text: trimmed }));
       running = true;
       broadcast(localEvent(session.id, { type: 'status', status: 'running' }));
       try {
@@ -230,10 +234,9 @@ export function registerBuilderHandlers({
         });
       } catch (error) {
         running = false;
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         broadcast(localEvent(session.id, { type: 'error', message }));
-        throw new Error(message);
+        throw new Error(message, { cause: error });
       }
     },
   );
@@ -269,14 +272,15 @@ export function registerBuilderHandlers({
       // git repository by the session that created it; re-validating here keeps
       // that guarantee true even if the folder moved or was deleted since.
       if (!activeWorkspace) {
-        throw new Error(
-          'Create a Builder session before starting a preview.',
-        );
+        throw new Error('Create a Builder session before starting a preview.');
       }
       const workspace = await inspectBuilderWorkspace(
         activeWorkspace.directory,
       );
-      return preview.start({ directory: workspace.directory, script: req?.script });
+      return preview.start({
+        directory: workspace.directory,
+        script: req?.script,
+      });
     },
   );
 
@@ -292,6 +296,29 @@ export function registerBuilderHandlers({
       void shell.openExternal(url);
     }
   });
+
+  ipcMain.handle(
+    'builder:workspace-files',
+    async (): Promise<
+      import('../../../lib/builder-workspace.js').BuilderFileNode[]
+    > => {
+      if (!activeWorkspace) return [];
+      const { readWorkspaceFiles } = await import('../../builder/workspace.js');
+      return readWorkspaceFiles(activeWorkspace.directory);
+    },
+  );
+
+  ipcMain.handle(
+    'builder:workspace-changes',
+    async (): Promise<
+      import('../../../lib/builder-workspace.js').BuilderFileChange[]
+    > => {
+      if (!activeWorkspace) return [];
+      const { readWorkspaceChanges } =
+        await import('../../builder/workspace.js');
+      return readWorkspaceChanges(activeWorkspace.directory);
+    },
+  );
 
   ipcMain.handle(
     'builder:permission-reply',

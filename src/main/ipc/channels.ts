@@ -86,7 +86,11 @@ import type {
   BuilderSessionStart,
   BuilderSessionState,
 } from '../../lib/builder-session.js';
-import type { BuilderWorkspace } from '../../lib/builder-workspace.js';
+import type {
+  BuilderWorkspace,
+  BuilderFileNode,
+  BuilderFileChange,
+} from '../../lib/builder-workspace.js';
 import type { BuilderPreviewStatus } from '../../lib/builder-preview.js';
 export type {
   BuilderPreviewOwner,
@@ -237,6 +241,18 @@ export interface IpcChannels {
   'builder:preview-open': { req: { url: string }; res: void };
   /** Fired on every preview state change (log lines included). */
   'builder:preview-changed': BuilderPreviewStatus;
+  /**
+   * Walk the active session's workspace directory and return a tree of files
+   * that are tracked or untracked by git (i.e., not in .gitignore).
+   * Returns an empty array when no session is bound.
+   */
+  'builder:workspace-files': { req: void; res: BuilderFileNode[] };
+  /**
+   * Return git diff --numstat + unified diff for every changed file in the
+   * active session's workspace. Returns an empty array when there are no
+   * changes or no session is bound.
+   */
+  'builder:workspace-changes': { req: void; res: BuilderFileChange[] };
 
   // Session management
   'sessions:list': {

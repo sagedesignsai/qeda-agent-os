@@ -13,6 +13,13 @@
  * on its own — the user still confirms a folder in the OS dialog and main still
  * proves it is a git repo, so the "a run happens only in a folder you chose"
  * guarantee in `main/builder/workspace.ts` is untouched.
+ *
+ * UNIFIED CANVAS BAR
+ * ──────────────────
+ * The workspace header (repo name, branch, runtime status, folder picker) is
+ * merged into BuilderCanvas's own top toolbar. Builder.tsx no longer renders a
+ * separate <BuilderWorkspaceHeader> row — the canvas bar is the one source of
+ * truth for workspace identity.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -20,7 +27,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { BuilderCanvas } from '@/components/builder/BuilderCanvas';
 import { BuilderChatPanel } from '@/components/builder/BuilderChatPanel';
-import { BuilderWorkspaceHeader } from '@/components/builder/BuilderWorkspaceHeader';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useBuilderPreview } from '@/hooks/use-builder-preview';
@@ -118,6 +124,7 @@ export default function Builder() {
       onFormReply={builderSession.replyForm}
     />
   );
+
   const canvasPanel = (
     <BuilderCanvas
       surface={workspace.surface}
@@ -141,6 +148,12 @@ export default function Builder() {
       onOpenExternal={preview.openExternal}
       selectedFilePath={workspace.selectedFilePath}
       onSelectFile={workspace.setSelectedFilePath}
+      // Workspace identity (now lives in the canvas bar)
+      workspace={builderSession.workspace}
+      runtimeStatus={runtime.status}
+      runtimeLoading={runtime.loading}
+      selecting={builderSession.creating}
+      onSelectWorkspace={chooseWorkspace}
     />
   );
 
@@ -154,13 +167,6 @@ export default function Builder() {
         meta={
           <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
         }
-      />
-      <BuilderWorkspaceHeader
-        status={runtime.status}
-        loading={runtime.loading}
-        workspace={builderSession.workspace}
-        selecting={builderSession.creating}
-        onSelectWorkspace={chooseWorkspace}
       />
 
       {isCompact ? (

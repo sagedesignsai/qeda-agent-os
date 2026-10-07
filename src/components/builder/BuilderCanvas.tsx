@@ -3,8 +3,16 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Preview, code, and change surfaces for one Builder workspace.
  *
+ * UNIFIED TOP BAR
+ * ───────────────
+ * The entire canvas top bar acts as the workspace chrome: session title and
+ * repo/branch badge on the left, surface tabs in the center, and runtime status
+ * + action controls on the right. This mirrors the v0 pattern where a single
+ * horizontal bar hosts both navigation and identity rather than stacking two
+ * separate headers.
+ *
  * THE PREVIEW IS EITHER QEDA'S OR THE AGENT'S — AND IT SAYS WHICH
- * ─────────────────────────────────────────────────────────────
+ * ─────────────────────────────────────────────────────────────────
  * Two things can put a URL in this canvas: a process Qeda started (`owner:
  * 'qeda'`, with a real Stop control because we can actually kill it) or a server
  * the agent started inside a turn and advertised in its output (`owner:
@@ -29,13 +37,15 @@
 
 import { useState } from 'react';
 import {
+  AlertTriangleIcon,
   ArrowDownToLineIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
-  CircleDotDashedIcon,
   Code2Icon,
   ExternalLinkIcon,
+  FolderGit2Icon,
+  GitBranchIcon,
   GitCompareArrowsIcon,
   Globe2Icon,
   Loader2Icon,
@@ -52,6 +62,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { BuilderCodeWorkspace } from '@/components/builder/BuilderCodeWorkspace';
 import { BuilderChangesWorkspace } from '@/components/builder/BuilderChangesWorkspace';
 import {
@@ -73,7 +84,9 @@ import type {
 import type {
   BuilderFileChange,
   BuilderFileNode,
+  BuilderWorkspace,
 } from '@/lib/builder-workspace';
+import type { BuilderConnectionStatus } from '@/lib/builder-types';
 
 interface BuilderCanvasProps {
   surface: BuilderSurface;
@@ -97,6 +110,15 @@ interface BuilderCanvasProps {
   changes?: BuilderFileChange[];
   selectedFilePath?: string;
   onSelectFile?: (path: string) => void;
+  // ── Workspace / runtime identity (merged from old BuilderWorkspaceHeader) ──
+  /** The bound workspace, or null when none has been selected. */
+  workspace?: BuilderWorkspace | null;
+  /** Runtime connection status for the status dot. */
+  runtimeStatus?: BuilderConnectionStatus | null;
+  runtimeLoading?: boolean;
+  /** Whether a workspace selection is in progress. */
+  selecting?: boolean;
+  onSelectWorkspace?: () => void;
 }
 
 const VIEWPORTS: Array<{
@@ -237,13 +259,13 @@ function PreviewIdleState({
             disabled={!canStart || starting}
             title={
               canStart
-                ? 'Run this project’s dev script and load it here.'
+                ? 'Run this project\u2019s dev script and load it here.'
                 : 'Choose a project folder first.'
             }
           >
             <PlayIcon className="size-3" />
             {starting
-              ? 'Starting…'
+              ? 'Starting\u2026'
               : status.state === 'error' || status.state === 'exited'
                 ? 'Try again'
                 : 'Start preview'}
@@ -283,6 +305,11 @@ export function BuilderCanvas({
   changes = [],
   selectedFilePath,
   onSelectFile,
+  workspace = null,
+  runtimeStatus = null,
+  runtimeLoading = false,
+  selecting = false,
+  onSelectWorkspace,
 }: BuilderCanvasProps) {
   // Remounting the frame is the only honest "reload" an iframe gives us without
   // reaching into the server: a new key is a new document load.
@@ -299,9 +326,9 @@ export function BuilderCanvas({
   const running = ownsProcess && previewStatus.state === 'ready';
 
   const footerStatus = running
-    ? `Preview running · ${previewUrl}`
+    ? `Preview running \u00b7 ${previewUrl}`
     : previewStatus.state === 'starting'
-      ? 'Preview starting…'
+      ? 'Preview starting\u2026'
       : previewOwner === 'detected'
         ? 'Preview detected in agent output'
         : previewStatus.state === 'error'
@@ -310,46 +337,105 @@ export function BuilderCanvas({
             ? 'Preview stopped'
             : 'No project process running';
 
+  // Runtime dot
+  const runtimeConnected = runtimeStatus?.state === 'connected';
+  const runtimeDot = runtimeLoading
+    ? 'bg-amber-400 animate-pulse'
+    : runtimeConnected
+      ? 'bg-emerald-400'
+      : 'bg-muted-foreground/40';
+  const runtimeLabel = runtimeLoading
+    ? 'Checking'
+    : runtimeConnected
+      ? 'Connected'
+      : runtimeStatus?.state === 'unsupported'
+        ? 'Unsupported'
+        : runtimeStatus?.state === 'error'
+          ? 'Error'
+          : 'Offline';
+
   return (
     <section
       className="flex h-full min-h-0 flex-col bg-muted/20"
       aria-label="Build canvas"
     >
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-1 border-b border-border/50 bg-background/75 px-2.5 sm:px-3">
-        <Tabs
-          value={surface}
-          onValueChange={(value) => onSurfaceChange(value as BuilderSurface)}
-          className="min-w-0"
-        >
-          <TabsList variant="line" className="h-9 gap-1 p-0">
-            <TabsTrigger
-              value="preview"
-              className="h-8 flex-none gap-1.5 px-2 text-[11px]"
-            >
-              <Globe2Icon className="size-3.5" /> Preview
-            </TabsTrigger>
-            <TabsTrigger
-              value="code"
-              className="h-8 flex-none gap-1.5 px-2 text-[11px]"
-            >
-              <Code2Icon className="size-3.5" /> Code
-            </TabsTrigger>
-            <TabsTrigger
-              value="changes"
-              className="h-8 flex-none gap-1.5 px-2 text-[11px]"
-            >
-              <GitCompareArrowsIcon className="size-3.5" />
-              <span className="hidden xs:inline">Changes</span>
-              <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[9px] text-muted-foreground">
-                {changes.length}
-              </span>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      {/* ── Unified top bar ────────────────────────────────────────────────── */}
+      <div className="flex min-h-10 shrink-0 items-center gap-2 border-b border-border/50 bg-background/80 px-2 backdrop-blur-sm sm:px-3">
+        {/* Left: workspace identity */}
+        <div className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden">
+          <div className="flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <WandSparklesIcon className="size-3" />
+          </div>
+          <span className="max-w-[100px] truncate text-[11px] font-semibold tracking-tight sm:max-w-[160px]">
+            {workspace?.name ?? 'No workspace'}
+          </span>
+          {workspace && (
+            <>
+              <Separator
+                orientation="vertical"
+                className="mx-0.5 hidden h-3 shrink-0 sm:block"
+              />
+              <Badge
+                variant="outline"
+                className="hidden h-5 max-w-[120px] shrink-0 gap-0.5 border-border/60 px-1 text-[9px] font-normal text-muted-foreground sm:inline-flex"
+              >
+                <GitBranchIcon className="size-2.5 shrink-0" />
+                <span className="truncate">{workspace.branch ?? 'HEAD'}</span>
+              </Badge>
+              {workspace.dirty && (
+                <Badge
+                  variant="outline"
+                  className="hidden h-5 shrink-0 gap-0.5 border-amber-500/30 bg-amber-500/5 px-1 text-[9px] font-normal text-amber-600 dark:text-amber-400 sm:inline-flex"
+                >
+                  <AlertTriangleIcon className="size-2.5" />
+                  {workspace.changedFileCount}
+                </Badge>
+              )}
+            </>
+          )}
+        </div>
 
-        <div className="flex items-center gap-1">
+        {/* Center: surface tabs (absolute center so it doesn't shift on narrow screens) */}
+        <div className="mx-auto flex-none">
+          <Tabs
+            value={surface}
+            onValueChange={(value) => onSurfaceChange(value as BuilderSurface)}
+          >
+            <TabsList variant="line" className="h-9 gap-0.5 p-0">
+              <TabsTrigger
+                value="preview"
+                className="h-8 flex-none gap-1.5 px-2 text-[11px]"
+              >
+                <Globe2Icon className="size-3.5" />
+                <span className="hidden xs:inline">Preview</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="code"
+                className="h-8 flex-none gap-1.5 px-2 text-[11px]"
+              >
+                <Code2Icon className="size-3.5" />
+                <span className="hidden xs:inline">Code</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="changes"
+                className="h-8 flex-none gap-1.5 px-2 text-[11px]"
+              >
+                <GitCompareArrowsIcon className="size-3.5" />
+                <span className="hidden xs:inline">Changes</span>
+                {changes.length > 0 && (
+                  <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[9px] text-muted-foreground">
+                    {changes.length}
+                  </span>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {/* Right: viewport controls, stop, runtime dot, folder picker, more */}
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {surface === 'preview' && (
-            <div className="mr-1 flex items-center rounded-lg border border-border/60 bg-card/70 p-0.5">
+            <div className="mr-0.5 flex items-center rounded-lg border border-border/60 bg-card/70 p-0.5">
               {VIEWPORTS.map(({ id, label, icon: Icon }) => (
                 <Button
                   key={id}
@@ -374,9 +460,41 @@ export function BuilderCanvas({
               disabled={previewStopping}
             >
               <SquareIcon className="size-3" />
-              {previewStopping ? 'Stopping…' : 'Stop'}
+              {previewStopping ? 'Stopping\u2026' : 'Stop'}
             </Button>
           )}
+
+          {/* Runtime dot */}
+          <div
+            className="hidden items-center gap-1 px-1 text-[10px] text-muted-foreground sm:flex"
+            title={runtimeStatus?.message ?? runtimeLabel}
+          >
+            <span className={`size-1.5 rounded-full ${runtimeDot}`} />
+            <span className="hidden lg:inline">{runtimeLabel}</span>
+          </div>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 px-2 text-[11px]"
+            onClick={onSelectWorkspace}
+            disabled={selecting || !onSelectWorkspace}
+            title={
+              workspace
+                ? 'Choose a different project folder.'
+                : 'Choose the git repository Builder should work in.'
+            }
+          >
+            {selecting ? (
+              <span className="size-3 animate-spin rounded-full border border-current border-t-transparent" />
+            ) : (
+              <FolderGit2Icon className="size-3" />
+            )}
+            <span className="hidden sm:inline">
+              {workspace ? 'Switch' : 'Choose folder'}
+            </span>
+          </Button>
+
           <Button
             size="icon-sm"
             variant="ghost"
@@ -417,7 +535,9 @@ export function BuilderCanvas({
                 {previewUrl && previewStatus.state === 'ready' ? (
                   <span className="size-1.5 shrink-0 rounded-full bg-emerald-400" />
                 ) : (
-                  <span className={`size-1.5 shrink-0 rounded-full ${badge.dot}`} />
+                  <span
+                    className={`size-1.5 shrink-0 rounded-full ${badge.dot}`}
+                  />
                 )}
                 <WebPreviewUrl
                   value={previewUrl}

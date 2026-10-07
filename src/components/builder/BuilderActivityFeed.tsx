@@ -4,6 +4,14 @@
  * Renders normalized OpenCode session activity with explicit progress, tools,
  * forms, permissions, and errors. This feed observes a session but does not
  * submit coding turns or imply that a project workspace is isolated.
+ *
+ * TOOL DISPLAY STRATEGY
+ * ─────────────────────
+ * Completed tool calls collapse to a single compact row:
+ *   <icon> ToolName · key detail
+ * Only pending/streaming/failed calls show the full expandable card, because
+ * those require the user's attention. This keeps the feed focused on what
+ * matters right now rather than burying it in completed history.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -12,7 +20,13 @@ import {
   AlertCircleIcon,
   CheckCircle2Icon,
   CircleDashedIcon,
+  FileCode2Icon,
+  FolderSearchIcon,
   GitBranchIcon,
+  GlobeIcon,
+  SearchIcon,
+  ShellIcon,
+  TerminalSquareIcon,
   UserIcon,
   WrenchIcon,
 } from 'lucide-react';
@@ -25,7 +39,6 @@ import {
 } from '@/components/ai-elements/message';
 import { BuilderFormCard } from '@/components/builder/tools/BuilderFormCard';
 import { BuilderPermissionCard } from '@/components/builder/tools/BuilderPermissionCard';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { BuilderPermissionDecision } from '@/lib/builder-interactions';
 import type { BuilderSessionEvent } from '@/lib/builder-session';
@@ -162,12 +175,12 @@ export function BuilderActivityFeed({
             <GitBranchIcon className="size-3 shrink-0" />
             <span className="truncate">
               {workspace
-                ? `${workspace.name}${workspace.branch ? ` · ${workspace.branch}` : ''}`
+                ? `${workspace.name}${workspace.branch ? ` \u00b7 ${workspace.branch}` : ''}`
                 : 'No workspace bound'}
             </span>
             {workspace?.dirty && (
               <span className="shrink-0 text-amber-600 dark:text-amber-400">
-                · {workspace.changedFileCount} changed
+                \u00b7 {workspace.changedFileCount} changed
               </span>
             )}
           </span>
@@ -232,7 +245,8 @@ export function BuilderActivityFeed({
                 <MessageResponse
                   isAnimating={
                     status?.type === 'status' &&
-                    (status.status === 'running' || status.status === 'retrying')
+                    (status.status === 'running' ||
+                      status.status === 'retrying')
                   }
                 >
                   {item.text}
@@ -288,6 +302,8 @@ export function BuilderActivityFeed({
   );
 }
 
+// ─── Tool activity ──────────────────────────────────────────────────────────
+
 function ToolActivity({
   callId,
   updates,
@@ -309,6 +325,25 @@ function ToolActivity({
     .find((event) => event.type === 'tool-input');
   const input =
     latestInput?.type === 'tool-input' ? latestInput.input : started.input;
+
+  const isDone = Boolean(completed);
+  const isFailed = completed?.type === 'tool-failed';
+
+  // Completed (succeeded) tools → compact single-line summary row.
+  if (isDone && !isFailed) {
+    return (
+      <CompactToolRow
+        key={callId}
+        name={started.name}
+        input={input}
+        output={
+          completed?.type === 'tool-completed' ? completed.output : undefined
+        }
+      />
+    );
+  }
+
+  // Pending / streaming / failed → full expandable card.
   const part: ToolPart =
     completed?.type === 'tool-completed'
       ? {
@@ -337,4 +372,135 @@ function ToolActivity({
           };
 
   return <BuilderToolCall part={part} key={callId} />;
+}
+
+// ─── Compact row ─────────────────────────────────────────────────────────────
+
+const TOOL_ICONS: Record<string, typeof WrenchIcon> = {
+  bash: TerminalSquareIcon,
+  shell: ShellIcon,
+  read: FileCode2Icon,
+  write: FileCode2Icon,
+  edit: FileCode2Icon,
+  glob: FolderSearchIcon,
+  grep: SearchIcon,
+  webfetch: GlobeIcon,
+  websearch: GlobeIcon,
+  task: CircleDashedIcon,
+  question: AlertCircleIcon,
+};
+
+/** Returns a small icon JSX node for the compact row — avoids a capitalized
+ * variable inside render, which the static-components lint rule flags. */
+function renderToolIcon(name: string) {
+  const Ic = TOOL_ICONS[name.toLowerCase()] ?? WrenchIcon;
+  return <Ic className="size-3 shrink-0 text-muted-foreground/60" />;
+}
+
+function compactSummary(name: string, input: unknown, output?: string): string {
+  const args = isRecord(input) ? input : {};
+  const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+
+  // Count lines in the output to annotate reads/writes.
+  const outputLineCount = output
+    ? output.split('\n').filter((l) => l.trim()).length
+    : 0;
+
+  switch (name.toLowerCase()) {
+    case 'bash':
+    case 'shell': {
+      const cmd = str(args.command);
+      return cmd ? truncate(cmd, 60) : 'Ran shell command';
+    }
+    case 'read': {
+      const file = str(args.filePath ?? args.path ?? args.file);
+      return file
+        ? `${file}${outputLineCount > 0 ? ` \u00b7 ${outputLineCount} lines` : ''}`
+        : 'Read file';
+    }
+    case 'write': {
+      const file = str(args.filePath ?? args.path ?? args.file);
+      return file ? file : 'Wrote file';
+    }
+    case 'edit': {
+      const file = str(args.filePath ?? args.path ?? args.file);
+      return file ? file : 'Edited file';
+    }
+    case 'glob': {
+      const pattern = str(args.pattern);
+      const count = outputLineCount;
+      return `${pattern || '**/*'}${count > 0 ? ` \u00b7 ${count} files` : ''}`;
+    }
+    case 'grep': {
+      const pattern = str(args.pattern);
+      const count = outputLineCount;
+      return `${pattern || 'pattern'}${count > 0 ? ` \u00b7 ${count} matches` : ''}`;
+    }
+    case 'webfetch': {
+      const url = str(args.url);
+      return url ? truncate(url, 60) : 'Fetched page';
+    }
+    case 'websearch': {
+      const query = str(args.query);
+      return query ? truncate(query, 60) : 'Searched web';
+    }
+    default:
+      return name;
+  }
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Human-readable label for a tool name. */
+function toolLabel(name: string): string {
+  const labels: Record<string, string> = {
+    bash: 'Bash',
+    shell: 'Shell',
+    read: 'Read',
+    write: 'Write',
+    edit: 'Edit',
+    glob: 'Find files',
+    grep: 'Search',
+    webfetch: 'Fetch',
+    websearch: 'Search web',
+    task: 'Subtask',
+    question: 'Question',
+  };
+  return labels[name.toLowerCase()] ?? name;
+}
+
+function CompactToolRow({
+  name,
+  input,
+  output,
+}: {
+  name: string;
+  input: unknown;
+  output?: string;
+}) {
+  const label = toolLabel(name);
+  const summary = compactSummary(name, input, output);
+  const iconNode = renderToolIcon(name);
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border/40 bg-card/30 px-3 py-1.5 text-[11px] text-muted-foreground">
+      <CheckCircle2Icon className="size-3 shrink-0 text-emerald-500/70" />
+      {iconNode}
+      <span className="shrink-0 font-medium text-foreground/70">{label}</span>
+      {summary && (
+        <>
+          <span className="text-muted-foreground/40">&middot;</span>
+          <span className="min-w-0 truncate font-mono text-[10px]">
+            {summary}
+          </span>
+        </>
+      )}
+    </div>
+  );
 }

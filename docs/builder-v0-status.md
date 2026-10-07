@@ -1,119 +1,192 @@
 # Qeda Builder v0 — implementation status and next steps
 
-**Snapshot:** 2026-10-07  
-**Basis:** source inspection of the current Builder implementation and the stated v0 goal: a polished, local-first “describe → build → inspect → preview → review” experience. This is not a screenshot-by-screenshot visual audit; the reference screenshots were not available in this working context.
+**Snapshot:** 2026-10-07 (revision 2)
+**Basis:** source inspection of the current Builder implementation after the UX
+pass that unified the workspace header, wired real file/diff data, and added
+compact tool summaries. Reference: v0.dev screenshots (three captures from
+2026-10-07).
+
+---
 
 ## Executive summary
 
-Builder has a separate route and a polished, responsive workspace shell. The preview, code explorer, change review, chat composer, and OpenCode interaction cards are present as frontend surfaces. The OpenCode v2 connection preflight is real, and the latest slice adds creation of an empty session plus a main-process event subscription and normalized activity feed.
+Builder has a full coding-turn loop: workspace selection → OpenCode session
+creation → prompt submission → streaming events → permission/form approvals →
+abort. The canvas shows a live preview (Qeda-owned or agent-detected), a real
+git-backed file tree, and a real git diff change list. The activity feed
+collapses completed tool calls to compact single-line summaries, matching the
+v0 reference style.
 
-**Builder cannot yet perform a coding turn.** Prompt submission is intentionally disabled. No project/worktree is selected or isolated, no prompt is sent, no build process is started, and the code/diff/preview surfaces are not connected to project data. The current implementation is therefore a UI and integration foundation—not an end-to-end vibecoding loop.
+**What still cannot happen:** a fully autonomous run against an isolated
+worktree. Every coding turn runs against the user's actual working tree. Safe
+worktree isolation, checkpoint/revert semantics, and a local preview lifecycle
+are the three remaining product-loop gaps.
+
+---
 
 ## Implemented
 
-### Route and workspace UI
+### Route, workspace UI, and chrome
 
 - Dedicated `/builder` page and sidebar entry.
-- Responsive chat/canvas split, compact-screen Chat/Canvas switch, resizable desktop panels, and persisted surface/viewport preferences.
-- Preview, Code, and Changes tabs with empty states that do not present fabricated project output as agent-generated work.
-- Preview viewport controls update the visual frame; the preview URL is blank by default and navigation/server controls remain disabled.
-- Code surface includes a searchable file tree, file selection, a read-only editor frame, loading/empty states, and renderer-safe file view-model types.
-- Changes surface includes Added/Modified/Deleted filters, counts, a unified-diff display, and gated Keep/Discard actions.
+- Responsive chat/canvas split with resizable desktop panels and persisted
+  preferences.
+- **Unified canvas top bar** — workspace name, branch badge, dirty-file count,
+  runtime status dot, folder picker, and Preview/Code/Changes tabs are all in
+  one horizontal toolbar (no separate workspace header row). Matches the v0
+  single-bar pattern.
+- Compact surface tabs with viewport controls (desktop/tablet/mobile) in the
+  same bar.
+- Canvas footer showing live process status.
 
-### OpenCode connection and current session lane
+### OpenCode connection and full session turn loop
 
-- Direct `@opencode/client` dependency pinned to `2.0.24`.
-- Main-process, attach-only OpenCode service discovery and v2 API preflight. The app does not start or stop the user-owned OpenCode service.
-- Typed IPC for connection status, creating/stopping the active Builder event feed, and replying to Builder session forms and permissions.
-- Main-process adapter normalizes selected OpenCode v2 events before forwarding them to the renderer: text deltas, tool lifecycle, permission/form requests and resolutions, execution status, and errors.
-- Renderer hook owns session/feed state and lifecycle; the activity feed uses the existing tool, form, and permission renderers.
-- Session creation does **not** submit a prompt. Prompt submission remains disabled pending safe workspace isolation.
+- `@opencode/client` dependency pinned to `2.0.24`.
+- Main-process attach-only service discovery and v2 API preflight.
+- **Prompt submission is live**: `builder:prompt` calls
+  `rt.client.session.prompt()`, which starts a real coding turn.
+- Full streaming event subscription normalized into the renderer activity
+  contract: text deltas, tool lifecycle, permission/form requests,
+  status transitions, errors.
+- Abort: `builder:abort` calls `rt.client.session.interrupt()`.
+- Session continuity: session identity, workspace, and the normalized event
+  buffer survive route changes and renderer reloads via `builder:session-state`.
+- Permission approvals: Allow once / Always allow / Deny forwarded to OpenCode.
+- Form replies and cancellations forwarded to OpenCode.
 
-### Interaction UI
+### Activity feed
 
-- Specialized tool-call, form, and permission components exist.
-- Form renderer supports typed fields, defaults, conditions, validation, and cancel/submit callbacks.
-- Permission UI exposes explicit **Allow once**, **Always allow**, and **Deny** decisions.
-- Starter ideas and quick prompts populate the draft only; they do not initiate execution.
+- **Compact tool summaries**: completed tool calls collapse to a single row —
+  `✓ <icon> Label · detail` (file path, command, search pattern + match count).
+- Pending/streaming/failed tools still show the full expandable `BuilderToolCall`
+  card because those require the user's attention.
+- User prompts, assistant text deltas, permission cards, and form cards remain
+  unchanged.
 
-### Coverage authored
+### Code and Changes surfaces
 
-Builder-focused component and event-adapter test files are present. **They have not been run**, and no typecheck/build has been run for this implementation snapshot, per the current instruction to defer checks until the v0 implementation is complete.
+- **Real file tree**: `builder:workspace-files` IPC walks the active session's
+  workspace with `git ls-files` (respects `.gitignore`, includes untracked-but-not-ignored
+  files). Result is a nested `BuilderFileNode[]` sorted directories-first.
+- **Real git diff**: `builder:workspace-changes` IPC runs `git diff HEAD --numstat`
+  plus per-file unified diffs. Returns `BuilderFileChange[]` with
+  additions/deletions counts and raw diff text (capped at 256 KB total).
+- File tree and change list are visible in Code and Changes tabs when a session
+  is bound.
+- Read-only code viewer, change filters (all/added/modified/deleted), diff display.
 
-## Present, but not connected to real workspace data
+### Preview
 
-| Surface | What works now | What is still a placeholder |
+- `BuilderPreview` class owns one dev-server process per session.
+- Readiness is detected by scanning stdout/stderr for a `localhost:` URL.
+- Graceful teardown kills the process group (detached spawn) to avoid orphaned
+  grandchildren.
+- Detected preview: a server the agent started inside a turn is shown read-only
+  without offering a Stop control the app cannot honour.
+- Preview status broadcasts over `builder:preview-changed`.
+
+### Project scope
+
+- Builder reads `?project=` and pre-fills the folder picker with `repo_path`.
+- The project is a suggestion only — the user still confirms the folder and main
+  proves it is a git repo.
+
+---
+
+## Present, but not connected / still placeholder
+
+| Surface | What works now | What is still a gap |
 | --- | --- | --- |
-| Code | Search/filter UI, tree interaction, editor presentation for injected data | No project scan, file read IPC, editor writes, or service-provided files are wired into the page |
-| Changes | Filtering, totals, diff presentation for injected data | No OpenCode/Git diff fetch, checkpoint, keep, discard, or revert operation is wired |
-| Preview | Responsive frame and viewport selector | No project process, port allocation, embedded live page, reload, or external-open lifecycle |
-| Session activity | Empty session creation and live event subscription for the active session | No prompt submission, session history, durable persistence, resume/reconnect, or abort control |
-| Forms/permissions | UI plus IPC response handlers | No Builder-originated coding turn can currently produce these requests; they are ready for a future session turn |
+| **Code** | Real git-backed file tree, path filtering, file selection | File content is not fetched (editor shows empty / coming soon) |
+| **Changes** | Real git diff with per-file additions/deletions and unified diff | Keep / Discard / Revert actions are UI-only stubs |
+| **Preview** | Qeda-owned dev server, readiness detection, stop | No isolated worktree; the server runs against the user's actual working tree |
+| **Session** | Full turn loop: prompt → stream → approve → abort | No durable session persistence across app restarts; no history fetch on resume |
+| **File content** | `builder:workspace-files` returns the tree | `builder:workspace-files` does not yet return file body (needs a separate IPC for selected-file content) |
+
+---
 
 ## Missing for the v0 product loop
 
-1. **Explicit project/workspace selection.** The user cannot choose a repository or workspace in Builder.
-2. **A safety boundary for code execution.** There is no isolated worktree, clean-tree/checkpoint policy, or documented handling for dirty/untracked files. The current session-create request supplies a title but no explicit location; the service’s default location is relied upon and has not been validated as the intended Builder workspace.
-3. **A real coding turn.** No send-prompt IPC, streaming turn lifecycle, cancellation/abort, retry, or recovery exists. The composer is intentionally non-submitting.
-4. **Session continuity.** Session identity and events live in renderer/main-process memory only. There is no persisted Builder-to-OpenCode session link, history fetch, route-reentry resume, or stream reconnection.
-5. **Real source and diff data.** File tree, selected file content, change list, unified diff, and review actions are not populated from the selected project/session.
-6. **Safe local preview lifecycle.** No isolated dev server start/stop, readiness check, port ownership, embedded preview, or cleanup exists.
-7. **Run/review state machine.** The UI does not yet transition through queued/running/awaiting-review/kept/reverted/error states based on real work.
-8. **Screenshot validation.** Responsive behavior is implemented in code, but a comparison against the supplied visual references could not be made here.
+### P0 — Safe workspace isolation
 
-## Decisions to reconcile before enabling autonomous turns
+- Create or select an isolated git worktree for Builder changes so a run cannot
+  silently modify the user's main working tree.
+- Decide and document the dirty-tree / untracked-file policy (refuse, stash, or
+  checkpoint).
+- Pass the worktree directory to `session.create({ location })` explicitly.
+- Keep-all / Discard-all backed by `git checkout` or `git worktree remove`.
 
-There is a product-policy mismatch in the repository documentation:
+**Exit condition:** a repeatable test workspace can be created, inspected, and
+discarded without modifying the source branch.
 
-- `docs/vibe-coding-surface.md` describes **autonomous execution followed by full-session review**, with no individual tool approvals.
-- The current Builder interaction design exposes explicit permission decisions and prioritizes inspecting diffs and keeping/discarding changes.
+### P1 — File content in the code viewer
 
-The current code does not execute prompts, so this conflict has not yet produced behavior. Before the turn loop is enabled, settle whether Builder is supervised per permission, autonomous inside an isolated workspace with review-after, or offers both modes. Update the older design doc once that choice is confirmed; its opening status and some SDK assumptions are stale relative to the current implementation.
+- Add `builder:workspace-file-read` IPC that reads one file from the active
+  workspace.
+- Call it when a file is selected in `BuilderCodeWorkspace` and populate the
+  editor frame.
 
-## Recommended next steps
+**Exit condition:** selecting a file in the tree shows its content.
 
-### P0 — Define and establish the safety boundary
+### P2 — Keep / Discard / Revert in the Changes surface
 
-- Select a project/repository explicitly and show its canonical path/branch.
-- Create or select an isolated worktree for Builder changes; never silently run against OpenCode’s ambient default directory.
-- Decide how dirty, ignored, and untracked files are protected and surfaced. Require a clean tree or create a verifiable checkpoint before a run.
-- Make session creation receive the validated workspace location explicitly.
-- Keep the send control disabled until the main process can prove the session is bound to that workspace.
+- Implement keep-all (no-op when worktree isolation is in place), discard-all
+  (`git checkout -- .` or worktree teardown), and per-file discard.
+- Re-fetch the diff after each action.
 
-**Exit condition:** a repeatable test workspace can be created, inspected, and discarded without changing the source repository.
+**Exit condition:** a controlled edit appears in Changes, and discard restores
+the exact pre-run state.
 
-### P1 — Complete the session turn lifecycle
+### P3 — Session persistence and resume
 
-- Add prompt submission and streaming IPC against the pinned v2 client.
-- Normalize assistant text, tool input/progress/result, interaction requests, session idle/failure, and files changed into a stable renderer contract.
-- Add abort/cancel, prevent duplicate turns, surface transport errors, and recover after route changes or renderer reloads.
-- Persist or otherwise reliably restore Builder session identity and history.
-- Keep permission behavior aligned with the product decision above.
+- Persist the active session ID and workspace to SQLite alongside other session
+  types.
+- On re-attach, fetch recent session events from OpenCode's history endpoint so
+  the activity feed can be rebuilt after an app restart.
+- Handle `builder:session-state` reconnect after a renderer reload without
+  losing the ongoing turn.
 
-**Exit condition:** a deterministic fixture prompt streams to completion, can be aborted, and produces no activity in another session.
+**Exit condition:** closing and reopening the app while a session is idle
+restores the activity feed.
 
-### P2 — Connect project inspection and review
+### P4 — Local preview lifecycle in isolated workspace
 
-- Populate the file tree and read-only editor from the isolated workspace.
-- Fetch per-file diff/status and display real additions/deletions and hunks.
-- Implement explicit keep/discard/revert semantics backed by checkpoints or verified OpenCode revert behavior.
-- Ensure untracked and ignored file changes cannot disappear from review.
+- Start the project's dev server only inside the isolated worktree.
+- Track readiness, logs, port, and process ownership; always clean up.
+- Embedded preview, device widths, reload; never open a port owned by the
+  user's own running server.
 
-**Exit condition:** a controlled edit appears in Code and Changes, and discard restores the exact pre-run state.
+**Exit condition:** a prompt results in a live local preview that can be
+aborted and discarded cleanly.
 
-### P3 — Add local preview and finish the product loop
+### P5 — Visual and release validation
 
-- Start the project’s preview process only inside the isolated workspace; track readiness, logs, port, and process ownership.
-- Load the real page in the embedded preview, support reload/device widths, and always clean up owned processes.
-- Connect chat, activity, code, changes, and preview state so users can move between them without implying unsupported readiness.
+- Compare the current UI against the v0 reference screenshots for hierarchy,
+  density, breakpoints, and empty/running/error/approval/review states.
+- Run deferred typecheck (`npx tsc --noEmit`), lint, targeted Builder tests,
+  `scripts/verify-ipc-split.py`, production build, and smoke test.
 
-**Exit condition:** a prompt results in a live local preview and a reviewable diff, with a working abort and safe discard path.
+---
 
-### P4 — Visual and release validation
+## Architecture decisions to reconcile
 
-- Re-open the reference screenshots and compare hierarchy, density, breakpoints, and empty/running/error/approval/review states.
-- Once implementation is complete, run the deferred typecheck, lint, targeted Builder tests, IPC coverage script, production build, and an end-to-end smoke run against a disposable isolated project.
+`docs/vibe-coding-surface.md` describes **autonomous execution followed by
+full-session review** (no per-tool approvals). The current Builder exposes
+explicit permission cards per OpenCode request. These are not in conflict while
+prompt submission runs against a real isolated worktree — the permission model
+can be revisited as a setting once the safety boundary is established.
+
+---
 
 ## Current verification status
 
-No tests, typechecks, or builds were run for this snapshot, by request. The newly added test files are not evidence of passing behavior. Treat all integration behavior—especially OpenCode event payload handling, default session location, response semantics, and session recovery—as **unverified until the deferred verification pass**.
+The following have not been run for this snapshot:
+- `npx tsc --noEmit` — TypeScript typecheck
+- `npm run lint`
+- `npm test` (Builder-specific test files exist but have not been executed)
+- `npm run build` + production smoke run
+- `python3 scripts/verify-ipc-split.py` (two new IPC channels added)
+
+Treat all runtime behaviour — especially OpenCode event payload handling,
+session location semantics, and the new `git diff` / `git ls-files` paths — as
+**unverified until the deferred verification pass**.
