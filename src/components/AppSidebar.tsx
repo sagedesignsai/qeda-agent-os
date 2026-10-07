@@ -61,6 +61,7 @@ import {
   FileTextIcon,
   NotebookIcon,
   VideoIcon,
+  BrainCircuitIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjects } from '@/hooks/use-projects';
@@ -93,6 +94,7 @@ const NAV_ITEMS = [
   { to: '/workspace', label: 'Knowledge', icon: NotebookIcon },
   { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
+  { to: '/soundlab', label: 'SoundLab', icon: BrainCircuitIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
   { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },
 ];

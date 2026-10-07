@@ -68,6 +68,8 @@ import { registerDocumentsHandlers } from './handlers/documents';
 import { registerStudioHandlers } from './handlers/studio';
 import { registerStudioCopilotHandlers } from './handlers/studio-copilot';
 import { registerSerperHandlers } from './handlers/serper';
+import { registerSoundLabHandlers } from './handlers/soundlab';
+import { registerSoundLabCopilotHandlers } from './handlers/soundlab-copilot';
 
 /**
  * Register every request/response handler.
@@ -93,4 +95,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerStudioHandlers({ mainWindow });
   registerStudioCopilotHandlers({ mainWindow });
   registerSerperHandlers({ mainWindow });
+  registerSoundLabHandlers({ mainWindow });
+  registerSoundLabCopilotHandlers({ mainWindow });
 }

@@ -31,6 +31,8 @@ export interface FocusAudioPanelProps {
 
 export function FocusAudioPanel({ audio, className }: FocusAudioPanelProps) {
   const { config, playing, toggle, setConfig } = audio;
+  // toneMode replaces the old `binaural: boolean` field
+  const binauralOn = config.toneMode === 'binaural';
 
   return (
     <div
@@ -116,12 +118,14 @@ export function FocusAudioPanel({ audio, className }: FocusAudioPanelProps) {
           </span>
           <Switch
             size="sm"
-            checked={config.binaural}
-            onCheckedChange={(checked) => setConfig({ binaural: checked })}
+            checked={binauralOn}
+            onCheckedChange={(checked) =>
+              setConfig({ toneMode: checked ? 'binaural' : 'off' })
+            }
           />
         </label>
 
-        {config.binaural && (
+        {binauralOn && (
           <div className="flex flex-col gap-3">
             <ToggleGroup
               type="single"
@@ -163,8 +167,8 @@ export function FocusAudioPanel({ audio, className }: FocusAudioPanelProps) {
                 Vol
               </span>
               <Slider
-                value={[Math.round(config.binauralVolume * 100)]}
-                onValueChange={([v]) => setConfig({ binauralVolume: v / 100 })}
+                value={[Math.round(config.toneVolume * 100)]}
+                onValueChange={([v]) => setConfig({ toneVolume: v / 100 })}
                 max={100}
                 step={1}
                 aria-label="Binaural volume"

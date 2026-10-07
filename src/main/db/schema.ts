@@ -456,6 +456,45 @@ CREATE INDEX IF NOT EXISTS idx_studio_takes_project ON studio_takes(project_id);
 CREATE INDEX IF NOT EXISTS idx_studio_takes_created ON studio_takes(created_at DESC);
 `;
 
+export const CREATE_SOUNDLAB_SESSIONS = `
+CREATE TABLE IF NOT EXISTS soundlab_sessions (
+  id              TEXT PRIMARY KEY,
+  project_id      TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  title           TEXT NOT NULL DEFAULT 'Untitled Session',
+  bpm             INTEGER NOT NULL DEFAULT 120,
+  key_signature   TEXT NOT NULL DEFAULT 'C',
+  target_band     TEXT NOT NULL DEFAULT 'alpha',
+  duration_beats  INTEGER NOT NULL DEFAULT 64,
+  loop_enabled    INTEGER NOT NULL DEFAULT 0,
+  loop_start_beat REAL NOT NULL DEFAULT 0,
+  loop_end_beat   REAL NOT NULL DEFAULT 32,
+  created_at      INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_soundlab_sessions_project ON soundlab_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_soundlab_sessions_updated ON soundlab_sessions(updated_at DESC);
+`;
+
+export const CREATE_SOUNDLAB_TRACKS = `
+CREATE TABLE IF NOT EXISTS soundlab_tracks (
+  id              TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL REFERENCES soundlab_sessions(id) ON DELETE CASCADE,
+  type            TEXT NOT NULL CHECK(type IN ('instrument','entrainment','noise','drums')),
+  name            TEXT NOT NULL,
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  muted           INTEGER NOT NULL DEFAULT 0,
+  solo            INTEGER NOT NULL DEFAULT 0,
+  volume          REAL NOT NULL DEFAULT 0.8,
+  pan             REAL NOT NULL DEFAULT 0.0,
+  color           TEXT NOT NULL DEFAULT '#6366f1',
+  config_json     TEXT NOT NULL DEFAULT '{}',
+  patterns_json   TEXT NOT NULL DEFAULT '[]',
+  clips_json      TEXT NOT NULL DEFAULT '[]',
+  automation_json TEXT NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS idx_soundlab_tracks_session ON soundlab_tracks(session_id, sort_order ASC);
+`;
+
 /** DDL applied in order; every statement must be idempotent. */
 export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SESSIONS,
@@ -483,6 +522,8 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_XP_LEDGER,
   CREATE_DOCUMENTS,
   CREATE_STUDIO_TAKES,
+  CREATE_SOUNDLAB_SESSIONS,
+  CREATE_SOUNDLAB_TRACKS,
 ];
 
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────
@@ -624,6 +665,12 @@ export function applyMigrations(db: {
           'ALTER TABLE studio_takes ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
         );
       }
+
+      // soundlab_sessions — placeholder guards for future columns
+      columnsOf('soundlab_sessions'); // ensures table is reachable
+
+      // soundlab_tracks — placeholder guards for future columns
+      columnsOf('soundlab_tracks'); // ensures table is reachable
     } catch {
       // Table might not exist yet or running in raw exec mock
     }

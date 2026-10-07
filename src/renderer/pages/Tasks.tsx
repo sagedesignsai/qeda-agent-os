@@ -378,7 +378,7 @@ function FocusMode({
   const ringColor = state.phase === 'break' ? '#34d399' : '#f59e0b';
 
   const handleStart = useCallback(() => {
-    if (!audio.playing && (audio.config.noise || audio.config.binaural)) {
+    if (!audio.playing && (audio.config.noise || audio.config.toneMode !== 'off')) {
       void audio.start();
     }
     timer.start();
@@ -1357,7 +1357,7 @@ export default function Tasks() {
             onStart={() => {
               if (
                 !audio.playing &&
-                (audio.config.noise || audio.config.binaural)
+                (audio.config.noise || audio.config.toneMode !== 'off')
               ) {
                 void audio.start();
               }

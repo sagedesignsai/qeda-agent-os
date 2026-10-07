@@ -25,6 +25,7 @@ import Tasks from './pages/Tasks';
 import Projects from './pages/Projects';
 import Documents from './pages/Documents';
 import Studio from './pages/Studio';
+import SoundLab from './pages/SoundLab';
 import Workspace from './pages/Workspace';
 
 export const routes: RouteObject[] = [
@@ -56,6 +57,14 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Studio /> },
           { path: ':takeId', element: <Studio /> },
+        ],
+      },
+
+      {
+        path: 'soundlab',
+        children: [
+          { index: true, element: <SoundLab /> },
+          { path: ':sessionId', element: <SoundLab /> },
         ],
       },
 

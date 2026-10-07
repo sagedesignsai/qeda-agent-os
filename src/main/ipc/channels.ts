@@ -70,6 +70,13 @@ export type {
 };
 export { DEFAULT_STUDIO_STYLING };
 
+import type {
+  SoundLabSession,
+  SoundLabSessionWithTracks,
+  SoundLabTrack,
+} from '../../lib/soundlab-types.js';
+export type { SoundLabSession, SoundLabSessionWithTracks, SoundLabTrack };
+
 import type { SerperImage, ImageFormatFilter } from '../services/serper.js';
 import type { DownloadResourceResult } from '../services/downloader.js';
 export type { SerperImage, ImageFormatFilter, DownloadResourceResult };
@@ -576,6 +583,26 @@ export interface IpcChannels {
     res: FocusSession[];
   };
   'focus:stats': { req: void; res: FocusStats };
+  /** Generate a bounded, validated focus soundscape recipe from a natural-language brief. */
+  'focus:compose-soundscape': {
+    req: { prompt: string };
+    res: {
+      title: string;
+      rationale: string;
+      config: {
+        noise: 'white' | 'pink' | 'brown' | null;
+        noiseVolume: number;
+        clip: 'forest' | 'rain' | 'waves' | null;
+        clipVolume: number;
+        toneMode: 'off' | 'binaural' | 'isochronic';
+        carrierHz: number;
+        beatHz: number;
+        toneVolume: number;
+        pulseDepth: number;
+        masterVolume: number;
+      };
+    };
+  };
 
   // ── Gamification & Dopamine System ──────────────────────────────────────────
   'gamification:get-state': { req: void; res: GamificationState };
@@ -866,6 +893,30 @@ export interface IpcChannels {
   /** Broadcast when any take changes, created, updated or deleted. */
   'studio:changed': void;
 
+  // ── SoundLab (Brain Entrainment DAW) ──────────────────────────────────────
+  /** List saved sessions, optionally scoped by project. */
+  'soundlab:list': {
+    req: { projectId?: string | null } | void;
+    res: SoundLabSession[];
+  };
+  /** Fetch a full session including all tracks. */
+  'soundlab:get': {
+    req: { id: string };
+    res: SoundLabSessionWithTracks | null;
+  };
+  /** Upsert a session and all its tracks atomically. */
+  'soundlab:save': {
+    req: SoundLabSessionWithTracks;
+    res: { id: string };
+  };
+  /** Hard-delete a session (tracks cascade). */
+  'soundlab:delete': {
+    req: { id: string };
+    res: { ok: boolean };
+  };
+  /** Broadcast when any session changes (created, updated, deleted). */
+  'soundlab:changed': void;
+
   // ── Studio Copilot (Autonomous Video Director Agent) ─────────────────────
   /** Run one studio copilot turn. Streams back over `studio-copilot:stream-*`. */
   'studio-copilot:chat': {
@@ -883,6 +934,30 @@ export interface IpcChannels {
   'studio-copilot:stream-done': { runId: string };
   'studio-copilot:stream-error': { error: string };
   'studio-copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+
+  // ── SoundLab Copilot (Autonomous Neuro-Acoustic Producer Agent) ──────────
+  /** Run one SoundLab copilot turn. Streams back over `soundlab-copilot:stream-*`. */
+  'soundlab-copilot:chat': {
+    req: {
+      messages: UIMessage[];
+      context: {
+        sessionId: string;
+        projectId?: string;
+        currentBeat?: number;
+      };
+    };
+    res: void;
+  };
+  'soundlab-copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'soundlab-copilot:stream-done': { runId: string };
+  'soundlab-copilot:stream-error': { error: string };
+  'soundlab-copilot:stream-fallback': {
     fromProvider: string;
     fromModel: string;
     toProvider: string;
