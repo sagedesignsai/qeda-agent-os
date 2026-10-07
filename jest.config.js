@@ -23,6 +23,7 @@ module.exports = {
     '^react-resizable-panels$': '<rootDir>/.erb/mocks/resizablePanelsMock.js',
     '^use-stick-to-bottom$': '<rootDir>/.erb/mocks/useStickToBottomMock.js',
     '^@react-pdf/renderer$': '<rootDir>/.erb/mocks/reactPdfMock.js',
+    '^shiki$': '<rootDir>/.erb/mocks/shikiMock.js',
     '^electron$': '<rootDir>/.erb/mocks/electronMock.js',
     '^@ai-sdk/(.*)$': '<rootDir>/.erb/mocks/aiMock.js',
     '^ai$': '<rootDir>/.erb/mocks/aiMock.js',

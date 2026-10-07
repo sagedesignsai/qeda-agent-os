@@ -62,6 +62,7 @@ import {
   NotebookIcon,
   VideoIcon,
   BrainCircuitIcon,
+  WandSparklesIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjects } from '@/hooks/use-projects';
@@ -96,19 +97,14 @@ const NAV_ITEMS = [
   { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
   { to: '/soundlab', label: 'SoundLab', icon: BrainCircuitIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
+  { to: '/builder', label: 'Builder', icon: WandSparklesIcon },
   { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },
 ];
 
 /** Which section submenu a pathname belongs to, if any. */
 function sectionOf(
   pathname: string,
-):
-  | 'chat'
-  | 'terminal'
-  | 'projects'
-  | 'documents'
-  | 'workspace'
-  | null {
+): 'chat' | 'terminal' | 'projects' | 'documents' | 'workspace' | null {
   if (pathname === '/chat' || pathname.startsWith('/chat/')) return 'chat';
   if (pathname === '/projects' || pathname.startsWith('/projects/')) {
     return 'projects';

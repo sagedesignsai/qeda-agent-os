@@ -70,6 +70,7 @@ import { registerStudioCopilotHandlers } from './handlers/studio-copilot';
 import { registerSerperHandlers } from './handlers/serper';
 import { registerSoundLabHandlers } from './handlers/soundlab';
 import { registerSoundLabCopilotHandlers } from './handlers/soundlab-copilot';
+import { registerBuilderHandlers } from './handlers/builder';
 
 /**
  * Register every request/response handler.
@@ -97,4 +98,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerSerperHandlers({ mainWindow });
   registerSoundLabHandlers({ mainWindow });
   registerSoundLabCopilotHandlers({ mainWindow });
+  registerBuilderHandlers({ mainWindow });
 }

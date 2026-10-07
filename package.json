@@ -73,6 +73,7 @@
     "@ai-sdk/react": "^4.0.117",
     "@base-ui/react": "^1.8.0",
     "@electron/notarize": "^3.1.1",
+    "@opencode/client": "2.0.24",
     "@radix-ui/react-use-controllable-state": "^1.2.6",
     "@react-pdf/renderer": "^4.9.0",
     "@rive-app/react-webgl2": "^4.35.0",

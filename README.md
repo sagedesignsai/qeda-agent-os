@@ -263,11 +263,14 @@ container.
   lands in the right place.
 - **Views** — `pages/Projects.tsx` is a grid of rollup cards at `/projects` and a
   project detail at `/projects/:projectId`; `components/sidebar/ProjectsMenu.tsx`
-  makes the rail a project switcher. Tasks, Terminal, and Chat all accept a
-  `?project=` scope via the shared `hooks/use-project-scope.ts`: lists filter to
-  the project, anything created while scoped is filed into it (a Terminal
-  session starts in the project's `repo_path` when set), and a header chip clears
-  the scope. So a project is a *view* over the work, not a copy of it. When only
+  makes the rail a project switcher. Tasks, Terminal, Chat, and Builder all
+  accept a `?project=` scope via the shared `hooks/use-project-scope.ts`: lists
+  filter to the project, anything created while scoped is filed into it (a
+  Terminal session starts in the project's `repo_path` when set), and a header
+  chip clears the scope. Builder is the one exception to the filing rule — it
+  only *suggests* the project's `repo_path` as the folder picker's default, since
+  a coding session has to be bound to a directory the user explicitly confirms
+  (and main proves is a git repository). So a project is a *view* over the work, not a copy of it. When only
   the Inbox exists (e.g. onboarding was skipped) the grid is replaced by a
   first-run empty state that still surfaces the Inbox, so quick capture is never
   stranded.

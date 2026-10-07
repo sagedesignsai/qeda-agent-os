@@ -27,6 +27,7 @@ import Documents from './pages/Documents';
 import Studio from './pages/Studio';
 import SoundLab from './pages/SoundLab';
 import Workspace from './pages/Workspace';
+import Builder from './pages/Builder';
 
 export const routes: RouteObject[] = [
   {
@@ -43,6 +44,8 @@ export const routes: RouteObject[] = [
       },
 
       { path: 'tasks', element: <Tasks /> },
+
+      { path: 'builder', element: <Builder /> },
 
       {
         path: 'documents',

@@ -80,6 +80,37 @@ export type { SoundLabSession, SoundLabSessionWithTracks, SoundLabTrack };
 import type { SerperImage, ImageFormatFilter } from '../services/serper.js';
 import type { DownloadResourceResult } from '../services/downloader.js';
 export type { SerperImage, ImageFormatFilter, DownloadResourceResult };
+import type { BuilderConnectionStatus } from '../../lib/builder-types.js';
+import type {
+  BuilderSessionEvent,
+  BuilderSessionStart,
+  BuilderSessionState,
+} from '../../lib/builder-session.js';
+import type { BuilderWorkspace } from '../../lib/builder-workspace.js';
+import type { BuilderPreviewStatus } from '../../lib/builder-preview.js';
+export type {
+  BuilderPreviewOwner,
+  BuilderPreviewState,
+  BuilderPreviewStatus,
+} from '../../lib/builder-preview.js';
+export type {
+  BuilderConnectionStatus,
+  BuilderConnectionState,
+} from '../../lib/builder-types.js';
+export type {
+  BuilderSessionEvent,
+  BuilderSessionStart,
+  BuilderSessionState,
+  BuilderSessionSummary,
+  BuilderFormReply,
+} from '../../lib/builder-session.js';
+export type {
+  BuilderWorkspace,
+  BuilderFile,
+  BuilderFileChange,
+  BuilderFileNode,
+  BuilderChangeKind,
+} from '../../lib/builder-workspace.js';
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -142,6 +173,71 @@ export type ChatContext = {
 export type AgentIntent = 'chat' | 'research' | 'notebook';
 
 export interface IpcChannels {
+  // OpenCode-powered coding Builder
+  /** Inspect the registered local OpenCode service without starting/stopping it. */
+  'builder:connection-status': {
+    req: void;
+    res: BuilderConnectionStatus;
+  };
+  /**
+   * Resolve a chosen folder to a canonical git repository and describe it.
+   * Throws (rejects) with a user-facing message when it is not usable.
+   */
+  'builder:workspace-validate': {
+    req: { directory: string };
+    res: BuilderWorkspace;
+  };
+  /**
+   * Create an OpenCode session bound to an explicit workspace directory.
+   * The directory is re-validated here; a session is never created against
+   * OpenCode's ambient default location.
+   */
+  'builder:session-create': {
+    req: { directory: string };
+    res: BuilderSessionStart;
+  };
+  /** Re-attach state for the active session (identity, workspace, event buffer). */
+  'builder:session-state': { req: void; res: BuilderSessionState };
+  /** Submit one coding prompt to the active session. Streams over `builder:session-event`. */
+  'builder:prompt': { req: { text: string }; res: void };
+  /** Abort the in-flight coding turn (the kill switch). */
+  'builder:abort': { req: void; res: void };
+  /** Submit a response to a Builder-owned permission request. */
+  'builder:permission-reply': {
+    req: { requestId: string; decision: 'once' | 'always' | 'reject' };
+    res: void;
+  };
+  /** Submit or cancel a Builder-owned OpenCode form. */
+  'builder:form-reply': {
+    req: {
+      formId: string;
+      answer?: Record<string, string | number | boolean | string[]>;
+      cancel?: boolean;
+    };
+    res: void;
+  };
+  /** Normalized live events for the active Builder-owned session. */
+  'builder:session-event': BuilderSessionEvent;
+  /** Stop forwarding events without deleting the OpenCode session. */
+  'builder:session-stop': { req: void; res: void };
+  /**
+   * Start a preview process Qeda owns, in the *active session's* workspace.
+   * The directory is not a parameter: it is always the workspace main already
+   * validated, so the renderer cannot point a spawn at an arbitrary repo.
+   */
+  'builder:preview-start': {
+    req: { script?: string } | void;
+    res: BuilderPreviewStatus;
+  };
+  /** Stop the Qeda-owned preview process (never a detected one). */
+  'builder:preview-stop': { req: void; res: BuilderPreviewStatus };
+  /** Current preview state — the re-attach snapshot after a route change. */
+  'builder:preview-status': { req: void; res: BuilderPreviewStatus };
+  /** Open a preview URL in the user's own browser. */
+  'builder:preview-open': { req: { url: string }; res: void };
+  /** Fired on every preview state change (log lines included). */
+  'builder:preview-changed': BuilderPreviewStatus;
+
   // Session management
   'sessions:list': {
     req: { projectId?: string | null } | void;

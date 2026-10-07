@@ -20,6 +20,7 @@ import { formatDistanceToNow } from 'date-fns';
 import {
   FileTextIcon,
   FolderPlusIcon,
+  HammerIcon,
   InboxIcon,
   Loader2Icon,
   PlusIcon,
@@ -262,7 +263,12 @@ export default function Projects() {
             </div>
 
             {/* Shortcuts into the work */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              <Shortcut
+                to={`/builder?project=${project.id}`}
+                icon={HammerIcon}
+                label="Builder"
+              />
               <Shortcut
                 to={`/tasks?project=${project.id}`}
                 icon={TargetIcon}
