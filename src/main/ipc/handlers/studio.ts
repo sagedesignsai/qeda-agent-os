@@ -46,6 +46,7 @@ import {
 import { getProject } from '../../db/projects.js';
 import { getSettings } from '../../ai/settings.js';
 import { resolveModel } from '../../ai/provider.js';
+import { transcodeStudioVideo } from '../../studio-export.js';
 
 // ── In-memory active recording telemetry ──────────────────────────────────────
 
@@ -510,6 +511,7 @@ export function registerStudioHandlers({
       {
         takeId,
         format,
+        quality,
       }: {
         takeId: string;
         format: 'mp4' | 'gif' | 'webm';
@@ -550,8 +552,13 @@ export function registerStudioHandlers({
       }
 
       try {
-        // If webm requested or source is webm, copy or write
-        await fs.copyFile(take.videoPath, filePath);
+        // Recordings are WebM; MP4/GIF need a real re-encode, not a rename.
+        await transcodeStudioVideo({
+          inputPath: take.videoPath,
+          outputPath: filePath,
+          format,
+          quality,
+        });
         shell.showItemInFolder(filePath);
         return { ok: true, filePath };
       } catch (err) {
