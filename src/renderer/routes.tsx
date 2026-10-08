@@ -3,15 +3,18 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * The application route tree, expressed as nested `RouteObject`s.
  *
- * Structure:
+ * Structure (not exhaustive — Chat and Workspace are called out because they
+ * are the two that take a param and are driven by a rail submenu):
  *   <AppLayout>                     – persistent shell (rail + framed content)
- *     ├── /                         – redirects to /chat
- *     ├── /chat                     – Chat index (starts a fresh session)
+ *     ├── /                         – redirects to /projects
+ *     ├── /chat                     – Chat index (blank conversation; the
+ *     │                               session is created lazily by the first
+ *     │                               message, not by landing here)
  *     │     └── /chat/:sessionId    – a specific conversation
  *     ├── /workspace                – Knowledge index (no page selected)
  *     │     ├── /workspace/:notebookId
  *     │     └── /workspace/:notebookId/:pageId
- *     └── *                         – redirects to /chat
+ *     └── *                         – redirects to /projects
  *
  * The route params mirror the selection held in the rail's section submenus
  * (ChatMenu / WorkspaceMenu), which is what keeps a single sidebar in play.

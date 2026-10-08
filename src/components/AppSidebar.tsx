@@ -6,7 +6,8 @@
  * It is a two-level menu so there is never a second sidebar on screen:
  *
  *   Brand (always visible)
- *   Level 1 — Main menu: search (⌘K), new chat, section links, recent chats.
+ *   Level 1 — Main menu: search (⌘K), section links, recent chats. "New chat"
+ *             lives in the Chat section submenu, not here.
  *   Level 2 — Section submenu, auto-selected from the route:
  *             /chat*      → conversation list  (ChatMenu)
  *             /workspace* → notebook/page tree (WorkspaceMenu)

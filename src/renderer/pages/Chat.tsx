@@ -14,6 +14,7 @@ import { MessageList } from '@/components/chat/MessageList';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatWelcome } from '@/components/chat/ChatWelcome';
 import { ChatContextPicker } from '@/components/chat/ChatContextPicker';
+import { NewChatButton } from '@/components/chat/NewChatButton';
 import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
@@ -63,6 +64,28 @@ export default function Chat() {
   const [chatContext, setChatContext] = useState<ChatContext | undefined>(
     undefined,
   );
+
+  // Where "Chat" points and where "New chat" goes — the blank start screen with
+  // the project scope carried along. Computed once so the breadcrumb and the
+  // button can never disagree about the same destination.
+  const chatHomePath = withScope('/chat');
+
+  /**
+   * Drop the context bound to the conversation being left, keeping only the
+   * project scope: `projectId` belongs to the URL (see useProjectScope), not to
+   * the turn, and clearing it here would silently un-scope the user out of
+   * their project. Everything else was attached by a handover — Workspace's
+   * "Chat about page", the notebook dialog — and a new conversation should not
+   * inherit it by accident. The focused task is deliberately left alone: it is
+   * owned by the Tasks surface and re-supplies itself through the `focusedTask`
+   * sync above whenever that is re-run, so this only drops the chat's copy
+   * rather than reaching across features to clear global state.
+   */
+  const resetChatContext = () => {
+    setChatContext((prev) =>
+      prev?.projectId ? { projectId: prev.projectId } : undefined,
+    );
+  };
 
   const handleAssetDownloaded = (res: DownloadResourceResult) => {
     if (!res.fileName) return;
@@ -246,7 +269,7 @@ export default function Chat() {
     <div className="flex h-full w-full flex-col overflow-hidden bg-background">
       <PageHeader
         crumbs={[
-          { label: 'Chat', to: withScope('/chat') },
+          { label: 'Chat', to: chatHomePath },
           ...(projectName ? [{ label: projectName }] : []),
           { label: sessionTitle || 'New conversation' },
         ]}
@@ -277,6 +300,13 @@ export default function Chat() {
         }
         actions={
           <>
+            {/* Inline rather than an overflow item, despite the cluster being
+                tight: an overflow entry would be one more click deep for the
+                one command people reach for on this screen, which is what the
+                sidebar and ⌘K already are. It is the compact `h-7 / text-xs`
+                header button used by Tasks and Projects, so it costs ~70px and
+                the heading truncates before the controls do. */}
+            <NewChatButton to={chatHomePath} onReset={resetChatContext} />
             <ChatContextPicker
               value={chatContext}
               onChange={(ctx) =>
@@ -290,8 +320,7 @@ export default function Chat() {
                 })
               }
             />
-            {/* The context picker is this screen's primary control, so it keeps
-                an inline trigger; the rest are situational and collapse. */}
+            {/* Situational only, so it collapses. */}
             <OverflowMenu
               label="More chat actions"
               items={[
