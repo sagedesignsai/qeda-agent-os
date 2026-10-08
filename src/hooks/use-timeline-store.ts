@@ -195,6 +195,9 @@ class TimelineStore {
 
   setScrollTimeMs = (scrollTimeMs: number) => {
     const clamped = Math.max(0, Math.min(this.state.durationMs, scrollTimeMs));
+    // Scrolling emits far more events than frames; an unchanged value must not
+    // notify subscribers, or every event re-renders the timeline tree.
+    if (this.state.scrollTimeMs === clamped) return;
     this.state = { ...this.state, scrollTimeMs: clamped };
     this.notify();
   };
@@ -215,11 +218,15 @@ class TimelineStore {
   };
 
   setSnapLine = (snapLineMs: number | null) => {
+    // Pointer moves report the same guide repeatedly; notifying on an
+    // unchanged value re-renders every subscriber for no visual change.
+    if (this.state.snapLineMs === snapLineMs) return;
     this.state.snapLineMs = snapLineMs;
     this.notify();
   };
 
   setSelectedClipId = (selectedClipId: string | null) => {
+    if (this.state.selectedClipId === selectedClipId) return;
     this.state = { ...this.state, selectedClipId };
     this.notify();
   };

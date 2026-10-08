@@ -40,6 +40,9 @@ import type { StudioTakeSummary } from '@/lib/studio-types';
 
 interface StudioProjectsViewProps {
   takes: StudioTakeSummary[];
+  hasMoreTakes?: boolean;
+  loadingMoreTakes?: boolean;
+  onLoadMore?: () => void;
   onOpenTake: (id: string) => void;
   onNewRecording: () => void;
   onNewBlankProject?: () => void;
@@ -52,6 +55,9 @@ type ViewMode = 'grid' | 'list';
 
 export function StudioProjectsView({
   takes,
+  hasMoreTakes = false,
+  loadingMoreTakes = false,
+  onLoadMore = () => {},
   onOpenTake,
   onNewRecording,
   onNewBlankProject,
@@ -116,7 +122,9 @@ export function StudioProjectsView({
             </div>
 
             <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary/60 text-muted-foreground font-mono">
-              {takes.length} {takes.length === 1 ? 'project' : 'projects'}
+              {takes.length}
+              {hasMoreTakes ? '+' : ''}{' '}
+              {takes.length === 1 && !hasMoreTakes ? 'project' : 'projects'}
             </span>
           </div>
 
@@ -266,6 +274,19 @@ export function StudioProjectsView({
                 onQuickExport={onQuickExport}
                 onDelete={(take) => setTakePendingDelete(take)}
               />
+            </div>
+          )}
+          {hasMoreTakes && filteredTakes.length > 0 && (
+            <div className="flex justify-center py-6">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onLoadMore}
+                disabled={loadingMoreTakes}
+                className="text-xs"
+              >
+                {loadingMoreTakes ? 'Loading…' : 'Load more takes'}
+              </Button>
             </div>
           )}
         </div>

@@ -62,6 +62,7 @@ import {
   extractZoomsFromTracks,
   extractCaptionsFromTracks,
   extractCutsFromTracks,
+  safeDurationMs,
   type StudioTake,
   type TimelineTrack,
 } from '@/lib/studio-types';
@@ -74,19 +75,22 @@ export default function Studio() {
 
   const {
     takes,
+    hasMoreTakes,
+    loadingMoreTakes,
     activeTake,
     isRecording,
     recordingSeconds,
     isProcessingDraft,
     isGeneratingSocialKit,
     loadTake,
+    loadMoreTakes,
     listSources,
     startRecording,
     stopRecording,
     updateStyling,
     updateZooms,
     updateCaptions,
-    updateCuts,
+    updateTimelineData,
     generateSocialKit,
     exportVideo,
     deleteTake,
@@ -94,9 +98,18 @@ export default function Studio() {
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
-  const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  // The take's recorded duration is authoritative. `durationMs` state is only
+  // trusted once the media element reports a finite length — a `MediaRecorder`
+  // webm reports `Infinity`, and a plain `durationMs || fallback` would let that
+  // poison the timeline because `Infinity` is truthy.
+  const effectiveDurationMs = safeDurationMs(
+    durationMs,
+    activeTake?.durationMs ?? 0,
+  );
 
   // Modals & Copilot
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
@@ -154,13 +167,13 @@ export default function Studio() {
     }
   }, [isEditingTitle]);
 
-  // Fetch video data URL when active take changes
+  // Resolve a lightweight streaming URL when the active take changes.
   useEffect(() => {
     let cancelled = false;
 
     void (async () => {
       if (!activeTake?.id) {
-        if (!cancelled) setVideoDataUrl(null);
+        if (!cancelled) setVideoUrl(null);
         return;
       }
 
@@ -170,11 +183,11 @@ export default function Studio() {
           { takeId: activeTake.id },
         );
         if (!cancelled) {
-          setVideoDataUrl(url);
+          setVideoUrl(url);
         }
       } catch {
         if (!cancelled) {
-          setVideoDataUrl(null);
+          setVideoUrl(null);
         }
       }
     })();
@@ -190,17 +203,17 @@ export default function Studio() {
       if (!activeTake) return;
       const updatedZooms = extractZoomsFromTracks(tracks);
       const updatedCaptions = extractCaptionsFromTracks(tracks);
-      const updatedCuts = extractCutsFromTracks(
-        tracks,
-        durationMs || activeTake.durationMs,
-      );
+      const updatedCuts = extractCutsFromTracks(tracks, effectiveDurationMs);
 
-      // Real-time synchronization: update activeTake and persist
-      updateZooms(updatedZooms);
-      updateCaptions(updatedCaptions);
-      updateCuts(updatedCuts);
+      // Timeline commits arrive on pointer release, so persist the full
+      // structural delta as one narrow database update.
+      void updateTimelineData({
+        zooms: updatedZooms,
+        captions: updatedCaptions,
+        cuts: updatedCuts,
+      });
     },
-    [activeTake, durationMs, updateZooms, updateCaptions, updateCuts],
+    [activeTake, effectiveDurationMs, updateTimelineData],
   );
 
   const handleTitleSubmit = async () => {
@@ -238,11 +251,10 @@ export default function Studio() {
   const handleAddZoomAtPlayhead = () => {
     if (!activeTake) return;
     const currentPlayhead = timelineStore.getState().currentTimeMs;
-    const effectiveDuration = durationMs || activeTake.durationMs;
     const newZoom = {
       id: Math.random().toString(36).slice(2, 9),
       startMs: Math.max(0, currentPlayhead - 200),
-      endMs: Math.min(effectiveDuration, currentPlayhead + 2000),
+      endMs: Math.min(effectiveDurationMs, currentPlayhead + 2000),
       targetX: 0.5,
       targetY: 0.5,
       scale: 1.6,
@@ -250,6 +262,52 @@ export default function Studio() {
     updateZooms([...activeTake.zooms, newZoom]);
     toast.success('Added zoom keyframe at playhead');
   };
+
+  // The timeline store owns the playhead; canvas playback does not update page
+  // state at frame rate.
+  const handlePreviewTimeUpdate = useCallback((ms: number) => {
+    timelineStore.seek(ms, false);
+  }, []);
+
+  const handleTogglePlayback = useCallback(() => {
+    const nextPlaying = !isPlaying;
+    const video = previewVideoRef.current;
+    if (nextPlaying) {
+      // Start from the button's user gesture; the canvas also keeps playback
+      // synchronized when state changes or the video element mounts later.
+      const playheadMs = timelineStore.getState().currentTimeMs;
+      if (video && Math.abs(video.currentTime * 1000 - playheadMs) > 50) {
+        video.currentTime = playheadMs / 1000;
+      }
+      void video?.play().catch((error: unknown) => {
+        console.warn('[Studio] Timeline playback request failed.', error);
+        setIsPlaying(false);
+        timelineStore.setPlaying(false);
+      });
+    } else {
+      video?.pause();
+    }
+    setIsPlaying(nextPlaying);
+    timelineStore.setPlaying(nextPlaying);
+  }, [isPlaying]);
+
+  const handlePreviewVideoElement = useCallback(
+    (video: HTMLVideoElement | null) => {
+      previewVideoRef.current = video;
+    },
+    [],
+  );
+
+  const handleRestartPlayback = useCallback(() => {
+    timelineStore.seek(0, false);
+    const video = previewVideoRef.current;
+    if (video && video.readyState >= 1) video.currentTime = 0;
+  }, []);
+
+  const handlePlaybackEnded = useCallback(() => {
+    timelineStore.setPlaying(false);
+    setIsPlaying(false);
+  }, []);
 
   const handleRunMagicDraftViaCopilot = () => {
     setCopilotInitialPrompt(
@@ -412,6 +470,9 @@ export default function Studio() {
         /* ── Studio Projects Library (Grid / List view) ─────────────────────── */
         <StudioProjectsView
           takes={takes}
+          hasMoreTakes={hasMoreTakes}
+          loadingMoreTakes={loadingMoreTakes}
+          onLoadMore={loadMoreTakes}
           onOpenTake={(id) => {
             loadTake(id);
             navigate(`/studio/${id}`);
@@ -703,18 +764,20 @@ export default function Studio() {
                     {/* 60fps Real-Time Video Preview Canvas */}
                     <div className="flex-1 w-full flex items-center justify-center min-h-0 overflow-hidden">
                       <StudioCanvas
-                        videoUrl={videoDataUrl}
+                        videoUrl={videoUrl}
                         styling={activeTake.styling}
                         zooms={activeTake.zooms}
                         captions={activeTake.captions}
-                        currentTimeMs={currentTimeMs}
-                        durationMs={durationMs || activeTake.durationMs}
+                        durationMs={effectiveDurationMs}
                         isPlaying={isPlaying}
-                        onTimeUpdate={(ms) => {
-                          timelineStore.seek(ms, false);
-                        }}
-                        onDurationChange={(ms) => setDurationMs(ms)}
-                        onEnded={() => setIsPlaying(false)}
+                        onTimeUpdate={handlePreviewTimeUpdate}
+                        onDurationChange={(ms) =>
+                          setDurationMs(
+                            safeDurationMs(ms, activeTake.durationMs),
+                          )
+                        }
+                        onEnded={handlePlaybackEnded}
+                        onVideoElement={handlePreviewVideoElement}
                       />
                     </div>
                   </main>
@@ -763,15 +826,12 @@ export default function Studio() {
             >
               <StudioCanvasTimeline
                 activeTake={activeTake}
-                videoUrl={videoDataUrl}
-                currentTimeMs={currentTimeMs}
-                durationMs={durationMs || activeTake.durationMs}
+                videoUrl={videoUrl}
+                durationMs={effectiveDurationMs}
                 isPlaying={isPlaying}
-                onSeek={(ms) => {
-                  setCurrentTimeMs(ms);
-                  timelineStore.seek(ms, false);
-                }}
-                onTogglePlay={() => setIsPlaying((prev) => !prev)}
+                onSeek={handlePreviewTimeUpdate}
+                onTogglePlay={handleTogglePlayback}
+                onRestartPlayback={handleRestartPlayback}
                 onTracksChange={handleTimelineTracksChange}
               />
             </ResizablePanel>
@@ -814,7 +874,7 @@ export default function Studio() {
           open={copilotOpen}
           onOpenChange={setCopilotOpen}
           activeTake={activeTake}
-          currentTimeMs={currentTimeMs}
+          currentTimeMs={timelineStore.getState().currentTimeMs}
           initialPrompt={copilotInitialPrompt}
           onInitialPromptHandled={() => setCopilotInitialPrompt(null)}
           onChanged={() => loadTake(activeTake.id)}

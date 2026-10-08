@@ -85,7 +85,7 @@ describe('StudioProjectsView & Components', () => {
     jest.clearAllMocks();
     window.electron = {
       ipc: {
-        invoke: jest.fn().mockResolvedValue('data:video/webm;base64,AAAA'),
+        invoke: jest.fn().mockResolvedValue('qeda-media://studio/take-1'),
         on: jest.fn(),
       },
     } as unknown as typeof window.electron;

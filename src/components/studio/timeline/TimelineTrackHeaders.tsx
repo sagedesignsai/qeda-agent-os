@@ -32,7 +32,11 @@ import type { TrackType } from '@/lib/studio-types';
 interface TimelineTrackHeadersProps {
   trackHeight?: number;
   rulerHeight?: number;
-  scrollY?: number;
+  /**
+   * Ref to the translated header strip. Vertical scrolling mutates this
+   * element's transform directly instead of re-rendering React per frame.
+   */
+  contentRef?: React.Ref<HTMLDivElement>;
   onWheel?: (e: React.WheelEvent) => void;
 }
 
@@ -52,7 +56,7 @@ function getTrackIcon(type: TrackType) {
 export function TimelineTrackHeaders({
   trackHeight = 48,
   rulerHeight = 28,
-  scrollY = 0,
+  contentRef,
   onWheel,
 }: TimelineTrackHeadersProps) {
   const tracks = useTimelineTracks();
@@ -73,7 +77,7 @@ export function TimelineTrackHeaders({
       {/* ── Track Header Rows (Synchronized Smooth Slide) ──────────────────── */}
       <div className="flex-1 overflow-hidden relative">
         <div
-          style={{ transform: `translateY(-${scrollY}px)` }}
+          ref={contentRef}
           className="flex flex-col will-change-transform"
         >
           {tracks.map((track) => (

@@ -89,6 +89,29 @@ export function TimelineCanvasViewport({
   // Drag interaction state
   const dragModeRef = useRef<DragMode>({ type: 'none' });
 
+  // Scroll and pointer input are coalesced into one animation frame: wheel,
+  // momentum, and pointermove all fire faster than the display refreshes, and
+  // each event used to force a React re-render plus a HiDPI canvas repaint.
+  const scrollRafRef = useRef<number | null>(null);
+  const pendingScrollRef = useRef<{
+    scrollLeft: number;
+    scrollY: number;
+  } | null>(null);
+  const lastNotifiedScrollYRef = useRef(0);
+
+  // The concrete painter is assigned once `renderCanvas` exists; the no-op
+  // default keeps early events (and tests) from throwing.
+  const renderCanvasRef = useRef<() => void>(() => {});
+
+  /** Paint at most once per frame, no matter how many events arrive. */
+  const scheduleRender = useCallback(() => {
+    if (scrollRafRef.current !== null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      renderCanvasRef.current();
+    });
+  }, []);
+
   // Calculate virtual canvas width based on duration and zoom
   const totalTimelineWidth = Math.max(
     800,
@@ -557,6 +580,7 @@ export function TimelineCanvasViewport({
     thumbnails,
     durationMs,
   ]);
+  renderCanvasRef.current = renderCanvas;
 
   // ── High-Frequency Playhead Synchronization & RAF Loop ────────────────────
   useEffect(() => {
@@ -565,21 +589,21 @@ export function TimelineCanvasViewport({
       currentTimeMsRef.current = ms;
       // If not currently playing in RAF loop, request single frame redraw
       if (!timelineStore.getState().isPlaying) {
-        renderCanvas();
+        renderCanvasRef.current();
       }
     });
 
     return () => {
       unsubscribeTime();
     };
-  }, [renderCanvas]);
+  }, []);
 
   // 60fps RAF Loop when playing
   useEffect(() => {
     let animId: number;
 
     const tick = () => {
-      renderCanvas();
+      renderCanvasRef.current();
       if (timelineStore.getState().isPlaying) {
         animId = requestAnimationFrame(tick);
       }
@@ -588,18 +612,36 @@ export function TimelineCanvasViewport({
     if (isPlaying) {
       animId = requestAnimationFrame(tick);
     } else {
-      renderCanvas();
+      renderCanvasRef.current();
     }
 
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [isPlaying, renderCanvas]);
+  }, [isPlaying]);
+
+  // Cancel a pending coalesced frame when the viewport unmounts.
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, []);
+
+  // Repaint when the drawing inputs change (clip drag, trim, selection, zoom).
+  // `renderCanvas` identity changes exactly when one of those inputs does, and
+  // this keeps the canvas in step without re-running the playhead subscription
+  // or the 60fps loop.
+  useEffect(() => {
+    renderCanvasRef.current();
+  }, [renderCanvas]);
 
   // Redraw when thumbnails or audio peaks become available
   useEffect(() => {
-    renderCanvas();
-  }, [thumbnails, audioPeaks, renderCanvas]);
+    renderCanvasRef.current();
+  }, [thumbnails, audioPeaks]);
 
   // ── Canvas Resize Observer & HiDPI Setup ──────────────────────────────────
   useEffect(() => {
@@ -621,7 +663,7 @@ export function TimelineCanvasViewport({
       canvas.style.height = `${h}px`;
       canvas.style.marginBottom = `-${h}px`;
 
-      renderCanvas();
+      renderCanvasRef.current();
     };
 
     updateSize();
@@ -635,16 +677,35 @@ export function TimelineCanvasViewport({
     }
 
     return () => ro?.disconnect();
-  }, [totalHeight, renderCanvas, containerRef]);
+  }, [totalHeight, containerRef]);
 
   // ── Native Horizontal & Vertical Scroll Synchronization ───────────────────
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    // Refs stay current for hit-testing; only the expensive work is deferred.
     scrollLeftRef.current = e.currentTarget.scrollLeft;
-    const currentScrollY = e.currentTarget.scrollTop;
-    scrollYRef.current = currentScrollY;
-    timelineStore.setScrollTimeMs(scrollLeftRef.current / zoomPxPerMs);
-    onScrollYChange?.(currentScrollY);
-    renderCanvas();
+    scrollYRef.current = e.currentTarget.scrollTop;
+    pendingScrollRef.current = {
+      scrollLeft: e.currentTarget.scrollLeft,
+      scrollY: e.currentTarget.scrollTop,
+    };
+
+    if (scrollRafRef.current === null) {
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        const pending = pendingScrollRef.current;
+        if (!pending) return;
+        pendingScrollRef.current = null;
+
+        timelineStore.setScrollTimeMs(pending.scrollLeft / zoomPxPerMs);
+        // Purely vertical scrolling moves only the header strip; skipping the
+        // store notification avoids re-rendering the canvas and toolbar.
+        if (pending.scrollY !== lastNotifiedScrollYRef.current) {
+          lastNotifiedScrollYRef.current = pending.scrollY;
+          onScrollYChange?.(pending.scrollY);
+        }
+        renderCanvasRef.current();
+      });
+    }
   };
 
   const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
@@ -811,7 +872,7 @@ export function TimelineCanvasViewport({
     if (activeTool === 'blade') {
       hoverBladeXRef.current = pointerX;
       canvas.style.cursor = 'crosshair';
-      renderCanvas();
+      scheduleRender();
     } else {
       hoverBladeXRef.current = null;
     }
@@ -823,7 +884,7 @@ export function TimelineCanvasViewport({
       snapLineMsRef.current = didSnap ? snappedMs : null;
       timelineStore.seek(snappedMs, false);
       onSeek?.(snappedMs);
-      renderCanvas();
+      scheduleRender();
       return;
     }
 
@@ -852,7 +913,7 @@ export function TimelineCanvasViewport({
         currentDrag.clipId,
         finalStartMs,
       );
-      renderCanvas();
+      scheduleRender();
       return;
     }
 
@@ -867,7 +928,7 @@ export function TimelineCanvasViewport({
         currentDrag.edge,
         snappedMs,
       );
-      renderCanvas();
+      scheduleRender();
       return;
     }
 

@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   MoreVerticalIcon,
@@ -54,7 +54,7 @@ function formatDuration(ms: number): string {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function StudioProjectRow({
+export const StudioProjectRow = memo(function StudioProjectRow({
   take,
   onOpen,
   onRename,
@@ -98,7 +98,15 @@ export function StudioProjectRow({
     } else {
       const v = videoRef.current;
       if (v) {
-        v.play().catch(() => {});
+        v.play().catch((err: unknown) => {
+          const name = (err as { name?: string } | null)?.name;
+          console.warn(
+            name === 'NotAllowedError'
+              ? '[StudioProjectRow] Hover preview blocked by autoplay policy.'
+              : '[StudioProjectRow] Hover preview could not start.',
+            err,
+          );
+        });
       }
     }
   };
@@ -323,4 +331,4 @@ export function StudioProjectRow({
       </div>
     </div>
   );
-}
+});

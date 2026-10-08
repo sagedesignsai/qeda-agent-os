@@ -127,7 +127,7 @@ describe('Studio Resizable Panels Layout', () => {
       ipc: {
         invoke: jest.fn().mockImplementation((channel: string) => {
           if (channel === 'studio:read-video-data') {
-            return Promise.resolve('data:video/mp4;base64,mock');
+            return Promise.resolve('qeda-media://studio/take-res-1');
           }
           return Promise.resolve(null);
         }),

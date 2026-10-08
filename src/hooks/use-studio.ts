@@ -27,6 +27,8 @@ import type {
 } from '@/main/ipc/channels';
 import { DEFAULT_STUDIO_STYLING } from '@/main/ipc/channels';
 
+const STUDIO_TAKE_PAGE_SIZE = 50;
+
 export interface CaptureSource {
   id: string;
   name: string;
@@ -40,6 +42,8 @@ export function useStudio(
   projectId?: string | null,
 ) {
   const [takes, setTakes] = useState<StudioTakeSummary[]>([]);
+  const [hasMoreTakes, setHasMoreTakes] = useState(false);
+  const [loadingMoreTakes, setLoadingMoreTakes] = useState(false);
   const [activeTake, setActiveTake] = useState<StudioTake | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [isProcessingDraft, setIsProcessingDraft] = useState<boolean>(false);
@@ -63,15 +67,38 @@ export function useStudio(
     try {
       const list = await window.electron.ipc.invoke<StudioTakeSummary[]>(
         'studio:list-takes',
-        { projectId },
+        { projectId, limit: STUDIO_TAKE_PAGE_SIZE, offset: 0 },
       );
       setTakes(list || []);
+      setHasMoreTakes((list?.length ?? 0) === STUDIO_TAKE_PAGE_SIZE);
       return list;
     } catch (err) {
       console.error('Failed to list studio takes:', err);
       return [];
     }
   }, [projectId]);
+
+  const loadMoreTakes = useCallback(async () => {
+    if (loadingMoreTakes || !hasMoreTakes) return;
+    setLoadingMoreTakes(true);
+    try {
+      const page = await window.electron.ipc.invoke<StudioTakeSummary[]>(
+        'studio:list-takes',
+        {
+          projectId,
+          limit: STUDIO_TAKE_PAGE_SIZE,
+          offset: takes.length,
+        },
+      );
+      const nextPage = page || [];
+      setTakes((current) => [...current, ...nextPage]);
+      setHasMoreTakes(nextPage.length === STUDIO_TAKE_PAGE_SIZE);
+    } catch (err) {
+      console.error('Failed to load more studio takes:', err);
+    } finally {
+      setLoadingMoreTakes(false);
+    }
+  }, [hasMoreTakes, loadingMoreTakes, projectId, takes.length]);
 
   // ── Load Active Take ──────────────────────────────────────────────────────
 
@@ -415,6 +442,22 @@ export function useStudio(
     [activeTake],
   );
 
+  const updateTimelineData = useCallback(
+    async (data: {
+      zooms: StudioZoom[];
+      captions: StudioCaption[];
+      cuts: StudioCut[];
+    }) => {
+      if (!activeTake) return;
+      setActiveTake((prev) => (prev ? { ...prev, ...data } : null));
+      await window.electron.ipc.invoke('studio:save-take', {
+        id: activeTake.id,
+        ...data,
+      });
+    },
+    [activeTake],
+  );
+
   // ── Re-run Magic Draft ────────────────────────────────────────────────────
 
   const runMagicDraft = useCallback(async () => {
@@ -528,6 +571,9 @@ export function useStudio(
     isGeneratingSocialKit,
     loadTake,
     refreshTakes,
+    loadMoreTakes,
+    hasMoreTakes,
+    loadingMoreTakes,
     listSources,
     startRecording,
     stopRecording,
@@ -535,6 +581,7 @@ export function useStudio(
     updateZooms,
     updateCuts,
     updateCaptions,
+    updateTimelineData,
     runMagicDraft,
     generateSocialKit,
     exportVideo,

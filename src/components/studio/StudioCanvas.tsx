@@ -12,13 +12,15 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FilmIcon } from 'lucide-react';
 import type {
   StudioStyling,
   StudioZoom,
   StudioCaption,
-} from '@/lib/studio-types';
+} from '@/main/ipc/channels';
+import { safeDurationMs } from '@/lib/studio-types';
+import { timelineStore } from '@/hooks/use-timeline-store';
 import {
   drawDeviceFrameHeader,
   drawDeviceFrameFooter,
@@ -30,13 +32,17 @@ interface StudioCanvasProps {
   styling: StudioStyling;
   zooms: StudioZoom[];
   captions: StudioCaption[];
-  currentTimeMs: number;
   durationMs?: number;
   isPlaying: boolean;
   onTimeUpdate?: (ms: number) => void;
   onDurationChange?: (ms: number) => void;
   onEnded?: () => void;
+  onVideoElement?: (video: HTMLVideoElement | null) => void;
 }
+
+// Max drift tolerated between the parent's clock and the video element while
+// playing before it counts as a real seek request rather than a one-frame echo.
+const PLAYBACK_SEEK_TOLERANCE_MS = 400;
 
 // EaseInOutCubic interpolation
 function easeInOutCubic(t: number): number {
@@ -148,16 +154,23 @@ export function StudioCanvas({
   styling,
   zooms,
   captions,
-  currentTimeMs,
   durationMs,
   isPlaying,
   onTimeUpdate,
   onDurationChange,
   onEnded,
+  onVideoElement,
 }: StudioCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const attachVideoRef = useCallback(
+    (video: HTMLVideoElement | null) => {
+      videoRef.current = video;
+      onVideoElement?.(video);
+    },
+    [onVideoElement],
+  );
 
   // Dynamic canvas bitmap dimensions based on aspect ratio
   const canvasDims = useMemo(() => {
@@ -183,10 +196,7 @@ export function StudioCanvas({
 
   const [videoLoaded, setVideoLoaded] = useState(false);
   const lastEmittedTimeRef = useRef(0);
-  const currentTimeRef = useRef(currentTimeMs);
-  useEffect(() => {
-    currentTimeRef.current = currentTimeMs;
-  }, [currentTimeMs]);
+  const currentTimeRef = useRef(timelineStore.getState().currentTimeMs);
 
   const bgGradCacheRef = useRef<{
     bg: string;
@@ -234,24 +244,43 @@ export function StudioCanvas({
     if (!video || !videoLoaded) return;
 
     if (isPlaying) {
-      video.play().catch(() => {});
+      // Playback can still be refused (autoplay policy, decoder error), and a
+      // swallowed rejection shows up as a frozen frame with no explanation.
+      video.play().catch((err: unknown) => {
+        const name = (err as { name?: string } | null)?.name;
+        console.warn(
+          name === 'NotAllowedError'
+            ? '[StudioCanvas] Preview playback blocked by autoplay policy.'
+            : '[StudioCanvas] Preview playback could not start.',
+          err,
+        );
+      });
     } else {
       video.pause();
     }
   }, [isPlaying, videoLoaded]);
 
-  // Synchronize seek from parent (bypassed during smooth playback to prevent decoder stutter)
+  // Subscribe directly to isolated store time updates; do not re-render this
+  // component (or its parent tree) for every playback frame.
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoLoaded) return;
+    const syncVideoTime = (timeMs: number) => {
+      currentTimeRef.current = timeMs;
+      const video = videoRef.current;
+      if (!video || !videoLoaded) return;
 
-    const diff = Math.abs(video.currentTime * 1000 - currentTimeMs);
-    if (!isPlaying && diff > 50) {
-      video.currentTime = currentTimeMs / 1000;
-    } else if (isPlaying && diff > 400) {
-      video.currentTime = currentTimeMs / 1000;
-    }
-  }, [currentTimeMs, videoLoaded, isPlaying]);
+      const targetSec = timeMs / 1000;
+      if (!Number.isFinite(targetSec) || targetSec < 0) return;
+      const diff = Math.abs(video.currentTime * 1000 - timeMs);
+      if (!isPlaying) {
+        if (diff > 50) video.currentTime = targetSec;
+        return;
+      }
+      if (diff > PLAYBACK_SEEK_TOLERANCE_MS) video.currentTime = targetSec;
+    };
+
+    syncVideoTime(timelineStore.getState().currentTimeMs);
+    return timelineStore.subscribeTime(syncVideoTime);
+  }, [videoLoaded, isPlaying]);
 
   // Main 60fps render loop
   useEffect(() => {
@@ -544,19 +573,33 @@ export function StudioCanvas({
       ref={containerRef}
       className={`relative w-full mx-auto flex items-center justify-center overflow-hidden rounded-xl bg-black/40 border border-border/40 shadow-2xl ${aspectClass}`}
     >
-      {/* Hidden native video source */}
+      {/* Native video source driving the canvas.
+          Visually hidden rather than `display:none`: a display:none element is
+          not guaranteed to produce paintable frames, which leaves the canvas
+          black. `absolute` keeps it out of the layout flow. */}
       {videoUrl && (
         <video
-          ref={videoRef}
+          ref={attachVideoRef}
           src={videoUrl}
+          muted
           playsInline
-          className="hidden"
+          className="absolute h-px w-px opacity-0 pointer-events-none"
           onLoadedMetadata={() => {
             const v = videoRef.current;
             if (v) {
               setVideoLoaded(true);
-              onDurationChange?.(v.duration * 1000);
+              // `MediaRecorder` webm has no duration in its header, so
+              // `v.duration` is Infinity; the caller's known duration wins.
+              onDurationChange?.(
+                safeDurationMs(v.duration * 1000, durationMs ?? 0),
+              );
             }
+          }}
+          onError={() => {
+            console.warn(
+              '[StudioCanvas] Preview video failed to load.',
+              videoUrl,
+            );
           }}
           onTimeUpdate={() => {
             const v = videoRef.current;

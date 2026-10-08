@@ -52,7 +52,6 @@ describe('Studio Canvas Enhancements', () => {
           styling={{ ...DEFAULT_STUDIO_STYLING, aspectRatio: '16:9' }}
           zooms={[]}
           captions={[]}
-          currentTimeMs={0}
           isPlaying={false}
         />,
       );
@@ -70,7 +69,6 @@ describe('Studio Canvas Enhancements', () => {
           styling={{ ...DEFAULT_STUDIO_STYLING, aspectRatio: '9:16' }}
           zooms={[]}
           captions={[]}
-          currentTimeMs={0}
           isPlaying={false}
         />,
       );
@@ -88,7 +86,6 @@ describe('Studio Canvas Enhancements', () => {
           styling={{ ...DEFAULT_STUDIO_STYLING, aspectRatio: '1:1' }}
           zooms={[]}
           captions={[]}
-          currentTimeMs={0}
           isPlaying={false}
         />,
       );
@@ -106,7 +103,6 @@ describe('Studio Canvas Enhancements', () => {
           styling={{ ...DEFAULT_STUDIO_STYLING, aspectRatio: '4:3' }}
           zooms={[]}
           captions={[]}
-          currentTimeMs={0}
           isPlaying={false}
         />,
       );
@@ -124,7 +120,6 @@ describe('Studio Canvas Enhancements', () => {
           styling={DEFAULT_STUDIO_STYLING}
           zooms={[]}
           captions={[]}
-          currentTimeMs={0}
           isPlaying={false}
         />,
       );
@@ -136,6 +131,7 @@ describe('Studio Canvas Enhancements', () => {
   describe('Blank Playback Clock', () => {
     it('advances playback clock via requestAnimationFrame when playing without videoUrl', () => {
       jest.useFakeTimers();
+      timelineStore.seek(1000);
       const onTimeUpdate = jest.fn();
 
       render(
@@ -144,7 +140,6 @@ describe('Studio Canvas Enhancements', () => {
           styling={DEFAULT_STUDIO_STYLING}
           zooms={[]}
           captions={[]}
-          currentTimeMs={1000}
           durationMs={5000}
           isPlaying={true}
           onTimeUpdate={onTimeUpdate}

@@ -962,7 +962,7 @@ export interface IpcChannels {
   };
   /** List saved showcase takes, optionally scoped by project. */
   'studio:list-takes': {
-    req: { projectId?: string | null } | void;
+    req: { projectId?: string | null; limit?: number; offset?: number } | void;
     res: StudioTakeSummary[];
   };
   /** Retrieve a full take record by ID. */
@@ -1047,9 +1047,9 @@ export interface IpcChannels {
     req: { path: string };
     res: boolean;
   };
-  /** Retrieve video or media file as base64 data URL for player rendering. */
+  /** Get a streaming URL for a saved Studio take; media bytes never cross IPC. */
   'studio:read-video-data': {
-    req: { takeId?: string; filePath?: string };
+    req: { takeId?: string };
     res: string | null;
   };
   /** Create a fresh blank studio showcase project with canvas styling and empty tracks. */

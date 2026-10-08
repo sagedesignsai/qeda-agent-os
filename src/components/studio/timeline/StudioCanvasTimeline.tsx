@@ -11,7 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { timelineStore } from '@/hooks/use-timeline-store';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineTrackHeaders } from './TimelineTrackHeaders';
@@ -26,11 +26,11 @@ import { toast } from 'sonner';
 interface StudioCanvasTimelineProps {
   activeTake: StudioTake | null;
   videoUrl: string | null;
-  currentTimeMs: number;
   durationMs: number;
   isPlaying: boolean;
   onSeek: (ms: number) => void;
   onTogglePlay: () => void;
+  onRestartPlayback: () => void;
   onTracksChange?: (tracks: TimelineTrack[]) => void;
 }
 
@@ -40,16 +40,23 @@ const RULER_HEIGHT = 28;
 export function StudioCanvasTimeline({
   activeTake,
   videoUrl,
-  currentTimeMs,
   durationMs,
   isPlaying,
   onSeek,
   onTogglePlay,
+  onRestartPlayback,
   onTracksChange,
 }: StudioCanvasTimelineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportContainerRef = useRef<HTMLDivElement | null>(null);
-  const [scrollY, setScrollY] = useState(0);
+  // Vertical scrolling writes the header offset straight to the DOM. Driving it
+  // through React state re-rendered the toolbar, headers, and canvas subtree
+  // once per scroll event, which is what made vertical scrolling stutter.
+  const headersContentRef = useRef<HTMLDivElement | null>(null);
+  const handleHeadersScrollY = useCallback((scrollY: number) => {
+    const content = headersContentRef.current;
+    if (content) content.style.transform = `translateY(-${scrollY}px)`;
+  }, []);
 
   // Take sync tracking to prevent feedback loops between timeline edits and parent state
   const currentTakeIdRef = useRef<string | null>(null);
@@ -122,19 +129,6 @@ export function StudioCanvasTimeline({
     });
   }, [onTracksChange]);
 
-  // Listen to store time changes and notify parent player (onSeek) only when paused (user scrub/seek)
-  useEffect(() => {
-    return timelineStore.subscribeTime((timeMs) => {
-      // Never forward playhead updates back to parent player during active playback
-      // (prevents continuous decoder buffer flushing and audio/video stutter)
-      if (timelineStore.getState().isPlaying) return;
-
-      if (Math.abs(timeMs - currentTimeMs) > 80) {
-        onSeek(timeMs);
-      }
-    });
-  }, [currentTimeMs, onSeek]);
-
   // Zoom to Fit calculation
   const handleZoomToFit = useCallback(() => {
     const container = containerRef.current;
@@ -159,6 +153,7 @@ export function StudioCanvasTimeline({
         durationMs={durationMs}
         isPlaying={isPlaying}
         onTogglePlay={onTogglePlay}
+        onRestartPlayback={onRestartPlayback}
         onZoomToFit={handleZoomToFit}
       />
 
@@ -168,7 +163,7 @@ export function StudioCanvasTimeline({
         <TimelineTrackHeaders
           trackHeight={TRACK_HEIGHT}
           rulerHeight={RULER_HEIGHT}
-          scrollY={scrollY}
+          contentRef={headersContentRef}
           onWheel={handleTrackHeadersWheel}
         />
 
@@ -179,7 +174,7 @@ export function StudioCanvasTimeline({
           rulerHeight={RULER_HEIGHT}
           onSeek={onSeek}
           onTogglePlay={onTogglePlay}
-          onScrollYChange={setScrollY}
+          onScrollYChange={handleHeadersScrollY}
           containerRef={viewportContainerRef}
         />
       </div>

@@ -133,7 +133,7 @@ export interface StudioTakeSummary {
   sourceType: 'screen' | 'window';
   sourceName: string | null;
   durationMs: number;
-  videoPath: string;
+  videoPath?: string;
   cutCount: number;
   zoomCount: number;
   fileSizeBytes?: number;
@@ -175,6 +175,36 @@ export const DEFAULT_STUDIO_STYLING: StudioStyling = {
     preset: 'gradient',
   },
 };
+
+// ── Duration Sanitization ─────────────────────────────────────────────────────
+
+/**
+ * True when a duration reported by a media element (in seconds) is usable for
+ * seeking.
+ *
+ * Screen recordings come out of `MediaRecorder`, and its webm output carries no
+ * duration in the container header — Chromium therefore reports
+ * `video.duration === Infinity`. A truthiness guard passes that value happily
+ * and the element then throws "provided double value is non-finite" the moment
+ * `currentTime` is assigned, so `Infinity` must be rejected explicitly.
+ */
+export function isFiniteDurationSeconds(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+/**
+ * Coerces an untrusted duration into a finite, positive number of milliseconds.
+ *
+ * The take's own recorded duration is authoritative — it comes from the recorder
+ * or a previously measured media length — whereas `HTMLMediaElement.duration` is
+ * `Infinity` for headerless webm. Anything non-numeric, non-finite or
+ * non-positive falls back, and the fallback is sanitized in turn so this can
+ * never hand back `NaN`, `Infinity` or a negative length.
+ */
+export function safeDurationMs(value: unknown, fallbackMs: number): number {
+  if (isFiniteDurationSeconds(value)) return value;
+  return isFiniteDurationSeconds(fallbackMs) ? fallbackMs : 0;
+}
 
 // ── Multi-Track Timeline Domain Models ────────────────────────────────────────
 

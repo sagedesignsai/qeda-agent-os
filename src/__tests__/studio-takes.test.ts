@@ -104,6 +104,32 @@ describe('Showcase Studio Database Store', () => {
     expect(loaded?.captions[0].text).toBe('Building intelligent local agents');
   });
 
+  it('applies partial updates without clearing untouched take fields', () => {
+    saveStudioTake({
+      id: 'take-patch',
+      title: 'Patch Demo',
+      videoPath: '/tmp/patch.webm',
+      zooms: [
+        {
+          id: 'z-keep',
+          startMs: 100,
+          endMs: 900,
+          targetX: 0.5,
+          targetY: 0.5,
+          scale: 1.4,
+        },
+      ],
+    });
+
+    saveStudioTake({ id: 'take-patch', title: 'Renamed Demo' });
+
+    const updated = getStudioTake('take-patch');
+    expect(updated?.title).toBe('Renamed Demo');
+    expect(updated?.videoPath).toBe('/tmp/patch.webm');
+    expect(updated?.zooms).toHaveLength(1);
+    expect(updated?.zooms[0].id).toBe('z-keep');
+  });
+
   it('filters takes by project scope', () => {
     // Seed project
     db.prepare(
@@ -132,6 +158,19 @@ describe('Showcase Studio Database Store', () => {
     expect(scoped.length).toBe(1);
     expect(scoped[0].id).toBe('take-scoped');
     expect(scoped[0].projectName).toBe('Project Alpha');
+  });
+
+  it('returns narrow paginated take summaries', () => {
+    for (let i = 0; i < 3; i++) {
+      saveStudioTake({
+        id: `take-page-${i}`,
+        title: `Page ${i}`,
+        videoPath: `/tmp/page-${i}.webm`,
+      });
+    }
+
+    expect(listStudioTakes(null, 2, 0)).toHaveLength(2);
+    expect(listStudioTakes(null, 2, 2)).toHaveLength(1);
   });
 
   it('deletes a showcase take cleanly', () => {

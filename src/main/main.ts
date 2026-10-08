@@ -17,6 +17,11 @@ import { loadEnvironment } from './env';
 import { getDb, closeDb } from './db/client.js';
 import { registerIpcHandlers } from './ipc/index.js';
 import { registerPtyHandlers } from './pty/manager.js';
+import {
+  registerStudioMediaHandler,
+  registerStudioMediaScheme,
+} from './studio-media.js';
+import { stopOwnedBuilderService } from './builder/client.js';
 import MenuBuilder, { attachContentContextMenu } from './menu';
 import { resolveHtmlPath } from './util';
 import startAutoUpdates from './updates';
@@ -40,6 +45,7 @@ let mainWindow: BrowserWindow | null = null;
 let pendingDeepLink: string | null = null;
 
 loadEnvironment();
+registerStudioMediaScheme();
 
 // Identity must be applied before any Notification is created: on Windows the
 // AppUserModelID decides whether toasts are attributed to Qeda or fail.
@@ -196,6 +202,10 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   shutdownOsIntegration();
   destroyTray();
+  // Best-effort: stops the OpenCode service only when Builder started it, so an
+  // already-running user service is never taken down. Not awaited — quit cannot
+  // block here — but the service is a detached process, so we ask it to stop.
+  void stopOwnedBuilderService();
 });
 
 app.on('quit', () => {
@@ -223,6 +233,7 @@ app
     } catch (e) {
       log.error('Failed to initialize database', e);
     }
+    registerStudioMediaHandler();
     await createWindow();
 
     // OS presence: tray icon, global quick capture, suspend events, badge,

@@ -31,6 +31,8 @@ import { z } from 'zod';
 import {
   listStudioTakes,
   getStudioTake,
+  getStudioVideoPath,
+  hasStudioTake,
   saveStudioTake,
   deleteStudioTake,
   DEFAULT_STUDIO_STYLING,
@@ -55,6 +57,7 @@ interface ActiveRecordingSession {
 }
 
 let activeTracker: ActiveRecordingSession | null = null;
+const MAX_MOUSE_TRACKER_EVENTS = 100_000;
 
 function getStudioDir(takeId?: string): string {
   const base = path.join(app.getPath('userData'), 'studio');
@@ -91,8 +94,8 @@ export function registerStudioHandlers({
       const types = req?.types ?? ['screen', 'window'];
       const sources = await desktopCapturer.getSources({
         types,
-        thumbnailSize: { width: 480, height: 270 },
-        fetchWindowIcons: true,
+        thumbnailSize: { width: 160, height: 90 },
+        fetchWindowIcons: false,
       });
 
       return sources.map((s) => ({
@@ -109,8 +112,15 @@ export function registerStudioHandlers({
 
   ipcMain.handle(
     'studio:list-takes',
-    (_e, req?: { projectId?: string | null }): StudioTakeSummary[] => {
-      return listStudioTakes(req?.projectId ?? null);
+    (
+      _e,
+      req?: { projectId?: string | null; limit?: number; offset?: number },
+    ): StudioTakeSummary[] => {
+      return listStudioTakes(
+        req?.projectId ?? null,
+        req?.limit,
+        req?.offset,
+      );
     },
   );
 
@@ -171,12 +181,14 @@ export function registerStudioHandlers({
           if (point.x !== lastX || point.y !== lastY) {
             lastX = point.x;
             lastY = point.y;
-            events.push({
-              t: Date.now() - startTime,
-              x: point.x,
-              y: point.y,
-              type: 'move',
-            });
+            if (events.length < MAX_MOUSE_TRACKER_EVENTS) {
+              events.push({
+                t: Date.now() - startTime,
+                x: point.x,
+                y: point.y,
+                type: 'move',
+              });
+            }
           }
         } catch {
           // Screen query safe guard
@@ -213,15 +225,12 @@ export function registerStudioHandlers({
       await fs.mkdir(takeDir, { recursive: true });
 
       const filePath = path.join(takeDir, 'mouse_events.json');
-      await fs.writeFile(filePath, JSON.stringify(events, null, 2), 'utf-8');
+      await fs.writeFile(filePath, JSON.stringify(events), 'utf-8');
 
-      // Update take record with mouse_events_path if take exists
-      const existing = getStudioTake(takeId);
-      if (existing) {
-        saveStudioTake({
-          ...existing,
-          mouseEventsPath: filePath,
-        });
+      // Check existence with a narrow query so this partial save cannot create
+      // a phantom take or load/serialize its other large fields.
+      if (hasStudioTake(takeId)) {
+        saveStudioTake({ id: takeId, mouseEventsPath: filePath });
       }
 
       return { ok: true, count: events.length, filePath };
@@ -262,15 +271,10 @@ export function registerStudioHandlers({
       }
 
       if (isLast) {
-        const existing = getStudioTake(takeId);
         saveStudioTake({
           id: takeId,
-          title:
-            existing?.title ||
-            `Showcase Take ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
           videoPath,
-          durationMs: durationMs || existing?.durationMs || 5000,
-          styling: existing?.styling || DEFAULT_STUDIO_STYLING,
+          durationMs: durationMs || 5000,
         });
         broadcastChanged();
       }
@@ -330,21 +334,31 @@ export function registerStudioHandlers({
         const screenW = primaryDisplay.bounds.width || 1920;
         const screenH = primaryDisplay.bounds.height || 1080;
 
-        let windowStart = 0;
         const windowSizeMs = 1800;
+        const windowStrideMs = windowSizeMs + 1200;
+        const buckets = new Map<number, { count: number; x: number; y: number }>();
+        for (const event of mouseEvents) {
+          const bucket = Math.floor(event.t / windowStrideMs);
+          const offset = event.t - bucket * windowStrideMs;
+          if (offset < 0 || offset >= windowSizeMs) continue;
+          const aggregate = buckets.get(bucket) ?? { count: 0, x: 0, y: 0 };
+          aggregate.count++;
+          aggregate.x += event.x;
+          aggregate.y += event.y;
+          buckets.set(bucket, aggregate);
+        }
 
-        while (windowStart < durationMs - 1500) {
-          const windowEvents = mouseEvents.filter(
-            (e) => e.t >= windowStart && e.t < windowStart + windowSizeMs,
-          );
+        for (
+          let windowIndex = 0;
+          windowIndex * windowStrideMs < durationMs - 1500;
+          windowIndex++
+        ) {
+          const windowStart = windowIndex * windowStrideMs;
+          const aggregate = buckets.get(windowIndex);
 
-          if (windowEvents.length > 5) {
-            const avgX =
-              windowEvents.reduce((acc, cur) => acc + cur.x, 0) /
-              windowEvents.length;
-            const avgY =
-              windowEvents.reduce((acc, cur) => acc + cur.y, 0) /
-              windowEvents.length;
+          if (aggregate && aggregate.count > 5) {
+            const avgX = aggregate.x / aggregate.count;
+            const avgY = aggregate.y / aggregate.count;
 
             const normX = Math.min(Math.max(avgX / screenW, 0.15), 0.85);
             const normY = Math.min(Math.max(avgY / screenH, 0.15), 0.85);
@@ -358,7 +372,6 @@ export function registerStudioHandlers({
               scale: 1.5,
             });
           }
-          windowStart += windowSizeMs + 1200; // alternate zoom and full view
         }
       } else {
         // Synthetic cinematic zoom pulses if no telemetry
@@ -409,7 +422,7 @@ export function registerStudioHandlers({
             ];
 
       const updated = saveStudioTake({
-        ...take,
+        id: take.id,
         title: generatedTitle,
         zooms,
         captions,
@@ -479,7 +492,7 @@ export function registerStudioHandlers({
 
       const socialKit = result.object;
       saveStudioTake({
-        ...take,
+        id: take.id,
         socialKit,
       });
 
@@ -549,31 +562,9 @@ export function registerStudioHandlers({
 
   ipcMain.handle(
     'studio:read-video-data',
-    async (
-      _e,
-      req: { takeId?: string; filePath?: string },
-    ): Promise<string | null> => {
-      try {
-        let p = req.filePath;
-        if (!p && req.takeId) {
-          const take = getStudioTake(req.takeId);
-          p = take?.videoPath;
-        }
-        if (!p) return null;
-        const buffer = await fs.readFile(p);
-        const ext = path.extname(p).toLowerCase().replace('.', '');
-        let mime = 'video/webm';
-        if (ext === 'mp4') mime = 'video/mp4';
-        else if (ext === 'mov') mime = 'video/quicktime';
-        else if (ext === 'mp3') mime = 'audio/mpeg';
-        else if (ext === 'wav') mime = 'audio/wav';
-        else if (ext === 'png') mime = 'image/png';
-        else if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
-        else if (ext === 'webp') mime = 'image/webp';
-        return `data:${mime};base64,${buffer.toString('base64')}`;
-      } catch {
-        return null;
-      }
+    async (_e, req: { takeId?: string }): Promise<string | null> => {
+      if (!req.takeId || !getStudioVideoPath(req.takeId)) return null;
+      return `qeda-media://studio/${encodeURIComponent(req.takeId)}`;
     },
   );
 

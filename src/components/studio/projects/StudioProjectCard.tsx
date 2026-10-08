@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   MoreVerticalIcon,
@@ -32,7 +32,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { StudioTakeSummary } from '@/lib/studio-types';
+import {
+  isFiniteDurationSeconds,
+  safeDurationMs,
+  type StudioTakeSummary,
+} from '@/lib/studio-types';
 
 interface StudioProjectCardProps {
   take: StudioTakeSummary;
@@ -49,7 +53,7 @@ function formatDuration(ms: number): string {
   return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function StudioProjectCard({
+export const StudioProjectCard = memo(function StudioProjectCard({
   take,
   onOpen,
   onRename,
@@ -99,7 +103,15 @@ export function StudioProjectCard({
     } else {
       const v = videoRef.current;
       if (v) {
-        v.play().catch(() => {});
+        v.play().catch((err: unknown) => {
+          const name = (err as { name?: string } | null)?.name;
+          console.warn(
+            name === 'NotAllowedError'
+              ? '[StudioProjectCard] Hover preview blocked by autoplay policy.'
+              : '[StudioProjectCard] Hover preview could not start.',
+            err,
+          );
+        });
       }
     }
   };
@@ -124,8 +136,11 @@ export function StudioProjectCard({
     setScrubProgress(relX);
 
     const v = videoRef.current;
-    if (v && v.duration) {
-      v.currentTime = relX * v.duration;
+    // Headerless webm reports `Infinity`, which passes a truthiness check and
+    // then throws on assignment — scrub against the recorded duration instead.
+    const scrubSec = safeDurationMs(v?.duration, take.durationMs) / 1000;
+    if (v && isFiniteDurationSeconds(scrubSec)) {
+      v.currentTime = relX * scrubSec;
     }
   };
 
@@ -333,4 +348,4 @@ export function StudioProjectCard({
       </div>
     </div>
   );
-}
+});

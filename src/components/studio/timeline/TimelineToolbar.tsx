@@ -21,6 +21,7 @@ import {
   Maximize2Icon,
   PlayIcon,
   PauseIcon,
+  RotateCcwIcon,
   SplitIcon,
   Undo2Icon,
   Redo2Icon,
@@ -38,6 +39,7 @@ interface TimelineToolbarProps {
   durationMs: number;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  onRestartPlayback: () => void;
   onZoomToFit: () => void;
 }
 
@@ -83,6 +85,7 @@ export function TimelineToolbar({
   durationMs,
   isPlaying,
   onTogglePlay,
+  onRestartPlayback,
   onZoomToFit,
 }: TimelineToolbarProps) {
   const {
@@ -226,6 +229,20 @@ export function TimelineToolbar({
 
       {/* ── Center Transport & Timecode ─────────────────────────────────────── */}
       <div className="flex items-center gap-3">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={onRestartPlayback}
+              aria-label="Restart playback from beginning"
+            >
+              <RotateCcwIcon className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Restart from beginning</TooltipContent>
+        </Tooltip>
         <Button
           variant="default"
           size="icon"

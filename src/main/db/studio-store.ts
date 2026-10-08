@@ -94,50 +94,67 @@ function rowToTake(row: StudioTakeRow): StudioTake {
 
 export function listStudioTakes(
   projectId?: string | null,
+  limit = 50,
+  offset = 0,
 ): StudioTakeSummary[] {
   const db = getDb();
-  let rows: StudioTakeRow[];
+  const pageSize = Number.isFinite(limit)
+    ? Math.max(1, Math.min(100, Math.floor(limit)))
+    : 50;
+  const pageOffset = Number.isFinite(offset)
+    ? Math.max(0, Math.floor(offset))
+    : 0;
+  const projection = `SELECT t.id, t.project_id, p.name AS project_name,
+       t.title, t.description, t.source_type, t.source_name, t.duration_ms,
+       CASE WHEN json_valid(t.cuts_json) THEN json_array_length(t.cuts_json)
+            ELSE 0 END AS cut_count,
+       CASE WHEN json_valid(t.zooms_json) THEN json_array_length(t.zooms_json)
+            ELSE 0 END AS zoom_count,
+       t.created_at, t.updated_at
+       FROM studio_takes t LEFT JOIN projects p ON p.id = t.project_id`;
+  let rows: Array<{
+    id: string;
+    project_id: string | null;
+    project_name: string | null;
+    title: string;
+    description: string | null;
+    source_type: string;
+    source_name: string | null;
+    duration_ms: number;
+    cut_count: number;
+    zoom_count: number;
+    created_at: number;
+    updated_at: number;
+  }>;
 
   if (projectId) {
     rows = db
       .prepare(
-        `SELECT t.*, p.name AS project_name
-           FROM studio_takes t
-      LEFT JOIN projects p ON p.id = t.project_id
-          WHERE t.project_id = ?
-       ORDER BY t.created_at DESC`,
+        `${projection} WHERE t.project_id = ? ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
       )
-      .all(projectId) as StudioTakeRow[];
+      .all(projectId, pageSize, pageOffset) as typeof rows;
   } else {
     rows = db
       .prepare(
-        `SELECT t.*, p.name AS project_name
-           FROM studio_takes t
-      LEFT JOIN projects p ON p.id = t.project_id
-       ORDER BY t.created_at DESC`,
+        `${projection} ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
       )
-      .all() as StudioTakeRow[];
+      .all(pageSize, pageOffset) as typeof rows;
   }
 
-  return rows.map((r) => {
-    const cuts = parseJsonSafe<StudioCut[]>(r.cuts_json, []);
-    const zooms = parseJsonSafe<StudioZoom[]>(r.zooms_json, []);
-    return {
-      id: r.id,
-      projectId: r.project_id,
-      projectName: r.project_name,
-      title: r.title,
-      description: r.description,
-      sourceType: (r.source_type as 'screen' | 'window') || 'screen',
-      sourceName: r.source_name,
-      durationMs: r.duration_ms,
-      videoPath: r.video_path,
-      cutCount: cuts.length,
-      zoomCount: zooms.length,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    };
-  });
+  return rows.map((r) => ({
+    id: r.id,
+    projectId: r.project_id,
+    projectName: r.project_name,
+    title: r.title,
+    description: r.description,
+    sourceType: (r.source_type as 'screen' | 'window') || 'screen',
+    sourceName: r.source_name,
+    durationMs: r.duration_ms,
+    cutCount: r.cut_count,
+    zoomCount: r.zoom_count,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
 }
 
 export function getStudioTake(id: string): StudioTake | null {
@@ -154,15 +171,28 @@ export function getStudioTake(id: string): StudioTake | null {
   return row ? rowToTake(row) : null;
 }
 
+export function hasStudioTake(id: string): boolean {
+  return Boolean(
+    getDb().prepare('SELECT 1 FROM studio_takes WHERE id = ?').get(id),
+  );
+}
+
+export function getStudioVideoPath(id: string): string | null {
+  const row = getDb()
+    .prepare('SELECT video_path FROM studio_takes WHERE id = ?')
+    .get(id) as { video_path: string } | undefined;
+  return row?.video_path || null;
+}
+
 export function saveStudioTake(take: {
   id: string;
   projectId?: string | null;
-  title: string;
+  title?: string;
   description?: string | null;
   sourceType?: 'screen' | 'window';
   sourceName?: string | null;
   durationMs?: number;
-  videoPath: string;
+  videoPath?: string;
   audioPath?: string | null;
   mouseEventsPath?: string | null;
   cuts?: StudioCut[];
@@ -172,45 +202,72 @@ export function saveStudioTake(take: {
   socialKit?: StudioSocialKit | null;
 }): StudioTake {
   const db = getDb();
-  const existing = getStudioTake(take.id);
   const now = Math.floor(Date.now() / 1000);
 
+  const existingRow = db
+    .prepare('SELECT created_at FROM studio_takes WHERE id = ?')
+    .get(take.id) as { created_at: number } | undefined;
+
+  if (existingRow) {
+    const columns: Partial<Record<keyof typeof take, string>> = {
+      projectId: 'project_id',
+      title: 'title',
+      description: 'description',
+      sourceType: 'source_type',
+      sourceName: 'source_name',
+      durationMs: 'duration_ms',
+      videoPath: 'video_path',
+      audioPath: 'audio_path',
+      mouseEventsPath: 'mouse_events_path',
+      cuts: 'cuts_json',
+      zooms: 'zooms_json',
+      captions: 'captions_json',
+      styling: 'styling_json',
+      socialKit: 'social_kit_json',
+    };
+    const jsonFields = new Set([
+      'cuts',
+      'zooms',
+      'captions',
+      'styling',
+      'socialKit',
+    ]);
+    const updates = Object.entries(columns).filter(([key]) =>
+      Object.prototype.hasOwnProperty.call(take, key) &&
+      take[key as keyof typeof take] !== undefined,
+    );
+
+    if (updates.length > 0) {
+      const setClauses = updates.map(([, column]) => `${column} = ?`);
+      const values = updates.map(([key]) => {
+        const value = take[key as keyof typeof take];
+        if (!jsonFields.has(key)) return value;
+        return value == null && key === 'socialKit'
+          ? null
+          : JSON.stringify(value);
+      });
+      db.prepare(
+        `UPDATE studio_takes SET ${setClauses.join(', ')}, updated_at = ? WHERE id = ?`,
+      ).run(...values, now, take.id);
+    }
+    return getStudioTake(take.id)!;
+  }
+
   const merged = {
-    projectId:
-      take.projectId !== undefined
-        ? take.projectId
-        : (existing?.projectId ?? null),
-    title: take.title || existing?.title || 'Untitled Showcase Take',
-    description:
-      take.description !== undefined
-        ? take.description
-        : (existing?.description ?? null),
-    sourceType: take.sourceType || existing?.sourceType || 'screen',
-    sourceName:
-      take.sourceName !== undefined
-        ? take.sourceName
-        : (existing?.sourceName ?? null),
-    durationMs:
-      take.durationMs !== undefined
-        ? take.durationMs
-        : (existing?.durationMs ?? 0),
-    videoPath: take.videoPath || existing?.videoPath || '',
-    audioPath:
-      take.audioPath !== undefined
-        ? take.audioPath
-        : (existing?.audioPath ?? null),
-    mouseEventsPath:
-      take.mouseEventsPath !== undefined
-        ? take.mouseEventsPath
-        : (existing?.mouseEventsPath ?? null),
-    cuts: take.cuts || existing?.cuts || [],
-    zooms: take.zooms || existing?.zooms || [],
-    captions: take.captions || existing?.captions || [],
-    styling: take.styling || existing?.styling || DEFAULT_STUDIO_STYLING,
-    socialKit:
-      take.socialKit !== undefined
-        ? take.socialKit
-        : (existing?.socialKit ?? null),
+    projectId: take.projectId ?? null,
+    title: take.title || 'Untitled Showcase Take',
+    description: take.description ?? null,
+    sourceType: take.sourceType || 'screen',
+    sourceName: take.sourceName ?? null,
+    durationMs: take.durationMs ?? 0,
+    videoPath: take.videoPath || '',
+    audioPath: take.audioPath ?? null,
+    mouseEventsPath: take.mouseEventsPath ?? null,
+    cuts: take.cuts ?? [],
+    zooms: take.zooms ?? [],
+    captions: take.captions ?? [],
+    styling: take.styling ?? DEFAULT_STUDIO_STYLING,
+    socialKit: take.socialKit ?? null,
   };
 
   db.prepare(
@@ -252,7 +309,7 @@ export function saveStudioTake(take: {
     JSON.stringify(merged.captions),
     JSON.stringify(merged.styling),
     merged.socialKit ? JSON.stringify(merged.socialKit) : null,
-    existing?.createdAt ?? now,
+     now,
     now,
   );
 
