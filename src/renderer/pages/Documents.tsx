@@ -15,16 +15,16 @@
 
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
-import { PlusIcon, FileTextIcon } from 'lucide-react';
+import { PlusIcon } from 'lucide-react';
 import { PageHeader, type PageCrumb } from '@/components/PageHeader';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useDocuments, useDocumentEditor } from '@/hooks/use-documents';
 import { WordProcessor } from '@/components/documents/word-processor';
 import { TemplatePickerModal } from '@/components/documents/TemplatePickerModal';
-import { DOCUMENT_TEMPLATES } from '@/lib/pdf-studio/templates';
+import { DocumentsWelcome } from '@/components/documents/DocumentsWelcome';
+import { DocumentDrafterSheet } from '@/components/documents/drafter/DocumentDrafterSheet';
 
 export default function Documents() {
   const navigate = useNavigate();
@@ -35,7 +35,8 @@ export default function Documents() {
     clear: clearProjectScope,
   } = useProjectScope();
 
-  const { documents, createFromTemplate } = useDocuments(activeProjectId);
+  const { documents, createFromTemplate, loading } =
+    useDocuments(activeProjectId);
 
   const {
     doc,
@@ -52,6 +53,24 @@ export default function Documents() {
   } = useDocumentEditor(documentId ?? null);
 
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  /** Template id currently being created, or null when idle.
+   *
+   *  `createFromTemplate` is async and the cards are bare buttons, so before
+   *  this a double-click opened the same template twice and produced two
+   *  documents with two ids. Naming the in-flight template (rather than a bare
+   *  boolean) also lets the card show which one is being created. */
+  const [creatingFromTemplate, setCreatingFromTemplate] = useState<
+    string | null
+  >(null);
+  /** Prompt handed to the Document Drafter, or null when the panel is closed.
+   *
+   *  The welcome composer does NOT create a document itself. It opens the
+   *  drafter seeded with what was typed, so the agent — not a template click —
+   *  produces the draft, which is the whole AI-first premise of this page.
+   *  The drafter's `onDocumentCreated` then navigates to the finished file. */
+  const [draftPrompt, setDraftPrompt] = useState<string | null>(null);
+
+  const handleDraft = (prompt: string) => setDraftPrompt(prompt);
 
   // Note: this route deliberately does *not* auto-open the most recent document.
   // It used to navigate to `documents[0]`, which is `ORDER BY updated_at DESC` —
@@ -60,9 +79,17 @@ export default function Documents() {
   // is now a real landing page, matching how Projects handles its index.
 
   const handleSelectTemplate = async (templateId: string) => {
-    const id = await createFromTemplate(templateId, activeProjectId);
-    if (id) {
-      navigate(`/documents/${id}`);
+    // Guard rather than rely on `disabled` alone: the state update lands after
+    // the current event, so two clicks in the same tick would both pass.
+    if (creatingFromTemplate !== null) return;
+    setCreatingFromTemplate(templateId);
+    try {
+      const id = await createFromTemplate(templateId, activeProjectId);
+      if (id) {
+        navigate(`/documents/${id}`);
+      }
+    } finally {
+      setCreatingFromTemplate(null);
     }
   };
 
@@ -95,9 +122,19 @@ export default function Documents() {
         </div>
       ) : (
         <>
-          {/* Top Application Bar for Template Gallery / Empty State */}
+          {/* Top Application Bar for the welcome / drafting surface */}
           <PageHeader
             crumbs={crumbs}
+            subtitle={
+              // The count was previously shown nowhere, so a user with 200
+              // documents had no idea how much they were not seeing here —
+              // matching `Projects.tsx:379-383`.
+              !loading && documents.length > 0
+                ? `${documents.length} document${
+                    documents.length === 1 ? '' : 's'
+                  }`
+                : undefined
+            }
             meta={
               <ProjectScopeChip
                 name={activeProjectName}
@@ -117,94 +154,42 @@ export default function Documents() {
             }
           />
 
-          {/* Empty State / Template Gallery Hero */}
-          <div className="flex flex-1 flex-col items-center justify-center p-8 text-center bg-background">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary mb-4">
-              <FileTextIcon className="h-7 w-7" />
-            </div>
-            <h2 className="text-xl font-bold tracking-tight text-foreground">
-              Document Composer & Studio
-            </h2>
-            <p className="max-w-md text-sm text-muted-foreground mt-1.5 mb-6">
-              Design multi-page proposals, itemized invoices, technical specs,
-              and resumes with live paper-sheet canvas, office formatting
-              ribbon, and AI drafting.
-            </p>
-
-            {/* Recent documents. Without this the templates below are the only
-                way back into an existing document from this route — the
-                sidebar is the other, but a landing page that hides your own
-                work behind a "new document" grid is a dead end. */}
-            {documents.length > 0 && (
-              <div className="w-full max-w-3xl text-left">
-                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Recent
-                </h3>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {documents.slice(0, 6).map((d) => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      onClick={() => navigate(`/documents/${d.id}`)}
-                      className="group flex items-center gap-2.5 rounded-lg border border-border/60 bg-card px-3 py-2 text-left transition-all hover:border-primary hover:bg-muted/30 cursor-pointer"
-                    >
-                      <FileTextIcon className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs font-medium text-foreground">
-                          {d.title}
-                        </span>
-                        <span className="block truncate text-[10px] text-muted-foreground">
-                          Edited{' '}
-                          {formatDistanceToNow(new Date(d.updatedAt), {
-                            addSuffix: true,
-                          })}
-                          {d.projectName ? ` · ${d.projectName}` : ''}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                {documents.length > 6 && (
-                  <p className="mt-2 text-[10px] text-muted-foreground">
-                    Showing the 6 most recent. All documents are listed in the
-                    sidebar.
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 max-w-3xl w-full text-left">
-              {DOCUMENT_TEMPLATES.map((tmpl) => (
-                <button
-                  key={tmpl.id}
-                  type="button"
-                  onClick={() => void handleSelectTemplate(tmpl.id)}
-                  className="group flex flex-col rounded-xl border border-border/60 bg-card p-4 transition-all hover:border-primary hover:bg-muted/30 hover:shadow-md cursor-pointer"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-primary uppercase tracking-wide">
-                      {tmpl.category}
-                    </span>
-                    <PlusIcon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </div>
-                  <h4 className="text-sm font-bold text-foreground mb-1 group-hover:text-primary transition-colors">
-                    {tmpl.name}
-                  </h4>
-                  <p className="text-xs text-muted-foreground line-clamp-2">
-                    {tmpl.description}
-                  </p>
-                </button>
-              ))}
-            </div>
+          {/* AI-first welcome. `min-h-0` + `overflow-y-auto` are both required
+              and the order matters: a flex child defaults to `min-height: auto`,
+              so without `min-h-0` it refuses to shrink below its content and the
+              scroll container never engages — this page used to clip its own
+              template grid with no way to reach it. Same pattern as
+              `Projects.tsx:419`. */}
+          <div className="min-h-0 flex-1 overflow-y-auto bg-background">
+            <DocumentsWelcome
+              onDraft={handleDraft}
+              loading={loading}
+              isEmpty={documents.length === 0}
+            />
           </div>
         </>
       )}
 
-      {/* Template Picker Modal */}
+      {/* Template Picker Modal — the explicit "start from a fixed layout" path,
+          kept separate from the AI composer on the welcome view. */}
       <TemplatePickerModal
         open={templatePickerOpen}
         onOpenChange={setTemplatePickerOpen}
         onSelectTemplate={(tmplId) => void handleSelectTemplate(tmplId)}
+      />
+
+      {/* The Document Drafter. Mounted always and opened by presence of a
+          prompt, so a draft conversation survives closing the panel and
+          reopening it — same pattern `Tasks.tsx` uses for its task drafter. */}
+      <DocumentDrafterSheet
+        open={draftPrompt !== null}
+        onOpenChange={(open) => !open && setDraftPrompt(null)}
+        projectId={activeProjectId ?? undefined}
+        initialPrompt={draftPrompt ?? undefined}
+        onDocumentCreated={(id) => {
+          setDraftPrompt(null);
+          navigate(`/documents/${id}`);
+        }}
       />
     </div>
   );
