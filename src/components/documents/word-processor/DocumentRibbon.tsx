@@ -161,9 +161,7 @@ export function DocumentRibbon({
                 <ChevronRightIcon className="h-3 w-3 text-muted-foreground/40 shrink-0" />
                 <Link
                   to={
-                    projectId
-                      ? `/documents?projectId=${projectId}`
-                      : '/documents'
+                    projectId ? `/documents?project=${projectId}` : '/documents'
                   }
                   className="max-w-[100px] truncate hover:text-foreground transition-colors md:max-w-[140px]"
                 >

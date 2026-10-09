@@ -67,7 +67,7 @@ export function ProjectOverviewPanel({
       icon: FileTextIcon,
       label: 'Documents',
       value: linked.documents,
-      to: `/documents?projectId=${project.id}`,
+      to: `/documents?project=${project.id}`,
     },
     {
       icon: VideoIcon,

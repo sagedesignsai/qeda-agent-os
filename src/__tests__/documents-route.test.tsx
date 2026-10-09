@@ -1,18 +1,33 @@
 /**
  * __tests__/documents-route.test.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Guards the /documents landing page against silently re-acquiring its old
- * behaviour: navigating to the index used to redirect into the most recently
- * edited document, which made the template gallery unreachable whenever the
- * user had any document at all.
+ * Guards the /documents landing page.
  *
- * `documents:list` orders by `updated_at DESC`, so "the first document" was
- * never arbitrary — it was always the last thing edited.
+ * The original regression this file exists for: navigating to the index used to
+ * redirect into the most recently edited document, which made the landing page
+ * unreachable whenever the user had any document at all. `documents:list`
+ * orders by `updated_at DESC`, so "the first document" was never arbitrary — it
+ * was always the last thing edited. That guard is kept.
+ *
+ * WHAT CHANGED AND WHY THE EXPECTATIONS MOVED
+ * The landing page used to open with a product pitch ("Document Composer &
+ * Studio") and then list the user's own documents in a capped "Recent" grid.
+ * It now leads with the AI composer — the same shape as the chat empty state
+ * (`components/chat/ChatWelcome.tsx`) — because recents live in the sidebar
+ * (`components/sidebar/DocumentsMenu.tsx`) and duplicating a capped slice of
+ * that list on the page was both a dead end and a second copy of the same
+ * query. The old "Recent" assertions were removed deliberately, alongside the
+ * behaviour they described.
+ *
+ * Templates no longer create a document on a bare click. They seed the
+ * composer, and the Document Drafter produces the draft. That is asserted here
+ * because the previous behaviour silently created a file — and, with no
+ * in-flight guard, created two on a double-click.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import '@testing-library/jest-dom';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 
 import type { PdfDocumentSummary } from '@/lib/pdf-studio/types';
@@ -72,6 +87,15 @@ const summary = (id: string, title: string): PdfDocumentSummary => ({
   updatedAt: 2,
 });
 
+/** Answer `documents:list` with `docs`; everything else resolves to undefined. */
+function listReturns(docs: PdfDocumentSummary[]) {
+  invokeMock.mockImplementation((channel: string) =>
+    channel === 'documents:list'
+      ? Promise.resolve(docs)
+      : Promise.resolve(undefined),
+  );
+}
+
 beforeEach(() => {
   navigateMock.mockClear();
   invokeMock.mockReset();
@@ -81,67 +105,89 @@ beforeEach(() => {
       on: () => () => {},
     },
   };
-  // Every channel resolve to a benign value; documents:list is overridden per test.
   invokeMock.mockResolvedValue(undefined);
 });
 
 describe('Documents landing page', () => {
   it('does not navigate away from the index when documents exist', async () => {
-    invokeMock.mockImplementation((channel: string) =>
-      channel === 'documents:list'
-        ? Promise.resolve([summary('a', 'Most Recent')])
-        : Promise.resolve(undefined),
-    );
+    listReturns([summary('a', 'Most Recent')]);
 
     renderPage();
 
-    // Wait for the list to actually load before asserting. The gallery itself
-    // renders on the first paint (with an empty list), so waiting on it proves
-    // nothing — the old effect only fired *after* `documents:list` resolved.
+    // Wait on the header's document count — that only appears once the list has
+    // actually resolved, so unlike the old waitFor-on-gallery it proves the
+    // fetch completed rather than that the first paint happened.
     await waitFor(() => {
-      expect(screen.getByText('Most Recent')).toBeInTheDocument();
+      expect(screen.getByText('1 document')).toBeInTheDocument();
     });
 
     expect(navigateMock).not.toHaveBeenCalled();
-    expect(
-      screen.queryByText(/Document Composer & Studio/),
-    ).toBeInTheDocument();
   });
 
-  it('offers existing documents as recent entries, not just templates', async () => {
-    invokeMock.mockImplementation((channel: string) =>
-      channel === 'documents:list'
-        ? Promise.resolve([
-            summary('a', 'Quarterly Proposal'),
-            summary('b', 'Itemized Invoice'),
-          ])
-        : Promise.resolve(undefined),
-    );
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText('Recent')).toBeInTheDocument();
-    });
-    // Existing work is one click away instead of hiding behind "new document".
-    expect(screen.getByText('Quarterly Proposal')).toBeInTheDocument();
-    expect(screen.getByText('Itemized Invoice')).toBeInTheDocument();
-  });
-
-  it('omits the recent section when there are no documents', async () => {
-    invokeMock.mockImplementation((channel: string) =>
-      channel === 'documents:list'
-        ? Promise.resolve([])
-        : Promise.resolve(undefined),
-    );
+  it('leads with the composer rather than a product pitch', async () => {
+    listReturns([]);
 
     renderPage();
 
     await waitFor(() => {
       expect(
-        screen.getByText('Document Composer & Studio'),
+        screen.getByPlaceholderText(/Draft a letter of demand/i),
       ).toBeInTheDocument();
     });
-    expect(screen.queryByText('Recent')).toBeNull();
+
+    // The marketing hero is gone; the composer is the page.
+    expect(
+      screen.queryByText(/Document Composer & Studio/),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Start from a template')).toBeInTheDocument();
+  });
+
+  it('tells a first-run user they have no documents', async () => {
+    listReturns([]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/No documents yet/i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows a loading state instead of claiming the workspace is empty', async () => {
+    // `documents:list` never resolves: the request is genuinely still in
+    // flight. The old page could not tell this apart from "you have none" and
+    // showed the marketing hero in both cases.
+    invokeMock.mockImplementation((channel: string) =>
+      channel === 'documents:list'
+        ? new Promise(() => {})
+        : Promise.resolve(undefined),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText(/Loading your documents/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/No documents yet/i)).not.toBeInTheDocument();
+  });
+
+  it('does not create a document when a template is clicked', async () => {
+    listReturns([]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('Start from a template')).toBeInTheDocument();
+    });
+
+    const template = screen.getByText('Professional Consulting Invoice');
+    fireEvent.click(template);
+
+    // The template seeds the composer and opens the drafter; it does not write.
+    // Previously this fired `documents:save` immediately and, with no in-flight
+    // guard, a second click produced a second document.
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'documents:save',
+      expect.anything(),
+    );
   });
 });

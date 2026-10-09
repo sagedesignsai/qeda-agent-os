@@ -25,6 +25,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   ArrowLeftIcon,
   FileTextIcon,
   MoreHorizontalIcon,
@@ -42,6 +52,11 @@ export function DocumentsMenu({ onBack }: { onBack: () => void }) {
   const { documents, createFromTemplate, deleteDocument } =
     useDocuments(activeProjectId);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  /** Document awaiting delete confirmation, or null. */
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
 
   const handleSelectTemplate = async (templateId: string) => {
     const id = await createFromTemplate(templateId, activeProjectId);
@@ -50,8 +65,10 @@ export function DocumentsMenu({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
+    setDeleteTarget(null);
     const ok = await deleteDocument(id);
     if (ok && activeDocumentId === id) {
       navigate('/documents');
@@ -119,7 +136,9 @@ export function DocumentsMenu({ onBack }: { onBack: () => void }) {
                         <DropdownMenuContent align="end" className="w-36">
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
-                            onClick={(e) => handleDelete(doc.id, e)}
+                            onClick={() =>
+                              setDeleteTarget({ id: doc.id, title: doc.title })
+                            }
                           >
                             <TrashIcon className="mr-2 h-3.5 w-3.5" />
                             Delete
@@ -140,6 +159,33 @@ export function DocumentsMenu({ onBack }: { onBack: () => void }) {
         onOpenChange={setTemplatePickerOpen}
         onSelectTemplate={(tId) => void handleSelectTemplate(tId)}
       />
+
+      {/* Deleting a document is unrecoverable, and this menu is one stray click
+          from it — the same reason `Projects.tsx:668` gates its delete. Named
+          in the title because the list truncates, so "the first one" is not a
+          safe way to refer to what you are about to destroy. */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{deleteTarget?.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the document and its content. It cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void confirmDelete()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

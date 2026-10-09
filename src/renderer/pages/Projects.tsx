@@ -323,7 +323,7 @@ export default function Projects() {
                 label="Tasks"
               />
               <Shortcut
-                to={`/documents?projectId=${project.id}`}
+                to={`/documents?project=${project.id}`}
                 icon={FileTextIcon}
                 label="Documents"
               />
