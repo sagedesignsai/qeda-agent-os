@@ -80,13 +80,23 @@ afterEach(() => {
 
 describe('listProjectFiles', () => {
   it('accepts a project folder that is not a git repository', async () => {
-    expect(fs.existsSync(path.join(root, '.git'))).toBe(false);
+    // The fixture plants a DECOY `.git` directory (see the `write` calls in
+    // beforeEach) so the list can prove git metadata is skipped. Assert there is
+    // no real repository here — no HEAD, no object store — rather than asserting
+    // the directory is absent, which would contradict the fixture that creates
+    // it on purpose.
+    expect(fs.existsSync(path.join(root, '.git', 'HEAD'))).toBe(false);
+    expect(fs.existsSync(path.join(root, '.git', 'objects'))).toBe(false);
 
     const result = await run(projectFilesTools.listProjectFiles, { projectId });
     expect(result.success).toBe(true);
     expect(result.projectName).toBe('Matter');
     // The folder really was used, not a silently-chosen default.
     expect(result.root).toBe(root);
+    // And the decoy `.git` never leaks into the listing.
+    expect(result.files.map((f: { path: string }) => f.path)).not.toContain(
+      expect.stringContaining('.git'),
+    );
   });
 
   it('lists only .md files by default, with size and mtime but no content', async () => {
