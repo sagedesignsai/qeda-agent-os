@@ -30,14 +30,19 @@ import {
   copilotToolPolicies,
   allTools,
 } from '../main/tools/index';
+import { documentDrafterToolPolicies } from '../main/tools/policies/drafter';
 import { copilotTools } from '../main/ai/task-copilot-agent';
 
 /**
- * Ceilings from spec §8, with ~25% headroom above the current counts.
+ * Ceilings from spec §8.
  *
- * Chat is 36 and copilot 34 today. Note `allTools` does NOT include the task
- * verbs — those are copilot-only — so the chat surface is smaller than the sum
- * of all registered tool groups suggests.
+ * Chat is 63 today and copilot 34. `allTools` spreads EVERY registered group —
+ * filesystem, shell, clipboard, rag, web, workspace, services, repo, resources,
+ * tasks (17) and documents-drafter (8) — plus `indexPage`, so the chat count is
+ * the exact sum of the group sizes above rather than a curated subset. That is
+ * deliberate: chat is the general surface, and this ceiling is the tripwire that
+ * notices when a new group lands in it. Do not lower it to "make room"; raise it
+ * in docs/agent-tooling-spec.md §8 in the same review that adds the tool.
  */
 const CEILING = { chat: 70, copilot: 50 } as const;
 
@@ -111,6 +116,15 @@ describe('§5.2 exhaustiveness — every exposed tool is classified', () => {
     const drift = policyDrift(copilotToolPolicies, Object.keys(copilotTools));
     expect(drift.unclassified).toEqual([]);
     expect(drift.stale).toEqual([]);
+  });
+
+  it('classifies the shared document tools the same way for chat and the drafter', () => {
+    // The chat agent and the standalone Document Drafter call the SAME six
+    // tools. If they disagreed, the same edit would gate in one surface and not
+    // the other, which is exactly the drift this module exists to prevent.
+    for (const [name, policy] of Object.entries(documentDrafterToolPolicies)) {
+      expect(chatToolPolicies[name]?.capability).toBe(policy.capability);
+    }
   });
 });
 

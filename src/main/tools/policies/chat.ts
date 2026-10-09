@@ -138,4 +138,24 @@ export const chatToolPolicies: ToolPolicyMap = {
   assignTaskToProject: t('destructive'),
   moveBlock: t('destructive'),
   deleteBlock: t('destructive'),
+
+  // ── Document drafting (tools/documents-drafter.ts) ──────────────────────────
+  // Same classification as `policies/drafter.ts`, deliberately: these are the
+  // shared block-level document tools, so the standalone Document Drafter and
+  // the chat agent must not disagree about how much friction each call meets.
+  // `replaceBlock` is `destructive`, so it asks for approval here too.
+  //
+  // The two project-file reads are the SAFER way for chat to reach source
+  // material — project-scoped, containment-checked and byte-capped, where the
+  // `readFile` tool above accepts any absolute path with no size limit at all.
+  // They are classified `read` because they observe the user's own files and
+  // cannot reach outside the project's configured root.
+  getDocumentOutline: t('read'),
+  readDocument: t('read'),
+  listProjectFiles: t('read'),
+  readProjectFile: t('read'),
+  createDocument: t('write-local'),
+  appendBlocks: t('write-local'),
+  insertBlocksAt: t('write-local'),
+  replaceBlock: t('destructive'),
 };

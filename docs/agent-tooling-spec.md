@@ -29,7 +29,7 @@ single most important thing to know before changing any of them.
 
 | Agent | Factory | Kind | Tools | Step budget | Approval mechanism |
 | --- | --- | --- | --- | --- | --- |
-| Chat | `createDesktopAgent` (`ai/agent.ts:190`) | `ToolLoopAgent` | `allTools` — **36** | `isStepCount(40)` | Derived from `tools/policies/chat.ts` |
+| Chat | `createDesktopAgent` (`ai/agent.ts:190`) | `ToolLoopAgent` | `allTools` — **63** | `isStepCount(40)` | Derived from `tools/policies/chat.ts` |
 | Focus copilot | `createTaskCopilotAgent` (`ai/task-copilot-agent.ts:146`) | `ToolLoopAgent` | 34 (17 task verbs + 17 context) | `isStepCount(25)` | Derived from `tools/policies/copilot.ts` |
 | Terminal | `runGoal` (`ai/terminal-agent.ts:610`) | **hand-rolled goal loop** | Not a tool registry | n/a | IPC round-trip: `resolveApproval` |
 
@@ -251,12 +251,20 @@ its tool set is paid for repeatedly.
 | Agent | Today | Ceiling |
 | --- | --- | --- |
 | Focus copilot | 34 | **42** |
-| Chat | 36 | **45** |
+| Chat | 63 | **63** |
 
-Note that `allTools` does **not** spread `taskTools` — the 17 task verbs are
-copilot-only, so the chat surface is smaller than the sum of all registered tool
-groups suggests. Classifying a tool an agent does not expose is dead policy and
-the §5.2 test rejects it.
+`allTools` spreads **every** registered group, so the chat count is the exact sum
+of the group sizes: filesystem 4, shell 1, clipboard 2, rag 4 (+ `indexPage`),
+web 2, workspace 12, services 6, repo 4, resources 4, tasks 17, documents-drafter
+6. Chat is the general surface; it is not a curated subset, and the task verbs
+included — the Document Drafter's six block tools are now shared with it the same
+way. Classifying a tool an agent does not expose is dead policy and the §5.2 test
+rejects it.
+
+The chat ceiling is deliberately tight: with `allTools` open to every new group,
+it is the tripwire that makes a chat tool-set growth deliberate rather than
+incidental. Raising it is a §8 amendment in the same review that adds the tool,
+never a follow-up.
 
 Adding `tools/repo.ts` (§6.1) reaches the chat agent implicitly, because
 `allTools` spreads every registered group. That is the right default — chat is
