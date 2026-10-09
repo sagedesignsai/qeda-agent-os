@@ -48,21 +48,35 @@ const mockTake: StudioTake = {
   updatedAt: Date.now(),
 };
 
-// Mock useStudio
+// Mock useStudio.
+// Mirrors the real hook's full surface (src/hooks/use-studio.ts): Studio
+// destructures the pagination and timeline-persistence members too, and a
+// partial mock leaves them `undefined`, which only blows up once a timeline
+// commit reaches `updateTimelineData`.
 jest.mock('@/hooks/use-studio', () => ({
   useStudio: () => ({
     takes: [mockTake],
     activeTake: mockTake,
+    loading: false,
     isRecording: false,
     recordingSeconds: 0,
     isProcessingDraft: false,
     isGeneratingSocialKit: false,
     loadTake: jest.fn().mockResolvedValue(mockTake),
+    refreshTakes: jest.fn().mockResolvedValue(undefined),
+    loadMoreTakes: jest.fn().mockResolvedValue(undefined),
+    hasMoreTakes: false,
+    loadingMoreTakes: false,
     listSources: jest.fn().mockResolvedValue([]),
     startRecording: jest.fn().mockResolvedValue('take-new'),
     stopRecording: jest.fn().mockResolvedValue(mockTake),
     updateStyling: jest.fn(),
     updateZooms: jest.fn(),
+    updateCuts: jest.fn(),
+    updateCaptions: jest.fn(),
+    updateEffects: jest.fn(),
+    updateOverlays: jest.fn(),
+    updateTimelineData: jest.fn(),
     runMagicDraft: jest.fn(),
     generateSocialKit: jest.fn(),
     exportVideo: jest.fn(),
@@ -80,16 +94,20 @@ jest.mock('@/hooks/use-project-scope', () => ({
 
 describe('Studio Resizable Panels Layout', () => {
   beforeAll(() => {
-    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: jest.fn(),
-      removeListener: jest.fn(),
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn(),
-      dispatchEvent: jest.fn(),
-    }) as MediaQueryList);
+    // jsdom has no `matchMedia`; `useIsMobile` (via SidebarProvider) needs one.
+    window.matchMedia = jest.fn().mockImplementation(
+      (query: string) =>
+        ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addListener: jest.fn(),
+          removeListener: jest.fn(),
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
+          dispatchEvent: jest.fn(),
+        }) as MediaQueryList,
+    );
 
     window.HTMLMediaElement.prototype.play = jest
       .fn()
@@ -136,6 +154,8 @@ describe('Studio Resizable Panels Layout', () => {
     } as unknown as typeof window.electron;
   });
 
+  // `Studio` renders a `PageHeader`, which renders a `SidebarTrigger` and so
+  // needs the sidebar context that `AppLayout` supplies in the real app.
   const renderStudioEditor = () => {
     return render(
       <SidebarProvider>
@@ -207,9 +227,14 @@ describe('Studio Resizable Panels Layout', () => {
   it('renders timeline track badges and controls', () => {
     renderStudioEditor();
 
-    expect(screen.getByText('Kinetic Zooms')).toBeInTheDocument();
-    expect(screen.getByText('Subtitles')).toBeInTheDocument();
+    // Track names track what each track now carries: `effects` holds both
+    // kinetic zooms and canvas FX, `captions` holds subtitles and text, and an
+    // `overlays` track appears only once a take actually has media overlays —
+    // this take has none, so it keeps the historical four-track shape.
+    expect(screen.getByText('Effects & Zooms')).toBeInTheDocument();
+    expect(screen.getByText('Subtitles & Text')).toBeInTheDocument();
     expect(screen.getByText('Primary Video')).toBeInTheDocument();
     expect(screen.getByText('Audio Waveform')).toBeInTheDocument();
+    expect(screen.queryByText('Media Overlays')).not.toBeInTheDocument();
   });
 });
