@@ -449,6 +449,8 @@ CREATE TABLE IF NOT EXISTS studio_takes (
   cuts_json         TEXT,
   zooms_json        TEXT,
   captions_json     TEXT,
+  effects_json      TEXT,
+  overlays_json     TEXT,
   styling_json      TEXT,
   social_kit_json   TEXT,
   created_at        INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -691,6 +693,12 @@ export function applyMigrations(db: {
         db.exec(
           'ALTER TABLE studio_takes ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
         );
+      }
+      if (!studioCols.includes('effects_json')) {
+        db.exec('ALTER TABLE studio_takes ADD COLUMN effects_json TEXT');
+      }
+      if (!studioCols.includes('overlays_json')) {
+        db.exec('ALTER TABLE studio_takes ADD COLUMN overlays_json TEXT');
       }
 
       const chunkCols = columnsOf('chunks');

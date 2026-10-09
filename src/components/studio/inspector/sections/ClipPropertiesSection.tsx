@@ -21,6 +21,7 @@ import {
   TypeIcon,
   GaugeIcon,
   SparklesIcon,
+  ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -62,6 +63,8 @@ export function ClipPropertiesSection({
         return <VideoIcon className="w-3.5 h-3.5 text-blue-400" />;
       case 'audio':
         return <Volume2Icon className="w-3.5 h-3.5 text-amber-400" />;
+      case 'overlays':
+        return <ImageIcon className="w-3.5 h-3.5 text-amber-400" />;
       default:
         return <SparklesIcon className="w-3.5 h-3.5 text-primary" />;
     }
@@ -70,8 +73,12 @@ export function ClipPropertiesSection({
   const getBadgeText = () => {
     switch (track.type) {
       case 'effects': {
-        const scale = clip.payload?.scale ?? 1.5;
-        return `ZOOM ${scale.toFixed(1)}X`;
+        const effectType = clip.payload?.effectType;
+        if (!effectType || effectType === 'zoom') {
+          const scale = clip.payload?.scale ?? 1.5;
+          return `ZOOM ${scale.toFixed(1)}X`;
+        }
+        return effectType.toUpperCase();
       }
       case 'captions':
         return 'SUBTITLE';
@@ -79,12 +86,16 @@ export function ClipPropertiesSection({
         return 'VIDEO';
       case 'audio':
         return 'AUDIO';
+      case 'overlays':
+        return 'OVERLAY';
       default:
         return 'CLIP';
     }
   };
 
   // Zoom parameters
+  const effectType = clip.payload?.effectType;
+  const isZoomClip = !effectType || effectType === 'zoom';
   const currentScale = clip.payload?.scale ?? 1.5;
   const targetX = clip.payload?.targetX ?? 0.5;
   const targetY = clip.payload?.targetY ?? 0.5;
@@ -113,7 +124,7 @@ export function ClipPropertiesSection({
       }
     >
       {/* ── Type-Specific Properties ────────────────────────────────────────── */}
-      {track.type === 'effects' && (
+      {track.type === 'effects' && isZoomClip && (
         <>
           {/* Zoom scale slider */}
           <InspectorSliderInput
@@ -142,6 +153,81 @@ export function ClipPropertiesSection({
                 payload: { targetX: newX, targetY: newY },
               });
             }}
+          />
+        </>
+      )}
+
+      {track.type === 'effects' && !isZoomClip && (
+        <InspectorSliderInput
+          label="Effect Intensity"
+          icon={<SparklesIcon className="w-3.5 h-3.5" />}
+          value={Math.round((clip.payload?.intensity ?? 0.6) * 100)}
+          min={0}
+          max={100}
+          step={5}
+          unit="%"
+          onChange={(percent) =>
+            onUpdateClip(clip.id, { payload: { intensity: percent / 100 } })
+          }
+        />
+      )}
+
+      {track.type === 'overlays' && (
+        <>
+          <InspectorSliderInput
+            label="Overlay Width"
+            icon={<ImageIcon className="w-3.5 h-3.5" />}
+            value={Math.round((clip.payload?.widthPct ?? 0.42) * 100)}
+            min={10}
+            max={100}
+            step={1}
+            unit="%"
+            onChange={(percent) =>
+              onUpdateClip(clip.id, { payload: { widthPct: percent / 100 } })
+            }
+          />
+          <InspectorSliderInput
+            label="Opacity"
+            icon={<SparklesIcon className="w-3.5 h-3.5" />}
+            value={Math.round((clip.payload?.opacity ?? 1) * 100)}
+            min={0}
+            max={100}
+            step={5}
+            unit="%"
+            onChange={(percent) =>
+              onUpdateClip(clip.id, { payload: { opacity: percent / 100 } })
+            }
+          />
+          <InspectorSliderInput
+            label="Rotation"
+            icon={<CameraIcon className="w-3.5 h-3.5" />}
+            value={clip.payload?.rotation ?? 0}
+            min={-180}
+            max={180}
+            step={5}
+            unit="°"
+            onChange={(rotation) =>
+              onUpdateClip(clip.id, { payload: { rotation } })
+            }
+          />
+          <InspectorSliderInput
+            label="Corner Radius"
+            icon={<ImageIcon className="w-3.5 h-3.5" />}
+            value={clip.payload?.cornerRadius ?? 12}
+            min={0}
+            max={48}
+            step={2}
+            unit="px"
+            onChange={(cornerRadius) =>
+              onUpdateClip(clip.id, { payload: { cornerRadius } })
+            }
+          />
+          <InspectorCoordinatePad
+            targetX={clip.payload?.x ?? 0.5}
+            targetY={clip.payload?.y ?? 0.5}
+            onChange={(x, y) =>
+              onUpdateClip(clip.id, { payload: { x, y } })
+            }
           />
         </>
       )}

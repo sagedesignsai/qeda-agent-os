@@ -298,7 +298,35 @@ export function TimelineCanvasViewport({
         ctx.clip();
 
         // ── Render Specific Track Types ─────────────────────────────────────
-        if (track.type === 'effects') {
+        if (track.type === 'overlays') {
+          // Media overlays (Amber gradient)
+          const grad = ctx.createLinearGradient(
+            clipX,
+            clipY,
+            clipX,
+            clipY + clipH,
+          );
+          grad.addColorStop(0, '#d97706');
+          grad.addColorStop(1, '#b45309');
+          ctx.fillStyle = grad;
+          ctx.fillRect(clipX, clipY, clipW, clipH);
+
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.fillRect(clipX, clipY, clipW, 2);
+
+          ctx.fillStyle = '#fffbeb';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textBaseline = 'middle';
+          const src = clip.payload?.srcPath || clip.payload?.filePath || '';
+          const base = src.split('/').pop() || 'overlay';
+          const kindIcon = clip.payload?.kind === 'image' ? '🖼' : '🎬';
+          ctx.fillText(
+            `${kindIcon} ${base}`,
+            clipX + 8,
+            clipY + clipH / 2,
+            Math.max(10, clipW - 16),
+          );
+        } else if (track.type === 'effects') {
           // Track 1: Effects / Kinetic Camera Zooms (Purple gradient)
           const grad = ctx.createLinearGradient(
             clipX,
@@ -319,8 +347,17 @@ export function TimelineCanvasViewport({
           ctx.fillStyle = '#ffffff';
           ctx.font = 'bold 11px sans-serif';
           ctx.textBaseline = 'middle';
-          const scale = clip.payload?.scale ?? 1.6;
-          ctx.fillText(`⚡ Zoom ${scale}x`, clipX + 8, clipY + clipH / 2);
+          const effectType = clip.payload?.effectType;
+          const effectLabel =
+            !effectType || effectType === 'zoom'
+              ? `⚡ Zoom ${(clip.payload?.scale ?? 1.6).toFixed(1)}x`
+              : `✦ ${effectType}`;
+          ctx.fillText(
+            effectLabel,
+            clipX + 8,
+            clipY + clipH / 2,
+            Math.max(10, clipW - 16),
+          );
         } else if (track.type === 'captions') {
           // Track 2: Captions / AI Subtitles (Teal gradient)
           const grad = ctx.createLinearGradient(

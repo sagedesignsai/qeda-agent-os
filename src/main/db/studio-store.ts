@@ -4,8 +4,12 @@
  * SQLite storage and domain models for Studio: Showcase Generator.
  *
  * Persists recording takes, mouse telemetry references, cuts, zoom keyframes,
- * captions, styling presets, and social release kits. Tied optionally to projects
- * via project_id.
+ * captions, canvas effects, media overlays, styling presets, and social release
+ * kits. Tied optionally to projects via project_id.
+ *
+ * The JSON-array fields (cuts/zooms/captions/effects/overlays) mirror the
+ * existing zoom/caption convention rather than a normalized child table; the
+ * timeline is a projection of these arrays, not their owner.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -15,6 +19,8 @@ import type {
   StudioZoom,
   StudioCaption,
   StudioCaptionWord,
+  StudioEffect,
+  StudioOverlay,
   StudioStyling,
   StudioSocialKit,
   MouseTrackerEvent,
@@ -28,6 +34,8 @@ export type {
   StudioZoom,
   StudioCaption,
   StudioCaptionWord,
+  StudioEffect,
+  StudioOverlay,
   StudioStyling,
   StudioSocialKit,
   MouseTrackerEvent,
@@ -51,6 +59,8 @@ interface StudioTakeRow {
   cuts_json: string | null;
   zooms_json: string | null;
   captions_json: string | null;
+  effects_json: string | null;
+  overlays_json: string | null;
   styling_json: string | null;
   social_kit_json: string | null;
   created_at: number;
@@ -82,6 +92,8 @@ function rowToTake(row: StudioTakeRow): StudioTake {
     cuts: parseJsonSafe<StudioCut[]>(row.cuts_json, []),
     zooms: parseJsonSafe<StudioZoom[]>(row.zooms_json, []),
     captions: parseJsonSafe<StudioCaption[]>(row.captions_json, []),
+    effects: parseJsonSafe<StudioEffect[]>(row.effects_json, []),
+    overlays: parseJsonSafe<StudioOverlay[]>(row.overlays_json, []),
     styling: parseJsonSafe<StudioStyling>(
       row.styling_json,
       DEFAULT_STUDIO_STYLING,
@@ -110,6 +122,10 @@ export function listStudioTakes(
             ELSE 0 END AS cut_count,
        CASE WHEN json_valid(t.zooms_json) THEN json_array_length(t.zooms_json)
             ELSE 0 END AS zoom_count,
+       CASE WHEN json_valid(t.effects_json) THEN json_array_length(t.effects_json)
+            ELSE 0 END AS effect_count,
+       CASE WHEN json_valid(t.overlays_json) THEN json_array_length(t.overlays_json)
+            ELSE 0 END AS overlay_count,
        t.created_at, t.updated_at
        FROM studio_takes t LEFT JOIN projects p ON p.id = t.project_id`;
   let rows: Array<{
@@ -123,6 +139,8 @@ export function listStudioTakes(
     duration_ms: number;
     cut_count: number;
     zoom_count: number;
+    effect_count: number;
+    overlay_count: number;
     created_at: number;
     updated_at: number;
   }>;
@@ -135,9 +153,7 @@ export function listStudioTakes(
       .all(projectId, pageSize, pageOffset) as typeof rows;
   } else {
     rows = db
-      .prepare(
-        `${projection} ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
-      )
+      .prepare(`${projection} ORDER BY t.created_at DESC LIMIT ? OFFSET ?`)
       .all(pageSize, pageOffset) as typeof rows;
   }
 
@@ -152,6 +168,8 @@ export function listStudioTakes(
     durationMs: r.duration_ms,
     cutCount: r.cut_count,
     zoomCount: r.zoom_count,
+    effectCount: r.effect_count,
+    overlayCount: r.overlay_count,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
@@ -184,6 +202,30 @@ export function getStudioVideoPath(id: string): string | null {
   return row?.video_path || null;
 }
 
+/**
+ * Resolve a media overlay's on-disk source by its id.
+ *
+ * Overlays live inside each take's `overlays_json`, so this scans the (small)
+ * set of takes that have any. The `qeda-media://overlay/<id>` scheme uses this to
+ * serve bytes without exposing arbitrary filesystem reads.
+ */
+export function getStudioOverlaySource(overlayId: string): string | null {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT overlays_json FROM studio_takes
+        WHERE json_valid(overlays_json) = 1`,
+    )
+    .all() as Array<{ overlays_json: string | null }>;
+
+  for (const row of rows) {
+    const overlays = parseJsonSafe<StudioOverlay[]>(row.overlays_json, []);
+    const match = overlays.find((overlay) => overlay.id === overlayId);
+    if (match?.srcPath) return match.srcPath;
+  }
+  return null;
+}
+
 export function saveStudioTake(take: {
   id: string;
   projectId?: string | null;
@@ -198,6 +240,8 @@ export function saveStudioTake(take: {
   cuts?: StudioCut[];
   zooms?: StudioZoom[];
   captions?: StudioCaption[];
+  effects?: StudioEffect[];
+  overlays?: StudioOverlay[];
   styling?: StudioStyling;
   socialKit?: StudioSocialKit | null;
 }): StudioTake {
@@ -222,6 +266,8 @@ export function saveStudioTake(take: {
       cuts: 'cuts_json',
       zooms: 'zooms_json',
       captions: 'captions_json',
+      effects: 'effects_json',
+      overlays: 'overlays_json',
       styling: 'styling_json',
       socialKit: 'social_kit_json',
     };
@@ -229,6 +275,8 @@ export function saveStudioTake(take: {
       'cuts',
       'zooms',
       'captions',
+      'effects',
+      'overlays',
       'styling',
       'socialKit',
     ]);
@@ -266,6 +314,8 @@ export function saveStudioTake(take: {
     cuts: take.cuts ?? [],
     zooms: take.zooms ?? [],
     captions: take.captions ?? [],
+    effects: take.effects ?? [],
+    overlays: take.overlays ?? [],
     styling: take.styling ?? DEFAULT_STUDIO_STYLING,
     socialKit: take.socialKit ?? null,
   };
@@ -274,9 +324,10 @@ export function saveStudioTake(take: {
     `INSERT INTO studio_takes (
        id, project_id, title, description, source_type, source_name,
        duration_ms, video_path, audio_path, mouse_events_path,
-       cuts_json, zooms_json, captions_json, styling_json, social_kit_json,
+       cuts_json, zooms_json, captions_json, effects_json, overlays_json,
+       styling_json, social_kit_json,
        created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        project_id        = excluded.project_id,
        title             = excluded.title,
@@ -290,6 +341,8 @@ export function saveStudioTake(take: {
        cuts_json         = excluded.cuts_json,
        zooms_json        = excluded.zooms_json,
        captions_json     = excluded.captions_json,
+       effects_json      = excluded.effects_json,
+       overlays_json     = excluded.overlays_json,
        styling_json      = excluded.styling_json,
        social_kit_json   = excluded.social_kit_json,
        updated_at        = excluded.updated_at`,
@@ -307,9 +360,11 @@ export function saveStudioTake(take: {
     JSON.stringify(merged.cuts),
     JSON.stringify(merged.zooms),
     JSON.stringify(merged.captions),
+    JSON.stringify(merged.effects),
+    JSON.stringify(merged.overlays),
     JSON.stringify(merged.styling),
     merged.socialKit ? JSON.stringify(merged.socialKit) : null,
-     now,
+    now,
     now,
   );
 

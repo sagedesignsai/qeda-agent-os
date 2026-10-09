@@ -1,8 +1,16 @@
 /**
  * main/studio-media.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Streams saved Studio videos to the renderer without copying their bytes over
- * IPC. Range responses let Chromium seek and decode only the media it needs.
+ * Streams saved Studio media to the renderer without copying bytes over IPC.
+ * Range responses let Chromium seek and decode only the media it needs.
+ *
+ * Two addressable hosts under one scheme:
+ *   - `qeda-media://studio/<takeId>`     → the take's primary recording
+ *   - `qeda-media://overlay/<overlayId>` → a picture-in-picture overlay asset
+ *
+ * The overlay host resolves its path *through the database* (only paths that a
+ * persisted overlay references are reachable), so this is not an arbitrary
+ * filesystem read surface.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -10,7 +18,14 @@ import { createReadStream, promises as fs } from 'node:fs';
 import { Readable } from 'node:stream';
 import path from 'node:path';
 import { protocol } from 'electron';
-import { getStudioVideoPath } from './db/studio-store.js';
+import {
+  getStudioVideoPath,
+  getStudioOverlaySource,
+} from './db/studio-store.js';
+import {
+  STUDIO_OVERLAY_HOST,
+  STUDIO_TAKE_HOST,
+} from '../lib/studio/media.js';
 
 export const STUDIO_MEDIA_SCHEME = 'qeda-media';
 
@@ -37,13 +52,39 @@ function mediaType(filePath: string): string {
       return 'video/quicktime';
     case '.webm':
       return 'video/webm';
+    case '.mkv':
+      return 'video/x-matroska';
     case '.mp3':
       return 'audio/mpeg';
     case '.wav':
       return 'audio/wav';
+    case '.m4a':
+      return 'audio/mp4';
+    case '.ogg':
+      return 'audio/ogg';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.webp':
+      return 'image/webp';
+    case '.gif':
+      return 'image/gif';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.avif':
+      return 'image/avif';
     default:
       return 'application/octet-stream';
   }
+}
+
+/** Resolve a request host+id to an allow-listed on-disk path. */
+function resolveMediaPath(hostname: string, id: string): string | null {
+  if (hostname === STUDIO_TAKE_HOST) return getStudioVideoPath(id);
+  if (hostname === STUDIO_OVERLAY_HOST) return getStudioOverlaySource(id);
+  return null;
 }
 
 function rangeNotSatisfiable(size: number): Response {
@@ -56,8 +97,8 @@ function rangeNotSatisfiable(size: number): Response {
 export function registerStudioMediaHandler(): void {
   protocol.handle(STUDIO_MEDIA_SCHEME, async (request) => {
     const url = new URL(request.url);
-    const takeId = decodeURIComponent(url.pathname.slice(1));
-    if (url.hostname !== 'studio' || !takeId) {
+    const id = decodeURIComponent(url.pathname.slice(1));
+    if (!id) {
       return new Response(null, { status: 404 });
     }
     if (request.method === 'OPTIONS') {
@@ -74,7 +115,7 @@ export function registerStudioMediaHandler(): void {
       return new Response(null, { status: 405 });
     }
 
-    const filePath = getStudioVideoPath(takeId);
+    const filePath = resolveMediaPath(url.hostname, id);
     if (!filePath) return new Response(null, { status: 404 });
 
     try {

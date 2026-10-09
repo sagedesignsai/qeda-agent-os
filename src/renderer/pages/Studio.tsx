@@ -62,8 +62,13 @@ import {
   extractZoomsFromTracks,
   extractCaptionsFromTracks,
   extractCutsFromTracks,
+  extractEffectsFromTracks,
+  extractOverlaysFromTracks,
   safeDurationMs,
   type StudioTake,
+  type StudioEffect,
+  type StudioEffectType,
+  type StudioOverlay,
   type TimelineTrack,
 } from '@/lib/studio-types';
 import { toast } from 'sonner';
@@ -90,6 +95,8 @@ export default function Studio() {
     updateStyling,
     updateZooms,
     updateCaptions,
+    updateEffects,
+    updateOverlays,
     updateTimelineData,
     generateSocialKit,
     exportVideo,
@@ -204,6 +211,8 @@ export default function Studio() {
       const updatedZooms = extractZoomsFromTracks(tracks);
       const updatedCaptions = extractCaptionsFromTracks(tracks);
       const updatedCuts = extractCutsFromTracks(tracks, effectiveDurationMs);
+      const updatedEffects = extractEffectsFromTracks(tracks);
+      const updatedOverlays = extractOverlaysFromTracks(tracks);
 
       // Timeline commits arrive on pointer release, so persist the full
       // structural delta as one narrow database update.
@@ -211,6 +220,8 @@ export default function Studio() {
         zooms: updatedZooms,
         captions: updatedCaptions,
         cuts: updatedCuts,
+        effects: updatedEffects,
+        overlays: updatedOverlays,
       });
     },
     [activeTake, effectiveDurationMs, updateTimelineData],
@@ -403,6 +414,8 @@ export default function Studio() {
     if (
       clipPayload.trackType === 'effects' &&
       clipPayload.payload?.scale &&
+      (!clipPayload.payload.effectType ||
+        clipPayload.payload.effectType === 'zoom') &&
       activeTake
     ) {
       const zoom = {
@@ -414,6 +427,45 @@ export default function Studio() {
         scale: clipPayload.payload.scale ?? 1.5,
       };
       updateZooms([...activeTake.zooms, zoom]);
+    }
+
+    // If it's a canvas effect, sync to activeTake.effects
+    if (
+      clipPayload.trackType === 'effects' &&
+      clipPayload.payload?.effectType &&
+      clipPayload.payload.effectType !== 'zoom' &&
+      activeTake
+    ) {
+      const effect: StudioEffect = {
+        id: newClip.id,
+        type: clipPayload.payload.effectType as StudioEffectType,
+        startMs: newClip.startMs,
+        endMs: newClip.startMs + newClip.durationMs,
+        intensity: clipPayload.payload.intensity ?? 0.6,
+      };
+      updateEffects([...(activeTake.effects ?? []), effect]);
+    }
+
+    // If it's a media overlay, sync to activeTake.overlays
+    if (
+      clipPayload.trackType === 'overlays' &&
+      clipPayload.payload?.srcPath &&
+      activeTake
+    ) {
+      const overlay: StudioOverlay = {
+        id: newClip.id,
+        kind: clipPayload.payload.kind === 'image' ? 'image' : 'video',
+        srcPath: clipPayload.payload.srcPath,
+        startMs: newClip.startMs,
+        endMs: newClip.startMs + newClip.durationMs,
+        x: 0.5,
+        y: 0.5,
+        widthPct: 0.42,
+        opacity: 1,
+        rotation: 0,
+        cornerRadius: 12,
+      };
+      updateOverlays([...(activeTake.overlays ?? []), overlay]);
     }
 
     // If it's a text caption, sync to activeTake.captions
@@ -768,6 +820,8 @@ export default function Studio() {
                         styling={activeTake.styling}
                         zooms={activeTake.zooms}
                         captions={activeTake.captions}
+                        effects={activeTake.effects ?? []}
+                        overlays={activeTake.overlays ?? []}
                         durationMs={effectiveDurationMs}
                         isPlaying={isPlaying}
                         onTimeUpdate={handlePreviewTimeUpdate}

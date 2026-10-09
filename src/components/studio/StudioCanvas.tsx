@@ -1,37 +1,59 @@
 /**
  * components/studio/StudioCanvas.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Real-time 60fps HTML5 Canvas preview renderer for Studio.
+ * Real-time 60fps HTML5 Canvas preview for Studio.
  *
- * Implements:
- *   - Kinetic camera zoom & pan interpolation with smooth cubic easing
- *   - Sleek wallpaper backdrop with mesh gradients / dark glass
- *   - Rounded window frame clipping with customizable drop shadows and header dots
- *   - Aspect ratio framing (16:9, 9:16, 1:1, 4:3)
- *   - Synchronized karaoke subtitles overlay
+ * This component owns *time and media*, not pixels:
+ *   - it keeps the hidden `<video>` element that drives the frame,
+ *   - loads overlay image/video elements and keeps them in a ref map,
+ *   - steps the kinetic camera once per frame,
+ *   - and delegates the actual drawing to `@/lib/studio/render/compose`.
+ *
+ * Keeping the draw order in a pure module means the preview and any future
+ * export renderer can paint identical frames.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FilmIcon } from 'lucide-react';
 import type {
+  StudioCaption,
+  StudioEffect,
+  StudioOverlay,
   StudioStyling,
   StudioZoom,
-  StudioCaption,
 } from '@/main/ipc/channels';
 import { safeDurationMs } from '@/lib/studio-types';
+import { studioCanvasDims } from '@/lib/studio/render/geometry';
+import {
+  computeCameraTarget,
+  IDLE_CAMERA,
+  stepCamera,
+  type StudioCameraState,
+} from '@/lib/studio/render/camera';
+import {
+  drawStudioFrame,
+  type StudioComposeInput,
+} from '@/lib/studio/render/compose';
+import {
+  studioOverlayMediaUrl,
+  type StudioOverlayAsset,
+} from '@/lib/studio/render/overlays';
 import { timelineStore } from '@/hooks/use-timeline-store';
 import {
   drawDeviceFrameHeader,
   drawDeviceFrameFooter,
 } from './renderers/device-frames';
 import { drawMotionCard } from './renderers/motion-cards';
+import { drawStudioWindowChrome } from '@/lib/studio/render/frame';
 
 interface StudioCanvasProps {
   videoUrl: string | null;
   styling: StudioStyling;
   zooms: StudioZoom[];
   captions: StudioCaption[];
+  effects?: StudioEffect[];
+  overlays?: StudioOverlay[];
   durationMs?: number;
   isPlaying: boolean;
   onTimeUpdate?: (ms: number) => void;
@@ -44,116 +66,13 @@ interface StudioCanvasProps {
 // playing before it counts as a real seek request rather than a one-frame echo.
 const PLAYBACK_SEEK_TOLERANCE_MS = 400;
 
-// EaseInOutCubic interpolation
-function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-}
-
-// Parse CSS linear-gradient string and construct a CanvasGradient
-function parseLinearGradient(
-  ctx: CanvasRenderingContext2D,
-  bgString: string,
-  cw: number,
-  ch: number,
-): CanvasGradient {
-  const match = bgString.match(/linear-gradient\s*\((.+)\)/i);
-  if (!match) {
-    const fallback = ctx.createLinearGradient(0, 0, cw, ch);
-    fallback.addColorStop(0, '#111827');
-    fallback.addColorStop(1, '#030712');
-    return fallback;
-  }
-
-  const rawArgs = match[1];
-  const parts: string[] = [];
-  let current = '';
-  let parenDepth = 0;
-  for (let i = 0; i < rawArgs.length; i++) {
-    const char = rawArgs[i];
-    if (char === '(') parenDepth++;
-    else if (char === ')') parenDepth--;
-    if (char === ',' && parenDepth === 0) {
-      parts.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  if (current.trim()) parts.push(current.trim());
-
-  let angleDeg = 135;
-  let stopParts = parts;
-
-  if (parts.length > 0 && /deg$/i.test(parts[0])) {
-    angleDeg = parseFloat(parts[0]) || 135;
-    stopParts = parts.slice(1);
-  } else if (parts.length > 0 && /^to\s+/i.test(parts[0])) {
-    const toDir = parts[0].toLowerCase();
-    if (toDir.includes('bottom') && toDir.includes('right')) angleDeg = 135;
-    else if (toDir.includes('bottom') && toDir.includes('left')) angleDeg = 225;
-    else if (toDir.includes('top') && toDir.includes('right')) angleDeg = 45;
-    else if (toDir.includes('top') && toDir.includes('left')) angleDeg = 315;
-    else if (toDir.includes('bottom')) angleDeg = 180;
-    else if (toDir.includes('right')) angleDeg = 90;
-    else if (toDir.includes('top')) angleDeg = 0;
-    else if (toDir.includes('left')) angleDeg = 270;
-    stopParts = parts.slice(1);
-  }
-
-  // Calculate coordinates from angle
-  const rad = ((angleDeg - 90) * Math.PI) / 180;
-  const cx = cw / 2;
-  const cy = ch / 2;
-  const length = Math.abs(cw * Math.cos(rad)) + Math.abs(ch * Math.sin(rad));
-  const halfLen = length / 2;
-  const x0 = cx - Math.cos(rad) * halfLen;
-  const y0 = cy - Math.sin(rad) * halfLen;
-  const x1 = cx + Math.cos(rad) * halfLen;
-  const y1 = cy + Math.sin(rad) * halfLen;
-
-  const grad = ctx.createLinearGradient(x0, y0, x1, y1);
-
-  const parsedStops: { color: string; offset: number | null }[] = [];
-  stopParts.forEach((part) => {
-    const pctMatch = part.match(/(.*?)\s+(\d+(?:\.\d+)?)%/);
-    if (pctMatch) {
-      parsedStops.push({
-        color: pctMatch[1].trim(),
-        offset: Math.min(1, Math.max(0, parseFloat(pctMatch[2]) / 100)),
-      });
-    } else {
-      parsedStops.push({
-        color: part.trim(),
-        offset: null,
-      });
-    }
-  });
-
-  const n = parsedStops.length;
-  if (n === 0) {
-    grad.addColorStop(0, '#111827');
-    grad.addColorStop(1, '#030712');
-    return grad;
-  }
-
-  parsedStops.forEach((stop, idx) => {
-    const offset =
-      stop.offset !== null ? stop.offset : n === 1 ? 0 : idx / (n - 1);
-    try {
-      grad.addColorStop(offset, stop.color);
-    } catch {
-      // Fallback in case of an invalid color format
-    }
-  });
-
-  return grad;
-}
-
 export function StudioCanvas({
   videoUrl,
   styling,
   zooms,
   captions,
+  effects,
+  overlays,
   durationMs,
   isPlaying,
   onTimeUpdate,
@@ -164,6 +83,16 @@ export function StudioCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const cameraRef = useRef<StudioCameraState>({ ...IDLE_CAMERA });
+  const overlayAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
+  const overlayVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const glowRef = useRef<{
+    width: number;
+    height: number;
+    value: CanvasGradient;
+  } | null>(null);
+
   const attachVideoRef = useCallback(
     (video: HTMLVideoElement | null) => {
       videoRef.current = video;
@@ -172,45 +101,100 @@ export function StudioCanvas({
     [onVideoElement],
   );
 
-  // Dynamic canvas bitmap dimensions based on aspect ratio
-  const canvasDims = useMemo(() => {
-    switch (styling.aspectRatio) {
-      case '9:16':
-        return { w: 1080, h: 1920 };
-      case '1:1':
-        return { w: 1080, h: 1080 };
-      case '4:3':
-        return { w: 1440, h: 1080 };
-      case '16:9':
-      default:
-        return { w: 1920, h: 1080 };
-    }
-  }, [styling.aspectRatio]);
-
-  // Smooth camera state
-  const cameraStateRef = useRef({
-    scale: 1,
-    panX: 0.5,
-    panY: 0.5,
-  });
+  const canvasDims = useMemo(
+    () => studioCanvasDims(styling.aspectRatio),
+    [styling.aspectRatio],
+  );
 
   const [videoLoaded, setVideoLoaded] = useState(false);
   const lastEmittedTimeRef = useRef(0);
   const currentTimeRef = useRef(timelineStore.getState().currentTimeMs);
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
 
-  const bgGradCacheRef = useRef<{
-    bg: string;
-    cw: number;
-    ch: number;
-    val: CanvasGradient | string;
-  } | null>(null);
-  const glowGradCacheRef = useRef<{
-    cw: number;
-    ch: number;
-    val: CanvasGradient;
-  } | null>(null);
+  // The numbers/texture inputs the render loop reads. Stored in refs so prop
+  // changes never tear down and re-create the animation loop.
+  const renderInputsRef = useRef({
+    styling,
+    zooms,
+    captions,
+    effects: effects ?? [],
+    overlays: overlays ?? [],
+  });
+  renderInputsRef.current = {
+    styling,
+    zooms,
+    captions,
+    effects: effects ?? [],
+    overlays: overlays ?? [],
+  };
 
-  // Delta-clock playback loop when playing without a video source (blank showcase)
+  // ── Overlay asset loading ──────────────────────────────────────────────────
+  useEffect(() => {
+    const list = overlays ?? [];
+    const assets = overlayAssetsRef.current;
+    const videos = overlayVideoRefs.current;
+    const activeIds = new Set<string>();
+
+    for (const overlay of list) {
+      activeIds.add(overlay.id);
+      if (assets.has(overlay.id)) continue;
+
+      const url = studioOverlayMediaUrl(overlay.id);
+      if (overlay.kind === 'image') {
+        const image = new Image();
+        image.onload = () => {
+          if (image.naturalWidth > 0) {
+            assets.set(overlay.id, {
+              element: image,
+              width: image.naturalWidth,
+              height: image.naturalHeight,
+            });
+          }
+        };
+        image.src = url;
+      } else {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.loop = true;
+        video.preload = 'auto';
+        video.onloadedmetadata = () => {
+          if (video.videoWidth > 0) {
+            assets.set(overlay.id, {
+              element: video,
+              width: video.videoWidth,
+              height: video.videoHeight,
+            });
+          }
+        };
+        video.src = url;
+        videos.set(overlay.id, video);
+      }
+    }
+
+    // Drop assets for overlays that no longer exist.
+    for (const id of [...assets.keys()]) {
+      if (!activeIds.has(id)) assets.delete(id);
+    }
+    for (const [id, video] of videos) {
+      if (!activeIds.has(id)) {
+        video.pause();
+        video.src = '';
+        videos.delete(id);
+      }
+    }
+  }, [overlays]);
+
+  // ── Play / pause sync for overlay videos ──────────────────────────────────
+  useEffect(() => {
+    for (const video of overlayVideoRefs.current.values()) {
+      if (isPlaying) void video.play().catch(() => {});
+      else video.pause();
+    }
+  }, [isPlaying]);
+
+  // ── Delta-clock playback loop for blank canvases (no video source) ─────────
   useEffect(() => {
     if (!isPlaying || videoUrl) return;
 
@@ -238,40 +222,30 @@ export function StudioCanvas({
     return () => cancelAnimationFrame(animId);
   }, [isPlaying, videoUrl, durationMs, onTimeUpdate, onEnded]);
 
-  // Synchronize play / pause with video element
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !videoLoaded) return;
-
-    if (isPlaying) {
-      // Playback can still be refused (autoplay policy, decoder error), and a
-      // swallowed rejection shows up as a frozen frame with no explanation.
-      video.play().catch((err: unknown) => {
-        const name = (err as { name?: string } | null)?.name;
-        console.warn(
-          name === 'NotAllowedError'
-            ? '[StudioCanvas] Preview playback blocked by autoplay policy.'
-            : '[StudioCanvas] Preview playback could not start.',
-          err,
-        );
-      });
-    } else {
-      video.pause();
-    }
-  }, [isPlaying, videoLoaded]);
-
-  // Subscribe directly to isolated store time updates; do not re-render this
-  // component (or its parent tree) for every playback frame.
+  // ── Sync the hidden video (and overlay videos) to the playhead ────────────
   useEffect(() => {
     const syncVideoTime = (timeMs: number) => {
       currentTimeRef.current = timeMs;
-      const video = videoRef.current;
-      if (!video || !videoLoaded) return;
-
       const targetSec = timeMs / 1000;
       if (!Number.isFinite(targetSec) || targetSec < 0) return;
+
+      for (const video of overlayVideoRefs.current.values()) {
+        if (
+          Math.abs(video.currentTime - targetSec) >
+          PLAYBACK_SEEK_TOLERANCE_MS / 1000
+        ) {
+          try {
+            video.currentTime = targetSec;
+          } catch {
+            // Overlay may not be seekable yet; the next tick retries.
+          }
+        }
+      }
+
+      const video = videoRef.current;
+      if (!video || !videoLoaded) return;
       const diff = Math.abs(video.currentTime * 1000 - timeMs);
-      if (!isPlaying) {
+      if (!isPlayingRef.current) {
         if (diff > 50) video.currentTime = targetSec;
         return;
       }
@@ -280,274 +254,125 @@ export function StudioCanvas({
 
     syncVideoTime(timelineStore.getState().currentTimeMs);
     return timelineStore.subscribeTime(syncVideoTime);
-  }, [videoLoaded, isPlaying]);
+  }, [videoLoaded]);
 
-  // Main 60fps render loop
+  // ── Main 60fps render loop (delegates to the compose module) ──────────────
   useEffect(() => {
     let animId: number;
 
     const render = () => {
       const canvas = canvasRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (!canvas || !ctx) {
+        animId = requestAnimationFrame(render);
+        return;
+      }
+
+      const { styling: style, zooms: z, captions: c, effects: fx, overlays: ov } =
+        renderInputsRef.current;
       const video = videoRef.current;
-      if (!canvas || !video || video.readyState < 2) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
+      const ready = Boolean(video && video.readyState >= 2);
+      const timeMs =
+        ready && video ? video.currentTime * 1000 : currentTimeRef.current;
 
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-
-      const cw = canvas.width;
-      const ch = canvas.height;
-      const timeMs = video.currentTime * 1000;
-
-      // 60fps playhead synchronization
-      if (isPlaying && Math.abs(timeMs - lastEmittedTimeRef.current) >= 16) {
+      if (
+        isPlayingRef.current &&
+        Math.abs(timeMs - lastEmittedTimeRef.current) >= 16
+      ) {
         lastEmittedTimeRef.current = timeMs;
         onTimeUpdate?.(timeMs);
       }
 
-      // ── 1. Calculate Active Zoom Target ─────────────────────────────────────
-      let targetScale = 1.0;
-      let targetPanX = 0.5;
-      let targetPanY = 0.5;
-
-      const activeZoom = zooms.find(
-        (z) => timeMs >= z.startMs - 400 && timeMs <= z.endMs + 400,
+      const target = computeCameraTarget({
+        zooms: z,
+        timeMs,
+        zoomIntensity: style.zoomIntensity,
+      });
+      cameraRef.current = stepCamera(
+        cameraRef.current,
+        target,
+        style.cameraEasing,
       );
 
-      if (activeZoom) {
-        const transitionDuration = 450;
-        let progress = 1.0;
-
-        if (timeMs < activeZoom.startMs) {
-          // Transition in
-          progress = easeInOutCubic(
-            Math.max(
-              0,
-              (timeMs - (activeZoom.startMs - transitionDuration)) /
-                transitionDuration,
-            ),
-          );
-        } else if (timeMs > activeZoom.endMs) {
-          // Transition out
-          progress = easeInOutCubic(
-            Math.max(0, 1.0 - (timeMs - activeZoom.endMs) / transitionDuration),
-          );
-        }
-
-        const scaleBoost =
-          (activeZoom.scale - 1.0) * (styling.zoomIntensity / 1.5);
-        targetScale = 1.0 + scaleBoost * progress;
-        targetPanX = 0.5 + (activeZoom.targetX - 0.5) * progress;
-        targetPanY = 0.5 + (activeZoom.targetY - 0.5) * progress;
-      }
-
-      // Smooth camera interpolation
-      const smoothFactor = styling.cameraEasing === 'snappy' ? 0.22 : 0.12;
-      const cam = cameraStateRef.current;
-      cam.scale += (targetScale - cam.scale) * smoothFactor;
-      cam.panX += (targetPanX - cam.panX) * smoothFactor;
-      cam.panY += (targetPanY - cam.panY) * smoothFactor;
-      // ── 2. Draw Background (Cached Gradients) ───────────────────────────────
-      ctx.clearRect(0, 0, cw, ch);
-
-      let bgStyle = bgGradCacheRef.current;
-      if (
-        !bgStyle ||
-        bgStyle.bg !== styling.background ||
-        bgStyle.cw !== cw ||
-        bgStyle.ch !== ch
-      ) {
-        const val =
-          styling.background && styling.background.includes('gradient')
-            ? parseLinearGradient(ctx, styling.background, cw, ch)
-            : styling.background || '#090a0f';
-        bgStyle = { bg: styling.background, cw, ch, val };
-        bgGradCacheRef.current = bgStyle;
-      }
-      ctx.fillStyle = bgStyle.val;
-      ctx.fillRect(0, 0, cw, ch);
-
-      let glowStyle = glowGradCacheRef.current;
-      if (!glowStyle || glowStyle.cw !== cw || glowStyle.ch !== ch) {
-        const glow = ctx.createRadialGradient(
-          cw * 0.5,
-          ch * 0.5,
+      let glow = glowRef.current;
+      if (!glow || glow.width !== canvas.width || glow.height !== canvas.height) {
+        const gradient = ctx.createRadialGradient(
+          canvas.width * 0.5,
+          canvas.height * 0.5,
           100,
-          cw * 0.5,
-          ch * 0.5,
-          cw * 0.65,
+          canvas.width * 0.5,
+          canvas.height * 0.5,
+          canvas.width * 0.65,
         );
-        glow.addColorStop(0, 'rgba(99, 102, 241, 0.18)');
-        glow.addColorStop(1, 'rgba(99, 102, 241, 0)');
-        glowStyle = { cw, ch, val: glow };
-        glowGradCacheRef.current = glowStyle;
-      }
-      ctx.fillStyle = glowStyle.val;
-      ctx.fillRect(0, 0, cw, ch);
-
-      // ── 3. Window Container Bounds & Shadows ────────────────────────────────
-      const pad = (styling.padding / 100) * Math.min(cw, ch) * 0.85;
-      const maxWinW = Math.max(10, cw - pad * 2);
-      const maxWinH = Math.max(10, ch - pad * 2);
-
-      const headerH = 26;
-      const vw = video.videoWidth || 1920;
-      const vh = video.videoHeight || 1080;
-      const videoAspect = vw / vh;
-
-      // Fit content inside maxWinW x (maxWinH - headerH) preserving the video content aspect ratio
-      let contentW = maxWinW;
-      let contentH = contentW / videoAspect;
-      if (contentH + headerH > maxWinH) {
-        contentH = Math.max(10, maxWinH - headerH);
-        contentW = contentH * videoAspect;
-      }
-      const winW = contentW;
-      const winH = contentH + headerH;
-      const winX = (cw - winW) / 2;
-      const winY = (ch - winH) / 2;
-      const radius = styling.borderRadius;
-
-      if (pad > 8) {
-        ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
-        ctx.shadowBlur = 24;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 14;
-
-        ctx.beginPath();
-        ctx.roundRect(winX, winY, winW, winH, radius);
-        ctx.fillStyle = '#0f1117';
-        ctx.fill();
-        ctx.restore();
+        gradient.addColorStop(0, 'rgba(99, 102, 241, 0.18)');
+        gradient.addColorStop(1, 'rgba(99, 102, 241, 0)');
+        glow = { width: canvas.width, height: canvas.height, value: gradient };
+        glowRef.current = glow;
       }
 
-      // Clip inside window
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(winX, winY, winW, winH, radius);
-      ctx.clip();
-
-      // ── 4. Draw Zoomed & Panned Video Frame ──────────────────────────────────
-      // Calculate video source crop based on camera zoom & pan
-      const cropW = vw / cam.scale;
-      const cropH = vh / cam.scale;
-      const cropX = Math.max(
-        0,
-        Math.min(vw - cropW, cam.panX * vw - cropW / 2),
-      );
-      const cropY = Math.max(
-        0,
-        Math.min(vh - cropH, cam.panY * vh - cropH / 2),
-      );
-
-      // Render content cleanly beneath the window header bar
-      const contentY = winY + headerH;
-      ctx.drawImage(
-        video,
-        cropX,
-        cropY,
-        cropW,
-        cropH,
-        winX,
-        contentY,
-        winW,
-        contentH,
-      );
-
-      // Window border overlay
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // ── 5. Device Frame Header & Footer Rendering ───────────────────────────
-      drawDeviceFrameHeader(ctx, {
-        frame: styling.deviceFrame || { type: 'none' },
-        winX,
-        winY,
-        winW,
-        winH,
-        headerH,
-        radius,
-      });
-
-      drawDeviceFrameFooter(ctx, {
-        frame: styling.deviceFrame || { type: 'none' },
-        winX,
-        winY,
-        winW,
-        winH,
-        headerH,
-        radius,
-      });
-
-      // ── 6. Synchronized Subtitles / Captions ─────────────────────────────────
-      if (styling.showCaptions && captions.length > 0) {
-        const activeCap = captions.find(
-          (c) => timeMs >= c.startMs && timeMs <= c.endMs,
-        );
-
-        if (activeCap) {
-          const capText = activeCap.text;
-          const fontSize = Math.max(18, Math.round(Math.min(cw, ch) * 0.032));
-          ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
-          const textMetrics = ctx.measureText(capText);
-          const horizPad = Math.round(fontSize * 1.1);
-          const vertPad = Math.round(fontSize * 0.45);
-          const badgeW = textMetrics.width + horizPad * 2;
-          const badgeH = fontSize + vertPad * 2;
-          const badgeX = winX + (winW - badgeW) / 2;
-          const bottomOffset = Math.round(Math.min(cw, ch) * 0.04);
-          const badgeY = winY + winH - badgeH - bottomOffset;
-
-          // Capsule pill background
-          ctx.save();
-          ctx.fillStyle = 'rgba(10, 10, 15, 0.88)';
-          ctx.beginPath();
-          ctx.roundRect(badgeX, badgeY, badgeW, badgeH, badgeH / 2);
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-
-          // Render text with crisp styling
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillStyle = '#ffffff';
-          ctx.fillText(capText, badgeX + badgeW / 2, badgeY + badgeH / 2);
-          ctx.restore();
-        }
-      }
-
-      ctx.restore(); // end window clip
+      const input: StudioComposeInput = {
+        width: canvas.width,
+        height: canvas.height,
+        styling: style,
+        timeMs,
+        video: video,
+        videoReady: ready,
+        camera: cameraRef.current,
+        effects: fx,
+        captions: c,
+        overlays: ov,
+        overlayAssets: overlayAssetsRef.current,
+        glowGradient: glow.value,
+        drawWindowChrome: (chromeCtx, frame) => {
+          if (style.deviceFrame && style.deviceFrame.type !== 'none') {
+            drawDeviceFrameHeader(chromeCtx, {
+              frame: style.deviceFrame,
+              winX: frame.x,
+              winY: frame.y,
+              winW: frame.width,
+              winH: frame.height,
+              headerH: frame.headerHeight,
+              radius: frame.radius,
+            });
+            drawDeviceFrameFooter(chromeCtx, {
+              frame: style.deviceFrame,
+              winX: frame.x,
+              winY: frame.y,
+              winW: frame.width,
+              winH: frame.height,
+              headerH: frame.headerHeight,
+              radius: frame.radius,
+            });
+          } else {
+            drawStudioWindowChrome(chromeCtx, frame);
+          }
+        },
+      };
+      drawStudioFrame(ctx, input);
 
       // ── 7. Intro & Outro Motion Cards Rendering ──────────────────────────────
-      const totalDur = durationMs || (video.duration ? video.duration * 1000 : 30000);
+      const totalDur =
+        durationMs || (video && video.duration ? video.duration * 1000 : 30000);
 
-      if (styling.introCard?.enabled) {
+      if (style.introCard?.enabled) {
         drawMotionCard(ctx, {
-          card: styling.introCard,
+          card: style.introCard,
           cardType: 'intro',
           currentTimeMs: timeMs,
           totalDurationMs: totalDur,
-          cw,
-          ch,
+          cw: canvas.width,
+          ch: canvas.height,
         });
       }
 
-      if (styling.outroCard?.enabled) {
+      if (style.outroCard?.enabled) {
         drawMotionCard(ctx, {
-          card: styling.outroCard,
+          card: style.outroCard,
           cardType: 'outro',
           currentTimeMs: timeMs,
           totalDurationMs: totalDur,
-          cw,
-          ch,
+          cw: canvas.width,
+          ch: canvas.height,
         });
       }
 
@@ -556,9 +381,8 @@ export function StudioCanvas({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [styling, zooms, captions, isPlaying, onTimeUpdate]);
+  }, [onTimeUpdate]);
 
-  // Aspect ratio styling for outer canvas container
   const aspectClass =
     styling.aspectRatio === '9:16'
       ? 'aspect-[9/16] max-h-[640px]'
@@ -567,6 +391,8 @@ export function StudioCanvas({
         : styling.aspectRatio === '4:3'
           ? 'aspect-[4/3] max-h-[580px]'
           : 'aspect-video max-h-[580px]';
+
+  const showBlankPlaceholder = !videoUrl && (overlays?.length ?? 0) === 0;
 
   return (
     <div
@@ -588,8 +414,6 @@ export function StudioCanvas({
             const v = videoRef.current;
             if (v) {
               setVideoLoaded(true);
-              // `MediaRecorder` webm has no duration in its header, so
-              // `v.duration` is Infinity; the caller's known duration wins.
               onDurationChange?.(
                 safeDurationMs(v.duration * 1000, durationMs ?? 0),
               );
@@ -601,12 +425,6 @@ export function StudioCanvas({
               videoUrl,
             );
           }}
-          onTimeUpdate={() => {
-            const v = videoRef.current;
-            if (v && onTimeUpdate) {
-              onTimeUpdate(v.currentTime * 1000);
-            }
-          }}
           onEnded={onEnded}
         >
           <track kind="captions" />
@@ -616,13 +434,13 @@ export function StudioCanvas({
       {/* Render Canvas */}
       <canvas
         ref={canvasRef}
-        width={canvasDims.w}
-        height={canvasDims.h}
+        width={canvasDims.width}
+        height={canvasDims.height}
         className="w-full h-full object-contain pointer-events-none select-none"
       />
 
-      {/* Sleek Canvas View when no video is loaded (Blank Canvas mode) */}
-      {!videoUrl && (
+      {/* Placeholder when there is nothing to preview yet. */}
+      {showBlankPlaceholder && (
         <div
           className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center"
           style={{

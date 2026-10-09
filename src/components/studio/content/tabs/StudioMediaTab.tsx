@@ -252,13 +252,27 @@ export function StudioMediaTab({
                   )
                 }
                 itemData={{
-                  trackType: asset.type === 'audio' ? 'audio' : 'video',
+                  // Images become picture-in-picture overlays; audio and video
+                  // feed their dedicated tracks.
+                  trackType:
+                    asset.type === 'audio'
+                      ? 'audio'
+                      : asset.type === 'image'
+                        ? 'overlays'
+                        : 'video',
                   name: asset.name,
                   durationMs: asset.durationMs,
-                  color: asset.type === 'audio' ? '#0f766e' : '#4338ca',
+                  color:
+                    asset.type === 'audio'
+                      ? '#0f766e'
+                      : asset.type === 'image'
+                        ? '#f59e0b'
+                        : '#4338ca',
                   payload: {
                     mediaUrl: asset.path,
                     filePath: asset.path,
+                    kind: asset.type === 'image' ? 'image' : undefined,
+                    srcPath: asset.type === 'image' ? asset.path : undefined,
                   },
                 }}
                 onAdd={onAddClip}

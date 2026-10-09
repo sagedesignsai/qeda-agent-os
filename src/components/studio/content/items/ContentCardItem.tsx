@@ -17,22 +17,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import type { StudioClipPayload, TrackType } from '@/lib/studio-types';
 
 export interface ContentItemPayload {
-  trackType: 'video' | 'captions' | 'effects' | 'audio';
+  trackType: TrackType;
   name: string;
   durationMs: number;
   color?: string;
-  payload?: {
-    text?: string;
-    scale?: number;
-    targetX?: number;
-    targetY?: number;
-    effectType?: string;
-    mediaUrl?: string;
-    filePath?: string;
-    volume?: number;
-  };
+  payload?: StudioClipPayload;
 }
 
 interface ContentCardItemProps {

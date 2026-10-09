@@ -22,6 +22,7 @@ import {
   type StudioZoom,
   type StudioCut,
   type StudioCaption,
+  type StudioEffect,
   type MouseTrackerEvent,
 } from '../db/studio-store.js';
 import { getProject } from '../db/projects.js';
@@ -98,6 +99,10 @@ export function createStudioTools({
             zooms: take.zooms,
             captionCount: take.captions.length,
             captions: take.captions,
+            effectCount: (take.effects ?? []).length,
+            effects: take.effects ?? [],
+            overlayCount: (take.overlays ?? []).length,
+            overlays: take.overlays ?? [],
             socialKit: take.socialKit,
             project: projectInfo,
           },
@@ -319,6 +324,103 @@ export function createStudioTools({
           note: clearAll
             ? 'Cleared all kinetic zooms'
             : `Removed zoom ${zoomId}`,
+        };
+      },
+    }),
+
+    // ─── 2b. Canvas Effect Passes ─────────────────────────────────────────────
+
+    addCanvasEffect: tool({
+      description:
+        'Adds a timed canvas compositing effect (spotlight, neon-glow, vignette, film-grain, scanlines) over the framed video.',
+      inputSchema: z.object({
+        type: z
+          .enum([
+            'spotlight',
+            'neon-glow',
+            'vignette',
+            'film-grain',
+            'scanlines',
+          ])
+          .describe('Which compositing pass to add'),
+        startMs: z.number().describe('Start timecode in milliseconds'),
+        endMs: z.number().describe('End timecode in milliseconds'),
+        intensity: z
+          .number()
+          .min(0)
+          .max(1)
+          .optional()
+          .describe('Effect strength 0..1 (default 0.6)'),
+        takeId: z.string().optional(),
+      }),
+      execute: async ({ type, startMs, endMs, intensity, takeId }) => {
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
+        if (endMs <= startMs) {
+          return {
+            success: false,
+            error: 'endMs must be strictly greater than startMs',
+          };
+        }
+
+        const effect: StudioEffect = {
+          id: nanoid(),
+          type,
+          startMs: Math.max(0, Math.round(startMs)),
+          endMs: Math.min(take.durationMs, Math.round(endMs)),
+          intensity: Number((intensity ?? 0.6).toFixed(2)),
+        };
+        const updatedEffects = [...(take.effects ?? []), effect].sort(
+          (a, b) => a.startMs - b.startMs,
+        );
+        saveStudioTake({ ...take, effects: updatedEffects });
+        notify();
+
+        return {
+          success: true,
+          addedEffect: effect,
+          totalEffects: updatedEffects.length,
+          note: `Added ${type} effect (intensity ${effect.intensity}) from ${effect.startMs}ms to ${effect.endMs}ms.`,
+        };
+      },
+    }),
+
+    removeCanvasEffect: tool({
+      description:
+        'Removes a canvas effect by id, or clears every canvas effect from the timeline.',
+      inputSchema: z.object({
+        effectId: z
+          .string()
+          .optional()
+          .describe('ID of the effect to remove'),
+        clearAll: z
+          .boolean()
+          .optional()
+          .describe('If true, removes all canvas effects'),
+        takeId: z.string().optional(),
+      }),
+      execute: async ({ effectId, clearAll, takeId }) => {
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
+        if (!clearAll && !effectId) {
+          return {
+            success: false,
+            error: 'Specify either effectId or clearAll: true',
+          };
+        }
+
+        const updatedEffects = clearAll
+          ? []
+          : (take.effects ?? []).filter((effect) => effect.id !== effectId);
+        saveStudioTake({ ...take, effects: updatedEffects });
+        notify();
+
+        return {
+          success: true,
+          remainingEffects: updatedEffects.length,
+          note: clearAll
+            ? 'Cleared all canvas effects'
+            : `Removed effect ${effectId}`,
         };
       },
     }),

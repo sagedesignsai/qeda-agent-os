@@ -1,25 +1,37 @@
 /**
  * components/studio/content/tabs/StudioEffectsTab.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Visual FX and Kinetic Zoom Presets Tab for Studio Content Panel:
- *   - Kinetic camera zooms (1.5x, 2.0x, Pan Left, Pan Right)
- *   - Visual filters (Spotlight, Ambient Neon Glow, Film Grain, Vignette, Blur)
+ * Effects tab for the Studio Content Panel.
+ *
+ * The preset grid is *generated* from the domain catalogs
+ * (`lib/studio/effects/*`) rather than hand-listed here, so adding a canvas
+ * effect to the catalog makes it appear — and render — without touching the UI.
+ *
+ * Two families are offered side by side:
+ *   - Kinetic Camera (zooms) → `payload.effectType === 'zoom'`
+ *   - Canvas FX            → a real compositing pass keyed by `payload.effectType`
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   SearchIcon,
   SparklesIcon,
   ZoomInIcon,
   SunIcon,
-  EyeIcon,
+  ApertureIcon,
+  FilmIcon,
+  ScanLineIcon,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
   ContentCardItem,
   type ContentItemPayload,
 } from '../items/ContentCardItem';
+import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
+import type { StudioEffectType } from '@/lib/studio-types';
+import { STUDIO_ZOOM_PRESETS } from '@/lib/studio/effects/zoom-presets';
 
 interface StudioEffectsTabProps {
   onAddClip: (clip: ContentItemPayload) => void;
@@ -30,126 +42,84 @@ interface EffectPreset {
   title: string;
   category: string;
   durationMs: number;
-  preview: React.ReactNode;
+  preview: ReactNode;
   itemData: ContentItemPayload;
 }
 
-const EFFECT_PRESETS: EffectPreset[] = [
-  {
-    id: 'fx-zoom-15',
-    title: '1.5x Focus Zoom',
+const EFFECT_ICONS: Record<StudioEffectType, ReactNode> = {
+  spotlight: <SunIcon className="w-6 h-6 text-amber-300" />,
+  'neon-glow': <SparklesIcon className="w-6 h-6 text-indigo-300" />,
+  vignette: <ApertureIcon className="w-6 h-6 text-slate-300" />,
+  'film-grain': <FilmIcon className="w-6 h-6 text-stone-300" />,
+  scanlines: <ScanLineIcon className="w-6 h-6 text-cyan-300" />,
+};
+
+function buildPresets(): EffectPreset[] {
+  const zoomPresets: EffectPreset[] = STUDIO_ZOOM_PRESETS.map((preset) => ({
+    id: preset.id,
+    title: preset.label,
     category: 'Kinetic Camera',
-    durationMs: 2500,
+    durationMs: preset.durationMs,
     preview: (
       <div className="flex flex-col items-center justify-center gap-1 text-purple-400">
-        <ZoomInIcon className="w-6 h-6 animate-pulse" />
-        <span className="text-[10px] font-mono font-bold">1.5x Scale</span>
+        <ZoomInIcon className="w-6 h-6" />
+        <span className="text-[10px] font-mono font-bold">
+          {preset.scale.toFixed(1)}x
+        </span>
       </div>
     ),
     itemData: {
       trackType: 'effects',
-      name: '1.5x Focus Zoom',
-      durationMs: 2500,
-      color: '#8b5cf6',
+      name: preset.label,
+      durationMs: preset.durationMs,
+      color: preset.accent,
       payload: {
-        scale: 1.5,
-        targetX: 0.5,
-        targetY: 0.5,
         effectType: 'zoom',
+        scale: preset.scale,
+        targetX: preset.targetX,
+        targetY: preset.targetY,
       },
     },
-  },
-  {
-    id: 'fx-zoom-20',
-    title: '2.0x Macro Punch-in',
-    category: 'Kinetic Camera',
-    durationMs: 2000,
+  }));
+
+  const canvasEffects: EffectPreset[] = STUDIO_EFFECTS.map((effect) => ({
+    id: `fx-${effect.type}`,
+    title: effect.label,
+    category: effect.category,
+    durationMs: effect.defaultDurationMs,
     preview: (
-      <div className="flex flex-col items-center justify-center gap-1 text-indigo-400">
-        <SparklesIcon className="w-6 h-6" />
-        <span className="text-[10px] font-mono font-bold">2.0x Macro</span>
+      <div className="flex flex-col items-center justify-center gap-1">
+        {EFFECT_ICONS[effect.type]}
+        <span className="text-[9px] font-mono font-bold text-muted-foreground">
+          {Math.round(effect.defaultIntensity * 100)}%
+        </span>
       </div>
     ),
     itemData: {
       trackType: 'effects',
-      name: '2.0x Macro Punch',
-      durationMs: 2000,
-      color: '#7c3aed',
+      name: effect.label,
+      durationMs: effect.defaultDurationMs,
+      color: effect.accent,
       payload: {
-        scale: 2.0,
-        targetX: 0.5,
-        targetY: 0.5,
-        effectType: 'zoom',
+        effectType: effect.type,
+        intensity: effect.defaultIntensity,
       },
     },
-  },
-  {
-    id: 'fx-spotlight',
-    title: 'Spotlight Focus',
-    category: 'Canvas FX',
-    durationMs: 3000,
-    preview: (
-      <div className="w-12 h-12 rounded-full bg-radial from-white/30 to-transparent flex items-center justify-center">
-        <SunIcon className="w-5 h-5 text-amber-300" />
-      </div>
-    ),
-    itemData: {
-      trackType: 'effects',
-      name: 'Spotlight Focus',
-      durationMs: 3000,
-      color: '#d97706',
-      payload: {
-        effectType: 'spotlight',
-      },
-    },
-  },
-  {
-    id: 'fx-neon-glow',
-    title: 'Ambient Neon Glow',
-    category: 'Canvas FX',
-    durationMs: 4000,
-    preview: (
-      <div className="w-16 h-8 rounded border border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.7)] flex items-center justify-center">
-        <span className="text-[9px] font-mono text-indigo-300">Glow</span>
-      </div>
-    ),
-    itemData: {
-      trackType: 'effects',
-      name: 'Ambient Neon Glow',
-      durationMs: 4000,
-      color: '#6366f1',
-      payload: {
-        effectType: 'neon-glow',
-      },
-    },
-  },
-  {
-    id: 'fx-vignette',
-    title: 'Cinematic Vignette',
-    category: 'Canvas FX',
-    durationMs: 4000,
-    preview: (
-      <div className="w-16 h-9 rounded bg-gradient-to-r from-black/80 via-transparent to-black/80 flex items-center justify-center">
-        <EyeIcon className="w-4 h-4 text-white/70" />
-      </div>
-    ),
-    itemData: {
-      trackType: 'effects',
-      name: 'Cinematic Vignette',
-      durationMs: 4000,
-      color: '#475569',
-      payload: {
-        effectType: 'vignette',
-      },
-    },
-  },
-];
+  }));
+
+  return [...zoomPresets, ...canvasEffects];
+}
+
+const PRESETS = buildPresets();
 
 export function StudioEffectsTab({ onAddClip }: StudioEffectsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filtered = EFFECT_PRESETS.filter((e) =>
-    e.title.toLowerCase().includes(searchQuery.toLowerCase()),
+  const query = searchQuery.toLowerCase();
+  const filtered = PRESETS.filter(
+    (preset) =>
+      preset.title.toLowerCase().includes(query) ||
+      preset.category.toLowerCase().includes(query),
   );
 
   return (
@@ -160,12 +130,12 @@ export function StudioEffectsTab({ onAddClip }: StudioEffectsTabProps) {
         <Input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search effects..."
+          placeholder="Search effects & zooms..."
           className="h-8 pl-8 text-xs bg-secondary/30 border-border/40 focus-visible:ring-1"
         />
       </div>
 
-      {/* Grid of Effects Presets */}
+      {/* Grid of Effect Presets */}
       <div className="grid grid-cols-2 gap-2">
         {filtered.map((preset) => (
           <ContentCardItem

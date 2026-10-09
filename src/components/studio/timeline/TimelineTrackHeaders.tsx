@@ -19,6 +19,7 @@ import {
   SubtitlesIcon,
   VideoIcon,
   MusicIcon,
+  ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,6 +51,10 @@ function getTrackIcon(type: TrackType) {
       return <VideoIcon className="w-3.5 h-3.5 text-slate-300" />;
     case 'audio':
       return <MusicIcon className="w-3.5 h-3.5 text-sky-400" />;
+    case 'overlays':
+      return <ImageIcon className="w-3.5 h-3.5 text-amber-400" />;
+    default:
+      return <SparklesIcon className="w-3.5 h-3.5 text-primary" />;
   }
 }
 

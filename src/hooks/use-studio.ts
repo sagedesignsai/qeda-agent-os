@@ -24,6 +24,8 @@ import type {
   StudioZoom,
   StudioCut,
   StudioCaption,
+  StudioEffect,
+  StudioOverlay,
 } from '@/main/ipc/channels';
 import { DEFAULT_STUDIO_STYLING } from '@/main/ipc/channels';
 
@@ -442,11 +444,41 @@ export function useStudio(
     [activeTake],
   );
 
+  // ── Update Canvas Effects ─────────────────────────────────────────────────
+
+  const updateEffects = useCallback(
+    async (effects: StudioEffect[]) => {
+      if (!activeTake) return;
+      setActiveTake((prev) => (prev ? { ...prev, effects } : null));
+      await window.electron.ipc.invoke('studio:save-take', {
+        id: activeTake.id,
+        effects,
+      });
+    },
+    [activeTake],
+  );
+
+  // ── Update Media Overlays ─────────────────────────────────────────────────
+
+  const updateOverlays = useCallback(
+    async (overlays: StudioOverlay[]) => {
+      if (!activeTake) return;
+      setActiveTake((prev) => (prev ? { ...prev, overlays } : null));
+      await window.electron.ipc.invoke('studio:save-take', {
+        id: activeTake.id,
+        overlays,
+      });
+    },
+    [activeTake],
+  );
+
   const updateTimelineData = useCallback(
     async (data: {
       zooms: StudioZoom[];
       captions: StudioCaption[];
       cuts: StudioCut[];
+      effects: StudioEffect[];
+      overlays: StudioOverlay[];
     }) => {
       if (!activeTake) return;
       setActiveTake((prev) => (prev ? { ...prev, ...data } : null));
@@ -581,6 +613,8 @@ export function useStudio(
     updateZooms,
     updateCuts,
     updateCaptions,
+    updateEffects,
+    updateOverlays,
     updateTimelineData,
     runMagicDraft,
     generateSocialKit,
