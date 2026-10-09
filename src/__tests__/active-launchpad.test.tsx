@@ -6,7 +6,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ActiveLaunchpad } from '@/components/tasks/ActiveLaunchpad';
 import { TodayEmptyHero } from '@/components/tasks/TodayEmptyHero';
 import type { Task } from '@/main/ipc/channels';
@@ -159,16 +159,28 @@ describe('TodayEmptyHero', () => {
 
     // Type in composer and submit
     const textarea = screen.getByPlaceholderText(/Ask Copilot: plan my day/i);
-    act(() => {
-      fireEvent.change(textarea, {
-        target: { value: 'Schedule 2 hours for deep work' },
-      });
+    // `PromptInputSubmit` (ai-elements) is an icon button whose accessible name
+    // is `aria-label="Submit"` — there is no visible "Send" text. It is gated on
+    // a non-empty prompt, so assert the gate before typing, then submit.
+    const submitBtn = screen.getByRole('button', { name: /submit/i });
+    expect(submitBtn).toBeDisabled();
+
+    fireEvent.change(textarea, {
+      target: { value: 'Schedule 2 hours for deep work' },
     });
-    const form = textarea.closest('form')!;
-    await act(async () => {
-      fireEvent.submit(form);
-    });
-    expect(onSendPrompt).toHaveBeenCalledWith('Schedule 2 hours for deep work');
+    await waitFor(() => expect(submitBtn).toBeEnabled());
+    fireEvent.click(submitBtn);
+    // `PromptInput`'s submit handler is async — it awaits blob-URL conversion
+    // before invoking `onSubmit` — so the callback lands in a microtask after
+    // the click returns. Assert it with waitFor rather than synchronously.
+    await waitFor(() =>
+      expect(onSendPrompt).toHaveBeenCalledWith(
+        'Schedule 2 hours for deep work',
+      ),
+    );
+    // The composer clears itself after a successful submit.
+    await waitFor(() => expect(textarea).toHaveValue(''));
+    expect(submitBtn).toBeDisabled();
 
     // Click suggestion chip for planning
     const planChip = screen.getByRole('button', {
