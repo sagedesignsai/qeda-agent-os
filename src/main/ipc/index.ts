@@ -36,6 +36,7 @@
  * | projects.ts     | 7 + 1 ev | The productivity spine                     |
  * | tasks.ts        | 18       | Focus manager: tasks, steps, blocks, stats |
  * | copilot.ts      | 4 + 5 ev | Focus copilot, both of its forms           |
+ * | document-drafter.ts | 1 + 4 ev | The document drafting agent           |
  *
  * The PTY handlers are NOT here: they live in `pty/manager.ts` next to the
  * `PtyManager` class they expose, and `main.ts` registers them separately. That
@@ -67,6 +68,7 @@ import { registerNotificationsHandlers } from './handlers/notifications';
 import { registerDocumentsHandlers } from './handlers/documents';
 import { registerStudioHandlers } from './handlers/studio';
 import { registerStudioCopilotHandlers } from './handlers/studio-copilot';
+import { registerDocumentDrafterHandlers } from './handlers/document-drafter';
 import { registerSerperHandlers } from './handlers/serper';
 import { registerSoundLabHandlers } from './handlers/soundlab';
 import { registerSoundLabCopilotHandlers } from './handlers/soundlab-copilot';
@@ -95,6 +97,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerDocumentsHandlers({ mainWindow });
   registerStudioHandlers({ mainWindow });
   registerStudioCopilotHandlers({ mainWindow });
+  registerDocumentDrafterHandlers({ mainWindow });
   registerSerperHandlers({ mainWindow });
   registerSoundLabHandlers({ mainWindow });
   registerSoundLabCopilotHandlers({ mainWindow });

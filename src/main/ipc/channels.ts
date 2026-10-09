@@ -46,6 +46,8 @@ import type {
   StudioCaption,
   StudioCaptionWord,
   StudioSocialKit,
+  StudioEffect,
+  StudioOverlay,
   MouseTrackerEvent,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
@@ -80,8 +82,21 @@ export type {
   StudioCaption,
   StudioCaptionWord,
   StudioSocialKit,
+  StudioEffect,
+  StudioOverlay,
   MouseTrackerEvent,
 };
+export type {
+  StudioEffectType,
+  StudioOverlayKind,
+  StudioAspectRatio,
+  StudioCameraEasing,
+  StudioCaptionStyle,
+  StudioClipPayload,
+  TrackType,
+  TimelineClip,
+  TimelineTrack,
+} from '../../lib/studio-types.js';
 export { DEFAULT_STUDIO_STYLING };
 
 import type {
@@ -986,6 +1001,8 @@ export interface IpcChannels {
       cuts?: StudioCut[];
       zooms?: StudioZoom[];
       captions?: StudioCaption[];
+      effects?: StudioEffect[];
+      overlays?: StudioOverlay[];
       styling?: StudioStyling;
       socialKit?: StudioSocialKit | null;
     };
@@ -1120,6 +1137,54 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
+
+  // ── Document Drafter (Professional Document Drafting Agent) ───────────────
+  /**
+   * Run one document drafter turn. Streams back over `document-drafter:stream-*`.
+   * `context` is optional in full: an undefined context means "draft a new
+   * document from scratch, no project and no task".
+   */
+  'document-drafter:chat': {
+    req: {
+      messages: UIMessage[];
+      context?: {
+        documentId?: string;
+        projectId?: string;
+        taskId?: string;
+      };
+    };
+    res: void;
+  };
+  'document-drafter:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'document-drafter:stream-done': { runId: string };
+  /**
+   * Emitted when the run stopped because it hit its step ceiling, NOT because the
+   * model finished. `stream-done` still fires in this case — the run did end —
+   * so this is an ADDITIONAL signal the renderer must surface, not a replacement.
+   *
+   * WHY this channel has to exist: the agent is capped at a fixed step budget
+   * (`isStepCount(20)`), and the SDK exposes no `stepLimitReached` flag. A run
+   * that dies on step 20 while writing block 14 of a Letter of Demand is
+   * indistinguishable from a completed document unless something says otherwise
+   * — the renderer's chat hook drops `finish` chunks, so `finishReason` never
+   * reaches it. "Half-written legal instrument presented as finished" is the
+   * worst failure mode this feature has, so it must be detectable from main.
+   *
+   * `steps` is what was actually consumed, `budget` the ceiling that was hit.
+   */
+  'document-drafter:stream-truncated': { steps: number; budget: number };
+  'document-drafter:stream-error': { error: string };
+  'document-drafter:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  // NOTE: there is deliberately no 'document-drafter:changed' channel. The
+  // drafter broadcasts the existing 'documents:changed' invalidation event,
+  // which `use-documents.ts` already listens to — a second event would mean two
+  // subscription sites and one of them would eventually be forgotten.
 
   // ── SoundLab Copilot (Autonomous Neuro-Acoustic Producer Agent) ──────────
   /** Run one SoundLab copilot turn. Streams back over `soundlab-copilot:stream-*`. */
