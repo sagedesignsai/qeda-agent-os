@@ -10,10 +10,28 @@
  *   │  Today  → focus stats, time blocks, "Plan my day"                       │
  *   │  Board  → the three-column kanban                                       │
  *   └─────────────────────────────────────────────────────────────────────────┘
- *   [FocusMode overlay]  [TaskStepsSheet]  [BrainDumpDialog]  [ScheduleBlock]
+ *   [FocusMode overlay]  [TaskStepsSheet]  [DocumentDrafterSheet]  [Schedule]
  *
  * FocusMode pairs the pomodoro timer with a synthesised soundscape and records
  * every phase to the DB, which is what feeds the stats strip and streaks.
+ *
+ * WHY THE DRAFTER IS REACHED FROM TWO PLACES, AND NOT MORE
+ * ──────────────────────────────────────────────────────
+ * `DocumentDrafterSheet` writes a real document, so the moment to offer it is
+ * the moment someone decides a task produces *paper* — not the moment they are
+ * merely looking at the board. That argues for a per-task action rather than a
+ * header button, and it argues against spraying it across every surface.
+ *
+ *   - The card's `⋯` menu, next to "Break down" and "Block time". This is the
+ *     task's existing action vocabulary, and it reaches every task in every
+ *     column without adding chrome to the card itself.
+ *   - Focus mode, under "Complete Task". Focus is where people land when they
+ *     are *about to do the thing*, and it is the only one of the two entry
+ *     points the Today timeline can reach — it hands off to FocusMode rather
+ *     than to the board's cards.
+ *
+ * Those two cover every path a task can be worked from; a third button on the
+ * lens or in the header would be the carpeting the two above exist to avoid.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -35,6 +53,7 @@ import {
   Loader2Icon,
   Minimize2Icon,
   PauseIcon,
+  PenLineIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -66,6 +85,7 @@ import { HeaderTab, HeaderTabStrip } from '@/components/HeaderTabStrip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { BrainDumpDialog } from '@/components/tasks/BrainDumpDialog';
+import { DocumentDrafterSheet } from '@/components/documents/drafter/DocumentDrafterSheet';
 import { TaskDialog } from '@/components/tasks/TaskDialog';
 import {
   useTaskMutations,
@@ -140,6 +160,54 @@ const DURATION_PRESETS = [
   { label: '50 / 10', work: 50, break: 10 },
 ] as const;
 
+/**
+ * The prompt the Document Drafter opens on, for a given task.
+ *
+ * WHY IT IS BUILT RATHER THAN JUST PASSING `task.title`
+ * ──────────────────────────────────────────────────────
+ * The task's own words are the brief. `description` is where the actual
+ * instruction lives — a title like "Chase invoices" carries almost nothing, and
+ * a drafter handed only that will produce a generic letter rather than one
+ * about *these* invoices. So the title, the description and the project name all
+ * travel together.
+ *
+ * The imperative at the top matters just as much. The drafter is an agent that
+ * can discuss a document or write one, and given "Chase invoices" it will
+ * cheerfully explain how it *would* draft the letter — a conversation where the
+ * user wanted a deliverable. "Write it now, do not discuss it" closes that door.
+ *
+ * The `[CONFIRM: …]` rule is repeated here on purpose. The drafter's own
+ * instructions already forbid inventing statute numbers and figures, but the
+ * user is about to spend real time on the output — so the safety behaviour is
+ * stated in the request rather than left as something they discover in the
+ * prose. Stated once, it also keeps the rest of the prompt short enough to read
+ * at a glance in the transcript.
+ */
+function buildDrafterPrompt(task: Task, projectName: string | null): string {
+  const lines = [
+    'Draft the document this task calls for — write it into my documents now rather than describing what you would write.',
+    '',
+    `Task: ${task.title}`,
+  ];
+
+  const description = task.description?.trim();
+  if (description) {
+    lines.push(`What it has to cover: ${description}`);
+  }
+  if (projectName) {
+    lines.push(
+      `Project: ${projectName} — use this project's material as your source.`,
+    );
+  }
+
+  lines.push(
+    '',
+    'Choose the document type that best fits the task. Do not invent dates, figures, statutes or party details that are not in the material — mark each one [CONFIRM: …] and list the open placeholders when you are done.',
+  );
+
+  return lines.join('\n');
+}
+
 // ─── Task card ────────────────────────────────────────────────────────────────
 
 interface TaskCardProps {
@@ -151,6 +219,8 @@ interface TaskCardProps {
   onOpenSteps: (task: Task) => void;
   onSchedule: (task: Task) => void;
   onEdit: (task: Task) => void;
+  /** Open the Document Drafter scoped to this task. */
+  onDraftDocument: (task: Task) => void;
   /** In-flight drag source; dims the card while it is being dragged. */
   isDragging?: boolean;
   /**
@@ -169,6 +239,7 @@ function TaskCard({
   onOpenSteps,
   onSchedule,
   onEdit,
+  onDraftDocument,
   isDragging = false,
   dragProps,
 }: TaskCardProps) {
@@ -249,6 +320,16 @@ function TaskCard({
             <DropdownMenuItem onClick={() => onSchedule(task)}>
               <CalendarPlusIcon className="mr-2 size-3" />
               Block time
+            </DropdownMenuItem>
+            {/*
+              Last action before the destructive separator, so drafting reads
+              as the final thing this menu offers rather than as part of the
+              housekeeping. The icon is the drafter sheet's own, so the menu
+              item and the panel it opens are visibly the same thing.
+            */}
+            <DropdownMenuItem onClick={() => onDraftDocument(task)}>
+              <PenLineIcon className="mr-2 size-3 text-primary" />
+              Draft document with AI
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -352,6 +433,8 @@ interface FocusModeProps {
   onMinimize: () => void;
   onClose: () => void;
   onComplete: (task: Task, event: React.MouseEvent) => void;
+  /** Hand this task to the Document Drafter. */
+  onDraftDocument: () => void;
 }
 
 function FocusMode({
@@ -363,6 +446,7 @@ function FocusMode({
   onMinimize,
   onClose,
   onComplete,
+  onDraftDocument,
 }: FocusModeProps) {
   const navigate = useNavigate();
   const [showAudio, setShowAudio] = useState(false);
@@ -583,6 +667,23 @@ function FocusMode({
             Complete Task (+{xpReward} XP)
           </Button>
 
+          {/*
+            Sits between "Complete" and the hand-off pair because it is the
+            other way this task can end: not done, but turned into something a
+            person has to read. Deliberately not a third column in the row
+            below — at max-w-md, three labels and three icons stop being
+            readable. The timer keeps running underneath; the sheet is a
+            right-hand slide-over, so returning to focus is just closing it.
+          */}
+          <Button
+            variant="outline"
+            className="w-full gap-2 border-zinc-700 text-zinc-300 hover:border-primary/60 hover:bg-primary/10 hover:text-primary"
+            onClick={onDraftDocument}
+          >
+            <PenLineIcon className="size-4 text-primary" />
+            Draft a document with AI
+          </Button>
+
           <div className="flex w-full items-center gap-2">
             <Button
               variant="outline"
@@ -621,6 +722,8 @@ interface ColumnProps {
   onOpenSteps: (task: Task) => void;
   onSchedule: (task: Task) => void;
   onEdit: (task: Task) => void;
+  /** Forwarded to each card: the drafter is per-task, not per-board. */
+  onDraftDocument: (task: Task) => void;
   onStartFlow?: (task: Task, event: React.MouseEvent) => void;
   onShuffle?: () => void;
   /** True while a drag hovers this column. */
@@ -650,6 +753,7 @@ function Column({
   onOpenSteps,
   onSchedule,
   onEdit,
+  onDraftDocument,
   onStartFlow,
   onShuffle,
   isDropTarget = false,
@@ -699,6 +803,7 @@ function Column({
                 onOpenSteps={onOpenSteps}
                 onSchedule={onSchedule}
                 onEdit={onEdit}
+                onDraftDocument={onDraftDocument}
                 isDragging={isDragging(task.id)}
                 dragProps={getCardProps(task.id)}
               />
@@ -735,6 +840,7 @@ function Column({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function Tasks() {
+  const navigate = useNavigate();
   const {
     projectId,
     projectName,
@@ -798,6 +904,14 @@ export default function Tasks() {
   const [scheduleTaskId, setScheduleTaskId] = useState<string | null>(null);
   const [isPrioritizing, setIsPrioritizing] = useState(false);
   const [shuffleIndex, setShuffleIndex] = useState(0);
+
+  /**
+   * The task the Document Drafter is open for. The sheet is always mounted —
+   * it holds a live agent conversation that should survive being closed — so
+   * "which task is being drafted" is the single piece of state that decides
+   * whether it is showing anything. `null` means closed.
+   */
+  const [drafterTask, setDrafterTask] = useState<Task | null>(null);
 
   const gamification = useGamification();
   const audio = useFocusAudio();
@@ -1109,9 +1223,53 @@ export default function Tasks() {
     [tasks],
   );
 
+  /**
+   * The drafted prompt names the task's OWN project, not whatever scope the
+   * board happens to be filtered by — a task can be drafted while the board is
+   * scoped elsewhere, and naming the wrong project in the brief would point
+   * the drafter at material the task has nothing to do with. A Map rather than
+   * a `find` per render: the board re-renders on every timer tick and every
+   * drag, and the lookup runs on each one.
+   */
+  const projectNameForTask = useMemo(
+    () => new Map(projects.map((p) => [p.id, p.name])),
+    [projects],
+  );
+
   const drag = useTaskDrag({
     onDrop: (taskId: string, to: Status) => void handleMove(taskId, to),
   });
+
+  /**
+   * Open the drafter on a task. Shared by both entry points so the card menu
+   * and focus mode cannot drift apart in what they hand over.
+   */
+  const openDrafter = useCallback((task: Task) => {
+    setDrafterTask(task);
+  }, []);
+
+  const closeDrafter = useCallback(() => setDrafterTask(null), []);
+
+  /**
+   * Hand the finished document to the editor.
+   *
+   * The route is the editor route (`/documents/:documentId` — verified against
+   * `renderer/routes.tsx`), not a "new document" route, so the created record
+   * goes straight to the surface where a human edits it.
+   *
+   * Focus mode is minimized rather than closed on the way out: the sheet is a
+   * full-height slide-over, and leaving a pomodoro ticking silently behind it
+   * would lose the session when the user finally navigates away. Minimizing
+   * parks it in the floating bar, so coming back is one click.
+   */
+  const handleDocumentCreated = useCallback(
+    (documentId: string) => {
+      setDrafterTask(null);
+      if (focusDisplayMode !== 'closed') setFocusDisplayMode('floating');
+      navigate(`/documents/${documentId}`);
+    },
+    [focusDisplayMode, navigate, setFocusDisplayMode],
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -1257,6 +1415,7 @@ export default function Tasks() {
                   onOpenSteps={openSteps}
                   onSchedule={openSchedule}
                   onEdit={openEdit}
+                  onDraftDocument={openDrafter}
                   onStartFlow={handleStartFlow}
                   onShuffle={() => setShuffleIndex((prev) => prev + 1)}
                   isDropTarget={drag.overColumn === status}
@@ -1313,6 +1472,40 @@ export default function Tasks() {
         onChanged={() => void loadSteps()}
       />
 
+      {/*
+        The one drafter instance for the page, kept mounted so a conversation
+        survives being closed.
+
+        `projectId` is the task's OWN project, not the active board scope: a
+        task can be drafted while the board is filtered elsewhere, and the
+        document belongs with the task either way.
+
+        The sheet fires `initialPrompt` once per distinct prompt string, which
+        is why the prompt is built from the task and nothing else — no counter,
+        no timestamp. Picking a *different* task produces different text and
+        drafts immediately; re-opening the *same* task resumes that
+        conversation instead of silently creating a second document. The sheet's
+        "new draft" button is the way out of that.
+      */}
+      <DocumentDrafterSheet
+        open={drafterTask !== null}
+        onOpenChange={(open) => {
+          if (!open) closeDrafter();
+        }}
+        taskId={drafterTask?.id}
+        taskTitle={drafterTask?.title}
+        projectId={drafterTask?.project_id}
+        initialPrompt={
+          drafterTask
+            ? buildDrafterPrompt(
+                drafterTask,
+                projectNameForTask.get(drafterTask.project_id) ?? null,
+              )
+            : undefined
+        }
+        onDocumentCreated={handleDocumentCreated}
+      />
+
       {/* Focus mode overlay */}
       <AnimatePresence>
         {focusDisplayMode === 'modal' && focusedTask && (
@@ -1329,6 +1522,7 @@ export default function Tasks() {
               focusTimer.pause();
             }}
             onComplete={handleComplete}
+            onDraftDocument={() => focusedTask && openDrafter(focusedTask)}
           />
         )}
       </AnimatePresence>
