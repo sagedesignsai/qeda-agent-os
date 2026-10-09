@@ -43,7 +43,7 @@ import {
 } from '../db/terminal.js';
 import { updateTask } from '../db/tasks.js';
 import {
-  getShellExecutable,
+  getExecutionShell,
   buildExecutionEnv,
   setSessionEnvVar,
   parseExportCommand,
@@ -193,7 +193,9 @@ function runCommand(
     const startedAt = Date.now();
 
     const isUnix = process.platform !== 'win32';
-    const shellBin = getShellExecutable();
+    // The execution shell, NOT the user's login shell: `wrappedCommand` below is
+    // POSIX sh and fish/csh reject it outright, which fails every command.
+    const shellBin = getExecutionShell();
     const env = buildExecutionEnv(sessionId, cwd);
 
     // Transparent FD3 probe: wrap command in a block that probes final working directory to fd 3

@@ -7,6 +7,14 @@
  *   3. Parses and merges local .env files safely.
  *   4. Tracks session-level environment variables (export KEY=val).
  *   5. Detects interactive commands requiring a TTY (sudo, git add -p, vim, etc).
+ *
+ * TWO SHELLS, NOT ONE
+ * ───────────────────
+ * The user's login shell (`$SHELL`) and the shell that executes commands are
+ * separate answers. The login shell is only ever asked for its environment; the
+ * execution shell has to understand the POSIX wrapper built in
+ * `terminal-agent.ts`, so a fish or csh login falls back to `/bin/sh`. See
+ * `getExecutionShell`.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -18,12 +26,55 @@ let cachedLoginEnv: Record<string, string> | null = null;
 
 /**
  * Return the user's configured default shell executable.
+ *
+ * This is the *login* shell: it is what `getLoginEnvironment` interrogates to
+ * recover the user's PATH, so it must stay the shell the user actually chose.
  */
 export function getShellExecutable(): string {
   if (process.platform === 'win32') {
     return process.env.SHELL ?? 'powershell.exe';
   }
   return process.env.SHELL ?? '/bin/bash';
+}
+
+/**
+ * Shells whose command language is close enough to POSIX sh to run the wrapper
+ * `runCommand` builds (`{ … }`, `$?`, `exit`, and the fd-3 cwd probe).
+ */
+const POSIX_COMPATIBLE_SHELLS = new Set([
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'ksh',
+  'mksh',
+  'ash',
+]);
+
+/**
+ * The shell used to actually *execute* a command.
+ *
+ * This is deliberately NOT `getShellExecutable`. Those are two different
+ * questions and conflating them breaks the terminal for every user whose login
+ * shell is not a POSIX dialect — fish and csh reject the `{ … }` / `$?` wrapper
+ * outright ("Unsupported use of '='"), so every command fails with exit 127 and
+ * the block is reported as `error` instead of running.
+ *
+ * `$SHELL` is the right answer for *reading the user's environment* and the
+ * wrong answer for *running a POSIX command string*. Where the user's shell
+ * speaks POSIX we honour it; where it does not we use `/bin/sh`, which is
+ * always present and always understands the wrapper.
+ */
+export function getExecutionShell(): string {
+  if (process.platform === 'win32') {
+    return process.env.SHELL ?? 'powershell.exe';
+  }
+  const configured = process.env.SHELL;
+  if (configured) {
+    const name = path.basename(configured).toLowerCase();
+    if (POSIX_COMPATIBLE_SHELLS.has(name)) return configured;
+  }
+  return '/bin/sh';
 }
 
 /**
