@@ -42,6 +42,13 @@ interface StreamPart {
   errorText?: string;
   approvalId?: string;
   reason?: string;
+  /**
+   * True when the policy resolved this call itself (`'approved'` / `'denied'`)
+   * rather than deferring to the user. Carried through so the UI can withhold
+   * Approve/Deny buttons — a card that invites a click on a call the agent
+   * already resolved is worse than no card.
+   */
+  isAutomatic?: boolean;
   toolCall?: { toolCallId?: string; toolName?: string; input?: unknown };
 }
 
@@ -215,7 +222,11 @@ export function applyStreamPart(
       const toolCallId = part.toolCall?.toolCallId ?? part.toolCallId;
       patchToolPart(toolCallId, {
         state: 'approval-requested',
-        approval: { id: part.approvalId, requestReason: part.reason },
+        approval: {
+          id: part.approvalId,
+          requestReason: part.reason,
+          isAutomatic: part.isAutomatic,
+        },
       });
       break;
     }

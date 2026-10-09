@@ -188,7 +188,22 @@ export function MessageList({
                 const approval = toolPart.approval;
 
                 // Awaiting a decision from the user.
-                if (state === 'approval-requested' && approval?.id) {
+                //
+                // `isAutomatic` means the agent's own policy already resolved
+                // this call (approved or denied) — the SDK still emits the
+                // request so the decision lands in the transcript, but there
+                // is nobody left to ask. Rendering Approve/Deny here would
+                // offer a click that cannot change the outcome, so those parts
+                // fall through to the plain tool card below, which shows the
+                // resolved state instead.
+                if (
+                  state === 'approval-requested' &&
+                  approval?.id &&
+                  // Cast rather than widen `ConfirmationProps['approval']`:
+                  // the vendored ai-elements type predates the SDK field, and
+                  // the existing `requestReason` reads below already cast.
+                  !(approval as { isAutomatic?: boolean }).isAutomatic
+                ) {
                   const approvalId = approval.id;
                   return (
                     <Confirmation
