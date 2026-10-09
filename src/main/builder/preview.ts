@@ -36,12 +36,12 @@ import path from 'node:path';
 import {
   EMPTY_PREVIEW_STATUS,
   MAX_PREVIEW_LOG_LINES,
+  announcedLocalUrls,
   choosePreviewScript,
   detectPackageManager,
   previewArgv,
   type BuilderPreviewStatus,
 } from '../../lib/builder-preview.js';
-import { extractLocalhostUrls } from '../../lib/terminal-input.js';
 
 /** How long a live process may stay silent before we say so. Never fatal. */
 const READY_HINT_MS = 30_000;
@@ -233,7 +233,9 @@ export class BuilderPreview {
     const scan = (chunk: string) => {
       this.appendLog(chunk);
       if (announced) return;
-      const urls = extractLocalhostUrls(chunk);
+      // The log still shows the echo; only readiness ignores it, because npm
+      // prints the script body — URL included — before the server has started.
+      const urls = announcedLocalUrls(chunk);
       if (urls.length === 0) return;
       announced = true;
       this.clearReadyHint();

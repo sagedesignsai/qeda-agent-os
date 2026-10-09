@@ -82,7 +82,12 @@ export const MAX_PREVIEW_LOG_LINES = 300;
  * name a production/`node` entry point often takes, so it is only reached when
  * nothing better exists.
  */
-export const PREVIEW_SCRIPT_NAMES = ['dev', 'serve', 'develop', 'start'] as const;
+export const PREVIEW_SCRIPT_NAMES = [
+  'dev',
+  'serve',
+  'develop',
+  'start',
+] as const;
 
 /** The script to run for a preview, or null when the package has none. */
 export function choosePreviewScript(
@@ -139,6 +144,40 @@ export function previewArgv(
 }
 
 /**
+ * Lines a package manager prints to *echo the script it is about to run*, before
+ * the script itself has produced a single byte of output.
+ *
+ * npm 12 writes them to stderr as `npm notice run <script>`; older npm, yarn and
+ * pnpm use a bare `> ` / `$ ` prompt prefix. Either way the line contains the
+ * script body verbatim — and a script body very often contains the URL it is
+ * about to print, e.g.
+ *
+ *     npm notice run node -e "…console.log('  Local:   http://localhost:5173/')…"
+ *
+ * Reading a URL out of that echo reports the preview `ready` before the process
+ * has even started, which is exactly the fake-ready this module refuses to
+ * produce. So the echo is stripped before any URL is read.
+ */
+const COMMAND_ECHO_LINE = /^\s*(?:npm notice\b|> |\$ |yarn run v|pnpm run\b)/i;
+
+/** Drop the package manager's "about to run <script>" echo lines from `text`. */
+export function stripCommandEcho(text: string): string {
+  if (!text) return '';
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !COMMAND_ECHO_LINE.test(line))
+    .join('\n');
+}
+
+/**
+ * The local URL a chunk of preview output *announces*, ignoring the package
+ * manager's command echo (see `stripCommandEcho`).
+ */
+export function announcedLocalUrls(text: string): string[] {
+  return extractLocalhostUrls(stripCommandEcho(text));
+}
+
+/**
  * The most recent local URL advertised by the agent's own tool output.
  *
  * This is the always-on half of the preview: a dev server the agent started
@@ -150,11 +189,11 @@ export function latestLocalUrl(events: BuilderSessionEvent[]): string | null {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
     if (event.type === 'tool-completed') {
-      const urls = extractLocalhostUrls(event.output);
+      const urls = announcedLocalUrls(event.output);
       if (urls.length > 0) return urls[urls.length - 1];
     } else if (event.type === 'tool-failed') {
       // A server that logs its URL to stderr and then dies still announced one.
-      const urls = extractLocalhostUrls(event.error);
+      const urls = announcedLocalUrls(event.error);
       if (urls.length > 0) return urls[urls.length - 1];
     }
   }
