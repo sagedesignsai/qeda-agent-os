@@ -72,6 +72,24 @@ function useResolvedState(overrides: ActiveProjectNoticeProps) {
   };
 }
 
+/**
+ * The single project the app is currently treating as active.
+ *
+ * Used by surfaces that already have a scope but also want to show the
+ * restored-default banner when the visible scope is empty. This keeps the
+ * "which project is active" readout consistent between the sidebar footer,
+ * the copilot sheets, and the project-detail page without each re-deriving it.
+ */
+export function useActiveProject() {
+  const scope = useProjectScope();
+  return {
+    id: scope.activeProjectId,
+    name: scope.activeProjectName,
+    project: scope.activeProject,
+    defaulted: scope.isActiveProjectDefaulted,
+  };
+}
+
 export function ActiveProjectNotice({
   className,
   compact,

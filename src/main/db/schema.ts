@@ -287,8 +287,8 @@ CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status, sort_order);
 /**
  * The default project for unsorted capture. Deterministic id so the data
  * migration and code can agree without a lookup.
- */
-export const INBOX_PROJECT_ID = 'inbox';
+ */export const INBOX_PROJECT_ID = 'inbox';
+
 
 // ─── ADHD task manager ────────────────────────────────────────────────────────
 

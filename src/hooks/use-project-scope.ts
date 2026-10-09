@@ -101,6 +101,10 @@ export function useProjectScope(): ProjectScope {
   // The persisted default. Read through `settings:get` rather than a new
   // channel, and kept fresh on `settings:changed` — the same broadcast the
   // sidebar's own write triggers.
+  //
+  // `settings:get` may now resolve a launch-time default on first read (when none
+  // was persisted), so a first load can receive a non-empty default even on a
+  // fresh install with one project.
   const loadDefault = useCallback(async () => {
     try {
       const s = await window.electron.ipc.invoke<{ activeProjectId?: string }>(

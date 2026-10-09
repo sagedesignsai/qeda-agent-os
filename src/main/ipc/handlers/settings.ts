@@ -15,6 +15,7 @@ import {
   getRawSettings,
   getSettings,
   saveSettings,
+  resolveLaunchDefaultProjectId,
   type AppSettings,
 } from '../../ai/settings';
 import { listServiceStatuses } from '../../services/keys';
@@ -46,6 +47,14 @@ export function registerSettingsHandlers({
       serviceKeysSet[status.id] = status.configured;
     }
 
+    // If no active project is persisted, pick one deterministically so the app
+    // does not sit on "no project selected" when there is an obvious choice
+    // (e.g. a fresh install with a single project). This is a one-time write on
+    // first read after launch, so a later explicit pick still wins.
+    const activeProjectId =
+      s.activeProjectId ??
+      (resolveLaunchDefaultProjectId() ?? '');
+
     return {
       activeProvider: s.activeProvider,
       activeModel: s.activeModel,
@@ -58,7 +67,7 @@ export function registerSettingsHandlers({
       embeddingModel: s.embeddingModel ?? '',
       // The restored default project. Empty string rather than null so the
       // renderer gets a plain falsy value it can compare against directly.
-      activeProjectId: s.activeProjectId ?? '',
+      activeProjectId,
       providers: sanitizedProviders,
       serviceKeysSet,
     };
@@ -67,14 +76,17 @@ export function registerSettingsHandlers({
   /**
    * Record the active project. Deliberately NOT folded into `settings:save`:
    * that is the Settings dialog's channel and carries a provider-state merge,
-   * whereas this is a one-field write from a sidebar click.
+   * whereas this is a one-field write from a sidebar click (and, now, from the
+   * automatic triggers that persist a project the user is clearly working in).
    */
   ipcMain.handle(
     'settings:set-active-project',
     (_e, { projectId }: { projectId: string | null }) => {
       const current = getRawSettings();
       // Store null rather than '' so the field round-trips as "no default".
-      saveSettings({ ...current, activeProjectId: projectId || null });
+      const nextId = projectId ?? null;
+      if (current.activeProjectId === nextId) return;
+      saveSettings({ ...current, activeProjectId: nextId });
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('settings:changed');
       }

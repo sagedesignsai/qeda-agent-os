@@ -13,7 +13,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { createElement, useMemo, useState } from 'react';
+import { createElement, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { motion } from 'motion/react';
 import {
@@ -119,6 +119,29 @@ export default function Projects() {
     () => rollups.find((r) => r.project.id === projectId) ?? null,
     [rollups, projectId],
   );
+
+  // Opening a project detail page is a clear "I am working in this project"
+  // moment. Persist it as the active project so a later launch restores it,
+  // without requiring a separate sidebar click. Best-effort: a failed write
+  // must not break the page the user is already on.
+  useEffect(() => {
+    let cancelled = false;
+    if (!projectId) return;
+    void (async () => {
+      try {
+        await window.electron.ipc.invoke('settings:set-active-project', {
+          projectId,
+        });
+      } catch {
+        // Best-effort persistence: the page is already open, so a failed write
+        // is not worth surfacing or blocking navigation for.
+      }
+      if (cancelled) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   // Drag reorder only applies to the non-archived grid/list, so the id array
   // must match exactly what is rendered or drops land in the wrong slot.

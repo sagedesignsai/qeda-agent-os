@@ -236,7 +236,10 @@ export function SoundLabCopilotSheet({
             drums, arrange timeline, and mix effects.
           </SheetDescription>
 
-          <ActiveProjectNotice className="mt-1.5" />
+          <ActiveProjectNotice
+            className="mt-1.5"
+            compact
+          />
         </SheetHeader>
 
         {/* ── Conversation Stream ─────────────────────────────────────────────── */}

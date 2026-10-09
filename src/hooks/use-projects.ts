@@ -88,6 +88,21 @@ export function useProjects(): UseProjectsReturn {
         input,
       );
       await refresh();
+
+      // Creating a project is a clear "I am working in this project" moment,
+      // especially on a fresh install where it is likely the only one. Persist
+      // it as the active project so a later launch restores it without a manual
+      // sidebar pick. Best-effort: a failed write must not invalidate the create.
+      if (project) {
+        try {
+          await window.electron.ipc.invoke('settings:set-active-project', {
+            projectId: project.id,
+          });
+        } catch {
+          // Best-effort persistence.
+        }
+      }
+
       return project ?? null;
     },
     [refresh],

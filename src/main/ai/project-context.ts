@@ -19,7 +19,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { getProject, projectRollup } from '../db/projects';
+import { getProject, projectRollup } from '../db/projects.js';
 import { getRawSettings } from './settings';
 import { getRecentProjectMemories } from '../tools/rag';
 

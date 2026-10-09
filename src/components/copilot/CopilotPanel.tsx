@@ -149,7 +149,10 @@ export function CopilotPanel({
           {/* Which project this agent is grounded in — and, when there is none,
               why that limits it. Without this the copilot's refusal to touch a
               repo looked identical to it simply having nothing to say. */}
-          <ActiveProjectNotice className="mt-2" />
+          <ActiveProjectNotice
+            className="mt-2"
+            compact
+          />
         </SheetHeader>
 
         <Conversation className="flex-1">

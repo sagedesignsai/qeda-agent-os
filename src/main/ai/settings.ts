@@ -12,6 +12,7 @@ import { app, safeStorage } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pickDefaultProvider } from './registry';
+import { pickDefaultActiveProject } from '../db/projects.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,4 +228,38 @@ export function saveSettings(settings: AppSettings): void {
 export function setActiveModel(providerId: string, modelId: string): void {
   const s = getRawSettings();
   saveSettings({ ...s, activeProvider: providerId, activeModel: modelId });
+}
+
+/**
+ * Persist a chosen active project. Deliberately the only main-process write path
+ * for `activeProjectId`, so the manual sidebar picker and the automatic triggers
+ * (project open, first-project creation, launch-time default) all go through one
+ * place and one `settings:changed` broadcast.
+ *
+ * A repeated write of the same id is a no-op.
+ */
+export function setActiveProjectId(id: string | null): void {
+  const current = getRawSettings();
+  const nextId: string | null = id ?? null;
+  if (current.activeProjectId === nextId) return;
+  saveSettings({ ...current, activeProjectId: nextId });
+}
+
+/**
+ * When there is no persisted active project, pick one deterministically so the
+ * app does not sit on "no project selected" on a launch where there is an obvious
+ * choice. Returns the picked project id, or null when there is nothing sensible
+ * to choose (no projects at all, or only the Inbox).
+ *
+ * This is what makes a fresh install with a single project, or a user who has one
+ * obvious working project, start with an active project instead of forcing a
+ * manual pick.
+ */
+export function resolveLaunchDefaultProjectId(): string | null {
+  const s = getRawSettings();
+  if (s.activeProjectId) return s.activeProjectId;
+  const picked = pickDefaultActiveProject();
+  if (!picked) return null;
+  setActiveProjectId(picked.id);
+  return picked.id;
 }
