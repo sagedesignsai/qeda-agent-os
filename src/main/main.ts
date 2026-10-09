@@ -21,7 +21,6 @@ import {
   registerStudioMediaHandler,
   registerStudioMediaScheme,
 } from './studio-media.js';
-import { stopOwnedBuilderService } from './builder/client.js';
 import MenuBuilder, { attachContentContextMenu } from './menu';
 import { resolveHtmlPath } from './util';
 import startAutoUpdates from './updates';
@@ -205,7 +204,6 @@ app.on('before-quit', () => {
   // Best-effort: stops the OpenCode service only when Builder started it, so an
   // already-running user service is never taken down. Not awaited — quit cannot
   // block here — but the service is a detached process, so we ask it to stop.
-  void stopOwnedBuilderService();
 });
 
 app.on('quit', () => {
