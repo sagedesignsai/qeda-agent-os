@@ -18,18 +18,21 @@ import type {
   StudioStyling,
   StudioZoom,
   StudioCaption,
+  StudioSvgLayer,
 } from '@/lib/studio-types';
 import {
   drawDeviceFrameHeader,
   drawDeviceFrameFooter,
 } from './renderers/device-frames';
 import { drawMotionCard } from './renderers/motion-cards';
+import { drawSvgAnimatedLayer } from './renderers/svg-animator';
 
 interface StudioCanvasProps {
   videoUrl: string | null;
   styling: StudioStyling;
   zooms: StudioZoom[];
   captions: StudioCaption[];
+  svgLayers?: StudioSvgLayer[];
   currentTimeMs: number;
   durationMs?: number;
   isPlaying: boolean;
@@ -496,6 +499,18 @@ export function StudioCanvas({
       }
 
       ctx.restore(); // end window clip
+
+      // ── 6.5 Vector & SVG Layer Animation Rendering ───────────────────────────
+      if (svgLayers && svgLayers.length > 0) {
+        for (const layer of svgLayers) {
+          drawSvgAnimatedLayer(ctx, {
+            layer,
+            currentTimeMs: timeMs,
+            cw,
+            ch,
+          });
+        }
+      }
 
       // ── 7. Intro & Outro Motion Cards Rendering ──────────────────────────────
       const totalDur = durationMs || (video.duration ? video.duration * 1000 : 30000);

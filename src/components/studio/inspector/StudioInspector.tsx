@@ -18,12 +18,15 @@ import { SlidersIcon, XIcon, LayersIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { StudioStyling } from '@/lib/studio-types';
+import { PRESET_SVG_VECTORS } from '@/lib/studio/svg-types';
 import { useSelectedClip, timelineStore } from '@/hooks/use-timeline-store';
+import { toast } from 'sonner';
 import {
   MagicActionsSection,
   GlobalFramingSection,
   GlobalDeviceFrameSection,
   GlobalMotionCardsSection,
+  GlobalSvgLayerSection,
   GlobalWallpaperSection,
   GlobalCameraSection,
   GlobalCaptionsSection,
@@ -68,6 +71,25 @@ export function StudioInspector({
 
   const handleDeselectClip = () => {
     timelineStore.setSelectedClipId(null);
+  };
+
+  const handleAddPresetSvg = (presetId: string) => {
+    const preset = PRESET_SVG_VECTORS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    const playheadMs = timelineStore.getState().currentTimeMs;
+    timelineStore.addClip('vector', {
+      trackType: 'vector',
+      name: preset.name,
+      durationMs: preset.defaultLayer.durationMs || 4000,
+      payload: {
+        svgLayer: {
+          ...preset.defaultLayer,
+          startMs: playheadMs,
+        },
+      },
+    });
+    toast.success(`Added ${preset.name} to vector timeline`);
   };
 
   return (
@@ -166,7 +188,30 @@ export function StudioInspector({
           defaultOpen={false}
         />
 
-        {/* 5. Wallpaper & Theme */}
+        {/* 5. SVG Vector Motion */}
+        <GlobalSvgLayerSection
+          svgLayer={selectedClipData?.clip.payload?.svgLayer || null}
+          onUpdateSvgLayer={(patch) => {
+            if (selectedClipData?.clip) {
+              const currentLayer = selectedClipData.clip.payload?.svgLayer;
+              if (currentLayer) {
+                handleUpdateClip(selectedClipData.clip.id, {
+                  payload: {
+                    ...selectedClipData.clip.payload,
+                    svgLayer: {
+                      ...currentLayer,
+                      ...patch,
+                    },
+                  },
+                });
+              }
+            }
+          }}
+          onAddPresetSvg={handleAddPresetSvg}
+          defaultOpen={false}
+        />
+
+        {/* 6. Wallpaper & Theme */}
         <GlobalWallpaperSection
           styling={styling}
           onUpdateStyling={onUpdateStyling}

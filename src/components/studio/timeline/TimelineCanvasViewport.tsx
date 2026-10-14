@@ -298,6 +298,27 @@ export function TimelineCanvasViewport({
           ctx.textBaseline = 'middle';
           const scale = clip.payload?.scale ?? 1.6;
           ctx.fillText(`⚡ Zoom ${scale}x`, clipX + 8, clipY + clipH / 2);
+        } else if (track.type === 'vector') {
+          // Track: SVG Vector Layers (Sky blue gradient with PenTool badge)
+          const grad = ctx.createLinearGradient(
+            clipX,
+            clipY,
+            clipX,
+            clipY + clipH,
+          );
+          grad.addColorStop(0, '#0284c7');
+          grad.addColorStop(1, '#0369a1');
+          ctx.fillStyle = grad;
+          ctx.fillRect(clipX, clipY, clipW, clipH);
+
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.fillRect(clipX, clipY, clipW, 2);
+
+          ctx.fillStyle = '#e0f2fe';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textBaseline = 'middle';
+          const layerName = clip.payload?.svgLayer?.name || clip.name;
+          ctx.fillText(`✒️ ${layerName}`, clipX + 8, clipY + clipH / 2, Math.max(10, clipW - 16));
         } else if (track.type === 'captions') {
           // Track 2: Captions / AI Subtitles (Teal gradient)
           const grad = ctx.createLinearGradient(

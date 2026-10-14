@@ -64,6 +64,7 @@ import {
   extractCutsFromTracks,
   type StudioTake,
   type TimelineTrack,
+  type StudioSvgLayer,
 } from '@/lib/studio-types';
 import { toast } from 'sonner';
 
@@ -97,6 +98,23 @@ export default function Studio() {
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [durationMs, setDurationMs] = useState(0);
   const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
+  const [svgLayers, setSvgLayers] = useState<StudioSvgLayer[]>([]);
+
+  // Subscribe to active vector tracks on timeline
+  useEffect(() => {
+    return timelineStore.subscribeTracks((tracks) => {
+      const vectorTracks = tracks.filter((t) => t.type === 'vector' && t.visible);
+      const layers: StudioSvgLayer[] = [];
+      for (const tr of vectorTracks) {
+        for (const clip of tr.clips) {
+          if (clip.payload?.svgLayer) {
+            layers.push(clip.payload.svgLayer);
+          }
+        }
+      }
+      setSvgLayers(layers);
+    });
+  }, []);
 
   // Modals & Copilot
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
@@ -707,6 +725,7 @@ export default function Studio() {
                         styling={activeTake.styling}
                         zooms={activeTake.zooms}
                         captions={activeTake.captions}
+                        svgLayers={svgLayers}
                         currentTimeMs={currentTimeMs}
                         durationMs={durationMs || activeTake.durationMs}
                         isPlaying={isPlaying}

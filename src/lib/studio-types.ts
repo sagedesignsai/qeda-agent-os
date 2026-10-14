@@ -178,7 +178,10 @@ export const DEFAULT_STUDIO_STYLING: StudioStyling = {
 
 // ── Multi-Track Timeline Domain Models ────────────────────────────────────────
 
-export type TrackType = 'effects' | 'captions' | 'video' | 'audio';
+import type { StudioSvgLayer } from './studio/svg-types';
+export type { StudioSvgLayer, StudioSvgKeyframe, StudioSvgFilter } from './studio/svg-types';
+
+export type TrackType = 'effects' | 'captions' | 'video' | 'audio' | 'vector';
 
 export interface TimelineClip {
   id: string;
@@ -197,6 +200,7 @@ export interface TimelineClip {
     volume?: number;
     reason?: string;
     speed?: number;
+    svgLayer?: StudioSvgLayer;
   };
 }
 

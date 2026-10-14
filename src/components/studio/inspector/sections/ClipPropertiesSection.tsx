@@ -21,6 +21,7 @@ import {
   TypeIcon,
   GaugeIcon,
   SparklesIcon,
+  PenToolIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -56,6 +57,8 @@ export function ClipPropertiesSection({
     switch (track.type) {
       case 'effects':
         return <CameraIcon className="w-3.5 h-3.5 text-purple-400" />;
+      case 'vector':
+        return <PenToolIcon className="w-3.5 h-3.5 text-sky-400" />;
       case 'captions':
         return <SubtitlesIcon className="w-3.5 h-3.5 text-teal-400" />;
       case 'video':
@@ -73,6 +76,8 @@ export function ClipPropertiesSection({
         const scale = clip.payload?.scale ?? 1.5;
         return `ZOOM ${scale.toFixed(1)}X`;
       }
+      case 'vector':
+        return 'SVG VECTOR';
       case 'captions':
         return 'SUBTITLE';
       case 'video':
@@ -113,6 +118,86 @@ export function ClipPropertiesSection({
       }
     >
       {/* ── Type-Specific Properties ────────────────────────────────────────── */}
+      {track.type === 'vector' && clip.payload?.svgLayer && (
+        <>
+          <InspectorSliderInput
+            label="Trim Path Draw-On"
+            icon={<PenToolIcon className="w-3.5 h-3.5" />}
+            value={Math.round((clip.payload.svgLayer.trimPath?.endProgress ?? 1.0) * 100)}
+            min={0}
+            max={100}
+            step={1}
+            unit="%"
+            onChange={(val) => {
+              const currentLayer = clip.payload!.svgLayer!;
+              onUpdateClip(clip.id, {
+                payload: {
+                  ...clip.payload,
+                  svgLayer: {
+                    ...currentLayer,
+                    trimPath: {
+                      ...currentLayer.trimPath,
+                      endProgress: val / 100,
+                    },
+                  },
+                },
+              });
+            }}
+          />
+
+          <InspectorSliderInput
+            label="Vector Scale"
+            icon={<SparklesIcon className="w-3.5 h-3.5" />}
+            value={Math.round((clip.payload.svgLayer.transform?.scale ?? 1.0) * 100)}
+            min={10}
+            max={300}
+            step={5}
+            unit="%"
+            onChange={(val) => {
+              const currentLayer = clip.payload!.svgLayer!;
+              onUpdateClip(clip.id, {
+                payload: {
+                  ...clip.payload,
+                  svgLayer: {
+                    ...currentLayer,
+                    transform: {
+                      ...currentLayer.transform,
+                      scale: val / 100,
+                    },
+                  },
+                },
+              });
+            }}
+          />
+
+          <InspectorFieldRow label="Vector Filter" icon={<SparklesIcon className="w-3.5 h-3.5" />}>
+            <InspectorSegmentedGroup
+              value={clip.payload.svgLayer.filter?.type || 'none'}
+              onChange={(filterType) => {
+                const currentLayer = clip.payload!.svgLayer!;
+                onUpdateClip(clip.id, {
+                  payload: {
+                    ...clip.payload,
+                    svgLayer: {
+                      ...currentLayer,
+                      filter: {
+                        ...currentLayer.filter,
+                        type: filterType as 'none' | 'glow' | 'drop-shadow' | 'blur' | 'neon',
+                      },
+                    },
+                  },
+                });
+              }}
+              options={[
+                { value: 'none', label: 'None' },
+                { value: 'glow', label: 'Glow' },
+                { value: 'neon', label: 'Neon' },
+                { value: 'drop-shadow', label: 'Shadow' },
+              ]}
+            />
+          </InspectorFieldRow>
+        </>
+      )}
       {track.type === 'effects' && (
         <>
           {/* Zoom scale slider */}

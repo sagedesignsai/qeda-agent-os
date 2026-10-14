@@ -17,6 +17,7 @@ import {
   CheckIcon,
   SlidersIcon,
   LayersIcon,
+  PenToolIcon,
 } from 'lucide-react';
 import {
   Dialog,
@@ -43,7 +44,10 @@ import type {
   StudioDeviceFrame,
   StudioMotionCard,
 } from '@/lib/studio-types';
+import { PRESET_SVG_VECTORS } from '@/lib/studio/svg-types';
+import { timelineStore } from '@/hooks/use-timeline-store';
 import { BUILTIN_STUDIO_PLUGINS } from './StudioPluginRegistry';
+import { toast } from 'sonner';
 
 interface StudioPluginsModalProps {
   open: boolean;
@@ -124,34 +128,41 @@ export function StudioPluginsModal({
             </div>
           </div>
           <Badge variant="outline" className="font-mono text-[10px] tracking-wider uppercase">
-            3 Plugins Active
+            5 Plugins Active
           </Badge>
         </div>
 
         {/* Plugin Tabs */}
         <div className="p-5">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-3 w-full bg-muted/40 p-1 rounded-xl">
+            <TabsList className="grid grid-cols-4 w-full bg-muted/40 p-1 rounded-xl">
               <TabsTrigger
                 value="plugin-device-frames"
-                className="text-xs font-medium flex items-center gap-2 cursor-pointer"
+                className="text-xs font-medium flex items-center gap-1.5 cursor-pointer"
               >
                 <MonitorIcon className="w-3.5 h-3.5 text-primary" />
-                <span>Device Mockup Frame</span>
+                <span>Device Frame</span>
               </TabsTrigger>
               <TabsTrigger
                 value="plugin-intro-outro"
-                className="text-xs font-medium flex items-center gap-2 cursor-pointer"
+                className="text-xs font-medium flex items-center gap-1.5 cursor-pointer"
               >
                 <FilmIcon className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Intro & Outro Cards</span>
+                <span>Intro/Outro</span>
               </TabsTrigger>
               <TabsTrigger
-                value="plugin-kinetic-callout"
-                className="text-xs font-medium flex items-center gap-2 cursor-pointer"
+                value="plugin-svg-trim-path"
+                className="text-xs font-medium flex items-center gap-1.5 cursor-pointer"
               >
-                <SparklesIcon className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Badges & Lower Thirds</span>
+                <PenToolIcon className="w-3.5 h-3.5 text-sky-400" />
+                <span>SVG Trim Path</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="plugin-svg-filter-effects"
+                className="text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+              >
+                <LayersIcon className="w-3.5 h-3.5 text-emerald-400" />
+                <span>SVG Filters</span>
               </TabsTrigger>
             </TabsList>
 
@@ -442,25 +453,80 @@ export function StudioPluginsModal({
               </div>
             </TabsContent>
 
-            {/* Content: Lower Thirds & Callouts Plugin */}
-            <TabsContent value="plugin-kinetic-callout" className="mt-4 space-y-4">
-              <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-3 text-xs">
+            {/* Content: SVG Trim Path Plugin */}
+            <TabsContent value="plugin-svg-trim-path" className="mt-4 space-y-4">
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-4 text-xs">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <SparklesIcon className="w-4 h-4 text-emerald-400" />
+                    <PenToolIcon className="w-4 h-4 text-sky-400" />
                     <h4 className="text-xs font-semibold text-foreground">
-                      Lower Thirds & Tech Badges
+                      SVG Stroke & Trim Path Animator
                     </h4>
                   </div>
                   <Badge variant="secondary" className="text-[10px]">
-                    v1.0.0
+                    v2.0.0
                   </Badge>
                 </div>
                 <p className="text-muted-foreground leading-relaxed">
-                  Lower Thirds & Feature Callout overlays automatically style subtitles and key event callouts as animated badges on the lower canvas.
+                  SVGator-style self-drawing vector logos and path write-on animations. Insert animated vector presets directly into your multi-track timeline:
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {PRESET_SVG_VECTORS.map((preset) => (
+                    <div
+                      key={preset.id}
+                      className="p-3 rounded-lg border border-border/50 bg-background/50 flex flex-col gap-2"
+                    >
+                      <span className="font-semibold text-foreground">{preset.name}</span>
+                      <p className="text-[10px] text-muted-foreground">Category: {preset.category}</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 text-[11px] font-medium cursor-pointer"
+                        onClick={() => {
+                          const playheadMs = timelineStore.getState().currentTimeMs;
+                          timelineStore.addClip('vector', {
+                            trackType: 'vector',
+                            name: preset.name,
+                            durationMs: preset.defaultLayer.durationMs || 4000,
+                            payload: {
+                              svgLayer: {
+                                ...preset.defaultLayer,
+                                startMs: playheadMs,
+                              },
+                            },
+                          });
+                          toast.success(`Inserted ${preset.name} onto vector track`);
+                          onOpenChange(false);
+                        }}
+                      >
+                        <PenToolIcon className="w-3 h-3 mr-1.5 text-sky-400" />
+                        Insert to Timeline
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Content: SVG Filter Effects Plugin */}
+            <TabsContent value="plugin-svg-filter-effects" className="mt-4 space-y-4">
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/10 space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <LayersIcon className="w-4 h-4 text-emerald-400" />
+                    <h4 className="text-xs font-semibold text-foreground">
+                      SVG Layer Compositor & Filter Effects
+                    </h4>
+                  </div>
+                  <Badge variant="secondary" className="text-[10px]">
+                    v2.0.0
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground leading-relaxed">
+                  After Effects style multi-layer composition, neon glow, drop shadow, and blur vector filters for vector tracks.
                 </p>
                 <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 font-mono text-[11px]">
-                  ✨ Synchronized with timeline Subtitles and Kinetic Zooms.
+                  ✨ Supports Neon Glow, Drop Shadow, and Motion Blur filters with real-time 60fps canvas rendering.
                 </div>
               </div>
             </TabsContent>
