@@ -18,7 +18,12 @@ import type {
   StudioStyling,
   StudioZoom,
   StudioCaption,
-} from '@/main/ipc/channels';
+} from '@/lib/studio-types';
+import {
+  drawDeviceFrameHeader,
+  drawDeviceFrameFooter,
+} from './renderers/device-frames';
+import { drawMotionCard } from './renderers/motion-cards';
 
 interface StudioCanvasProps {
   videoUrl: string | null;
@@ -431,26 +436,25 @@ export function StudioCanvas({
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // ── 5. Window Header Bar & Traffic Dots ─────────────────────────────────
-      ctx.fillStyle = 'rgba(15, 17, 23, 0.75)';
-      ctx.fillRect(winX, winY, winW, headerH);
+      // ── 5. Device Frame Header & Footer Rendering ───────────────────────────
+      drawDeviceFrameHeader(ctx, {
+        frame: styling.deviceFrame || { type: 'none' },
+        winX,
+        winY,
+        winW,
+        winH,
+        headerH,
+        radius,
+      });
 
-      // Subtle header separator
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.beginPath();
-      ctx.moveTo(winX, winY + headerH);
-      ctx.lineTo(winX + winW, winY + headerH);
-      ctx.stroke();
-
-      // macOS Traffic light dots
-      const dotY = winY + headerH / 2;
-      const dotR = 4.5;
-      const dots = ['#ef4444', '#f59e0b', '#10b981'];
-      dots.forEach((color, i) => {
-        ctx.beginPath();
-        ctx.arc(winX + 16 + i * 14, dotY, dotR, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
+      drawDeviceFrameFooter(ctx, {
+        frame: styling.deviceFrame || { type: 'none' },
+        winX,
+        winY,
+        winW,
+        winH,
+        headerH,
+        radius,
       });
 
       // ── 6. Synchronized Subtitles / Captions ─────────────────────────────────
@@ -492,6 +496,31 @@ export function StudioCanvas({
       }
 
       ctx.restore(); // end window clip
+
+      // ── 7. Intro & Outro Motion Cards Rendering ──────────────────────────────
+      const totalDur = durationMs || (video.duration ? video.duration * 1000 : 30000);
+
+      if (styling.introCard?.enabled) {
+        drawMotionCard(ctx, {
+          card: styling.introCard,
+          cardType: 'intro',
+          currentTimeMs: timeMs,
+          totalDurationMs: totalDur,
+          cw,
+          ch,
+        });
+      }
+
+      if (styling.outroCard?.enabled) {
+        drawMotionCard(ctx, {
+          card: styling.outroCard,
+          cardType: 'outro',
+          currentTimeMs: timeMs,
+          totalDurationMs: totalDur,
+          cw,
+          ch,
+        });
+      }
 
       animId = requestAnimationFrame(render);
     };

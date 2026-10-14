@@ -13,6 +13,7 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { TooltipProvider } from '../components/ui/tooltip';
+import { SidebarProvider } from '../components/ui/sidebar';
 import Studio from '../renderer/pages/Studio';
 import type { StudioTake } from '../lib/studio-types';
 
@@ -79,6 +80,17 @@ jest.mock('@/hooks/use-project-scope', () => ({
 
 describe('Studio Resizable Panels Layout', () => {
   beforeAll(() => {
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }) as MediaQueryList);
+
     window.HTMLMediaElement.prototype.play = jest
       .fn()
       .mockImplementation(() => Promise.resolve());
@@ -126,14 +138,16 @@ describe('Studio Resizable Panels Layout', () => {
 
   const renderStudioEditor = () => {
     return render(
-      <TooltipProvider>
-        <MemoryRouter initialEntries={['/studio/take-res-1']}>
-          <Routes>
-            <Route path="/studio" element={<Studio />} />
-            <Route path="/studio/:takeId" element={<Studio />} />
-          </Routes>
-        </MemoryRouter>
-      </TooltipProvider>,
+      <SidebarProvider>
+        <TooltipProvider>
+          <MemoryRouter initialEntries={['/studio/take-res-1']}>
+            <Routes>
+              <Route path="/studio" element={<Studio />} />
+              <Route path="/studio/:takeId" element={<Studio />} />
+            </Routes>
+          </MemoryRouter>
+        </TooltipProvider>
+      </SidebarProvider>,
     );
   };
 

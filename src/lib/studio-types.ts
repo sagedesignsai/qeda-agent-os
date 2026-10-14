@@ -36,6 +36,42 @@ export interface StudioCaption {
   words?: StudioCaptionWord[];
 }
 
+export type DeviceFrameType =
+  | 'none'
+  | 'browser'
+  | 'macbook'
+  | 'iphone'
+  | 'minimal-svg'
+  | 'glass';
+
+export interface StudioDeviceFrame {
+  type: DeviceFrameType;
+  title?: string;
+  url?: string;
+  theme?: 'dark' | 'light' | 'accent';
+  showControls?: boolean;
+}
+
+export interface StudioMotionCard {
+  enabled: boolean;
+  title: string;
+  subtitle?: string;
+  badge?: string;
+  durationMs: number;
+  preset?: 'minimal' | 'kinetic' | 'gradient' | 'cyber';
+  logoUrl?: string;
+}
+
+export interface StudioPlugin {
+  id: string;
+  name: string;
+  description: string;
+  category: 'frame' | 'motion' | 'effects' | 'overlay';
+  icon: string;
+  version: string;
+  author?: string;
+}
+
 export interface StudioStyling {
   background: string;
   borderRadius: number;
@@ -46,6 +82,9 @@ export interface StudioStyling {
   cameraEasing: 'smooth' | 'snappy' | 'cinematic';
   showCaptions: boolean;
   captionStyle: 'karaoke' | 'minimal' | 'badge';
+  deviceFrame?: StudioDeviceFrame;
+  introCard?: StudioMotionCard;
+  outroCard?: StudioMotionCard;
 }
 
 export interface StudioSocialKit {
@@ -112,6 +151,29 @@ export const DEFAULT_STUDIO_STYLING: StudioStyling = {
   cameraEasing: 'smooth',
   showCaptions: true,
   captionStyle: 'karaoke',
+  deviceFrame: {
+    type: 'none',
+    title: 'Showcase Demo',
+    url: 'https://qeda.app',
+    theme: 'dark',
+    showControls: true,
+  },
+  introCard: {
+    enabled: false,
+    title: 'Product Walkthrough',
+    subtitle: 'Built with Qeda Studio',
+    badge: 'NEW RELEASE',
+    durationMs: 3000,
+    preset: 'minimal',
+  },
+  outroCard: {
+    enabled: false,
+    title: 'Try Qeda Today',
+    subtitle: 'qeda.app • Open Source Agent OS',
+    badge: 'GET STARTED',
+    durationMs: 3000,
+    preset: 'gradient',
+  },
 };
 
 // ── Multi-Track Timeline Domain Models ────────────────────────────────────────

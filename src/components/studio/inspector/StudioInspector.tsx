@@ -22,6 +22,8 @@ import { useSelectedClip, timelineStore } from '@/hooks/use-timeline-store';
 import {
   MagicActionsSection,
   GlobalFramingSection,
+  GlobalDeviceFrameSection,
+  GlobalMotionCardsSection,
   GlobalWallpaperSection,
   GlobalCameraSection,
   GlobalCaptionsSection,
@@ -150,7 +152,21 @@ export function StudioInspector({
           defaultOpen={true}
         />
 
-        {/* 3. Wallpaper & Theme */}
+        {/* 3. Device Mockup Frame */}
+        <GlobalDeviceFrameSection
+          styling={styling}
+          onUpdateStyling={onUpdateStyling}
+          defaultOpen={false}
+        />
+
+        {/* 4. Motion Cards (Intro / Outro) */}
+        <GlobalMotionCardsSection
+          styling={styling}
+          onUpdateStyling={onUpdateStyling}
+          defaultOpen={false}
+        />
+
+        {/* 5. Wallpaper & Theme */}
         <GlobalWallpaperSection
           styling={styling}
           onUpdateStyling={onUpdateStyling}
