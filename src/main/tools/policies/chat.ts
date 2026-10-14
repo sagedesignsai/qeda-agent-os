@@ -68,6 +68,9 @@ export const chatToolPolicies: ToolPolicyMap = {
   ),
   indexPage: t('cost', 'not-applicable', 'Same rationale as indexFile.'),
   removeFromIndex: t('destructive'),
+  storeProjectMemory: t('write-local'),
+  searchProjectMemory: t('read'),
+  listProjectMemories: t('read'),
 
   // ── Web / services ─────────────────────────────────────────────────────────
   webSearch: t('network'),

@@ -143,8 +143,12 @@ export const indexFileTool = tool({
       .max(4000)
       .default(1500)
       .describe('Maximum characters per chunk.'),
+    projectId: z
+      .string()
+      .optional()
+      .describe('Optional project ID to associate with the indexed file chunks.'),
   }),
-  execute: async ({ filePath, chunkSize }) => {
+  execute: async ({ filePath, chunkSize, projectId }) => {
     const resolved = path.resolve(filePath);
     const db = getDb();
 
@@ -188,7 +192,7 @@ export const indexFileTool = tool({
 
       // Insert chunks + vectors.
       const insertChunk = db.prepare(
-        'INSERT INTO chunks (id, file_path, chunk_index, content) VALUES (?, ?, ?, ?)',
+        'INSERT INTO chunks (id, file_path, chunk_index, content, project_id) VALUES (?, ?, ?, ?, ?)',
       );
       const insertVec = db.prepare(
         'INSERT INTO embeddings (chunk_id, embedding) VALUES (?, ?)',
@@ -197,7 +201,7 @@ export const indexFileTool = tool({
       const insertAll = db.transaction(() => {
         chunks.forEach((content, i) => {
           const id = randomUUID();
-          insertChunk.run(id, resolved, i, content);
+          insertChunk.run(id, resolved, i, content, projectId ?? null);
           // sqlite-vec expects a Float32Array serialized as a Buffer.
           const vecBuffer = Buffer.from(new Float32Array(embeddings[i]).buffer);
           insertVec.run(id, vecBuffer);
@@ -210,6 +214,7 @@ export const indexFileTool = tool({
         success: true,
         path: resolved,
         chunksIndexed: chunks.length,
+        projectId: projectId ?? null,
         model: `${ctx.config.provider}/${ctx.config.model}`,
         dimensions: ctx.tableDim,
       };
@@ -231,8 +236,12 @@ export const searchDocsTool = tool({
       .max(20)
       .default(5)
       .describe('Maximum number of results to return.'),
+    projectId: z
+      .string()
+      .optional()
+      .describe('If provided, filters results to chunks belonging to this project (or unscoped/global if null).'),
   }),
-  execute: async ({ query, topK }) => {
+  execute: async ({ query, topK, projectId }) => {
     const db = getDb();
     try {
       const ctx = getEmbeddingContext();
@@ -250,7 +259,8 @@ export const searchDocsTool = tool({
 
       const vecBuffer = Buffer.from(new Float32Array(embedding).buffer);
 
-      // KNN search via sqlite-vec.
+      // KNN search via sqlite-vec. If projectId is provided, fetch extra candidates then filter.
+      const fetchCount = projectId ? topK * 4 : topK;
       const results = db
         .prepare<[Buffer, number], { chunk_id: string; distance: number }>(
           `SELECT chunk_id, distance
@@ -259,13 +269,13 @@ export const searchDocsTool = tool({
            ORDER BY distance ASC
            LIMIT ?`,
         )
-        .all(vecBuffer, topK);
+        .all(vecBuffer, fetchCount);
 
       if (results.length === 0) {
         return { success: true, results: [] };
       }
 
-      // Fetch chunk text for each result.
+      // Fetch chunk text and metadata for candidate results.
       const placeholders = results.map(() => '?').join(',');
       const chunks = db
         .prepare<
@@ -275,22 +285,32 @@ export const searchDocsTool = tool({
             file_path: string;
             content: string;
             chunk_index: number;
+            project_id: string | null;
           }
         >(
-          `SELECT id, file_path, content, chunk_index
+          `SELECT id, file_path, content, chunk_index, project_id
            FROM chunks WHERE id IN (${placeholders})`,
         )
         .all(...results.map((r) => r.chunk_id));
 
       const chunkMap = new Map(chunks.map((c) => [c.id, c]));
 
-      const formatted = results.map((r) => {
+      let filteredResults = results;
+      if (projectId) {
+        filteredResults = results.filter((r) => {
+          const chunk = chunkMap.get(r.chunk_id);
+          return chunk?.project_id === projectId || chunk?.project_id === null;
+        }).slice(0, topK);
+      }
+
+      const formatted = filteredResults.map((r) => {
         const chunk = chunkMap.get(r.chunk_id);
         return {
           chunkId: r.chunk_id,
           filePath: chunk?.file_path ?? 'unknown',
           chunkIndex: chunk?.chunk_index ?? 0,
           content: chunk?.content ?? '',
+          projectId: chunk?.project_id ?? null,
           score: Math.round((1 - r.distance) * 1000) / 1000,
         };
       });
@@ -353,9 +373,241 @@ export const removeFromIndexTool = tool({
   },
 });
 
+// ─── Project Vector Memory Tools ─────────────────────────────────────────────
+
+export function memoryPath(projectId: string, memoryId: string): string {
+  return `project-memory://${projectId}/${memoryId}`;
+}
+
+export const storeProjectMemoryTool = tool({
+  description:
+    'Store a fact, decision, preference, instruction, or key context into the project vector memory for cross-agent long-term recall.',
+  inputSchema: z.object({
+    projectId: z
+      .string()
+      .describe('The project ID to associate this vector memory with.'),
+    content: z
+      .string()
+      .describe('The memory content/fact/decision to remember.'),
+    category: z
+      .string()
+      .optional()
+      .describe('Optional category label (e.g. decision, goal, architecture, preference, context).'),
+  }),
+  execute: async ({ projectId, content, category }) => {
+    const db = getDb();
+    try {
+      const memoryId = randomUUID();
+      const filePath = memoryPath(projectId, memoryId);
+      const formattedContent = category
+        ? `[${category.toUpperCase()}] ${content}`
+        : content;
+
+      const ctx = getEmbeddingContext();
+      const { embedding } = await embed({
+        model: ctx.model,
+        value: formattedContent,
+        ...(ctx.providerOptions
+          ? { providerOptions: ctx.providerOptions }
+          : {}),
+      });
+
+      assertEmbeddingFits(ctx, embedding.length);
+
+      const chunkId = randomUUID();
+      const insertChunk = db.prepare(
+        'INSERT INTO chunks (id, file_path, chunk_index, content, project_id) VALUES (?, ?, ?, ?, ?)',
+      );
+      const insertVec = db.prepare(
+        'INSERT INTO embeddings (chunk_id, embedding) VALUES (?, ?)',
+      );
+
+      const vecBuffer = Buffer.from(new Float32Array(embedding).buffer);
+
+      const tx = db.transaction(() => {
+        insertChunk.run(chunkId, filePath, 0, formattedContent, projectId);
+        insertVec.run(chunkId, vecBuffer);
+      });
+      tx();
+
+      return {
+        success: true,
+        memoryId,
+        projectId,
+        category: category ?? null,
+        content: formattedContent,
+      };
+    } catch (err) {
+      return { success: false, error: ragError(err) };
+    }
+  },
+});
+
+export const searchProjectMemoryTool = tool({
+  description:
+    'Search long-term project vector memory for relevant facts, architectural decisions, and previous insights.',
+  inputSchema: z.object({
+    projectId: z
+      .string()
+      .describe('The project ID whose memory to search.'),
+    query: z.string().describe('Natural language search query.'),
+    topK: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(5)
+      .describe('Maximum number of memory items to return.'),
+  }),
+  execute: async ({ projectId, query, topK }) => {
+    const db = getDb();
+    try {
+      const ctx = getEmbeddingContext();
+      const { embedding } = await embed({
+        model: ctx.model,
+        value: query,
+        ...(ctx.providerOptions
+          ? { providerOptions: ctx.providerOptions }
+          : {}),
+      });
+
+      assertEmbeddingFits(ctx, embedding.length);
+      const vecBuffer = Buffer.from(new Float32Array(embedding).buffer);
+
+      const results = db
+        .prepare<[Buffer, number], { chunk_id: string; distance: number }>(
+          `SELECT chunk_id, distance
+           FROM embeddings
+           WHERE embedding MATCH ?
+           ORDER BY distance ASC
+           LIMIT ?`,
+        )
+        .all(vecBuffer, topK * 4);
+
+      if (results.length === 0) {
+        return { success: true, memories: [] };
+      }
+
+      const placeholders = results.map(() => '?').join(',');
+      const chunks = db
+        .prepare<
+          string[],
+          {
+            id: string;
+            file_path: string;
+            content: string;
+            project_id: string | null;
+            created_at: number;
+          }
+        >(
+          `SELECT id, file_path, content, project_id, created_at
+           FROM chunks WHERE id IN (${placeholders})`,
+        )
+        .all(...results.map((r) => r.chunk_id));
+
+      const chunkMap = new Map(chunks.map((c) => [c.id, c]));
+
+      const filtered = results
+        .filter((r) => {
+          const chunk = chunkMap.get(r.chunk_id);
+          return (
+            chunk?.project_id === projectId &&
+            chunk?.file_path.startsWith('project-memory://')
+          );
+        })
+        .slice(0, topK);
+
+      const memories = filtered.map((r) => {
+        const chunk = chunkMap.get(r.chunk_id);
+        return {
+          id: chunk?.id ?? '',
+          content: chunk?.content ?? '',
+          score: Math.round((1 - r.distance) * 1000) / 1000,
+          createdAt: chunk?.created_at ?? 0,
+        };
+      });
+
+      return { success: true, memories };
+    } catch (err) {
+      return { success: false, error: ragError(err) };
+    }
+  },
+});
+
+export const listProjectMemoriesTool = tool({
+  description: 'List recent vector memory entries stored for a specific project.',
+  inputSchema: z.object({
+    projectId: z.string().describe('The project ID to list memories for.'),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .default(20)
+      .describe('Maximum number of recent memories to return.'),
+  }),
+  execute: async ({ projectId, limit }) => {
+    const db = getDb();
+    try {
+      const rows = db
+        .prepare<
+          [string, number],
+          { id: string; file_path: string; content: string; created_at: number }
+        >(
+          `SELECT id, file_path, content, created_at
+           FROM chunks
+           WHERE project_id = ? AND file_path LIKE 'project-memory://%'
+           ORDER BY created_at DESC
+           LIMIT ?`,
+        )
+        .all(projectId, limit);
+
+      return {
+        success: true,
+        projectId,
+        memories: rows.map((r) => ({
+          id: r.id,
+          content: r.content,
+          createdAt: r.created_at,
+        })),
+      };
+    } catch (err) {
+      return { success: false, error: ragError(err) };
+    }
+  },
+});
+
+/** Retrieve recent project memories directly for system prompt context. */
+export function getRecentProjectMemories(
+  projectId: string,
+  limit = 5,
+): Array<{ content: string; createdAt: number }> {
+  try {
+    const db = getDb();
+    const rows = db
+      .prepare<
+        [string, number],
+        { content: string; created_at: number }
+      >(
+        `SELECT content, created_at
+         FROM chunks
+         WHERE project_id = ? AND file_path LIKE 'project-memory://%'
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(projectId, limit);
+    return rows.map((r) => ({ content: r.content, createdAt: r.created_at }));
+  } catch {
+    return [];
+  }
+}
+
 export const ragTools = {
   indexFile: indexFileTool,
   searchDocs: searchDocsTool,
   listIndexed: listIndexedTool,
   removeFromIndex: removeFromIndexTool,
+  storeProjectMemory: storeProjectMemoryTool,
+  searchProjectMemory: searchProjectMemoryTool,
+  listProjectMemories: listProjectMemoriesTool,
 };

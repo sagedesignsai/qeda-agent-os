@@ -84,4 +84,7 @@ export const copilotToolPolicies: ToolPolicyMap = {
   // a store shared with the chat agent.
   indexFile: t('cost'),
   indexPage: t('cost'),
+  storeProjectMemory: t('write-local'),
+  searchProjectMemory: t('read'),
+  listProjectMemories: t('read'),
 };

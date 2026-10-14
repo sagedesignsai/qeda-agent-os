@@ -849,15 +849,13 @@ export const PromptInput = ({
       const text = usingProvider
         ? controller.textInput.value
         : (() => {
+            const textarea = form.querySelector<HTMLTextAreaElement>(
+              'textarea[name="message"]',
+            );
+            if (textarea?.value) return textarea.value;
             const formData = new FormData(form);
             return (formData.get('message') as string) || '';
           })();
-
-      // Reset form immediately after capturing text to avoid race condition
-      // where user input during async blob conversion would be lost
-      if (!usingProvider) {
-        form.reset();
-      }
 
       try {
         // Convert blob URLs to data URLs asynchronously

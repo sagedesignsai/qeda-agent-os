@@ -21,6 +21,7 @@
 
 import { getProject, projectRollup } from '../db/projects';
 import { getRawSettings } from './settings';
+import { getRecentProjectMemories } from '../tools/rag';
 
 export interface ProjectAgentContext {
   projectId?: string;
@@ -98,6 +99,17 @@ export function renderProjectContext(
       lines.push(
         `Tasks: ${rollup.taskTotal} total, ${rollup.taskDone} done, ${rollup.taskActive} active` +
           (rollup.overdue > 0 ? `, ${rollup.overdue} overdue` : ''),
+      );
+    }
+
+    const memories = getRecentProjectMemories(projectId, 5);
+    if (memories.length > 0) {
+      lines.push('\n### Recent Project Memory Context');
+      memories.forEach((mem) => {
+        lines.push(`• ${mem.content}`);
+      });
+      lines.push(
+        'Use searchProjectMemory or storeProjectMemory tools to search or persist facts, decisions, and instructions.',
       );
     }
 

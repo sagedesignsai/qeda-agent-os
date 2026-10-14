@@ -51,9 +51,12 @@ const contextTools = {
   listPages: workspaceTools.listPages,
   getPage: workspaceTools.getPage,
   relatedPages: workspaceTools.relatedPages,
-  // Semantic search over indexed documents
+  // Semantic search over indexed documents & project vector memories
   searchDocs: ragTools.searchDocs,
   listIndexed: ragTools.listIndexed,
+  storeProjectMemory: ragTools.storeProjectMemory,
+  searchProjectMemory: ragTools.searchProjectMemory,
+  listProjectMemories: ragTools.listProjectMemories,
   // ── Indexing (approval-gated: `cost` capability) ─────────────────────────
   // The copilot could always SEARCH the index but never add to it, so grounding
   // a new task in a file the user just mentioned needed a manual round-trip

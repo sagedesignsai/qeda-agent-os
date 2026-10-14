@@ -117,8 +117,8 @@ export function TodayEmptyHero({
         ? XP_REWARDS.TASK_MED
         : XP_REWARDS.TASK_LOW;
 
-  const handlePromptSubmit = () => {
-    const text = promptText.trim();
+  const handlePromptSubmit = (message?: { text?: string }) => {
+    const text = (message?.text ?? promptText).trim();
     if (!text) return;
     onSendPrompt?.(text);
     setPromptText('');
