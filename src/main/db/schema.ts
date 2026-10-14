@@ -71,9 +71,11 @@ CREATE TABLE IF NOT EXISTS chunks (
   file_path   TEXT NOT NULL,
   chunk_index INTEGER NOT NULL,
   content     TEXT NOT NULL,
+  project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
   created_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path);
+CREATE INDEX IF NOT EXISTS idx_chunks_project ON chunks(project_id);
 `;
 
 // ─── Knowledge workspace ──────────────────────────────────────────────────────
@@ -688,6 +690,13 @@ export function applyMigrations(db: {
       if (!studioCols.includes('project_id')) {
         db.exec(
           'ALTER TABLE studio_takes ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
+      }
+
+      const chunkCols = columnsOf('chunks');
+      if (!chunkCols.includes('project_id')) {
+        db.exec(
+          'ALTER TABLE chunks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
         );
       }
     } catch {

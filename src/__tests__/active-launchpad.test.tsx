@@ -6,7 +6,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ActiveLaunchpad } from '@/components/tasks/ActiveLaunchpad';
 import { TodayEmptyHero } from '@/components/tasks/TodayEmptyHero';
 import type { Task } from '@/main/ipc/channels';
@@ -136,7 +136,7 @@ describe('TodayEmptyHero', () => {
     expect(onAutoPlan).toHaveBeenCalled();
   });
 
-  it('submits conversational prompt and executes suggestion chips', () => {
+  it('submits conversational prompt and executes suggestion chips', async () => {
     const onSendPrompt = jest.fn();
     const onOpenBrainDump = jest.fn();
 
@@ -159,11 +159,15 @@ describe('TodayEmptyHero', () => {
 
     // Type in composer and submit
     const textarea = screen.getByPlaceholderText(/Ask Copilot: plan my day/i);
-    fireEvent.change(textarea, {
-      target: { value: 'Schedule 2 hours for deep work' },
+    act(() => {
+      fireEvent.change(textarea, {
+        target: { value: 'Schedule 2 hours for deep work' },
+      });
     });
-    const submitBtn = screen.getByRole('button', { name: /send/i });
-    fireEvent.click(submitBtn);
+    const form = textarea.closest('form')!;
+    await act(async () => {
+      fireEvent.submit(form);
+    });
     expect(onSendPrompt).toHaveBeenCalledWith('Schedule 2 hours for deep work');
 
     // Click suggestion chip for planning

@@ -48,6 +48,7 @@ export function removePageFromRagIndex(pageId: string): number {
 /** Chunk + embed a page's markdown into the RAG index. */
 export async function indexPageIntoRag(
   page: Page,
+  projectId?: string | null,
 ): Promise<{ chunksIndexed: number }> {
   const db = getDb();
   const markdown = loadPageMarkdown(page.id);
@@ -81,7 +82,7 @@ export async function indexPageIntoRag(
 
   const indexPath = pageIndexPath(page.id);
   const insertChunk = db.prepare(
-    'INSERT INTO chunks (id, file_path, chunk_index, content) VALUES (?, ?, ?, ?)',
+    'INSERT INTO chunks (id, file_path, chunk_index, content, project_id) VALUES (?, ?, ?, ?, ?)',
   );
   const insertVec = db.prepare(
     'INSERT INTO embeddings (chunk_id, embedding) VALUES (?, ?)',
@@ -90,7 +91,7 @@ export async function indexPageIntoRag(
   const insertAll = db.transaction(() => {
     chunks.forEach((content, i) => {
       const id = randomUUID();
-      insertChunk.run(id, indexPath, i, `${page.title}\n\n${content}`);
+      insertChunk.run(id, indexPath, i, `${page.title}\n\n${content}`, projectId ?? null);
       const vecBuffer = Buffer.from(new Float32Array(embeddings[i]).buffer);
       insertVec.run(id, vecBuffer);
     });
@@ -164,13 +165,17 @@ export const indexPageTool = tool({
     'Index a workspace page into the semantic (vector) index so it can be found by searchDocs. Run it after significant page edits.',
   inputSchema: z.object({
     pageId: z.string().describe('The page to index.'),
+    projectId: z
+      .string()
+      .optional()
+      .describe('Optional project ID to associate with the indexed page.'),
   }),
-  execute: async ({ pageId }) => {
+  execute: async ({ pageId, projectId }) => {
     try {
       const page = getPage(pageId);
       if (!page) return { success: false, error: `No page with id ${pageId}` };
-      const { chunksIndexed } = await indexPageIntoRag(page);
-      return { success: true, pageId, chunksIndexed };
+      const { chunksIndexed } = await indexPageIntoRag(page, projectId);
+      return { success: true, pageId, projectId: projectId ?? null, chunksIndexed };
     } catch (err) {
       return { success: false, error: String(err) };
     }
