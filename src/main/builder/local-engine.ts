@@ -134,6 +134,11 @@ export class LocalBuilderSession {
       | { type: 'tool-completed'; callId: string; output: string }
       | { type: 'tool-failed'; callId: string; error: string }
       | { type: 'permission'; request: any }
+      | {
+          type: 'interaction-resolved';
+          interactionId: string;
+          interactionType: 'form' | 'permission';
+        }
       | { type: 'status'; status: 'running' | 'idle' | 'interrupted' | 'failed' }
       | { type: 'file-changed'; path: string }
       | { type: 'error'; message: string },
@@ -318,7 +323,7 @@ export class LocalBuilderSession {
     pending.resolve(decision);
 
     this.emit({
-      type: 'interaction-resolved' as any,
+      type: 'interaction-resolved',
       interactionId: requestId,
       interactionType: 'permission',
     });
