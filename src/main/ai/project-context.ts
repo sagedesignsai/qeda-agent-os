@@ -16,6 +16,12 @@
  * chat agent should not invent project-management behaviour it has no tools
  * for. (The chat agent does get the repo path, which is genuinely useful for
  * terminal-style work.)
+ *
+ * `resolveActiveProjectId` is the single place that decides which project a turn
+ * belongs to. It validates both the explicit scope and the persisted default
+ * against the projects store, because every downstream consumer — the prompt
+ * block, the repo tools, the copilot's task-filing fallback — assumes the id it
+ * is handed names a project that still exists.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -40,17 +46,42 @@ export interface ProjectAgentContext {
  * which resolve `projectId → repo_path` — would have nothing to resolve and
  * would (correctly, per spec §6.1) refuse rather than guess.
  *
- * A stored id pointing at a deleted project resolves to null here rather than
- * throwing: `renderProjectContext` already returns '' for an unknown id, so a
- * stale default degrades to "unscoped" instead of breaking the turn.
+ * Both the scoped id and the persisted default are VALIDATED against the
+ * projects store, so a deleted project resolves to null rather than being handed
+ * to consumers that treat it as real. That matters beyond the prompt block:
+ * `renderProjectContext` already degraded an unknown id to '', but repo-path
+ * tools and the copilot's task-filing fallback did not, so a stale id leaked a
+ * bogus project into them.
+ *
+ * An empty string counts as *not scoped* (`?project=` with no value) and falls
+ * through to the default.
+ *
+ * Every read is best-effort and never throws. A store read that FAILS is not the
+ * same as a read that says "no such project": failure means we cannot disprove
+ * the id, so the id is passed through unchanged and the turn behaves exactly as
+ * it did before validation existed. Only a successful read that finds no row
+ * yields null.
  */
 export function resolveActiveProjectId(scoped?: string | null): string | null {
-  if (scoped) return scoped;
+  if (scoped) return projectExistsOrKeep(scoped);
   try {
-    return getRawSettings().activeProjectId || null;
+    return projectExistsOrKeep(getRawSettings().activeProjectId || null);
   } catch {
     // Settings unreadable (first run, corrupt file) must not fail a turn.
     return null;
+  }
+}
+
+/**
+ * `id` when the projects store can still resolve it, `null` when the store says
+ * it does not exist, and `id` unchanged when the store itself is unreadable.
+ */
+function projectExistsOrKeep(id: string | null): string | null {
+  if (!id) return null;
+  try {
+    return getProject(id) ? id : null;
+  } catch {
+    return id;
   }
 }
 

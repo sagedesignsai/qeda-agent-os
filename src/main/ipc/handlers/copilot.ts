@@ -165,7 +165,11 @@ export function registerCopilotHandlers({
           let emitted = false;
 
           try {
-            const agent = createTaskCopilotAgent({ activeProject, target });
+            const agent = createTaskCopilotAgent({
+              activeProject,
+              projectId,
+              target,
+            });
             const result = await agent.stream({ messages: modelMessages });
 
             let streamError: unknown;

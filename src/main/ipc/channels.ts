@@ -51,6 +51,12 @@ import type {
   MouseTrackerEvent,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
+import type {
+  BuilderEngine,
+  McpServerSettings,
+  McpServerStatus,
+  McpTestResult,
+} from '../../lib/builder-engine.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -58,6 +64,12 @@ export type { Notebook, Page, PageVersion, SearchHit };
 export type { Block };
 export type { ResearchRun, ResearchSourceWithEvidence };
 export type { ServiceStatus };
+export type {
+  BuilderEngine,
+  McpServerSettings,
+  McpServerStatus,
+  McpTestResult,
+};
 export type { TerminalSession, TerminalBlock };
 export type { Task };
 export type { TaskStep, StepProgress };

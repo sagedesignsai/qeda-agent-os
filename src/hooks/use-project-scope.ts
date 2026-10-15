@@ -69,6 +69,13 @@ export function useProjectScope(): ProjectScope {
   /** The restored default from settings.json; '' means none is set. */
   const [defaultProjectId, setDefaultProjectId] = useState('');
 
+  // Declared above `load` because the self-heal below calls it.
+  const clear = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('project');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const load = useCallback(async () => {
     if (!projectId) {
       setProject(null);
@@ -79,12 +86,26 @@ export function useProjectScope(): ProjectScope {
         'projects:get',
         { id: projectId },
       );
+      // A DEFINITIVE null means the row is gone — deleting a project clears the
+      // persisted `settings.activeProjectId` in main (ipc/handlers/projects.ts)
+      // but nothing strips `?project=` from the URL, leaving a dead scope that
+      // renders as "no project" while the URL still names it. Self-heal by
+      // reusing `clear` rather than duplicating the delete-and-replace.
+      //
+      // Only on a resolved null. A REJECTED invoke below is a transient IPC
+      // failure and must never destroy the user's scope, so the catch branch is
+      // left alone.
+      if (found == null) clear();
       setProject(found ?? null);
     } catch {
       setProject(null);
     }
-  }, [projectId]);
+  }, [projectId, clear]);
 
+  // Terminates: `clear()` drops `?project=`, so the `searchParams` change makes
+  // `projectId` null, which rebuilds `load` and re-runs this effect. That second
+  // pass takes the `!projectId` early return above and never calls `clear` again
+  // — so the self-heal fires at most once per dead id, with no ping-pong.
   useEffect(() => {
     void load();
   }, [load]);
@@ -158,12 +179,6 @@ export function useProjectScope(): ProjectScope {
   }, [projectId, defaultProjectId]);
 
   const activeProject = projectId ? project : defaultProject;
-
-  const clear = useCallback(() => {
-    const next = new URLSearchParams(searchParams);
-    next.delete('project');
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
 
   const withScope = useCallback(
     (path: string) => {

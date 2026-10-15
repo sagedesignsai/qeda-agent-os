@@ -351,7 +351,7 @@ export default function Projects() {
                 label="Documents"
               />
               <Shortcut
-                to={`/studio?projectId=${project.id}`}
+                to={`/studio?project=${project.id}`}
                 icon={VideoIcon}
                 label="Studio"
               />

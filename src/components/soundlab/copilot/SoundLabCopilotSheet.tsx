@@ -130,6 +130,7 @@ export function SoundLabCopilotSheet({
     clearMessages,
   } = useSoundLabCopilot({
     sessionId: activeSession.id,
+    projectId: activeSession.projectId ?? undefined,
     currentBeat,
   });
 

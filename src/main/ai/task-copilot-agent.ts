@@ -26,7 +26,7 @@
 import { ToolLoopAgent, isStepCount } from 'ai';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
-import { taskTools } from '../tools/tasks.js';
+import { taskTools, createTaskCreationTools } from '../tools/tasks.js';
 import { webTools } from '../tools/web.js';
 import { filesystemTools } from '../tools/filesystem.js';
 import { workspaceTools } from '../tools/workspace.js';
@@ -179,6 +179,7 @@ export function isRiskyCopilotTool(toolName: string): boolean {
  */
 export function createTaskCopilotAgent(opts?: {
   activeProject?: string;
+  projectId?: string | null;
   target?: ModelTarget;
 }) {
   const settings = getSettings();
@@ -189,7 +190,10 @@ export function createTaskCopilotAgent(opts?: {
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildInstructions(opts?.activeProject),
-    tools: copilotTools,
+    tools: {
+      ...copilotTools,
+      ...createTaskCreationTools(opts?.projectId),
+    },
     // Handles the dynamic-call guard internally; a dynamic call is not covered
     // by a name-keyed table, so it always requires approval.
     toolApproval: copilotApproval,

@@ -28,6 +28,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { ChevronDownIcon, ChevronUpIcon, DrumIcon, PianoIcon } from 'lucide-react';
 import { useSoundLab } from '@/hooks/use-soundlab';
+import { useProjectScope } from '@/hooks/use-project-scope';
 import { soundLabStore, useSoundLabState, useSelectedPattern } from '@/hooks/use-soundlab-store';
 import { SoundLabTransportBar } from '@/components/soundlab/SoundLabTransportBar';
 import { InstrumentRack } from '@/components/soundlab/InstrumentRack';
@@ -45,8 +46,9 @@ type DrawerTab = 'pianoroll' | 'stepseq';
 
 export default function SoundLab() {
   const { sessionId } = useParams<{ sessionId?: string }>();
+  const { projectId } = useProjectScope();
   const { saveStatus, sessions, createSession, deleteSession, play, pause, stop, reloadSession } =
-    useSoundLab(sessionId);
+    useSoundLab(sessionId, projectId);
 
   const state = useSoundLabState();
   const selectedPattern = useSelectedPattern();

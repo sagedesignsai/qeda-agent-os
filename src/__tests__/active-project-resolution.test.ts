@@ -21,9 +21,16 @@
 jest.mock('../main/ai/settings', () => ({
   getRawSettings: jest.fn(() => ({ activeProjectId: 'proj-default' })),
 }));
+jest.mock('../main/db/projects', () => ({
+  getProject: jest.fn((id: string) => ({ id })),
+  projectRollup: jest.fn(),
+}));
 
 const settingsMock = require('../main/ai/settings') as {
   getRawSettings: jest.Mock;
+};
+const projectsMock = require('../main/db/projects') as {
+  getProject: jest.Mock;
 };
 
 const { resolveActiveProjectId } = require('../main/ai/project-context') as {
@@ -35,7 +42,10 @@ function setDefault(id: string | null | undefined): void {
 }
 
 describe('resolveActiveProjectId', () => {
-  beforeEach(() => setDefault('proj-default'));
+  beforeEach(() => {
+    setDefault('proj-default');
+    projectsMock.getProject.mockImplementation((id: string) => ({ id }));
+  });
 
   it('prefers an explicit scope over the persisted default', () => {
     // This is the whole point of keeping them separate: looking at a different
@@ -62,6 +72,15 @@ describe('resolveActiveProjectId', () => {
     // `?project=` with no value should fall through to the default, not
     // resolve to a project whose id is "".
     expect(resolveActiveProjectId('')).toBe('proj-default');
+  });
+
+  it('rejects a scoped or default id whose project row no longer exists', () => {
+    projectsMock.getProject.mockImplementation((id: string) =>
+      id === 'deleted' ? null : { id },
+    );
+    expect(resolveActiveProjectId('deleted')).toBeNull();
+    setDefault('deleted');
+    expect(resolveActiveProjectId()).toBeNull();
   });
 
   it('does not throw when settings are unreadable', () => {

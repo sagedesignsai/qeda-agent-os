@@ -73,7 +73,7 @@ export function ProjectOverviewPanel({
       icon: VideoIcon,
       label: 'Studio takes',
       value: linked.studioTakes,
-      to: `/studio?projectId=${project.id}`,
+      to: `/studio?project=${project.id}`,
     },
     {
       icon: TerminalIcon,

@@ -69,6 +69,7 @@
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.92",
+    "@ai-sdk/mcp": "^2.0.73",
     "@ai-sdk/openai-compatible": "^3.0.55",
     "@ai-sdk/react": "^4.0.117",
     "@base-ui/react": "^1.8.0",

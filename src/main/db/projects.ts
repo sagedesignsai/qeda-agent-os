@@ -417,9 +417,8 @@ export function reorderProjects(orderedIds: string[]): void {
 }
 
 /**
- * Delete a project. Its tasks are re-homed to the Inbox rather than deleted —
- * losing work because a container was removed would be unforgivable. Blocks,
- * chats, and terminal sessions simply lose the association.
+ * Delete a project. User-authored work is re-homed to the Inbox rather than
+ * deleted; ephemeral associations (blocks, chats, terminal sessions) detach.
  *
  * The Inbox itself cannot be deleted.
  */
@@ -441,6 +440,16 @@ export function deleteProject(id: string): boolean {
     db.prepare(
       `UPDATE terminal_sessions SET project_id = NULL WHERE project_id = ?`,
     ).run(id);
+    db.prepare(`UPDATE documents SET project_id = ? WHERE project_id = ?`).run(
+      INBOX_PROJECT_ID,
+      id,
+    );
+    db.prepare(
+      `UPDATE studio_takes SET project_id = ? WHERE project_id = ?`,
+    ).run(INBOX_PROJECT_ID, id);
+    db.prepare(
+      `UPDATE soundlab_sessions SET project_id = ? WHERE project_id = ?`,
+    ).run(INBOX_PROJECT_ID, id);
     db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
   });
   tx();
@@ -479,5 +488,3 @@ export function pickDefaultActiveProject(): Project | null {
   });
   return working[0];
 }
-
-export type { Project } from './schema.js';

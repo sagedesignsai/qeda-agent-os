@@ -45,6 +45,7 @@ import {
   getProject,
   createProject,
 } from '../db/projects.js';
+import { resolveActiveProjectId } from '../ai/project-context.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -111,18 +112,35 @@ const draftTaskSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Project id from listProjects. Omit to file in the Inbox (unsorted capture).',
+      'Project id from listProjects. Omit to file in the currently active project (the surface scope, else the persisted default); falls back to the Inbox only when there is no active project.',
     ),
 });
 
-function createFromDraft(draft: z.infer<typeof draftTaskSchema>): Task {
+/**
+ * Create one task from a model-supplied draft.
+ *
+ * When the model omits `projectId` we fall back to the *resolved* active project
+ * rather than a bare `null`, because `createTask` coerces a null `project_id`
+ * into `'inbox'` (db/tasks.ts) and the task then disappears from every
+ * project-filtered view — even though the prompt named a project. `null` is kept
+ * only as the last resort, for the genuinely unscoped case where there is no
+ * active project at all.
+ */
+function createFromDraft(
+  draft: z.infer<typeof draftTaskSchema>,
+  fallbackProjectId?: string | null,
+): Task {
   return createTask({
     title: draft.title.trim(),
     description: draft.description ?? '',
     priority: (draft.priority ?? 2) as TaskPriority,
     estimate_mins: draft.estimate_mins ?? null,
     due_at: toEpochSeconds(draft.due),
-    project_id: draft.projectId ?? null,
+    project_id:
+      draft.projectId ??
+      (fallbackProjectId === undefined
+        ? resolveActiveProjectId()
+        : fallbackProjectId),
     status: 'backlog',
   });
 }
@@ -266,20 +284,28 @@ export const listBlocksTool = tool({
 
 // ─── Additive write tools (no approval) ───────────────────────────────────────
 
-export const createTaskTool = tool({
+function makeCreateTaskTool(fallbackProjectId?: string | null) {
+  return tool({
   description:
     'Create a single task. Prefer createTasks when capturing several at once. Use this for one well-defined, realistic task.',
   inputSchema: draftTaskSchema,
   execute: async (draft) => {
     try {
-      return { success: true, task: serializeTask(createFromDraft(draft)) };
+      return {
+        success: true,
+        task: serializeTask(createFromDraft(draft, fallbackProjectId)),
+      };
     } catch (err) {
       return { success: false, error: String(err) };
     }
   },
-});
+  });
+}
 
-export const createTasksTool = tool({
+export const createTaskTool = makeCreateTaskTool();
+
+function makeCreateTasksTool(fallbackProjectId?: string | null) {
+  return tool({
   description:
     'Create several tasks in one call — the right tool for a brain dump. Keep titles imperative, merge duplicates, and only capture things the user can actually do.',
   inputSchema: z.object({
@@ -288,14 +314,25 @@ export const createTasksTool = tool({
   execute: async ({ tasks }) => {
     try {
       const created = tasks.map((draft) =>
-        serializeTask(createFromDraft(draft)),
+        serializeTask(createFromDraft(draft, fallbackProjectId)),
       );
       return { success: true, count: created.length, tasks: created };
     } catch (err) {
       return { success: false, error: String(err) };
     }
   },
-});
+  });
+}
+
+export const createTasksTool = makeCreateTasksTool();
+
+/** Create copilot task-writing tools pinned to the current turn's project. */
+export function createTaskCreationTools(projectId?: string | null) {
+  return {
+    createTask: makeCreateTaskTool(projectId),
+    createTasks: makeCreateTasksTool(projectId),
+  };
+}
 
 export const addStepsTool = tool({
   description:

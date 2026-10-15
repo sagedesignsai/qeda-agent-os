@@ -30,13 +30,13 @@ export default function Documents() {
   const navigate = useNavigate();
   const { documentId } = useParams<{ documentId?: string }>();
   const {
+    projectId,
     activeProjectId,
     activeProjectName,
     clear: clearProjectScope,
   } = useProjectScope();
 
-  const { documents, createFromTemplate, loading } =
-    useDocuments(activeProjectId);
+  const { documents, createFromTemplate, loading } = useDocuments(projectId);
 
   const {
     doc,
@@ -84,7 +84,7 @@ export default function Documents() {
     if (creatingFromTemplate !== null) return;
     setCreatingFromTemplate(templateId);
     try {
-      const id = await createFromTemplate(templateId, activeProjectId);
+      const id = await createFromTemplate(templateId, projectId);
       if (id) {
         navigate(`/documents/${id}`);
       }
@@ -184,7 +184,7 @@ export default function Documents() {
       <DocumentDrafterSheet
         open={draftPrompt !== null}
         onOpenChange={(open) => !open && setDraftPrompt(null)}
-        projectId={activeProjectId ?? undefined}
+        projectId={projectId ?? undefined}
         initialPrompt={draftPrompt ?? undefined}
         onDocumentCreated={(id) => {
           setDraftPrompt(null);

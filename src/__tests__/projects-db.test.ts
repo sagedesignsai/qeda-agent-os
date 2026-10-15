@@ -219,7 +219,7 @@ describe('projects data layer', () => {
     expect(projectOverview('does-not-exist')).toBeNull();
   });
 
-  it('re-homes tasks to the Inbox when a project is deleted', () => {
+  it('re-homes project work to the Inbox when a project is deleted', () => {
     const project = createProject({ name: 'Doomed' });
     const task = createTask({ title: 'Survivor', project_id: project.id });
 
@@ -231,6 +231,15 @@ describe('projects data layer', () => {
     });
     const chat = createSession('Project chat', project.id);
     const term = createTerminalSession({ project_id: project.id });
+    db.prepare(
+      `INSERT INTO documents (id, project_id, title, data_json) VALUES ('doc-survivor', ?, 'Doc', '{}')`,
+    ).run(project.id);
+    db.prepare(
+      `INSERT INTO studio_takes (id, project_id, title, video_path) VALUES ('take-survivor', ?, 'Take', '/tmp/take.mp4')`,
+    ).run(project.id);
+    db.prepare(
+      `INSERT INTO soundlab_sessions (id, project_id) VALUES ('sound-survivor', ?)`,
+    ).run(project.id);
 
     expect(deleteProject(project.id)).toBe(true);
     expect(getProject(project.id)).toBeNull();
@@ -245,6 +254,20 @@ describe('projects data layer', () => {
     expect(
       listTerminalSessions().find((s) => s.id === term.id)?.project_id,
     ).toBeNull();
+    const inboxProjects = [
+      ['documents', 'doc-survivor'],
+      ['studio_takes', 'take-survivor'],
+      ['soundlab_sessions', 'sound-survivor'],
+    ];
+    for (const [table, id] of inboxProjects) {
+      expect(
+        (
+          db
+            .prepare(`SELECT project_id FROM ${table} WHERE id = ?`)
+            .get(id) as { project_id: string }
+        ).project_id,
+      ).toBe(INBOX_PROJECT_ID);
+    }
     expect(block.id).toBeDefined();
   });
 

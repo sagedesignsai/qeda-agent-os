@@ -66,6 +66,7 @@ async function git(cwd: string, args: string[]): Promise<GitResult> {
  */
 export async function inspectBuilderWorkspace(
   directory: string,
+  options?: { autoInit?: boolean },
 ): Promise<BuilderWorkspace> {
   if (typeof directory !== 'string' || directory.trim() === '') {
     throw new Error('Choose a project folder before starting a build.');
@@ -76,7 +77,12 @@ export async function inspectBuilderWorkspace(
   try {
     stat = await fs.stat(input);
   } catch {
-    throw new Error(`That folder does not exist: ${directory}`);
+    if (options?.autoInit) {
+      await fs.mkdir(input, { recursive: true });
+      stat = await fs.stat(input);
+    } else {
+      throw new Error(`That folder does not exist: ${directory}`);
+    }
   }
   if (!stat.isDirectory()) {
     throw new Error(`That path is not a folder: ${directory}`);
@@ -85,11 +91,52 @@ export async function inspectBuilderWorkspace(
   // --show-toplevel works from any subdirectory (and from a worktree, where
   // `.git` is a file rather than a directory), so it is more reliable than
   // testing for a `.git` entry by hand.
-  const toplevel = await git(input, ['rev-parse', '--show-toplevel']);
+  let toplevel = await git(input, ['rev-parse', '--show-toplevel']);
   if (!toplevel.success) {
-    throw new Error(
-      `"${directory}" is not a git repository. Builder needs git so each run can be reviewed and discarded safely.`,
-    );
+    if (options?.autoInit) {
+      // Auto-initialize git repository for fresh Node / code projects
+      await git(input, ['init', '-b', 'main']);
+      const readmePath = path.join(input, 'README.md');
+      const gitignorePath = path.join(input, '.gitignore');
+      const name = path.basename(input);
+
+      try {
+        await fs.access(readmePath);
+      } catch {
+        await fs.writeFile(
+          readmePath,
+          `# ${name}\n\nInitialized by Qeda Builder.\n`,
+          'utf8',
+        );
+      }
+      try {
+        await fs.access(gitignorePath);
+      } catch {
+        await fs.writeFile(
+          gitignorePath,
+          `node_modules/\ndist/\nbuild/\n.env\n.env.local\n.DS_Store\ncoverage/\n`,
+          'utf8',
+        );
+      }
+
+      await git(input, ['add', '-A']);
+      await git(input, [
+        '-c',
+        'user.name=Qeda Builder',
+        '-c',
+        'user.email=builder@qeda.local',
+        'commit',
+        '-m',
+        'chore: initialize project workspace',
+      ]);
+      toplevel = await git(input, ['rev-parse', '--show-toplevel']);
+    }
+
+    if (!toplevel.success) {
+      throw new Error(
+        `"${directory}" is not a git repository. Builder needs git so each run can be reviewed and discarded safely.`,
+      );
+    }
   }
 
   let root: string;

@@ -40,7 +40,9 @@ export interface AppStoreState {
   setFocusedTaskId: (id: string | null) => Promise<void>;
   clearFocusedTask: () => void;
 
-  // ── Active project ─────────────────────────────────────────────────────────
+  // ── Persisted active project ────────────────────────────────────────────────
+  // This is the user's selected/default project. Focusing a task does not alter
+  // it; task context is available on focusedTask.project_id instead.
   activeProjectId: string | null;
   activeProject: Project | null;
   setActiveProject: (project: Project | null) => void;
@@ -55,7 +57,10 @@ export interface AppStoreState {
   // ── Active workspace note / page ───────────────────────────────────────────
   activeNotebookId: string | null;
   activePageId: string | null;
-  setActiveWorkspace: (notebookId: string | null, pageId?: string | null) => void;
+  setActiveWorkspace: (
+    notebookId: string | null,
+    pageId?: string | null,
+  ) => void;
 
   // ── Active terminal session ────────────────────────────────────────────────
   activeTerminalSessionId: string | null;
@@ -99,7 +104,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     set({
       focusedTask: task,
       focusedTaskId: task?.id ?? null,
-      ...(task?.project_id ? { activeProjectId: task.project_id } : {}),
     });
   },
   setFocusedTaskId: async (id) => {
@@ -115,7 +119,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       if (task) {
         set({
           focusedTask: task,
-          ...(task.project_id ? { activeProjectId: task.project_id } : {}),
         });
       }
     } catch {
@@ -132,9 +135,23 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       activeProject: project,
       activeProjectId: project?.id ?? null,
     });
+    void window.electron.ipc
+      .invoke('settings:set-active-project', {
+        projectId: project?.id ?? null,
+      })
+      .catch(() => {
+        // Best-effort persistence; the local selection remains usable.
+      });
   },
   setActiveProjectId: async (id) => {
     set({ activeProjectId: id });
+    try {
+      await window.electron.ipc.invoke('settings:set-active-project', {
+        projectId: id,
+      });
+    } catch {
+      // The renderer state is still usable if persistence is temporarily unavailable.
+    }
     if (!id) {
       set({ activeProject: null });
       return;

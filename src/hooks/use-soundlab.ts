@@ -46,7 +46,10 @@ export function getEngine(): SoundLabEngine {
   return engineSingleton;
 }
 
-export function useSoundLab(sessionId?: string): UseSoundLabReturn {
+export function useSoundLab(
+  sessionId?: string,
+  projectId?: string | null,
+): UseSoundLabReturn {
   const [loading, setLoading] = useState(false);
   const [sessions, setSessions] = useState<SoundLabSession[]>([]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -59,13 +62,13 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
     try {
       const list = await window.electron.ipc.invoke<SoundLabSession[]>(
         'soundlab:list',
-        {},
+        projectId ? { projectId } : {},
       );
       setSessions(list ?? []);
     } catch {
       setSessions([]);
     }
-  }, []);
+  }, [projectId]);
 
   // ── Reload/sync session from disk / copilot ──────────────────────────────
 
@@ -252,7 +255,7 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
 
       const newSession: SoundLabSessionWithTracks = {
         id,
-        projectId: null,
+        projectId: projectId ?? null,
         title,
         bpm,
         keySignature: 'C',
@@ -269,7 +272,7 @@ export function useSoundLab(sessionId?: string): UseSoundLabReturn {
       await loadList();
       return id;
     },
-    [loadList],
+    [loadList, projectId],
   );
 
   const deleteSession = useCallback(

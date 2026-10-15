@@ -12,7 +12,11 @@ import { app, safeStorage } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pickDefaultProvider } from './registry';
-import { pickDefaultActiveProject } from '../db/projects.js';
+import { getProject, pickDefaultActiveProject } from '../db/projects.js';
+import type {
+  BuilderEngine,
+  McpServerSettings,
+} from '../../lib/builder-engine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +50,15 @@ export interface AppSettings {
   /** Optional override for RAG embedding model. */
   embeddingProvider?: string;
   embeddingModel?: string;
+  /**
+   * Which agent runtime powers Builder coding turns.
+   * Defaults to 'local'.
+   */
+  builderEngine?: BuilderEngine;
+  /**
+   * Configured Model Context Protocol (MCP) servers available to the Local Builder agent.
+   */
+  mcpServers?: McpServerSettings[];
   /**
    * External-service API keys (Tavily, Firecrawl, Context7, Unsplash, speech…),
    * keyed by service id from services/registry.ts. Encrypted at rest; the
@@ -91,6 +104,8 @@ function defaultSettings(): AppSettings {
     activeProvider: provider,
     activeModel: model,
     fallbackEnabled: true,
+    builderEngine: 'local',
+    mcpServers: [],
     providers: {},
     customProviders: [],
   };
@@ -147,7 +162,7 @@ export function getSettings(): AppSettings {
   }
 
   // Decrypt named provider keys.
-  for (const [key, val] of Object.entries(decrypted.providers)) {
+  for (const val of Object.values(decrypted.providers)) {
     if (
       val &&
       typeof val === 'object' &&
@@ -176,6 +191,48 @@ export function getSettings(): AppSettings {
       } catch {
         return { ...c, apiKey: undefined };
       }
+    });
+  }
+
+  // Decrypt MCP server env and headers.
+  if (Array.isArray(decrypted.mcpServers)) {
+    decrypted.mcpServers = decrypted.mcpServers.map((server) => {
+      const serverCopy = { ...server };
+      if (serverCopy.env) {
+        const decryptedEnv: Record<string, string> = {};
+        for (const [k, v] of Object.entries(serverCopy.env)) {
+          if (v && v.startsWith('enc:')) {
+            try {
+              decryptedEnv[k] = safeStorage.decryptString(
+                Buffer.from(v.slice(4), 'base64'),
+              );
+            } catch {
+              decryptedEnv[k] = '';
+            }
+          } else {
+            decryptedEnv[k] = v;
+          }
+        }
+        serverCopy.env = decryptedEnv;
+      }
+      if (serverCopy.headers) {
+        const decryptedHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(serverCopy.headers)) {
+          if (v && v.startsWith('enc:')) {
+            try {
+              decryptedHeaders[k] = safeStorage.decryptString(
+                Buffer.from(v.slice(4), 'base64'),
+              );
+            } catch {
+              decryptedHeaders[k] = '';
+            }
+          } else {
+            decryptedHeaders[k] = v;
+          }
+        }
+        serverCopy.headers = decryptedHeaders;
+      }
+      return serverCopy;
     });
   }
 
@@ -219,6 +276,39 @@ export function saveSettings(settings: AppSettings): void {
         };
       });
     }
+
+    if (Array.isArray(toWrite.mcpServers)) {
+      toWrite.mcpServers = toWrite.mcpServers.map((server) => {
+        const serverCopy = { ...server };
+        if (serverCopy.env) {
+          const encryptedEnv: Record<string, string> = {};
+          for (const [k, v] of Object.entries(serverCopy.env)) {
+            if (v && !v.startsWith('enc:')) {
+              encryptedEnv[k] = `enc:${safeStorage
+                .encryptString(v)
+                .toString('base64')}`;
+            } else {
+              encryptedEnv[k] = v;
+            }
+          }
+          serverCopy.env = encryptedEnv;
+        }
+        if (serverCopy.headers) {
+          const encryptedHeaders: Record<string, string> = {};
+          for (const [k, v] of Object.entries(serverCopy.headers)) {
+            if (v && !v.startsWith('enc:')) {
+              encryptedHeaders[k] = `enc:${safeStorage
+                .encryptString(v)
+                .toString('base64')}`;
+            } else {
+              encryptedHeaders[k] = v;
+            }
+          }
+          serverCopy.headers = encryptedHeaders;
+        }
+        return serverCopy;
+      });
+    }
   }
 
   fs.writeFileSync(settingsPath(), JSON.stringify(toWrite, null, 2), 'utf8');
@@ -237,12 +327,65 @@ export function setActiveModel(providerId: string, modelId: string): void {
  * place and one `settings:changed` broadcast.
  *
  * A repeated write of the same id is a no-op.
+ *
+ * Returns whether a write actually happened: `false` on the no-op early return,
+ * `true` after a real `saveSettings`. The write itself is SILENT — callers are
+ * responsible for broadcasting `settings:changed` when this returns `true`, so
+ * an already-mounted `useProjectScope` does not keep a stale
+ * `defaultProjectId = ''` until reload.
  */
-export function setActiveProjectId(id: string | null): void {
+export function setActiveProjectId(id: string | null): boolean {
   const current = getRawSettings();
   const nextId: string | null = id ?? null;
-  if (current.activeProjectId === nextId) return;
+  if (current.activeProjectId === nextId) return false;
   saveSettings({ ...current, activeProjectId: nextId });
+  return true;
+}
+
+/**
+ * Whether a stored `activeProjectId` still points at a live project row.
+ *
+ * Deleting a project re-homes its tasks to the Inbox but leaves settings.json
+ * alone, so the stored id can outlive its row. Failing the check must not throw —
+ * an unreadable DB here means "cannot prove it is stale", which keeps the user's
+ * last explicit choice rather than silently retargeting them.
+ */
+function storedProjectExists(id: string): boolean {
+  try {
+    return getProject(id) !== null;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * The launch-time default resolution behind `resolveLaunchDefaultProjectId`,
+ * with the extra fact the caller needs: did resolving actually WRITE?
+ *
+ * A stored id is trusted only when its project row still exists — a dangling id
+ * would otherwise pin the app to a project it can no longer show. The stored
+ * value still wins over the deterministic picker when it is valid: the picker
+ * exists to fill a gap on a fresh install, not to overrule a real choice.
+ *
+ * The write is SILENT. The `settings:get` handler is responsible for broadcasting
+ * `settings:changed` when `changed` is true.
+ */
+export function resolveLaunchDefaultProjectIdDetailed(): {
+  id: string | null;
+  changed: boolean;
+} {
+  const s = getRawSettings();
+  if (s.activeProjectId && storedProjectExists(s.activeProjectId)) {
+    return { id: s.activeProjectId, changed: false };
+  }
+  const picked = pickDefaultActiveProject();
+  if (!picked) {
+    const changed = s.activeProjectId ? setActiveProjectId(null) : false;
+    return { id: null, changed };
+  }
+  // A dangling stored id is overwritten here; setActiveProjectId reports whether
+  // that was a real write, so the handler can decide to broadcast.
+  return { id: picked.id, changed: setActiveProjectId(picked.id) };
 }
 
 /**
@@ -254,12 +397,11 @@ export function setActiveProjectId(id: string | null): void {
  * This is what makes a fresh install with a single project, or a user who has one
  * obvious working project, start with an active project instead of forcing a
  * manual pick.
+ *
+ * Thin wrapper over {@link resolveLaunchDefaultProjectIdDetailed} for callers that
+ * only want the id. The write is silent either way; if you need to broadcast
+ * `settings:changed` afterwards, use the detailed form.
  */
 export function resolveLaunchDefaultProjectId(): string | null {
-  const s = getRawSettings();
-  if (s.activeProjectId) return s.activeProjectId;
-  const picked = pickDefaultActiveProject();
-  if (!picked) return null;
-  setActiveProjectId(picked.id);
-  return picked.id;
+  return resolveLaunchDefaultProjectIdDetailed().id;
 }

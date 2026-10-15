@@ -15,7 +15,7 @@ import {
   getRawSettings,
   getSettings,
   saveSettings,
-  resolveLaunchDefaultProjectId,
+  resolveLaunchDefaultProjectIdDetailed,
   type AppSettings,
 } from '../../ai/settings';
 import { listServiceStatuses } from '../../services/keys';
@@ -51,9 +51,11 @@ export function registerSettingsHandlers({
     // does not sit on "no project selected" when there is an obvious choice
     // (e.g. a fresh install with a single project). This is a one-time write on
     // first read after launch, so a later explicit pick still wins.
-    const activeProjectId =
-      s.activeProjectId ??
-      (resolveLaunchDefaultProjectId() ?? '');
+    const launchDefault = resolveLaunchDefaultProjectIdDetailed();
+    const activeProjectId = launchDefault.id ?? '';
+    if (launchDefault.changed && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('settings:changed');
+    }
 
     return {
       activeProvider: s.activeProvider,
