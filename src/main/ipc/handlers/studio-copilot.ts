@@ -17,12 +17,11 @@ import {
   isRetryableProviderError,
 } from '../../ai/fallback.js';
 import { prepareModelMessages } from '../../ai/messages.js';
-import {
-  renderProjectContext,
-  resolveActiveProjectId,
-} from '../../ai/project-context.js';
+import { renderProjectContext, resolveActiveProjectId } from '../../ai/project-context.js';
 import { resolveModelChain } from '../../ai/provider.js';
 import { createStudioCopilotAgent } from '../../ai/studio-copilot-agent.js';
+import { PlanManager } from '../../ai/plan-manager.js';
+import type { AgentPlanEvent } from '../../../lib/agent-plan.js';
 
 export function registerStudioCopilotHandlers({
   mainWindow,
@@ -73,11 +72,18 @@ export function registerStudioCopilotHandlers({
           );
         }
 
+        const planManager = new PlanManager();
+        planManager.setEmit((event: AgentPlanEvent) => {
+          if (mainWindow.isDestroyed()) return;
+          mainWindow.webContents.send('studio-copilot:plan-event', event);
+        });
+
         let lastError: unknown;
 
         for (let attempt = 0; attempt < chain.length; attempt += 1) {
           const target = chain[attempt];
           let emitted = false;
+          planManager.reset();
 
           try {
             const agent = createStudioCopilotAgent({
@@ -86,6 +92,7 @@ export function registerStudioCopilotHandlers({
               currentTimeMs: context.currentTimeMs,
               target,
               broadcastChanged,
+              planManager,
             });
 
             const result = await agent.stream({ messages: modelMessages });

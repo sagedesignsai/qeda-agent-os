@@ -23,6 +23,7 @@ import {
 import { resolveModelChain } from '../../ai/provider';
 import { breakdownTask, expandBrainDump, planDay } from '../../ai/task-copilot';
 import { createTaskCopilotAgent } from '../../ai/task-copilot-agent';
+import { PlanManager } from '../../ai/plan-manager';
 import { startOfDay } from '../../db/focus-sessions';
 import { createBlock, listBlocks } from '../../db/task-blocks';
 import { createSteps } from '../../db/task-steps';
@@ -165,10 +166,15 @@ export function registerCopilotHandlers({
           let emitted = false;
 
           try {
+            const planManager = new PlanManager((event) => {
+              if (mainWindow.isDestroyed()) return;
+              mainWindow.webContents.send('copilot:plan-event', event);
+            });
             const agent = createTaskCopilotAgent({
               activeProject,
               projectId,
               target,
+              planManager,
             });
             const result = await agent.stream({ messages: modelMessages });
 

@@ -81,6 +81,7 @@ import { Shimmer } from '@/components/ai-elements/shimmer';
 import { Suggestions, Suggestion } from '@/components/ai-elements/suggestion';
 import { Tool, ToolContent } from '@/components/ai-elements/tool';
 import { MessageList } from '@/components/chat/MessageList';
+import { PlanPanel } from '@/components/plan/PlanPanel';
 import { Button } from '@/components/ui/button';
 import { CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
@@ -393,6 +394,7 @@ export function DocumentDrafterSheet({
     clearMessages,
     truncationNotice,
     clearTruncationNotice,
+    plan,
   } = useDocumentDrafter({ documentId, projectId, taskId });
 
   const scope = useProjectScope();
@@ -620,6 +622,15 @@ export function DocumentDrafterSheet({
         {/* ── Conversation ─────────────────────────────────────────────────── */}
         <Conversation className="flex-1 overflow-hidden">
           <ConversationContent className="p-0">
+            {plan && (
+              <div className="sticky top-0 z-20 p-3 bg-background/80 backdrop-blur-xs border-b border-border/40">
+                <PlanPanel
+                  plan={plan}
+                  isRunning={status === 'streaming'}
+                  title="Drafter Plan"
+                />
+              </div>
+            )}
             {showFirstPaint ? (
               firstPaint
             ) : (

@@ -382,11 +382,13 @@ describe('readProjectFile', () => {
 });
 
 describe('wiring into the drafter', () => {
-  it('exposes exactly eight tools, with both project-file reads among them', () => {
+  it('exposes exactly ten tools, with both project-file reads among them', () => {
     const names = Object.keys(documentDrafterTools);
-    expect(names).toHaveLength(8);
+    expect(names).toHaveLength(10);
     expect(names).toContain('listProjectFiles');
     expect(names).toContain('readProjectFile');
+    expect(names).toContain('createPlan');
+    expect(names).toContain('updatePlanItem');
   });
 
   it('classifies every exposed tool and leaves no stale policy row', () => {

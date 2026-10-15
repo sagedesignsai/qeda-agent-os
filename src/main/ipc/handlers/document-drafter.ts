@@ -37,6 +37,7 @@ import {
   createDocumentDrafterAgent,
   DRAFTER_STEP_BUDGET,
 } from '../../ai/document-drafter-agent.js';
+import { PlanManager } from '../../ai/plan-manager.js';
 
 // ─── Truncation detection ─────────────────────────────────────────────────────
 
@@ -156,17 +157,24 @@ export function registerDocumentDrafterHandlers({
           let emitted = false;
 
           try {
+            const planManager = new PlanManager((event) => {
+              if (mainWindow.isDestroyed()) return;
+              mainWindow.webContents.send('document-drafter:plan-event', event);
+            });
+
             const agent = createDocumentDrafterAgent({
               activeProject,
               taskId: context?.taskId,
               documentId: context?.documentId,
               target,
+              planManager,
             });
 
             const result = await agent.stream({ messages: modelMessages });
 
             let streamError: unknown;
-            for await (const chunk of result.stream) {
+            const streamToIterate = (result as any).fullStream ?? result.stream;
+            for await (const chunk of streamToIterate) {
               if (mainWindow.isDestroyed()) return;
               if (chunk?.type === 'error') {
                 streamError = chunk.error;

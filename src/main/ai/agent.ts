@@ -18,7 +18,8 @@ import { ToolLoopAgent, isStepCount, type ModelMessage } from 'ai';
 import { getSettings } from './settings';
 import { resolveModel } from './provider';
 import type { ModelTarget } from './fallback';
-import { allTools, chatApprovalPolicy } from '../tools/index';
+import { allTools, chatApprovalPolicy, createPlanTools } from '../tools/index';
+import { PlanManager } from './plan-manager';
 import { renderProjectContext } from './project-context';
 import {
   getPage,
@@ -76,6 +77,16 @@ What a draft is and is not:
 - Prefer listTasks before creating new tasks — avoid duplicates.
 - Cite sources with URLs whenever you state a non-obvious fact learned from the web.
 - Be concise. Use markdown formatting.
+
+## Planning Protocol
+Before using any other tool, call \`createPlan\` with an ordered list of tasks
+describing your complete approach. Each item should be a short, verb-first
+description (e.g. "Search web for docs", "Draft summary in page").
+As you work through each task:
+  1. Call \`updatePlanItem\` with status \`in-progress\` before you begin.
+  2. Do the work.
+  3. Call \`updatePlanItem\` with \`done\` (or \`failed\`) when finished.
+If you discover the scope has changed, call \`createPlan\` again with a revised list.
 `.trim();
 
 const NOTEBOOK_SUPPLEMENT = `
@@ -83,13 +94,13 @@ const NOTEBOOK_SUPPLEMENT = `
 The user wants a complete multi-page notebook (a tutorial, guide, paper or reference), not a chat answer. Build it end to end:
 
 1. **Frame the document.** Rewrite the request as a precise title and a one-paragraph scope. State the intended reader and what they will be able to do afterwards.
-2. **Plan the structure before writing.** Choose an overview page plus one page per major section. Prefer 5–9 section pages for a tutorial; fewer, deeper pages beat many shallow ones. Keep the outline in your head (or narrate it) so the pages stay in dependency order.
+2. **Plan the structure before writing.** Call \`createPlan\` with planned section pages and tasks (e.g. "Research & write section 1: Introduction", ..., "Synthesize sources & close run"). Choose an overview page plus one page per major section. Prefer 5–9 section pages for a tutorial; fewer, deeper pages beat many shallow ones. Track each section with \`updatePlanItem\` (\`in-progress\` -> \`done\`).
 3. **Research each section.** For every factual section: search from at least two angles (webSearch, or advancedSearch when Tavily/Exa/Serper is configured), read the best candidates (fetchUrl, or scrapePage for rendered pages), then recordSource every source you actually read and recordEvidence for each load-bearing quote. Cross-check claims that matter across at least two independent sources. Whenever a section involves a specific library, API or framework, call libraryDocs first and build the code from the returned current snippets — never from memory.
 4. **Gather imagery.** Call findImages once for a cover image and, where a section benefits from a visual, once for that section. Use the regular-size URL, keep the alt text short, and add a one-line photographer credit underneath. Album: an image is worth including only when it genuinely helps a reader.
 5. **Build the notebook in one pass.** Call createNotebook, then writeNotebook with the overview page first and every section page nested under it (parentTitle = the overview title). Put parents before children in the list. Markdown image syntax \`![alt](url)\` is supported and renders as an image.
 6. **Make it navigable.** In the overview page, link to each section with [[Section Page Title]] links and add a one-line description per section. Cross-link related sections from within their bodies.
 7. **Cite inline.** Use numbered citations like [1], [2] that match the recorded sources, and finish with a "Sources" child page listing every source as \`- [title](url)\` in the same numbering. Never state a non-obvious fact without a citation.
-8. **Close the run.** completeResearchRun with a summary of the notebook and its structure, then tell the user how many pages were created and how to open them.
+8. **Close the run.** completeResearchRun with a summary of the notebook and its structure, then tell the user how many pages were created and how to open them. Mark the final plan item \`done\`.
 
 Quality bar:
 - Code-bearing topics (APIs, frameworks, engines) must include real, runnable code blocks with the correct fence language, not pseudocode. Verify current APIs with libraryDocs rather than relying on memory.
@@ -101,12 +112,17 @@ Quality bar:
 const RESEARCH_SUPPLEMENT = `
 ## Deep-research mode
 The user has asked for a structured investigation. Follow the research protocol strictly:
-- Decompose the question into sub-questions before searching.
-- Search from multiple angles (synonyms, years, phrasings) — at least two distinct webSearch queries.
-- Cross-check important claims across at least two independent sources.
+- Decompose the core research question into concrete sub-questions / hypotheses.
+- Call \`createPlan\` where each item corresponds to investigating a sub-question (e.g. "Investigate: [sub-question 1]", "Investigate: [sub-question 2]", ..., "Synthesize report and open questions").
+- For each sub-question item:
+  1. Call \`updatePlanItem\` to mark it \`in-progress\`.
+  2. Search from multiple angles (synonyms, years, phrasings) — at least two distinct webSearch queries.
+  3. Record every source you actually read via recordSource, and every load-bearing quote via recordEvidence.
+  4. Cross-check important claims across at least two independent sources.
+  5. Call \`updatePlanItem\` to mark it \`done\`.
 - Distinguish clearly between: verified facts (cited), inference (labeled as such), and open questions.
-- Record every source you actually read via recordSource, and every load-bearing quote via recordEvidence.
 - If evidence conflicts, present both positions and say which is better supported and why.
+- Once all sub-questions are answered, mark the synthesis item \`in-progress\`, synthesize findings into completeResearchRun, and mark it \`done\`.
 - End with "## Open questions" listing what could not be resolved.
 `.trim();
 
@@ -259,6 +275,7 @@ export interface CreateAgentOptions {
    * `notebook` when `notebookMode` is set so the two cannot disagree.
    */
   mode?: 'chat' | 'research' | 'notebook';
+  planManager?: PlanManager;
 }
 
 /**
@@ -288,15 +305,25 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
     .filter(Boolean)
     .join('\n\n');
 
-  return new ToolLoopAgent({
+  const planManager = options.planManager ?? new PlanManager();
+
+  const agent = new ToolLoopAgent({
     model: model as any,
     instructions,
-    tools: allTools,
+    tools: {
+      ...allTools,
+      ...createPlanTools(planManager),
+    },
     // Derived from tools/policies/chat.ts rather than a hand-maintained name map.
     // The Tools page calls the same policy, so manual execution cannot bypass it.
     toolApproval: chatApprovalPolicy,
-    stopWhen: isStepCount(stepBudgetFor(mode)),
+    stopWhen: [
+      isStepCount(stepBudgetFor(mode)),
+      planManager.stopCondition(),
+    ],
   });
+  (agent as any).planManager = planManager;
+  return agent;
 }
 
 /** Back-compat signature used by tests and older call sites. */

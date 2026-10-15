@@ -14,6 +14,8 @@ import {
   type AgentTransport,
   type UseAgentChatReturn,
 } from './use-agent-chat';
+import { useIpcPlan } from './use-agent-plan';
+import type { AgentPlan } from '@/lib/agent-plan';
 
 const STUDIO_COPILOT_TRANSPORT: AgentTransport = {
   invokeChannel: 'studio-copilot:chat',
@@ -29,12 +31,17 @@ export interface UseStudioCopilotOptions {
   currentTimeMs?: number;
 }
 
+export interface UseStudioCopilotReturn extends UseAgentChatReturn {
+  plan: AgentPlan | null;
+  clearPlan: () => void;
+}
+
 export function useStudioCopilot({
   takeId,
   projectId,
   currentTimeMs,
-}: UseStudioCopilotOptions): UseAgentChatReturn {
-  return useAgentChat({
+}: UseStudioCopilotOptions): UseStudioCopilotReturn {
+  const agent = useAgentChat({
     sessionId: `studio-copilot-${takeId}`,
     transport: STUDIO_COPILOT_TRANSPORT,
     context: {
@@ -45,4 +52,8 @@ export function useStudioCopilot({
     persist: false,
     hydrate: false,
   });
+
+  const { plan, clearPlan } = useIpcPlan('studio-copilot:plan-event', agent.messages);
+
+  return { ...agent, plan, clearPlan };
 }

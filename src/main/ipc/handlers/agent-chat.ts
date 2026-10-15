@@ -17,7 +17,7 @@ import {
 } from '../../ai/fallback';
 import { prepareModelMessages } from '../../ai/messages';
 import { resolveModelChain } from '../../ai/provider';
-import { type AgentIntent, type ChatContext } from '../channels';
+import { type AgentIntent, type ChatContext, type AgentPlanEvent } from '../channels';
 import { getAgent, detectMode } from '../agent-runtime';
 
 export function registerAgentChatHandlers({
@@ -75,6 +75,14 @@ export function registerAgentChatHandlers({
 
           try {
             const agent = getAgent(target, mode, context);
+
+            if ((agent as any).planManager) {
+              (agent as any).planManager.reset();
+              (agent as any).planManager.setEmit((event: AgentPlanEvent) => {
+                if (mainWindow.isDestroyed()) return;
+                mainWindow.webContents.send('agent:plan-event', event);
+              });
+            }
 
             const result = await (agent as any).stream({
               messages: modelMessages,

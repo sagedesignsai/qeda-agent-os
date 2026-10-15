@@ -95,4 +95,9 @@ export const documentDrafterToolPolicies: ToolPolicyMap = {
   // earlier turn) wrote there is gone unless they approved this call. Derived
   // `destructive` => `user-approval`, which the UI renders as Approve/Deny.
   replaceBlock: t('destructive'),
+
+  // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
+  createPlan: t('write-local'),
+  updatePlanItem: t('write-local'),
 };
+

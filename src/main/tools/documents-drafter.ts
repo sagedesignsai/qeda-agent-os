@@ -60,6 +60,8 @@ import { getDocument, saveDocument } from '../db/documents.js';
 import type { PdfDocumentRecord } from '../db/documents.js';
 import { projectFilesTools } from './project-files.js';
 import type { PdfBlock } from '../../lib/pdf-studio/types.js';
+import { createPlanTools } from './plan.js';
+import { PlanManager } from '../ai/plan-manager.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -610,4 +612,6 @@ export const documentDrafterTools = {
   insertBlocksAt,
   replaceBlock,
   ...projectFilesTools,
+  ...createPlanTools(new PlanManager()),
 };
+

@@ -34,6 +34,7 @@ import {
 import { toast } from 'sonner';
 
 import { PageHeader } from '@/components/PageHeader';
+import { PlanPanel } from '@/components/plan/PlanPanel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -154,7 +155,6 @@ export default function Terminal() {
     clear: clearProjectScope,
     withScope,
   } = useProjectScope();
-  const bottomRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XtermPaneHandle>(null);
 
   const [mode, setMode] = useState<TerminalMode>('agent');
@@ -169,6 +169,7 @@ export default function Terminal() {
     isExplainingId,
     fixes,
     isFixingId,
+    plan,
     runGoal,
     runCommand,
     rerun,
@@ -266,7 +267,8 @@ export default function Terminal() {
   }, [sessionId, searchParams, setSearchParams, status, runGoal]);
 
   useIpcEvent('terminal:goal-done', (...args: unknown[]) => {
-    const payload = args[0] as { sessionId: string; taskId: string } | undefined;
+    const payload = args[0] as
+      { sessionId: string; taskId: string } | undefined;
     if (payload?.sessionId === sessionId) {
       toast.success('Linked task marked done!');
     }
@@ -498,6 +500,15 @@ export default function Terminal() {
             className="flex-1 min-h-0 overflow-y-auto"
           >
             <div className="mx-auto max-w-3xl px-4 py-6">
+              {plan && (
+                <div className="sticky top-0 z-20 mb-4 bg-background/80 backdrop-blur-xs">
+                  <PlanPanel
+                    plan={plan}
+                    isRunning={status === 'running'}
+                    title="Terminal Agent Plan"
+                  />
+                </div>
+              )}
               <AnimatePresence initial={false}>
                 {!hasBlocks && !isRunning ? (
                   <motion.div

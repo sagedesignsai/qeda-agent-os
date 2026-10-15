@@ -46,6 +46,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { MessageList } from '@/components/chat/MessageList';
+import { PlanPanel } from '@/components/plan/PlanPanel';
 import { ActiveProjectNotice } from '@/components/projects/ActiveProjectNotice';
 import { useStudioCopilot } from '@/hooks/use-studio-copilot';
 import { useIpcEvent } from '@/hooks/use-ipc';
@@ -106,11 +107,18 @@ export function StudioCopilotSheet({
     sendMessage,
     respondToApproval,
     clearMessages,
+    plan,
+    clearPlan,
   } = useStudioCopilot({
     takeId: activeTake.id,
     projectId: activeTake.projectId ?? undefined,
     currentTimeMs,
   });
+
+  const handleClear = () => {
+    clearPlan();
+    clearMessages();
+  };
 
   // Automatically dispatch when opened with an initial prompt (e.g. from Inspector buttons)
   useEffect(() => {
@@ -188,7 +196,7 @@ export function StudioCopilotSheet({
                 variant="ghost"
                 size="icon"
                 className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
-                onClick={clearMessages}
+                onClick={handleClear}
                 title="New session / Clear"
                 disabled={messages.length === 0}
               >
@@ -212,6 +220,11 @@ export function StudioCopilotSheet({
         {/* ── Conversation Stream ─────────────────────────────────────────────── */}
         <Conversation className="flex-1 overflow-hidden">
           <ConversationContent className="p-0">
+            {plan && (
+              <div className="sticky top-0 z-20 px-3 pt-3 pb-1 bg-card/80 backdrop-blur-xs">
+                <PlanPanel plan={plan} />
+              </div>
+            )}
             <MessageList
               messages={messages}
               status={status}
@@ -264,7 +277,7 @@ export function StudioCopilotSheet({
                   variant="ghost"
                   size="sm"
                   className="h-7 text-[11px] text-muted-foreground cursor-pointer"
-                  onClick={clearMessages}
+                  onClick={handleClear}
                   disabled={messages.length === 0}
                 >
                   Clear

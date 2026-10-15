@@ -23,6 +23,7 @@ export interface BuilderSessionRecord {
   worktree_path: string | null;
   workspace_name: string;
   branch: string | null;
+  engine: 'local' | 'opencode';
   created_at: number;
 }
 
@@ -36,7 +37,7 @@ export function getActiveBuilderSession(): BuilderSessionRecord | null {
     const row = db
       .prepare(
         `SELECT opencode_session_id, title, repo_directory, worktree_path,
-                workspace_name, branch, created_at
+                workspace_name, branch, engine, created_at
            FROM builder_sessions
           WHERE id = 'active'
           LIMIT 1`,
@@ -59,8 +60,8 @@ export function saveActiveBuilderSession(record: BuilderSessionRecord): void {
     db.prepare(
       `INSERT INTO builder_sessions
          (id, opencode_session_id, title, repo_directory, worktree_path,
-          workspace_name, branch, created_at)
-       VALUES ('active', ?, ?, ?, ?, ?, ?, ?)
+          workspace_name, branch, engine, created_at)
+       VALUES ('active', ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          opencode_session_id = excluded.opencode_session_id,
          title               = excluded.title,
@@ -68,6 +69,7 @@ export function saveActiveBuilderSession(record: BuilderSessionRecord): void {
          worktree_path       = excluded.worktree_path,
          workspace_name      = excluded.workspace_name,
          branch              = excluded.branch,
+         engine              = excluded.engine,
          created_at          = excluded.created_at`,
     ).run(
       record.opencode_session_id,
@@ -76,6 +78,7 @@ export function saveActiveBuilderSession(record: BuilderSessionRecord): void {
       record.worktree_path ?? null,
       record.workspace_name,
       record.branch ?? null,
+      record.engine,
       record.created_at,
     );
   } catch {

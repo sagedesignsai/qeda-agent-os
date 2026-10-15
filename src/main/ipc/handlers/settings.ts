@@ -18,6 +18,7 @@ import {
   resolveLaunchDefaultProjectIdDetailed,
   type AppSettings,
 } from '../../ai/settings';
+import { mcpManager } from '../../ai/mcp/manager';
 import { listServiceStatuses } from '../../services/keys';
 import { type ProviderInfo } from '../channels';
 import { resetAgents } from '../agent-runtime';
@@ -72,6 +73,21 @@ export function registerSettingsHandlers({
       activeProjectId,
       providers: sanitizedProviders,
       serviceKeysSet,
+      // Builder engine selection — defaults to 'local' on fresh installs.
+      builderEngine: s.builderEngine ?? 'local',
+      // MCP servers: strip secret env and header values, expose only presence.
+      mcpServers: (s.mcpServers ?? []).map((srv) => ({
+        id: srv.id,
+        name: srv.name,
+        enabled: srv.enabled,
+        transport: srv.transport,
+        command: srv.command,
+        args: srv.args,
+        cwd: srv.cwd,
+        url: srv.url,
+        hasEnv: !!(srv.env && Object.values(srv.env).some(Boolean)),
+        hasHeaders: !!(srv.headers && Object.values(srv.headers).some(Boolean)),
+      })),
     };
   });
 
@@ -164,4 +180,15 @@ export function registerSettingsHandlers({
   // ── External services ─────────────────────────────────────────────────────
 
   ipcMain.handle('services:list', () => listServiceStatuses());
+
+  // ── MCP server management ─────────────────────────────────────────────────
+
+  ipcMain.handle('mcp:statuses', () => mcpManager.getServerStatuses());
+
+  ipcMain.handle('mcp:test-server', (_e, server) => mcpManager.testServer(server));
+
+  ipcMain.handle('mcp:reload', async () => {
+    const { activeCount } = await mcpManager.loadToolsForEnabledServers();
+    return { activeCount };
+  });
 }

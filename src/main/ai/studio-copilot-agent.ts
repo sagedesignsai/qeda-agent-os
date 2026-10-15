@@ -16,6 +16,8 @@ import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createStudioTools } from '../tools/studio.js';
 import { getStudioTake, type StudioTake } from '../db/studio-store.js';
+import { createPlanTools } from '../tools/plan.js';
+import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
 
 export interface StudioCopilotAgentOptions {
@@ -24,6 +26,7 @@ export interface StudioCopilotAgentOptions {
   currentTimeMs?: number;
   target?: ModelTarget;
   broadcastChanged?: () => void;
+  planManager?: PlanManager;
 }
 
 function formatTimecode(ms: number): string {
@@ -108,7 +111,17 @@ You help developers turn raw screen recordings and software demos into stunning,
 ## Tone & Output
 - Confident, creative, and action-oriented.
 - When you execute tools, summarize the exact changes made to the timeline in clean markdown (e.g. list timestamps and actions taken).
-- Avoid fluff; make the video feel professional, modern, and engaging.`;
+- Avoid fluff; make the video feel professional, modern, and engaging.
+
+## Planning Protocol
+Before using any other tool, call \`createPlan\` with an ordered list of tasks
+describing your complete approach. Each item should be a short, verb-first
+description (e.g. "Inspect telemetry", "Add kinetic zooms", "Trim dead air").
+As you work through each task:
+  1. Call \`updatePlanItem\` with status \`in-progress\` before you begin.
+  2. Do the work (telemetry inspection, zoom cuts, captioning, styling, etc.).
+  3. Call \`updatePlanItem\` with \`done\` (or \`failed\`) when finished.
+If you discover the scope has changed, call \`createPlan\` again with a revised list.`;
 }
 
 export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
@@ -118,6 +131,7 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
   const model = resolveModel(providerId, modelId);
 
   const take = getStudioTake(opts.activeTakeId);
+  const planManager = opts.planManager ?? new PlanManager();
 
   const tools = createStudioTools({
     activeTakeId: opts.activeTakeId,
@@ -131,7 +145,14 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
       opts.activeProject,
       opts.currentTimeMs,
     ),
-    tools,
-    stopWhen: isStepCount(25),
+    tools: {
+      ...tools,
+      ...createPlanTools(planManager),
+    },
+    stopWhen: [
+      isStepCount(25),
+      planManager.stopCondition(),
+    ],
   });
 }
+

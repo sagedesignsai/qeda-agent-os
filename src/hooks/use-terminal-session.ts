@@ -22,7 +22,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIpcEvent } from './use-ipc';
+import { useIpcPlan } from './use-agent-plan';
 import type { TerminalBlock } from '@/main/ipc/channels';
+import type { AgentPlan } from '@/lib/agent-plan';
 
 export type SessionStatus = 'idle' | 'running' | 'done' | 'error';
 
@@ -42,6 +44,8 @@ export interface UseTerminalSessionReturn {
   fixes: Record<string, FixSuggestion>;
   /** Block id currently being diagnosed, if any. */
   isFixingId: string | undefined;
+  plan: AgentPlan | null;
+  clearPlan: () => void;
   runGoal: (goal: string, taskId?: string) => void;
   runCommand: (command: string) => void;
   rerun: (blockId: string) => void;
@@ -62,6 +66,7 @@ export function useTerminalSession(
   const [isExplainingId, setIsExplainingId] = useState<string | undefined>();
   const [fixes, setFixes] = useState<Record<string, FixSuggestion>>({});
   const [isFixingId, setIsFixingId] = useState<string | undefined>();
+  const { plan, clearPlan } = useIpcPlan('terminal:plan-event');
 
   // Track the active sessionId to ignore stale events from prior sessions
   const activeSessionRef = useRef<string | undefined>(sessionId);
@@ -71,6 +76,7 @@ export function useTerminalSession(
 
   // ── Load persisted blocks on session change ────────────────────────────────
   useEffect(() => {
+    clearPlan();
     if (!sessionId) {
       setBlocks([]);
       setStatus('idle');
@@ -95,7 +101,7 @@ export function useTerminalSession(
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, clearPlan]);
 
   // ── Streaming event: new block proposed ───────────────────────────────────
   useIpcEvent('terminal:block-proposed', (...args: unknown[]) => {
@@ -142,6 +148,7 @@ export function useTerminalSession(
   const runGoal = useCallback(
     (goal: string, taskId?: string) => {
       if (!sessionId) return;
+      clearPlan();
       setStatus('running');
       setSummary('');
       setError(undefined);
@@ -151,7 +158,7 @@ export function useTerminalSession(
         taskId,
       });
     },
-    [sessionId],
+    [sessionId, clearPlan],
   );
 
   const runCommand = useCallback(
@@ -208,6 +215,7 @@ export function useTerminalSession(
           setBlocks((prev) =>
             prev.map((b) => (b.id === blockId ? { ...b, explanation } : b)),
           );
+          return null;
         })
         .finally(() => setIsExplainingId(undefined));
     },
@@ -220,6 +228,7 @@ export function useTerminalSession(
       .invoke<FixSuggestion>('terminal:suggest-fix', { blockId })
       .then((suggestion) => {
         setFixes((prev) => ({ ...prev, [blockId]: suggestion }));
+        return null;
       })
       .finally(() => setIsFixingId(undefined));
   }, []);
@@ -256,6 +265,8 @@ export function useTerminalSession(
     isExplainingId,
     fixes,
     isFixingId,
+    plan,
+    clearPlan,
     runGoal,
     runCommand,
     rerun,

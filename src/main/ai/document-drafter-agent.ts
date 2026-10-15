@@ -34,6 +34,8 @@ import { resolveModel } from './provider.js';
 import { documentDrafterTools } from '../tools/documents-drafter.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { documentDrafterToolPolicies } from '../tools/policies/drafter.js';
+import { createPlanTools } from '../tools/plan.js';
+import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
 
 // ─── Step budget ───────────────────────────────────────────────────────────────
@@ -149,7 +151,17 @@ Use \`getDocumentOutline\` to orient — it is cheap and gives you the block str
 - Brief, factual, no filler. No "Certainly!", no restating the request back, no summary of what you are about to do before you do it.
 - Professional register, matching the document type the user asked for. Contracts are not memos.
 - When you have made changes, state exactly which blocks you created or changed, by id and by section heading.
-- When you could not finish something, say which part and why, in one line.`;
+- When you could not finish something, say which part and why, in one line.
+
+## Planning Protocol
+Before using any other tool, call \`createPlan\` with an ordered list of tasks
+describing your complete approach. Each item should be a short, verb-first
+description (e.g. "Read existing outline", "Draft preamble", "Append terms").
+As you work through each task:
+  1. Call \`updatePlanItem\` with status \`in-progress\` before you begin.
+  2. Do the work (read files, create document, append blocks, etc.).
+  3. Call \`updatePlanItem\` with \`done\` (or \`failed\`) when finished.
+If you discover the scope has changed, call \`createPlan\` again with a revised list.`;
 }
 
 // ─── Approval policy ──────────────────────────────────────────────────────────
@@ -190,20 +202,29 @@ export function createDocumentDrafterAgent(opts?: {
   taskId?: string;
   documentId?: string;
   target?: ModelTarget;
+  planManager?: PlanManager;
 }) {
   const settings = getSettings();
   const providerId = opts?.target?.providerId ?? settings.activeProvider;
   const modelId = opts?.target?.modelId ?? settings.activeModel;
   const model = resolveModel(providerId, modelId);
+  const planManager = opts?.planManager ?? new PlanManager();
 
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildInstructions(opts),
-    tools: documentDrafterTools,
+    tools: {
+      ...documentDrafterTools,
+      ...createPlanTools(planManager),
+    },
     // Handles the dynamic-call guard internally; a dynamic call is not covered
     // by a name-keyed table, so it always requires approval. An unclassified
     // name denies with an explanatory reason rather than running unclassified.
     toolApproval: drafterApproval,
-    stopWhen: isStepCount(DRAFTER_STEP_BUDGET),
+    stopWhen: [
+      isStepCount(DRAFTER_STEP_BUDGET),
+      planManager.stopCondition(),
+    ],
   });
 }
+

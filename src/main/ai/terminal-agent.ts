@@ -48,6 +48,9 @@ import {
   setSessionEnvVar,
   parseExportCommand,
 } from './shell-env.js';
+import { PlanManager } from './plan-manager.js';
+import { createPlanTools } from '../tools/plan.js';
+import type { AgentPlanEvent } from '../../lib/agent-plan.js';
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -63,6 +66,16 @@ Your job is to achieve a user-provided goal by intelligently composing and runni
 4. **Explain each command.** In your \`thought\` field, write 1–2 sentences explaining what the command does and why you are running it. This is shown to the user in the approval UI.
 5. **Interpret output.** After each command finishes, read the output carefully. If it reveals new information, adjust your plan.
 6. **Summarize at the end.** When you have achieved the goal (or determined it is not possible), write a clear, concise summary of what happened and what you found.
+
+## Planning Protocol
+Before using any other tool, call \`createPlan\` with an ordered list of tasks
+describing your complete approach. Each item should be a short, verb-first
+description (e.g. "List project files", "Read config file", "Run tests").
+As you work through each task:
+  1. Call \`updatePlanItem\` with status \`in-progress\` before you begin.
+  2. Do the work (shell commands, file reads, etc.).
+  3. Call \`updatePlanItem\` with \`done\` (or \`failed\`) when finished.
+If you discover the scope has changed, call \`createPlan\` again with a revised list.
 
 ## Constraints
 - You do NOT have access to the internet, clipboard, or the knowledge workspace. You are a pure shell agent.
@@ -318,6 +331,8 @@ export interface TerminalAgentEmitter {
    * `tasks:changed` so the Tasks page refreshes without polling.
    */
   onTaskCompleted?(sessionId: string, taskId: string): void;
+  /** A plan event was emitted by the PlanManager during this goal run. */
+  onPlanEvent?(event: AgentPlanEvent): void;
 }
 
 // ─── Direct execution (Warp-style) ───────────────────────────────────────────
@@ -645,17 +660,23 @@ export async function runGoal({
     settings.activeModel,
   ) as LanguageModel;
 
+  const planManager = new PlanManager();
+  planManager.setEmit((event: AgentPlanEvent) => {
+    emitter.onPlanEvent?.(event);
+  });
+
   updateTerminalSession(sessionId, { status: 'running' });
 
   try {
-    const tools = buildTerminalTools(sessionId, emitter);
+    const shellTools = buildTerminalTools(sessionId, emitter);
+    const planTools = createPlanTools(planManager);
 
     const result = await generateText({
       model: model as any,
       system: TERMINAL_AGENT_INSTRUCTIONS,
       prompt: goal,
-      tools,
-      stopWhen: isStepCount(20),
+      tools: { ...shellTools, ...planTools },
+      stopWhen: [isStepCount(20), planManager.stopCondition()],
     });
 
     // Final text is the agent's summary

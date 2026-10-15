@@ -36,6 +36,8 @@ import { repoTools } from '../tools/repo.js';
 import { indexPageTool } from '../tools/workspace-rag.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { copilotToolPolicies } from '../tools/policies/copilot.js';
+import { createPlanTools } from '../tools/plan.js';
+import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
 
 // ─── Context tools (read-only, least privilege) ───────────────────────────────
@@ -77,7 +79,11 @@ const contextTools = {
   grepSearch: repoTools.grepSearch,
 };
 
-export const copilotTools = { ...taskTools, ...contextTools };
+export const copilotTools = {
+  ...taskTools,
+  ...contextTools,
+  ...createPlanTools(new PlanManager()),
+};
 
 // ─── Instructions ─────────────────────────────────────────────────────────────
 
@@ -181,22 +187,43 @@ export function createTaskCopilotAgent(opts?: {
   activeProject?: string;
   projectId?: string | null;
   target?: ModelTarget;
+  planManager?: PlanManager;
 }) {
   const settings = getSettings();
   const providerId = opts?.target?.providerId ?? settings.activeProvider;
   const modelId = opts?.target?.modelId ?? settings.activeModel;
   const model = resolveModel(providerId, modelId);
+  const planManager = opts?.planManager ?? new PlanManager();
+
+  const planningInstructions = `
+## Planning Protocol
+Before using any other tool, call \`createPlan\` with an ordered list of tasks
+describing your complete approach. Each item should be a short, verb-first
+description (e.g. "Find relevant tasks", "Break down task-123").
+As you work through each task:
+  1. Call \`updatePlanItem\` with status \`in-progress\` before you begin.
+  2. Do the work (create/edit tasks, schedule blocks, search, etc.).
+  3. Call \`updatePlanItem\` with \`done\` (or \`failed\`) when finished.
+If you discover the scope has changed, call \`createPlan\` again with a revised list.
+`.trim();
+
+  const instructions = [
+    buildInstructions(opts?.activeProject),
+    planningInstructions,
+  ].join('\n\n');
 
   return new ToolLoopAgent({
     model: model as any,
-    instructions: buildInstructions(opts?.activeProject),
+    instructions,
     tools: {
       ...copilotTools,
       ...createTaskCreationTools(opts?.projectId),
+      ...createPlanTools(planManager),
     },
     // Handles the dynamic-call guard internally; a dynamic call is not covered
     // by a name-keyed table, so it always requires approval.
     toolApproval: copilotApproval,
-    stopWhen: isStepCount(25),
+    stopWhen: [isStepCount(25), planManager.stopCondition()],
   });
 }
+

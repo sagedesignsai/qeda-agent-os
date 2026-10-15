@@ -11,6 +11,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useAgentChat } from '@/hooks/use-agent-chat';
 import { MessageList } from '@/components/chat/MessageList';
+import { PlanPanel } from '@/components/plan/PlanPanel';
+import { useIpcPlan } from '@/hooks/use-agent-plan';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { ChatWelcome } from '@/components/chat/ChatWelcome';
 import { ChatContextPicker } from '@/components/chat/ChatContextPicker';
@@ -181,13 +183,21 @@ export default function Chat() {
     dismissFallbackNotice,
     sendMessage,
     respondToApproval,
-    clearMessages,
+    clearMessages: rawClearMessages,
   } = useAgentChat({
     sessionId: sessionId ?? '',
     initialMessages: [],
     context: chatContext,
     intent,
   });
+
+  const { plan, clearPlan } = useIpcPlan('agent:plan-event', messages);
+
+  const clearMessages = () => {
+    clearPlan();
+    rawClearMessages();
+  };
+
 
   // Auto-scroll to bottom on new messages.
   useEffect(() => {
@@ -354,7 +364,16 @@ export default function Chat() {
             isStreaming={status === 'streaming'}
           />
         ) : (
-          <div className="mx-auto max-w-4xl">
+          <div className="mx-auto max-w-4xl space-y-3 p-4">
+            {plan && (
+              <div className="sticky top-0 z-20 pb-1 bg-background/80 backdrop-blur-xs">
+                <PlanPanel
+                  plan={plan}
+                  isRunning={status === 'streaming'}
+                  title="Execution Plan"
+                />
+              </div>
+            )}
             <MessageList
               messages={messages}
               status={status}

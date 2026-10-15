@@ -3,24 +3,38 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Main-process bridge for the Builder coding turn.
  *
- * OWNERSHIP & SAFETY
- * ──────────────────
- * The user owns the OpenCode service; Qeda only attaches to it. A session is
- * never created against OpenCode's ambient working directory — the renderer
- * must supply a folder that resolves to a git repository, and that directory is
- * passed to `session.create({ location })` so every turn runs inside it.
+ * ENGINE DISPATCH
+ * ───────────────
+ * `settings.builderEngine` selects the runtime for `builder:session-create`:
  *
- * PERMISSIONS ARE SUPERVISED
- * ──────────────────────────
- * OpenCode's permission requests are forwarded to the renderer as explicit
- * Allow once / Always allow / Deny cards; nothing is auto-approved here. This is
- * why the prompt path only submits text — it never widens the permission set.
+ *   'local'     → Native Qeda ToolLoopAgent (LocalBuilderSession) with
+ *                 workspace-scoped coding tools + dynamic MCP servers.
+ *                 Always available; no external process required.
+ *
+ *   'opencode'  → External OpenCode v2 attach-only client. The user must have
+ *                 OpenCode installed and running. This was the only path before
+ *                 the Local engine landed.
+ *
+ * SHARED INFRASTRUCTURE
+ * ─────────────────────
+ * The following surface is engine-agnostic and works identically for both:
+ *   • Builder preview (dev-server probing + live URL push)
+ *   • Workspace files / changes / keep / discard
+ *   • Session event buffer + `builder:session-event` broadcasts
+ *
+ * PERMISSIONS (both engines)
+ * ─────────────────────────
+ * Permission requests are forwarded to the renderer as explicit
+ * Allow once / Always allow / Deny cards. Nothing is auto-approved here.
  *
  * SESSION CONTINUITY
  * ──────────────────
  * Session identity, the bound workspace, and the normalized event feed are
- * buffered here for the active session, so the renderer can re-attach after a
- * route change or reload without replaying the turn (`builder:session-state`).
+ * buffered so the renderer can re-attach after a route change or reload
+ * without replaying the turn (`builder:session-state`).
+ *
+ * A persisted `engine` column on `builder_sessions` ensures the restore path
+ * uses the same engine that created the session, not today's default.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -41,10 +55,15 @@ import {
 import { normalizeBuilderSessionEvent } from '../../builder/session-events';
 import { BuilderPreview } from '../../builder/preview';
 import {
+  createLocalBuilderSession,
+  LocalBuilderSession,
+} from '../../builder/local-engine';
+import {
   getActiveBuilderSession,
   saveActiveBuilderSession,
   deleteActiveBuilderSession,
 } from '../../db/builder-sessions';
+import { getSettings } from '../../ai/settings';
 import type { BuilderPreviewStatus } from '../../../lib/builder-preview';
 import type { BuilderWorkspace } from '../../../lib/builder-workspace';
 import type {
@@ -62,17 +81,26 @@ export function registerBuilderHandlers({
 }: {
   mainWindow: BrowserWindow;
 }): void {
-  /** The runtime the active session was created with; reused for its turns. */
-  let runtime: BuilderRuntime | null = null;
+  // ── Active-session state ──────────────────────────────────────────────────
+
+  /** OpenCode runtime; null when using local engine or no session. */
+  let opencodeRuntime: BuilderRuntime | null = null;
+  /** Local engine session; null when using OpenCode engine or no session. */
+  let localSession: LocalBuilderSession | null = null;
+
   let activeSession: BuilderSessionSummary | null = null;
   let activeWorkspace: BuilderWorkspace | null = null;
   /** Absolute path of the isolated git worktree, or null when not isolated. */
   let activeWorktreePath: string | null = null;
+  /** Which engine owns the active session. */
+  let activeEngine: 'local' | 'opencode' | null = null;
+
   let eventController: AbortController | null = null;
   let eventBuffer: BuilderSessionEvent[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- written by broadcast/stopActive/prompt/abort to track optimistic state; read path is the renderer's status events
   let running = false;
   let localEventSeq = 0;
+
+  // ── Preview (engine-agnostic) ─────────────────────────────────────────────
 
   /**
    * The one preview Qeda owns for this window. Started by the renderer, owned
@@ -86,13 +114,13 @@ export function registerBuilderHandlers({
     }
   });
 
+  // ── Event broadcasting ────────────────────────────────────────────────────
+
   const broadcast = (event: BuilderSessionEvent) => {
     eventBuffer.push(event);
     if (eventBuffer.length > EVENT_BUFFER_LIMIT) {
       eventBuffer.splice(0, eventBuffer.length - EVENT_BUFFER_LIMIT);
     }
-    // The run state is derived from the authoritative status events so the
-    // server, not a local guess, decides when a turn has finished.
     if (event.type === 'status') {
       running = event.status === 'running' || event.status === 'retrying';
     }
@@ -103,7 +131,7 @@ export function registerBuilderHandlers({
 
   /**
    * A renderer-originated event (the echoed user prompt, optimistic run state).
-   * It gets a locally unique id so the buffer can still dedupe by `eventId`.
+   * Gets a locally unique id so the buffer can still dedupe by eventId.
    */
   const localEvent = (
     sessionId: string,
@@ -119,50 +147,86 @@ export function registerBuilderHandlers({
       ...rest,
     }) as BuilderSessionEvent;
 
+  // ── Session teardown ──────────────────────────────────────────────────────
+
   const stopActive = async () => {
     eventController?.abort();
     eventController = null;
-    // The preview belongs to the workspace, so it goes with the session.
     await preview.stop();
-    const previous = runtime;
+
+    const prevRuntime = opencodeRuntime;
+    const prevLocal = localSession;
     const prevWorktree = activeWorktreePath;
     const prevRepo = activeWorkspace?.directory ?? null;
-    runtime = null;
+
+    opencodeRuntime = null;
+    localSession = null;
     activeSession = null;
     activeWorkspace = null;
     activeWorktreePath = null;
+    activeEngine = null;
     eventBuffer = [];
     running = false;
-    // Remove the persisted session record so a fresh restart doesn't try to
-    // reconnect to a session the user explicitly stopped.
+
     deleteActiveBuilderSession();
-    if (previous) {
-      // dispose() never closes a caller-supplied client, so this only releases
-      // the provider wrapper, not the OpenCode connection.
-      await previous.provider.dispose().catch(() => undefined);
+
+    if (prevRuntime) {
+      await prevRuntime.provider.dispose().catch(() => undefined);
     }
-    // Remove the isolated worktree after the session is fully torn down so
-    // any in-flight git operations can complete first.
+    if (prevLocal) {
+      await prevLocal.stop().catch(() => undefined);
+    }
     if (prevWorktree && prevRepo) {
-      await removeBuilderWorktree(prevRepo, prevWorktree).catch(
-        () => undefined,
-      );
+      await removeBuilderWorktree(prevRepo, prevWorktree).catch(() => undefined);
     }
   };
 
-  const requireActiveSession = (): {
-    runtime: BuilderRuntime;
-    session: BuilderSessionSummary;
-  } => {
-    if (!runtime || !activeSession) {
+  // ── Guard helpers ─────────────────────────────────────────────────────────
+
+  const requireSession = (): BuilderSessionSummary => {
+    if (!activeSession) {
       throw new Error(
         'Create a Builder session bound to a workspace before sending a prompt.',
       );
     }
-    return { runtime, session: activeSession };
+    return activeSession;
   };
 
+  const requireOpenCodeSession = (): {
+    runtime: BuilderRuntime;
+    session: BuilderSessionSummary;
+  } => {
+    const session = requireSession();
+    if (!opencodeRuntime || activeEngine !== 'opencode') {
+      throw new Error(
+        'This operation requires an OpenCode Builder session. Switch the engine in Settings → Builder & MCP.',
+      );
+    }
+    return { runtime: opencodeRuntime, session };
+  };
+
+  const requireLocalSession = (): {
+    local: LocalBuilderSession;
+    session: BuilderSessionSummary;
+  } => {
+    const session = requireSession();
+    if (!localSession || activeEngine !== 'local') {
+      throw new Error(
+        'This operation requires a Local Builder session. Switch the engine in Settings → Builder & MCP.',
+      );
+    }
+    return { local: localSession, session };
+  };
+
+  // ── Channels ──────────────────────────────────────────────────────────────
+
   ipcMain.handle('builder:connection-status', async () => {
+    const engine = getSettings().builderEngine ?? 'local';
+    if (engine === 'local') {
+      // Local engine is always available; no external connectivity required.
+      return { state: 'connected', message: 'Local Builder engine is ready.' };
+    }
+    // OpenCode: probe the running service.
     const { status, runtime: probe } = await connectBuilderRuntime();
     if (probe) await probe.provider.dispose().catch(() => undefined);
     return status;
@@ -174,33 +238,61 @@ export function registerBuilderHandlers({
       inspectBuilderWorkspace(directory),
   );
 
+  // ── Session create (engine dispatch) ────────────────────────────────────
+
   ipcMain.handle(
     'builder:session-create',
     async (
       _event,
       { directory }: { directory: string },
     ): Promise<BuilderSessionStart> => {
-      // Validate before touching OpenCode, so a bad folder never creates a
-      // session — and never falls back to the ambient default location.
       const workspace = await inspectBuilderWorkspace(directory);
+      await stopActive();
+
+      const engine = getSettings().builderEngine ?? 'local';
+
+      // ── Local engine path ─────────────────────────────────────────────────
+      if (engine === 'local') {
+        const { session, summary, workspace: boundWorkspace } =
+          await createLocalBuilderSession({
+            workspaceDirectory: workspace.directory,
+            onEvent: broadcast,
+          });
+
+        localSession = session;
+        activeSession = summary;
+        activeWorkspace = boundWorkspace;
+        activeWorktreePath = boundWorkspace.worktreePath ?? null;
+        activeEngine = 'local';
+        eventBuffer = [];
+        running = false;
+
+        saveActiveBuilderSession({
+          opencode_session_id: summary.id, // reuses the same col as local id
+          title: summary.title,
+          repo_directory: boundWorkspace.directory,
+          worktree_path: boundWorkspace.worktreePath ?? null,
+          workspace_name: boundWorkspace.name,
+          branch: boundWorkspace.branch ?? null,
+          engine: 'local',
+          created_at: summary.createdAt,
+        });
+
+        return { session: summary, workspace: boundWorkspace };
+      }
+
+      // ── OpenCode engine path ──────────────────────────────────────────────
       const result = await connectBuilderRuntime();
       if (!result.runtime) throw new Error(result.status.message);
 
-      await stopActive();
-      runtime = result.runtime;
+      opencodeRuntime = result.runtime;
 
-      // Create an isolated git worktree so all agent turns run in a copy of
-      // the repo. The source branch is untouched until the user keeps changes.
       let worktreePath: string | null = null;
       try {
-        // Ask OpenCode to create the worktree for its own registered project.
-        // This preserves project-scoped provider/model config: a raw git
-        // worktree under the OS temp directory looks like an unrelated project
-        // to OpenCode and can lose the selected repo's configuration.
         const locationHeaders = {
           'x-opencode-directory': encodeURIComponent(workspace.directory),
         };
-        const projects = await runtime.client.project.list({
+        const projects = await opencodeRuntime.client.project.list({
           headers: locationHeaders,
         });
         const opencodeProject = projects.find(
@@ -211,34 +303,27 @@ export function registerBuilderHandlers({
             'OpenCode could not associate the selected folder with a project. Open the folder in OpenCode once, then try again.',
           );
         }
-        const worktree = await runtime.client.worktree.create(
+        const worktree = await opencodeRuntime.client.worktree.create(
           { projectID: opencodeProject.id },
           { headers: locationHeaders },
         );
         worktreePath = worktree.directory;
       } catch (error) {
-        // Worktree creation failure is non-fatal: fall back to running in the
-        // actual repo directory and surface a visible warning via the session
-        // error channel. This keeps Builder usable in environments where git
-        // worktree is unavailable (e.g. shallow clones).
         console.warn(
           '[Builder] Worktree isolation failed, running in repo directly:',
           error instanceof Error ? error.message : String(error),
         );
       }
 
-      // The session runs in the worktree when isolation succeeded, else in the
-      // validated repo root.
       const sessionDirectory = worktreePath ?? workspace.directory;
 
-      let session;
+      let ocSession;
       try {
-        session = await runtime.client.session.create({
+        ocSession = await opencodeRuntime.client.session.create({
           title: `Builder · ${workspace.name}`,
           location: { directory: sessionDirectory },
         });
       } catch (error) {
-        // Clean up the worktree if the session create failed.
         if (worktreePath) {
           await removeBuilderWorktree(workspace.directory, worktreePath).catch(
             () => undefined,
@@ -249,9 +334,9 @@ export function registerBuilderHandlers({
       }
 
       const summary: BuilderSessionSummary = {
-        id: session.id,
-        title: session.title ?? `Builder · ${workspace.name}`,
-        createdAt: session.time.created,
+        id: ocSession.id,
+        title: ocSession.title ?? `Builder · ${workspace.name}`,
+        createdAt: ocSession.time.created,
       };
 
       const boundWorkspace: BuilderWorkspace = {
@@ -262,26 +347,31 @@ export function registerBuilderHandlers({
       activeSession = summary;
       activeWorkspace = boundWorkspace;
       activeWorktreePath = worktreePath;
+      activeEngine = 'opencode';
       eventBuffer = [];
       running = false;
 
+      // Subscribe to OpenCode event stream.
       const controller = new AbortController();
       eventController = controller;
       void (async () => {
         try {
-          for await (const event of runtime!.client.event.subscribe({
+          for await (const event of opencodeRuntime!.client.event.subscribe({
             signal: controller.signal,
           })) {
             if (controller.signal.aborted || eventController !== controller) {
               return;
             }
-            const normalized = normalizeBuilderSessionEvent(event, session.id);
+            const normalized = normalizeBuilderSessionEvent(
+              event,
+              ocSession.id,
+            );
             if (normalized) broadcast(normalized);
           }
         } catch (error) {
           if (!controller.signal.aborted && eventController === controller) {
             broadcast(
-              localEvent(session.id, {
+              localEvent(ocSession.id, {
                 type: 'error',
                 message: error instanceof Error ? error.message : String(error),
               }),
@@ -290,14 +380,14 @@ export function registerBuilderHandlers({
         }
       })();
 
-      // Persist so the session survives an app restart.
       saveActiveBuilderSession({
         opencode_session_id: summary.id,
         title: summary.title,
         repo_directory: boundWorkspace.directory,
-        worktree_path: boundWorkspace.worktreePath,
+        worktree_path: boundWorkspace.worktreePath ?? null,
         workspace_name: boundWorkspace.name,
-        branch: boundWorkspace.branch,
+        branch: boundWorkspace.branch ?? null,
+        engine: 'opencode',
         created_at: summary.createdAt,
       });
 
@@ -305,10 +395,12 @@ export function registerBuilderHandlers({
     },
   );
 
+  // ── Session state restore ────────────────────────────────────────────────
+
   ipcMain.handle(
     'builder:session-state',
     async (): Promise<BuilderSessionState> => {
-      // Fast path: the session is already live in memory.
+      // Fast path: already live in memory.
       if (activeSession) {
         return {
           session: activeSession,
@@ -317,15 +409,22 @@ export function registerBuilderHandlers({
         };
       }
 
-      // Restore path: the app just (re)started. Check the DB for a persisted
-      // session and try to re-subscribe to its OpenCode event stream.
+      // Restore path: check DB for a persisted session.
       const persisted = getActiveBuilderSession();
       if (!persisted) {
         return { session: null, workspace: null, events: [] };
       }
 
-      // Try to reconnect to OpenCode. If the service isn't running or the
-      // session is gone, silently clear the record rather than crashing.
+      const engine = (persisted.engine ?? 'opencode') as 'local' | 'opencode';
+
+      // Local sessions are ephemeral: the process and worktree are gone after a
+      // restart. Surface an empty state so the user can create a new session.
+      if (engine === 'local') {
+        deleteActiveBuilderSession();
+        return { session: null, workspace: null, events: [] };
+      }
+
+      // OpenCode sessions: try to reconnect.
       try {
         const result = await connectBuilderRuntime();
         if (!result.runtime) {
@@ -333,7 +432,6 @@ export function registerBuilderHandlers({
           return { session: null, workspace: null, events: [] };
         }
 
-        // Verify the session still exists on the server.
         let ocSession: {
           id: string;
           title?: string;
@@ -344,14 +442,12 @@ export function registerBuilderHandlers({
             sessionID: persisted.opencode_session_id,
           });
         } catch {
-          // Session not found on the server — clean up and start fresh.
           deleteActiveBuilderSession();
           await result.runtime.provider.dispose().catch(() => undefined);
           return { session: null, workspace: null, events: [] };
         }
 
-        // Restore in-memory state.
-        runtime = result.runtime;
+        opencodeRuntime = result.runtime;
         const summary: BuilderSessionSummary = {
           id: ocSession.id,
           title: ocSession.title ?? persisted.title,
@@ -365,18 +461,19 @@ export function registerBuilderHandlers({
           changedFileCount: 0,
           worktreePath: persisted.worktree_path,
         };
+
         activeSession = summary;
         activeWorkspace = restoredWorkspace;
         activeWorktreePath = persisted.worktree_path;
+        activeEngine = 'opencode';
         eventBuffer = [];
         running = false;
 
-        // Re-subscribe to the event stream so live turns are forwarded.
         const controller = new AbortController();
         eventController = controller;
         void (async () => {
           try {
-            for await (const event of runtime!.client.event.subscribe({
+            for await (const event of opencodeRuntime!.client.event.subscribe({
               signal: controller.signal,
             })) {
               if (controller.signal.aborted || eventController !== controller)
@@ -402,13 +499,13 @@ export function registerBuilderHandlers({
 
         return { session: summary, workspace: restoredWorkspace, events: [] };
       } catch {
-        // Any unexpected failure: clear persisted state so the next attempt
-        // starts fresh rather than looping.
         deleteActiveBuilderSession();
         return { session: null, workspace: null, events: [] };
       }
     },
   );
+
+  // ── Model selection (OpenCode only; local uses settings model) ────────────
 
   ipcMain.handle(
     'builder:models',
@@ -416,7 +513,21 @@ export function registerBuilderHandlers({
       models: Array<{ providerID: string; id: string; name: string }>;
       selected: { providerID: string; id: string; name: string } | null;
     }> => {
-      const { runtime: rt, session } = requireActiveSession();
+      // Local engine: expose the current settings model as the only option.
+      if (activeEngine === 'local') {
+        const s = getSettings();
+        const sel = localSession?.getModel() ?? {
+          providerID: s.activeProvider,
+          id: s.activeModel,
+          name: `${s.activeProvider} / ${s.activeModel}`,
+        };
+        return {
+          models: [{ providerID: sel.providerID, id: sel.id, name: sel.name }],
+          selected: { providerID: sel.providerID, id: sel.id, name: sel.name },
+        };
+      }
+
+      const { runtime: rt, session } = requireOpenCodeSession();
       const directory = activeWorktreePath ?? activeWorkspace?.directory;
       if (!directory) throw new Error('No active Builder workspace.');
 
@@ -452,20 +563,37 @@ export function registerBuilderHandlers({
 
   ipcMain.handle(
     'builder:model-select',
-    async (_event, { providerID, modelID }: { providerID: string; modelID: string }) => {
-      const { runtime: rt, session } = requireActiveSession();
-      if (running) throw new Error('Wait for the current turn to finish before changing models.');
+    async (
+      _event,
+      { providerID, modelID }: { providerID: string; modelID: string },
+    ) => {
+      if (activeEngine === 'local') {
+        const { local } = requireLocalSession();
+        local.setModel(providerID, modelID);
+        return;
+      }
+
+      const { runtime: rt, session } = requireOpenCodeSession();
+      if (running)
+        throw new Error(
+          'Wait for the current turn to finish before changing models.',
+        );
       const directory = activeWorktreePath ?? activeWorkspace?.directory;
       if (!directory) throw new Error('No active Builder workspace.');
 
-      const available = await rt.client.model.list({ location: { directory } });
+      const available = await rt.client.model.list({
+        location: { directory },
+      });
       const model = available.data.find(
         (candidate) =>
           candidate.enabled &&
           candidate.providerID === providerID &&
           candidate.modelID === modelID,
       );
-      if (!model) throw new Error('That model is not available in this OpenCode project.');
+      if (!model)
+        throw new Error(
+          'That model is not available in this OpenCode project.',
+        );
 
       await rt.client.session.switchModel({
         sessionID: session.id,
@@ -474,13 +602,25 @@ export function registerBuilderHandlers({
     },
   );
 
+  // ── Prompt ────────────────────────────────────────────────────────────────
+
   ipcMain.handle(
     'builder:prompt',
     async (_event, { text }: { text: string }) => {
-      const { runtime: rt, session } = requireActiveSession();
+      const session = requireSession();
       const trimmed = typeof text === 'string' ? text.trim() : '';
       if (!trimmed) throw new Error('Write a prompt before sending.');
 
+      if (activeEngine === 'local') {
+        const { local } = requireLocalSession();
+        // Local engine emits its own user-prompt and status events directly via
+        // the onEvent callback wired at session creation — no echo needed here.
+        await local.prompt(trimmed);
+        return;
+      }
+
+      // OpenCode path.
+      const { runtime: rt } = requireOpenCodeSession();
       broadcast(localEvent(session.id, { type: 'user-prompt', text: trimmed }));
       running = true;
       broadcast(localEvent(session.id, { type: 'status', status: 'running' }));
@@ -498,8 +638,18 @@ export function registerBuilderHandlers({
     },
   );
 
+  // ── Abort ─────────────────────────────────────────────────────────────────
+
   ipcMain.handle('builder:abort', async () => {
-    const { runtime: rt, session } = requireActiveSession();
+    const session = requireSession();
+
+    if (activeEngine === 'local') {
+      const { local } = requireLocalSession();
+      local.abort();
+      return;
+    }
+
+    const { runtime: rt } = requireOpenCodeSession();
     try {
       await rt.client.session.interrupt({ sessionID: session.id });
     } finally {
@@ -514,6 +664,59 @@ export function registerBuilderHandlers({
     await stopActive();
   });
 
+  // ── Permission reply ──────────────────────────────────────────────────────
+
+  ipcMain.handle(
+    'builder:permission-reply',
+    async (
+      _event,
+      payload: { requestId: string; decision: 'once' | 'always' | 'reject' },
+    ) => {
+      if (activeEngine === 'local') {
+        const { local } = requireLocalSession();
+        local.replyPermission(payload.requestId, payload.decision);
+        return;
+      }
+
+      const { runtime: rt, session } = requireOpenCodeSession();
+      await rt.client.permission.reply({
+        sessionID: session.id,
+        requestID: payload.requestId,
+        decision: payload.decision,
+      });
+    },
+  );
+
+  // ── Form reply (OpenCode only) ────────────────────────────────────────────
+
+  ipcMain.handle(
+    'builder:form-reply',
+    async (
+      _event,
+      payload: {
+        formId: string;
+        answer?: Record<string, string | number | boolean | string[]>;
+        cancel?: boolean;
+      },
+    ) => {
+      const { runtime: rt, session } = requireOpenCodeSession();
+      if (payload.cancel) {
+        await rt.client.session.form.cancel({
+          sessionID: session.id,
+          formID: payload.formId,
+        });
+      } else {
+        await rt.client.session.form.reply({
+          sessionID: session.id,
+          formID: payload.formId,
+          answer: payload.answer ?? {},
+        });
+      }
+    },
+  );
+
+  // ── Preview (engine-agnostic) ─────────────────────────────────────────────
+
   ipcMain.handle('builder:preview-status', (): BuilderPreviewStatus =>
     preview.getStatus(),
   );
@@ -524,19 +727,10 @@ export function registerBuilderHandlers({
       _event,
       req?: { script?: string },
     ): Promise<BuilderPreviewStatus> => {
-      // The preview is bound to the active session's workspace, never to a
-      // renderer-supplied path. When worktree isolation is active the dev
-      // server runs inside the worktree so the live preview reflects exactly
-      // what the agent has written there, not the unchanged source tree.
       if (!activeWorkspace) {
         throw new Error('Create a Builder session before starting a preview.');
       }
-      // Prefer the isolated worktree; fall back to the repo root for sessions
-      // that could not create one (shallow clones, etc.).
       const previewDir = activeWorktreePath ?? activeWorkspace.directory;
-      // Re-validate so we surface a clear error if the directory was removed
-      // (e.g. the user manually deleted the worktree) rather than spawning into
-      // a path that no longer exists.
       await inspectBuilderWorkspace(previewDir);
       return preview.start({
         directory: previewDir,
@@ -550,13 +744,12 @@ export function registerBuilderHandlers({
   );
 
   ipcMain.handle('builder:preview-open', (_event, { url }: { url: string }) => {
-    // Same http(s) gate as the terminal's open-url: this hands a string from a
-    // project's own output to the OS, so it must not be able to name a scheme
-    // like `file:` or `javascript:`.
     if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
       void shell.openExternal(url);
     }
   });
+
+  // ── Workspace (engine-agnostic) ───────────────────────────────────────────
 
   ipcMain.handle(
     'builder:workspace-files',
@@ -599,8 +792,6 @@ export function registerBuilderHandlers({
     }
     const { worktreePath, directory } = activeWorkspace;
     if (!worktreePath) {
-      // No worktree isolation: the agent ran directly in the repo, so there
-      // is nothing to "apply" — the changes are already there.
       return { paths: [] };
     }
     const paths = await applyWorktreeChanges(directory, worktreePath);
@@ -615,50 +806,9 @@ export function registerBuilderHandlers({
     await discardWorktreeChanges(root);
   });
 
-  ipcMain.handle(
-    'builder:permission-reply',
-    async (
-      _event,
-      payload: { requestId: string; decision: 'once' | 'always' | 'reject' },
-    ) => {
-      const { runtime: rt, session } = requireActiveSession();
-      await rt.client.permission.reply({
-        sessionID: session.id,
-        requestID: payload.requestId,
-        decision: payload.decision,
-      });
-    },
-  );
-
-  ipcMain.handle(
-    'builder:form-reply',
-    async (
-      _event,
-      payload: {
-        formId: string;
-        answer?: Record<string, string | number | boolean | string[]>;
-        cancel?: boolean;
-      },
-    ) => {
-      const { runtime: rt, session } = requireActiveSession();
-      if (payload.cancel) {
-        await rt.client.session.form.cancel({
-          sessionID: session.id,
-          formID: payload.formId,
-        });
-      } else {
-        await rt.client.session.form.reply({
-          sessionID: session.id,
-          formID: payload.formId,
-          answer: payload.answer ?? {},
-        });
-      }
-    },
-  );
+  // ── Cleanup ───────────────────────────────────────────────────────────────
 
   mainWindow.once('closed', () => {
-    // Nothing can be awaited here, so the group is signalled synchronously and
-    // the session teardown follows best-effort.
     preview.dispose();
     void stopActive();
   });

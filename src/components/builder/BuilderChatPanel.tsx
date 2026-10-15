@@ -63,6 +63,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { BuilderActivityFeed } from '@/components/builder/BuilderActivityFeed';
+import { PlanPanel } from '@/components/plan/PlanPanel';
+import { useBuilderPlan } from '@/hooks/use-agent-plan';
 import type { BuilderPermissionDecision } from '@/lib/builder-interactions';
 import type {
   BuilderSessionEvent,
@@ -206,6 +208,8 @@ export function BuilderChatPanel({
     onPromptChange('');
   };
 
+  const plan = useBuilderPlan(events);
+
   return (
     <section
       className="flex h-full min-h-0 flex-col bg-background"
@@ -214,15 +218,22 @@ export function BuilderChatPanel({
       <Conversation className="flex-1">
         <ConversationContent className="min-h-full p-0">
           {session ? (
-            <BuilderActivityFeed
-              events={events}
-              error={sessionError}
-              pendingResponse={pendingResponse}
-              workspace={workspace}
-              onPermission={onPermissionDecision}
-              onDisconnect={onDisconnectSession}
-              onForm={onFormReply}
-            />
+            <div className="flex flex-col min-h-full">
+              {plan && (
+                <div className="sticky top-0 z-20 px-3 py-2 bg-background/80 backdrop-blur-sm border-b border-border/40">
+                  <PlanPanel plan={plan} isRunning={running} title="Builder Plan" />
+                </div>
+              )}
+              <BuilderActivityFeed
+                events={events}
+                error={sessionError}
+                pendingResponse={pendingResponse}
+                workspace={workspace}
+                onPermission={onPermissionDecision}
+                onDisconnect={onDisconnectSession}
+                onForm={onFormReply}
+              />
+            </div>
           ) : (
             <ConversationEmptyState className="mx-auto flex w-full max-w-xl flex-1 items-stretch justify-start px-4 pb-5 pt-6 text-left sm:px-5">
               <div className="flex min-h-full w-full flex-col gap-6">

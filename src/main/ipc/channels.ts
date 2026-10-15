@@ -56,6 +56,9 @@ import type {
   McpServerSettings,
   McpServerStatus,
   McpTestResult,
+  McpToolSummary,
+  McpTransportKind,
+  McpServerPreset,
 } from '../../lib/builder-engine.js';
 
 // Re-export the domain types so the renderer can import them from the channel
@@ -69,6 +72,9 @@ export type {
   McpServerSettings,
   McpServerStatus,
   McpTestResult,
+  McpToolSummary,
+  McpTransportKind,
+  McpServerPreset,
 };
 export type { TerminalSession, TerminalBlock };
 export type { Task };
@@ -160,6 +166,19 @@ export type {
   BuilderFileNode,
   BuilderChangeKind,
 } from '../../lib/builder-workspace.js';
+import type {
+  AgentPlan,
+  PlanItem,
+  PlanItemStatus,
+  AgentPlanEvent,
+} from '../../lib/agent-plan.js';
+export type {
+  AgentPlan,
+  PlanItem,
+  PlanItemStatus,
+  AgentPlanEvent,
+};
+
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -380,8 +399,22 @@ export interface IpcChannels {
       serviceKeysSet: Record<string, boolean>;
       /** True once first-launch onboarding has been finished or skipped. */
       onboardingCompleted: boolean;
+      /** Which agent runtime powers Builder coding turns. */
+      builderEngine: BuilderEngine;
+      /**
+       * Configured MCP server list. Secret values in env/headers are stripped
+       * (the renderer only needs names and enabled flags for display; keys are
+       * never sent over IPC).
+       */
+      mcpServers: Array<Omit<McpServerSettings, 'env' | 'headers'> & {
+        /** True when any env value is set (never the values themselves). */
+        hasEnv: boolean;
+        /** True when any header value is set (never the values themselves). */
+        hasHeaders: boolean;
+      }>;
     };
   };
+
   'settings:save': { req: Partial<AppSettings>; res: void };
   /**
    * Settings were written — re-read them.
@@ -407,6 +440,27 @@ export interface IpcChannels {
     res: void;
   };
 
+  // ── MCP server management ─────────────────────────────────────────────────
+  /**
+   * Return live connection status (connected/connecting/error/disabled) and
+   * discovered tool counts for all configured MCP servers.
+   * The Local Builder agent must be active for statuses to be live; otherwise
+   * the manager performs a lightweight on-demand probe.
+   */
+  'mcp:statuses': { req: void; res: McpServerStatus[] };
+  /**
+   * One-off probe: connects to a specific server config, retrieves tools, and
+   * immediately tears the connection down. Used by the Settings dialog's
+   * "Test connection" action. Resolves with success=false (not rejects) on
+   * connectivity errors.
+   */
+  'mcp:test-server': { req: McpServerSettings; res: McpTestResult };
+  /**
+   * Close all active MCP connections and reconnect enabled servers using the
+   * latest settings. Called after saving a changed MCP server list.
+   */
+  'mcp:reload': { req: void; res: { activeCount: number } };
+
   // Providers
   'providers:list': { req: void; res: ProviderInfo[] };
   /** Live `/models` lookup, with curated free models as the fallback. */
@@ -414,6 +468,7 @@ export interface IpcChannels {
     req: { providerId: string };
     res: { models: string[]; error?: string };
   };
+
 
   // External services (search, scrape, docs, images, speech)
   /** Status of each registered external service, including whether a key is set. */
@@ -525,6 +580,8 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
+  /** Pushed when the agent creates or updates its plan. */
+  'agent:plan-event': { data: AgentPlanEvent };
 
   // ── Agentic terminal ────────────────────────────────────────────────────────
   'terminal:sessions-list': {
@@ -591,6 +648,8 @@ export interface IpcChannels {
    * Carries the now-completed task id so the Tasks page can highlight it.
    */
   'terminal:goal-done': { sessionId: string; taskId: string };
+  /** Pushed when the terminal agent creates or updates its plan. */
+  'terminal:plan-event': { data: AgentPlanEvent };
   /** Approve a pending command block (runs the command). */
   'terminal:approve': {
     req: { sessionId: string; blockId: string };
@@ -865,6 +924,8 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
+  /** Pushed when the focus copilot creates or updates its plan. */
+  'copilot:plan-event': { data: AgentPlanEvent };
   /** The copilot may have changed tasks, blocks, or sessions — refresh. */
   'copilot:changed': void;
 
@@ -1149,6 +1210,8 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
+  /** Pushed when the studio copilot creates or updates its plan. */
+  'studio-copilot:plan-event': { data: AgentPlanEvent };
 
   // ── Document Drafter (Professional Document Drafting Agent) ───────────────
   /**
@@ -1193,6 +1256,8 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
+  /** Pushed when the document drafter creates or updates its plan. */
+  'document-drafter:plan-event': { data: AgentPlanEvent };
   // NOTE: there is deliberately no 'document-drafter:changed' channel. The
   // drafter broadcasts the existing 'documents:changed' invalidation event,
   // which `use-documents.ts` already listens to — a second event would mean two
@@ -1221,6 +1286,8 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
+  /** Pushed when the soundlab copilot creates or updates its plan. */
+  'soundlab-copilot:plan-event': { data: AgentPlanEvent };
 
   // ── Native shell integration ────────────────────────────────────────────────
   /** Navigate the app router to a path. Sent by tray, menu, notifications, deep links. */

@@ -519,6 +519,7 @@ CREATE TABLE IF NOT EXISTS builder_sessions (
   worktree_path       TEXT,
   workspace_name      TEXT NOT NULL DEFAULT '',
   branch              TEXT,
+  engine              TEXT NOT NULL DEFAULT 'opencode',
   created_at          INTEGER NOT NULL DEFAULT (unixepoch())
 );
 `;
@@ -705,6 +706,13 @@ export function applyMigrations(db: {
       if (!chunkCols.includes('project_id')) {
         db.exec(
           'ALTER TABLE chunks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
+        );
+      }
+
+      const builderSessionCols = columnsOf('builder_sessions');
+      if (!builderSessionCols.includes('engine')) {
+        db.exec(
+          "ALTER TABLE builder_sessions ADD COLUMN engine TEXT NOT NULL DEFAULT 'opencode'",
         );
       }
     } catch {

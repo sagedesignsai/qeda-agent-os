@@ -23,6 +23,8 @@ import {
   useState,
 } from 'react';
 
+import type { BuilderEngine, McpServerSettings } from '@/main/ipc/channels';
+
 /** The subset of `settings:get` the sections actually read. */
 export interface SettingsSnapshot {
   activeProvider: string;
@@ -31,6 +33,16 @@ export interface SettingsSnapshot {
   /** RAG embedding endpoint + model; empty means "fall back to the environment". */
   embeddingProvider: string;
   embeddingModel: string;
+  /** Which agent runtime powers Builder coding turns. */
+  builderEngine: BuilderEngine;
+  /**
+   * Configured MCP server list (env/headers stripped of secret values;
+   * use hasEnv/hasHeaders booleans as presence indicators).
+   */
+  mcpServers: Array<Omit<McpServerSettings, 'env' | 'headers'> & {
+    hasEnv: boolean;
+    hasHeaders: boolean;
+  }>;
 }
 
 const EMPTY: SettingsSnapshot = {
@@ -39,7 +51,10 @@ const EMPTY: SettingsSnapshot = {
   fallbackEnabled: true,
   embeddingProvider: '',
   embeddingModel: '',
+  builderEngine: 'local',
+  mcpServers: [],
 };
+
 
 interface SettingsStoreValue {
   /** Null until the first `settings:get` resolves. */

@@ -114,6 +114,11 @@ export function registerTerminalHandlers({
         mainWindow.webContents.send('tasks:changed');
       }
     },
+    onPlanEvent(event) {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('terminal:plan-event', event);
+      }
+    },
   });
 
   ipcMain.handle(

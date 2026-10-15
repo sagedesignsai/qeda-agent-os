@@ -40,13 +40,15 @@ import {
 } from '@/components/ui/dialog';
 import { SettingsStoreProvider } from './settings-store';
 import { ModelsView } from './views/ModelsView';
+import { BuilderMcpView } from './views/BuilderMcpView';
 import { EmbeddingsView } from './views/EmbeddingsView';
 import { AppearanceView } from './views/AppearanceView';
 import { cn } from '@/lib/utils';
-import { BotIcon, BoxesIcon, PaletteIcon } from 'lucide-react';
+import { BotIcon, BoxesIcon, CpuIcon, PaletteIcon } from 'lucide-react';
 
 const SECTIONS = [
   { id: 'models', label: 'AI & Models', icon: BotIcon },
+  { id: 'builder', label: 'Builder & MCP', icon: CpuIcon },
   { id: 'embeddings', label: 'Embeddings', icon: BoxesIcon },
   { id: 'appearance', label: 'Appearance', icon: PaletteIcon },
 ] as const;
@@ -118,6 +120,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     and e2e a stable handle to scope to a single section. */}
                 <div id="settings-panel-models" hidden={section !== 'models'}>
                   <ModelsView />
+                </div>
+                <div id="settings-panel-builder" hidden={section !== 'builder'}>
+                  <BuilderMcpView />
                 </div>
                 <div
                   id="settings-panel-embeddings"

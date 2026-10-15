@@ -53,9 +53,13 @@ import { serviceTools } from './services.js';
 import { resourceTools } from './resources.js';
 import { taskTools } from './tasks.js';
 import { documentDrafterTools } from './documents-drafter.js';
+import { createPlanTools } from './plan.js';
+import { PlanManager } from '../ai/plan-manager.js';
 
 import { createApprovalPolicy } from './capability.js';
 import { chatToolPolicies } from './policies/chat.js';
+
+export { createPlanTools } from './plan.js';
 
 /** Every tool available to the chat agent. The copilot picks a subset. */
 export const allTools = {
@@ -70,8 +74,10 @@ export const allTools = {
   ...resourceTools,
   ...taskTools,
   ...documentDrafterTools,
+  ...createPlanTools(new PlanManager()),
   indexPage: indexPageTool,
 };
+
 
 /**
  * The chat agent's approval gate, derived from `chatToolPolicies`.

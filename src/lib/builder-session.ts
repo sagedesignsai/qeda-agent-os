@@ -11,6 +11,7 @@ import type {
   BuilderPermissionRequest,
 } from './builder-interactions';
 import type { BuilderWorkspace } from './builder-workspace';
+import type { AgentPlan, PlanItemStatus } from './agent-plan';
 
 export interface BuilderSessionSummary {
   id: string;
@@ -107,6 +108,17 @@ export type BuilderSessionEvent =
   | (BuilderSessionEventBase & {
       type: 'error';
       message: string;
+    })
+  /** The agent committed to a plan. Replaces any prior plan (version increments). */
+  | (BuilderSessionEventBase & {
+      type: 'plan-created';
+      plan: AgentPlan;
+    })
+  /** The agent updated the status of a single plan item. */
+  | (BuilderSessionEventBase & {
+      type: 'plan-item-updated';
+      itemId: string;
+      status: PlanItemStatus;
     });
 
 export interface BuilderFormReply {

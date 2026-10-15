@@ -29,6 +29,8 @@ import {
 } from '../../ai/project-context.js';
 import { resolveModelChain } from '../../ai/provider.js';
 import { createSoundLabCopilotAgent } from '../../ai/soundlab-copilot-agent.js';
+import { PlanManager } from '../../ai/plan-manager.js';
+import type { AgentPlanEvent } from '../../../lib/agent-plan.js';
 
 export function registerSoundLabCopilotHandlers({
   mainWindow,
@@ -79,11 +81,18 @@ export function registerSoundLabCopilotHandlers({
           );
         }
 
+        const planManager = new PlanManager();
+        planManager.setEmit((event: AgentPlanEvent) => {
+          if (mainWindow.isDestroyed()) return;
+          mainWindow.webContents.send('soundlab-copilot:plan-event', event);
+        });
+
         let lastError: unknown;
 
         for (let attempt = 0; attempt < chain.length; attempt += 1) {
           const target = chain[attempt];
           let emitted = false;
+          planManager.reset();
 
           try {
             const agent = createSoundLabCopilotAgent({
@@ -92,6 +101,7 @@ export function registerSoundLabCopilotHandlers({
               currentBeat: context.currentBeat,
               target,
               broadcastChanged,
+              planManager,
             });
 
             const result = await agent.stream({ messages: modelMessages });

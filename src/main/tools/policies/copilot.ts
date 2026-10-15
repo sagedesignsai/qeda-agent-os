@@ -87,4 +87,9 @@ export const copilotToolPolicies: ToolPolicyMap = {
   storeProjectMemory: t('write-local'),
   searchProjectMemory: t('read'),
   listProjectMemories: t('read'),
+
+  // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
+  createPlan: t('write-local'),
+  updatePlanItem: t('write-local'),
 };
+

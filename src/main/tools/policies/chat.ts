@@ -158,4 +158,9 @@ export const chatToolPolicies: ToolPolicyMap = {
   appendBlocks: t('write-local'),
   insertBlocksAt: t('write-local'),
   replaceBlock: t('destructive'),
+
+  // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
+  createPlan: t('write-local'),
+  updatePlanItem: t('write-local'),
 };
+

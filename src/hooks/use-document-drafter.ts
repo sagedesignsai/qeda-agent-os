@@ -36,6 +36,8 @@ import {
   type AgentTransport,
   type UseAgentChatReturn,
 } from './use-agent-chat';
+import { useIpcPlan } from './use-agent-plan';
+import type { AgentPlan } from '../lib/agent-plan';
 
 /** Namespaced, so a drafting turn can never collide with a chat or copilot turn. */
 const DOCUMENT_DRAFTER_TRANSPORT: AgentTransport = {
@@ -71,6 +73,9 @@ export interface UseDocumentDrafterReturn extends UseAgentChatReturn {
   /** Present only after a run has been cut short. Cleared on the next turn. */
   truncationNotice: TruncationNotice | undefined;
   clearTruncationNotice: () => void;
+  /** Active execution plan created by the drafter. */
+  plan: AgentPlan | null;
+  clearPlan: () => void;
 }
 
 export function useDocumentDrafter({
@@ -132,8 +137,30 @@ export function useDocumentDrafter({
       setTruncationNotice(undefined);
       agentSendMessage(text);
     },
+
     [agentSendMessage],
   );
 
-  return { ...agent, sendMessage, truncationNotice, clearTruncationNotice };
+  const { plan, clearPlan } = useIpcPlan(
+
+    'document-drafter:plan-event',
+    agent.messages,
+  );
+
+  const clearMessages = useCallback(() => {
+    clearTruncationNotice();
+    clearPlan();
+    agent.clearMessages();
+  }, [clearTruncationNotice, clearPlan, agent]);
+
+  return {
+    ...agent,
+    sendMessage,
+    clearMessages,
+    truncationNotice,
+    clearTruncationNotice,
+    plan,
+    clearPlan,
+  };
 }
+

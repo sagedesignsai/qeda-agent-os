@@ -127,7 +127,9 @@ function savePayloads(): Record<string, unknown>[] {
  * `hidden`), so an unscoped `getByRole('button', {name: 'Save'})` would be
  * ambiguous by design.
  */
-function panel(id: 'models' | 'embeddings' | 'appearance') {
+function panel(
+  id: 'models' | 'builder' | 'embeddings' | 'appearance',
+) {
   const el = document.getElementById(`settings-panel-${id}`);
   if (!el) throw new Error(`settings panel "${id}" is not mounted`);
   return within(el);
@@ -144,7 +146,12 @@ describe('SettingsDialog', () => {
       });
       expect(rail).toBeInTheDocument();
 
-      for (const label of ['AI & Models', 'Embeddings', 'Appearance']) {
+      for (const label of [
+        'AI & Models',
+        'Builder & MCP',
+        'Embeddings',
+        'Appearance',
+      ]) {
         expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
       }
 

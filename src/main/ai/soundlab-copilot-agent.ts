@@ -19,6 +19,8 @@ import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createSoundLabCopilotTools } from '../tools/soundlab-copilot.js';
 import { getSoundLabSession } from '../db/soundlab-store.js';
+import { PlanManager } from './plan-manager.js';
+import { createPlanTools } from '../tools/plan.js';
 import type { SoundLabSessionWithTracks } from '../../lib/soundlab-types.js';
 import type { ModelTarget } from './fallback.js';
 
@@ -28,6 +30,7 @@ export interface SoundLabCopilotAgentOptions {
   currentBeat?: number;
   target?: ModelTarget;
   broadcastChanged?: () => void;
+  planManager?: PlanManager;
 }
 
 // ─── System prompt helpers ────────────────────────────────────────────────────
@@ -162,7 +165,17 @@ When the user asks to optimize for a state, do not prescribe a brainwave band or
 - Confident, concise, and musically specific.
 - After executing tools, list the changes made in a tight markdown summary (track name, parameter, value).
 - Never invent MIDI pitches by guessing — calculate them from the key signature using semitone offsets.
-- Suggest next steps if there are obvious gaps (e.g. no automation, no arrangement clip for a track).`;
+- Suggest next steps if there are obvious gaps (e.g. no automation, no arrangement clip for a track).
+
+## Planning Protocol
+Before using any other tool, call \`createPlan\` with an ordered list of tasks
+describing your complete approach. Each item should be a short, verb-first
+description (e.g. "Inspect session state", "Tune entrainment", "Generate melody").
+As you work through each task:
+  1. Call \`updatePlanItem\` with status \`in-progress\` before you begin.
+  2. Do the work (session inspection, tuning, melody/drum generation, effects, automation, etc.).
+  3. Call \`updatePlanItem\` with \`done\` (or \`failed\`) when finished.
+If you discover the scope has changed, call \`createPlan\` again with a revised list.`;
 }
 
 // ─── Agent factory ────────────────────────────────────────────────────────────
@@ -178,6 +191,7 @@ export function createSoundLabCopilotAgent(opts: SoundLabCopilotAgentOptions) {
   const model = resolveModel(providerId, modelId);
 
   const session = getSoundLabSession(opts.activeSessionId);
+  const planManager = opts.planManager ?? new PlanManager();
 
   const tools = createSoundLabCopilotTools({
     activeSessionId: opts.activeSessionId,
@@ -191,7 +205,13 @@ export function createSoundLabCopilotAgent(opts: SoundLabCopilotAgentOptions) {
       opts.activeProject,
       opts.currentBeat,
     ),
-    tools,
-    stopWhen: isStepCount(25),
+    tools: {
+      ...tools,
+      ...createPlanTools(planManager),
+    },
+    stopWhen: [
+      isStepCount(25),
+      planManager.stopCondition(),
+    ],
   });
 }

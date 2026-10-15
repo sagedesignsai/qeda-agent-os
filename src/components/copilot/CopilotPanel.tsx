@@ -37,7 +37,9 @@ import {
 } from '@/components/ui/sheet';
 import { MessageList } from '@/components/chat/MessageList';
 import { ActiveProjectNotice } from '@/components/projects/ActiveProjectNotice';
+import { PlanPanel } from '@/components/plan/PlanPanel';
 import { useCopilotChat } from '@/hooks/use-copilot-chat';
+import { useIpcPlan } from '@/hooks/use-agent-plan';
 import { useIpcEvent } from '@/hooks/use-ipc';
 
 const SUGGESTIONS = [
@@ -75,8 +77,15 @@ export function CopilotPanel({
     dismissFallbackNotice,
     sendMessage,
     respondToApproval,
-    clearMessages,
+    clearMessages: rawClearMessages,
   } = useCopilotChat({ projectId: projectId ?? undefined });
+
+  const { plan, clearPlan } = useIpcPlan('copilot:plan-event', messages);
+
+  const clearMessages = () => {
+    clearPlan();
+    rawClearMessages();
+  };
 
   // When opened with a pre-seeded prompt, send it immediately
   useEffect(() => {
@@ -157,6 +166,15 @@ export function CopilotPanel({
 
         <Conversation className="flex-1">
           <ConversationContent className="p-0">
+            {plan && (
+              <div className="sticky top-0 z-20 p-3 bg-background/80 backdrop-blur-xs border-b border-border/40">
+                <PlanPanel
+                  plan={plan}
+                  isRunning={status === 'streaming'}
+                  title="Copilot Plan"
+                />
+              </div>
+            )}
             <MessageList
               messages={messages}
               status={status}

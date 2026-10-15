@@ -32,6 +32,9 @@ import {
   removeBuilderWorktree,
 } from './workspace';
 import { createWorkspaceCodingTools } from './tools/coding-tools';
+import { PlanManager } from '../ai/plan-manager';
+import { createPlanTools } from '../tools/plan';
+import type { AgentPlan, PlanItemStatus } from '../../lib/agent-plan';
 
 const STEP_BUDGET = 50;
 
@@ -56,6 +59,17 @@ You are Qeda's Local Builder Agent, an expert software engineer pair-programming
    - Explain what shell command you are about to run so the user can review and approve it.
 5. **Leverage MCP Tools**:
    - If MCP tools (e.g. GitHub, Fetch, SQLite, Context7 Docs) are present, use them proactively to fetch external APIs, read docs, or inspect databases.
+
+## Planning Protocol
+Before using any other tool, call \`createPlan\` with an ordered list of tasks
+describing your complete approach. Each item should be a short, verb-first
+description (e.g. "Read package.json", "Scaffold src/index.ts").
+As you work through each task:
+  1. Call \`updatePlanItem\` with status \`in-progress\` before you begin.
+  2. Do the work (read files, write code, run commands, etc.).
+  3. Call \`updatePlanItem\` with \`done\` (or \`failed\`) when finished.
+If you discover the scope is larger than expected, call \`createPlan\` again
+with a revised list — re-planning is encouraged over silently overrunning.
 `.trim();
 
 export interface LocalBuilderSessionOptions {
@@ -141,7 +155,9 @@ export class LocalBuilderSession {
         }
       | { type: 'status'; status: 'running' | 'idle' | 'interrupted' | 'failed' }
       | { type: 'file-changed'; path: string }
-      | { type: 'error'; message: string },
+      | { type: 'error'; message: string }
+      | { type: 'plan-created'; plan: AgentPlan }
+      | { type: 'plan-item-updated'; itemId: string; status: PlanItemStatus },
   ): void {
     const event: BuilderSessionEvent = {
       sessionId: this.id,
@@ -217,11 +233,27 @@ export class LocalBuilderSession {
         `- Available MCP Tools: ${activeCount} active server(s)`,
       ].join('\n');
 
+      // 3b. Plan manager — one per turn, wired to the session event emitter.
+      const planManager = new PlanManager((event) => {
+        if (event.type === 'plan-created') {
+          this.emit({ type: 'plan-created', plan: event.plan });
+        } else {
+          this.emit({
+            type: 'plan-item-updated',
+            itemId: event.itemId,
+            status: event.status,
+          });
+        }
+      });
+
       const agent = new ToolLoopAgent({
         model: model as any,
         instructions,
-        tools: allTools,
-        stopWhen: isStepCount(STEP_BUDGET),
+        tools: {
+          ...allTools,
+          ...createPlanTools(planManager),
+        },
+        stopWhen: [isStepCount(STEP_BUDGET), planManager.stopCondition()],
       });
 
       // 4. Stream Agent Turn
