@@ -28,17 +28,20 @@
  *
  * WHAT THIS PAGE CONTRIBUTES
  * ──────────────────────────
- * Only the frame: the page header (title + project scope chip), the wide-layout
- * resizable split, and the compact-width tab switch between canvas and chat. All
- * of Builder's chrome decisions live inside the two panels, so this file does not
- * grow a second opinion about them.
+ * The page header and full-workspace welcome state live here. The resizable
+ * chat/canvas split and compact-width tab switch appear only after a session and
+ * workspace are restored or created, so the empty route never renders editor
+ * chrome that has nothing to inspect.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router';
+import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
 import { BuilderCanvas } from '@/components/builder/BuilderCanvas';
 import { BuilderChatPanel } from '@/components/builder/BuilderChatPanel';
+import { BuilderWelcome } from '@/components/builder/BuilderWelcome';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useBuilderPreview } from '@/hooks/use-builder-preview';
@@ -56,10 +59,13 @@ import { useBuilderRuntime } from '@/hooks/use-builder-runtime';
 import { useBuilderSession } from '@/hooks/use-builder-session';
 import { useBuilderFiles } from '@/hooks/use-builder-files';
 import { useBuilderModels } from '@/hooks/use-builder-models';
+import { useBuilderCodeProjects } from '@/hooks/use-builder-code-projects';
 import { useBuilderWorkspace } from '@/hooks/use-builder-workspace';
 import { useDefaultLayout } from 'react-resizable-panels';
+import type { CodeProject } from '@/main/ipc/channels';
 
 export default function Builder() {
+  const navigate = useNavigate();
   const runtime = useBuilderRuntime();
   const builderSession = useBuilderSession();
   const builderFiles = useBuilderFiles(
@@ -69,7 +75,10 @@ export default function Builder() {
   const builderModels = useBuilderModels(builderSession.session?.id);
   const workspace = useBuilderWorkspace();
   const layout = useDefaultLayout({ id: 'qeda-builder-workspace-v1' });
-  const { chooseWorkspace: chooseSessionWorkspace } = builderSession;
+  const {
+    chooseWorkspace: chooseSessionWorkspace,
+    createSession: createBuilderSession,
+  } = builderSession;
 
   // `activeProject` is the project an agent would act on (explicit scope, else
   // the persisted default), while `projectName` is only the explicit scope — so
@@ -78,7 +87,20 @@ export default function Builder() {
     projectName,
     activeProject,
     clear: clearProjectScope,
+    withScope,
   } = useProjectScope();
+  const activeProjectId = activeProject?.id ?? null;
+  const activeProjectName = activeProject?.name ?? projectName;
+  const {
+    codeProjects: projectCodebases,
+    loading: codeProjectsLoading,
+    busy: codeProjectsBusy,
+    indexingId,
+    error: codeProjectsError,
+    register: registerCodeProject,
+    provision: provisionCodeProjectAction,
+    index: indexCodeProject,
+  } = useBuilderCodeProjects(activeProjectId);
 
   const preview = useBuilderPreview();
 
@@ -107,8 +129,125 @@ export default function Builder() {
   // Only the folder the user picks in the dialog is ever bound; this just opens
   // the picker at the project's repo when there is one.
   const chooseWorkspace = useCallback(
-    () => chooseSessionWorkspace(activeProject?.repo_path ?? undefined),
-    [chooseSessionWorkspace, activeProject?.repo_path],
+    async (defaultPath?: string | null) => {
+      const started = await chooseSessionWorkspace(
+        defaultPath === null
+          ? undefined
+          : (defaultPath ?? activeProject?.repo_path ?? undefined),
+      );
+      if (started?.workspace && activeProject?.id) {
+        await registerCodeProject(started.workspace.directory);
+      }
+      return started;
+    },
+    [
+      chooseSessionWorkspace,
+      activeProject?.repo_path,
+      activeProject?.id,
+      registerCodeProject,
+    ],
+  );
+
+  const openCodeProject = useCallback(
+    (codeProject: CodeProject) => {
+      void createBuilderSession(codeProject.directory);
+    },
+    [createBuilderSession],
+  );
+
+  const openCodeProjectTerminal = useCallback(
+    async (codeProject: CodeProject) => {
+      try {
+        const terminal = await window.electron.ipc.invoke<{ id: string }>(
+          'terminal:session-create',
+          {
+            title: `Terminal · ${codeProject.name}`,
+            goal: '',
+            cwd: codeProject.directory,
+            project_id: activeProjectId,
+          },
+        );
+        navigate(withScope(`/terminal/${terminal.id}`));
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : 'Could not open Terminal.',
+        );
+      }
+    },
+    [activeProjectId, navigate, withScope],
+  );
+
+  const provisionCodeProject = useCallback(
+    async (input: {
+      name: string;
+      source: 'created' | 'clone';
+      remoteUrl?: string;
+    }) => {
+      try {
+        const parentDirectory = await window.electron.ipc.invoke<string | null>(
+          'dialog:open-directory',
+          { title: 'Choose where to put this codebase' },
+        );
+        if (!parentDirectory) return;
+        const codeProject = await provisionCodeProjectAction({
+          ...input,
+          parentDirectory,
+        });
+        if (codeProject) {
+          await createBuilderSession(codeProject.directory);
+        }
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : 'Could not prepare codebase.',
+        );
+      }
+    },
+    [createBuilderSession, provisionCodeProjectAction],
+  );
+
+  const linkExistingCodeProject = useCallback(
+    async (defaultPath?: string | null) => {
+      try {
+        const directory = await window.electron.ipc.invoke<string | null>(
+          'dialog:open-directory',
+          {
+            title: 'Choose an existing Git repository to link',
+            ...(defaultPath ? { defaultPath } : {}),
+          },
+        );
+        if (!directory) return;
+        const linked = await registerCodeProject(directory);
+        if (linked) {
+          toast.success(
+            `Linked ${linked.name} to ${activeProjectName ?? 'Project'}.`,
+          );
+        }
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : 'Could not link repository.',
+        );
+      }
+    },
+    [activeProjectName, registerCodeProject],
+  );
+
+  const runCodeProjectIndex = useCallback(
+    async (id: string) => {
+      const result = await indexCodeProject(id);
+      if (result) {
+        toast.success(
+          `Indexed ${result.indexedFiles} source files (${result.indexedChunks} chunks).`,
+          {
+            description: result.skippedFiles
+              ? `${result.skippedFiles} ignored, binary, or oversized files were skipped.`
+              : 'Source is now searchable in project-scoped AI conversations.',
+          },
+        );
+      }
+    },
+    [indexCodeProject],
   );
   const [isCompact, setIsCompact] = useState(false);
   const [compactSurface, setCompactSurface] = useState<'chat' | 'canvas'>(
@@ -182,12 +321,12 @@ export default function Builder() {
       runtimeLoading={runtime.loading}
       // Keep / Discard — only available when a session is bound
       onKeepAll={
-        builderSession.workspace
+        builderSession.workspace?.worktreePath
           ? () => void window.electron.ipc.invoke('builder:changes-keep')
           : undefined
       }
       onDiscardAll={
-        builderSession.workspace
+        builderSession.workspace?.worktreePath
           ? () => void window.electron.ipc.invoke('builder:changes-discard')
           : undefined
       }
@@ -206,7 +345,39 @@ export default function Builder() {
         }
       />
 
-      {isCompact ? (
+      {builderSession.restoring ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+          Restoring your Builder workspace…
+        </div>
+      ) : !builderSession.session || !builderSession.workspace ? (
+        <BuilderWelcome
+          status={runtime.status}
+          runtimeLoading={runtime.loading}
+          projectName={activeProjectName}
+          projectRepoPath={activeProject?.repo_path ?? null}
+          prompt={workspace.prompt}
+          onPromptChange={workspace.setPrompt}
+          creatingSession={builderSession.creating}
+          error={builderSession.error || codeProjectsError}
+          projectId={activeProject?.id ?? null}
+          codeProjects={projectCodebases}
+          codeProjectsLoading={codeProjectsLoading}
+          codeProjectsBusy={codeProjectsBusy || builderSession.creating}
+          indexingId={indexingId}
+          onOpenCodeProject={openCodeProject}
+          onOpenTerminal={(codeProject) =>
+            void openCodeProjectTerminal(codeProject)
+          }
+          onProvisionCodeProject={(input) => void provisionCodeProject(input)}
+          onIndexCodeProject={(id) => void runCodeProjectIndex(id)}
+          onChooseWorkspace={(defaultPath) => {
+            void chooseWorkspace(defaultPath);
+          }}
+          onLinkExistingCodeProject={(defaultPath) =>
+            void linkExistingCodeProject(defaultPath)
+          }
+        />
+      ) : isCompact ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <Tabs
             value={compactSurface}

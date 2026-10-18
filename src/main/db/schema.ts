@@ -78,10 +78,17 @@ CREATE TABLE IF NOT EXISTS chunks (
   chunk_index INTEGER NOT NULL,
   content     TEXT NOT NULL,
   project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  code_project_id TEXT REFERENCES code_projects(id) ON DELETE CASCADE,
   created_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path);
-CREATE INDEX IF NOT EXISTS idx_chunks_project ON chunks(project_id);
+-- NO INDEX ON project_id HERE. "CREATE TABLE IF NOT EXISTS" is a no-op on a
+-- database written before project_id existed, so an inline index on that column
+-- in this statement throws "no such column" on exactly those databases --
+-- inside the migration loop in applyMigrations, which then aborts before the
+-- ALTER TABLE back-fill can add the column. That is a deadlock: the migration
+-- can never succeed, so the column is never added.
+-- idx_chunks_project is created in applyMigrations, after the back-fill.
 `;
 
 // ─── Knowledge workspace ──────────────────────────────────────────────────────
@@ -293,11 +300,32 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status, sort_order);
 `;
 
+/** Multiple codebases may be connected to one outcome-oriented Project. */
+export const CREATE_CODE_PROJECTS = `
+CREATE TABLE IF NOT EXISTS code_projects (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  name           TEXT NOT NULL,
+  directory      TEXT NOT NULL,
+  source         TEXT NOT NULL DEFAULT 'existing'
+                 CHECK(source IN ('existing','created','clone')),
+  remote_url     TEXT,
+  index_status   TEXT NOT NULL DEFAULT 'not-indexed'
+                 CHECK(index_status IN ('not-indexed','indexing','ready','error')),
+  indexed_files  INTEGER NOT NULL DEFAULT 0,
+  indexed_at     INTEGER,
+  index_error    TEXT,
+  created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE(project_id, directory)
+);
+CREATE INDEX IF NOT EXISTS idx_code_projects_project ON code_projects(project_id, updated_at DESC);
+`;
+
 /**
  * The default project for unsorted capture. Deterministic id so the data
  * migration and code can agree without a lookup.
- */export const INBOX_PROJECT_ID = 'inbox';
-
+ */ export const INBOX_PROJECT_ID = 'inbox';
 
 // ─── ADHD task manager ────────────────────────────────────────────────────────
 
@@ -933,6 +961,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_TERMINAL_SESSIONS,
   CREATE_TERMINAL_BLOCKS,
   CREATE_PROJECTS,
+  CREATE_CODE_PROJECTS,
   CREATE_TASKS,
   CREATE_TASK_STEPS,
   CREATE_TASK_BLOCKS,
@@ -964,6 +993,20 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 `;
 
+/** First meaningful line of a DDL string, for logging which step failed. */
+function firstStatementLine(statement: string): string {
+  return (
+    statement
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? '<empty>'
+  );
+}
+
+function describeMigrationError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * Apply every migration to the given database handle.
  *
@@ -976,9 +1019,24 @@ export function applyMigrations(db: {
   prepare?: (sql: string) => { all: () => Array<{ name: string }> };
 }): void {
   db.exec(CREATE_MIGRATIONS);
-  for (const statement of MIGRATION_STATEMENTS) {
-    db.exec(statement);
-  }
+
+  // Each statement runs independently and a failure is reported, not fatal.
+  //
+  // This used to be a plain `for` loop, which meant one bad statement aborted
+  // every statement after it — silently, because nothing caught it. A database
+  // in that half-migrated state cannot recover on the next launch either: the
+  // same statement throws again at the same point, so a transient or
+  // order-dependent failure becomes permanent. Each statement is idempotent, so
+  // retrying the remainder on the next launch is always safe.
+  MIGRATION_STATEMENTS.forEach((statement, index) => {
+    try {
+      db.exec(statement);
+    } catch (error) {
+      console.warn(
+        `[db] migration statement #${index} failed and was skipped: ${describeMigrationError(error)}\n${firstStatementLine(statement)}`,
+      );
+    }
+  });
 
   // Ensure optional columns exist on databases written by an earlier build.
   // This must run BEFORE DATA_MIGRATIONS, because some data migrations (the
@@ -989,136 +1047,161 @@ export function applyMigrations(db: {
         .all()
         .map((c) => c.name);
 
-    try {
-      const blockCols = columnsOf('terminal_blocks');
-      if (!blockCols.includes('duration_ms')) {
-        db.exec('ALTER TABLE terminal_blocks ADD COLUMN duration_ms INTEGER');
+    /**
+     * Add one column, tolerating a table that does not exist yet and a column
+     * that is already there.
+     *
+     * Deliberately per-statement rather than one big try/catch: the previous
+     * single try wrapped every back-fill below, so the first failure silently
+     * skipped all of the later ones. That is how a database ended up carrying
+     * `tasks.project_id` but not `chunks.project_id`, `builder_sessions.engine`,
+     * or the knowledge project-scope columns, with nothing in the log.
+     */
+    const addColumn = (table: string, column: string, definition: string) => {
+      try {
+        const columns = columnsOf(table);
+        // No rows means the table is absent; there is nothing to add a column to.
+        if (columns.length === 0) return;
+        if (!columns.includes(column)) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+        }
+      } catch (error) {
+        console.warn(
+          `[db] back-fill skipped: ${table}.${column} — ${describeMigrationError(error)}`,
+        );
       }
+    };
 
-      const terminalCols = columnsOf('terminal_sessions');
-      if (!terminalCols.includes('cwd')) {
-        db.exec(
-          "ALTER TABLE terminal_sessions ADD COLUMN cwd TEXT NOT NULL DEFAULT ''",
+    /** Idempotent DDL that is safe to retry but must not abort the chain. */
+    const execOptional = (label: string, sql: string) => {
+      try {
+        db.exec(sql);
+      } catch (error) {
+        console.warn(
+          `[db] ${label} failed and was skipped: ${describeMigrationError(error)}`,
         );
       }
-      if (!terminalCols.includes('env')) {
-        db.exec(
-          "ALTER TABLE terminal_sessions ADD COLUMN env TEXT NOT NULL DEFAULT '{}'",
-        );
-      }
-      if (!terminalCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE terminal_sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    };
 
-      const taskCols = columnsOf('tasks');
-      if (!taskCols.includes('estimate_mins')) {
-        db.exec('ALTER TABLE tasks ADD COLUMN estimate_mins INTEGER');
-      }
-      if (!taskCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE tasks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    addColumn('terminal_blocks', 'duration_ms', 'INTEGER');
 
-      const taskBlockCols = columnsOf('task_blocks');
-      if (!taskBlockCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE task_blocks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    addColumn('terminal_sessions', 'cwd', "TEXT NOT NULL DEFAULT ''");
+    addColumn('terminal_sessions', 'env', "TEXT NOT NULL DEFAULT '{}'");
+    addColumn(
+      'terminal_sessions',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
 
-      const chatSessionCols = columnsOf('sessions');
-      if (!chatSessionCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    addColumn('tasks', 'estimate_mins', 'INTEGER');
+    addColumn(
+      'tasks',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
 
-      const docCols = columnsOf('documents');
-      if (!docCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE documents ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    addColumn(
+      'task_blocks',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
 
-      const studioCols = columnsOf('studio_takes');
-      if (!studioCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE studio_takes ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
-      if (!studioCols.includes('effects_json')) {
-        db.exec('ALTER TABLE studio_takes ADD COLUMN effects_json TEXT');
-      }
-      if (!studioCols.includes('overlays_json')) {
-        db.exec('ALTER TABLE studio_takes ADD COLUMN overlays_json TEXT');
-      }
+    addColumn(
+      'sessions',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
 
-      const chunkCols = columnsOf('chunks');
-      if (!chunkCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE chunks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    addColumn(
+      'documents',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
 
-      const builderSessionCols = columnsOf('builder_sessions');
-      if (!builderSessionCols.includes('engine')) {
-        db.exec(
-          "ALTER TABLE builder_sessions ADD COLUMN engine TEXT NOT NULL DEFAULT 'opencode'",
-        );
-      }
+    addColumn(
+      'studio_takes',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
+    addColumn('studio_takes', 'effects_json', 'TEXT');
+    addColumn('studio_takes', 'overlays_json', 'TEXT');
 
-      // Knowledge-side project scope. Added after notebooks/pages/research_runs
-      // first shipped, so existing databases get the columns here and the
-      // MIGRATE_PROJECT_SCOPE_KNOWLEDGE backfill below fills them in.
-      const notebookCols = columnsOf('notebooks');
-      if (!notebookCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE notebooks ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    // `code_project_id` references code_projects, which is created in
+    // MIGRATION_STATEMENTS above. On a legacy database that table does not
+    // exist yet at this point, so this back-fill can legitimately fail —
+    // addColumn logs and continues rather than taking the rest with it, and
+    // the next launch retries it once the table exists.
+    addColumn(
+      'chunks',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
+    addColumn(
+      'chunks',
+      'code_project_id',
+      'TEXT REFERENCES code_projects(id) ON DELETE CASCADE',
+    );
 
-      const pageCols = columnsOf('pages');
-      if (!pageCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE pages ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    addColumn('builder_sessions', 'engine', "TEXT NOT NULL DEFAULT 'opencode'");
 
-      const runCols = columnsOf('research_runs');
-      if (!runCols.includes('project_id')) {
-        db.exec(
-          'ALTER TABLE research_runs ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL',
-        );
-      }
+    // Knowledge-side project scope. Added after notebooks/pages/research_runs
+    // first shipped, so existing databases get the columns here and the
+    // MIGRATE_PROJECT_SCOPE_KNOWLEDGE backfill below fills them in.
+    addColumn(
+      'notebooks',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
+    addColumn(
+      'pages',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
+    addColumn(
+      'research_runs',
+      'project_id',
+      'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
 
-      // Indexes on those three columns, created HERE rather than in the
-      // CREATE TABLE statements above, and that placement is load-bearing:
-      // `CREATE TABLE IF NOT EXISTS` is a no-op on a database written by an
-      // earlier build, so an inline `CREATE INDEX ... (project_id)` would run
-      // against a table that does not have the column yet, throw, and abort the
-      // entire migration before these ALTERs ever execute — breaking every
-      // existing install on launch. Unconditional here because `IF NOT EXISTS`
-      // already makes it idempotent for both fresh and upgraded databases.
-      db.exec(
-        'CREATE INDEX IF NOT EXISTS idx_notebooks_project ON notebooks(project_id)',
-      );
-      db.exec(
-        'CREATE INDEX IF NOT EXISTS idx_pages_project ON pages(project_id)',
-      );
-      db.exec(
-        'CREATE INDEX IF NOT EXISTS idx_research_runs_project ON research_runs(project_id)',
-      );
-    } catch {
-      // Table might not exist yet or running in raw exec mock
-    }
+    // Indexes on back-filled columns are created HERE, never inline in the
+    // CREATE TABLE statements above, and that placement is load-bearing:
+    // `CREATE TABLE IF NOT EXISTS` is a no-op on a database written by an
+    // earlier build, so an inline `CREATE INDEX ... (project_id)` would run
+    // against a table that does not have the column yet, throw, and — inside
+    // the migration loop — abort every statement after it. That is exactly
+    // what `chunks` did, and it deadlocked the migration permanently.
+    // Unconditional because `IF NOT EXISTS` already makes this idempotent.
+    execOptional(
+      'idx_chunks_project',
+      'CREATE INDEX IF NOT EXISTS idx_chunks_project ON chunks(project_id)',
+    );
+    execOptional(
+      'idx_chunks_code_project',
+      'CREATE INDEX IF NOT EXISTS idx_chunks_code_project ON chunks(code_project_id)',
+    );
+    execOptional(
+      'idx_notebooks_project',
+      'CREATE INDEX IF NOT EXISTS idx_notebooks_project ON notebooks(project_id)',
+    );
+    execOptional(
+      'idx_pages_project',
+      'CREATE INDEX IF NOT EXISTS idx_pages_project ON pages(project_id)',
+    );
+    execOptional(
+      'idx_research_runs_project',
+      'CREATE INDEX IF NOT EXISTS idx_research_runs_project ON research_runs(project_id)',
+    );
   }
 
   // Data migrations run last: the Inbox project must exist before orphan tasks
   // can adopt it, and the columns above must exist before the UPDATE runs.
-  for (const statement of DATA_MIGRATIONS) {
-    db.exec(statement);
-  }
+  DATA_MIGRATIONS.forEach((statement, index) => {
+    try {
+      db.exec(statement);
+    } catch (error) {
+      console.warn(
+        `[db] data migration #${index} failed and was skipped: ${describeMigrationError(error)}\n${firstStatementLine(statement)}`,
+      );
+    }
+  });
 }

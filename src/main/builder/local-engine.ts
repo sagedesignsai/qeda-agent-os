@@ -7,18 +7,15 @@
  *   • Workspace-scoped file & search tools (reading, writing, editing, grep, git)
  *   • Safe, supervised shell execution inside the workspace directory
  *   • Dynamic Model Context Protocol (MCP) server tools from active clients
- *   • Isolated git worktree sandboxing (with safe fallback to repo root)
+ *   • Required isolated git worktree sandboxing (session creation fails closed)
  *   • Live event streaming matching the normalized BuilderSessionEvent contract
  *   • Interactive permission approvals (Allow once / Always / Reject)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { isStepCount, ToolLoopAgent, type ModelMessage } from 'ai';
-import path from 'node:path';
 import type {
-  BuilderModelOption,
   BuilderSessionEvent,
-  BuilderSessionStart,
   BuilderSessionSummary,
   BuilderWorkspace,
 } from '../ipc/channels';
@@ -144,7 +141,11 @@ export class LocalBuilderSession {
       | { type: 'text-delta'; messageId: string; delta: string }
       | { type: 'tool-started'; callId: string; name: string; input: unknown }
       | { type: 'tool-input'; callId: string; input: unknown }
-      | { type: 'tool-progress'; callId: string; metadata: Record<string, unknown> }
+      | {
+          type: 'tool-progress';
+          callId: string;
+          metadata: Record<string, unknown>;
+        }
       | { type: 'tool-completed'; callId: string; output: string }
       | { type: 'tool-failed'; callId: string; error: string }
       | { type: 'permission'; request: any }
@@ -153,7 +154,10 @@ export class LocalBuilderSession {
           interactionId: string;
           interactionType: 'form' | 'permission';
         }
-      | { type: 'status'; status: 'running' | 'idle' | 'interrupted' | 'failed' }
+      | {
+          type: 'status';
+          status: 'running' | 'idle' | 'interrupted' | 'failed';
+        }
       | { type: 'file-changed'; path: string }
       | { type: 'error'; message: string }
       | { type: 'plan-created'; plan: AgentPlan }
@@ -347,7 +351,10 @@ export class LocalBuilderSession {
   /**
    * Handle user permission decisions (Allow once / Always / Reject).
    */
-  replyPermission(requestId: string, decision: BuilderPermissionDecision): void {
+  replyPermission(
+    requestId: string,
+    decision: BuilderPermissionDecision,
+  ): void {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return;
 
@@ -381,7 +388,9 @@ export class LocalBuilderSession {
    */
   setModel(providerId: string, modelId: string): void {
     if (this.running) {
-      throw new Error('Wait for the current turn to finish before switching models.');
+      throw new Error(
+        'Wait for the current turn to finish before switching models.',
+      );
     }
     this.activeProvider = providerId;
     this.activeModel = modelId;
@@ -429,14 +438,16 @@ export async function createLocalBuilderSession(
 
   const sessionId = `local-sess-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-  // Create isolated git worktree
-  let worktreePath: string | null = null;
+  // Isolation is a requirement, not a best-effort optimization. Running
+  // directly in the user's repository would make Discard unsafe because it
+  // could erase unrelated working-tree changes.
+  let worktreePath: string;
   try {
     worktreePath = await createBuilderWorktree(workspace.directory, sessionId);
   } catch (error) {
-    console.warn(
-      '[LocalBuilder] Worktree isolation failed, running directly in repo root:',
-      error instanceof Error ? error.message : String(error),
+    throw new Error(
+      `Builder could not create an isolated workspace, so it did not start. Your repository was not changed. ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 

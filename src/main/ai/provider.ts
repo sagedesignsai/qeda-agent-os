@@ -20,10 +20,11 @@
 
 import { createGateway } from '@ai-sdk/gateway';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import type { EmbeddingModel, LanguageModel } from 'ai';
+import { wrapLanguageModel, type EmbeddingModel, type LanguageModel } from 'ai';
 import { getSettings, type AppSettings } from './settings';
 import {
   PROVIDERS,
+  chooseProviderApiKey,
   getProvider,
   envApiKey,
   type ProviderConfig,
@@ -103,11 +104,14 @@ export function resolveApiKey(
   providerId: string,
   settings: AppSettings = getSettings(),
 ): string | undefined {
-  const fromSettings = settings.providers?.[providerId]?.apiKey;
-  if (fromSettings && fromSettings.trim()) return fromSettings.trim();
-
   const provider = getProvider(providerId);
-  return provider ? envApiKey(provider) : undefined;
+  const providerSettings = settings.providers?.[providerId];
+  const fromEnvironment = provider ? envApiKey(provider) : undefined;
+  return chooseProviderApiKey(
+    providerSettings?.apiKeySource,
+    providerSettings?.apiKey,
+    fromEnvironment,
+  );
 }
 
 /** Resolve the base URL, allowing a per-provider override from Settings. */
@@ -148,11 +152,42 @@ export function resolveModel(
   }
 
   // ── OpenAI-compatible (every other provider) ────────────────────────────────
-  return openAICompatible(
+  const compatibleModel = openAICompatible(
     providerId,
     settings,
     apiKey,
   )(modelId) as unknown as LanguageModel;
+
+  // `prepareModelMessages` sanitizes the renderer's prior conversation, but a
+  // ToolLoopAgent also feeds its own assistant responses back into the model
+  // between tool steps. Reasoning models can add reasoning parts to those
+  // internal messages, and the OpenAI-compatible adapter serializes them as
+  // `reasoning_content`. Strict endpoints (notably Groq) reject that field with
+  // HTTP 400. Strip it at the provider boundary so every internal iteration is
+  // covered, not just the first request in a turn.
+  return wrapLanguageModel({
+    model: compatibleModel as any,
+    middleware: {
+      specificationVersion: 'v4',
+      transformParams: async ({ params }) => ({
+        ...params,
+        prompt: params.prompt.map((message) => {
+          if (message.role !== 'assistant') return message;
+          const content = message.content.filter(
+            (part) =>
+              part.type !== 'reasoning' && part.type !== 'reasoning-file',
+          );
+          return {
+            ...message,
+            content:
+              content.length > 0
+                ? content
+                : [{ type: 'text' as const, text: '' }],
+          };
+        }),
+      }),
+    },
+  }) as unknown as LanguageModel;
 }
 
 /**

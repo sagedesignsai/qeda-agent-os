@@ -97,6 +97,7 @@ import {
   PlayIcon,
   RefreshCwIcon,
   SmartphoneIcon,
+  ShieldCheckIcon,
   SquareIcon,
   TabletIcon,
   TriangleAlertIcon,
@@ -419,6 +420,26 @@ export function BuilderCanvas({
                 </span>
               )}
             </span>
+          )}
+          {workspace && (
+            <Badge
+              variant="outline"
+              className="hidden h-5 shrink-0 items-center gap-1 border-border/70 px-1.5 text-xs font-normal text-muted-foreground md:inline-flex"
+              title={
+                workspace.worktreePath
+                  ? 'Builder is working in an isolated Git worktree. Your source repository is unchanged until you keep the changes.'
+                  : 'This restored legacy session is working directly in the selected repository.'
+              }
+            >
+              {workspace.worktreePath ? (
+                <ShieldCheckIcon className="size-3 text-emerald-600" />
+              ) : (
+                <AlertTriangleIcon className="size-3 text-amber-600" />
+              )}
+              {workspace.worktreePath
+                ? 'Isolated worktree'
+                : 'Direct repository'}
+            </Badge>
           )}
         </div>
 

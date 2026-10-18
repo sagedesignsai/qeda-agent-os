@@ -13,9 +13,11 @@ import type { ReactNode } from 'react';
 import { useProjectScope } from '../hooks/use-project-scope';
 
 function makeWrapper(initialEntry: string) {
-  return ({ children }: { children: ReactNode }) => (
+  const Wrapper = ({ children }: { children: ReactNode }) => (
     <MemoryRouter initialEntries={[initialEntry]}>{children}</MemoryRouter>
   );
+  Wrapper.displayName = 'ProjectScopeTestWrapper';
+  return Wrapper;
 }
 
 const PROJECT = { id: 'abc', name: 'Alpha', status: 'active' };
@@ -61,6 +63,34 @@ describe('useProjectScope', () => {
     expect(result.current.withScope('/chat?goal=hi')).toBe(
       '/chat?goal=hi&project=abc',
     );
+  });
+
+  it('carries the project detail route scope into other surfaces', async () => {
+    const { result } = renderHook(() => useProjectScope(), {
+      wrapper: makeWrapper('/projects/abc'),
+    });
+    await act(async () => {});
+
+    expect(result.current.projectId).toBe('abc');
+    expect(result.current.withScope('/chat')).toBe('/chat?project=abc');
+  });
+
+  it('uses the persisted project as the navigation scope when no surface scope exists', async () => {
+    const invoke = window.electron.ipc.invoke as jest.Mock;
+    invoke.mockImplementation((channel: string) =>
+      channel === 'settings:get'
+        ? Promise.resolve({ activeProjectId: 'abc' })
+        : channel === 'projects:get'
+          ? Promise.resolve(PROJECT)
+          : Promise.resolve(undefined),
+    );
+    const { result } = renderHook(() => useProjectScope(), {
+      wrapper: makeWrapper('/projects'),
+    });
+
+    await waitFor(() => {
+      expect(result.current.withScope('/chat')).toBe('/chat?project=abc');
+    });
   });
 
   it('drops the scope on clear but keeps other params', async () => {

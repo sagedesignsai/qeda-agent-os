@@ -159,9 +159,11 @@ function ProjectsHome() {
         const projects =
           await window.electron.ipc.invoke<Project[]>('projects:list');
         const activeProjectId =
-          (await window.electron.ipc.invoke<{
-            activeProjectId?: string;
-          }>('settings:get')).activeProjectId ?? '';
+          (
+            await window.electron.ipc.invoke<{
+              activeProjectId?: string;
+            }>('settings:get')
+          ).activeProjectId ?? '';
 
         const anyRealProject = projects.some((p) => p.id !== 'inbox');
 
@@ -171,7 +173,11 @@ function ProjectsHome() {
         }
 
         if (activeProjectId) {
-          if (!cancelled) navigate('/chat', { replace: true });
+          if (!cancelled) {
+            navigate(`/chat?project=${encodeURIComponent(activeProjectId)}`, {
+              replace: true,
+            });
+          }
           return;
         }
 

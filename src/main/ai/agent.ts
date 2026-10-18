@@ -34,7 +34,7 @@ const BASE_INSTRUCTIONS = `
 You are Qeda, an agent OS with full access to the user's local system and knowledge workspace.
 
 ## Capabilities
-- **Knowledge workspace**: list, search, read, create and update pages and notebooks (listPages, findPages, getPage, createNotebook, writeNotebook, writePage, appendToPage, relatedPages).
+- **Knowledge workspace**: list, search, read, create and update pages and notebooks (listPages, findPages, getPage, createNotebook, writeNotebook, writePage, appendToPage, relatedPages). When creating a notebook during a project-scoped conversation, pass the exact active project id to createNotebook so its pages remain connected to that project.
 - **Task management**: read, create, update and complete tasks (listTasks, getTask, createTask, createTasks, addSteps, updateTask, completeTask, scheduleBlock, handToTerminal). Use these to turn research findings or plans into real tasks — you can do it in the same turn without asking the user to go to another tab.
 - **Projects**: create projects (createProject), list them (listProjects). File tasks into the right project when creating them.
 - **Web research**: discover sources with webSearch (uses whichever search provider is configured), read them with fetchUrl. Prefer advancedSearch when you want Google results, published dates or a direct answer — it names a provider or falls back across all of them — and scrapePage (Firecrawl) to read JavaScript-heavy docs sites as clean markdown.
@@ -160,7 +160,12 @@ export interface WorkspaceContext {
  * the full text of its five most recently updated pages.
  */
 function renderContextBlock(context: WorkspaceContext | undefined): string {
-  if (!context?.pageId && !context?.notebookId && !context?.projectId && !context?.taskId)
+  if (
+    !context?.pageId &&
+    !context?.notebookId &&
+    !context?.projectId &&
+    !context?.taskId
+  )
     return '';
 
   const sections: string[] = [
@@ -292,8 +297,7 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
 
   // Notebook mode implies a larger budget, so derive the effective mode rather
   // than trusting the caller to pass both consistently.
-  const mode =
-    options.mode ?? (options.notebookMode ? 'notebook' : 'chat');
+  const mode = options.mode ?? (options.notebookMode ? 'notebook' : 'chat');
 
   const instructions = [
     BASE_INSTRUCTIONS,
@@ -317,10 +321,7 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
     // Derived from tools/policies/chat.ts rather than a hand-maintained name map.
     // The Tools page calls the same policy, so manual execution cannot bypass it.
     toolApproval: chatApprovalPolicy,
-    stopWhen: [
-      isStepCount(stepBudgetFor(mode)),
-      planManager.stopCondition(),
-    ],
+    stopWhen: [isStepCount(stepBudgetFor(mode)), planManager.stopCondition()],
   });
   (agent as any).planManager = planManager;
   return agent;

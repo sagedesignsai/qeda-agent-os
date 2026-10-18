@@ -31,6 +31,7 @@ export function useBuilderSession() {
   const [workspace, setWorkspace] = useState<BuilderWorkspace | null>(null);
   const [events, setEvents] = useState<BuilderSessionEvent[]>([]);
   const [creating, setCreating] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingResponse, setPendingResponse] = useState<string | null>(null);
@@ -55,15 +56,16 @@ export function useBuilderSession() {
     // Re-attach to whatever the main process still has buffered.
     void (async () => {
       try {
-        const state =
-          await window.electron.ipc.invoke<BuilderSessionState>(
-            'builder:session-state',
-          );
+        const state = await window.electron.ipc.invoke<BuilderSessionState>(
+          'builder:session-state',
+        );
         setSession(state.session);
         setWorkspace(state.workspace);
         mergeEvents(state.events);
       } catch (cause) {
         setError(messageOf(cause));
+      } finally {
+        setRestoring(false);
       }
     })();
     return unsubscribe;
@@ -105,28 +107,31 @@ export function useBuilderSession() {
    * an `onClick` handler in the Builder chrome, which would otherwise hand it a
    * React synthetic event instead of a path.
    */
-  const chooseWorkspace = useCallback(async (defaultPath?: string) => {
-    setError(null);
-    const initialPath =
-      typeof defaultPath === 'string' && defaultPath.trim()
-        ? defaultPath
-        : undefined;
-    try {
-      const payload: { title: string; defaultPath?: string } = {
-        title: 'Choose a project folder',
-      };
-      if (initialPath) payload.defaultPath = initialPath;
-      const directory = await window.electron.ipc.invoke<string | null>(
-        'dialog:open-directory',
-        payload,
-      );
-      if (!directory) return null;
-      return await createSession(directory);
-    } catch (cause) {
-      setError(messageOf(cause));
-      return null;
-    }
-  }, [createSession]);
+  const chooseWorkspace = useCallback(
+    async (defaultPath?: string) => {
+      setError(null);
+      const initialPath =
+        typeof defaultPath === 'string' && defaultPath.trim()
+          ? defaultPath
+          : undefined;
+      try {
+        const payload: { title: string; defaultPath?: string } = {
+          title: 'Choose a project folder',
+        };
+        if (initialPath) payload.defaultPath = initialPath;
+        const directory = await window.electron.ipc.invoke<string | null>(
+          'dialog:open-directory',
+          payload,
+        );
+        if (!directory) return null;
+        return await createSession(directory);
+      } catch (cause) {
+        setError(messageOf(cause));
+        return null;
+      }
+    },
+    [createSession],
+  );
 
   const stopSession = useCallback(async () => {
     try {
@@ -140,22 +145,19 @@ export function useBuilderSession() {
     }
   }, []);
 
-  const sendPrompt = useCallback(
-    async (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
-      setSending(true);
-      setError(null);
-      try {
-        await window.electron.ipc.invoke('builder:prompt', { text: trimmed });
-      } catch (cause) {
-        setError(messageOf(cause));
-      } finally {
-        setSending(false);
-      }
-    },
-    [],
-  );
+  const sendPrompt = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setSending(true);
+    setError(null);
+    try {
+      await window.electron.ipc.invoke('builder:prompt', { text: trimmed });
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setSending(false);
+    }
+  }, []);
 
   const abort = useCallback(async () => {
     setError(null);
@@ -215,6 +217,7 @@ export function useBuilderSession() {
     workspace,
     events,
     creating,
+    restoring,
     sending,
     running,
     error,

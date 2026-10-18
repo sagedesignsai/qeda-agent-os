@@ -23,6 +23,8 @@ import type {
 export interface NamedProviderSettings {
   /** Base64-encoded safeStorage cipher. */
   apiKey?: string;
+  /** Explicit credential source. Missing preserves the legacy saved-key-first behavior. */
+  apiKeySource?: 'settings' | 'environment';
   baseURL?: string;
 }
 
@@ -84,9 +86,12 @@ export interface AppSettings {
    * settings.json means main can answer "what is the current project" on its own.
    *
    * Not a column on `projects`: "which project is selected" is a preference of
-   * this install, not a property of the project.
+   * this install, not a property of the project. `activeProjectExplicitlyCleared`
+   * distinguishes a deliberate global choice from a first-run unset preference.
    */
   activeProjectId?: string | null;
+  /** True when the user explicitly chose global/no-default project context. */
+  activeProjectExplicitlyCleared?: boolean;
   providers: ProvidersMap;
   customProviders?: CustomProviderSettings[];
 }
@@ -328,17 +333,32 @@ export function setActiveModel(providerId: string, modelId: string): void {
  *
  * A repeated write of the same id is a no-op.
  *
+ * `explicitlyCleared` records the user's deliberate All Projects choice. Without
+ * it, null means no valid default and launch may choose a deterministic one.
  * Returns whether a write actually happened: `false` on the no-op early return,
  * `true` after a real `saveSettings`. The write itself is SILENT — callers are
  * responsible for broadcasting `settings:changed` when this returns `true`, so
  * an already-mounted `useProjectScope` does not keep a stale
  * `defaultProjectId = ''` until reload.
  */
-export function setActiveProjectId(id: string | null): boolean {
+export function setActiveProjectId(
+  id: string | null,
+  explicitlyCleared = false,
+): boolean {
   const current = getRawSettings();
   const nextId: string | null = id ?? null;
-  if (current.activeProjectId === nextId) return false;
-  saveSettings({ ...current, activeProjectId: nextId });
+  const nextExplicitlyCleared = nextId === null && explicitlyCleared;
+  if (
+    current.activeProjectId === nextId &&
+    Boolean(current.activeProjectExplicitlyCleared) === nextExplicitlyCleared
+  ) {
+    return false;
+  }
+  saveSettings({
+    ...current,
+    activeProjectId: nextId,
+    activeProjectExplicitlyCleared: nextExplicitlyCleared,
+  });
   return true;
 }
 
@@ -362,7 +382,8 @@ function storedProjectExists(id: string): boolean {
  * The launch-time default resolution behind `resolveLaunchDefaultProjectId`,
  * with the extra fact the caller needs: did resolving actually WRITE?
  *
- * A stored id is trusted only when its project row still exists — a dangling id
+ * An explicit global choice suppresses auto-picking. Otherwise, a stored id is
+ * trusted only when its project row still exists — a dangling id
  * would otherwise pin the app to a project it can no longer show. The stored
  * value still wins over the deterministic picker when it is valid: the picker
  * exists to fill a gap on a fresh install, not to overrule a real choice.
@@ -375,6 +396,9 @@ export function resolveLaunchDefaultProjectIdDetailed(): {
   changed: boolean;
 } {
   const s = getRawSettings();
+  if (!s.activeProjectId && s.activeProjectExplicitlyCleared) {
+    return { id: null, changed: false };
+  }
   if (s.activeProjectId && storedProjectExists(s.activeProjectId)) {
     return { id: s.activeProjectId, changed: false };
   }

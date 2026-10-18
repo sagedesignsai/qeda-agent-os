@@ -171,6 +171,7 @@ export function BuilderChatPanel({
   const canSend =
     runtimeConnected &&
     !!session &&
+    !!workspace?.worktreePath &&
     prompt.trim().length > 0 &&
     !creatingSession;
   const blockedReason = !runtimeConnected
@@ -181,7 +182,9 @@ export function BuilderChatPanel({
         : 'Waiting for the local agent'
     : !session
       ? 'Choose a project folder first'
-      : '';
+      : !workspace?.worktreePath
+        ? 'Start a new isolated workspace to continue'
+        : '';
 
   // One line, three states: why sending is blocked, what a run is doing, or the
   // promise that holds when the composer is idle. It never wraps into a column
@@ -219,9 +222,40 @@ export function BuilderChatPanel({
         <ConversationContent className="min-h-full p-0">
           {session ? (
             <div className="flex flex-col min-h-full">
+              {workspace?.worktreePath ? (
+                <div className="border-b border-emerald-600/15 bg-emerald-500/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    Isolated worktree ready.
+                  </span>{' '}
+                  Review the diff before keeping it in your repository.
+                  {workspace.dirty && (
+                    <span className="mt-1 block text-amber-700 dark:text-amber-400">
+                      The repository already had {workspace.changedFileCount}{' '}
+                      uncommitted change
+                      {workspace.changedFileCount === 1 ? '' : 's'} when setup
+                      began. This worktree starts from the last commit, so those
+                      edits are not included.
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div
+                  role="alert"
+                  className="border-b border-amber-600/20 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:text-amber-300"
+                >
+                  This saved session works directly in your repository; it is
+                  not isolated. Discard is disabled to protect existing files.
+                  Stop this session and choose a repository again to start in a
+                  worktree.
+                </div>
+              )}
               {plan && (
                 <div className="sticky top-0 z-20 px-3 py-2 bg-background/80 backdrop-blur-sm border-b border-border/40">
-                  <PlanPanel plan={plan} isRunning={running} title="Builder Plan" />
+                  <PlanPanel
+                    plan={plan}
+                    isRunning={running}
+                    title="Builder Plan"
+                  />
                 </div>
               )}
               <BuilderActivityFeed

@@ -34,6 +34,12 @@ import {
   reorderProjects,
   countProjectTasks,
 } from '../main/db/projects';
+import {
+  createCodeProject,
+  deleteCodeProject,
+  listCodeProjects,
+  setCodeProjectIndexState,
+} from '../main/db/code-projects';
 
 describe('projects data layer', () => {
   let db: Database.Database;
@@ -79,6 +85,68 @@ describe('projects data layer', () => {
     // Archived projects are hidden unless explicitly included.
     expect(listProjects().map((p) => p.id)).toEqual([INBOX_PROJECT_ID, b.id]);
     expect(listProjects({ includeArchived: true })).toHaveLength(3);
+  });
+
+  it('supports multiple linked codebases without replacing the legacy repo path', () => {
+    const project = createProject({ name: 'Qeda', repo_path: '/legacy/repo' });
+    const web = createCodeProject({
+      projectId: project.id,
+      name: 'web',
+      directory: '/code/web',
+      source: 'created',
+    });
+    const api = createCodeProject({
+      projectId: project.id,
+      name: 'api',
+      directory: '/code/api',
+      source: 'clone',
+      remoteUrl: 'https://example.com/api.git',
+    });
+
+    expect(listCodeProjects(project.id).map((item) => item.id)).toEqual([
+      api.id,
+      web.id,
+    ]);
+    expect(getProject(project.id)?.repo_path).toBe('/legacy/repo');
+
+    setCodeProjectIndexState(web.id, {
+      status: 'ready',
+      indexedFiles: 12,
+    });
+    expect(
+      listCodeProjects(project.id).find((item) => item.id === web.id),
+    ).toMatchObject({
+      index_status: 'ready',
+      indexed_files: 12,
+      indexed_at: expect.any(Number),
+    });
+  });
+
+  it('unlinks a CodeProject and its source chunks without deleting its files', () => {
+    const project = createProject({ name: 'Code project owner' });
+    const codeProject = createCodeProject({
+      projectId: project.id,
+      name: 'fixture',
+      directory: '/code/fixture',
+      source: 'existing',
+    });
+    const chunkId = 'fixture-chunk';
+    db.prepare(
+      `INSERT INTO chunks (id, file_path, chunk_index, content, project_id, code_project_id)
+       VALUES (?, ?, 0, ?, ?, ?)`,
+    ).run(
+      chunkId,
+      '/code/fixture/src/index.ts',
+      'fixture source',
+      project.id,
+      codeProject.id,
+    );
+
+    expect(deleteCodeProject(codeProject.id)).toBe(true);
+    expect(deleteCodeProject(codeProject.id)).toBe(false);
+    expect(
+      db.prepare('SELECT id FROM chunks WHERE id = ?').get(chunkId),
+    ).toBeUndefined();
   });
 
   it('files new tasks in the Inbox by default and filters by project', () => {

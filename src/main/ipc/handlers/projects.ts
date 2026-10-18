@@ -14,7 +14,7 @@ import {
   BrowserWindow,
   type IpcMainInvokeEvent,
 } from 'electron';
-import { getRawSettings, saveSettings } from '../../ai/settings';
+import { getRawSettings, setActiveProjectId } from '../../ai/settings';
 import {
   createProject,
   deleteProject,
@@ -94,8 +94,8 @@ export function registerProjectsHandlers({
       // unscoped), but clearing it here means the next launch is clean rather
       // than quietly unscoped-because-something-was-deleted.
       if (getRawSettings().activeProjectId === id) {
-        saveSettings({ ...getRawSettings(), activeProjectId: null });
-        if (!mainWindow.isDestroyed()) {
+        const settingsChanged = setActiveProjectId(null);
+        if (settingsChanged && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('settings:changed');
         }
       }

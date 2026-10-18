@@ -62,6 +62,9 @@ export function ModelsView() {
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [serviceKeys, setServiceKeys] = useState<Record<string, string>>({});
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [apiKeySources, setApiKeySources] = useState<
+    Record<string, 'settings' | 'environment'>
+  >({});
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [modelsError, setModelsError] = useState<string | undefined>();
@@ -84,7 +87,15 @@ export function ModelsView() {
     window.electron.ipc
       .invoke<ProviderInfo[]>('providers:list')
       .then((list) => {
-        if (!cancelled) setProviders(list);
+        if (!cancelled) {
+          setProviders(list);
+          setApiKeySources(
+            Object.fromEntries(
+              list.map((provider) => [provider.id, provider.apiKeyPreference]),
+            ),
+          );
+        }
+        return list;
       })
       .catch(console.error);
 
@@ -92,6 +103,7 @@ export function ModelsView() {
       .invoke<ServiceStatus[]>('services:list')
       .then((list) => {
         if (!cancelled) setServices(list);
+        return list;
       })
       .catch(console.error);
 
@@ -144,9 +156,22 @@ export function ModelsView() {
     }
 
     try {
-      const providerSettings: Record<string, { apiKey?: string }> = {};
+      const providerSettings: Record<
+        string,
+        { apiKey?: string; apiKeySource?: 'settings' | 'environment' }
+      > = {};
+      for (const provider of providers) {
+        providerSettings[provider.id] = {
+          apiKeySource: apiKeySources[provider.id] ?? 'environment',
+        };
+      }
       for (const [id, key] of Object.entries(apiKeys)) {
-        if (key.trim()) providerSettings[id] = { apiKey: key.trim() };
+        if (key.trim()) {
+          providerSettings[id] = {
+            ...providerSettings[id],
+            apiKey: key.trim(),
+          };
+        }
       }
 
       const serviceKeyPayload: Record<string, string> = {};
@@ -395,6 +420,37 @@ export function ModelsView() {
                 </Badge>
               )}
             </div>
+            {provider.apiKeyEnvs.length > 0 && (
+              <div className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-2.5 py-2">
+                <div className="grid gap-0.5">
+                  <Label
+                    htmlFor={`key-source-${provider.id}`}
+                    className="text-xs font-normal"
+                  >
+                    Use environment variable
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    {provider.apiKeyEnvs.join(' / ')}
+                  </p>
+                </div>
+                <Switch
+                  id={`key-source-${provider.id}`}
+                  checked={
+                    (apiKeySources[provider.id] ??
+                      provider.apiKeyPreference) === 'environment'
+                  }
+                  onCheckedChange={(useEnvironment) =>
+                    setApiKeySources((previous) => ({
+                      ...previous,
+                      [provider.id]: useEnvironment
+                        ? 'environment'
+                        : 'settings',
+                    }))
+                  }
+                  aria-label={`Use environment variable for ${provider.name}`}
+                />
+              </div>
+            )}
             <div className="relative">
               <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
               <Input
@@ -407,6 +463,10 @@ export function ModelsView() {
                     : `Enter ${provider.name} API key…`
                 }
                 value={apiKeys[provider.id] ?? ''}
+                disabled={
+                  (apiKeySources[provider.id] ?? provider.apiKeyPreference) ===
+                  'environment'
+                }
                 onChange={(e) =>
                   setApiKeys((prev) => ({
                     ...prev,
@@ -415,6 +475,14 @@ export function ModelsView() {
                 }
               />
             </div>
+            {(apiKeySources[provider.id] ?? provider.apiKeyPreference) ===
+              'environment' &&
+              provider.apiKeyEnvs.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  The saved key is retained but ignored while environment mode
+                  is on.
+                </p>
+              )}
           </div>
         ))}
       </div>

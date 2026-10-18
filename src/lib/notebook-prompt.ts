@@ -49,7 +49,7 @@ export function buildNotebookPrompt({
     '3. Research every factual section: search from multiple angles (webSearch, or advancedSearch when a provider is configured), read the best sources (fetchUrl, or scrapePage for rendered pages), and record each source you read with recordSource plus its load-bearing quotes with recordEvidence. Cross-check claims that matter.',
     '4. For EVERY section that involves a specific library, API, framework or engine, call libraryDocs (Context7) with the library name before writing that section, and build the code from the current snippets it returns — never from memory. Name the version you targeted.',
     '5. Add imagery: call findImages once for a cover image and, where a section benefits from a visual, once for that section. Embed the chosen images in the markdown as ![short alt text](image url); use the regular-size URL and include the photographer credit as a caption line.',
-    '6. Create the notebook with createNotebook, then build all pages in a single writeNotebook call — overview first, section pages nested under it.',
+    '6. Create the notebook with createNotebook (when this conversation has an active project, pass that exact project id), then build all pages in a single writeNotebook call — overview first, section pages nested under it.',
     '7. Cite sources inline as [1], [2]… matching the recorded sources, and finish with a "Sources" child page listing every source as `- [title](url)` in the same numbering.',
     '8. Link the overview to each section with [[Section Title]] links and cross-link related sections.',
     '9. Close the run with completeResearchRun and tell me how many pages were created.',

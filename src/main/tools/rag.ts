@@ -19,11 +19,14 @@
 
 import { tool, embed, embedMany } from 'ai';
 import type { EmbeddingModel } from 'ai';
+import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { z } from 'zod';
 import { getDb, getEmbeddingDim } from '../db/client.js';
+import { isIndexableCodePath } from '../../lib/code-indexing.js';
 import { getSettings } from '../ai/settings.js';
 import { resolveEmbeddingModel, resolveApiKey } from '../ai/provider.js';
 import { getProvider } from '../ai/registry.js';
@@ -33,6 +36,8 @@ import {
   resolveEmbeddingConfig,
   type ResolvedEmbeddingConfig,
 } from '../ai/embedding-config.js';
+
+const execFileAsync = promisify(execFile);
 
 // ─── Embedding helper ─────────────────────────────────────────────────────────
 
@@ -120,6 +125,162 @@ export function assertEmbeddingFits(
   });
 }
 
+const MAX_CODE_FILE_BYTES = 256 * 1024;
+const MAX_CODE_FILES = 3000;
+const MAX_CODE_CHUNKS = 12_000;
+
+/**
+ * Explicitly index a Git codebase into the existing project-scoped semantic
+ * index. Git supplies the ignore-aware file list; symlinks, secrets, generated
+ * folders, binary/large files, and unsupported formats are excluded. Existing
+ * vectors are replaced only after every new embedding succeeds.
+ */
+export async function indexCodeProjectFiles(input: {
+  codeProjectId: string;
+  projectId: string;
+  directory: string;
+}): Promise<{
+  indexedFiles: number;
+  indexedChunks: number;
+  skippedFiles: number;
+}> {
+  const root = await fs.realpath(input.directory);
+  const { stdout } = await execFileAsync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+    {
+      cwd: root,
+      timeout: 15_000,
+      maxBuffer: 16 * 1024 * 1024,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_PAGER: 'cat', GIT_TERMINAL_PROMPT: '0' },
+    },
+  );
+  const filePaths = stdout.split('\0').filter(isIndexableCodePath);
+  if (filePaths.length > MAX_CODE_FILES) {
+    throw new Error(
+      `This repository has ${filePaths.length} indexable files; the current limit is ${MAX_CODE_FILES}.`,
+    );
+  }
+
+  const documents: Array<{
+    filePath: string;
+    chunkIndex: number;
+    content: string;
+  }> = [];
+  let indexedFiles = 0;
+  let skippedFiles = 0;
+  for (const relativePath of filePaths) {
+    const absolutePath = path.resolve(root, relativePath);
+    const resolvedRelativePath = path.relative(root, absolutePath);
+    if (
+      resolvedRelativePath === '..' ||
+      resolvedRelativePath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(resolvedRelativePath)
+    ) {
+      skippedFiles += 1;
+      continue;
+    }
+    try {
+      const stat = await fs.lstat(absolutePath);
+      if (
+        !stat.isFile() ||
+        stat.isSymbolicLink() ||
+        stat.size > MAX_CODE_FILE_BYTES
+      ) {
+        skippedFiles += 1;
+        continue;
+      }
+      const text = await fs.readFile(absolutePath, 'utf8');
+      if (text.includes('\0')) {
+        skippedFiles += 1;
+        continue;
+      }
+      const chunks = chunkText(text);
+      if (!chunks.length) {
+        skippedFiles += 1;
+        continue;
+      }
+      chunks.forEach((content, chunkIndex) => {
+        documents.push({ filePath: absolutePath, chunkIndex, content });
+      });
+      indexedFiles += 1;
+      if (documents.length > MAX_CODE_CHUNKS) {
+        throw new Error(
+          `The source index exceeds ${MAX_CODE_CHUNKS} chunks. Narrow the repository or exclude generated files, then retry.`,
+        );
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith('The source index')
+      ) {
+        throw error;
+      }
+      skippedFiles += 1;
+    }
+  }
+
+  const ctx = getEmbeddingContext();
+  const embedded: number[][] = [];
+  for (let start = 0; start < documents.length; start += 64) {
+    const batch = documents.slice(start, start + 64);
+    const result = await embedMany({
+      model: ctx.model,
+      values: batch.map(({ content }) => content),
+      ...(ctx.providerOptions ? { providerOptions: ctx.providerOptions } : {}),
+    });
+    if (result.embeddings.length && start === 0) {
+      assertEmbeddingFits(ctx, result.embeddings[0].length);
+    }
+    embedded.push(...result.embeddings);
+  }
+
+  const db = getDb();
+  const oldIds = db
+    .prepare<[string], { id: string }>(
+      'SELECT id FROM chunks WHERE code_project_id = ?',
+    )
+    .all(input.codeProjectId)
+    .map(({ id }) => id);
+  const insertChunk = db.prepare(
+    `INSERT INTO chunks (id, file_path, chunk_index, content, project_id, code_project_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  const insertVector = db.prepare(
+    'INSERT INTO embeddings (chunk_id, embedding) VALUES (?, ?)',
+  );
+
+  db.transaction(() => {
+    if (oldIds.length) {
+      const placeholders = oldIds.map(() => '?').join(',');
+      db.prepare(
+        `DELETE FROM embeddings WHERE chunk_id IN (${placeholders})`,
+      ).run(...oldIds);
+      db.prepare(`DELETE FROM chunks WHERE id IN (${placeholders})`).run(
+        ...oldIds,
+      );
+    }
+    documents.forEach((document, index) => {
+      const id = randomUUID();
+      insertChunk.run(
+        id,
+        document.filePath,
+        document.chunkIndex,
+        document.content,
+        input.projectId,
+        input.codeProjectId,
+      );
+      insertVector.run(
+        id,
+        Buffer.from(new Float32Array(embedded[index]).buffer),
+      );
+    });
+  })();
+
+  return { indexedFiles, indexedChunks: documents.length, skippedFiles };
+}
+
 /** Shape the error an agent sees, so configuration problems read as such. */
 function ragError(err: unknown): string {
   if (err instanceof Error) {
@@ -146,7 +307,9 @@ export const indexFileTool = tool({
     projectId: z
       .string()
       .optional()
-      .describe('Optional project ID to associate with the indexed file chunks.'),
+      .describe(
+        'Optional project ID to associate with the indexed file chunks.',
+      ),
   }),
   execute: async ({ filePath, chunkSize, projectId }) => {
     const resolved = path.resolve(filePath);
@@ -239,9 +402,15 @@ export const searchDocsTool = tool({
     projectId: z
       .string()
       .optional()
-      .describe('If provided, filters results to chunks belonging to this project (or unscoped/global if null).'),
+      .describe(
+        'If provided, filters results to chunks belonging to this project (or unscoped/global if null).',
+      ),
+    codeProjectId: z
+      .string()
+      .optional()
+      .describe('Optionally restrict results to one indexed codebase.'),
   }),
-  execute: async ({ query, topK, projectId }) => {
+  execute: async ({ query, topK, projectId, codeProjectId }) => {
     const db = getDb();
     try {
       const ctx = getEmbeddingContext();
@@ -260,7 +429,7 @@ export const searchDocsTool = tool({
       const vecBuffer = Buffer.from(new Float32Array(embedding).buffer);
 
       // KNN search via sqlite-vec. If projectId is provided, fetch extra candidates then filter.
-      const fetchCount = projectId ? topK * 4 : topK;
+      const fetchCount = projectId || codeProjectId ? topK * 12 : topK;
       const results = db
         .prepare<[Buffer, number], { chunk_id: string; distance: number }>(
           `SELECT chunk_id, distance
@@ -286,9 +455,10 @@ export const searchDocsTool = tool({
             content: string;
             chunk_index: number;
             project_id: string | null;
+            code_project_id: string | null;
           }
         >(
-          `SELECT id, file_path, content, chunk_index, project_id
+          `SELECT id, file_path, content, chunk_index, project_id, code_project_id
            FROM chunks WHERE id IN (${placeholders})`,
         )
         .all(...results.map((r) => r.chunk_id));
@@ -296,11 +466,21 @@ export const searchDocsTool = tool({
       const chunkMap = new Map(chunks.map((c) => [c.id, c]));
 
       let filteredResults = results;
-      if (projectId) {
-        filteredResults = results.filter((r) => {
-          const chunk = chunkMap.get(r.chunk_id);
-          return chunk?.project_id === projectId || chunk?.project_id === null;
-        }).slice(0, topK);
+      if (projectId || codeProjectId) {
+        filteredResults = results
+          .filter((r) => {
+            const chunk = chunkMap.get(r.chunk_id);
+            if (codeProjectId) {
+              return (
+                chunk?.code_project_id === codeProjectId &&
+                (!projectId || chunk.project_id === projectId)
+              );
+            }
+            return (
+              chunk?.project_id === projectId || chunk?.project_id === null
+            );
+          })
+          .slice(0, topK);
       }
 
       const formatted = filteredResults.map((r) => {
@@ -311,6 +491,7 @@ export const searchDocsTool = tool({
           chunkIndex: chunk?.chunk_index ?? 0,
           content: chunk?.content ?? '',
           projectId: chunk?.project_id ?? null,
+          codeProjectId: chunk?.code_project_id ?? null,
           score: Math.round((1 - r.distance) * 1000) / 1000,
         };
       });
@@ -392,7 +573,9 @@ export const storeProjectMemoryTool = tool({
     category: z
       .string()
       .optional()
-      .describe('Optional category label (e.g. decision, goal, architecture, preference, context).'),
+      .describe(
+        'Optional category label (e.g. decision, goal, architecture, preference, context).',
+      ),
   }),
   execute: async ({ projectId, content, category }) => {
     const db = getDb();
@@ -447,9 +630,7 @@ export const searchProjectMemoryTool = tool({
   description:
     'Search long-term project vector memory for relevant facts, architectural decisions, and previous insights.',
   inputSchema: z.object({
-    projectId: z
-      .string()
-      .describe('The project ID whose memory to search.'),
+    projectId: z.string().describe('The project ID whose memory to search.'),
     query: z.string().describe('Natural language search query.'),
     topK: z
       .number()
@@ -535,7 +716,8 @@ export const searchProjectMemoryTool = tool({
 });
 
 export const listProjectMemoriesTool = tool({
-  description: 'List recent vector memory entries stored for a specific project.',
+  description:
+    'List recent vector memory entries stored for a specific project.',
   inputSchema: z.object({
     projectId: z.string().describe('The project ID to list memories for.'),
     limit: z
@@ -585,10 +767,7 @@ export function getRecentProjectMemories(
   try {
     const db = getDb();
     const rows = db
-      .prepare<
-        [string, number],
-        { content: string; created_at: number }
-      >(
+      .prepare<[string, number], { content: string; created_at: number }>(
         `SELECT content, created_at
          FROM chunks
          WHERE project_id = ? AND file_path LIKE 'project-memory://%'

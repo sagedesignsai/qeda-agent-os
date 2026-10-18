@@ -309,6 +309,7 @@ export function describeFallbackReason(error: unknown, depth = 0): string {
     lastError?: unknown;
     cause?: unknown;
     message?: unknown;
+    responseBody?: unknown;
   };
 
   // Unwrap RetryError or cause to find the root provider failure.
@@ -322,6 +323,26 @@ export function describeFallbackReason(error: unknown, depth = 0): string {
       : typeof candidate.status === 'number'
         ? candidate.status
         : undefined;
+
+  const providerMessage = [
+    typeof candidate.message === 'string' ? candidate.message : '',
+    typeof candidate.responseBody === 'string' ? candidate.responseBody : '',
+  ].join(' ');
+
+  if (
+    /missing authentication header|missing authorization header/i.test(
+      providerMessage,
+    )
+  ) {
+    return 'API key was not sent by the provider client';
+  }
+  if (
+    /invalid api key|invalid authentication|incorrect api key/i.test(
+      providerMessage,
+    )
+  ) {
+    return 'provider rejected the API key';
+  }
 
   if (statusCode === 429) return 'rate limit reached';
   if (statusCode === 401) return 'invalid or expired API key (HTTP 401)';

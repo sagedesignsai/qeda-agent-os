@@ -22,6 +22,7 @@ import {
   listPageTags,
   listPageVersions,
   listPages,
+  listRecentPages,
   listTags,
   loadPageBlocks,
   loadPageMarkdown,
@@ -47,8 +48,14 @@ export function registerWorkspaceHandlers(): void {
         title,
         description,
         icon,
-      }: { title: string; description?: string; icon?: string },
-    ) => createNotebook(title, description, icon),
+        projectId,
+      }: {
+        title: string;
+        description?: string;
+        icon?: string;
+        projectId?: string | null;
+      },
+    ) => createNotebook(title, description, icon, projectId ?? null),
   );
 
   ipcMain.handle(
@@ -60,6 +67,7 @@ export function registerWorkspaceHandlers(): void {
         title?: string;
         description?: string;
         icon?: string;
+        project_id?: string | null;
       },
     ) => {
       const { id, ...rest } = patch;
@@ -75,6 +83,10 @@ export function registerWorkspaceHandlers(): void {
 
   ipcMain.handle('pages:list', (_e, { notebookId }: { notebookId?: string }) =>
     listPages(notebookId),
+  );
+
+  ipcMain.handle('pages:recent', (_e, { limit }: { limit?: number }) =>
+    listRecentPages(limit),
   );
 
   ipcMain.handle(

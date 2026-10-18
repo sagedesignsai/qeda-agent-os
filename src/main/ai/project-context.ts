@@ -65,7 +65,11 @@ export interface ProjectAgentContext {
 export function resolveActiveProjectId(scoped?: string | null): string | null {
   if (scoped) return projectExistsOrKeep(scoped);
   try {
-    return projectExistsOrKeep(getRawSettings().activeProjectId || null);
+    const settings = getRawSettings();
+    if (settings.activeProjectExplicitlyCleared && !settings.activeProjectId) {
+      return null;
+    }
+    return projectExistsOrKeep(settings.activeProjectId || null);
   } catch {
     // Settings unreadable (first run, corrupt file) must not fail a turn.
     return null;

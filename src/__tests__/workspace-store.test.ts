@@ -8,7 +8,6 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import path from 'node:path';
 import Database from 'better-sqlite3';
 import { applyMigrations } from '../main/db/schema';
 import { useTestDatabase } from '../main/db/client';
@@ -20,6 +19,7 @@ import {
   createPage,
   getPage,
   listPages,
+  listRecentPages,
   updatePage,
   deletePage,
   savePageBlocks,
@@ -160,6 +160,28 @@ describe('FTS search', () => {
     const byBody = searchPages('tunnelling');
     expect(byBody.map((h) => h.page_id)).toContain(alpha.id);
     expect(byBody[0].snippet).toContain('quantum');
+    expect(byBody[0]).toMatchObject({
+      notebook_id: notebook.id,
+      notebook_title: 'N',
+      project_id: null,
+    });
+  });
+
+  it('lists recent pages with notebook context for the Knowledge home', () => {
+    const notebook = createNotebook('Research notebook');
+    const page = createPageWithBlocks(
+      notebook.id,
+      'Recent finding',
+      parseMarkdownToBlocks('A useful result.'),
+    );
+
+    expect(listRecentPages()).toContainEqual(
+      expect.objectContaining({
+        id: page.id,
+        notebook_id: notebook.id,
+        notebook_title: notebook.title,
+      }),
+    );
   });
 });
 

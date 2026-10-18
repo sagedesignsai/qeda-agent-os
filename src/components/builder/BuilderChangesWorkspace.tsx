@@ -104,7 +104,7 @@ export function BuilderChangesWorkspace({
             title={
               onDiscardAll
                 ? 'Reset the worktree to HEAD — all agent changes are discarded.'
-                : 'Discard is available after a workspace is bound.'
+                : 'Discard is unavailable for a session working directly in the repository.'
             }
           >
             <RotateCcwIcon className="size-3" />
@@ -118,7 +118,7 @@ export function BuilderChangesWorkspace({
             title={
               onKeepAll
                 ? 'Apply the worktree changes to your source tree.'
-                : 'Keep is available after a workspace is bound.'
+                : 'Keep is unavailable because this session has no isolated worktree.'
             }
           >
             <CheckIcon className="size-3" />

@@ -68,6 +68,17 @@ describe('resolveActiveProjectId', () => {
     expect(resolveActiveProjectId()).toBeNull();
   });
 
+  it('does not fall back to a project after the user explicitly chose global context', () => {
+    settingsMock.getRawSettings.mockReturnValue({
+      activeProjectId: null,
+      activeProjectExplicitlyCleared: true,
+    });
+
+    expect(resolveActiveProjectId()).toBeNull();
+    expect(resolveActiveProjectId(null)).toBeNull();
+    expect(resolveActiveProjectId('proj-scoped')).toBe('proj-scoped');
+  });
+
   it('treats an empty scope string as "not scoped" rather than an id', () => {
     // `?project=` with no value should fall through to the default, not
     // resolve to a project whose id is "".

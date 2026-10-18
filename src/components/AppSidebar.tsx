@@ -169,6 +169,8 @@ export function AppSidebar({
    */
   const hasNoProjectAtAll = !activeProject && !resolvedProjectId;
 
+  const withCurrentProjectScope = (path: string) => withScope(path);
+
   const handleSelectProject = (projectToSelect: Project | null) => {
     // Selecting a project also makes it the persisted default, so a fresh launch
     // returns to where the user was working. This is deliberately separate from
@@ -177,18 +179,11 @@ export function AppSidebar({
     // pick "All Projects" for that.
     void window.electron.ipc.invoke('settings:set-active-project', {
       projectId: projectToSelect?.id ?? null,
+      explicitlyAllProjects: projectToSelect === null,
     });
 
     if (!projectToSelect) {
       clearScope();
-      if (location.pathname.startsWith('/projects/')) {
-        navigate('/projects');
-      } else {
-        const params = new URLSearchParams(location.search);
-        params.delete('project');
-        const searchStr = params.toString() ? `?${params.toString()}` : '';
-        navigate(`${location.pathname}${searchStr}`);
-      }
     } else {
       if (location.pathname.startsWith('/projects')) {
         navigate(`/projects/${projectToSelect.id}`);
@@ -255,7 +250,7 @@ export function AppSidebar({
   // message, so bailing out here leaves no empty conversation behind.
   const handleNewChat = () => {
     setShowMainAt(null);
-    navigate('/chat');
+    navigate(withCurrentProjectScope('/chat'));
   };
 
   return (
@@ -340,8 +335,8 @@ export function AppSidebar({
                       >
                         <Link
                           to={
-                            activeProjectId && to !== '/projects'
-                              ? withScope(to)
+                            to !== '/projects'
+                              ? withCurrentProjectScope(to)
                               : to
                           }
                           onClick={() => setShowMainAt(null)}
@@ -368,7 +363,9 @@ export function AppSidebar({
                         size="sm"
                         onClick={() => {
                           setShowMainAt(null);
-                          navigate(`/chat/${session.id}`);
+                          navigate(
+                            withCurrentProjectScope(`/chat/${session.id}`),
+                          );
                         }}
                       >
                         <MessageSquareIcon />

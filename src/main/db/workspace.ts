@@ -69,9 +69,17 @@ export interface PageVersion {
 
 export interface SearchHit {
   page_id: string;
+  notebook_id: string;
+  notebook_title: string;
+  project_id: string | null;
   title: string;
   snippet: string;
   rank: number;
+}
+
+/** Recent page row enriched for the Knowledge home and cross-system handoffs. */
+export interface RecentPage extends Page {
+  notebook_title: string;
 }
 
 export interface BacklinkEdge {
@@ -229,6 +237,17 @@ export function listPages(notebookId?: string): Page[] {
   return db
     .prepare<[], Page>('SELECT * FROM pages ORDER BY notebook_id, sort_order')
     .all();
+}
+
+/** Pages most recently edited, with their notebook title for global discovery. */
+export function listRecentPages(limit = 8): RecentPage[] {
+  return getDb()
+    .prepare<[number], RecentPage>(
+      `SELECT p.*, n.title AS notebook_title
+       FROM pages p JOIN notebooks n ON n.id = p.notebook_id
+       ORDER BY p.updated_at DESC LIMIT ?`,
+    )
+    .all(Math.max(1, Math.min(limit, 50)));
 }
 
 export function updatePage(
@@ -625,12 +644,22 @@ export function searchPages(query: string, limit = 20): SearchHit[] {
   const rows = db
     .prepare<
       [string, number],
-      { page_id: string; title: string; snippet: string; rank: number }
+      {
+        page_id: string;
+        notebook_id: string;
+        notebook_title: string;
+        project_id: string | null;
+        title: string;
+        snippet: string;
+        rank: number;
+      }
     >(
-      `SELECT page_id, title,
-              snippet(pages_fts, 2, '[', ']', '…', 12) AS snippet,
-              bm25(pages_fts) AS rank
-       FROM pages_fts
+      `SELECT pages_fts.page_id, pages_fts.title, p.notebook_id, n.title AS notebook_title, p.project_id,
+               snippet(pages_fts, 2, '[', ']', '…', 12) AS snippet,
+               bm25(pages_fts) AS rank
+        FROM pages_fts
+        JOIN pages p ON p.id = pages_fts.page_id
+        JOIN notebooks n ON n.id = p.notebook_id
        WHERE pages_fts MATCH ?
        ORDER BY rank
        LIMIT ?`,
@@ -639,6 +668,9 @@ export function searchPages(query: string, limit = 20): SearchHit[] {
 
   return rows.map((r) => ({
     page_id: r.page_id,
+    notebook_id: r.notebook_id,
+    notebook_title: r.notebook_title,
+    project_id: r.project_id,
     title: r.title,
     snippet: r.snippet,
     rank: r.rank,

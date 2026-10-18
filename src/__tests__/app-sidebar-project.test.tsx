@@ -188,6 +188,19 @@ describe('AppSidebar Active Project Indicator', () => {
     });
   });
 
+  it('preserves a project-detail route scope when navigating to Chat', async () => {
+    renderSidebar('/projects/proj-2');
+
+    fireEvent.click(await screen.findByText('Main menu'));
+    fireEvent.click(await screen.findByText('Chat & Research'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent(
+        '/chat?project=proj-2',
+      );
+    });
+  });
+
   // Skipped: Radix UI dropdown synthetic pointer events in JSDOM cause delays
   it.skip('opens dropdown switcher and switches active project', async () => {
     renderSidebar('/chat');

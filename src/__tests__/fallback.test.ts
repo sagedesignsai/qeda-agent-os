@@ -151,6 +151,21 @@ describe('isRetryableProviderError', () => {
     expect(isRetryableProviderError({ statusCode: 404 })).toBe(true);
   });
 
+  it('explains a missing authentication header distinctly from a bad key', () => {
+    expect(
+      describeFallbackReason({
+        statusCode: 401,
+        responseBody: '{"error":{"message":"Missing Authentication header"}}',
+      }),
+    ).toBe('API key was not sent by the provider client');
+    expect(
+      describeFallbackReason({
+        statusCode: 401,
+        responseBody: '{"error":{"message":"Invalid API key"}}',
+      }),
+    ).toBe('provider rejected the API key');
+  });
+
   it('detects AI SDK typed provider error markers', () => {
     expect(
       isRetryableProviderError({

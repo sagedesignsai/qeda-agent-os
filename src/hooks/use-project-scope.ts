@@ -18,17 +18,15 @@
  * in in-memory history and is destroyed by any reload or app restart. An earlier
  * version of this comment claimed the scope "survives reloads"; that was false.
  *
- * What survives a restart is the separate PERSISTED DEFAULT in settings.json
- * (`AppSettings.activeProjectId`, written via `settings:set-active-project` when
- * the user picks a project). The two are different concepts and do not
- * conflict: this is a per-surface lens, the default is "what I was last doing".
- * Agents resolve a scoped id first and fall back to the default
- * (`resolveActiveProjectId`), so a fresh launch still has a project.
+ * What survives a restart is the PERSISTED DEFAULT in settings.json. Startup
+ * restores that default into the route scope, and navigation carries it onto
+ * destination paths. An explicit All Projects choice clears the default and
+ * suppresses auto-picking.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import type { Project } from '@/main/ipc/channels';
 import { useIpcEvent } from './use-ipc';
 
@@ -56,25 +54,32 @@ export interface ProjectScope {
    * default is the happy path and must not be dressed up as a problem.
    */
   isActiveProjectDefaulted: boolean;
-  /** Drop the `project` param, preserving any others (e.g. `goal`). */
+  /** Clear the route/query scope, preserving unrelated query params where possible. */
   clear: () => void;
-  /** Append `?project=` (or `&project=`) to a path when scoped. */
+  /** Append the surface scope, or remembered default, to a destination path. */
   withScope: (path: string) => string;
 }
 
 export function useProjectScope(): ProjectScope {
   const [searchParams, setSearchParams] = useSearchParams();
-  const projectId = searchParams.get('project');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const routeProjectId = location.pathname.match(/^\/projects\/([^/]+)$/)?.[1];
+  const projectId = searchParams.get('project') || routeProjectId || null;
   const [project, setProject] = useState<Project | null>(null);
   /** The restored default from settings.json; '' means none is set. */
   const [defaultProjectId, setDefaultProjectId] = useState('');
 
   // Declared above `load` because the self-heal below calls it.
   const clear = useCallback(() => {
+    if (routeProjectId) {
+      navigate('/projects', { replace: true });
+      return;
+    }
     const next = new URLSearchParams(searchParams);
     next.delete('project');
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+  }, [navigate, routeProjectId, searchParams, setSearchParams]);
 
   const load = useCallback(async () => {
     if (!projectId) {
@@ -182,11 +187,12 @@ export function useProjectScope(): ProjectScope {
 
   const withScope = useCallback(
     (path: string) => {
-      if (!projectId) return path;
+      const scopeId = projectId || defaultProjectId;
+      if (!scopeId) return path;
       const sep = path.includes('?') ? '&' : '?';
-      return `${path}${sep}project=${encodeURIComponent(projectId)}`;
+      return `${path}${sep}project=${encodeURIComponent(scopeId)}`;
     },
-    [projectId],
+    [defaultProjectId, projectId],
   );
 
   return {

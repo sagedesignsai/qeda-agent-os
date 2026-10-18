@@ -35,7 +35,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export interface DbResourceOptions<T> {
   /** IPC channel to read from. Must be a `req: void | {}` list-style channel. */
@@ -78,6 +78,13 @@ export function useDbResource<T>({
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  // Consumers commonly pass an inline selector. Keep the latest selector
+  // without making refresh (and therefore the loading effect) change identity
+  // on every render.
+  const selectRef = useRef(select);
+  useEffect(() => {
+    selectRef.current = select;
+  }, [select]);
 
   const refresh = useCallback(async () => {
     if (!enabled) {
@@ -87,14 +94,15 @@ export function useDbResource<T>({
     try {
       const raw = await window.electron.ipc.invoke(channel);
       // `select` is the consumer's transform; without it the payload is the shape.
-      setData(select ? select(raw) : (raw as T));
+      const currentSelect = selectRef.current;
+      setData(currentSelect ? currentSelect(raw) : (raw as T));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [channel, select, enabled]);
+  }, [channel, enabled]);
 
   // Load on mount, and whenever the identity of the resource changes.
   useEffect(() => {

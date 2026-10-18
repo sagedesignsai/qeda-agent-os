@@ -15,6 +15,7 @@ import type {
   Page,
   PageVersion,
   SearchHit,
+  RecentPage,
 } from '../db/workspace.js';
 import type { Block } from '../../lib/markdown-blocks.js';
 import type {
@@ -35,6 +36,7 @@ import type {
   ProjectFocusDay,
   ProjectLinkedCounts,
 } from '../db/projects.js';
+import type { CodeProject } from '../db/code-projects.js';
 import type { GamificationState } from '../../lib/gamification.js';
 import type { PdfDocumentRecord, PdfDocumentSummary } from '../db/documents.js';
 import type {
@@ -106,7 +108,7 @@ import {
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
-export type { Notebook, Page, PageVersion, SearchHit };
+export type { Notebook, Page, PageVersion, SearchHit, RecentPage };
 export type { Block };
 export type { ResearchRun, ResearchSourceWithEvidence };
 export type { ServiceStatus };
@@ -119,6 +121,7 @@ export type {
   McpTransportKind,
   McpServerPreset,
 };
+export type { CodeProject };
 export type { TerminalSession, TerminalBlock };
 export type { Task };
 export type { TaskStep, StepProgress };
@@ -263,10 +266,14 @@ export interface ProviderInfo {
   freeModels: string[];
   /** Free-tier caveat shown in the Settings dialog. */
   note?: string;
+  /** Environment variable names accepted for this provider. */
+  apiKeyEnvs: string[];
   /** Whether a usable key is available. */
   apiKeySet: boolean;
   /** Where that key comes from – an env var name, the encrypted store, or none. */
   apiKeySource: 'settings' | 'environment' | null;
+  /** The user-selected source, even when that source currently has no key. */
+  apiKeyPreference: 'settings' | 'environment';
 }
 
 /** Page payload with derived metadata for the UI. */
@@ -332,6 +339,33 @@ export interface IpcChannels {
   'builder:workspace-validate': {
     req: { directory: string };
     res: BuilderWorkspace;
+  };
+  /** Project-scoped codebases, separate from the legacy single repo_path. */
+  'builder:code-projects:list': {
+    req: { projectId: string };
+    res: CodeProject[];
+  };
+  'builder:code-projects:register': {
+    req: { projectId: string; directory: string };
+    res: CodeProject;
+  };
+  'builder:code-projects:provision': {
+    req: {
+      projectId: string;
+      parentDirectory: string;
+      name: string;
+      source: 'created' | 'clone';
+      remoteUrl?: string;
+    };
+    res: CodeProject;
+  };
+  'builder:code-projects:index': {
+    req: { codeProjectId: string };
+    res: { indexedFiles: number; indexedChunks: number; skippedFiles: number };
+  };
+  'builder:code-projects:delete': {
+    req: { codeProjectId: string };
+    res: boolean;
   };
   /**
    * Create an OpenCode session bound to an explicit workspace directory.
@@ -461,7 +495,14 @@ export interface IpcChannels {
   'settings:get': {
     req: void;
     res: Omit<AppSettings, 'providers' | 'serviceKeys'> & {
-      providers: Record<string, { apiKey?: boolean; baseURL?: string }>;
+      providers: Record<
+        string,
+        {
+          apiKey?: boolean;
+          apiKeySource?: 'settings' | 'environment';
+          baseURL?: string;
+        }
+      >;
       /** Which external services have a key set (never the value itself). */
       serviceKeysSet: Record<string, boolean>;
       /** True once first-launch onboarding has been finished or skipped. */
@@ -502,10 +543,12 @@ export interface IpcChannels {
    * provider state along. The active project is set by a sidebar click, not by
    * the dialog, and should not require opening Settings.
    *
-   * Pass `null` to clear it.
+   * Pass `null` with `explicitlyAllProjects` to persist a deliberate global
+   * choice. A plain null clears a stale/automatic default and permits relaunch
+   * default selection.
    */
   'settings:set-active-project': {
-    req: { projectId: string | null };
+    req: { projectId: string | null; explicitlyAllProjects?: boolean };
     res: void;
   };
 
@@ -584,16 +627,28 @@ export interface IpcChannels {
   // ── Workspace ─────────────────────────────────────────────────────────────
   'notebooks:list': { req: void; res: Notebook[] };
   'notebooks:create': {
-    req: { title: string; description?: string; icon?: string };
+    req: {
+      title: string;
+      description?: string;
+      icon?: string;
+      projectId?: string | null;
+    };
     res: Notebook;
   };
   'notebooks:update': {
-    req: { id: string; title?: string; description?: string; icon?: string };
+    req: {
+      id: string;
+      title?: string;
+      description?: string;
+      icon?: string;
+      project_id?: string | null;
+    };
     res: void;
   };
   'notebooks:delete': { req: { id: string }; res: void };
 
   'pages:list': { req: { notebookId?: string }; res: Page[] };
+  'pages:recent': { req: { limit?: number }; res: RecentPage[] };
   'pages:get': { req: { id: string }; res: PageDetail | null };
   'pages:create': {
     req: { notebookId: string; title: string; parentPageId?: string | null };

@@ -40,6 +40,14 @@
 
 import { ipcMain, shell, type BrowserWindow } from 'electron';
 import {
+  createCodeProject,
+  deleteCodeProject,
+  getCodeProject,
+  listCodeProjects,
+  setCodeProjectIndexState,
+} from '../../db/code-projects';
+import { getProject } from '../../db/projects';
+import {
   connectBuilderRuntime,
   type BuilderRuntime,
 } from '../../builder/client';
@@ -52,6 +60,11 @@ import {
   applyWorktreeChanges,
   discardWorktreeChanges,
 } from '../../builder/workspace';
+import {
+  cloneGitCodeProject,
+  createGitCodeProjectDirectory,
+} from '../../builder/code-projects';
+import { indexCodeProjectFiles } from '../../tools/rag';
 import { normalizeBuilderSessionEvent } from '../../builder/session-events';
 import { BuilderPreview } from '../../builder/preview';
 import {
@@ -177,7 +190,9 @@ export function registerBuilderHandlers({
       await prevLocal.stop().catch(() => undefined);
     }
     if (prevWorktree && prevRepo) {
-      await removeBuilderWorktree(prevRepo, prevWorktree).catch(() => undefined);
+      await removeBuilderWorktree(prevRepo, prevWorktree).catch(
+        () => undefined,
+      );
     }
   };
 
@@ -233,6 +248,110 @@ export function registerBuilderHandlers({
   });
 
   ipcMain.handle(
+    'builder:code-projects:list',
+    (_event, { projectId }: { projectId: string }) => {
+      if (!getProject(projectId))
+        throw new Error('That Project no longer exists.');
+      return listCodeProjects(projectId);
+    },
+  );
+
+  ipcMain.handle(
+    'builder:code-projects:register',
+    async (
+      _event,
+      { projectId, directory }: { projectId: string; directory: string },
+    ) => {
+      if (!getProject(projectId))
+        throw new Error('Choose an active Project first.');
+      const workspace = await inspectBuilderWorkspace(directory);
+      const existing = listCodeProjects(projectId).find(
+        (codeProject) => codeProject.directory === workspace.directory,
+      );
+      if (existing) return existing;
+      return createCodeProject({
+        projectId,
+        name: workspace.name,
+        directory: workspace.directory,
+        source: 'existing',
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'builder:code-projects:provision',
+    async (
+      _event,
+      input: {
+        projectId: string;
+        parentDirectory: string;
+        name: string;
+        source: 'created' | 'clone';
+        remoteUrl?: string;
+      },
+    ) => {
+      if (!getProject(input.projectId)) {
+        throw new Error('Choose an active Project before creating a codebase.');
+      }
+      const provisioned =
+        input.source === 'clone'
+          ? await cloneGitCodeProject({
+              parentDirectory: input.parentDirectory,
+              name: input.name,
+              remoteUrl: input.remoteUrl ?? '',
+            })
+          : await createGitCodeProjectDirectory(input);
+      const remoteUrl =
+        'remoteUrl' in provisioned && typeof provisioned.remoteUrl === 'string'
+          ? provisioned.remoteUrl
+          : undefined;
+      return createCodeProject({
+        projectId: input.projectId,
+        name: provisioned.name,
+        directory: provisioned.directory,
+        source: input.source,
+        ...(remoteUrl ? { remoteUrl } : {}),
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'builder:code-projects:index',
+    async (_event, { codeProjectId }: { codeProjectId: string }) => {
+      const codeProject = getCodeProject(codeProjectId);
+      if (!codeProject || !codeProject.project_id) {
+        throw new Error('This codebase is no longer linked to a Project.');
+      }
+      setCodeProjectIndexState(codeProjectId, { status: 'indexing' });
+      try {
+        const result = await indexCodeProjectFiles({
+          codeProjectId,
+          projectId: codeProject.project_id,
+          directory: codeProject.directory,
+        });
+        setCodeProjectIndexState(codeProjectId, {
+          status: 'ready',
+          indexedFiles: result.indexedFiles,
+        });
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setCodeProjectIndexState(codeProjectId, {
+          status: 'error',
+          error: message,
+        });
+        throw error;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'builder:code-projects:delete',
+    (_event, { codeProjectId }: { codeProjectId: string }) =>
+      deleteCodeProject(codeProjectId),
+  );
+
+  ipcMain.handle(
     'builder:workspace-validate',
     (_event, { directory }: { directory: string }) =>
       inspectBuilderWorkspace(directory),
@@ -253,11 +372,14 @@ export function registerBuilderHandlers({
 
       // ── Local engine path ─────────────────────────────────────────────────
       if (engine === 'local') {
-        const { session, summary, workspace: boundWorkspace } =
-          await createLocalBuilderSession({
-            workspaceDirectory: workspace.directory,
-            onEvent: broadcast,
-          });
+        const {
+          session,
+          summary,
+          workspace: boundWorkspace,
+        } = await createLocalBuilderSession({
+          workspaceDirectory: workspace.directory,
+          onEvent: broadcast,
+        });
 
         localSession = session;
         activeSession = summary;
@@ -287,7 +409,7 @@ export function registerBuilderHandlers({
 
       opencodeRuntime = result.runtime;
 
-      let worktreePath: string | null = null;
+      let worktreePath: string;
       try {
         const locationHeaders = {
           'x-opencode-directory': encodeURIComponent(workspace.directory),
@@ -309,9 +431,11 @@ export function registerBuilderHandlers({
         );
         worktreePath = worktree.directory;
       } catch (error) {
-        console.warn(
-          '[Builder] Worktree isolation failed, running in repo directly:',
-          error instanceof Error ? error.message : String(error),
+        await opencodeRuntime.provider.dispose().catch(() => undefined);
+        opencodeRuntime = null;
+        throw new Error(
+          `Builder could not create an isolated workspace, so it did not start. Your repository was not changed. ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
         );
       }
 
@@ -608,6 +732,11 @@ export function registerBuilderHandlers({
     'builder:prompt',
     async (_event, { text }: { text: string }) => {
       const session = requireSession();
+      if (!activeWorkspace?.worktreePath) {
+        throw new Error(
+          'This legacy session is not isolated. Choose a repository again to start a protected Builder session.',
+        );
+      }
       const trimmed = typeof text === 'string' ? text.trim() : '';
       if (!trimmed) throw new Error('Write a prompt before sending.');
 
@@ -792,7 +921,9 @@ export function registerBuilderHandlers({
     }
     const { worktreePath, directory } = activeWorkspace;
     if (!worktreePath) {
-      return { paths: [] };
+      throw new Error(
+        'Keep is unavailable because this legacy session is working directly in your repository.',
+      );
     }
     const paths = await applyWorktreeChanges(directory, worktreePath);
     return { paths };
@@ -802,8 +933,12 @@ export function registerBuilderHandlers({
     if (!activeWorkspace) {
       throw new Error('No active workspace to discard changes in.');
     }
-    const root = activeWorkspace.worktreePath ?? activeWorkspace.directory;
-    await discardWorktreeChanges(root);
+    if (!activeWorkspace.worktreePath) {
+      throw new Error(
+        'Discard is unavailable because this legacy session is working directly in your repository. Review and restore its changes manually.',
+      );
+    }
+    await discardWorktreeChanges(activeWorkspace.worktreePath);
   });
 
   // ── Cleanup ───────────────────────────────────────────────────────────────

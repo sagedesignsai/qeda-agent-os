@@ -158,13 +158,20 @@ export const createNotebookTool = tool({
       .string()
       .optional()
       .describe('Icon keyword, e.g. "flask", "book", "gamepad".'),
+    projectId: z
+      .string()
+      .optional()
+      .describe(
+        'When the conversation has an active project, use its exact id so this notebook and its pages belong to that project.',
+      ),
   }),
-  execute: async ({ title, description, icon }) => {
+  execute: async ({ title, description, icon, projectId }) => {
     try {
       const notebook = createNotebook(
         title,
         description ?? '',
         icon ?? 'notebook',
+        projectId ?? null,
       );
       return { success: true, notebookId: notebook.id, title: notebook.title };
     } catch (err) {

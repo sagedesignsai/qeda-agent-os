@@ -25,9 +25,9 @@ export interface BuilderFile {
  * `dirty` are displayed to the user so a run never starts on a tree they did
  * not intend to change.
  *
- * `worktreePath` is present when Builder has created an isolated git worktree
- * for this session. All OpenCode turns run inside the worktree; the source
- * branch is never touched until the user explicitly keeps the changes.
+ * New sessions require an isolated git worktree. Legacy sessions may have no
+ * `worktreePath`; the UI treats those as direct-to-repository sessions and
+ * disables destructive review actions.
  */
 export interface BuilderWorkspace {
   /** Canonical repository root (realpath). */
@@ -42,8 +42,7 @@ export interface BuilderWorkspace {
   changedFileCount: number;
   /**
    * Absolute path to the isolated git worktree created for this session.
-   * Present when worktree isolation is active; null when the session runs
-   * directly in `directory` (legacy / fallback).
+   * Present for isolated sessions; null only for a legacy direct-mode session.
    */
   worktreePath: string | null;
 }

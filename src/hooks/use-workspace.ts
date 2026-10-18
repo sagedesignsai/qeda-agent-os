@@ -7,12 +7,13 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Notebook,
   Page,
   PageDetail,
   SearchHit,
+  RecentPage,
 } from '../main/ipc/channels';
 
 export function useNotebooks() {
@@ -47,14 +48,18 @@ export function usePages(notebookId: string | null) {
     }
     let cancelled = false;
     setLoading(true);
-    window.electron.ipc
-      .invoke<Page[]>('pages:list', { notebookId })
-      .then((data) => {
+    void (async () => {
+      try {
+        const data = await window.electron.ipc.invoke<Page[]>('pages:list', {
+          notebookId,
+        });
         if (!cancelled) setPages(data ?? []);
-      })
-      .finally(() => {
+      } catch {
+        if (!cancelled) setPages([]);
+      } finally {
         if (!cancelled) setLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -96,10 +101,13 @@ export function usePageDetail(pageId: string | null) {
 export function usePageSearch() {
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const requestSequence = useRef(0);
 
   const search = useCallback(async (query: string) => {
+    const requestId = ++requestSequence.current;
     if (!query.trim()) {
       setHits([]);
+      setSearching(false);
       return;
     }
     setSearching(true);
@@ -108,11 +116,36 @@ export function usePageSearch() {
         'pages:search',
         { query },
       );
-      setHits(data ?? []);
+      if (requestId === requestSequence.current) setHits(data ?? []);
+    } catch {
+      if (requestId === requestSequence.current) setHits([]);
     } finally {
-      setSearching(false);
+      if (requestId === requestSequence.current) setSearching(false);
     }
   }, []);
 
   return { hits, searching, search };
+}
+
+/** Recent pages used by the Knowledge landing page. */
+export function useRecentPages() {
+  const [pages, setPages] = useState<RecentPage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const reload = useCallback(async () => {
+    try {
+      const data = await window.electron.ipc.invoke<RecentPage[]>(
+        'pages:recent',
+        { limit: 8 },
+      );
+      setPages(data ?? []);
+    } catch {
+      setPages([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+  return { pages, loading, reload };
 }

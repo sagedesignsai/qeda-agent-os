@@ -152,6 +152,23 @@ export function envApiKey(provider: ProviderConfig): string | undefined {
 }
 
 /**
+ * Select a provider credential while preserving legacy settings behavior.
+ * Explicit source selection never silently falls through to the other source:
+ * environment mode means environment-only, and Settings mode means saved-only.
+ */
+export function chooseProviderApiKey(
+  preference: 'settings' | 'environment' | undefined,
+  savedKey: string | undefined,
+  environmentKey: string | undefined,
+): string | undefined {
+  const saved = savedKey?.trim() || undefined;
+  const environment = environmentKey?.trim() || undefined;
+  if (preference === 'environment') return environment;
+  if (preference === 'settings') return saved;
+  return saved || environment;
+}
+
+/**
  * Choose the provider + model to use when the user has no saved settings.
  *
  * Prefers providers that are both configured in the environment and have a

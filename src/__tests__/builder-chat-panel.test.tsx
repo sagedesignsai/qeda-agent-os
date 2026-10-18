@@ -24,7 +24,7 @@ const workspace: BuilderWorkspace = {
   branch: 'main',
   dirty: false,
   changedFileCount: 0,
-  worktreePath: null,
+  worktreePath: '/tmp/qeda-builder-ses_1',
 };
 
 const session = { id: 'ses_1', title: 'Builder · app', createdAt: 1 };
@@ -147,6 +147,26 @@ describe('BuilderChatPanel', () => {
     expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled();
     expect(
       screen.getByText('Choose a project folder first'),
+    ).toBeInTheDocument();
+  });
+
+  it('blocks sends from a legacy direct-to-repository session', () => {
+    render(
+      <BuilderChatPanel
+        status={connected}
+        prompt="Add a pricing page"
+        onPromptChange={jest.fn()}
+        workspace={{ ...workspace, worktreePath: null }}
+        session={session}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This saved session works directly in your repository',
+    );
+    expect(
+      screen.getByText('Start a new isolated workspace to continue'),
     ).toBeInTheDocument();
   });
 

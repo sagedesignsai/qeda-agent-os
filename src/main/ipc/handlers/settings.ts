@@ -15,6 +15,7 @@ import {
   getRawSettings,
   getSettings,
   saveSettings,
+  setActiveProjectId,
   resolveLaunchDefaultProjectIdDetailed,
   type AppSettings,
 } from '../../ai/settings';
@@ -35,11 +36,17 @@ export function registerSettingsHandlers({
     // Only expose whether a key is set (boolean), never the actual value.
     const sanitizedProviders: Record<
       string,
-      { apiKey?: boolean; baseURL?: string }
+      {
+        apiKey?: boolean;
+        apiKeySource?: 'settings' | 'environment';
+        baseURL?: string;
+      }
     > = {};
     for (const [k, v] of Object.entries(s.providers)) {
       sanitizedProviders[k] = {
         apiKey: !!(v as { apiKey?: string })?.apiKey,
+        apiKeySource: (v as { apiKeySource?: 'settings' | 'environment' })
+          ?.apiKeySource,
         baseURL: (v as { baseURL?: string })?.baseURL,
       };
     }
@@ -99,12 +106,18 @@ export function registerSettingsHandlers({
    */
   ipcMain.handle(
     'settings:set-active-project',
-    (_e, { projectId }: { projectId: string | null }) => {
-      const current = getRawSettings();
-      // Store null rather than '' so the field round-trips as "no default".
-      const nextId = projectId ?? null;
-      if (current.activeProjectId === nextId) return;
-      saveSettings({ ...current, activeProjectId: nextId });
+    (
+      _e,
+      {
+        projectId,
+        explicitlyAllProjects,
+      }: { projectId: string | null; explicitlyAllProjects?: boolean },
+    ) => {
+      const changed = setActiveProjectId(
+        projectId ?? null,
+        explicitlyAllProjects === true,
+      );
+      if (!changed) return;
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('settings:changed');
       }
@@ -116,10 +129,19 @@ export function registerSettingsHandlers({
     // current settings rather than replacing them – otherwise saving would drop
     // unrelated configuration such as custom providers or the embedding setup.
     const current = getSettings();
+    const mergedProviders = { ...current.providers };
+    for (const [id, providerPatch] of Object.entries(
+      incoming.providers ?? {},
+    )) {
+      mergedProviders[id] = {
+        ...current.providers?.[id],
+        ...providerPatch,
+      };
+    }
     const merged: AppSettings = {
       ...current,
       ...incoming,
-      providers: { ...current.providers, ...(incoming.providers ?? {}) },
+      providers: mergedProviders,
     };
     // External-service keys: merge per service. A non-empty value replaces the
     // stored key; an empty string clears it. Absent services are untouched.
@@ -153,6 +175,17 @@ export function registerSettingsHandlers({
       const fromSettings = settings.providers?.[provider.id]?.apiKey;
       const hasStoredKey = Boolean(fromSettings && fromSettings.trim());
       const hasEnvKey = Boolean(envApiKey(provider));
+      const configuredSource = settings.providers?.[provider.id]?.apiKeySource;
+      const apiKeyPreference =
+        configuredSource ?? (hasStoredKey ? 'settings' : 'environment');
+      const apiKeySource =
+        apiKeyPreference === 'settings'
+          ? hasStoredKey
+            ? 'settings'
+            : null
+          : hasEnvKey
+            ? 'environment'
+            : null;
 
       return {
         id: provider.id,
@@ -160,13 +193,11 @@ export function registerSettingsHandlers({
         baseURL: provider.baseURL,
         freeModels: provider.freeModels ?? [],
         note: provider.note,
+        apiKeyEnvs: provider.apiKeyEnvs ?? [],
         // A keyless provider (a local Ollama) counts as configured.
-        apiKeySet: hasStoredKey || hasEnvKey || !provider.apiKeyEnvs?.length,
-        apiKeySource: hasStoredKey
-          ? ('settings' as const)
-          : hasEnvKey
-            ? ('environment' as const)
-            : null,
+        apiKeySet: apiKeySource !== null || !provider.apiKeyEnvs?.length,
+        apiKeySource,
+        apiKeyPreference,
       };
     });
   });
@@ -185,7 +216,9 @@ export function registerSettingsHandlers({
 
   ipcMain.handle('mcp:statuses', () => mcpManager.getServerStatuses());
 
-  ipcMain.handle('mcp:test-server', (_e, server) => mcpManager.testServer(server));
+  ipcMain.handle('mcp:test-server', (_e, server) =>
+    mcpManager.testServer(server),
+  );
 
   ipcMain.handle('mcp:reload', async () => {
     const { activeCount } = await mcpManager.loadToolsForEnabledServers();

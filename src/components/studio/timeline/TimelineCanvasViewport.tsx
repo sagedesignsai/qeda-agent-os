@@ -19,6 +19,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { timelineStore, useTimelineState } from '@/hooks/use-timeline-store';
 import { useTimelineMedia } from '@/hooks/use-timeline-media';
+import { drawBitmapIfLive } from '@/lib/image-bitmap-lifetime';
 
 interface TimelineCanvasViewportProps {
   videoUrl: string | null;
@@ -396,8 +397,11 @@ export function TimelineCanvasViewport({
           const totalTiles = Math.ceil(clipW / tileWidth);
 
           // Only render tiles visible within [0, width]
-          const minTileIndex = Math.max(0, Math.floor((-clipX) / tileWidth));
-          const maxTileIndex = Math.min(totalTiles, Math.ceil((width - clipX) / tileWidth));
+          const minTileIndex = Math.max(0, Math.floor(-clipX / tileWidth));
+          const maxTileIndex = Math.min(
+            totalTiles,
+            Math.ceil((width - clipX) / tileWidth),
+          );
 
           for (let i = minTileIndex; i < maxTileIndex; i++) {
             const tileX = clipX + i * tileWidth;
@@ -406,11 +410,20 @@ export function TimelineCanvasViewport({
             const slot = Math.floor(tileTimeMs / 1500);
 
             // Direct O(1) thumbnail lookup
-            const bmp = thumbnails.get(slot) || thumbnails.get(Math.floor(tileTimeMs / 1500) * 1500);
+            const bmp =
+              thumbnails.get(slot) ||
+              thumbnails.get(Math.floor(tileTimeMs / 1500) * 1500);
 
             if (bmp) {
               const drawW = Math.min(tileWidth, clipX + clipW - tileX);
-              ctx.drawImage(
+
+              // A closed ImageBitmap is still a valid object, so it reaches this
+              // loop looking healthy — but `drawImage` throws on it, and that
+              // throw happens mid-paint and takes the rest of the frame with it.
+              // Skip a dead one and keep the divider, so a stale frame reads as an
+              // empty tile rather than tearing the whole timeline down.
+              const drawn = drawBitmapIfLive(
+                ctx,
                 bmp,
                 0,
                 0,
@@ -421,13 +434,16 @@ export function TimelineCanvasViewport({
                 drawW,
                 clipH,
               );
-              // Subtle tile divider
-              ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(tileX + tileWidth - 0.5, clipY);
-              ctx.lineTo(tileX + tileWidth - 0.5, clipY + clipH);
-              ctx.stroke();
+
+              if (drawn) {
+                // Subtle tile divider
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(tileX + tileWidth - 0.5, clipY);
+                ctx.lineTo(tileX + tileWidth - 0.5, clipY + clipH);
+                ctx.stroke();
+              }
             }
           }
 
