@@ -17,6 +17,7 @@ import {
   Undo2Icon,
   Redo2Icon,
   PrinterIcon,
+  SendIcon,
   DownloadIcon,
   SparklesIcon,
   SlidersHorizontalIcon,
@@ -490,6 +491,30 @@ export function DocumentRibbon({
           </Button>
 
           <Separator orientation="vertical" className="h-4 mx-0.5" />
+
+          {/* Hand the document to Correspondence. A link rather than an action: the
+              message is composed in the Correspondence view, where the recipients and
+              their channels live, and the document arrives already attached. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                asChild
+              >
+                <Link
+                  to={`/correspondence?document=${doc.id}${
+                    doc.projectId ? `&project=${doc.projectId}` : ''
+                  }`}
+                  aria-label="Send this document"
+                >
+                  <SendIcon className="h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Send this to a contact…</TooltipContent>
+          </Tooltip>
 
           {/* Print */}
           <Tooltip>

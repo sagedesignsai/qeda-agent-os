@@ -13,6 +13,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getDb } from './client.js';
+import { resolveKnowledgeProjectId } from './workspace.js';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,12 @@ export interface ResearchRun {
   session_id: string | null;
   page_id: string | null;
   notebook_id: string | null;
+  /**
+   * Owning project, resolved from the notebook (or the page) at creation time.
+   * Null when the run targets a loose page, and on rows written before the
+   * column existed until `MIGRATE_PROJECT_SCOPE_KNOWLEDGE` fills them in.
+   */
+  project_id: string | null;
   question: string;
   status: ResearchRunStatus;
   report: string;
@@ -69,14 +76,22 @@ export interface CreateResearchRunInput {
 export function createResearchRun(input: CreateResearchRunInput): ResearchRun {
   const db = getDb();
   const id = randomUUID();
+  // Resolved, not accepted as an argument: the run belongs to whichever project
+  // owns the notebook or page it investigates, so it can never be filed
+  // somewhere its own subject does not live.
+  const projectId = resolveKnowledgeProjectId({
+    notebookId: input.notebookId,
+    pageId: input.pageId,
+  });
   db.prepare(
-    `INSERT INTO research_runs (id, session_id, page_id, notebook_id, question)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO research_runs (id, session_id, page_id, notebook_id, project_id, question)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.sessionId ?? null,
     input.pageId ?? null,
     input.notebookId ?? null,
+    projectId,
     input.question,
   );
   return db

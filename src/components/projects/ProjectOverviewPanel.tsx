@@ -14,8 +14,10 @@
 import { Link } from 'react-router';
 import {
   FileTextIcon,
+  MailIcon,
   MessageSquareIcon,
   TerminalIcon,
+  UsersIcon,
   VideoIcon,
   ActivityIcon,
   TargetIcon,
@@ -62,6 +64,8 @@ export function ProjectOverviewPanel({
     label: string;
     value: number;
     to: string;
+    /** Tint the number when it is a live obligation rather than a tally. */
+    emphasis?: boolean;
   }> = [
     {
       icon: FileTextIcon,
@@ -86,6 +90,20 @@ export function ProjectOverviewPanel({
       label: 'Chats',
       value: linked.chatSessions,
       to: `/chat?project=${project.id}`,
+    },
+    {
+      icon: UsersIcon,
+      label: 'Contacts',
+      value: linked.contacts,
+      to: `/correspondence?project=${project.id}`,
+    },
+    {
+      icon: MailIcon,
+      label: 'Awaiting reply',
+      value: linked.awaitingReplies,
+      to: `/correspondence?project=${project.id}`,
+      // Zero is the resting state; anything above it is somebody owing an answer.
+      emphasis: linked.awaitingReplies > 0,
     },
   ];
 
@@ -177,18 +195,31 @@ export function ProjectOverviewPanel({
           <TargetIcon className="size-3.5 text-muted-foreground" />
           Linked work
         </h3>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {linkedItems.map(({ icon: Icon, label, value, to }) => (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {linkedItems.map(({ icon: Icon, label, value, to, emphasis }) => (
             <Link
               key={label}
               to={to}
-              className="flex items-center gap-2 rounded-lg border bg-background/40 px-3 py-2 transition-colors hover:border-primary/40 hover:bg-card/70"
+              className={cn(
+                'flex items-center gap-2 rounded-lg border bg-background/40 px-3 py-2 transition-colors hover:border-primary/40 hover:bg-card/70',
+                emphasis && 'border-primary/30',
+              )}
             >
-              <Icon className="size-3.5 text-muted-foreground" />
+              <Icon
+                className={cn(
+                  'size-3.5',
+                  emphasis ? 'text-primary' : 'text-muted-foreground',
+                )}
+              />
               <span className="flex-1 text-[11px] text-muted-foreground">
                 {label}
               </span>
-              <span className="text-sm font-semibold tabular-nums">
+              <span
+                className={cn(
+                  'text-sm font-semibold tabular-nums',
+                  emphasis && 'text-primary',
+                )}
+              >
                 {value}
               </span>
             </Link>

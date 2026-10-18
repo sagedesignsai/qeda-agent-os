@@ -91,6 +91,10 @@ export interface ProjectLinkedCounts {
   studioTakes: number;
   terminalSessions: number;
   chatSessions: number;
+  /** Bodies the project writes to. */
+  contacts: number;
+  /** Sent, still owed a reply — the number the correspondence system exists for. */
+  awaitingReplies: number;
 }
 
 /** Everything the project detail page needs, in one read. */
@@ -302,6 +306,19 @@ export function projectOverview(
       chatSessions: count(
         `SELECT COUNT(*) AS n FROM sessions WHERE project_id = ?`,
       ),
+      contacts: count(`SELECT COUNT(*) AS n FROM contacts WHERE project_id = ?`),
+      // Sent and still owing a reply. Queued and withdrawn rows are excluded on
+      // purpose: nothing left the building, so nothing is owed. `not_expected` is
+      // excluded too — a SARS filing has no clock, and counting it as an open loop
+      // would manufacture the anxiety the state exists to prevent.
+      awaitingReplies: count(
+        `SELECT COUNT(*) AS n
+           FROM message_recipients r
+           JOIN correspondence_messages m ON m.id = r.message_id
+          WHERE m.project_id = ?
+            AND r.dispatch_state = 'sent'
+            AND r.reply_state = 'awaiting'`,
+      ),
     },
   };
 }
@@ -319,6 +336,39 @@ export function listProjectRollups(opts?: {
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────────
+
+/**
+ * Move the knowledge side of the project link.
+ *
+ * `projects.notebook_id` is the pointer the project UI writes (ProjectDialog's
+ * "Linked notebook"), and `notebooks.project_id` / `pages.project_id` /
+ * `research_runs.project_id` are the copies a project reads its own knowledge
+ * through. Re-pointing a project at a different notebook therefore has to move
+ * those copies in both directions — otherwise the project page keeps showing the
+ * previous notebook's pages and 100-block research output as its own, or shows
+ * nothing at all when `notebook_id` is the only link that was ever set.
+ *
+ * Plain SQL here rather than a call into `db/workspace.ts`, so the two stores
+ * stay independent of each other. `projectId: null` un-scopes the notebook.
+ */
+function linkNotebookToProject(
+  notebookId: string | null,
+  projectId: string | null,
+): void {
+  if (!notebookId) return;
+  const db = getDb();
+  db.prepare('UPDATE notebooks SET project_id = ? WHERE id = ?').run(
+    projectId,
+    notebookId,
+  );
+  db.prepare('UPDATE pages SET project_id = ? WHERE notebook_id = ?').run(
+    projectId,
+    notebookId,
+  );
+  db.prepare(
+    'UPDATE research_runs SET project_id = ? WHERE notebook_id = ?',
+  ).run(projectId, notebookId);
+}
 
 /** Create a project. */
 export function createProject(opts: {
@@ -361,6 +411,11 @@ export function createProject(opts: {
       now,
     );
 
+  // Linking an existing notebook at creation time adopts its pages and research
+  // as this project's knowledge — the path a user takes to repair a notebook
+  // that was never attached.
+  linkNotebookToProject(opts.notebook_id ?? null, id);
+
   return getProject(id)!;
 }
 
@@ -386,6 +441,13 @@ export function updateProject(
   const sets: string[] = ['updated_at = ?'];
   const values: unknown[] = [now];
 
+  // Read before the write: re-pointing a project at a notebook is a move, so the
+  // notebook it is moving away from has to be released afterwards.
+  const previousNotebookId =
+    patch.notebook_id !== undefined
+      ? (getProject(id)?.notebook_id ?? null)
+      : null;
+
   for (const [key, val] of Object.entries(patch)) {
     if (val !== undefined) {
       sets.push(`${key} = ?`);
@@ -397,6 +459,16 @@ export function updateProject(
   getDb()
     .prepare(`UPDATE projects SET ${sets.join(', ')} WHERE id = ?`)
     .run(...values);
+
+  // Re-homing is a move, not a relabel: the previous notebook is released and
+  // the new one adopts this project, in one step, after the row is written.
+  if (patch.notebook_id !== undefined) {
+    const nextNotebookId = patch.notebook_id ?? null;
+    if (previousNotebookId !== nextNotebookId) {
+      linkNotebookToProject(previousNotebookId, null);
+      linkNotebookToProject(nextNotebookId, id);
+    }
+  }
 }
 
 /**

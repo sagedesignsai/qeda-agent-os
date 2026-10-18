@@ -31,6 +31,12 @@ export interface Notebook {
   title: string;
   description: string;
   icon: string;
+  /**
+   * The project that owns this notebook, or null for a loose notebook.
+   * Mirrors the project's own `notebook_id` pointer and is the value pages and
+   * research runs inherit.
+   */
+  project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -41,6 +47,8 @@ export interface Page {
   parent_page: string | null;
   title: string;
   sort_order: number;
+  /** Denormalised from the notebook — see `syncNotebookScope` for why. */
+  project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -77,12 +85,13 @@ export function createNotebook(
   title: string,
   description = '',
   icon = 'notebook',
+  projectId: string | null = null,
 ): Notebook {
   const db = getDb();
   const id = randomUUID();
   db.prepare(
-    'INSERT INTO notebooks (id, title, description, icon) VALUES (?, ?, ?, ?)',
-  ).run(id, title, description, icon);
+    'INSERT INTO notebooks (id, title, description, icon, project_id) VALUES (?, ?, ?, ?, ?)',
+  ).run(id, title, description, icon, projectId);
   return db
     .prepare<[string], Notebook>('SELECT * FROM notebooks WHERE id = ?')
     .get(id)!;
@@ -102,7 +111,12 @@ export function getNotebook(id: string): Notebook | undefined {
 
 export function updateNotebook(
   id: string,
-  patch: { title?: string; description?: string; icon?: string },
+  patch: {
+    title?: string;
+    description?: string;
+    icon?: string;
+    project_id?: string | null;
+  },
 ): void {
   const db = getDb();
   const fields: string[] = [];
@@ -113,15 +127,62 @@ export function updateNotebook(
     (fields.push('description = ?'), values.push(patch.description));
   if (patch.icon !== undefined)
     (fields.push('icon = ?'), values.push(patch.icon));
+  if (patch.project_id !== undefined)
+    (fields.push('project_id = ?'), values.push(patch.project_id));
   if (fields.length === 0) return;
   values.push(id);
   db.prepare(
     `UPDATE notebooks SET ${fields.join(', ')}, updated_at = unixepoch() WHERE id = ?`,
   ).run(...values);
+
+  // Re-homing a notebook moves its contents with it. Without this the pages
+  // would keep claiming the old project and vanish from the new one.
+  if (patch.project_id !== undefined) {
+    syncNotebookScope(id, patch.project_id);
+  }
 }
 
 export function deleteNotebook(id: string): void {
   getDb().prepare('DELETE FROM notebooks WHERE id = ?').run(id);
+}
+
+/**
+ * Push a notebook's owner onto the rows that inherit it.
+ *
+ * `pages.project_id` and `research_runs.project_id` are denormalised copies of
+ * the notebook's owner, which buys a project a single indexed read of its own
+ * knowledge instead of a join that a stale `projects.notebook_id` silently
+ * empties. The cost of denormalising is that exactly one place may write the
+ * copies — this one — so re-linking or un-linking a notebook always moves its
+ * contents with it.
+ */
+function syncNotebookScope(notebookId: string, projectId: string | null): void {
+  const db = getDb();
+  db.prepare('UPDATE pages SET project_id = ? WHERE notebook_id = ?').run(
+    projectId,
+    notebookId,
+  );
+  db.prepare(
+    'UPDATE research_runs SET project_id = ? WHERE notebook_id = ?',
+  ).run(projectId, notebookId);
+}
+
+/**
+ * The project that owns a knowledge location.
+ *
+ * One rule for both directions, so a research run built against a page cannot
+ * disagree with the page about which project it belongs to. The notebook wins:
+ * it is the ownership link, and the page's copy is derived from it.
+ */
+export function resolveKnowledgeProjectId(input: {
+  notebookId?: string | null;
+  pageId?: string | null;
+}): string | null {
+  if (input.notebookId) {
+    const owned = getNotebook(input.notebookId)?.project_id ?? null;
+    if (owned) return owned;
+  }
+  return input.pageId ? (getPage(input.pageId)?.project_id ?? null) : null;
 }
 
 // ─── Pages ────────────────────────────────────────────────────────────────────
@@ -139,9 +200,12 @@ export function createPage(
         'SELECT MAX(sort_order) AS m FROM pages WHERE notebook_id = ?',
       )
       .get(notebookId)?.m ?? 0;
+  // Inherited from the notebook at write time, never passed in by callers: a
+  // page cannot be filed into a project its notebook does not belong to.
+  const projectId = getNotebook(notebookId)?.project_id ?? null;
   db.prepare(
-    'INSERT INTO pages (id, notebook_id, parent_page, title, sort_order) VALUES (?, ?, ?, ?, ?)',
-  ).run(id, notebookId, parentPage, title, maxOrder + 1);
+    'INSERT INTO pages (id, notebook_id, parent_page, title, sort_order, project_id) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(id, notebookId, parentPage, title, maxOrder + 1, projectId);
   return db
     .prepare<[string], Page>('SELECT * FROM pages WHERE id = ?')
     .get(id)!;

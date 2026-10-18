@@ -64,6 +64,7 @@ import {
   VideoIcon,
   BrainCircuitIcon,
   WandSparklesIcon,
+  SendIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjects } from '@/hooks/use-projects';
@@ -93,6 +94,10 @@ interface AppSidebarProps {
 const NAV_ITEMS = [
   { to: '/projects', label: 'Projects', icon: FolderKanbanIcon },
   { to: '/tasks', label: 'Tasks', icon: CheckSquareIcon },
+  // Sits directly after Tasks: same family of "things I am responsible for", so
+  // the relationship to what is already overdue is discoverable rather than
+  // something the user has to remember exists.
+  { to: '/correspondence', label: 'Correspondence', icon: SendIcon },
   { to: '/workspace', label: 'Knowledge', icon: NotebookIcon },
   { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },

@@ -39,7 +39,8 @@ export {
 } from './capability.js';
 
 export { chatToolPolicies } from './policies/chat.js';
-export { copilotToolPolicies } from './policies/copilot.js';
+export { correspondenceToolPolicies } from './policies/correspondence.js';
+export { createPlanTools } from './plan.js';
 
 import { filesystemTools } from './filesystem.js';
 import { shellTools } from './shell.js';
@@ -58,6 +59,7 @@ import { PlanManager } from '../ai/plan-manager.js';
 
 import { createApprovalPolicy } from './capability.js';
 import { chatToolPolicies } from './policies/chat.js';
+import { correspondenceToolPolicies } from './policies/correspondence.js';
 
 export { createPlanTools } from './plan.js';
 
@@ -88,18 +90,13 @@ export const allTools = {
 export const chatApprovalPolicy = createApprovalPolicy(chatToolPolicies);
 
 /**
- * Does the Tools page need a native confirmation before running this tool?
+ * The correspondence copilot's approval gate, derived from
+ * `correspondenceToolPolicies`.
  *
- * Mirrors the agent's gate exactly, including failing closed on an
- * unclassified tool — a tool nobody classified is one nobody has reasoned about,
- * so it is not one the user should be able to fire silently.
+ * Used by the correspondence copilot agent's `toolApproval`. Mirrors the chat and
+ * copilot policies exactly — same derived-approval machinery, same fail-closed-on-
+ * unknown-tool behaviour.
  */
-export function requiresApproval(toolName: string): boolean {
-  const decision = chatApprovalPolicy({
-    toolCall: { toolName, dynamic: false },
-  });
-  return (
-    decision === 'user-approval' ||
-    (typeof decision === 'object' && decision.type === 'denied')
-  );
-}
+export const correspondenceCopilotApprovalPolicy = createApprovalPolicy(
+  correspondenceToolPolicies,
+);

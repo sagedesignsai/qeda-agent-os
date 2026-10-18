@@ -26,6 +26,7 @@ import { AppLayout } from './components/AppLayout';
 import Chat from './pages/Chat';
 import Terminal from './pages/Terminal';
 import Tasks from './pages/Tasks';
+import Correspondence from './pages/Correspondence';
 import Projects from './pages/Projects';
 import Documents from './pages/Documents';
 import Studio from './pages/Studio';
@@ -81,6 +82,11 @@ export const routes: RouteObject[] = [
       },
 
       { path: 'tasks', element: <Tasks /> },
+
+      // Correspondence is contact-centric rather than project-centric, so it has
+      // no sub-params yet: the rail's project scope arrives as `?project=` via
+      // `withScope`, exactly as it does for Tasks and Documents.
+      { path: 'correspondence', element: <Correspondence /> },
 
       { path: 'builder', element: <Builder /> },
 

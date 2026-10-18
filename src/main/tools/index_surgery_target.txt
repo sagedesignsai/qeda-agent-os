@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+from pathlib import Path
+p = Path('src/main/tools/index.ts')
+text = p.read_text()
+
+# Normalize any accidental double-escaped newlines inside the source
+text = text.replace('\\\\n', chr(10)).replace('\\n', chr(10))
+
+p.write_text(text)
+print('normalized, total lines', text.count(chr(10)))

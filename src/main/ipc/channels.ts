@@ -60,6 +60,44 @@ import type {
   McpTransportKind,
   McpServerPreset,
 } from '../../lib/builder-engine.js';
+import type {
+  Contact,
+  ContactChannel,
+  ContactWithChannels,
+  HarvestImportResult,
+} from '../db/correspondence.js';
+import type {
+  AdvanceResult,
+  Sequence,
+  SequenceDetail,
+  SequenceRunDetail,
+} from '../db/sequences.js';
+import type {
+  AttentionRow,
+  CorrespondenceEvent,
+  DispatchInput,
+  EscalationInput,
+  EscalationResult,
+  MessageAttachment,
+  MessageDetail,
+  MessageRecipient,
+  MessageSummary,
+  RecipientPatch,
+  RecipientPick,
+  RecipientWithContact,
+  SaveMessageInput,
+} from '../db/messages.js';
+import type {
+  HarvestChannelDraft,
+  HarvestRowDraft,
+  HarvestScanResult,
+} from '../../lib/harvest.js';
+import type {
+  ChannelVerification,
+  ContactChannelKind,
+  ContactKind,
+  ContactSource,
+} from '../../lib/correspondence.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -91,6 +129,35 @@ export type {
 };
 export type { GamificationState };
 export type { PdfDocumentRecord, PdfDocumentSummary };
+export type {
+  Contact,
+  ContactChannel,
+  ContactWithChannels,
+  HarvestImportResult,
+};
+export type { AdvanceResult, Sequence, SequenceDetail, SequenceRunDetail };
+export type {
+  AttentionRow,
+  CorrespondenceEvent,
+  EscalationInput,
+  EscalationResult,
+  MessageAttachment,
+  MessageDetail,
+  MessageRecipient,
+  MessageSummary,
+  RecipientWithContact,
+  SaveMessageInput,
+  DispatchInput,
+  RecipientPatch,
+  RecipientPick,
+};
+export type { HarvestChannelDraft, HarvestRowDraft, HarvestScanResult };
+export type {
+  ChannelVerification,
+  ContactChannelKind,
+  ContactKind,
+  ContactSource,
+};
 export type {
   StudioTake,
   StudioTakeSummary,
@@ -1288,6 +1355,226 @@ export interface IpcChannels {
   };
   /** Pushed when the soundlab copilot creates or updates its plan. */
   'soundlab-copilot:plan-event': { data: AgentPlanEvent };
+
+  // ── Correspondence ─────────────────────────────────────────────────────────
+  //
+  // The registry, plus Harvest — the extraction path that stops a system like
+  // this from failing at the first screen (nobody types 147 cells into a form).
+  //
+  // There is deliberately NO send channel here. v1 owns the intent, not the
+  // delivery: `message-dispatch` (Phase 2) records that something left, when, and
+  // on what clock. That is also what makes "an agent cannot send your legal
+  // correspondence" a structural fact rather than a policy setting.
+  /** Contacts with their channels, for one project scope or the whole registry. */
+  'correspondence:contacts-list': {
+    req: { projectId?: string | null } | void;
+    res: ContactWithChannels[];
+  };
+  /** Create or patch a contact. */
+  'correspondence:contact-save': {
+    req: {
+      id?: string;
+      projectId?: string | null;
+      kind?: ContactKind;
+      name: string;
+      role?: string;
+      parentId?: string | null;
+      notes?: string;
+    };
+    res: ContactWithChannels;
+  };
+  'correspondence:contact-delete': { req: { id: string }; res: boolean };
+  /**
+   * Create or patch one way of reaching a contact.
+   *
+   * Changing a channel's value re-opens its verification, because the previous
+   * check was about the previous address.
+   */
+  'correspondence:channel-save': {
+    req: {
+      id?: string;
+      contactId: string;
+      kind: ContactChannelKind;
+      value: string;
+      label?: string;
+      source?: ContactSource;
+      confidence?: number | null;
+    };
+    res: ContactChannel;
+  };
+  'correspondence:channel-delete': { req: { id: string }; res: boolean };
+  /** Record the outcome of checking a channel: confirmed, or bounced. */
+  'correspondence:channel-set-verified': {
+    req: { id: string; verified: ChannelVerification };
+    res: ContactChannel | null;
+  };
+  /** Registry totals for the rail badge and the project card. */
+  'correspondence:counts': {
+    req: { projectId?: string | null } | void;
+    res: { contacts: number; channels: number; unverified: number };
+  };
+  /**
+   * Read a source and propose contacts from it. Writes nothing.
+   *
+   * Returns drafts for a review grid, so the round trip is scan → review → import
+   * and the user's edit is the only thing that ever reaches the database.
+   */
+  'correspondence:harvest-scan': {
+    req: {
+      projectId?: string | null;
+      source:
+        | { kind: 'page'; pageId: string }
+        | { kind: 'document'; documentId: string }
+        | { kind: 'text'; text: string; label?: string };
+      /** Run the model pass on top of the deterministic scan. Defaults to true. */
+      useAgent?: boolean;
+    };
+    res: HarvestScanResult;
+  };
+  /** Write a reviewed harvest grid. Idempotent: re-importing merges. */
+  'correspondence:harvest-import': {
+    req: { projectId: string | null; rows: HarvestRowDraft[] };
+    res: HarvestImportResult;
+  };
+  // ── Messages and their per-recipient state ────────────────────────────────
+  //
+  // A message is a record, and `message_recipients` is the state machine: one row
+  // per body, each with its own absolute clock. `message-dispatch` is the only
+  // verb that starts a clock, and it does not perform any transport — see
+  // `db/messages.ts`. There is still no channel here that could send anything.
+  /** Sent and logged items for one scope, with their counts. */
+  'correspondence:messages-list': {
+    req: { projectId?: string | null } | void;
+    res: MessageSummary[];
+  };
+  'correspondence:message-get': {
+    req: { id: string };
+    res: MessageDetail | null;
+  };
+  /** Create or patch a message, including replacing its attachments. */
+  'correspondence:message-save': {
+    req: SaveMessageInput;
+    res: MessageDetail;
+  };
+  'correspondence:message-delete': { req: { id: string }; res: boolean };
+  /** Reconcile the queued recipient list. Dispatched recipients are never touched. */
+  'correspondence:message-set-recipients': {
+    req: { messageId: string; picks: RecipientPick[] };
+    res: MessageDetail;
+  };
+  /**
+   * Record that something was sent: stamps the time, starts each recipient's
+   * clock, and writes one event per body. Performs no delivery.
+   */
+  'correspondence:message-dispatch': {
+    req: DispatchInput;
+    res: MessageDetail;
+  };
+  /** Log a reply, record a reference, move or clear a deadline, mark no response. */
+  'correspondence:recipient-update': {
+    req: { id: string; patch: RecipientPatch };
+    res: RecipientWithContact | null;
+  };
+  /**
+   * Turn "they went quiet" into a task, in the existing task manager, linked back.
+   * Safe to repeat: a recipient that already has a chase task is reported, not
+   * duplicated.
+   */
+  'correspondence:recipient-escalate': {
+    req: EscalationInput;
+    res: EscalationResult;
+  };
+  /**
+   * The append-only trail for one recipient — every dispatch, reply, deadline
+   * change and escalation, oldest last. Read on demand from the lane.
+   */
+  'correspondence:recipient-events': {
+    req: { id: string };
+    res: CorrespondenceEvent[];
+  };
+  /** What needs the user, most urgent first — the board's verb surface. */
+  'correspondence:attention-list': {
+    req: { projectId?: string | null } | void;
+    res: AttentionRow[];
+  };
+  /**
+   * Every deadline still running, including comfortable ones — the rail's read.
+   * Wider than the attention list on purpose: an axis has to show the whole
+   * situation, not only the parts that need a decision.
+   */
+  'correspondence:clocks': {
+    req: { projectId?: string | null } | void;
+    res: RecipientWithContact[];
+  };
+  'correspondence:message-counts': {
+    req: { projectId?: string | null } | void;
+    res: {
+      messages: number;
+      awaiting: number;
+      overdue: number;
+      nextDueAt: number | null;
+    };
+  };
+  // ── Sequences ─────────────────────────────────────────────────────────────
+  //
+  // Wait → chase → escalate, as ordered steps. The runner is deterministic and
+  // session-driven: `sequence-advance` is called with the user present, and a step
+  // that came due while the app was closed is reported as stalled rather than fired.
+  // Nothing here decides what to do next with a model.
+  'correspondence:sequences-list': {
+    req: { projectId?: string | null } | void;
+    res: Sequence[];
+  };
+  /** Create a plan from an explicit step list (the UI sends a template's steps). */
+  'correspondence:sequence-create': {
+    req: {
+      projectId?: string | null;
+      name: string;
+      description?: string;
+      steps: Array<{
+        kind: 'wait' | 'branch' | 'escalate' | 'task' | 'stop';
+        title: string;
+        config?: Record<string, unknown>;
+      }>;
+    };
+    res: SequenceDetail;
+  };
+  'correspondence:sequence-get': {
+    req: { id: string };
+    res: SequenceDetail | null;
+  };
+  /** Attach a plan to a dispatched message. Materialises every step up front. */
+  'correspondence:sequence-start': {
+    req: { sequenceId: string; messageId: string; projectId?: string | null };
+    res: SequenceRunDetail;
+  };
+  /** Where a plan stands — waiting, due, or stalled. */
+  'correspondence:sequence-run': {
+    req: { runId: string };
+    res: SequenceRunDetail | null;
+  };
+  'correspondence:sequence-runs-for-message': {
+    req: { messageId: string };
+    res: SequenceRunDetail[];
+  };
+  /**
+   * Advance exactly one named step. Called without `fireStepId` it fires nothing and
+   * only reports where the plan stands — there is no watch-and-fire path, so a plan
+   * can never advance while nobody asked.
+   */
+  'correspondence:sequence-advance': {
+    req: { runId: string; fireStepId?: string };
+    res: AdvanceResult;
+  };
+  'correspondence:sequence-stop': { req: { runId: string }; res: void };
+  /** Plans with a step that came due while the app was closed. Read at startup. */
+  'correspondence:sequence-stalled': {
+    req: { projectId?: string | null } | void;
+    res: SequenceRunDetail[];
+  };
+
+  /** The registry changed — re-fetch. Declared as an event (no req/res). */
+  'correspondence:changed': void;
 
   // ── Native shell integration ────────────────────────────────────────────────
   /** Navigate the app router to a path. Sent by tray, menu, notifications, deep links. */
