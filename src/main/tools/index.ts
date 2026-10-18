@@ -78,7 +78,6 @@ export const allTools = {
   indexPage: indexPageTool,
 };
 
-
 /**
  * The chat agent's approval gate, derived from `chatToolPolicies`.
  *

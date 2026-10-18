@@ -56,11 +56,11 @@ import {
   type ChannelVerification,
   type ContactChannelKind,
 } from '@/lib/correspondence';
-import type {
-  ContactChannel,
-  ContactWithChannels,
-} from '@/main/ipc/channels';
-import { useContacts, useCorrespondenceCounts } from '@/hooks/use-correspondence';
+import type { ContactChannel, ContactWithChannels } from '@/main/ipc/channels';
+import {
+  useContacts,
+  useCorrespondenceCounts,
+} from '@/hooks/use-correspondence';
 
 /** One glyph per channel, so a row is scannable without reading the kind label. */
 const CHANNEL_ICON: Record<ContactChannelKind, typeof MailIcon> = {
@@ -336,8 +336,7 @@ function ContactRow({
                 size="sm"
                 className={cn(
                   'h-6 shrink-0 gap-1 px-1.5 text-[10px]',
-                  channel.verified === 'unverified' &&
-                    'text-muted-foreground',
+                  channel.verified === 'unverified' && 'text-muted-foreground',
                   channel.verified === 'bounced' && 'text-destructive',
                 )}
                 title={`${VERIFICATION_LABELS[channel.verified]} — click to mark as ${VERIFICATION_LABELS[NEXT_VERIFICATION[channel.verified]].toLowerCase()}`}
@@ -453,7 +452,6 @@ function ContactEditor({
       {mode === 'contact' ? (
         <>
           <Input
-            autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Organisation or person"
@@ -492,7 +490,6 @@ function ContactEditor({
             ))}
           </NativeSelect>
           <Input
-            autoFocus
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder="name@example.org"
@@ -514,7 +511,11 @@ function ContactEditor({
           onClick={() => void submit()}
         >
           {saving && <Loader2Icon className="size-3.5 animate-spin" />}
-          {mode === 'channel' ? 'Add channel' : initial ? 'Save' : 'Add contact'}
+          {mode === 'channel'
+            ? 'Add channel'
+            : initial
+              ? 'Save'
+              : 'Add contact'}
         </Button>
         <Button
           variant="ghost"

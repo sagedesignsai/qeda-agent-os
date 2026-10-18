@@ -245,13 +245,7 @@ import type {
   PlanItemStatus,
   AgentPlanEvent,
 } from '../../lib/agent-plan.js';
-export type {
-  AgentPlan,
-  PlanItem,
-  PlanItemStatus,
-  AgentPlanEvent,
-};
-
+export type { AgentPlan, PlanItem, PlanItemStatus, AgentPlanEvent };
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -479,12 +473,14 @@ export interface IpcChannels {
        * (the renderer only needs names and enabled flags for display; keys are
        * never sent over IPC).
        */
-      mcpServers: Array<Omit<McpServerSettings, 'env' | 'headers'> & {
-        /** True when any env value is set (never the values themselves). */
-        hasEnv: boolean;
-        /** True when any header value is set (never the values themselves). */
-        hasHeaders: boolean;
-      }>;
+      mcpServers: Array<
+        Omit<McpServerSettings, 'env' | 'headers'> & {
+          /** True when any env value is set (never the values themselves). */
+          hasEnv: boolean;
+          /** True when any header value is set (never the values themselves). */
+          hasHeaders: boolean;
+        }
+      >;
     };
   };
 
@@ -541,7 +537,6 @@ export interface IpcChannels {
     req: { providerId: string };
     res: { models: string[]; error?: string };
   };
-
 
   // External services (search, scrape, docs, images, speech)
   /** Status of each registered external service, including whether a key is set. */

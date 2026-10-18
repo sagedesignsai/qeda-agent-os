@@ -40,7 +40,6 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-
 import { ToolLoopAgent, isStepCount } from 'ai';
 import { resolveModel } from './provider.js';
 import type { ModelTarget } from './fallback.js';
@@ -114,10 +113,8 @@ HOW TO READ THE TOOLS
 
 export function createCorrespondenceCopilotAgent({
   activeProject,
-  projectId,
   target,
   planManager,
-  broadcastChanged,
 }: CorrespondenceCopilotAgentInput): ToolLoopAgent {
   const model = resolveModel(target.providerId, target.modelId);
   const instructions = activeProject
@@ -132,9 +129,6 @@ export function createCorrespondenceCopilotAgent({
     } as unknown as ToolLoopAgent['tools'],
     toolApproval: correspondenceCopilotApprovalPolicy,
     instructions,
-    stopWhen: [
-      isStepCount(25),
-      planManager.stopCondition(),
-    ],
+    stopWhen: [isStepCount(25), planManager.stopCondition()],
   });
 }

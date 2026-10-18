@@ -103,12 +103,7 @@ export interface RecipientWithContact extends MessageRecipient {
 }
 
 export type CorrespondenceEventKind =
-  | 'dispatched'
-  | 'replied'
-  | 'no_response'
-  | 'clock'
-  | 'note'
-  | 'escalated';
+  'dispatched' | 'replied' | 'no_response' | 'clock' | 'note' | 'escalated';
 
 export interface CorrespondenceEvent {
   id: string;
@@ -215,7 +210,9 @@ function decorateRecipients(
         .join(', ')})`,
     )
     .all(...messageIds);
-  const projectByMessage = new Map(owners.map((owner) => [owner.id, owner.project_id]));
+  const projectByMessage = new Map(
+    owners.map((owner) => [owner.id, owner.project_id]),
+  );
 
   return rows.map((row) => ({
     ...row,
@@ -252,7 +249,9 @@ function writeAttachments(
   attachments: MessageAttachmentInput[],
 ): void {
   const db = getDb();
-  db.prepare('DELETE FROM message_attachments WHERE message_id = ?').run(messageId);
+  db.prepare('DELETE FROM message_attachments WHERE message_id = ?').run(
+    messageId,
+  );
   for (const attachment of attachments) {
     db.prepare(
       `INSERT INTO message_attachments (id, message_id, kind, document_id, path, label)
@@ -287,9 +286,9 @@ export function saveMessage(input: SaveMessageInput): MessageDetail {
       values.push(input.projectId);
     }
     values.push(input.id);
-    db.prepare(`UPDATE correspondence_messages SET ${sets.join(', ')} WHERE id = ?`).run(
-      ...values,
-    );
+    db.prepare(
+      `UPDATE correspondence_messages SET ${sets.join(', ')} WHERE id = ?`,
+    ).run(...values);
     if (input.attachments !== undefined) {
       writeAttachments(input.id, input.attachments);
     }
@@ -299,12 +298,7 @@ export function saveMessage(input: SaveMessageInput): MessageDetail {
   const id = randomUUID();
   db.prepare(
     `INSERT INTO correspondence_messages (id, project_id, subject, body) VALUES (?, ?, ?, ?)`,
-  ).run(
-    id,
-    input.projectId ?? null,
-    input.subject ?? '',
-    input.body ?? '',
-  );
+  ).run(id, input.projectId ?? null, input.subject ?? '', input.body ?? '');
   if (input.attachments) writeAttachments(id, input.attachments);
   return getMessageDetail(id)!;
 }
@@ -315,7 +309,9 @@ export function getMessageDetail(
 ): MessageDetail | null {
   const db = getDb();
   const message = db
-    .prepare<[string], Message>('SELECT * FROM correspondence_messages WHERE id = ?')
+    .prepare<[string], Message>(
+      'SELECT * FROM correspondence_messages WHERE id = ?',
+    )
     .get(id);
   if (!message) return null;
 
@@ -369,7 +365,9 @@ export function listMessages(
           )
           .all(projectId)
       : db
-          .prepare<[], Message>(`SELECT * FROM correspondence_messages ORDER BY updated_at DESC`)
+          .prepare<[], Message>(
+            `SELECT * FROM correspondence_messages ORDER BY updated_at DESC`,
+          )
           .all()
   ) as Message[];
 
@@ -420,7 +418,10 @@ export function listMessages(
 }
 
 export function deleteMessage(id: string): boolean {
-  return getDb().prepare('DELETE FROM correspondence_messages WHERE id = ?').run(id).changes > 0;
+  return (
+    getDb().prepare('DELETE FROM correspondence_messages WHERE id = ?').run(id)
+      .changes > 0
+  );
 }
 
 // ─── Recipients ───────────────────────────────────────────────────────────────
@@ -553,7 +554,8 @@ export function dispatchMessage(input: DispatchInput): MessageDetail {
         explicit !== undefined
           ? explicit
           : dueFrom(sentAt, deadlineClass, input.windowDays);
-      const notExpected = input.replyNotExpected?.includes(recipient.id) ?? false;
+      const notExpected =
+        input.replyNotExpected?.includes(recipient.id) ?? false;
 
       db.prepare(
         `UPDATE message_recipients
@@ -672,7 +674,10 @@ export function updateRecipient(
     `UPDATE message_recipients SET ${sets.join(', ')} WHERE id = ?`,
   ).run(...values);
 
-  if (patch.replyState !== undefined && patch.replyState !== before.reply_state) {
+  if (
+    patch.replyState !== undefined &&
+    patch.replyState !== before.reply_state
+  ) {
     if (patch.replyState === 'replied') {
       appendEvent({
         projectId,
@@ -940,7 +945,10 @@ export function listAttention(
   const messages =
     messageIds.length > 0
       ? db
-          .prepare<string[], { id: string; subject: string; project_id: string | null }>(
+          .prepare<
+            string[],
+            { id: string; subject: string; project_id: string | null }
+          >(
             `SELECT id, subject, project_id FROM correspondence_messages
               WHERE id IN (${messageIds.map(() => '?').join(', ')})`,
           )
@@ -1008,11 +1016,12 @@ export function messageCounts(
   const scope = projectId ? 'WHERE m.project_id = ?' : '';
   const args = projectId ? [projectId] : [];
 
-  const messages = db
-    .prepare<unknown[], { n: number }>(
-      `SELECT COUNT(*) AS n FROM correspondence_messages m ${scope}`,
-    )
-    .get(...args)?.n ?? 0;
+  const messages =
+    db
+      .prepare<unknown[], { n: number }>(
+        `SELECT COUNT(*) AS n FROM correspondence_messages m ${scope}`,
+      )
+      .get(...args)?.n ?? 0;
 
   const row = db
     .prepare<
@@ -1150,4 +1159,3 @@ export function getRecipientTrail(
     events,
   };
 }
-
