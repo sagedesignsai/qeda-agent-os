@@ -98,6 +98,11 @@ import type {
   ContactKind,
   ContactSource,
 } from '../../lib/correspondence.js';
+import {
+  CHANNEL_LABELS,
+  CONTACT_CHANNEL_KINDS,
+  VERIFICATION_LABELS,
+} from '../../lib/correspondence.js';
 
 // Re-export the domain types so the renderer can import them from the channel
 // contract module rather than reaching into the database layer.
@@ -158,6 +163,7 @@ export type {
   ContactKind,
   ContactSource,
 };
+export { CHANNEL_LABELS, CONTACT_CHANNEL_KINDS, VERIFICATION_LABELS };
 export type {
   StudioTake,
   StudioTakeSummary,
@@ -1575,6 +1581,28 @@ export interface IpcChannels {
 
   /** The registry changed — re-fetch. Declared as an event (no req/res). */
   'correspondence:changed': void;
+
+  // ── Correspondence Copilot ──────────────────────────────────────────────────
+  /** Run one correspondence copilot turn. Streams back over `correspondence-copilot:stream-*`. */
+  'correspondence-copilot:chat': {
+    req: {
+      messages: UIMessage[];
+      context?: { projectId?: string };
+    };
+    res: void;
+  };
+  'correspondence-copilot:stream-chunk': string;
+  'correspondence-copilot:stream-done': { runId: string };
+  'correspondence-copilot:stream-error': { error: string };
+  'correspondence-copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  /** Pushed when the correspondence copilot creates or updates its plan. */
+  'correspondence-copilot:plan-event': { data: AgentPlanEvent };
 
   // ── Native shell integration ────────────────────────────────────────────────
   /** Navigate the app router to a path. Sent by tray, menu, notifications, deep links. */

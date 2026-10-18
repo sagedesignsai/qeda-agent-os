@@ -378,7 +378,7 @@ export function listMessages(
   const ids = messages.map((message) => message.id);
   const rows = db
     .prepare<
-      string[],
+      (string | number)[],
       {
         message_id: string;
         recipient_count: number;
@@ -1088,3 +1088,66 @@ export function stalledRecipients(
 
   return decorateRecipients(rows, now);
 }
+
+export interface RecipientTrail {
+  recipientId: string;
+  contact: string;
+  contact_role: string;
+  message_id: string;
+  message_subject: string;
+  channel_kind: ContactChannelKind;
+  channel_value: string | null;
+  dispatch_state: DispatchState;
+  reply_state: ReplyState;
+  sent_at: number | null;
+  replied_at: number | null;
+  due: number | null;
+  deadline_class: DeadlineClass;
+  external_ref: string;
+  notes: string;
+  escalation_task_id: string | null;
+  events: CorrespondenceEvent[];
+}
+
+/** One recipient, their message, channel, state, deadline context, and recent events. */
+export function getRecipientTrail(
+  recipientId: string,
+  now = nowSeconds(),
+): RecipientTrail | null {
+  const db = getDb();
+  const row = db
+    .prepare<[string], MessageRecipient>(
+      `SELECT * FROM message_recipients WHERE id = ?`,
+    )
+    .get(recipientId);
+  if (!row) return null;
+
+  const decorated = decorateRecipients([row], now)[0];
+  const message = db
+    .prepare<[string], { subject: string }>(
+      `SELECT subject FROM correspondence_messages WHERE id = ?`,
+    )
+    .get(row.message_id);
+  const events = listRecipientEvents(recipientId);
+
+  return {
+    recipientId: row.id,
+    contact: decorated.contact_name,
+    contact_role: decorated.contact_role,
+    message_id: row.message_id,
+    message_subject: message?.subject ?? '',
+    channel_kind: row.channel_kind,
+    channel_value: decorated.channel_value,
+    dispatch_state: row.dispatch_state,
+    reply_state: row.reply_state,
+    sent_at: row.sent_at,
+    replied_at: row.replied_at,
+    due: row.response_due_at,
+    deadline_class: row.deadline_class,
+    external_ref: row.external_ref,
+    notes: row.notes,
+    escalation_task_id: row.escalation_task_id,
+    events,
+  };
+}
+

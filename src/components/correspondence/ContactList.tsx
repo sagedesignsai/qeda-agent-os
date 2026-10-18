@@ -54,9 +54,11 @@ import {
   CONTACT_CHANNEL_KINDS,
   VERIFICATION_LABELS,
   type ChannelVerification,
-  type ContactChannel,
   type ContactChannelKind,
-  type ContactWithChannels,
+} from '@/lib/correspondence';
+import type {
+  ContactChannel,
+  ContactWithChannels,
 } from '@/main/ipc/channels';
 import { useContacts, useCorrespondenceCounts } from '@/hooks/use-correspondence';
 
@@ -370,8 +372,11 @@ function ContactRow({
           mode="channel"
           contactId={contact.id}
           onCancel={() => setAddingChannel(false)}
-          onSave={async () => setAddingChannel(false)}
-          onSaveChannel={onSaveChannel}
+          onSaveChannel={async (ch) => {
+            const res = await onSaveChannel(ch);
+            setAddingChannel(false);
+            return res;
+          }}
         />
       ) : (
         <Button
@@ -394,7 +399,7 @@ interface ContactEditorProps {
   projectId: string | null;
   initial?: { id: string; name: string; role: string };
   onCancel: () => void;
-  onSave: (input: {
+  onSave?: (input: {
     projectId: string | null;
     name: string;
     role: string;
@@ -434,11 +439,10 @@ function ContactEditor({
       if (mode === 'channel') {
         if (!value.trim() || !contactId || !onSaveChannel) return;
         await onSaveChannel({ contactId, kind, value: value.trim() });
-        await onSave();
         return;
       }
       if (!name.trim()) return;
-      await onSave({ projectId, name: name.trim(), role: role.trim() });
+      await onSave?.({ projectId, name: name.trim(), role: role.trim() });
     } finally {
       setSaving(false);
     }

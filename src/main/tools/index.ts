@@ -39,6 +39,7 @@ export {
 } from './capability.js';
 
 export { chatToolPolicies } from './policies/chat.js';
+export { copilotToolPolicies } from './policies/copilot.js';
 export { correspondenceToolPolicies } from './policies/correspondence.js';
 export { createPlanTools } from './plan.js';
 
@@ -56,12 +57,9 @@ import { taskTools } from './tasks.js';
 import { documentDrafterTools } from './documents-drafter.js';
 import { createPlanTools } from './plan.js';
 import { PlanManager } from '../ai/plan-manager.js';
-
 import { createApprovalPolicy } from './capability.js';
 import { chatToolPolicies } from './policies/chat.js';
 import { correspondenceToolPolicies } from './policies/correspondence.js';
-
-export { createPlanTools } from './plan.js';
 
 /** Every tool available to the chat agent. The copilot picks a subset. */
 export const allTools = {
@@ -100,3 +98,10 @@ export const chatApprovalPolicy = createApprovalPolicy(chatToolPolicies);
 export const correspondenceCopilotApprovalPolicy = createApprovalPolicy(
   correspondenceToolPolicies,
 );
+
+export function requiresApproval(toolName: string): boolean {
+  return (
+    chatApprovalPolicy({ toolCall: { toolName, dynamic: false } }) ===
+    'user-approval'
+  );
+}

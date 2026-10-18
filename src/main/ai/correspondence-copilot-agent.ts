@@ -41,19 +41,18 @@
  */
 
 
+import { ToolLoopAgent, isStepCount } from 'ai';
+import { resolveModel } from './provider.js';
+import type { ModelTarget } from './fallback.js';
 import type { PlanManager } from './plan-manager.js';
-import type { ProviderChainEntry, ToolLoopAgent } from 'ai';
+import { createPlanTools } from '../tools/plan.js';
+import { correspondenceCopilotTools } from '../tools/correspondence.js';
+import { correspondenceCopilotApprovalPolicy } from '../tools/index.js';
 
 export interface CorrespondenceCopilotAgentInput {
-  activeProject?: {
-    id: string;
-    name: string;
-    status: string;
-    deadline: number | null;
-    repo_path: string | null;
-  } | null;
+  activeProject?: string;
   projectId?: string | null;
-  target: ProviderChainEntry;
+  target: ModelTarget;
   planManager: PlanManager;
   broadcastChanged: () => void;
 }
@@ -120,17 +119,22 @@ export function createCorrespondenceCopilotAgent({
   planManager,
   broadcastChanged,
 }: CorrespondenceCopilotAgentInput): ToolLoopAgent {
+  const model = resolveModel(target.providerId, target.modelId);
+  const instructions = activeProject
+    ? `${SYSTEM_INSTRUCTIONS}\n\nACTIVE PROJECT CONTEXT:\n${activeProject}`
+    : SYSTEM_INSTRUCTIONS;
+
   return new ToolLoopAgent({
-    model: target.model,
-    tools: correspondenceCopilotTools as unknown as ToolLoopAgent['tools'],
+    model: model as any,
+    tools: {
+      ...correspondenceCopilotTools,
+      ...createPlanTools(planManager),
+    } as unknown as ToolLoopAgent['tools'],
     toolApproval: correspondenceCopilotApprovalPolicy,
-    instructions: SYSTEM_INSTRUCTIONS,
-    onToolCall: () => {
-      planManager?.reset();
-      broadcastChanged?.();
-    },
-    onError: () => {
-      planManager?.reset();
-    },
+    instructions,
+    stopWhen: [
+      isStepCount(25),
+      planManager.stopCondition(),
+    ],
   });
 }

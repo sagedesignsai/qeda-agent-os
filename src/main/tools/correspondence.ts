@@ -23,12 +23,17 @@ import {
   getContact,
 } from '../db/correspondence.js';
 import {
-  listMessageCounts,
+  messageCounts,
   listAttention,
   listLiveClocks,
   listRecipientEvents,
   listMessages,
   getRecipientTrail,
+  saveMessage,
+  setMessageRecipients,
+  dispatchMessage,
+  updateRecipient,
+  escalateRecipients,
 } from '../db/messages.js';
 import {
   listProjects,
@@ -36,12 +41,7 @@ import {
   getProject,
 } from '../db/projects.js';
 import { listRunsForMessage } from '../db/sequences.js';
-import {
-  saveMessage,
-  setMessageRecipients,
-  updateRecipient,
-  escalateRecipients,
-} from '../db/messages.js';
+import { listProjectsTool, listTasksTool } from './tasks.js';
 
 // ─── Read tools (no approval) ─────────────────────────────────────────────────
 
@@ -56,10 +56,7 @@ export const listContactsTool = tool({
   }),
   execute: async ({ projectId }) => {
     try {
-      const contacts = (projectId
-        ? listContacts({ project_id: projectId })
-        : listContacts(null)
-      ).map((c) => ({
+      const contacts = listContacts(projectId ?? null).map((c) => ({
         id: c.id,
         name: c.name,
         kind: c.kind,
@@ -128,7 +125,6 @@ export const listAttentionTool = tool({
         channel: item.recipient.channel_value,
         state: item.state,
         reason: item.reason,
-        schedule_at: item.recipient.scheduled_at,
         reply_state: item.recipient.reply_state,
         deadline_class: item.recipient.deadline_class,
         due: item.recipient.response_due_at,
@@ -157,7 +153,6 @@ export const listLiveClocksTool = tool({
         contact: clock.contact_name,
         channel: clock.channel_value,
         state: clock.clock,
-        scheduled_at: clock.scheduled_at,
         deadline_class: clock.deadline_class,
         due: clock.response_due_at,
         sent_at: clock.sent_at,
@@ -177,7 +172,7 @@ export const listMessageCountsTool = tool({
     .optional(),
   execute: async () => {
     try {
-      const counts = listMessageCounts(null);
+      const counts = messageCounts(null);
       return { success: true, counts };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -219,17 +214,18 @@ export const listMessagesTool = tool({
         .describe('Restrict to one project, or omit for the unscoped list.'),
     })
     .optional(),
-  execute: async ({ projectId }) => {
+  execute: async (args) => {
     try {
-      const messages = listMessages(projectId ?? null).map((m) => ({
+      const messages = listMessages(args?.projectId ?? null).map((m) => ({
         id: m.id,
+        project_id: m.project_id,
         subject: m.subject,
         body: m.body,
-        reply_state: m.reply_state,
-        dispatch_state: m.dispatch_state,
-        scheduled_at: m.scheduled_at,
         recipient_count: m.recipient_count,
+        awaiting_count: m.awaiting_count,
+        overdue_count: m.overdue_count,
         sent_at: m.sent_at,
+        next_due_at: m.next_due_at,
       }));
       return { success: true, count: messages.length, messages };
     } catch (err) {
@@ -296,11 +292,11 @@ export const draftMessageTool = tool({
         success: true,
         message: {
           id: message.id,
+          project_id: message.project_id,
           subject: message.subject,
           body: message.body,
-          reply_state: message.reply_state,
-          dispatch_state: message.dispatch_state,
-          scheduled_at: message.scheduled_at,
+          attachments: message.attachments,
+          recipients: message.recipients,
         },
       };
     } catch (err) {
@@ -420,7 +416,7 @@ export const proposeReplyClassificationTool = tool({
 
 export const draftEscalationNoteTool = tool({
   description:
-    'Draft a chase task title and note from the recipient's trail — who, what was sent, when it was due, whether the window is statutory, and the current state. Use when the user wants a follow-up written before raising it as a task.',
+    'Draft a chase task title and note from the recipient\'s trail — who, what was sent, when it was due, whether the window is statutory, and the current state. Use when the user wants a follow-up written before raising it as a task.',
   inputSchema: z.object({
     recipientId: z
       .string()
@@ -499,7 +495,7 @@ export const logManualSendRecordTool = tool({
         attachments: [],
       });
       const recipient = setMessageRecipients(message.id, [
-        { contactId, channelId: null, channelKind, channelKind },
+        { contactId, channelId: null, channelKind },
       ]).recipients[0];
 
       return {
@@ -523,7 +519,7 @@ export const logManualSendRecordTool = tool({
 
 export const recordDispatchAsSentTool = tool({
   description:
-    'Record the dispatch date for a drafted message and its queued recipients — the honest verb this system uses. It stamps when it was sent, starts each recipient's reply clock, and writes the event trail. It does not deliver anything for you. Use only after the user has confirmed the recipients and the clock.',
+    'Record the dispatch date for a drafted message and its queued recipients — the honest verb this system uses. It stamps when it was sent, starts each recipient\'s reply clock, and writes the event trail. It does not deliver anything for you. Use only after the user has confirmed the recipients and the clock.',
   inputSchema: z.object({
     messageId: z
       .string()
@@ -538,15 +534,15 @@ export const recordDispatchAsSentTool = tool({
       .describe('When it was sent (ISO string or unix seconds), or omit for now.'),
     deadlineClass: z
       .enum(['statutory', 'tactical', 'contractual'])
-      .description('The reply window class.'),
+      .describe('The reply window class.'),
     windowDays: z
       .number()
       .int()
       .min(1)
       .max(365)
-      .description('Days until a reply is expected.'),
+      .describe('Days until a reply is expected.'),
     dueAtByRecipient: z
-      .record(z.number())
+      .record(z.string(), z.number())
       .optional()
       .describe('Per-recipient override due dates when windows differ.'),
     replyNotExpected: z
@@ -576,10 +572,9 @@ export const recordDispatchAsSentTool = tool({
       return {
         success: true,
         dispatched: {
-          messageId: dispatched.message.id,
-          sent_at: dispatched.message.sent_at,
-          recipientCount: dispatched.message.recipient_count,
-          awaitingCount: dispatched.message.awaiting_count,
+          messageId: dispatched.id,
+          recipientCount: dispatched.recipients.length,
+          awaitingCount: dispatched.recipients.filter((r) => r.reply_state === 'awaiting').length,
         },
       };
     } catch (err) {
@@ -592,7 +587,7 @@ export const recordDispatchAsSentTool = tool({
 
 export const markReplyReceivedTool = tool({
   description:
-    'Record that a reply arrived for one dispatched recipient. Stops that recipient's reply clock and writes the event. This rewrites a live board entry, so it is approval-gated. Use when the user confirms a reply came in.',
+    'Record that a reply arrived for one dispatched recipient. Stops that recipient\'s reply clock and writes the event. This rewrites a live board entry, so it is approval-gated. Use when the user confirms a reply came in.',
   inputSchema: z.object({
     recipientId: z
       .string()
@@ -600,7 +595,7 @@ export const markReplyReceivedTool = tool({
   }),
   execute: async ({ recipientId }) => {
     try {
-      const updated = updateRecipient(recipientId, { reply_state: 'replied' });
+      const updated = updateRecipient(recipientId, { replyState: 'replied' });
       if (!updated) return { success: false, error: `No recipient with id ${recipientId}` };
       return {
         success: true,
@@ -627,7 +622,7 @@ export const markNoResponseTool = tool({
   }),
   execute: async ({ recipientId }) => {
     try {
-      const updated = updateRecipient(recipientId, { reply_state: 'no_response' });
+      const updated = updateRecipient(recipientId, { replyState: 'no_response' });
       if (!updated) return { success: false, error: `No recipient with id ${recipientId}` };
       return {
         success: true,
@@ -654,8 +649,8 @@ export const withdrawSentRecipientTool = tool({
   execute: async ({ recipientId }) => {
     try {
       const updated = updateRecipient(recipientId, {
-        dispatch_state: 'withdrawn',
-        reply_state: 'not_expected',
+        dispatchState: 'withdrawn',
+        replyState: 'not_expected',
       });
       if (!updated) return { success: false, error: `No recipient with id ${recipientId}` };
       return {
@@ -691,8 +686,8 @@ export const setDeadlineOnSentRecipientTool = tool({
   execute: async ({ recipientId, dueAt, deadlineClass }) => {
     try {
       const due = typeof dueAt === 'string' ? Math.floor(Date.parse(dueAt) / 1000) : dueAt;
-      const patch: Parameters<typeof updateRecipient>[1] = { response_due_at: due };
-      if (deadlineClass) patch.deadline_class = deadlineClass;
+      const patch: Parameters<typeof updateRecipient>[1] = { responseDueAt: due };
+      if (deadlineClass) patch.deadlineClass = deadlineClass;
       const updated = updateRecipient(recipientId, patch);
       if (!updated) return { success: false, error: `No recipient with id ${recipientId}` };
       return {
@@ -750,6 +745,53 @@ export const raiseChaseTaskTool = tool({
   },
 });
 
+
+const getProjectTool = tool({
+  description: 'Read a single project by id.',
+  inputSchema: z.object({
+    id: z.string().describe('The project id.'),
+  }),
+  execute: async ({ id }) => {
+    try {
+      const project = getProject(id);
+      if (!project) return { success: false, error: `No project with id ${id}` };
+      return { success: true, project };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  },
+});
+
+const listProjectRollupsTool = tool({
+  description: 'List projects with rollup progress and focus metrics.',
+  inputSchema: z.object({
+    includeArchived: z.boolean().optional(),
+  }),
+  execute: async ({ includeArchived }) => {
+    try {
+      const rollups = listProjectRollups({ includeArchived: includeArchived ?? false });
+      return { success: true, count: rollups.length, rollups };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  },
+});
+
+const listSequenceRunsTool = tool({
+  description: 'List execution runs of automated follow-up sequences for a message.',
+  inputSchema: z.object({
+    messageId: z.string().describe('The message id.'),
+  }),
+  execute: async ({ messageId }) => {
+    try {
+      const runs = listRunsForMessage(messageId);
+      return { success: true, count: runs.length, runs };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  },
+});
+
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
 /**
@@ -791,11 +833,12 @@ export const correspondenceCopilotTools = {
   raiseChaseTask: raiseChaseTaskTool,
 };
 
+
 // Re-export the underlying plain tools so other code can use them directly.
 export {
-  listProjects as listProjectsTool,
-  listProjectRollups as listProjectRollupsTool,
-  getProject as getProjectTool,
-  listTasks as listTasksTool,
-  listRunsForMessage as listSequenceRunsTool,
+  listProjectsTool,
+  listProjectRollupsTool,
+  getProjectTool,
+  listTasksTool,
+  listSequenceRunsTool,
 };
