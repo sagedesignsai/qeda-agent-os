@@ -60,6 +60,7 @@ import { getDocument, saveDocument } from '../db/documents.js';
 import type { PdfDocumentRecord } from '../db/documents.js';
 import { projectFilesTools } from './project-files.js';
 import type { PdfBlock } from '../../lib/pdf-studio/types.js';
+import { normalizePdfDocument } from '../../lib/pdf-studio/document-normalize.js';
 import { createPlanTools } from './plan.js';
 import { PlanManager } from '../ai/plan-manager.js';
 
@@ -331,13 +332,24 @@ export const createDocument = tool({
 
       const documentId = nanoid();
 
+      // Persist a complete PdfDocument, not just `{ blocks }`. Older rows
+      // written as `{ blocks }` are healed on read by normalizePdfDocument.
+      const documentBody = normalizePdfDocument({
+        id: documentId,
+        title,
+        description: description ?? '',
+        projectId: projectId ?? null,
+        templateId: '',
+        blocks: body,
+      });
+
       saveDocument({
         id: documentId,
         projectId: projectId ?? null,
         title,
         description: description ?? '',
         templateId: '',
-        dataJson: JSON.stringify({ blocks: body }),
+        dataJson: JSON.stringify(documentBody),
       });
 
       return {
@@ -614,4 +626,3 @@ export const documentDrafterTools = {
   ...projectFilesTools,
   ...createPlanTools(new PlanManager()),
 };
-

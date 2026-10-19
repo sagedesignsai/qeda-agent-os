@@ -24,6 +24,10 @@ export interface BuilderSessionRecord {
   workspace_name: string;
   branch: string | null;
   engine: 'local' | 'opencode';
+  /** Serialized ModelMessage[] for a Local Builder session. */
+  messages_json?: string | null;
+  /** Serialized BuilderSessionEvent[] tail for re-attach after a restart. */
+  events_json?: string | null;
   created_at: number;
 }
 
@@ -37,7 +41,8 @@ export function getActiveBuilderSession(): BuilderSessionRecord | null {
     const row = db
       .prepare(
         `SELECT opencode_session_id, title, repo_directory, worktree_path,
-                workspace_name, branch, engine, created_at
+                workspace_name, branch, engine, messages_json, events_json,
+                created_at
            FROM builder_sessions
           WHERE id = 'active'
           LIMIT 1`,
@@ -60,8 +65,9 @@ export function saveActiveBuilderSession(record: BuilderSessionRecord): void {
     db.prepare(
       `INSERT INTO builder_sessions
          (id, opencode_session_id, title, repo_directory, worktree_path,
-          workspace_name, branch, engine, created_at)
-       VALUES ('active', ?, ?, ?, ?, ?, ?, ?, ?)
+          workspace_name, branch, engine, messages_json, events_json,
+          created_at)
+       VALUES ('active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          opencode_session_id = excluded.opencode_session_id,
          title               = excluded.title,
@@ -70,6 +76,8 @@ export function saveActiveBuilderSession(record: BuilderSessionRecord): void {
          workspace_name      = excluded.workspace_name,
          branch              = excluded.branch,
          engine              = excluded.engine,
+         messages_json       = excluded.messages_json,
+         events_json         = excluded.events_json,
          created_at          = excluded.created_at`,
     ).run(
       record.opencode_session_id,
@@ -79,10 +87,40 @@ export function saveActiveBuilderSession(record: BuilderSessionRecord): void {
       record.workspace_name,
       record.branch ?? null,
       record.engine,
+      record.messages_json ?? null,
+      record.events_json ?? null,
       record.created_at,
     );
   } catch {
     // Non-fatal: persistence is best-effort; the session still runs.
+  }
+}
+
+/**
+ * Persist the Local Builder conversation and/or the re-attachable event tail.
+ *
+ * `undefined` means "leave this field alone"; use `'[]'` to clear. The handler
+ * writes the event tail on status changes so a restart does not re-open a
+ * session with an empty activity feed.
+ */
+export function saveActiveBuilderSessionContext({
+  messagesJson,
+  eventsJson,
+}: {
+  messagesJson?: string;
+  eventsJson?: string;
+}): void {
+  if (messagesJson === undefined && eventsJson === undefined) return;
+  try {
+    const db = getDb();
+    db.prepare(
+      `UPDATE builder_sessions
+          SET messages_json = COALESCE(?, messages_json),
+              events_json   = COALESCE(?, events_json)
+        WHERE id = 'active'`,
+    ).run(messagesJson ?? null, eventsJson ?? null);
+  } catch {
+    // Non-fatal: the live session is still authoritative.
   }
 }
 

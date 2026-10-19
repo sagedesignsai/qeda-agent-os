@@ -71,6 +71,7 @@ import {
   type StudioOverlay,
   type TimelineTrack,
 } from '@/lib/studio-types';
+import { renderComposedStudioVideo } from '@/lib/studio/render/export-renderer';
 import { toast } from 'sonner';
 
 export default function Studio() {
@@ -87,6 +88,7 @@ export default function Studio() {
     recordingSeconds,
     isProcessingDraft,
     isGeneratingSocialKit,
+    exportProgress,
     loadTake,
     loadMoreTakes,
     listSources,
@@ -102,6 +104,14 @@ export default function Studio() {
     exportVideo,
     deleteTake,
   } = useStudio(takeId, projectId);
+
+  const [quickExportProgress, setQuickExportProgress] = useState<{
+    isExporting: boolean;
+    progress: number;
+    statusText: string;
+  } | null>(null);
+
+  const currentExportProgress = exportProgress || quickExportProgress;
 
   // Playback state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -364,8 +374,57 @@ export default function Studio() {
   };
 
   const handleQuickExport = async (id: string) => {
+    if (activeTake && activeTake.id === id) {
+      await exportVideo('mp4');
+      return;
+    }
+
     try {
-      toast.info('Exporting 1080p MP4 showcase video...');
+      const targetTake = await window.electron.ipc.invoke<StudioTake | null>(
+        'studio:get-take',
+        { id },
+      );
+      if (!targetTake) {
+        toast.error('Could not find showcase project to export');
+        return;
+      }
+
+      // 1. Prompt user for save destination
+      const savePrompt = await window.electron.ipc.invoke<{
+        canceled: boolean;
+        filePath?: string;
+      }>('studio:prompt-save-dialog', {
+        takeId: id,
+        format: 'mp4',
+        defaultTitle: targetTake.title,
+      });
+
+      if (savePrompt.canceled || !savePrompt.filePath) return;
+
+      // 2. Render complete composition
+      setQuickExportProgress({
+        isExporting: true,
+        progress: 0.05,
+        statusText: 'Rendering composition with camera zooms & subtitles...',
+      });
+
+      await renderComposedStudioVideo(targetTake, {
+        onProgress: (ratio, text) => {
+          setQuickExportProgress({
+            isExporting: true,
+            progress: Math.min(0.92, Math.max(0.05, ratio * 0.9)),
+            statusText: text,
+          });
+        },
+      });
+
+      // 3. Transcode rendered WebM into final MP4 container
+      setQuickExportProgress({
+        isExporting: true,
+        progress: 0.95,
+        statusText: 'Encoding final MP4 video with FFmpeg...',
+      });
+
       const res = await window.electron.ipc.invoke<{
         ok: boolean;
         filePath?: string;
@@ -373,7 +432,9 @@ export default function Studio() {
       }>('studio:export-video', {
         takeId: id,
         format: 'mp4',
+        targetPath: savePrompt.filePath,
       });
+
       if (res.ok && res.filePath) {
         toast.success(`Exported showcase to ${res.filePath}`);
         await window.electron.ipc.invoke('studio:open-path', {
@@ -384,6 +445,8 @@ export default function Studio() {
       }
     } catch (err) {
       toast.error(`Export failed: ${(err as Error).message}`);
+    } finally {
+      setQuickExportProgress(null);
     }
   };
 
@@ -516,6 +579,39 @@ export default function Studio() {
             if (take) navigate(`/studio/${take.id}`);
           }}
         />
+      )}
+
+      {/* ── Export Progress Overlay ────────────────────────────────────────── */}
+      {currentExportProgress?.isExporting && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-card/95 border border-border/80 shadow-2xl rounded-2xl p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0 animate-pulse">
+                <DownloadIcon className="size-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-semibold text-sm text-foreground truncate">
+                  Exporting Showcase Video
+                </h3>
+                <p className="text-xs text-muted-foreground truncate">
+                  {currentExportProgress.statusText}
+                </p>
+              </div>
+              <span className="text-xs font-mono font-semibold text-primary">
+                {Math.round(currentExportProgress.progress * 100)}%
+              </span>
+            </div>
+
+            <div className="w-full bg-muted/60 h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-primary h-full transition-all duration-150 ease-out rounded-full"
+                style={{
+                  width: `${Math.round(currentExportProgress.progress * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {!takeId ? (

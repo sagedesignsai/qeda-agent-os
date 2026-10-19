@@ -416,7 +416,7 @@ export interface IpcChannels {
    * validated, so the renderer cannot point a spawn at an arbitrary repo.
    */
   'builder:preview-start': {
-    req: { script?: string } | void;
+    req: { script?: string; command?: string } | void;
     res: BuilderPreviewStatus;
   };
   /** Stop the Qeda-owned preview process (never a detected one). */
@@ -1246,12 +1246,33 @@ export interface IpcChannels {
     req: { takeId: string };
     res: StudioSocialKit;
   };
+  /** Prompt OS save dialog for showcase export. */
+  'studio:prompt-save-dialog': {
+    req: {
+      takeId: string;
+      format: 'mp4' | 'gif' | 'webm';
+      defaultTitle?: string;
+    };
+    res: { canceled: boolean; filePath?: string };
+  };
+  /** Save a chunk of rendered showcase composition video for export. */
+  'studio:save-rendered-chunk': {
+    req: {
+      takeId: string;
+      chunkBase64: string;
+      isFirst?: boolean;
+      isLast: boolean;
+    };
+    res: { ok: boolean; filePath: string };
+  };
   /** Export video to MP4 or GIF via main process. */
   'studio:export-video': {
     req: {
       takeId: string;
       format: 'mp4' | 'gif' | 'webm';
       quality?: 'high' | 'medium';
+      targetPath?: string;
+      renderedVideoPath?: string;
     };
     res: { ok: boolean; filePath?: string; error?: string };
   };

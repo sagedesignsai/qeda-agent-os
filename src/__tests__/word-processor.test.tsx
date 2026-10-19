@@ -76,6 +76,25 @@ describe('useWordProcessor Hook State & History', () => {
     expect(result.current.stats.estimatedPages).toBeGreaterThanOrEqual(1);
   });
 
+  it('does not crash on malformed blocks from older/AI-written rows', () => {
+    // Regression: a paragraph stored as `{ text }` with no `content` made
+    // `stats` read `.length` of undefined and blanked the whole editor.
+    const doc = createExecutiveProposal();
+    doc.blocks = [
+      { id: 'p-legacy', type: 'paragraph', text: 'Legacy text' } as any,
+      { id: 't-empty', type: 'table' } as any,
+      { id: 'm-empty', type: 'metrics' } as any,
+    ];
+
+    const { result } = renderHook(() =>
+      useWordProcessor({ doc, onUpdateDocument: () => {} }),
+    );
+
+    expect(result.current.stats.blocks).toBe(3);
+    expect(result.current.stats.characters).toBeGreaterThanOrEqual(0);
+    expect(result.current.stats.estimatedPages).toBeGreaterThanOrEqual(1);
+  });
+
   it('supports undo and redo state traversal', () => {
     const initialDoc = createExecutiveProposal();
     let currentDoc = initialDoc;

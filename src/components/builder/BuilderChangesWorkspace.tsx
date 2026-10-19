@@ -30,6 +30,7 @@ import {
   ChevronRightIcon,
   FileCode2Icon,
   GitCompareArrowsIcon,
+  Loader2Icon,
   RotateCcwIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -45,15 +46,24 @@ type ChangeFilter = 'all' | BuilderChangeKind;
 
 interface BuilderChangesWorkspaceProps {
   changes?: BuilderFileChange[];
+  /** True while the change list is being read from the worktree. */
+  loading?: boolean;
+  /** True while Keep/Discard is in flight, so both actions stay disabled. */
+  keeping?: boolean;
+  discarding?: boolean;
   onKeepAll?: () => void;
   onDiscardAll?: () => void;
 }
 
 export function BuilderChangesWorkspace({
   changes = [],
+  loading = false,
+  keeping = false,
+  discarding = false,
   onKeepAll,
   onDiscardAll,
 }: BuilderChangesWorkspaceProps) {
+  const busy = loading || keeping || discarding;
   const [filter, setFilter] = useState<ChangeFilter>('all');
   const [selectedPath, setSelectedPath] = useState('');
   const visibleChanges = useMemo(
@@ -99,21 +109,25 @@ export function BuilderChangesWorkspace({
             size="sm"
             variant="ghost"
             className="h-7 gap-1.5 px-2 text-xs text-muted-foreground"
-            disabled={changes.length === 0 || !onDiscardAll}
+            disabled={changes.length === 0 || !onDiscardAll || busy}
             onClick={onDiscardAll}
             title={
               onDiscardAll
-                ? 'Reset the worktree to HEAD — all agent changes are discarded.'
+                ? 'Reset the worktree to its last kept baseline — unkept agent changes are discarded.'
                 : 'Discard is unavailable for a session working directly in the repository.'
             }
           >
-            <RotateCcwIcon className="size-3" />
-            Discard
+            {discarding ? (
+              <Loader2Icon className="size-3 animate-spin" />
+            ) : (
+              <RotateCcwIcon className="size-3" />
+            )}
+            {discarding ? 'Discarding…' : 'Discard'}
           </Button>
           <Button
             size="sm"
             className="h-7 gap-1.5 px-2.5 text-xs"
-            disabled={changes.length === 0 || !onKeepAll}
+            disabled={changes.length === 0 || !onKeepAll || busy}
             onClick={onKeepAll}
             title={
               onKeepAll
@@ -121,8 +135,12 @@ export function BuilderChangesWorkspace({
                 : 'Keep is unavailable because this session has no isolated worktree.'
             }
           >
-            <CheckIcon className="size-3" />
-            Keep changes
+            {keeping ? (
+              <Loader2Icon className="size-3 animate-spin" />
+            ) : (
+              <CheckIcon className="size-3" />
+            )}
+            {keeping ? 'Keeping…' : 'Keep changes'}
           </Button>
         </div>
       </div>
@@ -151,14 +169,18 @@ export function BuilderChangesWorkspace({
                   <GitCompareArrowsIcon className="size-3.5" />
                 </div>
                 <p className="text-sm font-medium">
-                  {changes.length === 0
-                    ? 'No changes yet'
-                    : 'Nothing in this filter'}
+                  {loading && changes.length === 0
+                    ? 'Loading changes…'
+                    : changes.length === 0
+                      ? 'No changes yet'
+                      : 'Nothing in this filter'}
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  {changes.length === 0
-                    ? 'Edits from your build will be collected here for review.'
-                    : 'Choose another change type to see its files.'}
+                  {loading && changes.length === 0
+                    ? 'Reading the worktree diff.'
+                    : changes.length === 0
+                      ? 'Edits from your build will be collected here for review.'
+                      : 'Choose another change type to see its files.'}
                 </p>
               </div>
             )}
@@ -201,8 +223,9 @@ export function BuilderChangesWorkspace({
               ) : (
                 <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8 text-center">
                   <p className="max-w-xs text-sm leading-relaxed text-muted-foreground">
-                    The diff for this file will appear here when the workspace
-                    change data is available.
+                    {loading
+                      ? 'Loading this file’s diff…'
+                      : 'The diff for this file will appear here when the workspace change data is available.'}
                   </p>
                 </div>
               )}

@@ -181,14 +181,14 @@ export async function inspectBuilderWorkspace(
 export async function createBuilderWorktree(
   repoDirectory: string,
   sessionId: string,
+  parentDirectory?: string,
 ): Promise<string> {
-  // Use the OS temp dir so worktrees are outside the repo (git requires the
-  // worktree path to be outside the repo's working tree).
-  const { tmpdir } = await import('node:os');
-  const worktreeDir = path.join(
-    tmpdir(),
-    `qeda-builder-${sessionId.slice(0, 12)}`,
-  );
+  // Worktrees must live outside the repository's working tree. A caller that
+  // wants sessions to survive an OS temp cleanup can pass a stable parent
+  // (the app's userData directory); otherwise fall back to the OS temp dir.
+  const root = parentDirectory ?? os.tmpdir();
+  await fs.mkdir(root, { recursive: true });
+  const worktreeDir = path.join(root, `qeda-builder-${sessionId.slice(0, 12)}`);
 
   // Remove any leftover worktree from a previous crashed session at the same
   // path before creating a fresh one.
@@ -430,94 +430,138 @@ export async function readWorkspaceChanges(
   type BuilderChangeKind =
     import('../../lib/builder-workspace.js').BuilderChangeKind;
 
-  // Tracked changes: diff against HEAD
-  const numstatResult = await git(directory, [
-    'diff',
-    'HEAD',
-    '--numstat',
-    '--no-color',
-  ]);
+  /**
+   * Read `--numstat` into a path → counts map.
+   *
+   * `git diff HEAD` is the authoritative view of tracked changes because it
+   * includes staged and unstaged edits in one pass. On an unborn HEAD (a brand
+   * new repository before its first commit) the command fails, so fall back to
+   * cached + unstaged diffs and sum them per path.
+   */
+  const readNumstat = async (args: string[]) => {
+    const result = await git(directory, args);
+    const counts = new Map<string, { additions: number; deletions: number }>();
+    if (!result.success) return counts;
+    for (const line of result.stdout.split('\n')) {
+      const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line.trim());
+      if (!match) continue;
+      const filePath = match[3].trim();
+      if (!filePath) continue;
+      const additions = match[1] === '-' ? 0 : parseInt(match[1], 10);
+      const deletions = match[2] === '-' ? 0 : parseInt(match[2], 10);
+      const current = counts.get(filePath);
+      counts.set(filePath, {
+        additions: (current?.additions ?? 0) + additions,
+        deletions: (current?.deletions ?? 0) + deletions,
+      });
+    }
+    return counts;
+  };
+
+  /**
+   * Read `--name-status` into a path → change kind map. `D` is the only status
+   * that changes the *kind*; an added file is `A`, everything else is modified.
+   * Renames/copies are reported as modifications of the new path.
+   */
+  const readKinds = async (args: string[]) => {
+    const result = await git(directory, args);
+    const kinds = new Map<string, BuilderChangeKind>();
+    if (!result.success) return kinds;
+    for (const line of result.stdout.split('\n')) {
+      const match = /^([A-Z])(?:\d+)?\t(.+)$/.exec(line.trim());
+      if (!match) continue;
+      const code = match[1];
+      const paths = match[2].split('\t');
+      const filePath = (paths[paths.length - 1] ?? '').trim();
+      if (!filePath) continue;
+      kinds.set(
+        filePath,
+        code === 'D' ? 'deleted' : code === 'A' ? 'added' : 'modified',
+      );
+    }
+    return kinds;
+  };
+
+  let counts = await readNumstat(['diff', 'HEAD', '--numstat', '--no-color']);
+  let kinds = await readKinds(['diff', 'HEAD', '--name-status', '--no-color']);
+  if (counts.size === 0 && kinds.size === 0) {
+    // Unborn HEAD, or a repository where `diff HEAD` is unavailable.
+    const [stagedCounts, unstagedCounts, stagedKinds, unstagedKinds] =
+      await Promise.all([
+        readNumstat(['diff', '--cached', '--numstat', '--no-color']),
+        readNumstat(['diff', '--numstat', '--no-color']),
+        readKinds(['diff', '--cached', '--name-status', '--no-color']),
+        readKinds(['diff', '--name-status', '--no-color']),
+      ]);
+    counts = new Map(stagedCounts);
+    for (const [filePath, value] of unstagedCounts) {
+      const current = counts.get(filePath);
+      counts.set(filePath, {
+        additions: (current?.additions ?? 0) + value.additions,
+        deletions: (current?.deletions ?? 0) + value.deletions,
+      });
+    }
+    kinds = new Map([...stagedKinds, ...unstagedKinds]);
+  }
 
   const changes: BuilderFileChange[] = [];
   const seen = new Set<string>();
-
-  if (numstatResult.success) {
-    for (const line of numstatResult.stdout
-      .split('\n')
-      .slice(0, MAX_CHANGED_FILES)) {
-      const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line.trim());
-      if (!match) continue;
-      const additions = match[1] === '-' ? 0 : parseInt(match[1], 10);
-      const deletions = match[2] === '-' ? 0 : parseInt(match[2], 10);
-      const filePath = match[3].trim();
-      seen.add(filePath);
-      changes.push({
-        path: filePath,
-        kind: deletions > 0 && additions === 0 ? 'deleted' : 'modified',
-        additions,
-        deletions,
-      });
-    }
+  for (const [filePath, value] of counts) {
+    if (changes.length >= MAX_CHANGED_FILES) break;
+    seen.add(filePath);
+    changes.push({
+      path: filePath,
+      kind: kinds.get(filePath) ?? 'modified',
+      additions: value.additions,
+      deletions: value.deletions,
+    });
   }
 
-  // Untracked files (new files not yet staged): additions only
+  // Untracked files (new files not yet staged). Compute real line counts
+  // instead of reporting +0/−0, which made every new file look empty.
   const untrackedResult = await git(directory, [
     'ls-files',
     '--others',
     '--exclude-standard',
   ]);
   if (untrackedResult.success) {
-    for (const line of untrackedResult.stdout
-      .split('\n')
-      .slice(0, MAX_CHANGED_FILES)) {
+    for (const line of untrackedResult.stdout.split('\n')) {
+      if (changes.length >= MAX_CHANGED_FILES) break;
       const filePath = line.trim();
       if (!filePath || seen.has(filePath)) continue;
+      seen.add(filePath);
+
+      let additions = 0;
+      try {
+        const buffer = await fs.readFile(path.join(directory, filePath));
+        if (!buffer.includes(0)) {
+          const text = buffer.toString('utf8');
+          if (text.length > 0) {
+            additions = text.split('\n').length;
+            if (text.endsWith('\n')) additions -= 1;
+          }
+        }
+      } catch {
+        // A file that vanished between `ls-files` and the read is still
+        // reported as untracked; the diff below will be empty.
+      }
+
       changes.push({
         path: filePath,
         kind: 'added',
-        additions: 0,
+        additions,
         deletions: 0,
       });
     }
   }
 
-  // Staged-only changes that don't appear in diff HEAD (initial commit / no HEAD)
-  const stagedResult = await git(directory, [
-    'diff',
-    '--cached',
-    '--numstat',
-    '--no-color',
-  ]);
-  if (stagedResult.success) {
-    for (const line of stagedResult.stdout
-      .split('\n')
-      .slice(0, MAX_CHANGED_FILES)) {
-      const match = /^(\d+|-)\t(\d+|-)\t(.+)$/.exec(line.trim());
-      if (!match) continue;
-      const filePath = match[3].trim();
-      if (seen.has(filePath)) continue;
-      const additions = match[1] === '-' ? 0 : parseInt(match[1], 10);
-      const deletions = match[2] === '-' ? 0 : parseInt(match[2], 10);
-      seen.add(filePath);
-      changes.push({
-        path: filePath,
-        kind: (deletions > 0 && additions === 0
-          ? 'deleted'
-          : seen.has(filePath) && deletions === 0
-            ? 'added'
-            : 'modified') as BuilderChangeKind,
-        additions,
-        deletions,
-      });
-    }
-  }
-
   // Fetch diffs concurrently, but cap total size so a large change set is not
-  // transferred in full across the IPC boundary.
+  // transferred in full across the IPC boundary. Deletions are included now:
+  // the deleted content is precisely what the reviewer needs to see.
   let totalBytes = 0;
   await Promise.all(
     changes.map(async (change) => {
-      if (change.kind === 'deleted' || totalBytes > MAX_DIFF_BYTES) return;
+      if (totalBytes > MAX_DIFF_BYTES) return;
       const diffArgs =
         change.kind === 'added'
           ? ['diff', '--no-index', '/dev/null', change.path]
@@ -555,18 +599,33 @@ export async function readWorkspaceFileContent(
   directory: string,
   filePath: string,
 ): Promise<{ content: string; language?: string; truncated: boolean }> {
-  // Prevent path traversal: resolve and confirm the result is inside directory.
-  const resolved = path.resolve(directory, filePath);
+  // Prevent path traversal *and* symlink escapes: resolving the lexical target
+  // is not enough when a file inside the workspace links to /etc/passwd. The
+  // real paths of both roots are compared after the target exists.
+  let canonicalRoot: string;
+  let canonicalTarget: string;
+  try {
+    canonicalRoot = await fs.realpath(directory);
+    canonicalTarget = await fs.realpath(path.resolve(directory, filePath));
+  } catch (error) {
+    const e = error as NodeJS.ErrnoException;
+    throw new Error(
+      e.code === 'ENOENT'
+        ? `File not found: ${filePath}`
+        : `Could not read ${filePath}: ${e.message}`,
+      { cause: error },
+    );
+  }
   if (
-    !resolved.startsWith(path.resolve(directory) + path.sep) &&
-    resolved !== path.resolve(directory)
+    canonicalTarget !== canonicalRoot &&
+    !canonicalTarget.startsWith(canonicalRoot + path.sep)
   ) {
     throw new Error(`Access denied: "${filePath}" is outside the workspace.`);
   }
 
   let buf: Buffer;
   try {
-    const handle = await fs.open(resolved, 'r');
+    const handle = await fs.open(canonicalTarget, 'r');
     try {
       const stat = await handle.stat();
       if (!stat.isFile()) {
@@ -613,6 +672,12 @@ export async function readWorkspaceFileContent(
  * agent's edits) and apply it to the source repo's working tree with
  * `git apply`. The user still needs to commit manually — Builder never
  * commits to the source branch on the user's behalf.
+ *
+ * After a successful apply the worktree's changes are committed on its own
+ * detached HEAD. That makes Keep idempotent: the next review starts from the
+ * kept state instead of showing (and trying to re-apply) the same patch. The
+ * source repository still has only a dirty working tree; no source branch ref
+ * moves.
  *
  * Returns the list of changed file paths that were applied.
  */
@@ -677,13 +742,18 @@ export async function applyWorktreeChanges(
     `qeda-builder-patch-${Date.now()}.patch`,
   );
   try {
-    await fs.writeFile(tmpPatch, fullDiff, 'utf8');
+    // git apply treats a missing final newline as a corrupt patch. The diff is
+    // trimmed above for the "nothing to apply" check, so restore the newline
+    // that every hunk terminator expects.
+    await fs.writeFile(tmpPatch, `${fullDiff}\n`, 'utf8');
 
     // Apply using --3way so conflicts surface cleanly rather than aborting.
+    // `nowarn` (not `fix`) keeps the agent's bytes intact: a review tool must
+    // not silently rewrite whitespace while claiming it applied the diff.
     const applyResult = await git(repoDirectory, [
       'apply',
       '--3way',
-      '--whitespace=fix',
+      '--whitespace=nowarn',
       '--allow-empty',
       tmpPatch,
     ]);
@@ -697,15 +767,41 @@ export async function applyWorktreeChanges(
     await fs.unlink(tmpPatch).catch(() => undefined);
   }
 
-  // Return the list of affected paths for the UI to report.
-  const paths = [
-    ...diffText
-      .split('\n')
-      .filter((l) => l.startsWith('diff --git'))
-      .map((l) => l.replace(/^diff --git a\/\S+ b\//, '')),
-    ...untrackedFiles,
-  ];
-  return paths;
+  // Snapshot the affected paths before the checkpoint moves HEAD. `git diff
+  // --name-only` is safer than parsing `diff --git` headers, which breaks on
+  // paths containing spaces.
+  const changedPathResult = await git(worktreeDirectory, [
+    'diff',
+    '--name-only',
+    'HEAD',
+  ]);
+  const changedPaths = changedPathResult.success
+    ? changedPathResult.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    : [];
+
+  // Move the worktree's baseline forward. This is deliberately best-effort:
+  // the source apply already succeeded, and a commit failure (for example a
+  // repository with an unusual identity policy) must not report Keep as failed.
+  try {
+    await git(worktreeDirectory, ['add', '-A']);
+    await git(worktreeDirectory, [
+      '-c',
+      'user.name=Qeda Builder',
+      '-c',
+      'user.email=builder@qeda.local',
+      'commit',
+      '--no-gpg-sign',
+      '-m',
+      'chore: builder checkpoint after keep',
+    ]);
+  } catch {
+    // Leave the worktree unchanged if the checkpoint could not be written.
+  }
+
+  return [...new Set([...changedPaths, ...untrackedFiles])];
 }
 
 /**

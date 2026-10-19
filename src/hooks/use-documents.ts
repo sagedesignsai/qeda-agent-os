@@ -39,6 +39,7 @@ import type {
   DocumentFooterConfig,
 } from '@/lib/pdf-studio/types';
 import { DOCUMENT_TEMPLATES } from '@/lib/pdf-studio/templates';
+import { normalizePdfDocument } from '@/lib/pdf-studio/document-normalize';
 
 export function useDocuments(projectId?: string | null) {
   const [documents, setDocuments] = useState<PdfDocumentSummary[]>([]);
@@ -148,8 +149,16 @@ export function useDocumentEditor(documentId: string | null) {
         { id },
       );
       if (record && record.data_json) {
-        const parsed = JSON.parse(record.data_json) as PdfDocument;
-        setDoc(parsed);
+        const parsed = JSON.parse(record.data_json) as unknown;
+        setDoc(
+          normalizePdfDocument(parsed, {
+            id: record.id,
+            title: record.title,
+            description: record.description,
+            projectId: record.project_id,
+            templateId: record.template_id,
+          }),
+        );
       } else {
         setDoc(null);
       }

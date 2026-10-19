@@ -117,11 +117,7 @@ export function registerStudioHandlers({
       _e,
       req?: { projectId?: string | null; limit?: number; offset?: number },
     ): StudioTakeSummary[] => {
-      return listStudioTakes(
-        req?.projectId ?? null,
-        req?.limit,
-        req?.offset,
-      );
+      return listStudioTakes(req?.projectId ?? null, req?.limit, req?.offset);
     },
   );
 
@@ -337,7 +333,10 @@ export function registerStudioHandlers({
 
         const windowSizeMs = 1800;
         const windowStrideMs = windowSizeMs + 1200;
-        const buckets = new Map<number, { count: number; x: number; y: number }>();
+        const buckets = new Map<
+          number,
+          { count: number; x: number; y: number }
+        >();
         for (const event of mouseEvents) {
           const bucket = Math.floor(event.t / windowStrideMs);
           const offset = event.t - bucket * windowStrideMs;
@@ -505,39 +504,22 @@ export function registerStudioHandlers({
   // ── Export Video & Dialogs ────────────────────────────────────────────────
 
   ipcMain.handle(
-    'studio:export-video',
+    'studio:prompt-save-dialog',
     async (
       _e,
       {
         takeId,
         format,
-        quality,
+        defaultTitle,
       }: {
         takeId: string;
         format: 'mp4' | 'gif' | 'webm';
-        quality?: 'high' | 'medium';
+        defaultTitle?: string;
       },
-    ): Promise<{ ok: boolean; filePath?: string; error?: string }> => {
+    ): Promise<{ canceled: boolean; filePath?: string }> => {
       const take = getStudioTake(takeId);
-      if (!take) return { ok: false, error: 'Take not found' };
-
-      if (!take.videoPath) {
-        return {
-          ok: false,
-          error: 'No video asset has been added to this showcase project yet.',
-        };
-      }
-
-      try {
-        await fs.access(take.videoPath);
-      } catch {
-        return {
-          ok: false,
-          error: `Source video file was not found on disk at: ${take.videoPath}`,
-        };
-      }
-
-      const defaultName = `${take.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${format}`;
+      const title = defaultTitle || take?.title || 'showcase';
+      const defaultName = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${format}`;
       const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
         title: `Export Showcase (${format.toUpperCase()})`,
         defaultPath: path.join(app.getPath('downloads'), defaultName),
@@ -548,19 +530,142 @@ export function registerStudioHandlers({
       });
 
       if (canceled || !filePath) {
-        return { ok: false };
+        return { canceled: true };
+      }
+      return { canceled: false, filePath };
+    },
+  );
+
+  ipcMain.handle(
+    'studio:save-rendered-chunk',
+    async (
+      _e,
+      {
+        takeId,
+        chunkBase64,
+        isFirst,
+      }: {
+        takeId: string;
+        chunkBase64: string;
+        isFirst?: boolean;
+        isLast?: boolean;
+      },
+    ): Promise<{ ok: boolean; filePath: string }> => {
+      const takeDir = getStudioDir(takeId);
+      await fs.mkdir(takeDir, { recursive: true });
+
+      const renderedPath = path.join(takeDir, 'rendered.webm');
+      if (chunkBase64) {
+        const buffer = Buffer.from(chunkBase64, 'base64');
+        if (isFirst) {
+          await fs.writeFile(renderedPath, buffer);
+        } else {
+          await fs.appendFile(renderedPath, buffer);
+        }
+      }
+      return { ok: true, filePath: renderedPath };
+    },
+  );
+
+  ipcMain.handle(
+    'studio:export-video',
+    async (
+      _e,
+      {
+        takeId,
+        format,
+        quality,
+        targetPath,
+        renderedVideoPath,
+      }: {
+        takeId: string;
+        format: 'mp4' | 'gif' | 'webm';
+        quality?: 'high' | 'medium';
+        targetPath?: string;
+        renderedVideoPath?: string;
+      },
+    ): Promise<{ ok: boolean; filePath?: string; error?: string }> => {
+      const take = getStudioTake(takeId);
+      if (!take) return { ok: false, error: 'Take not found' };
+
+      const takeDir = getStudioDir(takeId);
+      const defaultRenderedPath = path.join(takeDir, 'rendered.webm');
+      let effectiveInputPath = renderedVideoPath || '';
+
+      if (!effectiveInputPath) {
+        try {
+          await fs.access(defaultRenderedPath);
+          effectiveInputPath = defaultRenderedPath;
+        } catch {
+          effectiveInputPath = take.videoPath;
+        }
+      }
+
+      if (!effectiveInputPath) {
+        return {
+          ok: false,
+          error: 'No video asset has been added to this showcase project yet.',
+        };
       }
 
       try {
-        // Recordings are WebM; MP4/GIF need a real re-encode, not a rename.
+        await fs.access(effectiveInputPath);
+      } catch {
+        return {
+          ok: false,
+          error: `Source video file was not found on disk at: ${effectiveInputPath}`,
+        };
+      }
+
+      let finalOutputPath = targetPath;
+      if (!finalOutputPath) {
+        const defaultName = `${take.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${format}`;
+        const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+          title: `Export Showcase (${format.toUpperCase()})`,
+          defaultPath: path.join(app.getPath('downloads'), defaultName),
+          filters: [
+            { name: format.toUpperCase(), extensions: [format] },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        });
+
+        if (canceled || !filePath) {
+          return { ok: false };
+        }
+        finalOutputPath = filePath;
+      }
+
+      try {
+        // When the renderer has produced a composed rendered.webm, the source
+        // video path carries the original audio track. Pass it as audioInputPath
+        // so ffmpeg merges the audio with the composed video in one pass.
+        // If effectiveInputPath IS the original (no composed render), audio is
+        // already embedded so no separate merge is needed.
+        const hasComposedRender = effectiveInputPath === defaultRenderedPath ||
+          effectiveInputPath === (renderedVideoPath || '');
+        const audioInputPath =
+          hasComposedRender && take.videoPath && take.videoPath !== effectiveInputPath
+            ? take.videoPath
+            : undefined;
+
+        // Transcode the composed video (or raw fallback) to the requested format
         await transcodeStudioVideo({
-          inputPath: take.videoPath,
-          outputPath: filePath,
+          inputPath: effectiveInputPath,
+          outputPath: finalOutputPath,
           format,
           quality,
+          audioInputPath,
         });
-        shell.showItemInFolder(filePath);
-        return { ok: true, filePath };
+
+        // Clean up temporary rendered composition WebM
+        try {
+          await fs.rm(defaultRenderedPath, { force: true });
+        } catch {
+          // Best effort cleanup
+        }
+
+        shell.showItemInFolder(finalOutputPath);
+        return { ok: true, filePath: finalOutputPath };
       } catch (err) {
         return { ok: false, error: (err as Error).message };
       }

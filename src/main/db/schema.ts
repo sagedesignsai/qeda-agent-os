@@ -557,6 +557,8 @@ CREATE TABLE IF NOT EXISTS builder_sessions (
   workspace_name      TEXT NOT NULL DEFAULT '',
   branch              TEXT,
   engine              TEXT NOT NULL DEFAULT 'opencode',
+  messages_json       TEXT,
+  events_json         TEXT,
   created_at          INTEGER NOT NULL DEFAULT (unixepoch())
 );
 `;
@@ -1143,6 +1145,10 @@ export function applyMigrations(db: {
     );
 
     addColumn('builder_sessions', 'engine', "TEXT NOT NULL DEFAULT 'opencode'");
+    // Durable Local Builder context. Without these, a restart loses the
+    // conversation and the re-attached feed even when the worktree survives.
+    addColumn('builder_sessions', 'messages_json', 'TEXT');
+    addColumn('builder_sessions', 'events_json', 'TEXT');
 
     // Knowledge-side project scope. Added after notebooks/pages/research_runs
     // first shipped, so existing databases get the columns here and the

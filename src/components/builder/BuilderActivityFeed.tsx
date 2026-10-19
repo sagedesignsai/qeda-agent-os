@@ -32,6 +32,7 @@ import {
   FileCode2Icon,
   FolderSearchIcon,
   GitBranchIcon,
+  GitCompareArrowsIcon,
   GlobeIcon,
   SearchIcon,
   ShellIcon,
@@ -409,6 +410,18 @@ const TOOL_ICONS: Record<string, typeof WrenchIcon> = {
   websearch: GlobeIcon,
   task: CircleDashedIcon,
   question: AlertCircleIcon,
+  // Qeda local-engine tool names. Without these every local tool rendered as a
+  // generic wrench, which made the activity feed read as noise.
+  runshellcommand: ShellIcon,
+  readfile: FileCode2Icon,
+  writefile: FileCode2Icon,
+  editfile: FileCode2Icon,
+  listfiles: FolderSearchIcon,
+  grepworkspace: SearchIcon,
+  gitstatus: GitBranchIcon,
+  gitdiff: GitCompareArrowsIcon,
+  createplan: CircleDashedIcon,
+  updateplanitem: CircleDashedIcon,
 };
 
 /** Returns a small icon JSX node for the compact row — avoids a capitalized
@@ -429,33 +442,53 @@ function compactSummary(name: string, input: unknown, output?: string): string {
 
   switch (name.toLowerCase()) {
     case 'bash':
-    case 'shell': {
+    case 'shell':
+    case 'runshellcommand': {
       const cmd = str(args.command);
       return cmd ? truncate(cmd, 60) : 'Ran shell command';
     }
-    case 'read': {
+    case 'read':
+    case 'readfile': {
       const file = str(args.filePath ?? args.path ?? args.file);
       return file
         ? `${file}${outputLineCount > 0 ? ` \u00b7 ${outputLineCount} lines` : ''}`
         : 'Read file';
     }
-    case 'write': {
+    case 'write':
+    case 'writefile': {
       const file = str(args.filePath ?? args.path ?? args.file);
       return file ? file : 'Wrote file';
     }
-    case 'edit': {
+    case 'edit':
+    case 'editfile': {
       const file = str(args.filePath ?? args.path ?? args.file);
       return file ? file : 'Edited file';
     }
-    case 'glob': {
-      const pattern = str(args.pattern);
+    case 'glob':
+    case 'listfiles': {
+      const pattern = str(args.pattern ?? args.subDirectory);
       const count = outputLineCount;
       return `${pattern || '**/*'}${count > 0 ? ` \u00b7 ${count} files` : ''}`;
     }
-    case 'grep': {
+    case 'grep':
+    case 'grepworkspace': {
       const pattern = str(args.pattern);
       const count = outputLineCount;
       return `${pattern || 'pattern'}${count > 0 ? ` \u00b7 ${count} matches` : ''}`;
+    }
+    case 'gitstatus':
+      return args.path ? str(args.path) : 'Working tree status';
+    case 'gitdiff': {
+      const file = str(args.filePath);
+      return file ? file : 'Working tree diff';
+    }
+    case 'createplan': {
+      const title = str(args.title);
+      return title ? truncate(title, 60) : 'Created a plan';
+    }
+    case 'updateplanitem': {
+      const status = str(args.status);
+      return status ? `Marked ${status}` : 'Updated plan item';
     }
     case 'webfetch': {
       const url = str(args.url);
@@ -492,6 +525,16 @@ function toolLabel(name: string): string {
     websearch: 'Search web',
     task: 'Subtask',
     question: 'Question',
+    runshellcommand: 'Shell',
+    readfile: 'Read',
+    writefile: 'Write',
+    editfile: 'Edit',
+    listfiles: 'List files',
+    grepworkspace: 'Search',
+    gitstatus: 'Git status',
+    gitdiff: 'Git diff',
+    createplan: 'Plan',
+    updateplanitem: 'Plan',
   };
   return labels[name.toLowerCase()] ?? name;
 }

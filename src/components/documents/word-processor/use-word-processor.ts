@@ -132,22 +132,31 @@ export function useWordProcessor({
   const stats: DocumentStats = useMemo(() => {
     let words = 0;
     let characters = 0;
+    const blocks: PdfBlock[] = Array.isArray(doc.blocks) ? doc.blocks : [];
 
-    for (const b of doc.blocks) {
+    for (const b of blocks) {
+      // Blocks can come from older/AI-written rows whose per-type fields were
+      // not validated. Coerce rather than trusting `content`/`text` to exist:
+      // one undefined field here used to blank the whole editor.
       let text = '';
       if (b.type === 'heading') {
-        text = `${b.text} ${b.subtitle || ''}`;
+        text = `${b.text ?? ''} ${b.subtitle || ''}`;
       } else if (b.type === 'paragraph') {
-        text = b.content;
+        text = b.content ?? '';
       } else if (b.type === 'callout') {
-        text = `${b.title || ''} ${b.text}`;
+        text = `${b.title || ''} ${b.text ?? ''}`;
       } else if (b.type === 'table') {
         text =
-          b.columns.map((c) => c.header).join(' ') +
+          (b.columns ?? []).map((c) => c.header ?? '').join(' ') +
           ' ' +
-          b.rows.flat().join(' ');
+          (b.rows ?? [])
+            .flat()
+            .map((cell) => cell ?? '')
+            .join(' ');
       } else if (b.type === 'metrics') {
-        text = b.items.map((i) => `${i.label} ${i.value}`).join(' ');
+        text = (b.items ?? [])
+          .map((i) => `${i.label ?? ''} ${i.value ?? ''}`)
+          .join(' ');
       }
 
       characters += text.length;
@@ -156,9 +165,7 @@ export function useWordProcessor({
     }
 
     // Estimate pages based on content weight (~350 words per page or explicit breaks)
-    const explicitBreaks = doc.blocks.filter(
-      (b) => b.type === 'page-break',
-    ).length;
+    const explicitBreaks = blocks.filter((b) => b.type === 'page-break').length;
     const estimatedPages = Math.max(
       1,
       explicitBreaks + Math.ceil(words / 380) || 1,
@@ -167,7 +174,7 @@ export function useWordProcessor({
     return {
       words,
       characters,
-      blocks: doc.blocks.length,
+      blocks: blocks.length,
       estimatedPages,
     };
   }, [doc.blocks]);

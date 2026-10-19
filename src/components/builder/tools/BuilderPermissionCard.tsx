@@ -52,7 +52,7 @@ export function BuilderPermissionCard({
       state="approval-requested"
       approval={{ id: request.id }}
       className="gap-0 overflow-hidden rounded-xl border-amber-500/25 bg-amber-500/[0.035] p-0"
-      aria-label="OpenCode permission request"
+      aria-label="Builder permission request"
     >
       <div className="flex items-start gap-3 border-b border-amber-500/15 px-3.5 py-3">
         <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400">
@@ -109,7 +109,7 @@ export function BuilderPermissionCard({
               className="h-7 gap-1.5 px-2.5 text-xs"
               disabled={busy}
               onClick={() => onDecision('always')}
-              title="Allow this action and save the permission rule in OpenCode."
+              title="Allow this action without asking again."
             >
               <CheckIcon className="size-3" />
               Always allow
@@ -135,12 +135,12 @@ export function BuilderPermissionCard({
 }
 
 function permissionSummary(action: string) {
-  if (action === 'bash') return 'OpenCode wants to run a command.';
+  if (action === 'bash') return 'The agent wants to run a command.';
   if (action === 'edit' || action === 'write') {
-    return 'OpenCode wants to modify files in this workspace.';
+    return 'The agent wants to modify files in this workspace.';
   }
   if (action === 'external_directory') {
-    return 'OpenCode wants to access a location outside the project.';
+    return 'The agent wants to access a location outside the project.';
   }
-  return `OpenCode is requesting permission for “${action}”.`;
+  return `The agent is requesting permission for “${action}”.`;
 }

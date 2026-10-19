@@ -22,6 +22,9 @@ jest.mock('../main/ai/settings', () => ({
 describe('McpManager', () => {
   beforeEach(() => {
     mockSettingsServers = [];
+    // mockImplementation does not reset call history; the reuse tests assert on
+    // it, so clear it explicitly before each test.
+    (createMCPClient as jest.Mock).mockClear();
     (createMCPClient as jest.Mock).mockImplementation(async () => ({
       tools: jest.fn().mockResolvedValue({
         mock_tool: {
@@ -162,6 +165,76 @@ describe('McpManager', () => {
       expect(tools).toHaveProperty('mcp_good_mock_tool');
       expect(summaries).toHaveLength(1);
       expect(summaries[0].serverId).toBe('good');
+    });
+
+    it('reuses a live connection instead of re-handshaking every turn', async () => {
+      const server: McpServerSettings = {
+        id: 'reuse',
+        name: 'Reuse Server',
+        enabled: true,
+        transport: 'stdio',
+        command: 'node',
+      };
+
+      await mcpManager.loadToolsForEnabledServers([server]);
+      await mcpManager.loadToolsForEnabledServers([server]);
+
+      const createClient = createMCPClient as jest.Mock;
+      expect(createClient).toHaveBeenCalledTimes(1);
+      const client = await createClient.mock.results[0].value;
+      expect(client.close).not.toHaveBeenCalled();
+    });
+
+    it('reconnects only a server whose transport definition changed', async () => {
+      const server: McpServerSettings = {
+        id: 'mutable',
+        name: 'Mutable Server',
+        enabled: true,
+        transport: 'stdio',
+        command: 'node',
+        args: ['server-a.js'],
+      };
+
+      await mcpManager.loadToolsForEnabledServers([server]);
+      await mcpManager.loadToolsForEnabledServers([
+        { ...server, args: ['server-b.js'] },
+      ]);
+
+      const createClient = createMCPClient as jest.Mock;
+      expect(createClient).toHaveBeenCalledTimes(2);
+      const first = await createClient.mock.results[0].value;
+      expect(first.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes a client whose server is removed from settings', async () => {
+      const kept: McpServerSettings = {
+        id: 'kept',
+        name: 'Kept Server',
+        enabled: true,
+        transport: 'stdio',
+        command: 'node',
+        args: ['kept.js'],
+      };
+      const removed: McpServerSettings = {
+        id: 'removed',
+        name: 'Removed Server',
+        enabled: true,
+        transport: 'stdio',
+        command: 'node',
+        args: ['removed.js'],
+      };
+
+      mockSettingsServers = [kept, removed];
+      await mcpManager.loadToolsForEnabledServers([kept, removed]);
+      mockSettingsServers = [kept];
+      await mcpManager.loadToolsForEnabledServers([kept]);
+
+      const createClient = createMCPClient as jest.Mock;
+      expect(createClient).toHaveBeenCalledTimes(2);
+      const removedClient = await createClient.mock.results[1].value;
+      const keptClient = await createClient.mock.results[0].value;
+      expect(removedClient.close).toHaveBeenCalledTimes(1);
+      expect(keptClient.close).not.toHaveBeenCalled();
     });
 
     it('reports server statuses correctly', async () => {

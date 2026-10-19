@@ -13,9 +13,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pickDefaultProvider } from './registry';
 import { getProject, pickDefaultActiveProject } from '../db/projects.js';
-import type {
-  BuilderEngine,
-  McpServerSettings,
+import {
+  DEFAULT_BUILDER_MAX_STEPS,
+  type BuilderEngine,
+  type McpServerSettings,
 } from '../../lib/builder-engine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -57,6 +58,12 @@ export interface AppSettings {
    * Defaults to 'local'.
    */
   builderEngine?: BuilderEngine;
+  /**
+   * Maximum model/tool steps in one Local Builder turn. The default is high
+   * enough for install → test → fix loops; the Settings UI clamps it to a
+   * supported range.
+   */
+  builderMaxSteps?: number;
   /**
    * Configured Model Context Protocol (MCP) servers available to the Local Builder agent.
    */
@@ -110,6 +117,7 @@ function defaultSettings(): AppSettings {
     activeModel: model,
     fallbackEnabled: true,
     builderEngine: 'local',
+    builderMaxSteps: DEFAULT_BUILDER_MAX_STEPS,
     mcpServers: [],
     providers: {},
     customProviders: [],

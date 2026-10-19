@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { nanoid } from 'nanoid';
 import { useIpcEvent } from './use-ipc';
+import { renderComposedStudioVideo } from '@/lib/studio/render/export-renderer';
 import type {
   StudioTake,
   StudioTakeSummary,
@@ -51,6 +52,11 @@ export function useStudio(
   const [isProcessingDraft, setIsProcessingDraft] = useState<boolean>(false);
   const [isGeneratingSocialKit, setIsGeneratingSocialKit] =
     useState<boolean>(false);
+  const [exportProgress, setExportProgress] = useState<{
+    isExporting: boolean;
+    progress: number;
+    statusText: string;
+  } | null>(null);
 
   // Recording state
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -538,7 +544,42 @@ export function useStudio(
     async (format: 'mp4' | 'gif' | 'webm' = 'mp4') => {
       if (!activeTake) return;
       try {
-        toast.info(`Preparing ${format.toUpperCase()} export...`);
+        // 1. Prompt user for save destination
+        const savePrompt = await window.electron.ipc.invoke<{
+          canceled: boolean;
+          filePath?: string;
+        }>('studio:prompt-save-dialog', {
+          takeId: activeTake.id,
+          format,
+          defaultTitle: activeTake.title,
+        });
+
+        if (savePrompt.canceled || !savePrompt.filePath) return;
+
+        // 2. Render complete composition (zooms, captions, framing, motion cards)
+        setExportProgress({
+          isExporting: true,
+          progress: 0.05,
+          statusText: 'Rendering composition with camera zooms & subtitles...',
+        });
+
+        await renderComposedStudioVideo(activeTake, {
+          onProgress: (ratio, text) => {
+            setExportProgress({
+              isExporting: true,
+              progress: Math.min(0.92, Math.max(0.05, ratio * 0.9)),
+              statusText: text,
+            });
+          },
+        });
+
+        // 3. Transcode rendered WebM into final container (MP4/GIF/WebM)
+        setExportProgress({
+          isExporting: true,
+          progress: 0.95,
+          statusText: `Encoding final ${format.toUpperCase()} video with FFmpeg...`,
+        });
+
         const res = await window.electron.ipc.invoke<{
           ok: boolean;
           filePath?: string;
@@ -546,6 +587,7 @@ export function useStudio(
         }>('studio:export-video', {
           takeId: activeTake.id,
           format,
+          targetPath: savePrompt.filePath,
         });
 
         if (res.ok && res.filePath) {
@@ -558,6 +600,8 @@ export function useStudio(
         }
       } catch (err) {
         toast.error(`Export error: ${(err as Error).message}`);
+      } finally {
+        setExportProgress(null);
       }
     },
     [activeTake],
@@ -601,6 +645,7 @@ export function useStudio(
     recordingSeconds,
     isProcessingDraft,
     isGeneratingSocialKit,
+    exportProgress,
     loadTake,
     refreshTakes,
     loadMoreTakes,

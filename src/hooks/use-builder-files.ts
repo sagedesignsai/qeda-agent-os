@@ -14,6 +14,8 @@ import type { BuilderFileNode } from '@/lib/builder-workspace';
 export function useBuilderFiles(
   sessionId: string | undefined,
   events: BuilderSessionEvent[],
+  /** Bumped by Keep/Discard, which change the tree without a tool event. */
+  revision = 0,
 ) {
   const [files, setFiles] = useState<BuilderFileNode[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,6 +48,7 @@ export function useBuilderFiles(
       .invoke<BuilderFileNode[]>('builder:workspace-files')
       .then((result) => {
         if (!cancelled) setFiles(result);
+        return undefined;
       })
       .catch(() => {
         // Keep the last successful tree visible if a refresh fails; the main
@@ -58,7 +61,7 @@ export function useBuilderFiles(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, lastCompletedTool]);
+  }, [sessionId, lastCompletedTool, revision]);
 
   return { files, loading };
 }

@@ -105,6 +105,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { BuilderCodeWorkspace } from '@/components/builder/BuilderCodeWorkspace';
 import { BuilderChangesWorkspace } from '@/components/builder/BuilderChangesWorkspace';
@@ -146,12 +147,22 @@ interface BuilderCanvasProps {
   previewStopping?: boolean;
   /** True when a session is bound, so a preview *can* be started. */
   canStartPreview?: boolean;
-  onStartPreview?: () => void;
+  /**
+   * Last user-entered preview command. Empty means "use the project's
+   * detected package script"; a value is passed through as a shell command.
+   */
+  previewCommand?: string;
+  onPreviewCommandChange?: (command: string) => void;
+  /** `command` is the user-entered custom command, or undefined for auto. */
+  onStartPreview?: (command?: string) => void;
   onStopPreview?: () => void;
   onOpenExternal?: (url: string) => void;
   files?: BuilderFileNode[];
   filesLoading?: boolean;
   changes?: BuilderFileChange[];
+  changesLoading?: boolean;
+  keeping?: boolean;
+  discarding?: boolean;
   selectedFilePath?: string;
   onSelectFile?: (path: string) => void;
   onKeepAll?: () => void;
@@ -230,6 +241,8 @@ function PreviewIdleState({
   canStart,
   starting,
   stopping,
+  previewCommand,
+  onPreviewCommandChange,
   onStart,
   onStop,
 }: {
@@ -238,7 +251,9 @@ function PreviewIdleState({
   canStart: boolean;
   starting: boolean;
   stopping: boolean;
-  onStart?: () => void;
+  previewCommand: string;
+  onPreviewCommandChange?: (command: string) => void;
+  onStart?: (command?: string) => void;
   onStop?: () => void;
 }) {
   const badge = IDLE_BADGE[status.state];
@@ -306,26 +321,49 @@ function PreviewIdleState({
           {stopping ? 'Stopping…' : 'Stop preview'}
         </Button>
       ) : (
-        <Button
-          size="sm"
-          className="gap-1.5 text-xs"
-          onClick={onStart}
-          disabled={!canStart || starting}
-          // Why it is unavailable lives in the tooltip: the conversation panel
-          // owns the one folder call to action, so this canvas does not repeat it.
-          title={
-            canStart
-              ? 'Run this project’s dev script and load it here.'
-              : 'Choose a project folder first.'
-          }
+        <form
+          className="flex w-full max-w-md flex-col items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onStart?.(previewCommand.trim() || undefined);
+          }}
         >
-          <PlayIcon className="size-3.5" />
-          {starting
-            ? 'Starting…'
-            : status.state === 'error' || status.state === 'exited'
-              ? 'Try again'
-              : 'Start preview'}
-        </Button>
+          <div className="flex w-full items-center gap-1.5">
+            <Input
+              value={previewCommand}
+              onChange={(event) => onPreviewCommandChange?.(event.target.value)}
+              placeholder="python -m http.server 8000"
+              aria-label="Custom preview command"
+              className="h-8 font-mono text-xs"
+              disabled={!canStart || starting}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              className="gap-1.5 text-xs"
+              disabled={!canStart || starting}
+              // Why it is unavailable lives in the tooltip: the conversation
+              // panel owns the one folder call to action, so this canvas does
+              // not repeat it.
+              title={
+                canStart
+                  ? 'Start this project: leave blank for the detected script, or type a command.'
+                  : 'Choose a project folder first.'
+              }
+            >
+              <PlayIcon className="size-3.5" />
+              {starting
+                ? 'Starting…'
+                : status.state === 'error' || status.state === 'exited'
+                  ? 'Try again'
+                  : 'Start preview'}
+            </Button>
+          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Leave blank to run the project&rsquo;s detected dev script, or type
+            a command for Python, Go, Rust, or a static site.
+          </p>
+        </form>
       )}
     </div>
   );
@@ -342,12 +380,17 @@ export function BuilderCanvas({
   previewStarting = false,
   previewStopping = false,
   canStartPreview = false,
+  previewCommand = '',
+  onPreviewCommandChange,
   onStartPreview,
   onStopPreview,
   onOpenExternal,
   files = [],
   filesLoading = false,
   changes = [],
+  changesLoading = false,
+  keeping = false,
+  discarding = false,
   selectedFilePath,
   onSelectFile,
   onKeepAll,
@@ -615,6 +658,8 @@ export function BuilderCanvas({
                     canStart={canStartPreview}
                     starting={previewStarting}
                     stopping={previewStopping}
+                    previewCommand={previewCommand}
+                    onPreviewCommandChange={onPreviewCommandChange}
                     onStart={onStartPreview}
                     onStop={onStopPreview}
                   />
@@ -633,6 +678,9 @@ export function BuilderCanvas({
       ) : (
         <BuilderChangesWorkspace
           changes={changes}
+          loading={changesLoading}
+          keeping={keeping}
+          discarding={discarding}
           onKeepAll={onKeepAll}
           onDiscardAll={onDiscardAll}
         />

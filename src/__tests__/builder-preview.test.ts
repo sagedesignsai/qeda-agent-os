@@ -57,9 +57,9 @@ describe('detectPackageManager', () => {
   });
 
   it('prefers the specialised manager when a migration left two lockfiles', () => {
-    expect(
-      detectPackageManager(['package-lock.json', 'pnpm-lock.yaml']),
-    ).toBe('pnpm');
+    expect(detectPackageManager(['package-lock.json', 'pnpm-lock.yaml'])).toBe(
+      'pnpm',
+    );
   });
 
   it('defaults to npm with no lockfile at all', () => {
@@ -83,9 +83,7 @@ describe('previewArgv', () => {
 });
 
 describe('latestLocalUrl', () => {
-  const event = (
-    partial: Partial<BuilderSessionEvent>,
-  ): BuilderSessionEvent =>
+  const event = (partial: Partial<BuilderSessionEvent>): BuilderSessionEvent =>
     ({
       sessionId: 'ses_1',
       eventId: Math.random().toString(36).slice(2),
@@ -142,7 +140,11 @@ function makeFixtureDir(scripts?: Record<string, string>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-preview-'));
   fs.writeFileSync(
     path.join(dir, 'package.json'),
-    JSON.stringify({ name: 'preview-fixture', version: '0.0.0', scripts }, null, 2),
+    JSON.stringify(
+      { name: 'preview-fixture', version: '0.0.0', scripts },
+      null,
+      2,
+    ),
   );
   return dir;
 }
@@ -165,7 +167,8 @@ function statusWhen(
   predicate: (status: BuilderPreviewStatus) => boolean,
   timeoutMs = 20_000,
 ): Promise<BuilderPreviewStatus> {
-  if (predicate(preview.getStatus())) return Promise.resolve(preview.getStatus());
+  if (predicate(preview.getStatus()))
+    return Promise.resolve(preview.getStatus());
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       unsubscribe();
@@ -197,7 +200,9 @@ function isAlive(pid: number): boolean {
 
 describe('BuilderPreview', () => {
   it('reports a missing package.json instead of spawning anything', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-preview-empty-'));
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'builder-preview-empty-'),
+    );
     const preview = new BuilderPreview();
 
     const status = await preview.start({ directory: dir });
@@ -205,6 +210,39 @@ describe('BuilderPreview', () => {
     expect(status.state).toBe('error');
     expect(status.owner).toBe('qeda');
     expect(status.message).toMatch(/package\.json/);
+    expect(status.command).toBeNull();
+  });
+
+  it('runs a user-supplied command in a non-Node directory', async () => {
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'builder-preview-custom-'),
+    );
+    const preview = new BuilderPreview();
+
+    const status = await preview.start({
+      directory: dir,
+      command: ANNOUNCING_SCRIPT,
+    });
+
+    // No package.json is required in this mode: the user named the command.
+    expect(status.state).toBe('starting');
+    expect(status.command).toBe(ANNOUNCING_SCRIPT);
+
+    const ready = await statusWhen(preview, (s) => s.state === 'ready');
+    expect(ready.url).toBe('http://localhost:5999/');
+
+    const stopped = await preview.stop();
+    expect(stopped.state).toBe('idle');
+  }, 30_000);
+
+  it('rejects a blank custom command instead of running the package script', async () => {
+    const dir = makeFixtureDir({ dev: ANNOUNCING_SCRIPT });
+    const preview = new BuilderPreview();
+
+    const status = await preview.start({ directory: dir, command: '   ' });
+
+    expect(status.state).toBe('error');
+    expect(status.message).toMatch(/Type a command/);
     expect(status.command).toBeNull();
   });
 
@@ -235,11 +273,9 @@ describe('BuilderPreview', () => {
     expect(ready.url).toBe('http://localhost:5999/');
 
     const pidFile = path.join(dir, 'child.pid');
-    await statusWhen(
-      preview,
-      () => fs.existsSync(pidFile),
-      10_000,
-    ).catch(() => undefined);
+    await statusWhen(preview, () => fs.existsSync(pidFile), 10_000).catch(
+      () => undefined,
+    );
     const childPid = Number(fs.readFileSync(pidFile, 'utf8'));
     expect(Number.isInteger(childPid)).toBe(true);
     expect(isAlive(childPid)).toBe(true);

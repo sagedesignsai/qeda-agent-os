@@ -38,7 +38,9 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { ipcMain, shell, type BrowserWindow } from 'electron';
+import { app, ipcMain, shell, type BrowserWindow } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import {
   createCodeProject,
   deleteCodeProject,
@@ -74,9 +76,11 @@ import {
 import {
   getActiveBuilderSession,
   saveActiveBuilderSession,
+  saveActiveBuilderSessionContext,
   deleteActiveBuilderSession,
 } from '../../db/builder-sessions';
 import { getSettings } from '../../ai/settings';
+import type { ModelMessage } from 'ai';
 import type { BuilderPreviewStatus } from '../../../lib/builder-preview';
 import type { BuilderWorkspace } from '../../../lib/builder-workspace';
 import type {
@@ -88,6 +92,18 @@ import type {
 
 /** Upper bound on buffered events so a long session cannot grow unbounded. */
 const EVENT_BUFFER_LIMIT = 2_000;
+/** Only the newest events are persisted; older history is not worth the bytes. */
+const PERSISTED_EVENT_LIMIT = 500;
+
+function parseStoredArray<T>(value: string | null | undefined): T[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 export function registerBuilderHandlers({
   mainWindow,
@@ -112,6 +128,7 @@ export function registerBuilderHandlers({
   let eventBuffer: BuilderSessionEvent[] = [];
   let running = false;
   let localEventSeq = 0;
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Preview (engine-agnostic) ─────────────────────────────────────────────
 
@@ -127,6 +144,37 @@ export function registerBuilderHandlers({
     }
   });
 
+  // ── Durable context ───────────────────────────────────────────────────────
+
+  /**
+   * Persist the Local conversation and the event tail that lets a restarted
+   * renderer rebuild the feed. Writes are debounced because `broadcast` fires
+   * for every token delta; `flushPersistedContext` is called at terminal
+   * statuses and on shutdown.
+   */
+  const flushPersistedContext = () => {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    if (!activeSession) return;
+    saveActiveBuilderSessionContext({
+      ...(localSession
+        ? { messagesJson: JSON.stringify(localSession.getMessages()) }
+        : {}),
+      eventsJson: JSON.stringify(eventBuffer.slice(-PERSISTED_EVENT_LIMIT)),
+    });
+  };
+
+  const schedulePersistedContext = () => {
+    if (!activeSession || persistTimer) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      flushPersistedContext();
+    }, 300);
+    persistTimer.unref?.();
+  };
+
   // ── Event broadcasting ────────────────────────────────────────────────────
 
   const broadcast = (event: BuilderSessionEvent) => {
@@ -139,6 +187,16 @@ export function registerBuilderHandlers({
     }
     if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
       mainWindow.webContents.send('builder:session-event', event);
+    }
+    if (
+      event.type === 'status' &&
+      (event.status === 'idle' ||
+        event.status === 'interrupted' ||
+        event.status === 'failed')
+    ) {
+      flushPersistedContext();
+    } else {
+      schedulePersistedContext();
     }
   };
 
@@ -163,6 +221,10 @@ export function registerBuilderHandlers({
   // ── Session teardown ──────────────────────────────────────────────────────
 
   const stopActive = async () => {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
     eventController?.abort();
     eventController = null;
     await preview.stop();
@@ -193,6 +255,44 @@ export function registerBuilderHandlers({
       await removeBuilderWorktree(prevRepo, prevWorktree).catch(
         () => undefined,
       );
+    }
+  };
+
+  /**
+   * Release the running processes without destroying the session.
+   *
+   * This is the window-close path: the worktree and the persisted context must
+   * outlive the app so a long run can be re-attached on next launch. Explicit
+   * `builder:session-stop` still uses `stopActive`, which deletes the worktree.
+   */
+  const detachActive = async () => {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    eventController?.abort();
+    eventController = null;
+    await preview.stop();
+    flushPersistedContext();
+
+    const prevRuntime = opencodeRuntime;
+    const prevLocal = localSession;
+
+    opencodeRuntime = null;
+    localSession = null;
+    activeSession = null;
+    activeWorkspace = null;
+    activeWorktreePath = null;
+    activeEngine = null;
+    eventBuffer = [];
+    running = false;
+
+    if (prevRuntime) {
+      await prevRuntime.provider.dispose().catch(() => undefined);
+    }
+    if (prevLocal) {
+      // Abort only: `stop()` would remove the worktree we are preserving.
+      prevLocal.abort();
     }
   };
 
@@ -372,6 +472,10 @@ export function registerBuilderHandlers({
 
       // ── Local engine path ─────────────────────────────────────────────────
       if (engine === 'local') {
+        const worktreeParentDirectory = path.join(
+          app.getPath('userData'),
+          'builder-worktrees',
+        );
         const {
           session,
           summary,
@@ -379,6 +483,7 @@ export function registerBuilderHandlers({
         } = await createLocalBuilderSession({
           workspaceDirectory: workspace.directory,
           onEvent: broadcast,
+          worktreeParentDirectory,
         });
 
         localSession = session;
@@ -397,6 +502,8 @@ export function registerBuilderHandlers({
           workspace_name: boundWorkspace.name,
           branch: boundWorkspace.branch ?? null,
           engine: 'local',
+          messages_json: '[]',
+          events_json: '[]',
           created_at: summary.createdAt,
         });
 
@@ -541,11 +648,58 @@ export function registerBuilderHandlers({
 
       const engine = (persisted.engine ?? 'opencode') as 'local' | 'opencode';
 
-      // Local sessions are ephemeral: the process and worktree are gone after a
-      // restart. Surface an empty state so the user can create a new session.
+      // Local sessions are durable when their worktree survived: the model
+      // context and event tail are persisted, and the worktree lives under
+      // userData instead of the OS temp dir. If either is gone there is nothing
+      // honest to re-attach, so the stale row is removed.
       if (engine === 'local') {
-        deleteActiveBuilderSession();
-        return { session: null, workspace: null, events: [] };
+        if (!persisted.worktree_path) {
+          deleteActiveBuilderSession();
+          return { session: null, workspace: null, events: [] };
+        }
+        try {
+          const worktreeStat = await fs.stat(persisted.worktree_path);
+          if (!worktreeStat.isDirectory()) throw new Error('not a directory');
+          const source = await inspectBuilderWorkspace(
+            persisted.repo_directory,
+          );
+          const restoredWorkspace: BuilderWorkspace = {
+            ...source,
+            worktreePath: persisted.worktree_path,
+          };
+          const restored = new LocalBuilderSession(
+            persisted.opencode_session_id,
+            restoredWorkspace,
+            persisted.worktree_path,
+            broadcast,
+            undefined,
+            {
+              id: persisted.opencode_session_id,
+              title: persisted.title,
+              createdAt: persisted.created_at,
+              messages: parseStoredArray<ModelMessage>(persisted.messages_json),
+            },
+          );
+
+          localSession = restored;
+          activeSession = restored.getSummary();
+          activeWorkspace = restoredWorkspace;
+          activeWorktreePath = persisted.worktree_path;
+          activeEngine = 'local';
+          eventBuffer = parseStoredArray<BuilderSessionEvent>(
+            persisted.events_json,
+          );
+          running = false;
+
+          return {
+            session: activeSession,
+            workspace: activeWorkspace,
+            events: eventBuffer,
+          };
+        } catch {
+          deleteActiveBuilderSession();
+          return { session: null, workspace: null, events: [] };
+        }
       }
 
       // OpenCode sessions: try to reconnect.
@@ -590,7 +744,9 @@ export function registerBuilderHandlers({
         activeWorkspace = restoredWorkspace;
         activeWorktreePath = persisted.worktree_path;
         activeEngine = 'opencode';
-        eventBuffer = [];
+        eventBuffer = parseStoredArray<BuilderSessionEvent>(
+          persisted.events_json,
+        );
         running = false;
 
         const controller = new AbortController();
@@ -854,7 +1010,7 @@ export function registerBuilderHandlers({
     'builder:preview-start',
     async (
       _event,
-      req?: { script?: string },
+      req?: { script?: string; command?: string },
     ): Promise<BuilderPreviewStatus> => {
       if (!activeWorkspace) {
         throw new Error('Create a Builder session before starting a preview.');
@@ -864,6 +1020,7 @@ export function registerBuilderHandlers({
       return preview.start({
         directory: previewDir,
         script: req?.script,
+        command: req?.command,
       });
     },
   );
@@ -926,6 +1083,14 @@ export function registerBuilderHandlers({
       );
     }
     const paths = await applyWorktreeChanges(directory, worktreePath);
+    // The source tree's dirty count changed; refresh the bound workspace so the
+    // canvas identity bar does not keep reporting the pre-Keep state.
+    try {
+      const refreshed = await inspectBuilderWorkspace(directory);
+      activeWorkspace = { ...refreshed, worktreePath };
+    } catch {
+      // Keep succeeded; a stale count is cosmetic and self-corrects on restart.
+    }
     return { paths };
   });
 
@@ -939,12 +1104,23 @@ export function registerBuilderHandlers({
       );
     }
     await discardWorktreeChanges(activeWorkspace.worktreePath);
+    try {
+      const refreshed = await inspectBuilderWorkspace(
+        activeWorkspace.directory,
+      );
+      activeWorkspace = {
+        ...refreshed,
+        worktreePath: activeWorkspace.worktreePath,
+      };
+    } catch {
+      // Cosmetic; the worktree itself is already reset.
+    }
   });
 
   // ── Cleanup ───────────────────────────────────────────────────────────────
 
   mainWindow.once('closed', () => {
     preview.dispose();
-    void stopActive();
+    void detachActive();
   });
 }

@@ -35,6 +35,28 @@ interface ActiveClientEntry {
   connectedAt: number;
 }
 
+/**
+ * Stable-enough identity for a server definition. A connection is reused until
+ * one of its transport-relevant fields changes; key order inside `env` and
+ * `headers` is normalized so a settings round-trip does not force a reconnect.
+ */
+function serverSignature(server: McpServerSettings): string {
+  const sorted = (record?: Record<string, string>) =>
+    Object.entries(record ?? {})
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => [key, value]);
+  return JSON.stringify({
+    enabled: server.enabled,
+    transport: server.transport,
+    command: server.command,
+    args: server.args,
+    cwd: server.cwd,
+    url: server.url,
+    env: sorted(server.env),
+    headers: sorted(server.headers),
+  });
+}
+
 class McpManager {
   private activeClients = new Map<string, ActiveClientEntry>();
 
@@ -42,15 +64,15 @@ class McpManager {
    * Instantiate an MCP client for a specific server definition, perform the
    * handshake, and discover its tools.
    */
-  async connectServer(
-    server: McpServerSettings,
-  ): Promise<{
+  async connectServer(server: McpServerSettings): Promise<{
     client: Awaited<ReturnType<typeof createMCPClient>>;
     tools: Record<string, Tool>;
     toolSummaries: McpToolSummary[];
   }> {
     if (!server.enabled && server.enabled !== undefined) {
-      throw new Error(`MCP server "${server.name}" (${server.id}) is disabled.`);
+      throw new Error(
+        `MCP server "${server.name}" (${server.id}) is disabled.`,
+      );
     }
 
     let client: Awaited<ReturnType<typeof createMCPClient>>;
@@ -64,7 +86,10 @@ class McpManager {
       }
 
       // Merge environment variables safely. Clean empty entries.
-      const env: Record<string, string> = { ...process.env } as Record<string, string>;
+      const env: Record<string, string> = { ...process.env } as Record<
+        string,
+        string
+      >;
       if (server.env) {
         for (const [k, v] of Object.entries(server.env)) {
           if (v) env[k] = v;
@@ -148,26 +173,51 @@ class McpManager {
   ): Promise<{
     tools: Record<string, Tool>;
     activeCount: number;
-    summaries: Array<{ serverId: string; serverName: string; tools: McpToolSummary[] }>;
+    summaries: Array<{
+      serverId: string;
+      serverName: string;
+      tools: McpToolSummary[];
+    }>;
   }> {
     const servers =
-      overrideServers ?? (getSettings().mcpServers ?? []).filter((s) => s.enabled);
+      overrideServers ??
+      (getSettings().mcpServers ?? []).filter((s) => s.enabled);
+    const desired = new Map(servers.map((server) => [server.id, server]));
 
-    await this.closeAll();
+    // Reuse live connections. The Local Builder calls this once per prompt, and
+    // tearing every stdio server down and back up each time made long sessions
+    // pay a full MCP handshake per turn (and lose in-memory server state).
+    for (const [id, entry] of this.activeClients) {
+      const next = desired.get(id);
+      if (!next || serverSignature(next) !== serverSignature(entry.server)) {
+        this.activeClients.delete(id);
+        await entry.client.close().catch(() => undefined);
+      }
+    }
 
     const mergedTools: Record<string, Tool> = {};
-    const summaries: Array<{ serverId: string; serverName: string; tools: McpToolSummary[] }> = [];
+    const summaries: Array<{
+      serverId: string;
+      serverName: string;
+      tools: McpToolSummary[];
+    }> = [];
 
     const connectPromises = servers.map(async (server) => {
       try {
-        const { client, tools, toolSummaries } = await this.connectServer(server);
-        this.activeClients.set(server.id, {
-          client,
-          tools,
-          toolSummaries,
-          server,
-          connectedAt: Date.now(),
-        });
+        let entry = this.activeClients.get(server.id);
+        if (!entry) {
+          const { client, tools, toolSummaries } =
+            await this.connectServer(server);
+          entry = {
+            client,
+            tools,
+            toolSummaries,
+            server,
+            connectedAt: Date.now(),
+          };
+          this.activeClients.set(server.id, entry);
+        }
+        const { tools, toolSummaries } = entry;
 
         // Prefix or expose tools cleanly
         for (const [rawName, toolDef] of Object.entries(tools)) {

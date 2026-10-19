@@ -74,7 +74,11 @@ import type {
   McpServerPreset,
   BuilderEngine,
 } from '@/main/ipc/channels';
-import { MCP_SERVER_PRESETS } from '@/lib/builder-engine';
+import {
+  DEFAULT_BUILDER_MAX_STEPS,
+  MCP_SERVER_PRESETS,
+  normalizeBuilderMaxSteps,
+} from '@/lib/builder-engine';
 import { nanoid } from 'nanoid';
 
 // ─── Engine toggle ────────────────────────────────────────────────────────────
@@ -126,9 +130,7 @@ function EngineCard({
             selected ? 'border-primary' : 'border-muted-foreground/50',
           )}
         >
-          {selected && (
-            <div className="size-1.5 rounded-full bg-primary" />
-          )}
+          {selected && <div className="size-1.5 rounded-full bg-primary" />}
         </div>
         <span className="text-sm font-medium">{option.label}</span>
         {option.value === 'local' && (
@@ -196,8 +198,7 @@ function formStateToSettings(s: McpServerFormState): McpServerSettings {
       : undefined,
     cwd: s.cwd.trim() || undefined,
     url: s.url.trim() || undefined,
-    env:
-      s.envEntries.length > 0 ? entriesToRecord(s.envEntries) : undefined,
+    env: s.envEntries.length > 0 ? entriesToRecord(s.envEntries) : undefined,
     headers:
       s.headerEntries.length > 0 ? entriesToRecord(s.headerEntries) : undefined,
   };
@@ -232,14 +233,12 @@ function presetToFormState(preset: McpServerPreset): McpServerFormState {
     args: (preset.args ?? []).join(' '),
     cwd: '',
     url: preset.url ?? '',
-    envEntries:
-      preset.env
-        ? Object.entries(preset.env).map(([key, value]) => ({ key, value }))
-        : [],
-    headerEntries:
-      preset.headers
-        ? Object.entries(preset.headers).map(([key, value]) => ({ key, value }))
-        : [],
+    envEntries: preset.env
+      ? Object.entries(preset.env).map(([key, value]) => ({ key, value }))
+      : [],
+    headerEntries: preset.headers
+      ? Object.entries(preset.headers).map(([key, value]) => ({ key, value }))
+      : [],
   };
 }
 
@@ -364,7 +363,12 @@ function ServerEditForm({
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="size-7" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          onClick={onClose}
+        >
           <ChevronDownIcon className="size-3.5" />
         </Button>
         <span className="text-sm font-medium">
@@ -595,9 +599,7 @@ function ServerEditForm({
                     size="icon"
                     className="size-6 shrink-0"
                     onClick={() => {
-                      const next = form.headerEntries.filter(
-                        (_, j) => j !== i,
-                      );
+                      const next = form.headerEntries.filter((_, j) => j !== i);
                       onChange({ headerEntries: next });
                     }}
                   >
@@ -703,12 +705,13 @@ export function BuilderMcpView() {
   const { snapshot, saving, save } = useSettingsStore();
 
   const [engine, setEngine] = useState<BuilderEngine>('local');
+  const [maxSteps, setMaxSteps] = useState(DEFAULT_BUILDER_MAX_STEPS);
   const [servers, setServers] = useState<McpServerFormState[]>([]);
   const [statuses, setStatuses] = useState<McpServerStatus[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<
-    Record<string, McpTestResult>
-  >({});
+  const [testResults, setTestResults] = useState<Record<string, McpTestResult>>(
+    {},
+  );
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [reloading, setReloading] = useState(false);
 
@@ -718,10 +721,9 @@ export function BuilderMcpView() {
     if (!snapshot || seeded.current) return;
     seeded.current = true;
     setEngine(snapshot.builderEngine ?? 'local');
+    setMaxSteps(normalizeBuilderMaxSteps(snapshot.builderMaxSteps));
     setServers(
-      (snapshot.mcpServers ?? []).map((s) =>
-        settingsToFormState(s, s.id),
-      ),
+      (snapshot.mcpServers ?? []).map((s) => settingsToFormState(s, s.id)),
     );
   }, [snapshot]);
 
@@ -738,10 +740,28 @@ export function BuilderMcpView() {
       setEngine(next);
       try {
         await save({ builderEngine: next });
-        toast.success(`Builder engine switched to "${next === 'local' ? 'Local Agent' : 'OpenCode'}".`);
+        toast.success(
+          `Builder engine switched to "${next === 'local' ? 'Local Agent' : 'OpenCode'}".`,
+        );
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : 'Failed to save engine.',
+        );
+      }
+    },
+    [save],
+  );
+
+  const handleMaxStepsSave = useCallback(
+    async (raw: number) => {
+      const next = normalizeBuilderMaxSteps(raw);
+      setMaxSteps(next);
+      try {
+        await save({ builderMaxSteps: next });
+        toast.success(`Builder step budget set to ${next} steps per turn.`);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to save step budget.',
         );
       }
     },
@@ -763,9 +783,8 @@ export function BuilderMcpView() {
           'mcp:reload',
         );
         // Refresh statuses
-        const freshStatuses = await window.electron.ipc.invoke<
-          McpServerStatus[]
-        >('mcp:statuses');
+        const freshStatuses =
+          await window.electron.ipc.invoke<McpServerStatus[]>('mcp:statuses');
         setStatuses(freshStatuses);
         toast.success(
           `MCP servers saved. ${res.activeCount} active connection${res.activeCount === 1 ? '' : 's'}.`,
@@ -864,9 +883,8 @@ export function BuilderMcpView() {
       const res = await window.electron.ipc.invoke<{ activeCount: number }>(
         'mcp:reload',
       );
-      const fresh = await window.electron.ipc.invoke<McpServerStatus[]>(
-        'mcp:statuses',
-      );
+      const fresh =
+        await window.electron.ipc.invoke<McpServerStatus[]>('mcp:statuses');
       setStatuses(fresh);
       toast.success(
         `Reconnected. ${res.activeCount} active server${res.activeCount === 1 ? '' : 's'}.`,
@@ -916,6 +934,38 @@ export function BuilderMcpView() {
                 }}
               />
             ))}
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+            <div className="min-w-0 flex-1">
+              <Label
+                htmlFor="builder-max-steps"
+                className="text-sm font-medium"
+              >
+                Steps per turn
+              </Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Upper bound on model and tool steps in one Local Agent turn.
+                Higher budgets let install → test → fix loops finish without a
+                second prompt; 10–1000, default {DEFAULT_BUILDER_MAX_STEPS}.
+              </p>
+            </div>
+            <Input
+              id="builder-max-steps"
+              type="number"
+              min={10}
+              max={1000}
+              step={10}
+              inputMode="numeric"
+              value={maxSteps}
+              disabled={engine !== 'local'}
+              onChange={(event) => setMaxSteps(Number(event.target.value))}
+              onBlur={() => void handleMaxStepsSave(maxSteps)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+              className="h-8 w-24 shrink-0 text-sm tabular-nums"
+              aria-label="Builder steps per turn"
+            />
           </div>
         </section>
 
@@ -1036,9 +1086,9 @@ export function BuilderMcpView() {
                 <div className="space-y-1">
                   <p className="font-medium">OpenCode service required</p>
                   <p className="text-muted-foreground">
-                    OpenCode must be installed and running on your machine.
-                    MCP servers configured above are only used by the Local
-                    Agent engine; OpenCode manages its own tool set.
+                    OpenCode must be installed and running on your machine. MCP
+                    servers configured above are only used by the Local Agent
+                    engine; OpenCode manages its own tool set.
                   </p>
                 </div>
               </div>

@@ -85,15 +85,25 @@ function baseArgs(inputPath: string): string[] {
   ];
 }
 
-/** H.264/AAC MP4, `+faststart` so it streams from the start. */
+/** H.264/AAC MP4, `+faststart` so it streams from the start.
+ *  When `audioInputPath` is provided the audio is sourced from that file
+ *  (the original recording) rather than from the rendered WebM — the
+ *  frame-by-frame renderer produces a muted video-only stream.
+ */
 export function buildMp4Args(
   inputPath: string,
   outputPath: string,
   quality: StudioExportQuality,
+  audioInputPath?: string,
 ): string[] {
   const crf = quality === 'medium' ? '24' : '18';
+  const base: string[] = ['-y', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', inputPath];
+  if (audioInputPath) {
+    base.push('-i', audioInputPath);
+  }
   return [
-    ...baseArgs(inputPath),
+    ...base,
+    ...(audioInputPath ? ['-map', '0:v:0', '-map', '1:a:0?'] : []),
     '-c:v',
     'libx264',
     '-preset',
@@ -112,15 +122,24 @@ export function buildMp4Args(
   ];
 }
 
-/** VP9/Opus WebM, used when the source is not already a WebM. */
+/** VP9/Opus WebM, used when the source is not already a WebM.
+ *  When `audioInputPath` is provided audio is sourced from the original
+ *  recording rather than the rendered (video-only) WebM.
+ */
 export function buildWebmArgs(
   inputPath: string,
   outputPath: string,
   quality: StudioExportQuality,
+  audioInputPath?: string,
 ): string[] {
   const crf = quality === 'medium' ? '38' : '32';
+  const base: string[] = ['-y', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', inputPath];
+  if (audioInputPath) {
+    base.push('-i', audioInputPath);
+  }
   return [
-    ...baseArgs(inputPath),
+    ...base,
+    ...(audioInputPath ? ['-map', '0:v:0', '-map', '1:a:0?'] : []),
     '-c:v',
     'libvpx-vp9',
     '-crf',
@@ -137,7 +156,9 @@ export function buildWebmArgs(
   ];
 }
 
-/** First GIF pass: sample the video into a single optimized palette frame. */
+/** First GIF pass: sample the video into a single optimized palette frame.
+ *  GIFs have no audio, so `audioInputPath` is intentionally unused here.
+ */
 export function buildGifPaletteArgs(
   inputPath: string,
   palettePath: string,
@@ -184,6 +205,13 @@ export interface TranscodeStudioVideoOptions {
   outputPath: string;
   format: StudioExportFormat;
   quality?: StudioExportQuality;
+  /**
+   * Optional path to a separate audio source (the original recording).
+   * When the rendered video is produced by the frame-by-frame encoder it is
+   * muted (video-only WebM). Pass the original recording path here so ffmpeg
+   * can merge its audio track with the composed video in a single pass.
+   */
+  audioInputPath?: string;
 }
 
 /**
@@ -199,21 +227,26 @@ export async function transcodeStudioVideo(
   const { inputPath, outputPath } = options;
   const quality = options.quality ?? 'high';
 
+  const { audioInputPath } = options;
+
+  // If no audio needs merging, a WebM→WebM export with the same codec is a
+  // straight copy (re-encoding would only lose quality).
   if (
     options.format === 'webm' &&
-    path.extname(inputPath).toLowerCase() === '.webm'
+    path.extname(inputPath).toLowerCase() === '.webm' &&
+    !audioInputPath
   ) {
     await fs.copyFile(inputPath, outputPath);
     return;
   }
 
   if (options.format === 'mp4') {
-    await run(buildMp4Args(inputPath, outputPath, quality));
+    await run(buildMp4Args(inputPath, outputPath, quality, audioInputPath));
     return;
   }
 
   if (options.format === 'webm') {
-    await run(buildWebmArgs(inputPath, outputPath, quality));
+    await run(buildWebmArgs(inputPath, outputPath, quality, audioInputPath));
     return;
   }
 

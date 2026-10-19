@@ -27,9 +27,8 @@ function messageOf(error: unknown): string {
 }
 
 export function useBuilderPreview() {
-  const [status, setStatus] = useState<BuilderPreviewStatus>(
-    EMPTY_PREVIEW_STATUS,
-  );
+  const [status, setStatus] =
+    useState<BuilderPreviewStatus>(EMPTY_PREVIEW_STATUS);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,10 +43,9 @@ export function useBuilderPreview() {
     // Re-attach to whatever main is already running.
     void (async () => {
       try {
-        const snapshot =
-          await window.electron.ipc.invoke<BuilderPreviewStatus>(
-            'builder:preview-status',
-          );
+        const snapshot = await window.electron.ipc.invoke<BuilderPreviewStatus>(
+          'builder:preview-status',
+        );
         if (snapshot) setStatus(snapshot);
       } catch (cause) {
         setError(messageOf(cause));
@@ -56,22 +54,28 @@ export function useBuilderPreview() {
     return unsubscribe;
   }, []);
 
-  /** `script` overrides the auto-detected package script for this start. */
-  const start = useCallback(async (script?: string) => {
-    setStarting(true);
-    setError(null);
-    try {
-      const next = await window.electron.ipc.invoke<BuilderPreviewStatus>(
-        'builder:preview-start',
-        script ? { script } : {},
-      );
-      setStatus(next);
-    } catch (cause) {
-      setError(messageOf(cause));
-    } finally {
-      setStarting(false);
-    }
-  }, []);
+  /**
+   * Start the preview. `script` overrides the auto-detected package script;
+   * `command` runs a user-supplied shell command for a non-Node project.
+   */
+  const start = useCallback(
+    async (options?: { script?: string; command?: string }) => {
+      setStarting(true);
+      setError(null);
+      try {
+        const next = await window.electron.ipc.invoke<BuilderPreviewStatus>(
+          'builder:preview-start',
+          options ?? {},
+        );
+        setStatus(next);
+      } catch (cause) {
+        setError(messageOf(cause));
+      } finally {
+        setStarting(false);
+      }
+    },
+    [],
+  );
 
   const stop = useCallback(async () => {
     setStopping(true);

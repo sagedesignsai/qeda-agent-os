@@ -11,6 +11,7 @@ import { useTestDatabase } from '../main/db/client';
 import { applyMigrations } from '../main/db/schema';
 import {
   saveActiveBuilderSession,
+  saveActiveBuilderSessionContext,
   getActiveBuilderSession,
   deleteActiveBuilderSession,
 } from '../main/db/builder-sessions';
@@ -119,6 +120,51 @@ describe('builder_sessions database persistence', () => {
     expect(getActiveBuilderSession()).not.toBeNull();
     deleteActiveBuilderSession();
     expect(getActiveBuilderSession()).toBeNull();
+  });
+
+  it('persists the local context without clobbering the other column', () => {
+    saveActiveBuilderSession({
+      opencode_session_id: 'local-durable',
+      title: 'Durable',
+      repo_directory: '/repo',
+      worktree_path: '/repo/.qeda-worktree',
+      workspace_name: 'repo',
+      branch: 'main',
+      engine: 'local',
+      messages_json: '[]',
+      events_json: '[]',
+      created_at: Date.now(),
+    });
+
+    saveActiveBuilderSessionContext({
+      messagesJson: '[{"role":"user","content":"add tests"}]',
+    });
+    let active = getActiveBuilderSession();
+    expect(active?.messages_json).toContain('add tests');
+    expect(active?.events_json).toBe('[]');
+
+    // eventsJson only: messages must survive the COALESCE.
+    saveActiveBuilderSessionContext({
+      eventsJson: '[{"type":"status","status":"idle"}]',
+    });
+    active = getActiveBuilderSession();
+    expect(active?.messages_json).toContain('add tests');
+    expect(active?.events_json).toContain('idle');
+
+    // A fresh session at the same row must not inherit the old conversation.
+    saveActiveBuilderSession({
+      opencode_session_id: 'local-2',
+      title: 'Second',
+      repo_directory: '/repo',
+      worktree_path: null,
+      workspace_name: 'repo',
+      branch: 'main',
+      engine: 'local',
+      created_at: Date.now(),
+    });
+    active = getActiveBuilderSession();
+    expect(active?.messages_json).toBeNull();
+    expect(active?.events_json).toBeNull();
   });
 
   it('applies the ALTER TABLE back-fill to old tables lacking the engine column', () => {

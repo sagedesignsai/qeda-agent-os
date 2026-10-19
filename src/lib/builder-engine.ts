@@ -13,6 +13,26 @@
 /** Which agent runtime powers Builder coding turns. */
 export type BuilderEngine = 'local' | 'opencode';
 
+/**
+ * Default autonomy budget for one Local Builder turn.
+ *
+ * 50 steps was enough for a demo and not enough for real work: install, test,
+ * fix, and re-test routinely crosses it. The cap still exists so a looping
+ * model cannot run forever; it is a budget, not a target.
+ */
+export const DEFAULT_BUILDER_MAX_STEPS = 200;
+
+/** Upper bound keeps a typo in Settings from producing an unbounded run. */
+export const MAX_BUILDER_MAX_STEPS = 1_000;
+
+/** Normalize a persisted/user-entered step budget into the supported range. */
+export function normalizeBuilderMaxSteps(value: unknown): number {
+  const parsed =
+    typeof value === 'number' ? value : Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_BUILDER_MAX_STEPS;
+  return Math.min(MAX_BUILDER_MAX_STEPS, Math.max(10, Math.floor(parsed)));
+}
+
 export type McpTransportKind = 'stdio' | 'http' | 'sse';
 
 /**
@@ -80,19 +100,22 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
   {
     id: 'github',
     name: 'GitHub MCP',
-    description: 'Inspect repos, PRs, issues, commits, and file contents directly via GitHub API.',
+    description:
+      'Inspect repos, PRs, issues, commits, and file contents directly via GitHub API.',
     transport: 'stdio',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-github'],
     env: {
       GITHUB_PERSONAL_ACCESS_TOKEN: '',
     },
-    notes: 'Requires a GitHub Personal Access Token (classic or fine-grained repo scope).',
+    notes:
+      'Requires a GitHub Personal Access Token (classic or fine-grained repo scope).',
   },
   {
     id: 'fetch',
     name: 'Fetch MCP',
-    description: 'Fetch and parse web pages or HTML content into markdown for the model.',
+    description:
+      'Fetch and parse web pages or HTML content into markdown for the model.',
     transport: 'stdio',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-fetch'],
@@ -111,12 +134,18 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     description: 'Query, analyze, and inspect local SQLite databases.',
     transport: 'stdio',
     command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-sqlite', '--db-path', 'workspace.db'],
+    args: [
+      '-y',
+      '@modelcontextprotocol/server-sqlite',
+      '--db-path',
+      'workspace.db',
+    ],
   },
   {
     id: 'context7',
     name: 'Context7 Docs (SSE)',
-    description: 'Real-time library documentation and framework snippets via remote MCP.',
+    description:
+      'Real-time library documentation and framework snippets via remote MCP.',
     transport: 'sse',
     url: 'https://mcp.context7.ai/sse',
     headers: {

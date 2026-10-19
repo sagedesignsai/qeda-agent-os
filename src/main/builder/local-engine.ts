@@ -13,7 +13,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { isStepCount, ToolLoopAgent, type ModelMessage } from 'ai';
+import {
+  isStepCount,
+  pruneMessages,
+  ToolLoopAgent,
+  type ModelMessage,
+} from 'ai';
 import type {
   BuilderSessionEvent,
   BuilderSessionSummary,
@@ -32,29 +37,32 @@ import { createWorkspaceCodingTools } from './tools/coding-tools';
 import { PlanManager } from '../ai/plan-manager';
 import { createPlanTools } from '../tools/plan';
 import type { AgentPlan, PlanItemStatus } from '../../lib/agent-plan';
-
-const STEP_BUDGET = 50;
+import {
+  DEFAULT_BUILDER_MAX_STEPS,
+  normalizeBuilderMaxSteps,
+} from '../../lib/builder-engine';
 
 const CODING_INSTRUCTIONS = `
 You are Qeda's Local Builder Agent, an expert software engineer pair-programming inside the user's workspace.
 
 ## Core Directives
 1. **Analyze First**: Read existing code, project manifests (\`package.json\`, config files), and git status before proposing changes. Understand the architecture, conventions, and style of the project.
-2. **Scaffold Node Projects From Scratch**: When opening an empty or fresh project:
+2. **Respect the Existing Runtime**: Detect the project's actual stack before scaffolding. Node is a common default, not an assumption: Python, Go, Rust, Java, and static sites are all valid. Use the project's own task runner and entrypoint when one exists.
+3. **Scaffold From Scratch When Asked**: When opening an empty or fresh project:
    - Plan the project layout clearly.
-   - Scaffold \`package.json\` with meaningful scripts (\`dev\`, \`build\`, \`test\`).
-   - Scaffold configuration files (\`tsconfig.json\`, \`.gitignore\`, linter/Vite/Next configs).
-   - Write clean, modular source files (e.g. \`src/index.ts\` or \`src/App.tsx\`).
-   - Run \`npm install\` via \`runShellCommand\` to install dependencies.
-   - Inform the user how to test or launch the dev server.
-3. **Surgical Precision**:
+   - Scaffold the manifest and meaningful scripts for the chosen runtime (\`dev\`, \`build\`, \`test\`).
+   - Scaffold configuration files (\`.gitignore\`, compiler/linter/framework configs).
+   - Write clean, modular source files.
+   - Install dependencies via \`runShellCommand\`.
+   - Tell the user the exact command to test or launch the project.
+4. **Surgical Precision**:
    - Prefer \`editFile\` for targeted modifications to existing files.
    - Use \`writeFile\` when creating new files or replacing small self-contained modules.
    - Keep changes concise, clean, and well-typed.
-4. **Verified Execution**:
+5. **Verified Execution**:
    - Run \`runShellCommand\` for build steps, tests, or installing npm packages.
    - Explain what shell command you are about to run so the user can review and approve it.
-5. **Leverage MCP Tools**:
+6. **Leverage MCP Tools**:
    - If MCP tools (e.g. GitHub, Fetch, SQLite, Context7 Docs) are present, use them proactively to fetch external APIs, read docs, or inspect databases.
 
 ## Planning Protocol
@@ -73,6 +81,16 @@ export interface LocalBuilderSessionOptions {
   workspaceDirectory: string;
   onEvent: (event: BuilderSessionEvent) => void;
   preferredModel?: { providerId: string; modelId: string };
+  /** Stable parent for the isolated worktree; defaults to the OS temp dir. */
+  worktreeParentDirectory?: string;
+}
+
+interface RestoredLocalSessionState {
+  id?: string;
+  title?: string;
+  createdAt?: number;
+  messages?: ModelMessage[];
+  onMessagesChanged?: (messages: ModelMessage[]) => void;
 }
 
 export class LocalBuilderSession {
@@ -85,6 +103,15 @@ export class LocalBuilderSession {
   private eventSeq = 0;
   private messages: ModelMessage[] = [];
   private activeAbortController: AbortController | null = null;
+  private onMessagesChanged?: (messages: ModelMessage[]) => void;
+  /**
+   * Exact shell commands approved with "Always allow" for this session.
+   *
+   * Deliberately command-scoped rather than a global "allow all shells" flag:
+   * approving `npm test` must not silently approve `rm -rf` later in the same
+   * session. The set lives on the session, so it survives across turns.
+   */
+  private allowedShellCommands = new Set<string>();
   private pendingPermissions = new Map<
     string,
     {
@@ -103,13 +130,16 @@ export class LocalBuilderSession {
     worktreePath: string | null,
     onEvent: (event: BuilderSessionEvent) => void,
     modelTarget?: { providerId: string; modelId: string },
+    restored?: RestoredLocalSessionState,
   ) {
-    this.id = id;
-    this.title = `Builder · ${workspace.name}`;
-    this.createdAt = Date.now();
+    this.id = restored?.id ?? id;
+    this.title = restored?.title ?? `Builder · ${workspace.name}`;
+    this.createdAt = restored?.createdAt ?? Date.now();
     this.workspace = { ...workspace, worktreePath };
     this.worktreePath = worktreePath;
     this.onEvent = onEvent;
+    this.messages = restored?.messages ?? [];
+    this.onMessagesChanged = restored?.onMessagesChanged;
 
     const settings = getSettings();
     this.activeProvider = modelTarget?.providerId ?? settings.activeProvider;
@@ -133,6 +163,15 @@ export class LocalBuilderSession {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /** Full model context, including tool calls/results, for durable restore. */
+  getMessages(): ModelMessage[] {
+    return [...this.messages];
+  }
+
+  private messagesChanged(): void {
+    this.onMessagesChanged?.(this.messages);
   }
 
   private emit(
@@ -203,18 +242,21 @@ export class LocalBuilderSession {
           const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
           return new Promise<BuilderPermissionDecision>((resolve, reject) => {
             this.pendingPermissions.set(requestId, { resolve, reject });
+            const command =
+              typeof details.command === 'string' ? details.command : null;
             this.emit({
               type: 'permission',
               request: {
                 id: requestId,
-                type: 'command',
-                title: `Permission needed: ${toolName}`,
-                pattern: description,
-                metadata: details,
+                sessionID: this.id,
+                action: toolName === 'runShellCommand' ? 'bash' : toolName,
+                resources: command ? [command] : [description],
+                message: description,
               },
             });
           });
         },
+        allowedShellCommands: this.allowedShellCommands,
       });
 
       // 2. Load Enabled MCP Tools
@@ -250,6 +292,9 @@ export class LocalBuilderSession {
         }
       });
 
+      const stepBudget = normalizeBuilderMaxSteps(
+        getSettings().builderMaxSteps ?? DEFAULT_BUILDER_MAX_STEPS,
+      );
       const agent = new ToolLoopAgent({
         model: model as any,
         instructions,
@@ -257,7 +302,7 @@ export class LocalBuilderSession {
           ...allTools,
           ...createPlanTools(planManager),
         },
-        stopWhen: [isStepCount(STEP_BUDGET), planManager.stopCondition()],
+        stopWhen: [isStepCount(stepBudget), planManager.stopCondition()],
       });
 
       // 4. Stream Agent Turn
@@ -265,21 +310,28 @@ export class LocalBuilderSession {
         role: 'user',
         content: trimmed,
       });
+      this.messagesChanged();
+
+      // Keep the old tool-call/result pairs intact while shedding stale
+      // reasoning and tool output. Without this, a long-running session grows
+      // until every provider rejects the request.
+      const turnMessages = pruneMessages({
+        messages: this.messages,
+        reasoning: 'before-last-message',
+        toolCalls: 'before-last-24-messages',
+      });
 
       const messageId = `msg-${Date.now()}`;
       const result = await agent.stream({
-        messages: this.messages,
+        messages: turnMessages,
         abortSignal: abortController.signal,
       });
-
-      let assistantResponseText = '';
 
       for await (const part of result.fullStream) {
         if (abortController.signal.aborted) break;
 
         switch (part.type) {
           case 'text-delta':
-            assistantResponseText += part.text;
             this.emit({
               type: 'text-delta',
               messageId,
@@ -312,6 +364,17 @@ export class LocalBuilderSession {
             });
             break;
 
+          case 'tool-error':
+            this.emit({
+              type: 'tool-failed',
+              callId: part.toolCallId,
+              error:
+                part.error instanceof Error
+                  ? part.error.message
+                  : String(part.error),
+            });
+            break;
+
           case 'error':
             this.emit({
               type: 'error',
@@ -324,12 +387,18 @@ export class LocalBuilderSession {
         }
       }
 
-      if (assistantResponseText) {
-        this.messages.push({
-          role: 'assistant',
-          content: assistantResponseText,
-        });
+      if (abortController.signal.aborted) {
+        // The abort path must not be overwritten by the normal idle status.
+        this.running = false;
+        this.emit({ type: 'status', status: 'interrupted' });
+        return;
       }
+
+      // Persist the model's real turn messages, not just the text: tool calls
+      // and their results are what let the next turn continue the work.
+      const responseMessages = await result.responseMessages;
+      this.messages.push(...responseMessages);
+      this.messagesChanged();
 
       this.running = false;
       this.emit({ type: 'status', status: 'idle' });
@@ -443,7 +512,11 @@ export async function createLocalBuilderSession(
   // could erase unrelated working-tree changes.
   let worktreePath: string;
   try {
-    worktreePath = await createBuilderWorktree(workspace.directory, sessionId);
+    worktreePath = await createBuilderWorktree(
+      workspace.directory,
+      sessionId,
+      options.worktreeParentDirectory,
+    );
   } catch (error) {
     throw new Error(
       `Builder could not create an isolated workspace, so it did not start. Your repository was not changed. ${error instanceof Error ? error.message : String(error)}`,

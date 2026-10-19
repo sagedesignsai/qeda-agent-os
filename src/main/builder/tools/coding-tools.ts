@@ -82,6 +82,32 @@ async function resolveWithinWorkspace(
   if (!isInside(root, normalizedCandidate)) {
     throw new Error(`Path traverses outside workspace: ${candidate}`);
   }
+
+  // The lexical check above cannot see a symlinked parent directory. Walk up
+  // to the nearest existing ancestor and verify its real path, so
+  // `workspace/link-to-etc/passwd` is rejected even though the final file may
+  // not exist yet.
+  let probe = normalizedCandidate;
+  for (;;) {
+    try {
+      const realAncestor = await fs.realpath(probe);
+      if (!isInside(root, realAncestor)) {
+        throw new Error(`Path traverses outside workspace: ${candidate}`);
+      }
+      break;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('outside workspace')
+      ) {
+        throw error;
+      }
+      const parent = path.dirname(probe);
+      if (parent === probe) break;
+      probe = parent;
+    }
+  }
+
   return normalizedCandidate;
 }
 
@@ -93,12 +119,25 @@ export interface BuilderToolingContext {
     description: string;
     details: Record<string, unknown>;
   }) => Promise<BuilderPermissionDecision>;
+  /**
+   * Session-scoped exact commands approved with "Always allow".
+   *
+   * Shared by reference across turns so the approval survives a prompt; keyed
+   * by the exact trimmed command so a broad approval never becomes a blanket
+   * shell grant.
+   */
+  allowedShellCommands?: Set<string>;
 }
 
 export function createWorkspaceCodingTools(
   ctx: BuilderToolingContext,
 ): Record<string, Tool> {
-  const { workspaceDirectory, onFileChanged, requestPermission } = ctx;
+  const {
+    workspaceDirectory,
+    onFileChanged,
+    requestPermission,
+    allowedShellCommands = new Set<string>(),
+  } = ctx;
 
   // ─── 1. readFile ─────────────────────────────────────────────────────────────
   const readFile = tool({
@@ -108,7 +147,9 @@ export function createWorkspaceCodingTools(
     inputSchema: z.object({
       filePath: z
         .string()
-        .describe('Relative path to the file within the workspace (e.g. "package.json" or "src/index.ts").'),
+        .describe(
+          'Relative path to the file within the workspace (e.g. "package.json" or "src/index.ts").',
+        ),
       startLine: z
         .number()
         .int()
@@ -131,7 +172,9 @@ export function createWorkspaceCodingTools(
         );
         const stat = await fs.stat(fullPath);
         if (stat.isDirectory()) {
-          return { error: `"${filePath}" is a directory, not a file. Use listFiles instead.` };
+          return {
+            error: `"${filePath}" is a directory, not a file. Use listFiles instead.`,
+          };
         }
         if (stat.size > MAX_FILE_READ_BYTES && !startLine) {
           return {
@@ -148,7 +191,9 @@ export function createWorkspaceCodingTools(
 
         const sliced = lines.slice(start - 1, end);
         const numbered = sliced
-          .map((line, idx) => `${String(start + idx).padStart(5, ' ')} | ${line}`)
+          .map(
+            (line, idx) => `${String(start + idx).padStart(5, ' ')} | ${line}`,
+          )
           .join('\n');
 
         return {
@@ -172,7 +217,9 @@ export function createWorkspaceCodingTools(
     inputSchema: z.object({
       filePath: z
         .string()
-        .describe('Relative path to the file to create or overwrite (e.g. "src/server.ts").'),
+        .describe(
+          'Relative path to the file to create or overwrite (e.g. "src/server.ts").',
+        ),
       content: z.string().describe('The complete file content to write.'),
     }),
     execute: async ({ filePath, content }) => {
@@ -209,10 +256,14 @@ export function createWorkspaceCodingTools(
     inputSchema: z.object({
       filePath: z
         .string()
-        .describe('Relative path to the file to edit (e.g. "package.json" or "src/app.ts").'),
+        .describe(
+          'Relative path to the file to edit (e.g. "package.json" or "src/app.ts").',
+        ),
       targetContent: z
         .string()
-        .describe('Exact string or code block to replace (must match uniquely).'),
+        .describe(
+          'Exact string or code block to replace (must match uniquely).',
+        ),
       replacementContent: z
         .string()
         .describe('New string or code block to replace targetContent with.'),
@@ -229,14 +280,12 @@ export function createWorkspaceCodingTools(
         const occurrences = original.split(targetContent).length - 1;
         if (occurrences === 0) {
           return {
-            error:
-              `Target content not found in ${filePath}. Verify line formatting, indentation, and exact text.`,
+            error: `Target content not found in ${filePath}. Verify line formatting, indentation, and exact text.`,
           };
         }
         if (occurrences > 1) {
           return {
-            error:
-              `Target content matches ${occurrences} locations in ${filePath}. Provide more surrounding lines to make it unique.`,
+            error: `Target content matches ${occurrences} locations in ${filePath}. Provide more surrounding lines to make it unique.`,
           };
         }
 
@@ -265,14 +314,18 @@ export function createWorkspaceCodingTools(
       subDirectory: z
         .string()
         .optional()
-        .describe('Optional subfolder to list (relative to workspace root). Defaults to workspace root.'),
+        .describe(
+          'Optional subfolder to list (relative to workspace root). Defaults to workspace root.',
+        ),
       maxDepth: z
         .number()
         .int()
         .min(1)
         .max(6)
         .default(3)
-        .describe('Maximum directory depth to recurse into (1-6). Default is 3.'),
+        .describe(
+          'Maximum directory depth to recurse into (1-6). Default is 3.',
+        ),
     }),
     execute: async ({ subDirectory, maxDepth = 3 }) => {
       try {
@@ -295,7 +348,8 @@ export function createWorkspaceCodingTools(
           }
 
           for (const entry of entries) {
-            if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+            if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.'))
+              continue;
             const full = path.join(dir, entry.name);
             const rel = path.relative(workspaceDirectory, full);
             totalCount++;
@@ -348,7 +402,8 @@ export function createWorkspaceCodingTools(
 
           for (const entry of entries) {
             if (matches.length >= MAX_GREP_MATCHES) return;
-            if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+            if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.'))
+              continue;
 
             const full = path.join(dir, entry.name);
             if (entry.isDirectory()) {
@@ -465,21 +520,22 @@ export function createWorkspaceCodingTools(
   });
 
   // ─── 8. runShellCommand ──────────────────────────────────────────────────────
-  let alwaysAllowedCommands = false;
-
   const runShellCommand = tool({
     description:
       'Execute a shell command inside the workspace directory (e.g. "npm install", "npm test", "npm run build"). ' +
       'Gated behind user approval. Commands run with a timeout.',
     inputSchema: z.object({
-      command: z.string().describe('The command to run, e.g. "npm install express".'),
+      command: z
+        .string()
+        .describe('The command to run, e.g. "npm install express".'),
     }),
     execute: async ({ command }) => {
       const trimmed = command.trim();
       if (!trimmed) return { error: 'Empty command.' };
 
-      // Request user approval if not always allowed for this session
-      if (!alwaysAllowedCommands) {
+      // Request user approval unless this exact command was already approved
+      // with "Always allow" in this session.
+      if (!allowedShellCommands.has(trimmed)) {
         const decision = await requestPermission({
           toolName: 'runShellCommand',
           description: `Run shell command in workspace: \`${trimmed}\``,
@@ -493,7 +549,7 @@ export function createWorkspaceCodingTools(
           };
         }
         if (decision === 'always') {
-          alwaysAllowedCommands = true;
+          allowedShellCommands.add(trimmed);
         }
       }
 
@@ -502,17 +558,21 @@ export function createWorkspaceCodingTools(
         const shell = isWindows ? 'cmd.exe' : '/bin/sh';
         const shellArg = isWindows ? '/c' : '-c';
 
-        const { stdout, stderr } = await execFileAsync(shell, [shellArg, trimmed], {
-          cwd: workspaceDirectory,
-          timeout: SHELL_TIMEOUT_MS,
-          maxBuffer: 512 * 1024,
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            NODE_ENV: 'development',
-            CI: '1',
+        const { stdout, stderr } = await execFileAsync(
+          shell,
+          [shellArg, trimmed],
+          {
+            cwd: workspaceDirectory,
+            timeout: SHELL_TIMEOUT_MS,
+            maxBuffer: 512 * 1024,
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              NODE_ENV: 'development',
+              CI: '1',
+            },
           },
-        });
+        );
 
         return {
           success: true,

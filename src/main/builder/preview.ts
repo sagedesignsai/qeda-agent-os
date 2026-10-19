@@ -129,7 +129,13 @@ export class BuilderPreview {
   private appendLog(chunk: string): void {
     const lines = chunk
       .split(/\r?\n/)
-      .map((line) => line.replace(/\u001b\[[0-9;]*m/g, '').trimEnd())
+      // ANSI SGR codes start with ESC. Building the pattern at runtime keeps a
+      // control-character literal out of this file (eslint no-control-regex).
+      .map((line) =>
+        line
+          .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g'), '')
+          .trimEnd(),
+      )
       .filter((line) => line.trim() !== '');
     if (lines.length === 0) return;
     this.publish({
@@ -140,52 +146,97 @@ export class BuilderPreview {
   /**
    * Start a preview for `directory`, replacing any preview already running.
    *
-   * The command is never a shell string: the script name is resolved from the
-   * workspace's own `package.json` and run as `<manager> run <script>`, so a
-   * script name can never turn into a second command.
+   * Two invocation modes:
+   *   • package script (default) — the script name is resolved from the
+   *     workspace's own `package.json` and run as `<manager> run <script>`, so
+   *     a script name can never turn into a second command.
+   *   • custom `command` — a shell string the *user* typed in the preview
+   *     panel. This is what makes a Python, Go, Rust, or static project
+   *     previewable without pretending it is a Node package. It is only ever
+   *     reachable from the renderer's explicit control, never from agent tool
+   *     output.
    */
   async start({
     directory,
     script,
+    command: customCommand,
   }: {
     directory: string;
     script?: string;
+    command?: string;
   }): Promise<BuilderPreviewStatus> {
     await this.stop();
 
-    let pkg: PackageJson | null = null;
-    try {
-      pkg = JSON.parse(
-        await fs.readFile(path.join(directory, 'package.json'), 'utf8'),
-      ) as PackageJson;
-    } catch {
+    const custom = customCommand?.trim();
+    if (customCommand !== undefined && !custom) {
       this.publish({
         ...EMPTY_PREVIEW_STATUS,
         state: 'error',
         owner: 'qeda',
         directory,
-        message: `No readable package.json in ${directory}. Qeda can only start a preview for a Node project.`,
+        message: 'Type a command to run, for example `python -m http.server`.',
       });
       return this.status;
     }
 
-    const chosen = script ?? choosePreviewScript(pkg?.scripts);
-    if (!chosen || !pkg?.scripts?.[chosen]) {
-      this.publish({
-        ...EMPTY_PREVIEW_STATUS,
-        state: 'error',
-        owner: 'qeda',
-        directory,
-        message:
-          'No preview script found. Add a "dev", "serve", "develop" or "start" script to package.json.',
-      });
-      return this.status;
+    let invocation: { command: string; args: string[]; display: string };
+    if (custom) {
+      if (custom.length > 2_000) {
+        this.publish({
+          ...EMPTY_PREVIEW_STATUS,
+          state: 'error',
+          owner: 'qeda',
+          directory,
+          message: 'The preview command is too long.',
+        });
+        return this.status;
+      }
+      const isWindows = process.platform === 'win32';
+      invocation = {
+        command: isWindows ? 'cmd.exe' : '/bin/sh',
+        args: [isWindows ? '/c' : '-c', custom],
+        display: custom,
+      };
+    } else {
+      let pkg: PackageJson;
+      try {
+        pkg = JSON.parse(
+          await fs.readFile(path.join(directory, 'package.json'), 'utf8'),
+        ) as PackageJson;
+      } catch {
+        this.publish({
+          ...EMPTY_PREVIEW_STATUS,
+          state: 'error',
+          owner: 'qeda',
+          directory,
+          message: `No readable package.json in ${directory}. Start a custom command instead for a non-Node project.`,
+        });
+        return this.status;
+      }
+
+      const chosen = script ?? choosePreviewScript(pkg.scripts);
+      if (!chosen || !pkg.scripts?.[chosen]) {
+        this.publish({
+          ...EMPTY_PREVIEW_STATUS,
+          state: 'error',
+          owner: 'qeda',
+          directory,
+          message:
+            'No preview script found. Add a "dev", "serve", "develop" or "start" script to package.json, or run a custom command.',
+        });
+        return this.status;
+      }
+
+      const entries = await fs.readdir(directory).catch(() => [] as string[]);
+      const manager = detectPackageManager(entries);
+      const argv = previewArgv(manager, chosen);
+      invocation = {
+        ...argv,
+        display: `${argv.command} ${argv.args.join(' ')}`,
+      };
     }
 
-    const entries = await fs.readdir(directory).catch(() => [] as string[]);
-    const manager = detectPackageManager(entries);
-    const { command, args } = previewArgv(manager, chosen);
-    const display = `${command} ${args.join(' ')}`;
+    const { command, args, display } = invocation;
 
     let child: ChildProcess;
     try {

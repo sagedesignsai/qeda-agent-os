@@ -57,6 +57,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useBuilderRuntime } from '@/hooks/use-builder-runtime';
 import { useBuilderSession } from '@/hooks/use-builder-session';
+import { useBuilderChanges } from '@/hooks/use-builder-changes';
 import { useBuilderFiles } from '@/hooks/use-builder-files';
 import { useBuilderModels } from '@/hooks/use-builder-models';
 import { useBuilderCodeProjects } from '@/hooks/use-builder-code-projects';
@@ -68,9 +69,20 @@ export default function Builder() {
   const navigate = useNavigate();
   const runtime = useBuilderRuntime();
   const builderSession = useBuilderSession();
+  const builderChanges = useBuilderChanges(
+    builderSession.session?.id,
+    builderSession.events,
+  );
+  // Destructured so the callbacks depend on the stable functions the hook
+  // memoizes, not on the object it rebuilds every render.
+  const { keep: keepBuilderChanges, discard: discardBuilderChanges } =
+    builderChanges;
   const builderFiles = useBuilderFiles(
     builderSession.session?.id,
     builderSession.events,
+    // Discard can delete files without a tool event; Keep advances the review
+    // baseline. Both should refresh the tree the same way a tool does.
+    builderChanges.revision,
   );
   const builderModels = useBuilderModels(builderSession.session?.id);
   const workspace = useBuilderWorkspace();
@@ -262,6 +274,44 @@ export default function Builder() {
     return () => media.removeEventListener('change', update);
   }, []);
 
+  const keepChanges = useCallback(async () => {
+    try {
+      const paths = await keepBuilderChanges();
+      if (paths.length === 0) {
+        toast.info('Nothing to keep — the worktree matches its baseline.');
+      } else {
+        toast.success(
+          `Applied ${paths.length} file${paths.length === 1 ? '' : 's'} to your repository.`,
+          {
+            description:
+              'Your source tree is updated but not committed; commit when you are ready.',
+          },
+        );
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not apply the Builder changes.',
+      );
+    }
+  }, [keepBuilderChanges]);
+
+  const discardChanges = useCallback(async () => {
+    try {
+      await discardBuilderChanges();
+      toast.success('Discarded Builder changes.', {
+        description: 'The worktree is back to its last kept baseline.',
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Could not discard the Builder changes.',
+      );
+    }
+  }, [discardBuilderChanges]);
+
   const chatPanel = (
     <BuilderChatPanel
       status={runtime.status}
@@ -307,28 +357,33 @@ export default function Builder() {
       previewStarting={preview.starting}
       previewStopping={preview.stopping}
       canStartPreview={Boolean(builderSession.workspace)}
-      onStartPreview={() => void preview.start()}
+      previewCommand={workspace.previewCommand}
+      onPreviewCommandChange={workspace.setPreviewCommand}
+      onStartPreview={(command) =>
+        void preview.start(command ? { command } : {})
+      }
       onStopPreview={() => void preview.stop()}
       onOpenExternal={preview.openExternal}
       selectedFilePath={workspace.selectedFilePath}
       onSelectFile={workspace.setSelectedFilePath}
       files={builderFiles.files}
       filesLoading={builderFiles.loading}
+      changes={builderChanges.changes}
+      changesLoading={builderChanges.loading}
+      keeping={builderChanges.keeping}
+      discarding={builderChanges.discarding}
       // Workspace identity (name/branch/dirty) lives in the canvas bar; the
       // folder picker itself lives in the chat panel, next to Send.
       workspace={builderSession.workspace}
       runtimeStatus={runtime.status}
       runtimeLoading={runtime.loading}
-      // Keep / Discard — only available when a session is bound
+      // Keep / Discard are wired through the changes hook so the diff list and
+      // tree refresh after the operation instead of going stale.
       onKeepAll={
-        builderSession.workspace?.worktreePath
-          ? () => void window.electron.ipc.invoke('builder:changes-keep')
-          : undefined
+        builderSession.workspace?.worktreePath ? keepChanges : undefined
       }
       onDiscardAll={
-        builderSession.workspace?.worktreePath
-          ? () => void window.electron.ipc.invoke('builder:changes-discard')
-          : undefined
+        builderSession.workspace?.worktreePath ? discardChanges : undefined
       }
     />
   );

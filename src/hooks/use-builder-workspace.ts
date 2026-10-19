@@ -18,6 +18,8 @@ export type BuilderViewport = 'desktop' | 'tablet' | 'mobile';
 interface BuilderPreferences {
   surface: BuilderSurface;
   viewport: BuilderViewport;
+  /** Last custom preview command, kept per install so non-Node projects resume. */
+  previewCommand: string;
 }
 
 const STORAGE_KEY = 'qeda:builder:preferences:v1';
@@ -25,7 +27,9 @@ const STORAGE_KEY = 'qeda:builder:preferences:v1';
 function readPreferences(): BuilderPreferences {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    if (!value) return { surface: 'preview', viewport: 'desktop' };
+    if (!value) {
+      return { surface: 'preview', viewport: 'desktop', previewCommand: '' };
+    }
     const parsed = JSON.parse(value) as Partial<BuilderPreferences>;
     return {
       surface:
@@ -36,9 +40,11 @@ function readPreferences(): BuilderPreferences {
         parsed.viewport === 'tablet' || parsed.viewport === 'mobile'
           ? parsed.viewport
           : 'desktop',
+      previewCommand:
+        typeof parsed.previewCommand === 'string' ? parsed.previewCommand : '',
     };
   } catch {
-    return { surface: 'preview', viewport: 'desktop' };
+    return { surface: 'preview', viewport: 'desktop', previewCommand: '' };
   }
 }
 
@@ -63,10 +69,15 @@ export function useBuilderWorkspace() {
     setPreferences((current) => ({ ...current, viewport }));
   }, []);
 
+  const setPreviewCommand = useCallback((previewCommand: string) => {
+    setPreferences((current) => ({ ...current, previewCommand }));
+  }, []);
+
   return {
     ...preferences,
     setSurface,
     setViewport,
+    setPreviewCommand,
     prompt,
     setPrompt,
     selectedFilePath,

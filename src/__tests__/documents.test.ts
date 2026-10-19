@@ -26,6 +26,7 @@ import {
   DOCUMENT_TEMPLATES,
 } from '../lib/pdf-studio/templates';
 import { PdfDocumentView } from '../lib/pdf-studio/renderer';
+import { createDocument } from '../main/tools/documents-drafter';
 import { pdf } from '@react-pdf/renderer';
 import React from 'react';
 
@@ -165,6 +166,36 @@ describe('PDF Studio Database Operations', () => {
     const ok = deleteDocument(doc.id);
     expect(ok).toBe(true);
     expect(getDocument(doc.id)).toBeNull();
+  });
+
+  it('createDocument persists a complete PdfDocument the editor can open', async () => {
+    // Regression: this tool used to write `{ blocks }` only, so opening the
+    // row crashed the editor on missing settings — and a paragraph emitted as
+    // `{ text }` crashed it on `text.length`.
+    const result = (await (createDocument as any).execute(
+      {
+        title: 'AI Draft',
+        blocks: [{ type: 'paragraph', text: 'Hello world' }],
+      },
+      { toolCallId: 'test', messages: [] },
+    )) as { success: boolean; documentId: string };
+
+    expect(result.success).toBe(true);
+
+    const record = getDocument(result.documentId);
+    expect(record).not.toBeNull();
+
+    const parsed = JSON.parse(record!.data_json);
+    expect(parsed.id).toBe(result.documentId);
+    expect(parsed.title).toBe('AI Draft');
+    expect(parsed.settings.pageSize).toBe('A4');
+    expect(parsed.settings.theme.name).toBeTruthy();
+    expect(Number.isFinite(parsed.createdAt)).toBe(true);
+
+    const paragraph = parsed.blocks.find(
+      (b: { type: string }) => b.type === 'paragraph',
+    );
+    expect(paragraph.content).toBe('Hello world');
   });
 });
 
