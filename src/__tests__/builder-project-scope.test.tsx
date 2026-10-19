@@ -64,6 +64,22 @@ jest.mock('@/hooks/use-builder-workspace', () => ({
 
 const mockedUseBuilderSession = useBuilderSession as unknown as jest.Mock;
 
+// jsdom implements neither :fullscreen, :modal nor :popover-open, and nwsapi's
+// probe for them recurses through jsdom's own `matches` until the stack
+// overflows (~80s per probe). Floating UI asks for them as soon as a popper
+// opens, so short-circuit to the correct jsdom answer up front.
+const nativeMatches = Element.prototype.matches;
+Element.prototype.matches = function matches(this: Element, selector: string) {
+  if (
+    selector === ':fullscreen' ||
+    selector === ':modal' ||
+    selector === ':popover-open'
+  ) {
+    return false;
+  }
+  return nativeMatches.call(this, selector);
+} as typeof Element.prototype.matches;
+
 const PROJECT = {
   id: 'proj-1',
   name: 'Vellum Core',
@@ -224,7 +240,7 @@ describe('Builder project scope', () => {
     );
   }
 
-  it('shows the scoped project and opens the picker at its repo_path', async () => {
+  it('shows the scoped project and binds its repo_path from the codebase menu', async () => {
     installIpc();
     renderBuilder();
 
@@ -233,7 +249,15 @@ describe('Builder project scope', () => {
       0,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Choose folder/ }));
+    // The composer's codebase trigger suggests the project repo; choosing that
+    // menu entry is what actually binds it.
+    fireEvent.keyDown(
+      screen.getByTitle('Pick the codebase Builder should build in'),
+      { key: 'Enter' },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /^Vellum Core/ }),
+    );
     expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum');
   });
 
@@ -241,7 +265,15 @@ describe('Builder project scope', () => {
     installIpc({ 'projects:get': { ...PROJECT, repo_path: null } });
     renderBuilder();
 
-    fireEvent.click(screen.getByRole('button', { name: /Choose folder/ }));
+    fireEvent.keyDown(
+      screen.getByTitle('Pick the codebase Builder should build in'),
+      { key: 'Enter' },
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /Choose a folder/ }),
+    );
+    // `null` means "no default of your own" — the page maps it to `undefined`
+    // rather than letting the project repo become the fallback.
     expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(undefined);
   });
 
@@ -250,9 +282,7 @@ describe('Builder project scope', () => {
     renderBuilder('/builder');
 
     expect(screen.queryByText('Vellum Core')).not.toBeInTheDocument();
-    expect(
-      screen.queryByTitle('Clear project filter'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Clear project filter')).not.toBeInTheDocument();
 
     // Drain the scope hook's async load so it cannot leak an act() warning.
     await act(async () => {});

@@ -8,8 +8,47 @@
  */
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { BuilderWelcome } from '@/components/builder/BuilderWelcome';
+
+// jsdom implements neither :fullscreen, :modal nor :popover-open, and nwsapi's
+// probe for them recurses through jsdom's own `matches` until the stack
+// overflows (~80s per probe). Floating UI asks for them as soon as a popper
+// opens, so short-circuit to the correct jsdom answer up front.
+const nativeMatches = Element.prototype.matches;
+Element.prototype.matches = function matches(this: Element, selector: string) {
+  if (
+    selector === ':fullscreen' ||
+    selector === ':modal' ||
+    selector === ':popover-open'
+  ) {
+    return false;
+  }
+  return nativeMatches.call(this, selector);
+} as typeof Element.prototype.matches;
+
+// Radix (DropdownMenu/Dialog) needs pointer capture and layout shims in jsdom.
+beforeAll(() => {
+  window.PointerEvent = window.MouseEvent as unknown as typeof PointerEvent;
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  window.HTMLElement.prototype.scrollIntoView = jest.fn();
+  window.HTMLElement.prototype.hasPointerCapture = jest.fn(() => false);
+  window.HTMLElement.prototype.releasePointerCapture = jest.fn();
+  window.HTMLElement.prototype.setPointerCapture = jest.fn();
+});
+
+/**
+ * Open the composer's codebase menu. Radix opens a DropdownMenu on
+ * Enter/Space/ArrowDown; a bare click is not its activation gesture.
+ */
+async function openCodebaseMenu(name: string | RegExp = 'Choose codebase') {
+  fireEvent.keyDown(screen.getByRole('button', { name }), { key: 'Enter' });
+  await screen.findByRole('menuitem', { name: /New project/ });
+}
 
 const connected = {
   state: 'connected' as const,
@@ -113,21 +152,27 @@ describe('BuilderWelcome', () => {
     );
   });
 
-  it('asks the user to confirm the active project repository before binding it', () => {
+  it('binds the active project repo from the codebase menu, or clears it', async () => {
     const onChooseWorkspace = jest.fn();
     renderWelcome({
       projectRepoPath: '/repos/website',
       onChooseWorkspace,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Use Project repo' }));
+    await openCodebaseMenu('Website');
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Website/ }));
     expect(onChooseWorkspace).toHaveBeenCalledWith('/repos/website');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose another' }));
+    // The generic entry is the "choose another folder" path: it reopens the OS
+    // picker with no default instead of binding a path by itself.
+    await openCodebaseMenu('Website');
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /Choose a folder/ }),
+    );
     expect(onChooseWorkspace).toHaveBeenLastCalledWith(null);
   });
 
-  it('offers Project-scoped provisioning and explicit source indexing', () => {
+  it('offers Project-scoped provisioning and explicit source indexing', async () => {
     const onProvisionCodeProject = jest.fn();
     const onIndexCodeProject = jest.fn();
     renderWelcome({
@@ -136,41 +181,62 @@ describe('BuilderWelcome', () => {
       onIndexCodeProject,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Index source/ }));
+    // Indexing hangs off the linked codebase's own submenu.
+    await openCodebaseMenu();
+    fireEvent.click(
+      await screen.findByRole('menuitem', {
+        name: /Codebases in this Project/,
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /website-ui/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /Index source for search/ }),
+    );
     expect(onIndexCodeProject).toHaveBeenCalledWith('code-1');
 
-    fireEvent.click(screen.getByRole('button', { name: /New project/ }));
-    fireEvent.change(screen.getByLabelText('Folder name'), {
+    // Provisioning opens a dialog because a folder name does not fit in a menu.
+    await openCodebaseMenu();
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /New project/ }),
+    );
+    fireEvent.change(await screen.findByLabelText('Folder name'), {
       target: { value: 'new-app' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Choose folder…' }));
+    fireEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: /^Create/,
+      }),
+    );
     expect(onProvisionCodeProject).toHaveBeenCalledWith({
       name: 'new-app',
       source: 'created',
     });
   });
 
-  it('requires a remote URL before a clone can be staged', () => {
+  it('requires a remote URL before a clone can be staged', async () => {
     const onProvisionCodeProject = jest.fn();
     renderWelcome({ onProvisionCodeProject });
 
-    fireEvent.click(screen.getByRole('button', { name: /Clone repository/ }));
-    fireEvent.change(screen.getByLabelText('Folder name'), {
+    await openCodebaseMenu();
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /Clone a repository/ }),
+    );
+    fireEvent.change(await screen.findByLabelText('Folder name'), {
       target: { value: 'website' },
     });
 
-    expect(
-      screen.getByRole('button', { name: 'Choose folder…' }),
-    ).toBeDisabled();
+    const dialog = await screen.findByRole('dialog');
+    const submit = () => within(dialog).getByRole('button', { name: /^Clone/ });
+    expect(submit()).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText('HTTPS or SSH Git URL'), {
       target: { value: 'https://example.com/website.git' },
     });
-    expect(
-      screen.getByRole('button', { name: 'Choose folder…' }),
-    ).toBeEnabled();
+    expect(submit()).toBeEnabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Choose folder…' }));
+    fireEvent.click(submit());
     expect(onProvisionCodeProject).toHaveBeenCalledWith({
       name: 'website',
       source: 'clone',

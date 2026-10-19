@@ -21,7 +21,7 @@ import {
 } from '../../db/soundlab-store.js';
 import type { SoundLabSessionWithTracks } from '../../../lib/soundlab-types.js';
 
-export function registerSoundLabHandlers({
+export function registerSoundlabHandlers({
   mainWindow,
 }: {
   mainWindow: BrowserWindow;
@@ -34,41 +34,29 @@ export function registerSoundLabHandlers({
 
   // ── List sessions ─────────────────────────────────────────────────────────
 
-  ipcMain.handle(
-    'soundlab:list',
-    (_e, req?: { projectId?: string | null }) => {
-      return listSoundLabSessions(req ?? {});
-    },
-  );
+  ipcMain.handle('soundlab:list', (_e, req?: { projectId?: string | null }) => {
+    return listSoundLabSessions(req ?? {});
+  });
 
   // ── Get session ───────────────────────────────────────────────────────────
 
-  ipcMain.handle(
-    'soundlab:get',
-    (_e, req: { id: string }) => {
-      return getSoundLabSession(req.id);
-    },
-  );
+  ipcMain.handle('soundlab:get', (_e, req: { id: string }) => {
+    return getSoundLabSession(req.id);
+  });
 
   // ── Save session ──────────────────────────────────────────────────────────
 
-  ipcMain.handle(
-    'soundlab:save',
-    (_e, data: SoundLabSessionWithTracks) => {
-      saveSoundLabSession(data);
-      broadcastChanged();
-      return { id: data.id };
-    },
-  );
+  ipcMain.handle('soundlab:save', (_e, data: SoundLabSessionWithTracks) => {
+    saveSoundLabSession(data);
+    broadcastChanged();
+    return { id: data.id };
+  });
 
   // ── Delete session ────────────────────────────────────────────────────────
 
-  ipcMain.handle(
-    'soundlab:delete',
-    (_e, req: { id: string }) => {
-      const ok = deleteSoundLabSession(req.id);
-      if (ok) broadcastChanged();
-      return { ok };
-    },
-  );
+  ipcMain.handle('soundlab:delete', (_e, req: { id: string }) => {
+    const ok = deleteSoundLabSession(req.id);
+    if (ok) broadcastChanged();
+    return { ok };
+  });
 }

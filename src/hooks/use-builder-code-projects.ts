@@ -34,7 +34,8 @@ export function useBuilderCodeProjects(projectId: string | null) {
         'builder:code-projects:list',
         { projectId },
       );
-      setCodeProjects(result);
+      // A malformed payload must not reach the picker, which reads `.length`.
+      setCodeProjects(Array.isArray(result) ? result : []);
       setLoadedFor(projectId);
     } catch (cause) {
       setError(messageOf(cause));

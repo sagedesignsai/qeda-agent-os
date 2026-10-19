@@ -188,14 +188,17 @@ export function BuilderChatPanel({
 
   // One line, three states: why sending is blocked, what a run is doing, or the
   // promise that holds when the composer is idle. It never wraps into a column
-  // beside the button — the full text stays available as the title.
+  // beside the button — the full text stays available as the title. A blocked
+  // send outranks the missing-model advisory: no model list matters until there
+  // is a workspace to send into.
   const statusCopy = running
     ? RUNNING_COPY
     : modelError
       ? modelError
-      : session && !modelsLoading && models.length === 0
-        ? 'No models available. Configure a model in OpenCode.'
-        : blockedReason || SUPERVISED_COPY;
+      : blockedReason ||
+        (session && !modelsLoading && models.length === 0
+          ? 'No models available. Configure a model in OpenCode.'
+          : SUPERVISED_COPY);
   const statusIconNode = running ? (
     <CircleDashedIcon className="size-3 shrink-0 animate-spin text-primary" />
   ) : blockedReason ? (

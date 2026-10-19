@@ -63,6 +63,8 @@ const invoke = jest.fn((channel: string) => {
           name: 'Groq',
           apiKeySet: true,
           apiKeySource: 'environment',
+          apiKeyPreference: 'environment',
+          apiKeyEnvs: ['GROQ_API_KEY'],
           freeModels: ['openai/gpt-oss-120b'],
         },
       ]);
@@ -127,9 +129,7 @@ function savePayloads(): Record<string, unknown>[] {
  * `hidden`), so an unscoped `getByRole('button', {name: 'Save'})` would be
  * ambiguous by design.
  */
-function panel(
-  id: 'models' | 'builder' | 'embeddings' | 'appearance',
-) {
+function panel(id: 'models' | 'builder' | 'embeddings' | 'appearance') {
   const el = document.getElementById(`settings-panel-${id}`);
   if (!el) throw new Error(`settings panel "${id}" is not mounted`);
   return within(el);

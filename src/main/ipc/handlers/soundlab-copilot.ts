@@ -32,7 +32,7 @@ import { createSoundLabCopilotAgent } from '../../ai/soundlab-copilot-agent.js';
 import { PlanManager } from '../../ai/plan-manager.js';
 import type { AgentPlanEvent } from '../../../lib/agent-plan.js';
 
-export function registerSoundLabCopilotHandlers({
+export function registerSoundlabCopilotHandlers({
   mainWindow,
 }: {
   mainWindow: BrowserWindow;

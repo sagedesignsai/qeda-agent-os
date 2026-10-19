@@ -73,7 +73,7 @@ idx = [(i, decl.match(l).group(1)) for i, l in enumerate(clines[s:e], s) if decl
 declared, req, evt = set(), set(), set()
 for k, (i, name) in enumerate(idx):
     stop = idx[k + 1][0] if k + 1 < len(idx) else e
-    (req if re.search(r'\breq\s*:', '\n'.join(clines[i:stop])) else evt).add(name)
+    (req if re.search(r'\breq\s*\??\s*:', '\n'.join(clines[i:stop])) else evt).add(name)
     declared.add(name)
 
 handled, sent = {}, {}
@@ -81,6 +81,10 @@ for f in MODULES + [RUNTIME, IPC / 'index.ts', ROOT / 'src/main/pty/manager.ts']
     src = f.read_text()
     for n in re.findall(r"ipcMain\.handle\(\s*'([\w:-]+)'", src):
         handled.setdefault(n, []).append(f.name)
+# Sends live outside the IPC layer too (os-integration, pty manager, …), so scan
+# every main-process file rather than a hard-coded list that goes stale.
+for f in sorted((ROOT / 'src/main').rglob('*.ts')):
+    src = f.read_text()
     for n in re.findall(r"webContents\.send\(\s*'([\w:-]+)'", src):
         sent.setdefault(n, []).append(f.name)
 
