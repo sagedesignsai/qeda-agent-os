@@ -13,19 +13,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  AlertCircleIcon,
-  BotIcon,
-  ExternalLinkIcon,
-  SquareIcon,
-  TerminalIcon,
-} from 'lucide-react';
+import { AlertCircleIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { PlanPanel } from '@/components/plan/PlanPanel';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   CommandBlock,
@@ -48,89 +41,12 @@ import {
 } from '@/components/terminal/XtermPane';
 import { useTerminalSession } from '@/hooks/use-terminal-session';
 import { useIpcEvent } from '@/hooks/use-ipc';
-import { extractLocalhostUrls, parseComposerInput } from '@/lib/terminal-input';
-import { cn } from '@/lib/utils';
+import { parseComposerInput } from '@/lib/terminal-input';
 import type { TerminalBlock } from '@/main/ipc/channels';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type TerminalMode = 'agent' | 'shell';
-
-// ─── Status badge ─────────────────────────────────────────────────────────────
-
-function StatusBadge({ status }: { status: string }) {
-  const configs: Record<string, { label: string; cls: string }> = {
-    idle: {
-      label: 'idle',
-      cls: 'bg-muted text-muted-foreground border-border',
-    },
-    running: {
-      label: 'running',
-      cls: 'bg-sky-900/60 text-sky-300 border-sky-700/40 animate-pulse',
-    },
-    done: {
-      label: 'done',
-      cls: 'bg-emerald-900/60 text-emerald-300 border-emerald-700/40',
-    },
-    error: {
-      label: 'error',
-      cls: 'bg-rose-900/60 text-rose-300 border-rose-700/40',
-    },
-    shell: {
-      label: 'shell',
-      cls: 'bg-violet-900/60 text-violet-300 border-violet-700/40',
-    },
-  };
-  const cfg = configs[status] ?? configs.idle;
-  return (
-    <Badge
-      variant="outline"
-      className={cn(
-        'h-5 border font-mono text-[10px] uppercase tracking-wide',
-        cfg.cls,
-      )}
-    >
-      {cfg.label}
-    </Badge>
-  );
-}
-
-// ─── Mode switcher ────────────────────────────────────────────────────────────
-
-interface ModeSwitcherProps {
-  mode: TerminalMode;
-  onChange: (m: TerminalMode) => void;
-  disabled?: boolean;
-}
-
-function ModeSwitcher({ mode, onChange, disabled }: ModeSwitcherProps) {
-  return (
-    <div className="flex items-center rounded-lg border border-border/60 bg-card p-0.5">
-      {(['agent', 'shell'] as TerminalMode[]).map((m) => {
-        const Icon = m === 'agent' ? BotIcon : TerminalIcon;
-        const active = mode === m;
-        return (
-          <Button
-            key={m}
-            size="sm"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => onChange(m)}
-            className={cn(
-              'h-6 gap-1.5 rounded-md px-2.5 text-[11px] font-medium capitalize transition-all',
-              active
-                ? 'bg-accent text-foreground shadow-sm'
-                : 'text-muted-foreground/75 hover:text-muted-foreground',
-            )}
-          >
-            <Icon className="size-3" />
-            {m}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -139,14 +55,12 @@ export interface TerminalTabProps {
   tabId: string;
   /** Session ID — if undefined, a session is created on first input. */
   sessionId?: string;
-  /** Initial mode. */
-  initialMode?: TerminalMode;
+  /** Fixed mode — the tab always renders in this mode. */
+  mode: TerminalMode;
   /** Called when the session title changes. */
   onTitleChange?: (tabId: string, title: string) => void;
   /** Called when the session ID is assigned (after auto-creation). */
   onSessionAssigned?: (tabId: string, sessionId: string) => void;
-  /** Called to signal the tab should be closed. */
-  onClose?: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -154,14 +68,12 @@ export interface TerminalTabProps {
 export function TerminalTab({
   tabId,
   sessionId: initialSessionId,
-  initialMode = 'agent',
+  mode,
   onTitleChange,
   onSessionAssigned,
-  onClose,
 }: TerminalTabProps) {
   const xtermRef = useRef<XtermPaneHandle>(null);
 
-  const [mode, setMode] = useState<TerminalMode>(initialMode);
   const [shellExited, setShellExited] = useState(false);
   const [hasVisitedShell, setHasVisitedShell] = useState(false);
 
@@ -298,7 +210,7 @@ export function TerminalTab({
     }
   }, [blocks.length, lastOutput, lastStatus, summary]);
 
-  // Focus and re-fit xterm when switching to shell mode
+  // Focus and re-fit xterm on mount for shell tabs
   useEffect(() => {
     if (mode === 'shell') {
       setHasVisitedShell(true);
@@ -308,15 +220,6 @@ export function TerminalTab({
       });
     }
   }, [mode]);
-
-  // Reset shell-exited state when switching back to shell mode
-  const handleModeChange = useCallback((m: TerminalMode) => {
-    setMode(m);
-    if (m === 'shell') {
-      setHasVisitedShell(true);
-      setShellExited(false);
-    }
-  }, []);
 
   // Agent goal submission
   const pendingGoalRef = useRef<string | null>(null);
@@ -377,221 +280,15 @@ export function TerminalTab({
   const isDone = status === 'done' || status === 'error';
   const isRunning = status === 'running';
 
-  const runningBlock = useMemo(
-    () => blocks.find((b) => b.status === 'running'),
-    [blocks],
-  );
-  const runningUrls = useMemo(
-    () =>
-      runningBlock?.output ? extractLocalhostUrls(runningBlock.output) : [],
-    [runningBlock],
-  );
-
   const pendingShellCmdRef = useRef<string | null>(null);
-
-  const handleRunInShell = useCallback((cmd: string) => {
-    setMode('shell');
-    setHasVisitedShell(true);
-    setShellExited(false);
-
-    requestAnimationFrame(() => {
-      xtermRef.current?.fit();
-      xtermRef.current?.focus();
-      const ptyId = xtermRef.current?.ptyId;
-      if (ptyId) {
-        void window.electron.ipc.invoke('pty:write', {
-          ptyId,
-          data: cmd + '\n',
-        });
-      } else {
-        pendingShellCmdRef.current = cmd;
-      }
-    });
-  }, []);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  return (
-    <div className="flex h-full flex-col bg-background text-foreground">
-      {/* ── Tab header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-1.5">
-        <div className="flex items-center gap-2 min-w-0">
-          <ModeSwitcher
-            mode={mode}
-            onChange={handleModeChange}
-            disabled={isRunning}
-          />
-          <StatusBadge status={mode === 'shell' ? 'shell' : status} />
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Long-running service readout */}
-          {runningBlock && (
-            <div className="hidden items-center gap-2 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1 text-xs text-sky-200 lg:flex">
-              <span className="size-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-              <span
-                className="font-mono text-[11px] font-medium text-sky-300 truncate max-w-[140px]"
-                title={runningBlock.command}
-              >
-                {runningBlock.command}
-              </span>
-              {runningUrls.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    void window.electron.ipc.invoke('terminal:open-url', {
-                      url: runningUrls[0],
-                    })
-                  }
-                  className="inline-flex items-center gap-1 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-mono text-sky-200 hover:bg-sky-500/30 transition-colors cursor-pointer"
-                  title={`Open ${runningUrls[0]}`}
-                >
-                  {runningUrls[0].replace(/^https?:\/\//, '')}
-                  <ExternalLinkIcon className="size-2.5 text-sky-400" />
-                </button>
-              )}
-              <Button
-                type="button"
-                size="xs"
-                variant="destructive"
-                className="h-5 px-1.5 text-[10px] bg-rose-600/90 hover:bg-rose-500 text-white"
-                onClick={() => stop(runningBlock.id)}
-                title="Stop running service"
-              >
-                <SquareIcon className="size-2 fill-current" />
-                Stop
-              </Button>
-            </div>
-          )}
-          {onClose && (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
-              onClick={onClose}
-              title="Close tab"
-            >
-              ✕
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Content area ────────────────────────────────────────────────────── */}
-      <div className="relative flex-1 min-h-0 overflow-hidden">
-        {/* ── Agent Mode ──────────────────────────────────────────────────── */}
-        <div
-          className={cn(
-            'flex h-full flex-col min-h-0',
-            mode !== 'agent' && 'hidden',
-          )}
-        >
-          <div
-            ref={scrollContainerRef}
-            onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-y-auto"
-          >
-            <div className="mx-auto max-w-3xl px-4 py-6">
-              {plan && (
-                <div className="sticky top-0 z-20 mb-4 bg-background/80 backdrop-blur-xs">
-                  <PlanPanel
-                    plan={plan}
-                    isRunning={status === 'running'}
-                    title="Terminal Agent Plan"
-                  />
-                </div>
-              )}
-              <AnimatePresence initial={false}>
-                {!hasBlocks && !isRunning ? (
-                  <motion.div
-                    key="welcome"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    <TerminalWelcome />
-                  </motion.div>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {blocks.map((block: TerminalBlock) => (
-                      <CommandBlock
-                        key={block.id}
-                        block={block}
-                        onApprove={() => approve(block.id)}
-                        onReject={() => reject(block.id)}
-                        onExplain={() => explain(block.id)}
-                        isExplaining={isExplainingId === block.id}
-                        onRerun={() => rerun(block.id)}
-                        onStop={() => stop(block.id)}
-                        onFix={() => fix(block.id)}
-                        fix={fixes[block.id]}
-                        isFixing={isFixingId === block.id}
-                        onUseFix={handleUseFix}
-                        onRunInShell={handleRunInShell}
-                      >
-                        {block.status === 'skipped' ? (
-                          <>
-                            <CommandBlockHeader />
-                            <CommandBlockSkipped />
-                          </>
-                        ) : (
-                          <>
-                            <CommandBlockHeader />
-                            <CommandBlockThought />
-                            <CommandBlockApproval />
-                            <CommandBlockFilterBar />
-                            <CommandBlockOutput />
-                            <CommandBlockFix />
-                            <CommandBlockExplanation />
-                            <CommandBlockFooter />
-                          </>
-                        )}
-                      </CommandBlock>
-                    ))}
-
-                    <AnimatePresence>
-                      {isDone && summary && (
-                        <AgentSummary key="summary" summary={summary} />
-                      )}
-                      {status === 'error' && error && (
-                        <motion.div
-                          key="error"
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="flex items-start gap-2 rounded-xl border border-rose-800/40 bg-rose-950/30 px-4 py-3 font-sans text-sm text-rose-300"
-                        >
-                          <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
-                          <div>
-                            <p className="font-medium">Agent error</p>
-                            <p className="mt-0.5 text-rose-400/80">{error}</p>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-              </AnimatePresence>
-              <div className="h-4" />
-            </div>
-          </div>
-
-          {/* Goal input */}
-          <div className="border-t border-border/60 p-3">
-            <div className="mx-auto max-w-3xl">
-              <TerminalGoalInput
-                onSubmit={handleGoalSubmit}
-                onRunInShell={handleRunInShell}
-                isRunning={isRunning}
-                disabled={isRunning}
-                prefill={draftCommand}
-                cwd={contextInfo.cwd}
-                gitBranch={contextInfo.gitBranch}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* ── Shell Mode ──────────────────────────────────────────────────── */}
-        <div className={cn('h-full', mode !== 'shell' && 'hidden')}>
+  // Shell mode: render xterm directly
+  if (mode === 'shell') {
+    return (
+      <div className="flex h-full flex-col bg-background text-foreground">
+        <div className="h-full">
           {hasVisitedShell && !shellExited && (
             <XtermPane
               key={sessionId ?? tabId}
@@ -617,7 +314,6 @@ export function TerminalTab({
           )}
           {shellExited && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/75">
-              <TerminalIcon className="size-8 opacity-30" />
               <p className="font-sans text-sm">Shell process exited.</p>
               <Button
                 size="sm"
@@ -629,6 +325,113 @@ export function TerminalTab({
               </Button>
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // Agent mode: render blocks + goal input
+  return (
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto"
+      >
+        <div className="mx-auto max-w-3xl px-4 py-6">
+          {plan && (
+            <div className="sticky top-0 z-20 mb-4 bg-background/80 backdrop-blur-xs">
+              <PlanPanel
+                plan={plan}
+                isRunning={status === 'running'}
+                title="Terminal Agent Plan"
+              />
+            </div>
+          )}
+          <AnimatePresence initial={false}>
+            {!hasBlocks && !isRunning ? (
+              <motion.div
+                key="welcome"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <TerminalWelcome />
+              </motion.div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {blocks.map((block: TerminalBlock) => (
+                  <CommandBlock
+                    key={block.id}
+                    block={block}
+                    onApprove={() => approve(block.id)}
+                    onReject={() => reject(block.id)}
+                    onExplain={() => explain(block.id)}
+                    isExplaining={isExplainingId === block.id}
+                    onRerun={() => rerun(block.id)}
+                    onStop={() => stop(block.id)}
+                    onFix={() => fix(block.id)}
+                    fix={fixes[block.id]}
+                    isFixing={isFixingId === block.id}
+                    onUseFix={handleUseFix}
+                  >
+                    {block.status === 'skipped' ? (
+                      <>
+                        <CommandBlockHeader />
+                        <CommandBlockSkipped />
+                      </>
+                    ) : (
+                      <>
+                        <CommandBlockHeader />
+                        <CommandBlockThought />
+                        <CommandBlockApproval />
+                        <CommandBlockFilterBar />
+                        <CommandBlockOutput />
+                        <CommandBlockFix />
+                        <CommandBlockExplanation />
+                        <CommandBlockFooter />
+                      </>
+                    )}
+                  </CommandBlock>
+                ))}
+
+                <AnimatePresence>
+                  {isDone && summary && (
+                    <AgentSummary key="summary" summary={summary} />
+                  )}
+                  {status === 'error' && error && (
+                    <motion.div
+                      key="error"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-start gap-2 rounded-xl border border-rose-800/40 bg-rose-950/30 px-4 py-3 font-sans text-sm text-rose-300"
+                    >
+                      <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
+                      <div>
+                        <p className="font-medium">Agent error</p>
+                        <p className="mt-0.5 text-rose-400/80">{error}</p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </AnimatePresence>
+          <div className="h-4" />
+        </div>
+      </div>
+
+      {/* Goal input */}
+      <div className="border-t border-border/60 p-3">
+        <div className="mx-auto max-w-3xl">
+          <TerminalGoalInput
+            onSubmit={handleGoalSubmit}
+            isRunning={isRunning}
+            disabled={isRunning}
+            prefill={draftCommand}
+            cwd={contextInfo.cwd}
+            gitBranch={contextInfo.gitBranch}
+          />
         </div>
       </div>
     </div>

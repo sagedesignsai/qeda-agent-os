@@ -164,7 +164,15 @@ export interface MouseTrackerEvent {
   type: 'move' | 'mousedown' | 'mouseup' | 'click' | 'dblclick' | 'wheel';
 }
 
-// ── Persisted take ────────────────────────────────────────────────────────────
+// ── Video region crop ─────────────────────────────────────────────────────────
+
+/** Normalized sub-region (0..1) of a take's source video to render/export. */
+export interface StudioVideoCrop {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface StudioTake {
   id: string;
@@ -185,6 +193,8 @@ export interface StudioTake {
   effects?: StudioEffect[];
   /** Picture-in-picture image / video elements. */
   overlays?: StudioOverlay[];
+  /** Normalized sub-region of source video to render/export (OBS-like crop). */
+  videoCrop?: StudioVideoCrop;
   styling: StudioStyling;
   socialKit: StudioSocialKit | null;
   fileSizeBytes?: number;

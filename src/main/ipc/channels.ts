@@ -50,6 +50,7 @@ import type {
   StudioSocialKit,
   StudioEffect,
   StudioOverlay,
+  StudioVideoCrop,
   MouseTrackerEvent,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
@@ -178,6 +179,7 @@ export type {
   StudioSocialKit,
   StudioEffect,
   StudioOverlay,
+  StudioVideoCrop,
   MouseTrackerEvent,
 };
 export type {

@@ -434,11 +434,13 @@ export async function renderComposedStudioVideo(
     }
 
     // Update camera state for this frame
-    const target = computeCameraTarget({
-      zooms: take.zooms ?? [],
-      timeMs: currentTimeMs,
-      zoomIntensity: take.styling.zoomIntensity,
-    });
+    const target = take.videoCrop
+      ? { ...IDLE_CAMERA }
+      : computeCameraTarget({
+          zooms: take.zooms ?? [],
+          timeMs: currentTimeMs,
+          zoomIntensity: take.styling.zoomIntensity,
+        });
     camera = stepCameraWithAlpha(camera, target, alphaAtFps);
 
     // Draw the full composition
@@ -454,6 +456,7 @@ export async function renderComposedStudioVideo(
       captions: take.captions ?? [],
       overlays: take.overlays ?? [],
       overlayAssets,
+      videoCrop: take.videoCrop,
       glowGradient: radialGlow,
       drawWindowChrome: (chromeCtx, frame) => {
         if (

@@ -21,6 +21,7 @@ import type {
   StudioEffect,
   StudioOverlay,
   StudioStyling,
+  StudioVideoCrop,
   StudioZoom,
 } from '@/main/ipc/channels';
 import { safeDurationMs } from '@/lib/studio-types';
@@ -54,6 +55,7 @@ interface StudioCanvasProps {
   captions: StudioCaption[];
   effects?: StudioEffect[];
   overlays?: StudioOverlay[];
+  videoCrop?: StudioVideoCrop;
   durationMs?: number;
   isPlaying: boolean;
   onTimeUpdate?: (ms: number) => void;
@@ -73,6 +75,7 @@ export function StudioCanvas({
   captions,
   effects,
   overlays,
+  videoCrop,
   durationMs,
   isPlaying,
   onTimeUpdate,
@@ -120,6 +123,7 @@ export function StudioCanvas({
     captions,
     effects: effects ?? [],
     overlays: overlays ?? [],
+    videoCrop,
   });
   renderInputsRef.current = {
     styling,
@@ -127,6 +131,7 @@ export function StudioCanvas({
     captions,
     effects: effects ?? [],
     overlays: overlays ?? [],
+    videoCrop,
   };
 
   // ── Overlay asset loading ──────────────────────────────────────────────────
@@ -268,7 +273,7 @@ export function StudioCanvas({
         return;
       }
 
-      const { styling: style, zooms: z, captions: c, effects: fx, overlays: ov } =
+      const { styling: style, zooms: z, captions: c, effects: fx, overlays: ov, videoCrop: vc } =
         renderInputsRef.current;
       const video = videoRef.current;
       const ready = Boolean(video && video.readyState >= 2);
@@ -283,11 +288,13 @@ export function StudioCanvas({
         onTimeUpdate?.(timeMs);
       }
 
-      const target = computeCameraTarget({
-        zooms: z,
-        timeMs,
-        zoomIntensity: style.zoomIntensity,
-      });
+       const target = vc
+        ? { ...IDLE_CAMERA }
+        : computeCameraTarget({
+            zooms: z,
+            timeMs,
+            zoomIntensity: style.zoomIntensity,
+          });
       cameraRef.current = stepCamera(
         cameraRef.current,
         target,
@@ -322,6 +329,7 @@ export function StudioCanvas({
         captions: c,
         overlays: ov,
         overlayAssets: overlayAssetsRef.current,
+        videoCrop: vc,
         glowGradient: glow.value,
         drawWindowChrome: (chromeCtx, frame) => {
           if (style.deviceFrame && style.deviceFrame.type !== 'none') {

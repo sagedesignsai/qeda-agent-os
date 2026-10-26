@@ -20,6 +20,12 @@ import { useEffect, useRef, useCallback } from 'react';
 import { timelineStore, useTimelineState } from '@/hooks/use-timeline-store';
 import { useTimelineMedia } from '@/hooks/use-timeline-media';
 import { drawBitmapIfLive } from '@/lib/image-bitmap-lifetime';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from '@/components/ui/context-menu';
 
 interface TimelineCanvasViewportProps {
   videoUrl: string | null;
@@ -28,6 +34,7 @@ interface TimelineCanvasViewportProps {
   onSeek?: (ms: number) => void;
   onTogglePlay?: () => void;
   onScrollYChange?: (scrollY: number) => void;
+  onOpenVideoCrop?: () => void;
   containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -59,6 +66,7 @@ export function TimelineCanvasViewport({
   onTogglePlay,
   onScrollYChange,
   containerRef: externalContainerRef,
+  onOpenVideoCrop,
 }: TimelineCanvasViewportProps) {
   const internalContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = externalContainerRef || internalContainerRef;
@@ -89,6 +97,7 @@ export function TimelineCanvasViewport({
 
   // Drag interaction state
   const dragModeRef = useRef<DragMode>({ type: 'none' });
+  const contextTargetRef = useRef<{ type?: string } | null>(null);
 
   // Scroll and pointer input are coalesced into one animation frame: wheel,
   // momentum, and pointermove all fire faster than the display refreshes, and
@@ -1110,17 +1119,35 @@ export function TimelineCanvasViewport({
       className="relative flex-1 h-full overflow-x-auto overflow-y-auto bg-[#080c14] select-none scrollbar-thin scrollbar-thumb-border/40 scrollbar-track-transparent"
     >
       {/* Hardware Accelerated Viewport Canvas */}
-      <canvas
-        ref={canvasRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerLeave}
-        className="sticky left-0 top-0 block touch-none z-10 pointer-events-auto"
-        style={{
-          marginBottom: `-${viewportHeightRef.current || 300}px`,
-        }}
-      />
+      <ContextMenu>
+        <ContextMenuTrigger
+          asChild
+          onContextMenu={(e: React.MouseEvent<HTMLCanvasElement>) => {
+            const hit = hitTest(e.clientX, e.clientY);
+            contextTargetRef.current =
+              hit && 'track' in hit ? (hit.track as { type?: string }) : null;
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
+            className="sticky left-0 top-0 block touch-none z-10 pointer-events-auto"
+            style={{
+              marginBottom: `-${viewportHeightRef.current || 300}px`,
+            }}
+          />
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {contextTargetRef.current?.type === 'video' && (
+            <ContextMenuItem onSelect={() => onOpenVideoCrop?.()}>
+              Crop video region…
+            </ContextMenuItem>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
 
       {/* Virtual Content Scroll Spacer */}
       <div

@@ -1,17 +1,25 @@
 /**
  * components/terminal/TerminalTabBar.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Tab bar for the terminal workspace — Warp-inspired compact tab strip.
+ * Per-pane tab bar — VSCode-style compact tab strip rendered inside each pane.
  *
- * Shows open tabs with session title, mode icon (Bot / Terminal), status dot,
- * and close button. Active tab is highlighted with a bottom border accent.
+ * Each pane has its own tab bar showing the tabs belonging to that pane, with
+ * a "+" button that opens a dropdown to choose the tab type (Shell or AI
+ * Terminal). Active tab is highlighted with a bottom border accent.
  *
- * New tab button provides a dropdown to choose Agent or Shell mode.
+ * Tabs show: mode icon (Bot/Terminal), title, status dot, and close button.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useState } from 'react';
 import { BotIcon, PlusIcon, TerminalIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import type { TerminalTabInfo } from '@/hooks/use-terminal-layout';
 import type { TerminalMode } from '@/components/terminal/TerminalTab';
@@ -43,22 +51,13 @@ function TabItem({ info, isActive, status, onSelect, onClose }: TabItemProps) {
       type="button"
       onClick={onSelect}
       className={cn(
-        'group flex items-center gap-1.5 rounded-t-lg border-border/30 px-3 py-1.5 text-left transition-all',
-        'max-w-[180px] min-w-[120px]',
+        'group flex items-center gap-1.5 px-2.5 py-1.5 text-left transition-all',
+        'max-w-[160px] min-w-[100px] border-b-2',
         isActive
-          ? 'border-b-2 border-b-accent bg-card text-foreground'
-          : 'border-b-2 border-b-transparent bg-transparent text-muted-foreground hover:bg-card/50 hover:text-foreground',
+          ? 'border-b-foreground bg-card text-foreground'
+          : 'border-b-transparent text-muted-foreground hover:bg-card/50 hover:text-foreground',
       )}
     >
-      {/* Status dot */}
-      <span
-        className={cn(
-          'size-1.5 rounded-full shrink-0',
-          statusColor,
-          status === 'running' && 'animate-pulse',
-        )}
-      />
-
       {/* Mode icon */}
       <Icon className="size-3 shrink-0 opacity-60" />
 
@@ -66,6 +65,17 @@ function TabItem({ info, isActive, status, onSelect, onClose }: TabItemProps) {
       <span className="truncate text-[11px] font-medium">
         {info.title || 'Untitled'}
       </span>
+
+      {/* Status dot */}
+      {status && status !== 'idle' && (
+        <span
+          className={cn(
+            'size-1 rounded-full shrink-0',
+            statusColor,
+            status === 'running' && 'animate-pulse',
+          )}
+        />
+      )}
 
       {/* Close button */}
       <span
@@ -86,11 +96,13 @@ function TabItem({ info, isActive, status, onSelect, onClose }: TabItemProps) {
   );
 }
 
-// ─── Tab bar ──────────────────────────────────────────────────────────────────
+// ─── Tab bar (per-pane) ───────────────────────────────────────────────────────
 
 interface TerminalTabBarProps {
-  tabs: Map<string, TerminalTabInfo>;
-  activeTabId: string | undefined;
+  /** Tabs belonging to this pane only. */
+  tabs: TerminalTabInfo[];
+  /** Index of the active tab in the tabs array. */
+  activeTabIndex: number;
   /** Session status per tab ID (for status dots). */
   tabStatuses?: Map<string, string>;
   onTabSelect: (tabId: string) => void;
@@ -100,37 +112,58 @@ interface TerminalTabBarProps {
 
 export function TerminalTabBar({
   tabs,
-  activeTabId,
+  activeTabIndex,
   tabStatuses,
   onTabSelect,
   onTabClose,
   onNewTab,
 }: TerminalTabBarProps) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="flex items-center gap-px border-b border-border/40 bg-muted/30 px-1">
+    <div className="flex items-center gap-px border-b border-border/40 bg-muted/30">
       {/* Tab items */}
-      {Array.from(tabs.values()).map((info) => (
+      {tabs.map((info, index) => (
         <TabItem
           key={info.tabId}
           info={info}
-          isActive={info.tabId === activeTabId}
+          isActive={index === activeTabIndex}
           status={tabStatuses?.get(info.tabId)}
           onSelect={() => onTabSelect(info.tabId)}
           onClose={() => onTabClose(info.tabId)}
         />
       ))}
 
-      {/* New tab button */}
+      {/* New tab dropdown */}
       <div className="ml-auto flex items-center gap-1 px-1">
-        <Button
-          size="xs"
-          variant="ghost"
-          className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-          onClick={() => onNewTab('agent')}
-          title="New agent tab (Cmd+T)"
-        >
-          <PlusIcon className="size-3" />
-        </Button>
+        <DropdownMenu open={open} onOpenChange={setOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="xs"
+              variant="ghost"
+              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+              title="New tab"
+            >
+              <PlusIcon className="size-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[160px]">
+            <DropdownMenuItem
+              className="flex items-center gap-2"
+              onClick={() => onNewTab('agent')}
+            >
+              <BotIcon className="size-3.5 text-muted-foreground" />
+              <span className="text-sm">AI Terminal</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="flex items-center gap-2"
+              onClick={() => onNewTab('shell')}
+            >
+              <TerminalIcon className="size-3.5 text-muted-foreground" />
+              <span className="text-sm">Shell</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

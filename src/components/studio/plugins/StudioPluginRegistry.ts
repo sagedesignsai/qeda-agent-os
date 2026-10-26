@@ -5,6 +5,7 @@
  *   - Device Mockup SVG Frame Plugin
  *   - Motion Title Intro/Outro Card Plugin
  *   - Kinetic Callout & Lower Thirds Overlay Plugin
+ *   - Video Region Crop Plugin
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -37,5 +38,14 @@ export const BUILTIN_STUDIO_PLUGINS: StudioPlugin[] = [
     icon: 'SparklesIcon',
     version: '1.0.0',
     author: 'Qeda Motion',
+  },
+  {
+    id: 'plugin-video-crop',
+    name: 'Video Region Crop',
+    description: 'Select a sub-region of the source video to render and export.',
+    category: 'effects',
+    icon: 'CropIcon',
+    version: '1.0.0',
+    author: 'Qeda Core',
   },
 ];

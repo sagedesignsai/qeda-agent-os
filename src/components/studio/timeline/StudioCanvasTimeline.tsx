@@ -32,6 +32,7 @@ interface StudioCanvasTimelineProps {
   onTogglePlay: () => void;
   onRestartPlayback: () => void;
   onTracksChange?: (tracks: TimelineTrack[]) => void;
+  onOpenVideoCrop?: () => void;
 }
 
 const TRACK_HEIGHT = 48;
@@ -46,6 +47,7 @@ export function StudioCanvasTimeline({
   onTogglePlay,
   onRestartPlayback,
   onTracksChange,
+  onOpenVideoCrop,
 }: StudioCanvasTimelineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportContainerRef = useRef<HTMLDivElement | null>(null);
@@ -176,6 +178,7 @@ export function StudioCanvasTimeline({
           onTogglePlay={onTogglePlay}
           onScrollYChange={handleHeadersScrollY}
           containerRef={viewportContainerRef}
+          onOpenVideoCrop={onOpenVideoCrop}
         />
       </div>
     </div>

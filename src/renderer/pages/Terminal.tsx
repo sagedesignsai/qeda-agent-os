@@ -1,25 +1,27 @@
 /**
  * pages/Terminal.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Multi-panel terminal workspace — Warp-inspired layout with tabs and splits.
+ * VSCode-inspired multi-pane terminal workspace.
  *
  *   ┌─────────────────────────────────────────────────┐
  *   │  PageHeader (Terminal breadcrumb + project)     │
  *   ├─────────────────────────────────────────────────┤
- *   │  TabBar [Tab1 ●] [Tab2 ●] [+]                  │
- *   ├─────────────────────────────────────────────────┤
- *   │  ┌─────────────┬─────────────┐                 │
- *   │  │ TerminalTab │ TerminalTab │  (split panes)  │
- *   │  │  (agent)    │  (shell)    │                 │
- *   │  └─────────────┴─────────────┘                 │
+ *   │ ┌──────────────────┬──────────────────────────┐ │
+ *   │ │ [Tab1 ●] [Tab2]  │ [Tab3 ●] [+]            │ │
+ *   │ │  (pane 1 tabs)   │  (pane 2 tabs)           │ │
+ *   │ ├──────────────────┤                          │ │
+ *   │ │  TerminalTab     │                          │ │
+ *   │ │  (active: Tab1)  │  TerminalTab             │ │
+ *   │ │                  │  (active: Tab3)          │ │
+ *   │ └──────────────────┴──────────────────────────┘ │
  *   └─────────────────────────────────────────────────┘
  *
- * Each tab manages its own session independently. Panes can be split
- * horizontally or vertically. Layout is session-scoped with localStorage
- * persistence for panel sizes.
+ * Each pane has its own tab bar. Tabs are owned by their pane. Closing the
+ * last tab in a pane removes that pane. Splitting creates a new pane with a
+ * new default tab.
  *
  * Keyboard shortcuts:
- *   Cmd+T       — New agent tab
+ *   Cmd+T       — New agent tab in active pane
  *   Cmd+W       — Close active tab
  *   Cmd+\       — Split right (horizontal)
  *   Cmd+Shift+\ — Split down (vertical)
@@ -30,7 +32,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router';
 
 import { PageHeader } from '@/components/PageHeader';
-import { TerminalTabBar } from '@/components/terminal/TerminalTabBar';
 import { TerminalPanel } from '@/components/terminal/TerminalPanel';
 import { useTerminalLayout } from '@/hooks/use-terminal-layout';
 import { useProjectScope } from '@/hooks/use-project-scope';
@@ -46,17 +47,17 @@ export default function Terminal() {
   const { projectName, clear: clearProjectScope } = useProjectScope();
 
   const {
-    tabs,
-    activeTabId,
     panelTree,
+    activePaneId,
     addTab,
     closeTab,
     selectTab,
     updateTitle,
     updateSessionId,
+    focusPane,
   } = useTerminalLayout();
 
-  // Collect session statuses for the tab bar (from useTerminalSession in each tab)
+  // Collect session statuses for tab bars (from useTerminalSession in each tab)
   const [tabStatuses, setTabStatuses] = useState<Map<string, string>>(
     new Map(),
   );
@@ -74,28 +75,24 @@ export default function Terminal() {
   });
 
   // Auto-run goal from ?goal= URL param (set by Tasks "Hand to Agent")
-  // This creates a new tab with the goal
   useEffect(() => {
     const goal = searchParams.get('goal');
-    if (goal && tabs.size > 0) {
+    if (goal) {
       const next = new URLSearchParams(searchParams);
       next.delete('goal');
       next.delete('task');
       setSearchParams(next, { replace: true });
-      // The goal will be handled by the first tab's input
+      // The goal will be handled by the active tab's input
     }
-  }, [searchParams, setSearchParams, tabs.size]);
+  }, [searchParams, setSearchParams]);
 
-  // If URL has a session ID, find or create a tab for it
+  // If URL has a session ID, assign it to the first tab
   useEffect(() => {
-    if (urlSessionId && tabs.size === 0) {
-      // Create a tab with the URL session ID
-      const tabId = Array.from(tabs.keys())[0];
-      if (tabId) {
-        updateSessionId(tabId, urlSessionId);
-      }
+    if (urlSessionId && activePaneId) {
+      // Find the first tab in the active pane and assign the session
+      // This is handled by the TerminalTab component via onSessionAssigned
     }
-  }, [urlSessionId, tabs, updateSessionId]);
+  }, [urlSessionId, activePaneId]);
 
   // Handle tab callbacks
   const handleTitleChange = useCallback(
@@ -113,28 +110,35 @@ export default function Terminal() {
   );
 
   const handleNewTab = useCallback(
-    (mode: TerminalMode) => {
-      addTab(mode);
+    (paneId: string, mode: TerminalMode) => {
+      addTab(paneId, mode);
     },
     [addTab],
   );
 
   const handleTabClose = useCallback(
-    (tabId: string) => {
-      closeTab(tabId);
+    (paneId: string, tabId: string) => {
+      closeTab(paneId, tabId);
     },
     [closeTab],
   );
 
   const handleTabSelect = useCallback(
-    (tabId: string) => {
-      selectTab(tabId);
+    (paneId: string, tabId: string) => {
+      selectTab(paneId, tabId);
     },
     [selectTab],
   );
 
-  // Empty state — no tabs
-  const hasTabs = tabs.size > 0;
+  const handleFocusPane = useCallback(
+    (paneId: string) => {
+      focusPane(paneId);
+    },
+    [focusPane],
+  );
+
+  // Check if there are any panes with tabs
+  const hasContent = panelTree !== null;
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
@@ -149,39 +153,24 @@ export default function Terminal() {
         }
       />
 
-      {/* ── Tab bar ────────────────────────────────────────────────────────── */}
-      <TerminalTabBar
-        tabs={tabs}
-        activeTabId={activeTabId}
-        tabStatuses={tabStatuses}
-        onTabSelect={handleTabSelect}
-        onTabClose={handleTabClose}
-        onNewTab={handleNewTab}
-      />
-
       {/* ── Panel area ─────────────────────────────────────────────────────── */}
       <div className="relative flex-1 min-h-0 overflow-hidden">
-        {hasTabs ? (
+        {hasContent ? (
           <TerminalPanel
             node={panelTree}
-            tabs={tabs}
-            activeTabId={activeTabId}
+            activePaneId={activePaneId}
+            tabStatuses={tabStatuses}
             onTitleChange={handleTitleChange}
             onSessionAssigned={handleSessionAssigned}
             onCloseTab={handleTabClose}
             onTabSelect={handleTabSelect}
+            onNewTab={handleNewTab}
+            onFocusPane={handleFocusPane}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/75">
             <span className="text-2xl">⌨️</span>
-            <p className="font-sans text-sm">No terminal tabs open.</p>
-            <p className="font-sans text-xs text-muted-foreground/50">
-              Press{' '}
-              <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
-                Cmd+T
-              </kbd>{' '}
-              to open a new tab
-            </p>
+            <p className="font-sans text-sm">Loading terminal workspace...</p>
           </div>
         )}
       </div>

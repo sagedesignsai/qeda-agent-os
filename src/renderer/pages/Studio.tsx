@@ -50,6 +50,7 @@ import { useProjectScope } from '@/hooks/use-project-scope';
 import { StudioProjectsView } from '@/components/studio/projects/StudioProjectsView';
 import { StudioCanvas } from '@/components/studio/StudioCanvas';
 import { StudioCanvasTimeline } from '@/components/studio/timeline/StudioCanvasTimeline';
+import { StudioVideoCropDialog } from '@/components/studio/plugins/StudioVideoCropDialog';
 import { timelineStore } from '@/hooks/use-timeline-store';
 import { StudioInspector } from '@/components/studio/StudioInspector';
 import { StudioSourcePicker } from '@/components/studio/StudioSourcePicker';
@@ -69,6 +70,7 @@ import {
   type StudioEffect,
   type StudioEffectType,
   type StudioOverlay,
+  type StudioVideoCrop,
   type TimelineTrack,
 } from '@/lib/studio-types';
 import { renderComposedStudioVideo } from '@/lib/studio/render/export-renderer';
@@ -135,6 +137,7 @@ export default function Studio() {
   const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
     string | null
   >(null);
+  const [videoCropDialogOpen, setVideoCropDialogOpen] = useState(false);
 
   // Content library & inspector panel states & refs
   const [contentPanelCollapsed, setContentPanelCollapsed] = useState(false);
@@ -357,6 +360,23 @@ export default function Studio() {
       if (kit) setSocialKitModalOpen(true);
     }
   };
+
+  const handleApplyVideoCrop = useCallback(
+    async (crop: StudioVideoCrop | null) => {
+      if (!activeTake) return;
+      try {
+        await window.electron.ipc.invoke('studio:save-take', {
+          id: activeTake.id,
+          videoCrop: crop,
+        });
+        await loadTake(activeTake.id);
+        toast.success(crop ? 'Video crop applied' : 'Video crop cleared');
+      } catch {
+        toast.error('Failed to apply video crop');
+      }
+    },
+    [activeTake, loadTake],
+  );
 
   const handleRenameTake = async (id: string, newTitle: string) => {
     try {
@@ -918,6 +938,7 @@ export default function Studio() {
                         captions={activeTake.captions}
                         effects={activeTake.effects ?? []}
                         overlays={activeTake.overlays ?? []}
+                        videoCrop={activeTake.videoCrop}
                         durationMs={effectiveDurationMs}
                         isPlaying={isPlaying}
                         onTimeUpdate={handlePreviewTimeUpdate}
@@ -983,6 +1004,7 @@ export default function Studio() {
                 onTogglePlay={handleTogglePlayback}
                 onRestartPlayback={handleRestartPlayback}
                 onTracksChange={handleTimelineTracksChange}
+                onOpenVideoCrop={() => setVideoCropDialogOpen(true)}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -1017,6 +1039,14 @@ export default function Studio() {
         open={socialKitModalOpen}
         onOpenChange={setSocialKitModalOpen}
         socialKit={activeTake?.socialKit ?? null}
+      />
+
+      <StudioVideoCropDialog
+        open={videoCropDialogOpen}
+        onOpenChange={setVideoCropDialogOpen}
+        videoUrl={videoUrl}
+        videoCrop={activeTake?.videoCrop ?? null}
+        onApply={handleApplyVideoCrop}
       />
 
       {activeTake && (

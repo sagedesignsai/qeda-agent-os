@@ -23,6 +23,7 @@ import type {
   StudioEffect,
   StudioOverlay,
   StudioStyling,
+  StudioVideoCrop,
 } from '../types';
 import { drawStudioBackground } from './background';
 import { cameraSourceRect, type StudioCameraState } from './camera';
@@ -44,6 +45,7 @@ export interface StudioComposeInput {
   captions: readonly StudioCaption[];
   overlays: readonly StudioOverlay[];
   overlayAssets: ReadonlyMap<string, StudioOverlayAsset>;
+  videoCrop?: StudioVideoCrop;
   /** Cached radial glow, rebuilt only when the canvas size changes. */
   glowGradient?: CanvasGradient | null;
   /** Optional custom window chrome / device frame renderer */
@@ -66,10 +68,13 @@ export function drawStudioFrame(
     glowGradient: input.glowGradient,
   });
 
+  const crop = input.videoCrop;
   const videoAspect =
-    input.video && input.video.videoWidth > 0 && input.video.videoHeight > 0
-      ? input.video.videoWidth / input.video.videoHeight
-      : 16 / 9;
+    crop && crop.width > 0 && crop.height > 0
+      ? crop.width / crop.height
+      : input.video && input.video.videoWidth > 0 && input.video.videoHeight > 0
+        ? input.video.videoWidth / input.video.videoHeight
+        : 16 / 9;
 
   const frame = computeStudioWindowFrame({
     canvasWidth: width,
@@ -87,11 +92,16 @@ export function drawStudioFrame(
   ctx.clip();
 
   if (input.videoReady && input.video) {
-    const source = cameraSourceRect(
-      input.camera,
-      input.video.videoWidth || 1920,
-      input.video.videoHeight || 1080,
-    );
+    const vw = input.video.videoWidth || 1920;
+    const vh = input.video.videoHeight || 1080;
+    const source = crop
+      ? {
+          x: Math.max(0, Math.min(vw, crop.x * vw)),
+          y: Math.max(0, Math.min(vh, crop.y * vh)),
+          width: Math.max(1, crop.width * vw),
+          height: Math.max(1, crop.height * vh),
+        }
+      : cameraSourceRect(input.camera, vw, vh);
     ctx.drawImage(
       input.video,
       source.x,
