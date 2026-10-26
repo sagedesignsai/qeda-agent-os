@@ -72,13 +72,16 @@ export function useBuilderSession() {
   }, [mergeEvents]);
 
   const createSession = useCallback(
-    async (directory: string): Promise<BuilderSessionStart | null> => {
+    async (
+      directory: string,
+      options?: { runInSandbox?: boolean; remoteUrl?: string },
+    ): Promise<BuilderSessionStart | null> => {
       setCreating(true);
       setError(null);
       try {
         const started = await window.electron.ipc.invoke<BuilderSessionStart>(
           'builder:session-create',
-          { directory },
+          { directory, runInSandbox: options?.runInSandbox, remoteUrl: options?.remoteUrl },
         );
         setSession(started.session);
         setWorkspace(started.workspace);

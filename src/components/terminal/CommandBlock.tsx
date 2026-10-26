@@ -246,7 +246,12 @@ export function CommandBlock({
         className={cn(
           'rounded-xl border font-mono text-sm',
           'bg-background text-foreground',
-          meta.ring,
+          // Warp-style: thinner border on idle states, accent only on active
+          block.status === 'pending' ||
+            block.status === 'running' ||
+            block.status === 'error'
+            ? meta.ring
+            : 'border-border/40',
           className,
         )}
         {...props}
@@ -281,14 +286,15 @@ export function CommandBlockHeader({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'sticky top-0 z-10 flex items-center gap-2.5 border-b border-border/60 bg-background/95 backdrop-blur-xs px-4 py-2.5 rounded-t-xl',
+        // Warp-style: more compact header with tighter padding
+        'sticky top-0 z-10 flex items-center gap-2 border-b border-border/40 bg-background/95 backdrop-blur-xs px-3 py-2 rounded-t-xl',
         className,
       )}
     >
-      {/* Status icon */}
+      {/* Status icon — smaller for compact look */}
       <StatusIcon
         className={cn(
-          'size-4 shrink-0',
+          'size-3.5 shrink-0',
           meta.color,
           block.status === 'running' && 'animate-spin',
         )}
@@ -925,7 +931,8 @@ export function CommandBlockFooter({ className }: { className?: string }) {
             size="sm"
             variant="ghost"
             className={cn(
-              'h-6 gap-1 px-2 text-[10px] font-sans',
+              // Warp-style: smaller, less prominent footer buttons
+              'h-5 gap-1 px-1.5 text-[10px] font-sans',
               fix
                 ? 'text-amber-400 hover:text-amber-300'
                 : 'text-muted-foreground/75 hover:text-muted-foreground',
@@ -934,7 +941,7 @@ export function CommandBlockFooter({ className }: { className?: string }) {
             disabled={isFixing}
           >
             <WrenchIcon className={cn('size-3', isFixing && 'animate-pulse')} />
-            {isFixing ? 'Diagnosing…' : fix ? 'Re-diagnose' : 'Fix with AI'}
+            {isFixing ? 'Diagnosing…' : fix ? 'Re-diagnose' : 'Fix'}
           </Button>
         )}
         {onExplain && (
@@ -942,7 +949,8 @@ export function CommandBlockFooter({ className }: { className?: string }) {
             size="sm"
             variant="ghost"
             className={cn(
-              'h-6 gap-1 px-2 text-[10px] font-sans',
+              // Warp-style: smaller, less prominent footer buttons
+              'h-5 gap-1 px-1.5 text-[10px] font-sans',
               block.explanation
                 ? 'text-violet-400 hover:text-violet-300'
                 : 'text-muted-foreground/75 hover:text-muted-foreground',

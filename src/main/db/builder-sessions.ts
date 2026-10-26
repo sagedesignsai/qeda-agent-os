@@ -23,7 +23,7 @@ export interface BuilderSessionRecord {
   worktree_path: string | null;
   workspace_name: string;
   branch: string | null;
-  engine: 'local' | 'opencode';
+  engine: 'local' | 'opencode' | 'opencode-sandbox';
   /** Serialized ModelMessage[] for a Local Builder session. */
   messages_json?: string | null;
   /** Serialized BuilderSessionEvent[] tail for re-attach after a restart. */

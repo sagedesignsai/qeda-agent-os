@@ -36,7 +36,63 @@ export type BuilderRuntimeResult =
  * This is intentionally attach-only: a separate owned-service lifecycle will
  * be added only after the app can manage the CLI binary safely.
  */
-export async function connectBuilderRuntime(): Promise<BuilderRuntimeResult> {
+export interface BuilderRuntimeConnectOptions {
+  /** Direct base URL for a remote (sandbox) OpenCode server. */
+  baseUrl?: string;
+  /** Headers to send with every request (e.g. auth). */
+  headers?: Record<string, string>;
+}
+
+export async function connectBuilderRuntime(
+  options?: BuilderRuntimeConnectOptions,
+): Promise<BuilderRuntimeResult> {
+  // Remote path: build the client directly against the supplied URL, skipping
+  // local service discovery. Used by the E2B sandbox engine.
+  if (options?.baseUrl) {
+    const client = OpenCode.make({
+      baseUrl: options.baseUrl,
+      headers: options.headers ?? {},
+    });
+
+    try {
+      const serverInfo = await client.server.info();
+      const version = serverInfo.version;
+
+      if (!isSupportedOpenCodeVersion(version)) {
+        return {
+          status: {
+            state: 'unsupported',
+            version,
+            message: `OpenCode ${version} is not supported. Builder currently requires an OpenCode 2.x server.`,
+          },
+          runtime: null,
+        };
+      }
+
+      return {
+        status: {
+          state: 'connected',
+          version,
+          message:
+            'OpenCode v2 is reachable. Full coding-turn compatibility is still being validated.',
+        },
+        runtime: {
+          client,
+          provider: createOpencode({ client }),
+          version,
+        },
+      };
+    } catch (error) {
+      return {
+        status: {
+          state: 'error',
+          message: `OpenCode responded to discovery but its v2 API check failed: ${messageOf(error)}`,
+        },
+        runtime: null,
+      };
+    }
+  }
+
   let endpoint;
   try {
     endpoint = await Service.discover();

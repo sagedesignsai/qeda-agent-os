@@ -75,6 +75,15 @@ export interface AppSettings {
    */
   serviceKeys?: Record<string, string>;
   /**
+   * Encrypted GitHub personal access token used by the E2B sandbox engine to
+   * clone private repositories. Stored encrypted at rest.
+   */
+  githubPat?: string;
+  /**
+   * Timeout (ms) for an E2B sandbox session. Defaults to 3600000.
+   */
+  e2bSandboxTimeoutMs?: number;
+  /**
    * Set once the first-launch onboarding has been finished or skipped, so the
    * welcome flow is shown exactly once. Absent on a fresh install.
    */
@@ -174,7 +183,16 @@ export function getSettings(): AppSettings {
     }
   }
 
-  // Decrypt named provider keys.
+  // Decrypt GitHub PAT.
+  if (typeof decrypted.githubPat === 'string' && decrypted.githubPat) {
+    try {
+      decrypted.githubPat = safeStorage.decryptString(
+        Buffer.from(decrypted.githubPat, 'base64'),
+      );
+    } catch {
+      decrypted.githubPat = undefined;
+    }
+  }
   for (const val of Object.values(decrypted.providers)) {
     if (
       val &&
@@ -267,6 +285,12 @@ export function saveSettings(settings: AppSettings): void {
             .toString('base64');
         }
       }
+    }
+
+    if (typeof toWrite.githubPat === 'string' && toWrite.githubPat) {
+      toWrite.githubPat = safeStorage
+        .encryptString(toWrite.githubPat)
+        .toString('base64');
     }
 
     for (const val of Object.values(toWrite.providers)) {

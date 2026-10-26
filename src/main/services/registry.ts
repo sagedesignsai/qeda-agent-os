@@ -12,7 +12,7 @@
  */
 
 export type ServiceCategory =
-  'search' | 'scrape' | 'docs' | 'images' | 'speech';
+  'search' | 'scrape' | 'docs' | 'images' | 'speech' | 'sandbox';
 
 export interface ServiceConfig {
   /** Stable id used in settings, the service key map, IPC and tool params. */
@@ -102,6 +102,14 @@ export const SERVICES: ServiceConfig[] = [
     apiKeyEnvs: ['CARTESIA_API_KEY'],
     note: 'Low-latency Sonic text-to-speech, good for real-time playback.',
     docsUrl: 'https://docs.cartesia.ai',
+  },
+  {
+    id: 'e2b',
+    name: 'E2B',
+    category: 'sandbox',
+    apiKeyEnvs: ['E2B_API_KEY'],
+    note: 'Cloud sandbox provider for running Builder sessions remotely.',
+    docsUrl: 'https://e2b.dev/docs',
   },
 ];
 

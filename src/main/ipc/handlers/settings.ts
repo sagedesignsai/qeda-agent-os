@@ -156,6 +156,21 @@ export function registerSettingsHandlers({
       }
       merged.serviceKeys = nextServiceKeys;
     }
+    // GitHub PAT: keep current when not provided; empty clears.
+    if (Object.prototype.hasOwnProperty.call(incoming, 'githubPat')) {
+      merged.githubPat =
+        typeof incoming.githubPat === 'string' && incoming.githubPat.trim()
+          ? incoming.githubPat.trim()
+          : undefined;
+    } else {
+      merged.githubPat = current.githubPat;
+    }
+    // E2B sandbox timeout.
+    if (Object.prototype.hasOwnProperty.call(incoming, 'e2bSandboxTimeoutMs')) {
+      merged.e2bSandboxTimeoutMs = incoming.e2bSandboxTimeoutMs;
+    } else {
+      merged.e2bSandboxTimeoutMs = current.e2bSandboxTimeoutMs;
+    }
     saveSettings(merged);
     resetAgents();
 

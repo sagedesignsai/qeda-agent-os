@@ -394,7 +394,11 @@ export interface IpcChannels {
    * OpenCode's ambient default location.
    */
   'builder:session-create': {
-    req: { directory: string };
+    req: {
+      directory: string;
+      runInSandbox?: boolean;
+      remoteUrl?: string;
+    };
     res: BuilderSessionStart;
   };
   /** Re-attach state for the active session (identity, workspace, event buffer). */

@@ -75,6 +75,14 @@ import {
   LocalBuilderSession,
 } from '../../builder/local-engine';
 import { startBridge, type Bridge } from '../../opencode/bridge';
+import {
+  createSandbox,
+  destroySandbox,
+  capturePatch,
+  applyPatchLocally,
+  resolveSourceRemoteUrl,
+  type E2bSandboxHandle,
+} from '../../sandbox/e2b.js';
 import { assertQedaToolSession } from '../../opencode/session-binding';
 import { PlanManager } from '../../ai/plan-manager';
 import type { AgentPlan, PlanItemStatus } from '../../../lib/agent-plan';
@@ -141,7 +149,11 @@ export function registerBuilderHandlers({
   /** Absolute path of the isolated git worktree, or null when not isolated. */
   let activeWorktreePath: string | null = null;
   /** Which engine owns the active session. */
-  let activeEngine: 'local' | 'opencode' | null = null;
+  let activeEngine: 'local' | 'opencode' | 'opencode-sandbox' | null = null;
+  /** E2B sandbox handle for sandboxed sessions. */
+  let activeSandbox: E2bSandboxHandle | null = null;
+  /** Local directory to apply captured patch to on stop. */
+  let activeSandboxLocalDir: string | null = null;
 
   let eventController: AbortController | null = null;
   let eventBuffer: BuilderSessionEvent[] = [];
@@ -613,6 +625,8 @@ export function registerBuilderHandlers({
     const prevEngine = activeEngine;
     const prevWorktree = activeWorktreePath;
     const prevRepo = activeWorkspace?.directory ?? null;
+    const prevSandbox = activeSandbox;
+    const prevSandboxLocalDir = activeSandboxLocalDir;
 
     opencodeRuntime = null;
     localSession = null;
@@ -620,6 +634,8 @@ export function registerBuilderHandlers({
     activeWorkspace = null;
     activeWorktreePath = null;
     activeEngine = null;
+    activeSandbox = null;
+    activeSandboxLocalDir = null;
     eventBuffer = [];
     running = false;
     planManager = null;
@@ -627,10 +643,47 @@ export function registerBuilderHandlers({
 
     deleteActiveBuilderSession();
 
-    if (prevEngine === 'opencode') {
+    if (prevEngine === 'opencode' || prevEngine === 'opencode-sandbox') {
       await interruptOpenCodeSession(prevRuntime, prevSession);
     }
-    if (prevWorktree && prevRepo) {
+    // Sandboxed sessions: capture + apply patch, then destroy sandbox.
+    if (prevEngine === 'opencode-sandbox' && prevSandbox) {
+      try {
+        const patch = await capturePatch(
+          prevSandbox,
+          prevRepo ?? prevSandbox.repoDir,
+        );
+        if (patch.trim()) {
+          const targetDir = prevSandboxLocalDir;
+          if (targetDir) {
+            const result = await applyPatchLocally(targetDir, patch);
+            if (!result.ok) {
+              // broadcast error with saved path? best-effort via mainWindow
+              if (
+                !mainWindow.isDestroyed() &&
+                !mainWindow.webContents.isDestroyed()
+              ) {
+                mainWindow.webContents.send('builder:sandbox-patch-failed', {
+                  error: result.error,
+                  savedPath: result.savedPath,
+                });
+              }
+            }
+          } else {
+            // No local target; persist patch.
+            const r = await applyPatchLocally(
+              app.getPath('userData'),
+              patch,
+            ).catch(() => ({ ok: false }));
+            void r;
+          }
+        }
+      } catch {
+        // ignore
+      }
+      await destroySandbox(prevSandbox).catch(() => undefined);
+    }
+    if (prevWorktree && prevRepo && prevEngine !== 'opencode-sandbox') {
       if (prevEngine === 'opencode' && prevRuntime) {
         await removeOpenCodeWorktree(prevRuntime, prevRepo, prevWorktree).catch(
           () => false,
@@ -674,6 +727,9 @@ export function registerBuilderHandlers({
     const prevLocal = localSession;
     const prevSession = activeSession;
     const prevEngine = activeEngine;
+    const prevRepo = activeWorkspace?.directory ?? null;
+    const prevSandbox = activeSandbox;
+    const prevSandboxLocalDir = activeSandboxLocalDir;
 
     opencodeRuntime = null;
     localSession = null;
@@ -681,12 +737,32 @@ export function registerBuilderHandlers({
     activeWorkspace = null;
     activeWorktreePath = null;
     activeEngine = null;
+    activeSandbox = null;
+    activeSandboxLocalDir = null;
     eventBuffer = [];
     running = false;
     planManager = null;
 
-    if (prevEngine === 'opencode') {
+    if (prevEngine === 'opencode' || prevEngine === 'opencode-sandbox') {
       await interruptOpenCodeSession(prevRuntime, prevSession);
+    }
+    // Sandboxed: attempt patch capture + apply before destroy.
+    if (prevEngine === 'opencode-sandbox' && prevSandbox) {
+      try {
+        const patch = await capturePatch(
+          prevSandbox,
+          prevRepo ?? prevSandbox.repoDir,
+        );
+        if (patch.trim()) {
+          const targetDir = prevSandboxLocalDir;
+          if (targetDir) {
+            await applyPatchLocally(targetDir, patch).catch(() => undefined);
+          }
+        }
+      } catch {
+        // ignore
+      }
+      await destroySandbox(prevSandbox).catch(() => undefined);
     }
     if (prevRuntime) {
       await prevRuntime.provider.dispose().catch(() => undefined);
@@ -713,7 +789,10 @@ export function registerBuilderHandlers({
     session: BuilderSessionSummary;
   } => {
     const session = requireSession();
-    if (!opencodeRuntime || activeEngine !== 'opencode') {
+    if (
+      !opencodeRuntime ||
+      (activeEngine !== 'opencode' && activeEngine !== 'opencode-sandbox')
+    ) {
       throw new Error(
         'This operation requires an OpenCode Builder session. Switch the engine in Settings → Builder & MCP.',
       );
@@ -864,7 +943,11 @@ export function registerBuilderHandlers({
     'builder:session-create',
     async (
       _event,
-      { directory }: { directory: string },
+      {
+        directory,
+        runInSandbox,
+        remoteUrl,
+      }: { directory: string; runInSandbox?: boolean; remoteUrl?: string },
     ): Promise<BuilderSessionStart> => {
       const workspace = await inspectBuilderWorkspace(directory, {
         autoInit: true,
@@ -872,6 +955,161 @@ export function registerBuilderHandlers({
       await stopActive();
 
       const engine = getSettings().builderEngine ?? 'local';
+
+      // ── E2B sandbox path ───────────────────────────────────────────────────
+      if (runInSandbox) {
+        const sourceRemoteUrl = await resolveSourceRemoteUrl({
+          remoteUrl,
+          directory,
+        });
+        const settings = getSettings();
+        const githubToken =
+          settings.githubPat ||
+          process.env.GITHUB_PAT ||
+          process.env.GITHUB_TOKEN ||
+          undefined;
+        const envs: Record<string, string> = {};
+        // Forward provider keys from settings into the sandbox env.
+        for (const [pid, p] of Object.entries(settings.providers ?? {})) {
+          if (p?.apiKey) {
+            const envName = `${pid.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`;
+            envs[envName] = p.apiKey;
+          }
+        }
+        for (const cp of settings.customProviders ?? []) {
+          if (cp?.apiKey) {
+            envs[`${cp.id.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY`] =
+              cp.apiKey;
+          }
+        }
+        const timeoutMs = settings.e2bSandboxTimeoutMs ?? 3_600_000;
+
+        let sandbox;
+        try {
+          sandbox = await createSandbox({
+            remoteUrl: sourceRemoteUrl,
+            githubToken,
+            timeoutMs,
+            envs,
+          });
+        } catch (error) {
+          throw new Error(
+            `Failed to create E2B sandbox: ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          );
+        }
+
+        const result = await connectBuilderRuntime({
+          baseUrl: sandbox.baseUrl,
+          headers: {},
+        });
+        if (!result.runtime) {
+          await destroySandbox(sandbox).catch(() => undefined);
+          throw new Error(result.status.message);
+        }
+
+        opencodeRuntime = result.runtime;
+        activeSandbox = sandbox;
+        activeSandboxLocalDir = directory;
+
+        const sessionDirectory = sandbox.repoDir;
+
+        const createSession = (agent?: string) =>
+          opencodeRuntime!.client.session.create({
+            title: `Builder · ${workspace.name}`,
+            location: { directory: sessionDirectory },
+            ...(agent ? { agent } : {}),
+          });
+
+        let ocSession;
+        try {
+          try {
+            ocSession = await createSession('qeda-builder');
+          } catch {
+            ocSession = await createSession();
+          }
+        } catch (error) {
+          await destroySandbox(sandbox).catch(() => undefined);
+          await stopActive();
+          throw error;
+        }
+
+        const summary: BuilderSessionSummary = {
+          id: ocSession.id,
+          title: ocSession.title ?? `Builder · ${workspace.name}`,
+          createdAt: ocSession.time.created,
+        };
+
+        const boundWorkspace: BuilderWorkspace = {
+          ...workspace,
+          directory: sandbox.repoDir,
+          worktreePath: sandbox.repoDir,
+        };
+
+        activeSession = summary;
+        activeWorkspace = boundWorkspace;
+        activeWorktreePath = sandbox.repoDir;
+        activeEngine = 'opencode-sandbox';
+        eventBuffer = [];
+        running = false;
+        qedaAgentChecked = true;
+        resetPlanManager();
+
+        try {
+          await startSessionBridge();
+        } catch (error) {
+          await stopActive();
+          throw new Error(
+            `Builder could not start the Qeda bridge: ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
+          );
+        }
+
+        const controller = new AbortController();
+        eventController = controller;
+        void (async () => {
+          try {
+            for await (const event of opencodeRuntime!.client.event.subscribe({
+              signal: controller.signal,
+            })) {
+              if (controller.signal.aborted || eventController !== controller) {
+                return;
+              }
+              const normalized = normalizeBuilderSessionEvent(
+                event,
+                ocSession.id,
+                {
+                  directory: sessionDirectory,
+                },
+              );
+              if (normalized) broadcast(normalized);
+            }
+          } catch (error) {
+            if (!controller.signal.aborted && eventController === controller) {
+              broadcast(
+                localEvent(ocSession.id, {
+                  type: 'error',
+                  message:
+                    error instanceof Error ? error.message : String(error),
+                }),
+              );
+            }
+          }
+        })();
+
+        saveActiveBuilderSession({
+          opencode_session_id: summary.id,
+          title: summary.title,
+          repo_directory: boundWorkspace.directory,
+          worktree_path: boundWorkspace.worktreePath ?? null,
+          workspace_name: boundWorkspace.name,
+          branch: boundWorkspace.branch ?? null,
+          engine: 'opencode-sandbox',
+          created_at: summary.createdAt,
+        });
+
+        return { session: summary, workspace: boundWorkspace };
+      }
 
       // ── Local engine path ─────────────────────────────────────────────────
       if (engine === 'local') {
@@ -1091,9 +1329,14 @@ export function registerBuilderHandlers({
         return { session: null, workspace: null, events: [] };
       }
 
-      const engine = (persisted.engine ?? 'opencode') as 'local' | 'opencode';
+      const engine = (persisted.engine ?? 'opencode') as
+        'local' | 'opencode' | 'opencode-sandbox';
 
-      // Local sessions are durable when their worktree survived: the model
+      if (engine === 'opencode-sandbox') {
+        // Ephemeral sandbox cannot survive app restart.
+        deleteActiveBuilderSession();
+        return { session: null, workspace: null, events: [] };
+      }
       // context and event tail are persisted, and the worktree lives under
       // userData instead of the OS temp dir. If either is gone there is nothing
       // honest to re-attach, so the stale row is removed.

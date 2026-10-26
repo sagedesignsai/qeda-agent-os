@@ -1,0 +1,636 @@
+/**
+ * components/terminal/TerminalTab.tsx
+ * ─────────────────────────────────────────────────────────────────────────────
+ * A single terminal tab — the core session UI extracted from the Terminal page.
+ *
+ * Each tab manages its own session (agent or shell mode), blocks, input, and
+ * xterm instance. Multiple tabs can coexist in split panes or tab bars.
+ *
+ * Props drive the session identity; callbacks report state changes back to the
+ * parent layout manager (tab bar, panel tree, etc.).
+ *
+ * No PageHeader — chrome is provided by the parent (tab bar, split controls).
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  AlertCircleIcon,
+  BotIcon,
+  ExternalLinkIcon,
+  SquareIcon,
+  TerminalIcon,
+} from 'lucide-react';
+import { toast } from 'sonner';
+
+import { PlanPanel } from '@/components/plan/PlanPanel';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  CommandBlock,
+  CommandBlockHeader,
+  CommandBlockThought,
+  CommandBlockApproval,
+  CommandBlockFilterBar,
+  CommandBlockOutput,
+  CommandBlockExplanation,
+  CommandBlockFix,
+  CommandBlockFooter,
+  CommandBlockSkipped,
+  AgentSummary,
+} from '@/components/terminal/CommandBlock';
+import { TerminalGoalInput } from '@/components/terminal/TerminalGoalInput';
+import { TerminalWelcome } from '@/components/terminal/TerminalWelcome';
+import {
+  XtermPane,
+  type XtermPaneHandle,
+} from '@/components/terminal/XtermPane';
+import { useTerminalSession } from '@/hooks/use-terminal-session';
+import { useIpcEvent } from '@/hooks/use-ipc';
+import { extractLocalhostUrls, parseComposerInput } from '@/lib/terminal-input';
+import { cn } from '@/lib/utils';
+import type { TerminalBlock } from '@/main/ipc/channels';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type TerminalMode = 'agent' | 'shell';
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: string }) {
+  const configs: Record<string, { label: string; cls: string }> = {
+    idle: {
+      label: 'idle',
+      cls: 'bg-muted text-muted-foreground border-border',
+    },
+    running: {
+      label: 'running',
+      cls: 'bg-sky-900/60 text-sky-300 border-sky-700/40 animate-pulse',
+    },
+    done: {
+      label: 'done',
+      cls: 'bg-emerald-900/60 text-emerald-300 border-emerald-700/40',
+    },
+    error: {
+      label: 'error',
+      cls: 'bg-rose-900/60 text-rose-300 border-rose-700/40',
+    },
+    shell: {
+      label: 'shell',
+      cls: 'bg-violet-900/60 text-violet-300 border-violet-700/40',
+    },
+  };
+  const cfg = configs[status] ?? configs.idle;
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        'h-5 border font-mono text-[10px] uppercase tracking-wide',
+        cfg.cls,
+      )}
+    >
+      {cfg.label}
+    </Badge>
+  );
+}
+
+// ─── Mode switcher ────────────────────────────────────────────────────────────
+
+interface ModeSwitcherProps {
+  mode: TerminalMode;
+  onChange: (m: TerminalMode) => void;
+  disabled?: boolean;
+}
+
+function ModeSwitcher({ mode, onChange, disabled }: ModeSwitcherProps) {
+  return (
+    <div className="flex items-center rounded-lg border border-border/60 bg-card p-0.5">
+      {(['agent', 'shell'] as TerminalMode[]).map((m) => {
+        const Icon = m === 'agent' ? BotIcon : TerminalIcon;
+        const active = mode === m;
+        return (
+          <Button
+            key={m}
+            size="sm"
+            variant="ghost"
+            disabled={disabled}
+            onClick={() => onChange(m)}
+            className={cn(
+              'h-6 gap-1.5 rounded-md px-2.5 text-[11px] font-medium capitalize transition-all',
+              active
+                ? 'bg-accent text-foreground shadow-sm'
+                : 'text-muted-foreground/75 hover:text-muted-foreground',
+            )}
+          >
+            <Icon className="size-3" />
+            {m}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+export interface TerminalTabProps {
+  /** Stable tab ID for the layout manager. */
+  tabId: string;
+  /** Session ID — if undefined, a session is created on first input. */
+  sessionId?: string;
+  /** Initial mode. */
+  initialMode?: TerminalMode;
+  /** Called when the session title changes. */
+  onTitleChange?: (tabId: string, title: string) => void;
+  /** Called when the session ID is assigned (after auto-creation). */
+  onSessionAssigned?: (tabId: string, sessionId: string) => void;
+  /** Called to signal the tab should be closed. */
+  onClose?: () => void;
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function TerminalTab({
+  tabId,
+  sessionId: initialSessionId,
+  initialMode = 'agent',
+  onTitleChange,
+  onSessionAssigned,
+  onClose,
+}: TerminalTabProps) {
+  const xtermRef = useRef<XtermPaneHandle>(null);
+
+  const [mode, setMode] = useState<TerminalMode>(initialMode);
+  const [shellExited, setShellExited] = useState(false);
+  const [hasVisitedShell, setHasVisitedShell] = useState(false);
+
+  // Track the current session ID — may change if auto-created
+  const [sessionId, setSessionId] = useState<string | undefined>(
+    initialSessionId,
+  );
+
+  const {
+    blocks,
+    status,
+    summary,
+    error,
+    isExplainingId,
+    fixes,
+    isFixingId,
+    plan,
+    runGoal,
+    runCommand,
+    rerun,
+    approve,
+    reject,
+    explain,
+    fix,
+    stop,
+  } = useTerminalSession(sessionId);
+
+  // When a fix is accepted, it goes into the composer rather than straight to
+  // the shell — the user still presses Enter.
+  const [draftCommand, setDraftCommand] = useState<string | undefined>();
+  const handleUseFix = useCallback((command: string) => {
+    setDraftCommand(command);
+  }, []);
+
+  // Context info: cwd & git branch for Warp-style rich prompt
+  const [contextInfo, setContextInfo] = useState<{
+    cwd?: string;
+    gitBranch?: string | null;
+  }>({});
+
+  const refreshContext = useCallback((targetCwd?: string) => {
+    void window.electron.ipc
+      .invoke<{ cwd: string; gitBranch: string | null }>(
+        'terminal:get-context-info',
+        {
+          cwd: targetCwd,
+        },
+      )
+      .then((info) => setContextInfo(info))
+      .catch(() => {});
+  }, []);
+
+  // Update working directory whenever PTY shell reports OSC 7 directory changes
+  useIpcEvent('pty:cwd-changed', (...args: unknown[]) => {
+    const { cwd } = args[0] as { cwd: string };
+    refreshContext(cwd);
+  });
+
+  // Promote scratchpad to saved session when first command is run in PTY
+  useIpcEvent('pty:session-assigned', (...args: unknown[]) => {
+    const { sessionId: newSessionId } = args[0] as {
+      ptyId: string;
+      sessionId: string;
+      title: string;
+    };
+    if (!sessionId) {
+      setSessionId(newSessionId);
+      onSessionAssigned?.(tabId, newSessionId);
+    }
+  });
+
+  // Track saved session working directory for fresh shell launches
+  const [sessionCwd, setSessionCwd] = useState<string | undefined>();
+  useEffect(() => {
+    setShellExited(false);
+    if (!sessionId) {
+      setSessionCwd(undefined);
+      return;
+    }
+    void window.electron.ipc
+      .invoke<{ id: string; cwd?: string } | null>('terminal:session-get', {
+        id: sessionId,
+      })
+      .then((data) => {
+        if (data?.cwd) {
+          setSessionCwd(data.cwd);
+          refreshContext(data.cwd);
+        }
+        return undefined;
+      })
+      .catch(() => {});
+  }, [sessionId, refreshContext]);
+
+  // Report title changes to parent
+  useEffect(() => {
+    if (sessionId && onTitleChange) {
+      void window.electron.ipc
+        .invoke<{ id: string; title: string } | null>('terminal:session-get', {
+          id: sessionId,
+        })
+        .then((data) => {
+          if (data?.title) {
+            onTitleChange(tabId, data.title);
+          }
+          return undefined;
+        })
+        .catch(() => {});
+    }
+  }, [sessionId, blocks.length, status, tabId, onTitleChange]);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
+
+  const handleScroll = useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } =
+      scrollContainerRef.current;
+    userScrolledUpRef.current = scrollHeight - scrollTop - clientHeight > 80;
+  }, []);
+
+  const lastBlock = blocks[blocks.length - 1];
+  const lastOutput = lastBlock?.output;
+  const lastStatus = lastBlock?.status;
+
+  // Auto-scroll agent blocks smoothly as new blocks arrive or as output streams in
+  useEffect(() => {
+    if (scrollContainerRef.current && !userScrolledUpRef.current) {
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current && !userScrolledUpRef.current) {
+          scrollContainerRef.current.scrollTop =
+            scrollContainerRef.current.scrollHeight;
+        }
+      });
+    }
+  }, [blocks.length, lastOutput, lastStatus, summary]);
+
+  // Focus and re-fit xterm when switching to shell mode
+  useEffect(() => {
+    if (mode === 'shell') {
+      setHasVisitedShell(true);
+      requestAnimationFrame(() => {
+        xtermRef.current?.fit();
+        xtermRef.current?.focus();
+      });
+    }
+  }, [mode]);
+
+  // Reset shell-exited state when switching back to shell mode
+  const handleModeChange = useCallback((m: TerminalMode) => {
+    setMode(m);
+    if (m === 'shell') {
+      setHasVisitedShell(true);
+      setShellExited(false);
+    }
+  }, []);
+
+  // Agent goal submission
+  const pendingGoalRef = useRef<string | null>(null);
+
+  const handleGoalSubmit = useCallback(
+    async (input: string) => {
+      const intent = parseComposerInput(input);
+
+      if (sessionId) {
+        if (intent.kind === 'command') runCommand(intent.command);
+        else runGoal(intent.text);
+        return;
+      }
+
+      try {
+        const folder = contextInfo.cwd
+          ? contextInfo.cwd.split('/').filter(Boolean).pop() || ''
+          : '';
+        const branchSuffix = contextInfo.gitBranch
+          ? ` (${contextInfo.gitBranch})`
+          : '';
+        const contextSuffix = folder ? ` · ${folder}${branchSuffix}` : '';
+        const cmdText = intent.kind === 'command' ? intent.command : input;
+        const shortCmd =
+          cmdText.length > 25 ? `${cmdText.slice(0, 22)}…` : cmdText;
+        const title = `${shortCmd}${contextSuffix}`;
+
+        const session = await window.electron.ipc.invoke<{ id: string }>(
+          'terminal:session-create',
+          {
+            title,
+            goal: input,
+            cwd: contextInfo.cwd,
+          },
+        );
+        setSessionId(session.id);
+        onSessionAssigned?.(tabId, session.id);
+        // Replay through this same handler once the session id exists.
+        pendingGoalRef.current = input;
+      } catch {
+        toast.error('Could not create terminal session');
+      }
+    },
+    [sessionId, runGoal, runCommand, contextInfo, tabId, onSessionAssigned],
+  );
+
+  useEffect(() => {
+    if (sessionId && pendingGoalRef.current) {
+      const queued = pendingGoalRef.current;
+      pendingGoalRef.current = null;
+      const intent = parseComposerInput(queued);
+      if (intent.kind === 'command') runCommand(intent.command);
+      else runGoal(intent.text);
+    }
+  }, [sessionId, runGoal, runCommand]);
+
+  const hasBlocks = blocks.length > 0;
+  const isDone = status === 'done' || status === 'error';
+  const isRunning = status === 'running';
+
+  const runningBlock = useMemo(
+    () => blocks.find((b) => b.status === 'running'),
+    [blocks],
+  );
+  const runningUrls = useMemo(
+    () =>
+      runningBlock?.output ? extractLocalhostUrls(runningBlock.output) : [],
+    [runningBlock],
+  );
+
+  const pendingShellCmdRef = useRef<string | null>(null);
+
+  const handleRunInShell = useCallback((cmd: string) => {
+    setMode('shell');
+    setHasVisitedShell(true);
+    setShellExited(false);
+
+    requestAnimationFrame(() => {
+      xtermRef.current?.fit();
+      xtermRef.current?.focus();
+      const ptyId = xtermRef.current?.ptyId;
+      if (ptyId) {
+        void window.electron.ipc.invoke('pty:write', {
+          ptyId,
+          data: cmd + '\n',
+        });
+      } else {
+        pendingShellCmdRef.current = cmd;
+      }
+    });
+  }, []);
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <div className="flex h-full flex-col bg-background text-foreground">
+      {/* ── Tab header ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <ModeSwitcher
+            mode={mode}
+            onChange={handleModeChange}
+            disabled={isRunning}
+          />
+          <StatusBadge status={mode === 'shell' ? 'shell' : status} />
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Long-running service readout */}
+          {runningBlock && (
+            <div className="hidden items-center gap-2 rounded-full border border-sky-500/30 bg-sky-950/40 px-2.5 py-1 text-xs text-sky-200 lg:flex">
+              <span className="size-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span
+                className="font-mono text-[11px] font-medium text-sky-300 truncate max-w-[140px]"
+                title={runningBlock.command}
+              >
+                {runningBlock.command}
+              </span>
+              {runningUrls.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void window.electron.ipc.invoke('terminal:open-url', {
+                      url: runningUrls[0],
+                    })
+                  }
+                  className="inline-flex items-center gap-1 rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-mono text-sky-200 hover:bg-sky-500/30 transition-colors cursor-pointer"
+                  title={`Open ${runningUrls[0]}`}
+                >
+                  {runningUrls[0].replace(/^https?:\/\//, '')}
+                  <ExternalLinkIcon className="size-2.5 text-sky-400" />
+                </button>
+              )}
+              <Button
+                type="button"
+                size="xs"
+                variant="destructive"
+                className="h-5 px-1.5 text-[10px] bg-rose-600/90 hover:bg-rose-500 text-white"
+                onClick={() => stop(runningBlock.id)}
+                title="Stop running service"
+              >
+                <SquareIcon className="size-2 fill-current" />
+                Stop
+              </Button>
+            </div>
+          )}
+          {onClose && (
+            <Button
+              size="xs"
+              variant="ghost"
+              className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onClose}
+              title="Close tab"
+            >
+              ✕
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Content area ────────────────────────────────────────────────────── */}
+      <div className="relative flex-1 min-h-0 overflow-hidden">
+        {/* ── Agent Mode ──────────────────────────────────────────────────── */}
+        <div
+          className={cn(
+            'flex h-full flex-col min-h-0',
+            mode !== 'agent' && 'hidden',
+          )}
+        >
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 min-h-0 overflow-y-auto"
+          >
+            <div className="mx-auto max-w-3xl px-4 py-6">
+              {plan && (
+                <div className="sticky top-0 z-20 mb-4 bg-background/80 backdrop-blur-xs">
+                  <PlanPanel
+                    plan={plan}
+                    isRunning={status === 'running'}
+                    title="Terminal Agent Plan"
+                  />
+                </div>
+              )}
+              <AnimatePresence initial={false}>
+                {!hasBlocks && !isRunning ? (
+                  <motion.div
+                    key="welcome"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    <TerminalWelcome />
+                  </motion.div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {blocks.map((block: TerminalBlock) => (
+                      <CommandBlock
+                        key={block.id}
+                        block={block}
+                        onApprove={() => approve(block.id)}
+                        onReject={() => reject(block.id)}
+                        onExplain={() => explain(block.id)}
+                        isExplaining={isExplainingId === block.id}
+                        onRerun={() => rerun(block.id)}
+                        onStop={() => stop(block.id)}
+                        onFix={() => fix(block.id)}
+                        fix={fixes[block.id]}
+                        isFixing={isFixingId === block.id}
+                        onUseFix={handleUseFix}
+                        onRunInShell={handleRunInShell}
+                      >
+                        {block.status === 'skipped' ? (
+                          <>
+                            <CommandBlockHeader />
+                            <CommandBlockSkipped />
+                          </>
+                        ) : (
+                          <>
+                            <CommandBlockHeader />
+                            <CommandBlockThought />
+                            <CommandBlockApproval />
+                            <CommandBlockFilterBar />
+                            <CommandBlockOutput />
+                            <CommandBlockFix />
+                            <CommandBlockExplanation />
+                            <CommandBlockFooter />
+                          </>
+                        )}
+                      </CommandBlock>
+                    ))}
+
+                    <AnimatePresence>
+                      {isDone && summary && (
+                        <AgentSummary key="summary" summary={summary} />
+                      )}
+                      {status === 'error' && error && (
+                        <motion.div
+                          key="error"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex items-start gap-2 rounded-xl border border-rose-800/40 bg-rose-950/30 px-4 py-3 font-sans text-sm text-rose-300"
+                        >
+                          <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
+                          <div>
+                            <p className="font-medium">Agent error</p>
+                            <p className="mt-0.5 text-rose-400/80">{error}</p>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </AnimatePresence>
+              <div className="h-4" />
+            </div>
+          </div>
+
+          {/* Goal input */}
+          <div className="border-t border-border/60 p-3">
+            <div className="mx-auto max-w-3xl">
+              <TerminalGoalInput
+                onSubmit={handleGoalSubmit}
+                onRunInShell={handleRunInShell}
+                isRunning={isRunning}
+                disabled={isRunning}
+                prefill={draftCommand}
+                cwd={contextInfo.cwd}
+                gitBranch={contextInfo.gitBranch}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Shell Mode ──────────────────────────────────────────────────── */}
+        <div className={cn('h-full', mode !== 'shell' && 'hidden')}>
+          {hasVisitedShell && !shellExited && (
+            <XtermPane
+              key={sessionId ?? tabId}
+              ref={xtermRef}
+              sessionId={sessionId}
+              cwd={sessionCwd || contextInfo.cwd}
+              className="h-full"
+              onReady={(ptyId) => {
+                if (pendingShellCmdRef.current) {
+                  const cmd = pendingShellCmdRef.current;
+                  pendingShellCmdRef.current = null;
+                  void window.electron.ipc.invoke('pty:write', {
+                    ptyId,
+                    data: cmd + '\n',
+                  });
+                }
+              }}
+              onExit={(code) => {
+                setShellExited(true);
+                toast.info(`Shell exited with code ${code}`);
+              }}
+            />
+          )}
+          {shellExited && (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/75">
+              <TerminalIcon className="size-8 opacity-30" />
+              <p className="font-sans text-sm">Shell process exited.</p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-border text-muted-foreground hover:text-foreground"
+                onClick={() => setShellExited(false)}
+              >
+                New shell
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
