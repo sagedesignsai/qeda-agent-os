@@ -25,6 +25,7 @@ node_modules
 !.env.example
 
 release/app/dist
+/plugins/qeda-builder/dist
 release/build
 .erb/dll
 

@@ -107,4 +107,44 @@ describe('normalizeBuilderSessionEvent', () => {
       form: { id: 'form-a', title: 'Choose a framework' },
     });
   });
+
+  it('maps scoped filesystem changes to file-changed for the active worktree', () => {
+    const normalized = normalizeBuilderSessionEvent(
+      event({
+        id: 'evt-fs',
+        created: 104,
+        type: 'filesystem.changed',
+        data: { file: 'src/app.ts', event: 'change' },
+      }),
+      'session-a',
+      { directory: '/repo/worktree' },
+    );
+
+    expect(normalized).toEqual({
+      sessionId: 'session-a',
+      eventId: 'evt-fs',
+      createdAt: 104,
+      type: 'file-changed',
+      path: '/repo/worktree/src/app.ts',
+    });
+  });
+
+  it('drops filesystem changes outside the worktree and build noise', () => {
+    const changed = (file: string) =>
+      normalizeBuilderSessionEvent(
+        event({
+          id: 'evt-fs',
+          created: 105,
+          type: 'filesystem.changed',
+          data: { file, event: 'change' },
+        }),
+        'session-a',
+        { directory: '/repo/worktree' },
+      );
+
+    expect(changed('../source/secret.ts')).toBeNull();
+    expect(changed('/other/root/file.ts')).toBeNull();
+    expect(changed('node_modules/pkg/index.js')).toBeNull();
+    expect(changed('dist/bundle.js')).toBeNull();
+  });
 });

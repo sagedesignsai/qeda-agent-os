@@ -80,6 +80,7 @@ interface BuilderWelcomeProps {
   projectRepoPath: string | null;
   prompt: string;
   onPromptChange: (value: string) => void;
+  onSubmitPrompt: (value: string) => void;
   creatingSession: boolean;
   error: string | null;
   onChooseWorkspace: (defaultPath?: string | null) => void;
@@ -106,6 +107,7 @@ export function BuilderWelcome({
   projectRepoPath,
   prompt,
   onPromptChange,
+  onSubmitPrompt,
   creatingSession,
   error,
   onChooseWorkspace,
@@ -136,7 +138,7 @@ export function BuilderWelcome({
         : status?.state === 'error'
           ? 'Builder could not connect to the local service.'
           : 'Start the local Builder service to continue.'
-      : 'Choose a codebase below to start building.';
+      : 'Choose a codebase below, or press Send to confirm one and start building.';
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -158,7 +160,8 @@ export function BuilderWelcome({
           <ChatInput
             value={prompt}
             onValueChange={onPromptChange}
-            onSend={(text) => onPromptChange(text)}
+            onSend={onSubmitPrompt}
+            clearOnSend={false}
             disabled={!canChoose}
             tall
             placeholder="Build a landing page, a dashboard, a new feature…"

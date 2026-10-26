@@ -44,11 +44,12 @@ import path from 'node:path';
 import {
   createCodeProject,
   deleteCodeProject,
+  findCodeProjectByDirectory,
   getCodeProject,
   listCodeProjects,
   setCodeProjectIndexState,
 } from '../../db/code-projects';
-import { getProject } from '../../db/projects';
+import { listProjects, getProject } from '../../db/projects';
 import {
   connectBuilderRuntime,
   type BuilderRuntime,
@@ -73,6 +74,10 @@ import {
   createLocalBuilderSession,
   LocalBuilderSession,
 } from '../../builder/local-engine';
+import { startBridge, type Bridge } from '../../opencode/bridge';
+import { assertQedaToolSession } from '../../opencode/session-binding';
+import { PlanManager } from '../../ai/plan-manager';
+import type { AgentPlan, PlanItemStatus } from '../../../lib/agent-plan';
 import {
   getActiveBuilderSession,
   saveActiveBuilderSession,
@@ -114,8 +119,22 @@ export function registerBuilderHandlers({
 
   /** OpenCode runtime; null when using local engine or no session. */
   let opencodeRuntime: BuilderRuntime | null = null;
+  /** Authenticated localhost bridge the Qeda plugin calls into. */
+  let bridge: Bridge | null = null;
+  const bridgeConfigPath = path.join(
+    app.getPath('userData'),
+    'opencode',
+    'bridge.json',
+  );
+  const clearBridgeConfig = async () => {
+    await fs.rm(bridgeConfigPath, { force: true }).catch(() => undefined);
+  };
   /** Local engine session; null when using OpenCode engine or no session. */
   let localSession: LocalBuilderSession | null = null;
+  /** Plan state for the OpenCode agent's qeda_plan_* bridge tools. */
+  let planManager: PlanManager | null = null;
+  /** Only attempt to switch a restored/legacy session onto the Qeda agent once. */
+  let qedaAgentChecked = false;
 
   let activeSession: BuilderSessionSummary | null = null;
   let activeWorkspace: BuilderWorkspace | null = null;
@@ -209,7 +228,13 @@ export function registerBuilderHandlers({
     rest:
       | { type: 'user-prompt'; text: string }
       | { type: 'status'; status: 'running' | 'interrupted' }
-      | { type: 'error'; message: string },
+      | { type: 'error'; message: string }
+      | { type: 'plan-created'; plan: AgentPlan }
+      | {
+          type: 'plan-item-updated';
+          itemId: string;
+          status: PlanItemStatus;
+        },
   ): BuilderSessionEvent =>
     ({
       sessionId,
@@ -218,7 +243,355 @@ export function registerBuilderHandlers({
       ...rest,
     }) as BuilderSessionEvent;
 
+  // ── Qeda bridge helpers (OpenCode engine) ─────────────────────────────────
+
+  const activeBuilderDirectory = (): string | null =>
+    activeWorktreePath ?? activeWorkspace?.directory ?? null;
+
+  const realDirectory = async (value: string): Promise<string> => {
+    try {
+      return await fs.realpath(value);
+    } catch {
+      return path.resolve(value);
+    }
+  };
+
+  /**
+   * Qeda tools must never be able to point preview or indexing at an arbitrary
+   * directory supplied by the model. Accept only the active source repo or its
+   * worktree, then always act on the worktree.
+   */
+  const resolveActiveDirectory = async (
+    candidate?: unknown,
+  ): Promise<string> => {
+    if (!activeWorkspace) {
+      throw new Error('Create a Builder session before using Qeda tools.');
+    }
+    const active = activeWorktreePath ?? activeWorkspace.directory;
+    if (typeof candidate === 'string' && candidate.trim()) {
+      const resolved = await realDirectory(candidate);
+      const allowed = new Set([
+        await realDirectory(active),
+        await realDirectory(activeWorkspace.directory),
+      ]);
+      if (!allowed.has(resolved)) {
+        throw new Error(
+          'Qeda tools can only use the active Builder workspace or its worktree.',
+        );
+      }
+    }
+    return active;
+  };
+
+  const resolveCodeProject = async (body: unknown) => {
+    const input =
+      body && typeof body === 'object'
+        ? (body as { codeProjectId?: unknown; directory?: unknown })
+        : {};
+    if (typeof input.codeProjectId === 'string' && input.codeProjectId) {
+      const codeProject = getCodeProject(input.codeProjectId);
+      if (!codeProject) {
+        throw new Error(`Unknown Qeda codebase: ${input.codeProjectId}`);
+      }
+      return codeProject;
+    }
+
+    const candidates = [
+      typeof input.directory === 'string' ? input.directory : null,
+      activeBuilderDirectory(),
+      activeWorkspace?.directory ?? null,
+    ].filter((value): value is string => Boolean(value));
+    for (const candidate of candidates) {
+      const resolved = await realDirectory(candidate);
+      const codeProject =
+        findCodeProjectByDirectory(resolved) ??
+        findCodeProjectByDirectory(path.resolve(candidate));
+      if (codeProject) return codeProject;
+    }
+    throw new Error(
+      'No linked Qeda codebase matches this workspace. Link the folder under Projects → Code first.',
+    );
+  };
+
+  const projectInfo = async (body: unknown) => {
+    const directory = await resolveActiveDirectory(
+      body && typeof body === 'object'
+        ? (body as { directory?: unknown }).directory
+        : undefined,
+    );
+    const codeProject =
+      findCodeProjectByDirectory(directory) ??
+      (activeWorkspace
+        ? findCodeProjectByDirectory(
+            await realDirectory(activeWorkspace.directory),
+          )
+        : null);
+    const project =
+      (codeProject?.project_id
+        ? listProjects().find((item) => item.id === codeProject.project_id)
+        : null) ??
+      listProjects().find(
+        (item) =>
+          item.repo_path === directory ||
+          item.repo_path === activeWorkspace?.directory,
+      ) ??
+      null;
+    const codeProjects = project
+      ? listCodeProjects(project.id)
+      : codeProject
+        ? [codeProject]
+        : [];
+
+    return {
+      projectId: project?.id ?? null,
+      name: project?.name ?? null,
+      description: project?.description ?? null,
+      directory,
+      sourceDirectory: activeWorkspace?.directory ?? null,
+      worktreePath: activeWorktreePath,
+      codeProjects: codeProjects.map((item) => ({
+        id: item.id,
+        name: item.name,
+        directory: item.directory,
+        indexStatus: item.index_status,
+        indexedFiles: item.indexed_files,
+        indexedAt: item.indexed_at,
+        indexError: item.index_error,
+      })),
+    };
+  };
+
+  const resetPlanManager = () => {
+    planManager = new PlanManager((event) => {
+      if (!activeSession) return;
+      broadcast(localEvent(activeSession.id, event));
+    });
+  };
+
+  const requirePlanManager = (): PlanManager => {
+    if (!planManager) resetPlanManager();
+    return planManager as PlanManager;
+  };
+
+  const indexCodeProject = async (body: unknown) => {
+    const codeProject = await resolveCodeProject(body);
+    setCodeProjectIndexState(codeProject.id, { status: 'indexing' });
+    try {
+      const indexed = await indexCodeProjectFiles({
+        codeProjectId: codeProject.id,
+        projectId: codeProject.project_id ?? '',
+        directory: codeProject.directory,
+      });
+      setCodeProjectIndexState(codeProject.id, {
+        status: 'ready',
+        indexedFiles: indexed.indexedFiles,
+        error: null,
+      });
+      return indexed;
+    } catch (error) {
+      setCodeProjectIndexState(codeProject.id, {
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
+  const createBridgeRoutes = (): Record<
+    string,
+    (body: unknown) => Promise<unknown>
+  > => {
+    const routes: Record<string, (body: unknown) => Promise<unknown>> = {
+      '/ping': async (body) => {
+        const message = (body as { message?: string })?.message ?? '';
+        return { reply: `${message} (qeda)` };
+      },
+      '/session/bind': async (body) => {
+        if (!activeSession) {
+          throw new Error('No active Qeda Builder session.');
+        }
+        const input = (body ?? {}) as {
+          sessionID?: unknown;
+          directory?: unknown;
+        };
+        if (
+          typeof input.sessionID === 'string' &&
+          input.sessionID !== activeSession.id
+        ) {
+          throw new Error(
+            'This OpenCode session is not bound to the active Qeda Builder session.',
+          );
+        }
+        if (typeof input.directory === 'string' && input.directory.trim()) {
+          await resolveActiveDirectory(input.directory);
+        }
+        return {
+          sessionId: activeSession.id,
+          directory: activeBuilderDirectory(),
+          worktreePath: activeWorktreePath,
+        };
+      },
+      '/preview/status': async () => preview.getStatus(),
+      '/preview/start': async (body) => {
+        const input = (body ?? {}) as {
+          directory?: unknown;
+          script?: string;
+          command?: string;
+        };
+        const directory = await resolveActiveDirectory(input.directory);
+        const status = await preview.start({
+          directory,
+          script: input.script,
+          command: input.command,
+        });
+        return status;
+      },
+      '/preview/stop': async () => {
+        await preview.stop();
+        return preview.getStatus();
+      },
+      '/index': async (body) => indexCodeProject(body),
+      '/index/status': async (body) => {
+        const codeProject = await resolveCodeProject(body);
+        return {
+          id: codeProject.id,
+          name: codeProject.name,
+          directory: codeProject.directory,
+          status: codeProject.index_status,
+          indexedFiles: codeProject.indexed_files,
+          indexedAt: codeProject.indexed_at,
+          error: codeProject.index_error,
+        };
+      },
+      '/project/info': async (body) => projectInfo(body),
+      '/plan/create': async (body) => {
+        const input = (body ?? {}) as { items?: unknown };
+        if (!Array.isArray(input.items) || input.items.length === 0) {
+          throw new Error('A plan needs at least one item.');
+        }
+        const items = input.items.map((item) => {
+          const value = (item ?? {}) as { id?: unknown; title?: unknown };
+          if (
+            typeof value.id !== 'string' ||
+            !value.id.trim() ||
+            typeof value.title !== 'string' ||
+            !value.title.trim()
+          ) {
+            throw new Error('Each plan item needs a non-empty id and title.');
+          }
+          return { id: value.id.trim(), title: value.title.trim() };
+        });
+        const plan = requirePlanManager().createPlan(items);
+        return { plan };
+      },
+      '/plan/update': async (body) => {
+        const input = (body ?? {}) as { id?: unknown; status?: unknown };
+        const statuses: PlanItemStatus[] = [
+          'pending',
+          'in-progress',
+          'done',
+          'failed',
+        ];
+        if (
+          typeof input.id !== 'string' ||
+          !input.id.trim() ||
+          typeof input.status !== 'string' ||
+          !statuses.includes(input.status as PlanItemStatus)
+        ) {
+          throw new Error('A plan update needs an item id and a valid status.');
+        }
+        const manager = requirePlanManager();
+        const before = manager.getSnapshot();
+        const existed =
+          before?.items.some((item) => item.id === input.id) ?? false;
+        manager.updateItem(input.id, input.status as PlanItemStatus);
+        return {
+          updated: existed,
+          plan: manager.getSnapshot(),
+        };
+      },
+      '/plan/status': async () => ({
+        plan: requirePlanManager().getSnapshot(),
+      }),
+    };
+
+    // The plugin loads globally: OpenCode exposes qeda_* tools in every
+    // session. Reject calls that do not come from the Qeda-created session
+    // before they can read or mutate Qeda's active workspace.
+    for (const [route, handler] of Object.entries(routes)) {
+      routes[route] = async (body) => {
+        assertQedaToolSession(body, activeSession?.id ?? null);
+        return handler(body);
+      };
+    }
+    return routes;
+  };
+
+  const startSessionBridge = async () => {
+    if (bridge) {
+      await bridge.stop().catch(() => undefined);
+      bridge = null;
+    }
+    const activeBridge = await startBridge(createBridgeRoutes());
+    bridge = activeBridge;
+    await fs.mkdir(path.dirname(bridgeConfigPath), { recursive: true });
+    await fs.writeFile(
+      bridgeConfigPath,
+      JSON.stringify({
+        url: activeBridge.url,
+        token: activeBridge.token,
+        sessionId: activeSession?.id ?? null,
+        directory: activeBuilderDirectory(),
+        worktreePath: activeWorktreePath,
+      }),
+      { mode: 0o600 },
+    );
+    await fs.chmod(bridgeConfigPath, 0o600).catch(() => undefined);
+    if (opencodeRuntime) {
+      opencodeRuntime.bridgeUrl = activeBridge.url;
+      opencodeRuntime.bridgeToken = activeBridge.token;
+    }
+  };
+
   // ── Session teardown ──────────────────────────────────────────────────────
+
+  /**
+   * Best-effort OpenCode-side worktree removal. Qeda still falls back to its
+   * local `git worktree remove` if OpenCode is already gone.
+   */
+  const removeOpenCodeWorktree = async (
+    runtime: BuilderRuntime,
+    repositoryDirectory: string,
+    worktreePath: string,
+  ): Promise<boolean> => {
+    const headers = {
+      'x-opencode-directory': encodeURIComponent(repositoryDirectory),
+    };
+    const projects = await runtime.client.project.list({ headers });
+    const project = projects.find(
+      (candidate) => candidate.canonical === repositoryDirectory,
+    );
+    if (!project) return false;
+    await runtime.client.worktree.remove(
+      {
+        projectID: project.id,
+        directory: worktreePath,
+        force: true,
+      },
+      { headers },
+    );
+    return true;
+  };
+
+  const interruptOpenCodeSession = async (
+    runtime: BuilderRuntime | null,
+    session: BuilderSessionSummary | null,
+  ): Promise<void> => {
+    if (!runtime || !session) return;
+    await runtime.client.session
+      .interrupt({ sessionID: session.id })
+      .catch(() => undefined);
+  };
 
   const stopActive = async () => {
     if (persistTimer) {
@@ -228,9 +601,16 @@ export function registerBuilderHandlers({
     eventController?.abort();
     eventController = null;
     await preview.stop();
+    if (bridge) {
+      await bridge.stop().catch(() => undefined);
+      bridge = null;
+    }
+    await clearBridgeConfig();
 
     const prevRuntime = opencodeRuntime;
     const prevLocal = localSession;
+    const prevSession = activeSession;
+    const prevEngine = activeEngine;
     const prevWorktree = activeWorktreePath;
     const prevRepo = activeWorkspace?.directory ?? null;
 
@@ -242,19 +622,29 @@ export function registerBuilderHandlers({
     activeEngine = null;
     eventBuffer = [];
     running = false;
+    planManager = null;
+    qedaAgentChecked = false;
 
     deleteActiveBuilderSession();
 
+    if (prevEngine === 'opencode') {
+      await interruptOpenCodeSession(prevRuntime, prevSession);
+    }
+    if (prevWorktree && prevRepo) {
+      if (prevEngine === 'opencode' && prevRuntime) {
+        await removeOpenCodeWorktree(prevRuntime, prevRepo, prevWorktree).catch(
+          () => false,
+        );
+      }
+      await removeBuilderWorktree(prevRepo, prevWorktree).catch(
+        () => undefined,
+      );
+    }
     if (prevRuntime) {
       await prevRuntime.provider.dispose().catch(() => undefined);
     }
     if (prevLocal) {
       await prevLocal.stop().catch(() => undefined);
-    }
-    if (prevWorktree && prevRepo) {
-      await removeBuilderWorktree(prevRepo, prevWorktree).catch(
-        () => undefined,
-      );
     }
   };
 
@@ -273,10 +663,17 @@ export function registerBuilderHandlers({
     eventController?.abort();
     eventController = null;
     await preview.stop();
+    if (bridge) {
+      await bridge.stop().catch(() => undefined);
+      bridge = null;
+    }
+    await clearBridgeConfig();
     flushPersistedContext();
 
     const prevRuntime = opencodeRuntime;
     const prevLocal = localSession;
+    const prevSession = activeSession;
+    const prevEngine = activeEngine;
 
     opencodeRuntime = null;
     localSession = null;
@@ -286,7 +683,11 @@ export function registerBuilderHandlers({
     activeEngine = null;
     eventBuffer = [];
     running = false;
+    planManager = null;
 
+    if (prevEngine === 'opencode') {
+      await interruptOpenCodeSession(prevRuntime, prevSession);
+    }
     if (prevRuntime) {
       await prevRuntime.provider.dispose().catch(() => undefined);
     }
@@ -465,7 +866,9 @@ export function registerBuilderHandlers({
       _event,
       { directory }: { directory: string },
     ): Promise<BuilderSessionStart> => {
-      const workspace = await inspectBuilderWorkspace(directory);
+      const workspace = await inspectBuilderWorkspace(directory, {
+        autoInit: true,
+      });
       await stopActive();
 
       const engine = getSettings().builderEngine ?? 'local';
@@ -532,10 +935,29 @@ export function registerBuilderHandlers({
             'OpenCode could not associate the selected folder with a project. Open the folder in OpenCode once, then try again.',
           );
         }
-        const worktree = await opencodeRuntime.client.worktree.create(
-          { projectID: opencodeProject.id },
-          { headers: locationHeaders },
+        // Ask OpenCode for a Qeda-owned worktree location first so Local and
+        // OpenCode sessions share the same cleanup/telemetry convention. Fall
+        // back to OpenCode's default location if it rejects the path.
+        const worktreeName = `qeda-builder-${Date.now().toString(36)}`;
+        const worktreeParent = path.join(
+          app.getPath('userData'),
+          'builder-worktrees',
         );
+        const worktree = await opencodeRuntime.client.worktree
+          .create(
+            {
+              projectID: opencodeProject.id,
+              directory: path.join(worktreeParent, worktreeName),
+              name: worktreeName,
+            },
+            { headers: locationHeaders },
+          )
+          .catch(() =>
+            opencodeRuntime!.client.worktree.create(
+              { projectID: opencodeProject.id },
+              { headers: locationHeaders },
+            ),
+          );
         worktreePath = worktree.directory;
       } catch (error) {
         await opencodeRuntime.provider.dispose().catch(() => undefined);
@@ -548,12 +970,22 @@ export function registerBuilderHandlers({
 
       const sessionDirectory = worktreePath ?? workspace.directory;
 
-      let ocSession;
-      try {
-        ocSession = await opencodeRuntime.client.session.create({
+      const createSession = (agent?: string) =>
+        opencodeRuntime!.client.session.create({
           title: `Builder · ${workspace.name}`,
           location: { directory: sessionDirectory },
+          ...(agent ? { agent } : {}),
         });
+
+      let ocSession;
+      try {
+        // Select Qeda's parity agent when the plugin is installed. Older
+        // installs (or a host without the plugin) fall back to the default.
+        try {
+          ocSession = await createSession('qeda-builder');
+        } catch {
+          ocSession = await createSession();
+        }
       } catch (error) {
         if (worktreePath) {
           await removeBuilderWorktree(workspace.directory, worktreePath).catch(
@@ -581,6 +1013,18 @@ export function registerBuilderHandlers({
       activeEngine = 'opencode';
       eventBuffer = [];
       running = false;
+      qedaAgentChecked = true;
+      resetPlanManager();
+
+      try {
+        await startSessionBridge();
+      } catch (error) {
+        await stopActive();
+        throw new Error(
+          `Builder could not start the Qeda bridge: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        );
+      }
 
       // Subscribe to OpenCode event stream.
       const controller = new AbortController();
@@ -596,6 +1040,7 @@ export function registerBuilderHandlers({
             const normalized = normalizeBuilderSessionEvent(
               event,
               ocSession.id,
+              { directory: sessionDirectory },
             );
             if (normalized) broadcast(normalized);
           }
@@ -740,6 +1185,18 @@ export function registerBuilderHandlers({
           worktreePath: persisted.worktree_path,
         };
 
+        if (persisted.worktree_path) {
+          try {
+            const stat = await fs.stat(persisted.worktree_path);
+            if (!stat.isDirectory()) throw new Error('not a directory');
+          } catch {
+            deleteActiveBuilderSession();
+            await opencodeRuntime.provider.dispose().catch(() => undefined);
+            opencodeRuntime = null;
+            return { session: null, workspace: null, events: [] };
+          }
+        }
+
         activeSession = summary;
         activeWorkspace = restoredWorkspace;
         activeWorktreePath = persisted.worktree_path;
@@ -748,7 +1205,26 @@ export function registerBuilderHandlers({
           persisted.events_json,
         );
         running = false;
+        qedaAgentChecked = false;
+        resetPlanManager();
 
+        try {
+          await startSessionBridge();
+        } catch (error) {
+          // Keep the coding session usable; Qeda tools surface their own
+          // actionable error until a new session restarts the bridge.
+          broadcast(
+            localEvent(ocSession.id, {
+              type: 'error',
+              message: `Qeda tools are unavailable for this restored session: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            }),
+          );
+        }
+
+        const sessionDirectory =
+          persisted.worktree_path ?? persisted.repo_directory;
         const controller = new AbortController();
         eventController = controller;
         void (async () => {
@@ -761,6 +1237,7 @@ export function registerBuilderHandlers({
               const normalized = normalizeBuilderSessionEvent(
                 event,
                 ocSession.id,
+                { directory: sessionDirectory },
               );
               if (normalized) broadcast(normalized);
             }
@@ -777,7 +1254,11 @@ export function registerBuilderHandlers({
           }
         })();
 
-        return { session: summary, workspace: restoredWorkspace, events: [] };
+        return {
+          session: summary,
+          workspace: restoredWorkspace,
+          events: eventBuffer,
+        };
       } catch {
         deleteActiveBuilderSession();
         return { session: null, workspace: null, events: [] };
@@ -906,6 +1387,17 @@ export function registerBuilderHandlers({
 
       // OpenCode path.
       const { runtime: rt } = requireOpenCodeSession();
+      if (!qedaAgentChecked) {
+        qedaAgentChecked = true;
+        await rt.client.session
+          .switchAgent({ sessionID: session.id, agent: 'qeda-builder' })
+          .catch(() => {
+            // The plugin may be installed after this session was restored.
+            // Retry on the next prompt instead of latching the fallback.
+            qedaAgentChecked = false;
+          });
+      }
+      resetPlanManager();
       broadcast(localEvent(session.id, { type: 'user-prompt', text: trimmed }));
       running = true;
       broadcast(localEvent(session.id, { type: 'status', status: 'running' }));

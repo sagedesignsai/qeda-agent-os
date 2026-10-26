@@ -29,11 +29,16 @@ import {
   AlertCircleIcon,
   CheckCircle2Icon,
   CircleDashedIcon,
+  DatabaseIcon,
   FileCode2Icon,
+  FolderKanbanIcon,
   FolderSearchIcon,
   GitBranchIcon,
   GitCompareArrowsIcon,
   GlobeIcon,
+  ListChecksIcon,
+  MonitorPlayIcon,
+  PlugIcon,
   SearchIcon,
   ShellIcon,
   TerminalSquareIcon,
@@ -422,6 +427,17 @@ const TOOL_ICONS: Record<string, typeof WrenchIcon> = {
   gitdiff: GitCompareArrowsIcon,
   createplan: CircleDashedIcon,
   updateplanitem: CircleDashedIcon,
+  // Qeda's OpenCode plugin tools (the host prefixes the `qeda` namespace).
+  qeda_ping: PlugIcon,
+  qeda_preview_status: MonitorPlayIcon,
+  qeda_preview_start: MonitorPlayIcon,
+  qeda_preview_stop: MonitorPlayIcon,
+  qeda_index_codebase: DatabaseIcon,
+  qeda_codebase_status: DatabaseIcon,
+  qeda_project_info: FolderKanbanIcon,
+  qeda_plan_create: ListChecksIcon,
+  qeda_plan_update: ListChecksIcon,
+  qeda_plan_status: ListChecksIcon,
 };
 
 /** Returns a small icon JSX node for the compact row — avoids a capitalized
@@ -490,6 +506,29 @@ function compactSummary(name: string, input: unknown, output?: string): string {
       const status = str(args.status);
       return status ? `Marked ${status}` : 'Updated plan item';
     }
+    case 'qeda_plan_create': {
+      const items = Array.isArray(args.items) ? args.items.length : 0;
+      return items > 0 ? `${items} plan items` : 'Created a plan';
+    }
+    case 'qeda_plan_update': {
+      const status = str(args.status);
+      return status ? `Marked ${status}` : 'Updated plan item';
+    }
+    case 'qeda_plan_status':
+      return 'Current plan';
+    case 'qeda_ping':
+      return 'Bridge reachable';
+    case 'qeda_preview_start':
+      return str(args.directory) || 'Started preview';
+    case 'qeda_preview_status':
+      return 'Preview status';
+    case 'qeda_preview_stop':
+      return 'Stopped preview';
+    case 'qeda_index_codebase':
+    case 'qeda_codebase_status':
+      return str(args.codeProjectId ?? args.directory) || 'Codebase index';
+    case 'qeda_project_info':
+      return str(args.directory) || 'Project info';
     case 'webfetch': {
       const url = str(args.url);
       return url ? truncate(url, 60) : 'Fetched page';
@@ -535,6 +574,16 @@ function toolLabel(name: string): string {
     gitdiff: 'Git diff',
     createplan: 'Plan',
     updateplanitem: 'Plan',
+    qeda_ping: 'Qeda bridge',
+    qeda_preview_status: 'Preview',
+    qeda_preview_start: 'Preview',
+    qeda_preview_stop: 'Preview',
+    qeda_index_codebase: 'Index codebase',
+    qeda_codebase_status: 'Codebase status',
+    qeda_project_info: 'Project info',
+    qeda_plan_create: 'Plan',
+    qeda_plan_update: 'Plan',
+    qeda_plan_status: 'Plan',
   };
   return labels[name.toLowerCase()] ?? name;
 }

@@ -27,8 +27,9 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { OpencodeSetupCard } from './OpencodeSetupCard';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -55,7 +56,6 @@ import {
   RefreshCwIcon,
   CheckCircleIcon,
   XCircleIcon,
-  AlertCircleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ZapIcon,
@@ -716,7 +716,7 @@ export function BuilderMcpView() {
   const [reloading, setReloading] = useState(false);
 
   // Seed once from snapshot
-  const seeded = { current: false };
+  const seeded = useRef(false);
   useEffect(() => {
     if (!snapshot || seeded.current) return;
     seeded.current = true;
@@ -1080,19 +1080,7 @@ export function BuilderMcpView() {
         {engine === 'opencode' && (
           <>
             <Separator />
-            <section>
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-600 dark:text-amber-400">
-                <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0" />
-                <div className="space-y-1">
-                  <p className="font-medium">OpenCode service required</p>
-                  <p className="text-muted-foreground">
-                    OpenCode must be installed and running on your machine. MCP
-                    servers configured above are only used by the Local Agent
-                    engine; OpenCode manages its own tool set.
-                  </p>
-                </div>
-              </div>
-            </section>
+            <OpencodeSetupCard />
           </>
         )}
       </div>

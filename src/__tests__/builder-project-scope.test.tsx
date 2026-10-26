@@ -22,11 +22,16 @@ import {
   render,
   renderHook,
   screen,
+  waitFor,
 } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { useBuilderSession } from '@/hooks/use-builder-session';
 import Builder from '@/renderer/pages/Builder';
+import type {
+  BuilderSessionSummary,
+  BuilderWorkspace,
+} from '@/main/ipc/channels';
 
 // The page test swaps in a fake session hook; `chooseWorkspace`'s own contract
 // is exercised below through the real implementation.
@@ -47,20 +52,28 @@ jest.mock('@/hooks/use-builder-runtime', () => ({
   }),
 }));
 
-jest.mock('@/hooks/use-builder-workspace', () => ({
-  useBuilderWorkspace: () => ({
-    surface: 'preview' as const,
-    viewport: 'desktop' as const,
-    setSurface: jest.fn(),
-    setViewport: jest.fn(),
-    previewUrl: '',
-    setPreviewUrl: jest.fn(),
-    prompt: '',
-    setPrompt: jest.fn(),
-    selectedFilePath: '',
-    setSelectedFilePath: jest.fn(),
-  }),
-}));
+jest.mock('@/hooks/use-builder-workspace', () => {
+  const { useState } = jest.requireActual<typeof import('react')>('react');
+
+  return {
+    useBuilderWorkspace: () => {
+      const [prompt, setPrompt] = useState('');
+      const [selectedFilePath, setSelectedFilePath] = useState('');
+      return {
+        surface: 'preview' as const,
+        viewport: 'desktop' as const,
+        setSurface: jest.fn(),
+        setViewport: jest.fn(),
+        previewUrl: '',
+        setPreviewUrl: jest.fn(),
+        prompt,
+        setPrompt,
+        selectedFilePath,
+        setSelectedFilePath,
+      };
+    },
+  };
+});
 
 const mockedUseBuilderSession = useBuilderSession as unknown as jest.Mock;
 
@@ -106,6 +119,15 @@ function installIpc(overrides: Record<string, unknown> = {}) {
     if (channel === 'builder:session-state') {
       return Promise.resolve({ session: null, workspace: null, events: [] });
     }
+    if (
+      channel === 'builder:workspace-changes' ||
+      channel === 'builder:workspace-files'
+    ) {
+      return Promise.resolve([]);
+    }
+    if (channel === 'builder:models') {
+      return Promise.resolve({ models: [], selected: null });
+    }
     return Promise.resolve(null);
   });
   window.electron = {
@@ -116,8 +138,8 @@ function installIpc(overrides: Record<string, unknown> = {}) {
 
 function makeSessionApi() {
   return {
-    session: null,
-    workspace: null,
+    session: null as BuilderSessionSummary | null,
+    workspace: null as BuilderWorkspace | null,
     events: [],
     creating: false,
     sending: false,
@@ -127,7 +149,7 @@ function makeSessionApi() {
     chooseWorkspace: jest.fn(),
     createSession: jest.fn(),
     stopSession: jest.fn(),
-    sendPrompt: jest.fn(),
+    sendPrompt: jest.fn().mockResolvedValue(true),
     abort: jest.fn(),
     replyPermission: jest.fn(),
     replyForm: jest.fn(),
@@ -261,6 +283,78 @@ describe('Builder project scope', () => {
     expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum');
   });
 
+  it('starts the project repo and sends the welcome draft in one action', async () => {
+    installIpc();
+    sessionApi.chooseWorkspace.mockResolvedValue({
+      session: { id: 'ses_1', title: 'Builder · vellum', createdAt: 1 },
+      workspace: {
+        directory: '/repo/vellum',
+        name: 'vellum',
+        branch: 'main',
+        dirty: false,
+        changedFileCount: 0,
+        worktreePath: '/tmp/qeda-builder-ses_1',
+      },
+    });
+    let finishSend: ((sent: boolean) => void) | undefined;
+    sessionApi.sendPrompt.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishSend = resolve;
+        }),
+    );
+    renderBuilder();
+    await screen.findAllByText('Vellum Core');
+
+    const textbox = screen.getByRole('textbox');
+    fireEvent.change(textbox, {
+      target: { value: 'Create an internal application for sales.' },
+    });
+    const form = textbox.closest('form');
+    if (!form) throw new Error('Prompt form not found');
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    await waitFor(() =>
+      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum'),
+    );
+    await waitFor(() =>
+      expect(sessionApi.sendPrompt).toHaveBeenCalledWith(
+        'Create an internal application for sales.',
+      ),
+    );
+    // The compose box clears as soon as the session exists, not when a whole
+    // Local-engine turn finishes.
+    expect(textbox).toHaveValue('');
+    await act(async () => {
+      finishSend?.(true);
+    });
+  });
+
+  it('keeps the welcome draft when the folder picker is cancelled', async () => {
+    installIpc();
+    sessionApi.chooseWorkspace.mockResolvedValue(null);
+    renderBuilder();
+    await screen.findAllByText('Vellum Core');
+
+    const textbox = screen.getByRole('textbox');
+    fireEvent.change(textbox, {
+      target: { value: 'Create an internal application for sales.' },
+    });
+    const form = textbox.closest('form');
+    if (!form) throw new Error('Prompt form not found');
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    await waitFor(() =>
+      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum'),
+    );
+    expect(textbox).toHaveValue('Create an internal application for sales.');
+    expect(sessionApi.sendPrompt).not.toHaveBeenCalled();
+  });
+
   it('passes no default when the active project has no repo_path', async () => {
     installIpc({ 'projects:get': { ...PROJECT, repo_path: null } });
     renderBuilder();
@@ -275,6 +369,36 @@ describe('Builder project scope', () => {
     // `null` means "no default of your own" — the page maps it to `undefined`
     // rather than letting the project repo become the fallback.
     expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(undefined);
+  });
+
+  it('confirms before replacing a live workspace and its worktree', async () => {
+    installIpc();
+    sessionApi.session = {
+      id: 'ses_1',
+      title: 'Builder · vellum',
+      createdAt: 1,
+    };
+    sessionApi.workspace = {
+      directory: '/repo/vellum',
+      name: 'vellum',
+      branch: 'main',
+      dirty: false,
+      changedFileCount: 0,
+      worktreePath: '/tmp/qeda-builder-ses_1',
+    };
+    renderBuilder();
+    await screen.findAllByText('Vellum Core');
+
+    fireEvent.click(screen.getByRole('button', { name: /Switch folder/ }));
+    expect(
+      await screen.findByText('Switch Builder workspace?'),
+    ).toBeInTheDocument();
+    expect(sessionApi.chooseWorkspace).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch workspace' }));
+    await waitFor(() =>
+      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum'),
+    );
   });
 
   it('shows no scope chip when nothing is scoped', async () => {

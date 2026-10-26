@@ -22,6 +22,9 @@ export interface BuilderRuntime {
   client: OpenCodeClient;
   provider: OpencodeProvider;
   version: string;
+  /** Authenticated localhost bridge the Qeda plugin calls into. */
+  bridgeUrl?: string;
+  bridgeToken?: string;
 }
 
 export type BuilderRuntimeResult =

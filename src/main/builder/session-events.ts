@@ -6,14 +6,79 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import path from 'node:path';
 import type { V2Event } from '@opencode/client';
 import type { BuilderFormField } from '../../lib/builder-interactions';
 import type { BuilderSessionEvent } from '../../lib/builder-session';
 
+export interface NormalizeBuilderEventOptions {
+  /** Active worktree/source directory used to scope global filesystem events. */
+  directory?: string | null;
+}
+
+const IGNORED_WORKSPACE_SEGMENTS = new Set([
+  '.git',
+  '.cache',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  '.venv',
+  'build',
+  'coverage',
+  'dist',
+  'node_modules',
+  'out',
+  'target',
+  'vendor',
+  'venv',
+]);
+
+function isWithin(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), target);
+  return (
+    relative === '' ||
+    (!relative.startsWith('..') && !path.isAbsolute(relative))
+  );
+}
+
+function isIgnoredWorkspacePath(file: string): boolean {
+  if (
+    file
+      .split(path.sep)
+      .some((segment) => IGNORED_WORKSPACE_SEGMENTS.has(segment))
+  ) {
+    return true;
+  }
+  return /\.(lock|log|tmp|swp)$/i.test(file) || file.endsWith('~');
+}
+
 export function normalizeBuilderSessionEvent(
   event: V2Event,
   sessionId: string,
+  options?: NormalizeBuilderEventOptions,
 ): BuilderSessionEvent | null {
+  // `filesystem.changed` is global (no sessionID), so match it against the
+  // active worktree instead of the session filter below. This is what makes
+  // OpenCode's native write/edit/bash tools refresh Qeda's diff review.
+  if (event.type === 'filesystem.changed') {
+    const root = options?.directory ?? event.location?.directory ?? null;
+    if (!root) return null;
+    const file = event.data.file;
+    const absolute = path.isAbsolute(file)
+      ? path.normalize(file)
+      : path.resolve(root, file);
+    if (!isWithin(root, absolute) || isIgnoredWorkspacePath(absolute)) {
+      return null;
+    }
+    return {
+      sessionId,
+      eventId: event.id,
+      createdAt: event.created,
+      type: 'file-changed',
+      path: absolute,
+    };
+  }
+
   const data = 'data' in event ? event.data : undefined;
   if (!data) return null;
   const eventSessionId =

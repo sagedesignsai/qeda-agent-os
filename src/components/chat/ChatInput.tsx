@@ -40,6 +40,12 @@ interface ChatInputProps {
   value?: string;
   onValueChange?: (value: string) => void;
   /**
+   * Clear the composer after `onSend`. Defaults to true for a normal chat
+   * turn. Builder's welcome view sets this false because sending first asks
+   * for a workspace; the draft must survive a cancelled folder picker.
+   */
+  clearOnSend?: boolean;
+  /**
    * Rendered immediately before the submit button.
    *
    * Builder uses this for its codebase picker: what you will build in changes
@@ -60,6 +66,7 @@ export function ChatInput({
   className,
   value,
   onValueChange,
+  clearOnSend = true,
   beforeSubmit,
 }: ChatInputProps) {
   const [internalText, setInternalText] = useState('');
@@ -75,7 +82,7 @@ export function ChatInput({
     const content = message.text.trim();
     if (!content || disabled) return;
     onSend(content);
-    setText('');
+    if (clearOnSend) setText('');
   };
 
   return (

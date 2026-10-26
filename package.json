@@ -36,6 +36,9 @@
   "main": "./release/app/dist/main/main.js",
   "scripts": {
     "build": "electron-vite build",
+    "prebuild": "npm run build:opencode-plugin",
+    "build:opencode-plugin": "tsc -p plugins/qeda-builder/tsconfig.json",
+    "prestart": "npm run build:opencode-plugin",
     "postinstall": "npm --prefix .erb/tooling ci && install-electron && electron-builder install-app-deps",
     "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx,.cjs",
     "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx,.cjs --fix",
@@ -232,7 +235,14 @@
       "output": "release/build"
     },
     "extraResources": [
-      "./assets/**"
+      "./assets/**",
+      {
+        "from": "plugins/qeda-builder/dist",
+        "to": "opencode-plugins/qeda-builder",
+        "filter": [
+          "index.js"
+        ]
+      }
     ],
     "publish": {
       "provider": "github",

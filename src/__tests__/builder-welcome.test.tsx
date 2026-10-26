@@ -8,7 +8,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { BuilderWelcome } from '@/components/builder/BuilderWelcome';
 
 // jsdom implements neither :fullscreen, :modal nor :popover-open, and nwsapi's
@@ -81,6 +81,7 @@ function renderWelcome(
     projectRepoPath: null as string | null,
     prompt: '',
     onPromptChange: jest.fn(),
+    onSubmitPrompt: jest.fn(),
     creatingSession: false,
     error: null as string | null,
     onChooseWorkspace: jest.fn(),
@@ -117,8 +118,33 @@ describe('BuilderWelcome', () => {
   it('states why the composer cannot be sent yet, without pretending to send', () => {
     renderWelcome();
     expect(
-      screen.getByText('Choose a codebase below to start building.'),
+      screen.getByText(
+        'Choose a codebase below, or press Send to confirm one and start building.',
+      ),
     ).toBeInTheDocument();
+  });
+
+  it('submits the draft as a one-shot start and leaves it in place', async () => {
+    const onSubmitPrompt = jest.fn();
+    const onPromptChange = jest.fn();
+    renderWelcome({
+      prompt: 'Create an internal application for the sales team.',
+      onPromptChange,
+      onSubmitPrompt,
+    });
+
+    const form = screen.getByRole('textbox').closest('form');
+    if (!form) throw new Error('Prompt form not found');
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    expect(onSubmitPrompt).toHaveBeenCalledWith(
+      'Create an internal application for the sales team.',
+    );
+    // The page clears the draft only after a session exists. A cancelled folder
+    // picker or a failed start must leave this text untouched.
+    expect(onPromptChange).not.toHaveBeenCalledWith('');
   });
 
   it('explains a disconnected runtime and explains a failed setup', () => {

@@ -73,6 +73,7 @@ import { registerSerperHandlers } from './handlers/serper';
 import { registerSoundlabHandlers } from './handlers/soundlab';
 import { registerSoundlabCopilotHandlers } from './handlers/soundlab-copilot';
 import { registerBuilderHandlers } from './handlers/builder';
+import { registerOpencodeSetupHandlers } from './handlers/opencode-setup';
 import { registerCorrespondenceHandlers } from './handlers/correspondence';
 import { registerCorrespondenceCopilotHandlers } from './handlers/correspondence-copilot';
 
@@ -104,6 +105,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerSoundlabHandlers({ mainWindow });
   registerSoundlabCopilotHandlers({ mainWindow });
   registerBuilderHandlers({ mainWindow });
+  registerOpencodeSetupHandlers();
   registerCorrespondenceHandlers({ mainWindow });
   registerCorrespondenceCopilotHandlers({ mainWindow });
 }

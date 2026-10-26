@@ -48,6 +48,19 @@ export function getCodeProject(id: string): CodeProject | null {
   );
 }
 
+/** Resolve a linked codebase by its canonical directory. */
+export function findCodeProjectByDirectory(
+  directory: string,
+): CodeProject | null {
+  return (
+    getDb()
+      .prepare<[string], CodeProject>(
+        'SELECT * FROM code_projects WHERE directory = ? ORDER BY updated_at DESC LIMIT 1',
+      )
+      .get(directory) ?? null
+  );
+}
+
 export function createCodeProject(input: {
   projectId: string;
   name: string;

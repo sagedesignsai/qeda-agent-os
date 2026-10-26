@@ -332,6 +332,27 @@ export interface IpcChannels {
     req: void;
     res: BuilderConnectionStatus;
   };
+  // OpenCode installation + plugin management
+  'opencode:detect': {
+    req: void;
+    res: import('../../main/opencode/detection').OpenCodeDetection;
+  };
+  'opencode:open-install-page': {
+    req: void;
+    res: void;
+  };
+  'opencode:register-plugin': {
+    req: { mode: 'bundled' | 'published'; resourcePath?: string };
+    res: import('../../main/opencode/registration').RegistrationResult;
+  };
+  'opencode:unregister-plugin': {
+    req: { entry: string };
+    res: import('../../main/opencode/registration').RegistrationResult;
+  };
+  'opencode:registered-plugins': {
+    req: void;
+    res: string[];
+  };
   /**
    * Resolve a chosen folder to a canonical git repository and describe it.
    * Throws (rejects) with a user-facing message when it is not usable.
@@ -1688,3 +1709,7 @@ export interface IpcChannels {
 }
 
 export type ChannelName = keyof IpcChannels;
+// OpenCode setup types (renderer-facing). Re-exported so the renderer never
+// reaches into the main-process modules directly.
+export type { OpenCodeDetection } from '../../main/opencode/detection';
+export type { RegistrationResult } from '../../main/opencode/registration';

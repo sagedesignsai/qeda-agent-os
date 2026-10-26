@@ -25,6 +25,7 @@ module.exports = {
     '^@react-pdf/renderer$': '<rootDir>/.erb/mocks/reactPdfMock.js',
     '^shiki$': '<rootDir>/.erb/mocks/shikiMock.js',
     '^electron$': '<rootDir>/.erb/mocks/electronMock.js',
+    '^@opencode/client(/.*)?$': '<rootDir>/.erb/mocks/opencodeClientMock.js',
     '^@ai-sdk/(.*)$': '<rootDir>/.erb/mocks/aiMock.js',
     '^ai$': '<rootDir>/.erb/mocks/aiMock.js',
   },
@@ -35,6 +36,22 @@ module.exports = {
   },
   testPathIgnorePatterns: ['release/app/dist', '.erb/dll'],
   transform: {
+    // The plugin has its own tsconfig (ESNext for OpenCode). Jest needs it
+    // emitted as CommonJS under its own test runner.
+    '^<rootDir>/plugins/qeda-builder/src/.*\\.ts$': [
+      toolingRequire.resolve('ts-jest'),
+      {
+        compiler: toolingRequire.resolve('typescript'),
+        tsconfig: {
+          isolatedModules: true,
+          module: 'CommonJS',
+          moduleResolution: 'Node',
+          target: 'ES2022',
+          esModuleInterop: true,
+          types: ['node'],
+        },
+      },
+    ],
     '\\.(ts|tsx|js|jsx)$': [
       toolingRequire.resolve('ts-jest'),
       {

@@ -145,15 +145,17 @@ export function useBuilderSession() {
     }
   }, []);
 
-  const sendPrompt = useCallback(async (text: string) => {
+  const sendPrompt = useCallback(async (text: string): Promise<boolean> => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed) return false;
     setSending(true);
     setError(null);
     try {
       await window.electron.ipc.invoke('builder:prompt', { text: trimmed });
+      return true;
     } catch (cause) {
       setError(messageOf(cause));
+      return false;
     } finally {
       setSending(false);
     }

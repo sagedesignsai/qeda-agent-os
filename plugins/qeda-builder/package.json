@@ -1,0 +1,17 @@
+{
+  "name": "@qeda/opencode-builder",
+  "version": "0.2.0",
+  "description": "Qeda Builder integration plugin for OpenCode v2.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

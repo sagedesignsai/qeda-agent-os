@@ -50,6 +50,16 @@ import {
   type BuilderPreviewOwner,
 } from '@/lib/builder-preview';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -90,7 +100,9 @@ export default function Builder() {
   const {
     chooseWorkspace: chooseSessionWorkspace,
     createSession: createBuilderSession,
+    sendPrompt: sendBuilderPrompt,
   } = builderSession;
+  const setDraftPrompt = workspace.setPrompt;
 
   // `activeProject` is the project an agent would act on (explicit scope, else
   // the persisted default), while `projectName` is only the explicit scope — so
@@ -138,9 +150,13 @@ export default function Builder() {
       ? 'detected'
       : null;
 
+  const [pendingWorkspaceSwitch, setPendingWorkspaceSwitch] = useState<{
+    defaultPath?: string | null;
+  } | null>(null);
+
   // Only the folder the user picks in the dialog is ever bound; this just opens
   // the picker at the project's repo when there is one.
-  const chooseWorkspace = useCallback(
+  const openWorkspace = useCallback(
     async (defaultPath?: string | null) => {
       const started = await chooseSessionWorkspace(
         defaultPath === null
@@ -158,6 +174,54 @@ export default function Builder() {
       activeProject?.id,
       registerCodeProject,
     ],
+  );
+
+  /**
+   * Changing folders tears down the current session and its worktree, so ask
+   * before doing it. The welcome screen has no session yet and therefore goes
+   * straight to the picker.
+   */
+  const chooseWorkspace = useCallback(
+    async (defaultPath?: string | null) => {
+      // The chat panel hands this callback straight to an onClick, so a click
+      // can arrive here as a MouseEvent despite the narrower signature. Only a
+      // real path (or an explicit "no default") should reach the picker.
+      const target =
+        typeof defaultPath === 'string' || defaultPath === null
+          ? defaultPath
+          : undefined;
+      if (builderSession.session) {
+        setPendingWorkspaceSwitch({ defaultPath: target });
+        return null;
+      }
+      return openWorkspace(target);
+    },
+    [builderSession.session, openWorkspace],
+  );
+
+  /**
+   * The welcome composer's Send is a one-shot start: confirm a folder, create
+   * the session, then submit the draft the user already wrote. Cancelling the
+   * folder picker (or failing to create a session) leaves the draft intact.
+   */
+  const startBuildFromWelcome = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || builderSession.creating) return;
+      const started = await openWorkspace(undefined);
+      if (!started) return;
+      // The session exists now, so the draft has done its job. Clear it before
+      // the prompt resolves: LocalBuilderSession's prompt() runs the whole turn
+      // and would otherwise leave stale text in the composer while the agent
+      // works. Restore it only if the send itself failed and the user has not
+      // started a new draft.
+      setDraftPrompt('');
+      const sent = await sendBuilderPrompt(trimmed);
+      if (!sent) {
+        setDraftPrompt((current) => current || trimmed);
+      }
+    },
+    [builderSession.creating, openWorkspace, sendBuilderPrompt, setDraftPrompt],
   );
 
   const openCodeProject = useCallback(
@@ -412,6 +476,7 @@ export default function Builder() {
           projectRepoPath={activeProject?.repo_path ?? null}
           prompt={workspace.prompt}
           onPromptChange={workspace.setPrompt}
+          onSubmitPrompt={(text) => void startBuildFromWelcome(text)}
           creatingSession={builderSession.creating}
           error={builderSession.error || codeProjectsError}
           projectId={activeProject?.id ?? null}
@@ -479,6 +544,35 @@ export default function Builder() {
           </ResizablePanel>
         </ResizablePanelGroup>
       )}
+
+      <AlertDialog
+        open={pendingWorkspaceSwitch !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingWorkspaceSwitch(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Switch Builder workspace?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This stops the current session and removes its isolated worktree.
+              Any changes you have not kept will be discarded.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const target = pendingWorkspaceSwitch?.defaultPath;
+                setPendingWorkspaceSwitch(null);
+                void openWorkspace(target);
+              }}
+            >
+              Switch workspace
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
