@@ -9,6 +9,8 @@
 import {
   parseComposerInput,
   isDirectCommandInput,
+  getDirectCommandRoute,
+  shouldRouteDirectCommandToPty,
   formatDuration,
   extractLocalhostUrls,
   isGitDiff,
@@ -112,6 +114,29 @@ describe('parseComposerInput', () => {
     expect(isDirectCommandInput('ls')).toBe(false);
     expect(isDirectCommandInput('!')).toBe(false);
   });
+
+  it('routes interactive direct commands through the PTY runtime', () => {
+    expect(shouldRouteDirectCommandToPty('!opencode')).toBe(true);
+    expect(shouldRouteDirectCommandToPty('!git add -p')).toBe(true);
+    expect(shouldRouteDirectCommandToPty('!ls -la')).toBe(false);
+    expect(shouldRouteDirectCommandToPty('show me disk usage')).toBe(false);
+  });
+});
+
+describe('getDirectCommandRoute', () => {
+  it.each(['opencode', 'opencode --continue', 'nvim src/main.ts', 'htop']) (
+    'routes interactive command %j through a PTY',
+    (command) => {
+      expect(getDirectCommandRoute(command)).toBe('pty');
+    },
+  );
+
+  it.each(['ls -la', 'git status', 'npm test', 'node scripts/check.js'])(
+    'keeps non-interactive command %j on block execution',
+    (command) => {
+      expect(getDirectCommandRoute(command)).toBe('block');
+    },
+  );
 });
 
 describe('formatDuration', () => {

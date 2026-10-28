@@ -43,13 +43,15 @@ import { ModelsView } from './views/ModelsView';
 import { BuilderMcpView } from './views/BuilderMcpView';
 import { EmbeddingsView } from './views/EmbeddingsView';
 import { AppearanceView } from './views/AppearanceView';
+import { ComputerUseView } from './views/ComputerUseView';
 import { cn } from '@/lib/utils';
-import { BotIcon, BoxesIcon, CpuIcon, PaletteIcon } from 'lucide-react';
+import { BotIcon, BoxesIcon, CpuIcon, PaletteIcon, MousePointerIcon } from 'lucide-react';
 
 const SECTIONS = [
   { id: 'models', label: 'AI & Models', icon: BotIcon },
   { id: 'builder', label: 'Builder & MCP', icon: CpuIcon },
   { id: 'embeddings', label: 'Embeddings', icon: BoxesIcon },
+  { id: 'computeruse', label: 'Computer Use', icon: MousePointerIcon },
   { id: 'appearance', label: 'Appearance', icon: PaletteIcon },
 ] as const;
 
@@ -129,6 +131,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   hidden={section !== 'embeddings'}
                 >
                   <EmbeddingsView />
+                </div>
+                <div
+                  id="settings-panel-computeruse"
+                  hidden={section !== 'computeruse'}
+                >
+                  <ComputerUseView />
                 </div>
                 <div
                   id="settings-panel-appearance"

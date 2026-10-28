@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FilmIcon } from 'lucide-react';
 import type {
   StudioCaption,
+  StudioCut,
   StudioEffect,
   StudioOverlay,
   StudioStyling,
@@ -25,6 +26,11 @@ import type {
   StudioZoom,
 } from '@/main/ipc/channels';
 import { safeDurationMs } from '@/lib/studio-types';
+import {
+  compFromSource,
+  cutAt,
+  sourceFromComp,
+} from '@/lib/studio/timeline/ripple';
 import { studioCanvasDims } from '@/lib/studio/render/geometry';
 import {
   computeCameraTarget,
@@ -56,6 +62,8 @@ interface StudioCanvasProps {
   effects?: StudioEffect[];
   overlays?: StudioOverlay[];
   videoCrop?: StudioVideoCrop;
+  /** Excision list, already normalized against the source duration. */
+  cuts?: StudioCut[];
   durationMs?: number;
   isPlaying: boolean;
   onTimeUpdate?: (ms: number) => void;
@@ -76,6 +84,7 @@ export function StudioCanvas({
   effects,
   overlays,
   videoCrop,
+  cuts,
   durationMs,
   isPlaying,
   onTimeUpdate,
@@ -114,6 +123,16 @@ export function StudioCanvas({
   const currentTimeRef = useRef(timelineStore.getState().currentTimeMs);
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
+
+  // The playhead and the element live on different axes: the store is
+  // composition time, `<video>.currentTime` is source time. These refs exist so
+  // the 60fps loop and the muxer-facing code can read the current cut list
+  // without re-subscribing.
+  const cutsRef = useRef<StudioCut[]>(cuts ?? []);
+  cutsRef.current = cuts ?? [];
+  const overlaysRef = useRef<StudioOverlay[]>(overlays ?? []);
+  overlaysRef.current = overlays ?? [];
+  const endedRef = useRef(false);
 
   // The numbers/texture inputs the render loop reads. Stored in refs so prop
   // changes never tear down and re-create the animation loop.
@@ -199,6 +218,15 @@ export function StudioCanvas({
     }
   }, [isPlaying]);
 
+  // ── Reset the local clock when the source changes ─────────────────────────
+  // Loading a different take swaps the `<video>` element; without this the next
+  // frame would read a stale composition time and immediately seek away.
+  useEffect(() => {
+    currentTimeRef.current = timelineStore.getState().currentTimeMs;
+    lastEmittedTimeRef.current = 0;
+    endedRef.current = false;
+  }, [videoUrl]);
+
   // ── Delta-clock playback loop for blank canvases (no video source) ─────────
   useEffect(() => {
     if (!isPlaying || videoUrl) return;
@@ -229,18 +257,32 @@ export function StudioCanvas({
 
   // ── Sync the hidden video (and overlay videos) to the playhead ────────────
   useEffect(() => {
-    const syncVideoTime = (timeMs: number) => {
-      currentTimeRef.current = timeMs;
-      const targetSec = timeMs / 1000;
+    const syncVideoTime = (compMs: number) => {
+      currentTimeRef.current = compMs;
+      // The store seeks in composition time; the media elements need source
+      // time. `sourceFromComp` also guarantees we never land inside a cut.
+      const sourceMs = sourceFromComp(compMs, cutsRef.current);
+      const targetSec = sourceMs / 1000;
       if (!Number.isFinite(targetSec) || targetSec < 0) return;
 
-      for (const video of overlayVideoRefs.current.values()) {
+      // An overlay's media clock starts at its own `startMs`, not at zero.
+      for (const overlay of overlaysRef.current) {
+        const video = overlayVideoRefs.current.get(overlay.id);
+        if (!video) continue;
+        const offsetSec = (sourceMs - overlay.startMs) / 1000;
+        if (offsetSec < 0) {
+          video.pause();
+          continue;
+        }
+        const duration = Number.isFinite(video.duration) ? video.duration : 0;
+        const desiredSec =
+          duration > 0 ? Math.min(offsetSec, Math.max(0, duration - 0.05)) : offsetSec;
         if (
-          Math.abs(video.currentTime - targetSec) >
+          Math.abs(video.currentTime - desiredSec) >
           PLAYBACK_SEEK_TOLERANCE_MS / 1000
         ) {
           try {
-            video.currentTime = targetSec;
+            video.currentTime = desiredSec;
           } catch {
             // Overlay may not be seekable yet; the next tick retries.
           }
@@ -249,7 +291,7 @@ export function StudioCanvas({
 
       const video = videoRef.current;
       if (!video || !videoLoaded) return;
-      const diff = Math.abs(video.currentTime * 1000 - timeMs);
+      const diff = Math.abs(video.currentTime * 1000 - sourceMs);
       if (!isPlayingRef.current) {
         if (diff > 50) video.currentTime = targetSec;
         return;
@@ -275,24 +317,66 @@ export function StudioCanvas({
 
       const { styling: style, zooms: z, captions: c, effects: fx, overlays: ov, videoCrop: vc } =
         renderInputsRef.current;
+      const activeCuts = cutsRef.current;
       const video = videoRef.current;
       const ready = Boolean(video && video.readyState >= 2);
-      const timeMs =
-        ready && video ? video.currentTime * 1000 : currentTimeRef.current;
+
+      // Two clocks. `video.currentTime` is the source; the playhead and every
+      // consumer of `onTimeUpdate` is composition time.
+      let sourceMs: number;
+      let compMs: number;
+
+      if (ready && video) {
+        sourceMs = video.currentTime * 1000;
+
+        // The element is the playback clock, so skipping a cut means jumping it
+        // past the excised range. Without this the export shortens but the
+        // preview holds a frozen frame.
+        if (isPlayingRef.current) {
+          const cut = cutAt(sourceMs, activeCuts);
+          if (cut) {
+            video.currentTime = cut.endMs / 1000;
+            sourceMs = cut.endMs;
+          }
+        }
+
+        compMs = compFromSource(sourceMs, activeCuts);
+        currentTimeRef.current = compMs;
+      } else {
+        compMs = currentTimeRef.current;
+        sourceMs = sourceFromComp(compMs, activeCuts);
+      }
 
       if (
         isPlayingRef.current &&
-        Math.abs(timeMs - lastEmittedTimeRef.current) >= 16
+        Math.abs(compMs - lastEmittedTimeRef.current) >= 16
       ) {
-        lastEmittedTimeRef.current = timeMs;
-        onTimeUpdate?.(timeMs);
+        lastEmittedTimeRef.current = compMs;
+        onTimeUpdate?.(compMs);
       }
 
-       const target = vc
+      // A trailing cut ends the composition before the file does, so the
+      // element's own `ended` event is not enough.
+      const compositionEnd = durationMs ?? 0;
+      if (
+        isPlayingRef.current &&
+        compositionEnd > 0 &&
+        compMs >= compositionEnd - 1
+      ) {
+        if (!endedRef.current) {
+          endedRef.current = true;
+          video?.pause();
+          onEnded?.();
+        }
+      } else if (compositionEnd > 0 && compMs < compositionEnd - 1) {
+        endedRef.current = false;
+      }
+
+      const target = vc
         ? { ...IDLE_CAMERA }
         : computeCameraTarget({
             zooms: z,
-            timeMs,
+            timeMs: sourceMs,
             zoomIntensity: style.zoomIntensity,
           });
       cameraRef.current = stepCamera(
@@ -321,7 +405,9 @@ export function StudioCanvas({
         width: canvas.width,
         height: canvas.height,
         styling: style,
-        timeMs,
+        // Composition children (captions, effects, overlays, zooms) are authored
+        // in source time, so that is the axis the compose pass receives.
+        timeMs: sourceMs,
         video: video,
         videoReady: ready,
         camera: cameraRef.current,
@@ -366,7 +452,7 @@ export function StudioCanvas({
         drawMotionCard(ctx, {
           card: style.introCard,
           cardType: 'intro',
-          currentTimeMs: timeMs,
+          currentTimeMs: compMs,
           totalDurationMs: totalDur,
           cw: canvas.width,
           ch: canvas.height,
@@ -377,7 +463,7 @@ export function StudioCanvas({
         drawMotionCard(ctx, {
           card: style.outroCard,
           cardType: 'outro',
-          currentTimeMs: timeMs,
+          currentTimeMs: compMs,
           totalDurationMs: totalDur,
           cw: canvas.width,
           ch: canvas.height,
@@ -389,7 +475,7 @@ export function StudioCanvas({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [onTimeUpdate]);
+  }, [onTimeUpdate, durationMs, onEnded]);
 
   const aspectClass =
     styling.aspectRatio === '9:16'

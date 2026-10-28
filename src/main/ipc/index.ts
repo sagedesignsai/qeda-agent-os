@@ -67,6 +67,7 @@ import { registerGamificationHandlers } from './handlers/gamification';
 import { registerNotificationsHandlers } from './handlers/notifications';
 import { registerDocumentsHandlers } from './handlers/documents';
 import { registerStudioHandlers } from './handlers/studio';
+import { registerComputerUseHandlers } from './handlers/computer-use';
 import { registerStudioCopilotHandlers } from './handlers/studio-copilot';
 import { registerDocumentDrafterHandlers } from './handlers/document-drafter';
 import { registerSerperHandlers } from './handlers/serper';
@@ -99,6 +100,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerNotificationsHandlers({ mainWindow });
   registerDocumentsHandlers({ mainWindow });
   registerStudioHandlers({ mainWindow });
+  registerComputerUseHandlers({ mainWindow });
   registerStudioCopilotHandlers({ mainWindow });
   registerDocumentDrafterHandlers({ mainWindow });
   registerSerperHandlers({ mainWindow });

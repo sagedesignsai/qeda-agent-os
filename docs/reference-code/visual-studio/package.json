@@ -1,0 +1,16 @@
+{
+  "name": "@sonic-genius/visual-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./visual/*": "./src/studio/visual/*.ts",
+    "./analysis/*": "./src/studio/analysis/*.ts"
+  },
+  "peerDependencies": {
+    "three": "^0.180.0",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.15"
+  }
+}

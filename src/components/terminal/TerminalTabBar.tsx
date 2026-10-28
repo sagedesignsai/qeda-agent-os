@@ -52,9 +52,9 @@ function TabItem({ info, isActive, status, onSelect, onClose }: TabItemProps) {
       onClick={onSelect}
       className={cn(
         'group flex items-center gap-1.5 px-2.5 py-1.5 text-left transition-all',
-        'max-w-[160px] min-w-[100px] border-b-2',
+        'max-w-[160px] min-w-[100px] border-b border-transparent',
         isActive
-          ? 'border-b-foreground bg-card text-foreground'
+          ? 'border-b-primary/80 bg-card/85 text-foreground'
           : 'border-b-transparent text-muted-foreground hover:bg-card/50 hover:text-foreground',
       )}
     >
@@ -121,7 +121,7 @@ export function TerminalTabBar({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex items-center gap-px border-b border-border/40 bg-muted/30">
+    <div className="flex items-center gap-px border-b border-border/40 bg-background/80">
       {/* Tab items */}
       {tabs.map((info, index) => (
         <TabItem

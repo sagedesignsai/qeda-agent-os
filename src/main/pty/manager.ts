@@ -50,6 +50,8 @@ interface PtyEntry {
   outputBuffer: string[];
   totalOutputBytes: number;
   isCommandRunning?: boolean;
+  isPromptReady?: boolean;
+  pendingCommand?: string;
 }
 
 export class PtyManager {
@@ -155,6 +157,16 @@ export class PtyManager {
     let entry: PtyEntry;
 
     const parser = new Osc133Parser({
+      onPromptReady: () => {
+        entry.isPromptReady = true;
+        if (entry.pendingCommand) {
+          entry.pty.write(`${entry.pendingCommand}\r`);
+          entry.pendingCommand = undefined;
+        }
+        if (!this.window.isDestroyed()) {
+          this.window.webContents.send('pty:prompt-ready', { ptyId });
+        }
+      },
       onCommandStart: (command, cwd) => {
         // Auto-create session on first command if this PTY was launched without a sessionId
         if (!opts.sessionId && !entry.sessionId && command) {
@@ -362,6 +374,29 @@ export class PtyManager {
     this.ptys.get(ptyId)?.pty.write(data);
   }
 
+  /** Queue a command for the next prompt or submit it to a ready shell. */
+  runCommand(ptyId: string, command: string): boolean {
+    const entry = this.ptys.get(ptyId);
+    if (!entry || entry.pendingCommand || entry.isCommandRunning) return false;
+    if (entry.isPromptReady) {
+      entry.isPromptReady = false;
+      entry.pty.write(`${command}\r`);
+    } else {
+      entry.pendingCommand = command;
+    }
+    return true;
+  }
+
+  /** Cancel a queued command and interrupt the current foreground process. */
+  interrupt(ptyId: string): boolean {
+    const entry = this.ptys.get(ptyId);
+    if (!entry) return false;
+    entry.pendingCommand = undefined;
+    entry.isPromptReady = false;
+    entry.pty.write('\u0003');
+    return true;
+  }
+
   /** Notify the PTY of a resize. */
   resize(ptyId: string, cols: number, rows: number): void {
     this.ptys.get(ptyId)?.pty.resize(cols, rows);
@@ -452,6 +487,17 @@ export function registerPtyHandlers(
       manager!.write(ptyId, data);
     },
   );
+
+  ipcMain.handle(
+    'pty:run-command',
+    (_e, { ptyId, command }: { ptyId: string; command: string }) => {
+      return { queued: manager!.runCommand(ptyId, command) };
+    },
+  );
+
+  ipcMain.handle('pty:interrupt', (_e, { ptyId }: { ptyId: string }) => {
+    return { interrupted: manager!.interrupt(ptyId) };
+  });
 
   ipcMain.handle(
     'pty:resize',

@@ -106,6 +106,14 @@ export interface AppSettings {
    * distinguishes a deliberate global choice from a first-run unset preference.
    */
   activeProjectId?: string | null;
+  /**
+   * Computer-use capability settings: master switch and allowlisted window
+   * titles (substring match against the foreground window).
+   */
+  computerUse?: {
+    enabled?: boolean;
+    allowedWindows?: string[];
+  };
   /** True when the user explicitly chose global/no-default project context. */
   activeProjectExplicitlyCleared?: boolean;
   providers: ProvidersMap;

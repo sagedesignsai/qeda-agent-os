@@ -165,13 +165,13 @@ export function StudioVideoCropDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="w-[95vw] max-w-none max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle>Crop video region</DialogTitle>
         </DialogHeader>
         <div
           ref={containerRef}
-          className="relative w-full aspect-video bg-black overflow-hidden rounded-md select-none touch-none"
+          className="relative w-full max-h-[60vh] aspect-video bg-black overflow-hidden rounded-md select-none touch-none"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}

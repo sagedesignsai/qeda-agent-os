@@ -107,7 +107,7 @@ export function StudioPluginsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl bg-card border-border/80 text-card-foreground p-0 overflow-hidden shadow-2xl">
+      <DialogContent className="w-[95vw] max-w-none bg-card border-border/80 text-card-foreground p-0 overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="p-5 border-b border-border/60 bg-muted/20 flex items-center justify-between">
           <div className="flex items-center gap-3">

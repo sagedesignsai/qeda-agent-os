@@ -57,6 +57,11 @@ import {
 } from '@/components/studio/renderers/device-frames';
 import { drawMotionCard } from '@/components/studio/renderers/motion-cards';
 import type { StudioTake } from '../types';
+import {
+  compositionDurationMs,
+  normalizeCuts,
+  sourceFromComp,
+} from '../timeline/ripple';
 import { WebMMuxer } from './webm-muxer';
 
 export interface RenderComposedVideoOptions {
@@ -219,6 +224,15 @@ export async function renderComposedStudioVideo(
     throw new Error('Showcase take has zero duration');
   }
 
+  // Dead-air cuts excise source ranges. The output length, the frame count and
+  // every encoded timestamp are composition time; only the video seeks use the
+  // source. An all-cut take has nothing to render.
+  const cuts = normalizeCuts(take.cuts ?? [], totalDurationMs);
+  const compositionDuration = compositionDurationMs(totalDurationMs, cuts);
+  if (compositionDuration <= 0) {
+    throw new Error('Showcase take has no content left after cuts');
+  }
+
   // 3. Preload overlay assets
   options?.onProgress?.(0.08, 'Preloading overlays and motion assets...');
   const overlayAssets = new Map<string, StudioOverlayAsset>();
@@ -341,21 +355,9 @@ export async function renderComposedStudioVideo(
     latencyMode: 'quality',
   });
 
-  // 7. Build pre-computed cut list for dead-air skipping
-  const cuts = [...(take.cuts ?? [])].sort((a, b) => a.startMs - b.startMs);
-
-  /**
-   * Advance timeMs past any pruned cut segment it falls inside.
-   * Returns the adjusted time.
-   */
-  function skipCuts(timeMs: number): number {
-    for (const cut of cuts) {
-      if (timeMs >= cut.startMs && timeMs < cut.endMs) {
-        return cut.endMs;
-      }
-    }
-    return timeMs;
-  }
+  // 7. Dead-air cuts, pre-mapped from composition time back to source time.
+  //    Sorting is done by `normalizeCuts`, which also merges overlaps so a
+  //    seek can never land between two adjacent cut entries.
 
   // 8. Pre-simulate camera state from t=0 to handle history-dependent easing.
   //    We run the camera forward at the export fps without rendering anything,
@@ -392,8 +394,11 @@ export async function renderComposedStudioVideo(
   radialGlow.addColorStop(0, 'rgba(99, 102, 241, 0.18)');
   radialGlow.addColorStop(1, 'rgba(99, 102, 241, 0)');
 
-  // 9. Frame-by-frame rendering loop
-  const totalFrames = Math.ceil((totalDurationMs / 1000) * fps);
+  // 9. Frame-by-frame rendering loop.
+  //    Composition time drives everything the viewer sees — frame count, encoded
+  //    timestamps, motion cards — while only the media seeks are translated back
+  //    to source time. This is what makes a cut actually shorten the file.
+  const totalFrames = Math.ceil((compositionDuration / 1000) * fps);
   const frameIntervalMs = 1000 / fps;
   const keyframeInterval = fps * 2; // Keyframe every 2 seconds
 
@@ -412,23 +417,33 @@ export async function renderComposedStudioVideo(
       throw encoderError;
     }
 
-    let currentTimeMs = frameIndex * frameIntervalMs;
-    currentTimeMs = skipCuts(currentTimeMs);
+    const currentTimeMs = Math.min(
+      frameIndex * frameIntervalMs,
+      compositionDuration,
+    );
+    const sourceMs = sourceFromComp(currentTimeMs, cuts);
 
     // Seek video and overlay videos to this exact frame
     if (video) {
-      const seekSec = Math.min(currentTimeMs / 1000, video.duration);
+      const seekSec = Math.min(sourceMs / 1000, video.duration);
       await seekTo(video, seekSec, options?.signal);
     }
 
-    // Seek overlay videos (they loop, so use modulo of their duration)
-    for (const asset of overlayAssets.values()) {
-      if (asset.element instanceof HTMLVideoElement) {
-        const ovVid = asset.element;
-        if (ovVid.duration > 0) {
-          const seekSec = (currentTimeMs / 1000) % ovVid.duration;
-          // Best-effort: we don't await overlay seeks to keep the loop fast
-          ovVid.currentTime = seekSec;
+    // Overlay media clocks start at their own `startMs`, so an overlay that
+    // appears at 10s shows its first frame there instead of its tenth second.
+    for (const overlay of take.overlays ?? []) {
+      const asset = overlayAssets.get(overlay.id);
+      if (!asset || !(asset.element instanceof HTMLVideoElement)) continue;
+      const ovVid = asset.element;
+      if (!(ovVid.duration > 0)) continue;
+      const offsetSec = (sourceMs - overlay.startMs) / 1000;
+      const seekSec = Math.max(0, Math.min(offsetSec, ovVid.duration - 0.05));
+      if (Math.abs(ovVid.currentTime - seekSec) > 0.01) {
+        try {
+          await seekTo(ovVid, seekSec, options?.signal);
+        } catch (error) {
+          if (options?.signal?.aborted) throw error;
+          // A broken overlay should not fail the whole export.
         }
       }
     }
@@ -438,7 +453,7 @@ export async function renderComposedStudioVideo(
       ? { ...IDLE_CAMERA }
       : computeCameraTarget({
           zooms: take.zooms ?? [],
-          timeMs: currentTimeMs,
+          timeMs: sourceMs,
           zoomIntensity: take.styling.zoomIntensity,
         });
     camera = stepCameraWithAlpha(camera, target, alphaAtFps);
@@ -448,7 +463,7 @@ export async function renderComposedStudioVideo(
       width: dims.width,
       height: dims.height,
       styling: take.styling,
-      timeMs: currentTimeMs,
+      timeMs: sourceMs,
       video: video || null,
       videoReady: Boolean(video && video.readyState >= 2),
       camera,
@@ -495,7 +510,7 @@ export async function renderComposedStudioVideo(
         card: take.styling.introCard,
         cardType: 'intro',
         currentTimeMs,
-        totalDurationMs,
+        totalDurationMs: compositionDuration,
         cw: dims.width,
         ch: dims.height,
       });
@@ -506,7 +521,7 @@ export async function renderComposedStudioVideo(
         card: take.styling.outroCard,
         cardType: 'outro',
         currentTimeMs,
-        totalDurationMs,
+        totalDurationMs: compositionDuration,
         cw: dims.width,
         ch: dims.height,
       });
@@ -514,6 +529,7 @@ export async function renderComposedStudioVideo(
 
     // Capture the drawn canvas as a VideoFrame and encode it
     const videoFrame = new VideoFrame(canvas, {
+      // Composition time: the muxer's timeline must match the shorter output.
       timestamp: Math.round(currentTimeMs * 1000), // μs
     });
     const isKeyframe = frameIndex % keyframeInterval === 0;
@@ -553,7 +569,7 @@ export async function renderComposedStudioVideo(
     const progressRange = 0.85;
     const frameProgress = frameIndex / Math.max(1, totalFrames);
     const secFormatted = (currentTimeMs / 1000).toFixed(1);
-    const totalSecFormatted = (totalDurationMs / 1000).toFixed(1);
+    const totalSecFormatted = (compositionDuration / 1000).toFixed(1);
     options?.onProgress?.(
       progressBase + frameProgress * progressRange,
       `Rendering frame ${frameIndex + 1}/${totalFrames} (${secFormatted}s / ${totalSecFormatted}s)...`,
@@ -575,5 +591,5 @@ export async function renderComposedStudioVideo(
     isLast: true,
   });
 
-  return { ok: true, durationMs: totalDurationMs };
+  return { ok: true, durationMs: compositionDuration };
 }

@@ -15,7 +15,6 @@ import {
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputTools,
-  PromptInputSubmit,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input';
 import {
@@ -26,10 +25,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import {
-  isDirectCommandInput,
-  isInteractiveCommand,
-} from '@/lib/terminal-input';
+import { isInteractiveCommand } from '@/lib/terminal-input';
 import { WorkflowsDialog } from '@/components/terminal/WorkflowsDialog';
 import { TerminalHistoryDialog } from '@/components/terminal/TerminalHistoryDialog';
 import {
@@ -38,9 +34,15 @@ import {
 } from '@/lib/terminal-history';
 import {
   AlertTriangleIcon,
+  BotIcon,
   BookOpenIcon,
+  ChevronUpIcon,
   ClockIcon,
+  FolderIcon,
   GitBranchIcon,
+  LoaderCircleIcon,
+  SearchIcon,
+  SquareIcon,
   TerminalIcon,
   ZapIcon,
 } from 'lucide-react';
@@ -103,6 +105,7 @@ const TAG_COLORS: Record<string, string> = {
 interface TerminalGoalInputProps {
   onSubmit: (goal: string) => void;
   onRunInShell?: (cmd: string) => void;
+  onStop?: () => void;
   isRunning?: boolean;
   disabled?: boolean;
   className?: string;
@@ -113,24 +116,42 @@ interface TerminalGoalInputProps {
   prefill?: string;
   /** Working directory to display in the rich prompt. */
   cwd?: string;
+  /** Git repository root, if the current directory is inside a repository. */
+  gitRoot?: string | null;
   /** Active git branch name (if any). */
   gitBranch?: string | null;
+  changedFiles?: number;
+  additions?: number;
+  deletions?: number;
+  onCwdChange?: (cwd: string) => void;
 }
 
 export function TerminalGoalInput({
   onSubmit,
   onRunInShell,
+  onStop,
   isRunning = false,
   disabled = false,
   className,
   prefill,
   cwd,
+  gitRoot,
   gitBranch,
+  changedFiles = 0,
+  additions = 0,
+  deletions = 0,
+  onCwdChange,
 }: TerminalGoalInputProps) {
   const [text, setText] = useState('');
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [workflowsOpen, setWorkflowsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
+  const [directorySearch, setDirectorySearch] = useState('');
+  const [directories, setDirectories] = useState<string[]>([]);
+  const [parentDir, setParentDir] = useState<string | null>(null);
+  const [isLoadingDirectories, setIsLoadingDirectories] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [interactivePrompt, setInteractivePrompt] = useState<string | null>(
     null,
   );
@@ -140,9 +161,36 @@ export function TerminalGoalInput({
     if (prefill !== undefined) setText(prefill);
   }, [prefill]);
 
+  useEffect(() => {
+    if (!directoryPickerOpen || !cwd) return;
+    let cancelled = false;
+    setIsLoadingDirectories(true);
+    setDirectoryError(null);
+    void window.electron.ipc
+      .invoke<{ parentDir: string | null; directories: string[] }>(
+        'terminal:list-directories',
+        { cwd },
+      )
+      .then((result) => {
+        if (cancelled) return null;
+        setParentDir(result.parentDir);
+        setDirectories(result.directories);
+        return null;
+      })
+      .catch(() => {
+        if (!cancelled) setDirectoryError('Could not read this directory.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingDirectories(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [directoryPickerOpen, cwd]);
+
   // A leading ! or $ means "run this directly", mirroring Warp's convention of
   // letting the shell handle what you type instead of routing it to the agent.
-  const isCommand = isDirectCommandInput(text);
+  const isDirectMode = /^[!$]\s?/.test(text.trimStart());
 
   // Ghost text autosuggestion suffix from command history
   const suggestion = getHistorySuggestion(text);
@@ -193,53 +241,40 @@ export function TerminalGoalInput({
     setPresetsOpen(false);
   };
 
+  const toggleDirectMode = () => {
+    setText((current) => {
+      if (/^[!$]\s?/.test(current.trimStart())) {
+        return current.trimStart().replace(/^[!$]\s?/, '');
+      }
+      return `! ${current}`;
+    });
+  };
+
+  const chooseDirectory = (nextCwd: string) => {
+    setDirectoryPickerOpen(false);
+    setDirectorySearch('');
+    onCwdChange?.(nextCwd);
+  };
+
+  const filteredDirectories = directories.filter((directory) =>
+    directory
+      .split(/[\\/]/)
+      .filter(Boolean)
+      .at(-1)
+      ?.toLocaleLowerCase()
+      .includes(directorySearch.trim().toLocaleLowerCase()),
+  );
+
   return (
-    <PromptInput onSubmit={handleSubmit} className={cn('font-mono', className)}>
-      <PromptInputBody>
-        {/* Terminal-flavored rich prompt header (Warp Pillar 2) */}
-        <div className="flex items-center justify-between px-3 pt-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <TerminalIcon
-              className={cn(
-                'size-3.5 shrink-0',
-                isCommand ? 'text-sky-400' : 'text-emerald-400',
-              )}
-            />
-            <span className="text-xs text-muted-foreground/75 shrink-0">
-              {isCommand ? 'command' : 'goal'}
-            </span>
-            <span className="text-muted-foreground/45 shrink-0">›</span>
-            {isCommand && (
-              <Badge
-                variant="outline"
-                className="h-4 border-sky-700/40 bg-sky-900/60 px-1.5 font-mono text-[9px] uppercase tracking-wide text-sky-300 shrink-0"
-              >
-                runs directly
-              </Badge>
-            )}
-          </div>
-
-          {/* Rich prompt metadata: path and git branch */}
-          {(cwd || gitBranch) && (
-            <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground/75 truncate pl-2">
-              {cwd && (
-                <span className="truncate max-w-[220px]" title={cwd}>
-                  {cwd.replace(/^\/home\/[^/]+/, '~')}
-                </span>
-              )}
-              {gitBranch && (
-                <Badge
-                  variant="outline"
-                  className="h-3.5 border-purple-700/40 bg-purple-950/40 px-1 font-mono text-[9px] text-purple-300 gap-1 shrink-0"
-                >
-                  <GitBranchIcon className="size-2.5" />
-                  {gitBranch}
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
-
+    <PromptInput
+      onSubmit={handleSubmit}
+      className={cn(
+        'relative isolate rounded-md border border-border/60 bg-card/70 font-mono shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]',
+        isRunning && 'terminal-composer-running',
+        className,
+      )}
+    >
+      <PromptInputBody className="bg-transparent">
         {/* Interactive TTY warning prompt banner */}
         {interactivePrompt && (
           <div className="mx-2 mb-2 mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
@@ -272,8 +307,8 @@ export function TerminalGoalInput({
                 onClick={() => {
                   const cmd = interactivePrompt;
                   setInteractivePrompt(null);
-                  addCommandHistory(cmd, cwd);
-                  onSubmit(cmd);
+                  addCommandHistory(`!${cmd}`, cwd);
+                  onSubmit(`!${cmd}`);
                   setText('');
                 }}
               >
@@ -302,7 +337,7 @@ export function TerminalGoalInput({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled || isRunning}
-          className="min-h-[52px] resize-none pl-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60"
+          className="min-h-[64px] resize-none border-0 bg-transparent px-3 py-3 font-mono text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-0"
         />
 
         {/* Ghost text autosuggestion indicator */}
@@ -318,8 +353,31 @@ export function TerminalGoalInput({
         )}
       </PromptInputBody>
 
-      <PromptInputFooter className="justify-between">
-        <PromptInputTools>
+      <PromptInputFooter className="flex-wrap justify-between border-t border-border/40 bg-background/40 px-2 py-1.5">
+        <PromptInputTools className="flex-wrap gap-1">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className={cn(
+              'size-7 text-muted-foreground/75 hover:text-foreground',
+              isDirectMode && 'bg-muted text-foreground',
+            )}
+            onClick={toggleDirectMode}
+            disabled={disabled || isRunning}
+            aria-label={
+              isDirectMode ? 'Switch to goal mode' : 'Switch to command mode'
+            }
+            aria-pressed={isDirectMode}
+            title={isDirectMode ? 'Command mode' : 'Goal mode'}
+          >
+            {isDirectMode ? (
+              <TerminalIcon className="size-3.5" />
+            ) : (
+              <BotIcon className="size-3.5" />
+            )}
+          </Button>
+
           {/* Preset goals popover */}
           <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
             <PopoverTrigger asChild>
@@ -328,9 +386,10 @@ export function TerminalGoalInput({
                 variant="ghost"
                 className="h-7 gap-1.5 px-2 text-[11px] font-sans text-muted-foreground/75 hover:text-muted-foreground"
                 disabled={isRunning}
+                title="Choose a common goal"
               >
                 <ZapIcon className="size-3" />
-                Quick goals
+                <span className="hidden sm:inline">Quick goals</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent
@@ -373,9 +432,10 @@ export function TerminalGoalInput({
             className="h-7 gap-1.5 px-2 text-[11px] font-sans text-muted-foreground/75 hover:text-muted-foreground"
             disabled={isRunning}
             onClick={() => setWorkflowsOpen(true)}
+            title="Open workflows"
           >
             <BookOpenIcon className="size-3 text-emerald-400" />
-            Workflows
+            <span className="hidden sm:inline">Workflows</span>
           </Button>
 
           {/* Warp-style Visual History (Pillar 3 - Ctrl+R) */}
@@ -388,17 +448,131 @@ export function TerminalGoalInput({
             title="Search command history (Ctrl+R)"
           >
             <ClockIcon className="size-3 text-sky-400" />
-            History
-            <kbd className="font-mono text-[9px] text-muted-foreground/60 bg-muted/60 px-1 rounded ml-0.5">
+            <span className="hidden sm:inline">History</span>
+            <kbd className="ml-0.5 rounded bg-muted/60 px-1 font-mono text-[9px] text-muted-foreground/60 max-sm:hidden">
               ^R
             </kbd>
           </Button>
         </PromptInputTools>
 
-        <PromptInputSubmit
-          status={isRunning ? 'streaming' : undefined}
-          disabled={!text.trim() && !isRunning}
-        />
+        <div className="ml-auto flex min-w-0 items-center gap-1">
+          {cwd && (
+            <Popover
+              open={directoryPickerOpen}
+              onOpenChange={setDirectoryPickerOpen}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 min-w-0 max-w-[min(52vw,360px)] justify-start gap-1.5 px-2 font-mono text-[10px] text-muted-foreground hover:text-foreground"
+                  disabled={disabled || isRunning}
+                  title={`Change directory: ${cwd}`}
+                >
+                  <FolderIcon className="size-3 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {cwd.replace(/^\/home\/[^/]+/, '~')
+                      ? cwd.replace(/^\/home\/[^/]+/, '~')
+                      : cwd}
+                  </span>
+                  {gitRoot && (
+                    <>
+                      <span className="shrink-0 text-muted-foreground/45">
+                        ·
+                      </span>
+                      <GitBranchIcon className="size-3 shrink-0" />
+                      <span className="max-w-24 shrink-0 truncate">
+                        {gitBranch ||
+                          gitRoot.split(/[\\/]/).filter(Boolean).pop()}
+                      </span>
+                    </>
+                  )}
+                  {gitRoot && changedFiles > 0 && (
+                    <span className="ml-1 hidden shrink-0 items-center gap-1 tabular-nums md:flex">
+                      <span className="text-muted-foreground/60">
+                        {changedFiles}
+                      </span>
+                      <span className="text-emerald-500">+{additions}</span>
+                      <span className="text-rose-500">-{deletions}</span>
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="end"
+                className="w-[min(360px,calc(100vw-32px))] gap-1.5 border-border bg-popover p-1.5"
+              >
+                <div className="flex items-center gap-2 rounded-md border border-border/60 bg-background px-2">
+                  <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <input
+                    value={directorySearch}
+                    onChange={(event) => setDirectorySearch(event.target.value)}
+                    placeholder="Search directories..."
+                    className="h-8 min-w-0 flex-1 bg-transparent font-sans text-xs outline-none placeholder:text-muted-foreground"
+                  />
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  {parentDir && (
+                    <button
+                      type="button"
+                      onClick={() => chooseDirectory(parentDir)}
+                      className="flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left font-sans text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <ChevronUpIcon className="size-3.5 shrink-0" />
+                      <span>.. (Parent Directory)</span>
+                    </button>
+                  )}
+                  {isLoadingDirectories ? (
+                    <div className="flex h-12 items-center justify-center text-muted-foreground">
+                      <LoaderCircleIcon className="size-4 animate-spin" />
+                    </div>
+                  ) : directoryError ? (
+                    <p className="px-2 py-3 font-sans text-xs text-destructive">
+                      {directoryError}
+                    </p>
+                  ) : filteredDirectories.length ? (
+                    filteredDirectories.map((directory) => (
+                      <button
+                        key={directory}
+                        type="button"
+                        onClick={() => chooseDirectory(directory)}
+                        className="flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left font-sans text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
+                        title={directory}
+                      >
+                        <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">
+                          {directory.split(/[\\/]/).filter(Boolean).pop()}
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="px-2 py-3 font-sans text-xs text-muted-foreground">
+                      {directorySearch
+                        ? 'No matching directories.'
+                        : 'No subdirectories.'}
+                    </p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          {isRunning && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={onStop}
+              disabled={!onStop}
+              aria-label="Stop running task"
+              title="Stop running task"
+            >
+              <SquareIcon className="size-3.5" />
+            </Button>
+          )}
+        </div>
       </PromptInputFooter>
 
       <WorkflowsDialog

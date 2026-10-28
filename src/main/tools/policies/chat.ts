@@ -159,8 +159,55 @@ export const chatToolPolicies: ToolPolicyMap = {
   insertBlocksAt: t('write-local'),
   replaceBlock: t('destructive'),
 
+  // ── Computer Use (tools/computer-use.ts) ────────────────────────────────────
+  listWindows: t('read'),
+  captureScreenshot: t('read'),
+  getActiveWindow: t('read'),
+  getCursorPosition: t('read'),
+  moveMouse: t('write-local'),
+  click: t('write-local'),
+  doubleClick: t('write-local'),
+  typeText: t('write-local'),
+  pressKey: t('write-local'),
+  scroll: t('write-local'),
+  wait: t('read'),
+
+  // ── Professional demo recording (tools/computer-use.ts → studio-recorder) ───
+  // The agent records its own demo: start, mark highlights as it goes, stop.
+  // Recording the screen is not an input action, but it is still gated inside
+  // the recorder on Computer Use being enabled — that toggle is the user's
+  // opt-in for an agent watching the screen at all.
+  startDemoRecording: t('write-local'),
+  markHighlight: t('write-local'),
+  stopDemoRecording: t('write-local'),
+
+  // ── Showcase Studio editing (tools/studio.ts) ───────────────────────────────
+  // Classified `write-local` across the board: these rewrite one take's own
+  // arrays, which the user can see and undo in the Studio timeline. Gating each
+  // edit would end the autonomy the whole feature exists for, and nothing here
+  // reaches outside the take or spends money — `generateSocialKit` only stores a
+  // kit the agent already wrote.
+  getTakeDetails: t('read'),
+  getMouseTelemetry: t('read'),
+  addKineticZoom: t('write-local'),
+  removeKineticZoom: t('write-local'),
+  addCanvasEffect: t('write-local'),
+  removeCanvasEffect: t('write-local'),
+  cutSilenceOrRange: t('write-local'),
+  setCaptions: t('write-local'),
+  updateStyling: t('write-local'),
+  generateSocialKit: t('write-local'),
+
+  // ── Browser Use (tools/browser-use.ts) ──────────────────────────────────────
+  openBrowser: t('network'),
+  navigateBrowser: t('network'),
+  clickSelector: t('write-local'),
+  typeSelector: t('write-local'),
+  evaluateBrowser: t('write-local'),
+  screenshotBrowser: t('read'),
+  closeBrowser: t('write-local'),
+
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),
   updatePlanItem: t('write-local'),
 };
-

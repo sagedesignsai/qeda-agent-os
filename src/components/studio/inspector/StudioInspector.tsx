@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { SlidersIcon, XIcon, LayersIcon } from 'lucide-react';
+import { SlidersIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { StudioStyling } from '@/lib/studio-types';
@@ -29,6 +29,7 @@ import {
   GlobalCaptionsSection,
   ClipPropertiesSection,
 } from './sections';
+import { InspectorAccordionContext } from './components/InspectorSection';
 
 export interface StudioInspectorProps {
   styling: StudioStyling;
@@ -54,6 +55,11 @@ export function StudioInspector({
   onToggleCollapse,
 }: StudioInspectorProps) {
   const selectedClipData = useSelectedClip();
+  // Agent actions (draft, social kit, export) are the primary commands, so they
+  // own the single open slot by default; everything else is one click away.
+  const [openSection, setOpenSection] = React.useState<string | null>(
+    'Magic Agent & Export',
+  );
 
   const handleUpdateClip = (
     clipId: string,
@@ -127,67 +133,66 @@ export function StudioInspector({
       )}
 
       {/* ── Global Showcase Styling Accordion ─────────────────────────────────── */}
-      <div className="flex flex-col">
-        {selectedClipData && (
-          <div className="px-3.5 py-2 bg-muted/20 border-b border-border/30 flex items-center gap-1.5 text-[10px] uppercase font-semibold text-muted-foreground tracking-wider">
-            <LayersIcon className="w-3 h-3 text-muted-foreground/70" />
-            <span>Global Showcase Styling</span>
+      {!selectedClipData && (
+        <InspectorAccordionContext.Provider
+          value={{ openTitle: openSection, setOpenTitle: setOpenSection }}
+        >
+          <div className="flex flex-col">
+            {/* 1. Magic Agent & Export */}
+            <MagicActionsSection
+              isProcessingDraft={isProcessingDraft}
+              isGeneratingSocialKit={isGeneratingSocialKit}
+              onRunMagicDraft={onRunMagicDraft}
+              onGenerateSocialKit={onGenerateSocialKit}
+              onExportVideo={onExportVideo}
+              defaultOpen={false}
+            />
+
+            {/* 2. Canvas & Framing */}
+            <GlobalFramingSection
+              styling={styling}
+              onUpdateStyling={onUpdateStyling}
+              defaultOpen={false}
+            />
+
+            {/* 3. Device Mockup Frame */}
+            <GlobalDeviceFrameSection
+              styling={styling}
+              onUpdateStyling={onUpdateStyling}
+              defaultOpen={false}
+            />
+
+            {/* 4. Motion Cards (Intro / Outro) */}
+            <GlobalMotionCardsSection
+              styling={styling}
+              onUpdateStyling={onUpdateStyling}
+              defaultOpen={false}
+            />
+
+            {/* 5. Wallpaper & Theme */}
+            <GlobalWallpaperSection
+              styling={styling}
+              onUpdateStyling={onUpdateStyling}
+              defaultOpen={false}
+            />
+
+            {/* 4. Camera & Kinetic Motion */}
+            <GlobalCameraSection
+              styling={styling}
+              onUpdateStyling={onUpdateStyling}
+              onAddZoomAtPlayhead={onAddZoomAtPlayhead}
+              defaultOpen={false}
+            />
+
+            {/* 5. Subtitles & Typography */}
+            <GlobalCaptionsSection
+              styling={styling}
+              onUpdateStyling={onUpdateStyling}
+              defaultOpen={false}
+            />
           </div>
-        )}
-
-        {/* 1. Magic Agent & Export */}
-        <MagicActionsSection
-          isProcessingDraft={isProcessingDraft}
-          isGeneratingSocialKit={isGeneratingSocialKit}
-          onRunMagicDraft={onRunMagicDraft}
-          onGenerateSocialKit={onGenerateSocialKit}
-          onExportVideo={onExportVideo}
-          defaultOpen={!selectedClipData}
-        />
-
-        {/* 2. Canvas & Framing */}
-        <GlobalFramingSection
-          styling={styling}
-          onUpdateStyling={onUpdateStyling}
-          defaultOpen={true}
-        />
-
-        {/* 3. Device Mockup Frame */}
-        <GlobalDeviceFrameSection
-          styling={styling}
-          onUpdateStyling={onUpdateStyling}
-          defaultOpen={false}
-        />
-
-        {/* 4. Motion Cards (Intro / Outro) */}
-        <GlobalMotionCardsSection
-          styling={styling}
-          onUpdateStyling={onUpdateStyling}
-          defaultOpen={false}
-        />
-
-        {/* 5. Wallpaper & Theme */}
-        <GlobalWallpaperSection
-          styling={styling}
-          onUpdateStyling={onUpdateStyling}
-          defaultOpen={true}
-        />
-
-        {/* 4. Camera & Kinetic Motion */}
-        <GlobalCameraSection
-          styling={styling}
-          onUpdateStyling={onUpdateStyling}
-          onAddZoomAtPlayhead={onAddZoomAtPlayhead}
-          defaultOpen={false}
-        />
-
-        {/* 5. Subtitles & Typography */}
-        <GlobalCaptionsSection
-          styling={styling}
-          onUpdateStyling={onUpdateStyling}
-          defaultOpen={false}
-        />
-      </div>
+        </InspectorAccordionContext.Provider>
+      )}
     </aside>
   );
 }

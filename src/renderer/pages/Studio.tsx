@@ -11,7 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import {
   VideoIcon,
@@ -60,12 +60,15 @@ import { StudioContentPanel } from '@/components/studio/content/StudioContentPan
 import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
 import type { ContentItemPayload } from '@/components/studio/content/items/ContentCardItem';
 import {
+  compositionDurationMs,
   extractZoomsFromTracks,
   extractCaptionsFromTracks,
   extractCutsFromTracks,
   extractEffectsFromTracks,
   extractOverlaysFromTracks,
+  normalizeCuts,
   safeDurationMs,
+  sourceFromComp,
   type StudioTake,
   type StudioEffect,
   type StudioEffectType,
@@ -125,10 +128,18 @@ export default function Studio() {
   // trusted once the media element reports a finite length — a `MediaRecorder`
   // webm reports `Infinity`, and a plain `durationMs || fallback` would let that
   // poison the timeline because `Infinity` is truthy.
-  const effectiveDurationMs = safeDurationMs(
+  const sourceDurationMs = safeDurationMs(
     durationMs,
     activeTake?.durationMs ?? 0,
   );
+
+  // Cuts excise ranges from the source, so everything the editor shows — the
+  // ruler, the playhead, the total — is composition time, which is shorter.
+  const cuts = useMemo(
+    () => normalizeCuts(activeTake?.cuts ?? [], sourceDurationMs),
+    [activeTake?.cuts, sourceDurationMs],
+  );
+  const effectiveDurationMs = compositionDurationMs(sourceDurationMs, cuts);
 
   // Modals & Copilot
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
@@ -221,11 +232,13 @@ export default function Studio() {
   const handleTimelineTracksChange = useCallback(
     (tracks: TimelineTrack[]) => {
       if (!activeTake) return;
-      const updatedZooms = extractZoomsFromTracks(tracks);
-      const updatedCaptions = extractCaptionsFromTracks(tracks);
-      const updatedCuts = extractCutsFromTracks(tracks, effectiveDurationMs);
-      const updatedEffects = extractEffectsFromTracks(tracks);
-      const updatedOverlays = extractOverlaysFromTracks(tracks);
+      // The timeline speaks composition time; the model is authored in source
+      // time, so every derived span is mapped back through the current cuts.
+      const updatedZooms = extractZoomsFromTracks(tracks, cuts);
+      const updatedCaptions = extractCaptionsFromTracks(tracks, cuts);
+      const updatedCuts = extractCutsFromTracks(tracks, activeTake.durationMs);
+      const updatedEffects = extractEffectsFromTracks(tracks, cuts);
+      const updatedOverlays = extractOverlaysFromTracks(tracks, cuts);
 
       // Timeline commits arrive on pointer release, so persist the full
       // structural delta as one narrow database update.
@@ -237,7 +250,7 @@ export default function Studio() {
         overlays: updatedOverlays,
       });
     },
-    [activeTake, effectiveDurationMs, updateTimelineData],
+    [activeTake, cuts, updateTimelineData],
   );
 
   const handleTitleSubmit = async () => {
@@ -299,9 +312,11 @@ export default function Studio() {
     if (nextPlaying) {
       // Start from the button's user gesture; the canvas also keeps playback
       // synchronized when state changes or the video element mounts later.
+      // The playhead lives in composition time, the element in source time.
       const playheadMs = timelineStore.getState().currentTimeMs;
-      if (video && Math.abs(video.currentTime * 1000 - playheadMs) > 50) {
-        video.currentTime = playheadMs / 1000;
+      const sourceMs = sourceFromComp(playheadMs, cuts);
+      if (video && Math.abs(video.currentTime * 1000 - sourceMs) > 50) {
+        video.currentTime = sourceMs / 1000;
       }
       void video?.play().catch((error: unknown) => {
         console.warn('[Studio] Timeline playback request failed.', error);
@@ -313,7 +328,7 @@ export default function Studio() {
     }
     setIsPlaying(nextPlaying);
     timelineStore.setPlaying(nextPlaying);
-  }, [isPlaying]);
+  }, [isPlaying, cuts]);
 
   const handlePreviewVideoElement = useCallback(
     (video: HTMLVideoElement | null) => {
@@ -939,6 +954,7 @@ export default function Studio() {
                         effects={activeTake.effects ?? []}
                         overlays={activeTake.overlays ?? []}
                         videoCrop={activeTake.videoCrop}
+                        cuts={cuts}
                         durationMs={effectiveDurationMs}
                         isPlaying={isPlaying}
                         onTimeUpdate={handlePreviewTimeUpdate}

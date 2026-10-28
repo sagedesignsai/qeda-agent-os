@@ -306,6 +306,7 @@ class TimelineStore {
     const firstClip: TimelineClip = {
       ...target,
       durationMs: firstDuration,
+      sourceDurationMs: firstDuration,
     };
 
     const secondClip: TimelineClip = {
@@ -315,6 +316,7 @@ class TimelineStore {
       startMs: splitTimeMs,
       durationMs: secondDuration,
       sourceStartMs: secondSourceStart,
+      sourceDurationMs: secondDuration,
     };
 
     const updatedClips = [...track.clips];
@@ -378,12 +380,17 @@ class TimelineStore {
         startMs: clampedStart,
         durationMs: clip.durationMs - delta,
         sourceStartMs: clip.sourceStartMs + delta,
+        // Rate is 1:1, so the source span always mirrors the timeline span.
+        // `extractCutsFromTracks` reads this to know which recording range a
+        // clip still covers — a stale value would invent a cut.
+        sourceDurationMs: clip.durationMs - delta,
       };
     } else {
       const clampedEnd = Math.max(newEdgeMs, clip.startMs + 300);
       updatedClip = {
         ...clip,
         durationMs: clampedEnd - clip.startMs,
+        sourceDurationMs: clampedEnd - clip.startMs,
       };
     }
 
@@ -404,6 +411,12 @@ class TimelineStore {
   moveClip = (trackId: string, clipId: string, newStartMs: number) => {
     const track = this.state.tracks.find((t) => t.id === trackId);
     if (!track || track.locked) return;
+
+    // The video track is the timeline's spine: its clips are laid out
+    // back-to-back so that "no clip here" means "this recording range was cut".
+    // Sliding one would leave a gap the model cannot express, so the editor
+    // only allows trimming it.
+    if (track.type === 'video') return;
 
     const clampedStart = Math.max(0, newStartMs);
 
@@ -456,7 +469,9 @@ class TimelineStore {
     clipId: string,
     patch: Partial<TimelineClip>,
     trackId?: string,
+    options: { snapshot?: boolean; commit?: boolean } = {},
   ) => {
+    const { snapshot = true, commit = true } = options;
     let targetTrackId = trackId;
     if (!targetTrackId) {
       const found = this.findClip(clipId);
@@ -464,7 +479,7 @@ class TimelineStore {
       targetTrackId = found.track.id;
     }
 
-    this.recordSnapshot();
+    if (snapshot) this.recordSnapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -491,7 +506,7 @@ class TimelineStore {
       ),
     };
     this.notify();
-    this.commitTrackChange();
+    if (commit) this.commitTrackChange();
   };
 
   addClip = (

@@ -239,12 +239,31 @@ describe('Master StudioInspector Component', () => {
   it('triggers onUpdateStyling when aspect ratio is clicked', () => {
     render(<StudioInspector {...defaultProps} />);
 
+    // The inspector is a single-open accordion; framing lives one click down.
+    fireEvent.click(screen.getByText('Canvas & Framing'));
+
     const ratio916 = screen.getByRole('button', { name: '9:16' });
     fireEvent.click(ratio916);
 
     expect(defaultProps.onUpdateStyling).toHaveBeenCalledWith({
       aspectRatio: '9:16',
     });
+  });
+
+  it('keeps one global section expanded at a time', () => {
+    render(<StudioInspector {...defaultProps} />);
+
+    // Agent actions are open on mount.
+    expect(
+      screen.getByRole('button', { name: /re-run magic draft/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Wallpaper & Background'));
+
+    expect(
+      screen.queryByRole('button', { name: /re-run magic draft/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Wallpaper & Background')).toBeInTheDocument();
   });
 
   it('triggers onRunMagicDraft when Re-Run Magic Draft button is clicked', () => {

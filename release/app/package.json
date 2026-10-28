@@ -17,6 +17,7 @@
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "node-pty": "^1.0.0",
-    "sqlite-vec": "^0.1.9"
+    "sqlite-vec": "^0.1.9",
+    "@nut-tree-fork/nut-js": "^4.2.0"
   }
 }

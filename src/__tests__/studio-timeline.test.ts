@@ -11,7 +11,12 @@
  */
 
 import {
+  compositionDurationMs,
   convertTakeToTracks,
+  extractCaptionsFromTracks,
+  extractCutsFromTracks,
+  extractZoomsFromTracks,
+  normalizeCuts,
   type StudioTake,
   DEFAULT_STUDIO_STYLING,
 } from '../lib/studio-types';
@@ -115,15 +120,83 @@ describe('Studio Multi-Track Timeline Engine', () => {
     expect(tracks[1].clips[0].startMs).toBe(1000);
     expect(tracks[1].clips[0].durationMs).toBe(3000);
 
-    // Video track is segmented around the cut (0-6000ms and 7500-12000ms)
+    // Video track is split around the cut, and the cut closes up: the second
+    // clip starts where the first ended, while its source offset jumps to 7500.
     expect(tracks[2].clips).toHaveLength(2);
     expect(tracks[2].clips[0].startMs).toBe(0);
     expect(tracks[2].clips[0].durationMs).toBe(6000);
-    expect(tracks[2].clips[1].startMs).toBe(7500);
+    expect(tracks[2].clips[0].sourceStartMs).toBe(0);
+    expect(tracks[2].clips[1].startMs).toBe(6000);
     expect(tracks[2].clips[1].durationMs).toBe(4500);
+    expect(tracks[2].clips[1].sourceStartMs).toBe(7500);
 
     // Audio track also segmented around the cut
     expect(tracks[3].clips).toHaveLength(2);
+    expect(tracks[3].clips[1].startMs).toBe(6000);
+    expect(tracks[3].clips[0].name).toBe('Microphone');
+  });
+
+  it('reports the composition duration, not the recording duration', () => {
+    const cuts = normalizeCuts(sampleTakeWithCuts.cuts, 12000);
+    expect(compositionDurationMs(12000, cuts)).toBe(10500);
+  });
+
+  it('round-trips cuts from source spans instead of ruler gaps', () => {
+    const tracks = convertTakeToTracks(sampleTakeWithCuts);
+    const cuts = extractCutsFromTracks(tracks, sampleTakeWithCuts.durationMs);
+
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0].startMs).toBe(6000);
+    expect(cuts[0].endMs).toBe(7500);
+
+    // Zooms and captions come back on the source axis even though they were
+    // laid out in composition time.
+    expect(extractZoomsFromTracks(tracks, cuts)[0]).toMatchObject({
+      startMs: 2000,
+      endMs: 5000,
+    });
+    expect(extractCaptionsFromTracks(tracks, cuts)[0]).toMatchObject({
+      startMs: 1000,
+      endMs: 4000,
+    });
+  });
+
+  it('treats a deleted video clip as a cut on the next sync', () => {
+    const tracks = convertTakeToTracks(sampleTakeWithoutCuts);
+    timelineStore.setTracksAndDuration(tracks, 12000);
+
+    const videoTrack = timelineStore
+      .getState()
+      .tracks.find((t) => t.type === 'video')!;
+    timelineStore.splitClipAt(videoTrack.id, videoTrack.clips[0].id, 4000);
+
+    const split = timelineStore
+      .getState()
+      .tracks.find((t) => t.id === videoTrack.id)!;
+    timelineStore.setSelectedClipId(split.clips[1].id);
+    timelineStore.deleteSelectedClip();
+
+    // The survivor still covers source 0-4000, so 4000-12000 became a cut.
+    const cuts = extractCutsFromTracks(timelineStore.getState().tracks, 12000);
+    expect(cuts).toEqual([
+      expect.objectContaining({ startMs: 4000, endMs: 12000 }),
+    ]);
+  });
+
+  it('refuses to slide a video clip off the timeline spine', () => {
+    const tracks = convertTakeToTracks(sampleTakeWithoutCuts);
+    timelineStore.setTracksAndDuration(tracks, 12000);
+
+    const videoTrack = timelineStore
+      .getState()
+      .tracks.find((t) => t.type === 'video')!;
+    timelineStore.moveClip(videoTrack.id, videoTrack.clips[0].id, 2000);
+
+    expect(
+      timelineStore
+        .getState()
+        .tracks.find((t) => t.id === videoTrack.id)!.clips[0].startMs,
+    ).toBe(0);
   });
 
   it('performs non-destructive clip splitting with source offsets', () => {

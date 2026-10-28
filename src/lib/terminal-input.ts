@@ -18,6 +18,8 @@
 export type ComposerIntent =
   { kind: 'goal'; text: string } | { kind: 'command'; command: string };
 
+export type DirectCommandRoute = 'block' | 'pty';
+
 /** Prefixes that switch the composer from "ask the agent" to "run this now". */
 const DIRECT_PREFIX = /^[!$]\s?/;
 
@@ -42,6 +44,91 @@ export function parseComposerInput(input: string): ComposerIntent {
 /** True when the composer will run the text directly rather than plan it. */
 export function isDirectCommandInput(input: string): boolean {
   return parseComposerInput(input).kind === 'command';
+}
+
+/** Route a direct command to the real PTY shell when it needs TTY semantics. */
+export function shouldRouteDirectCommandToPty(input: string): boolean {
+  const intent = parseComposerInput(input);
+  if (intent.kind !== 'command') return false;
+  return (
+    isInteractiveCommand(intent.command) ||
+    getDirectCommandRoute(intent.command) === 'pty'
+  );
+}
+
+const PTY_COMMANDS = new Set([
+  'opencode',
+  'claude',
+  'codex',
+  'vim',
+  'vi',
+  'nvim',
+  'nano',
+  'emacs',
+  'less',
+  'more',
+  'top',
+  'htop',
+  'btop',
+  'lazygit',
+  'lazydocker',
+  'tig',
+]);
+
+const DEV_SCRIPT_NAMES = new Set([
+  'dev',
+  'start',
+  'preview',
+  'watch',
+  'serve',
+  'storybook',
+  'web',
+  'app',
+]);
+
+const LONG_RUNNING_BINARIES = new Set([
+  'vite',
+  'next',
+  'nuxt',
+  'astro',
+  'webpack',
+  'webpack-dev-server',
+  'react-scripts',
+  'nodemon',
+  'http-server',
+  'python',
+  'python3',
+  'uvicorn',
+  'gunicorn',
+  'docker-compose',
+  'docker',
+  'pm2',
+  'forever',
+  'turbo',
+]);
+
+/** Route long-lived or TTY-driven commands to a PTY; other direct commands keep block capture. */
+export function getDirectCommandRoute(command: string): DirectCommandRoute {
+  const trimmed = command.trim();
+  if (!trimmed) return 'block';
+
+  const executable = trimmed.match(/^(?:[\w./-]+\/)?([\w.-]+)/)?.[1];
+  if (executable && PTY_COMMANDS.has(executable)) return 'pty';
+
+  const packageScript = trimmed.match(
+    /^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?([\w:-]+)/,
+  )?.[1];
+  if (packageScript && DEV_SCRIPT_NAMES.has(packageScript)) return 'pty';
+
+  const binary = trimmed.match(
+    /^(?:npx|pnpm\s+dlx|bunx|yarn\s+dlx)\s+([\w.-]+)/,
+  )?.[1];
+  if (binary && LONG_RUNNING_BINARIES.has(binary)) return 'pty';
+
+  const firstBin = trimmed.match(/^([\w.-]+)/)?.[1];
+  if (firstBin && LONG_RUNNING_BINARIES.has(firstBin)) return 'pty';
+
+  return 'block';
 }
 
 /**

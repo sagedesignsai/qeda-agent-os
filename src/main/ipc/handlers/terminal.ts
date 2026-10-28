@@ -10,6 +10,7 @@
 
 import { ipcMain, shell, type BrowserWindow } from 'electron';
 import { exec } from 'node:child_process';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { clearSessionEnv } from '../../ai/shell-env.js';
 import {
@@ -388,27 +389,76 @@ export function registerTerminalHandlers({
     async (_e, opts?: { cwd?: string }) => {
       const dir = opts?.cwd || process.env.HOME || process.cwd();
       let gitBranch: string | null = null;
+      let gitRoot: string | null = null;
+      let changedFiles = 0;
+      let additions = 0;
+      let deletions = 0;
+
+      const runGit = (command: string) =>
+        new Promise<string>((resolve, reject) => {
+          exec(command, { cwd: dir, timeout: 1500 }, (err, stdout) => {
+            if (err) reject(err);
+            else resolve(stdout.trimEnd());
+          });
+        });
+
       try {
-        const { stdout } = await new Promise<{ stdout: string }>(
-          (resolve, reject) => {
-            exec(
-              'git rev-parse --abbrev-ref HEAD',
-              { cwd: dir, timeout: 1500 },
-              (err, out) => {
-                if (err) reject(err);
-                else resolve({ stdout: out });
-              },
-            );
-          },
-        );
-        const trimmed = stdout.trim();
-        if (trimmed && !trimmed.includes('\n')) {
-          gitBranch = trimmed;
-        }
+        gitRoot = (await runGit('git rev-parse --show-toplevel')).trim();
       } catch {
         // Not a git repo or git not found
       }
-      return { cwd: dir, gitBranch };
+
+      if (gitRoot) {
+        const [branch, numstat, status] = await Promise.all([
+          runGit('git rev-parse --abbrev-ref HEAD').catch(() => ''),
+          runGit('git diff --numstat HEAD').catch(() => ''),
+          runGit('git status --porcelain --untracked-files=no').catch(() => ''),
+        ]);
+        gitBranch = branch && !branch.includes('\n') ? branch : null;
+        changedFiles = status ? status.split('\n').length : 0;
+
+        for (const line of numstat.split('\n')) {
+          const [added, removed] = line.split('\t');
+          additions += Number(added) || 0;
+          deletions += Number(removed) || 0;
+        }
+      }
+
+      return {
+        cwd: dir,
+        gitBranch,
+        gitRoot,
+        changedFiles,
+        additions,
+        deletions,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    'terminal:list-directories',
+    async (_e, { cwd }: { cwd: string }) => {
+      const currentDir = path.resolve(cwd);
+      const entries = await readdir(currentDir, { withFileTypes: true });
+      const directories = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(currentDir, entry.name))
+        .sort((left, right) =>
+          path.basename(left).localeCompare(path.basename(right)),
+        );
+      const parent = path.dirname(currentDir);
+
+      return {
+        parentDir: parent === currentDir ? null : parent,
+        directories,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    'terminal:set-session-cwd',
+    (_e, { sessionId, cwd }: { sessionId: string; cwd: string }) => {
+      updateTerminalSession(sessionId, { cwd: path.resolve(cwd) });
     },
   );
 }

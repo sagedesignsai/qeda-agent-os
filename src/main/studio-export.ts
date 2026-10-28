@@ -33,8 +33,14 @@ export type StudioExportQuality = 'high' | 'medium';
 const GIF_FPS = 15;
 const GIF_SCALE = 'scale=800:-1:flags=lanczos';
 
-/** ffmpeg binary to invoke. `FFMPEG_PATH` overrides the PATH lookup. */
-function resolveFfmpegPath(): string {
+/**
+ * ffmpeg binary to invoke. `FFMPEG_PATH` overrides the PATH lookup.
+ *
+ * Exported because the autonomous recorder shells out to the same binary, and
+ * two independent PATH overrides would let export and recording disagree about
+ * which ffmpeg is installed.
+ */
+export function resolveFfmpegPath(): string {
   const override = process.env.FFMPEG_PATH;
   return override && override.trim() ? override.trim() : 'ffmpeg';
 }
@@ -57,7 +63,9 @@ export function describeFfmpegFailure(error: unknown): Error {
       .map((line) => line.trim())
       .filter(Boolean)
       .slice(-3)
-      .join(' ') || err?.message || String(error);
+      .join(' ') ||
+    err?.message ||
+    String(error);
   return new Error(`ffmpeg export failed: ${detail}`);
 }
 
@@ -85,25 +93,84 @@ function baseArgs(inputPath: string): string[] {
   ];
 }
 
+/** A source range removed from the take. Times are milliseconds. */
+export interface StudioExportCut {
+  startMs: number;
+  endMs: number;
+}
+
+function seconds(ms: number): string {
+  return (ms / 1000).toFixed(3);
+}
+
+/**
+ * Audio equivalent of the renderer's cut skip.
+ *
+ * The composed video is already shorter than the recording, so the audio has to
+ * lose the same ranges or every word after a cut drifts. `aselect` drops the
+ * samples inside each cut and `asetpts` renumbers what is left, which is exactly
+ * a ripple delete on the audio track.
+ *
+ * Returns `null` when there is nothing to remove, so callers keep the simple
+ * `-map 1:a:0` path.
+ */
+export function buildCutAudioFilter(
+  cuts: readonly StudioExportCut[] | undefined,
+  label = 'a',
+): string | null {
+  if (!cuts || cuts.length === 0) return null;
+
+  const ranges = cuts
+    .filter((cut) => cut.endMs > cut.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+  if (ranges.length === 0) return null;
+
+  // Half-open ranges, matching `timeline/ripple`: the first removed sample is
+  // `startMs`, the first surviving one is `endMs`.
+  const removed = ranges
+    .map(
+      (cut) => `(gte(t,${seconds(cut.startMs)})*lt(t,${seconds(cut.endMs)}))`,
+    )
+    .join('+');
+
+  return `[1:a]aselect='not(${removed})',asetpts=N/SR/TB[${label}]`;
+}
+
 /** H.264/AAC MP4, `+faststart` so it streams from the start.
  *  When `audioInputPath` is provided the audio is sourced from that file
  *  (the original recording) rather than from the rendered WebM — the
- *  frame-by-frame renderer produces a muted video-only stream.
+ *  frame-by-frame renderer produces a muted video-only stream. `cuts` then
+ *  removes the excised ranges from that audio so it stays in sync.
  */
 export function buildMp4Args(
   inputPath: string,
   outputPath: string,
   quality: StudioExportQuality,
   audioInputPath?: string,
+  cuts?: readonly StudioExportCut[],
 ): string[] {
   const crf = quality === 'medium' ? '24' : '18';
-  const base: string[] = ['-y', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', inputPath];
+  const base: string[] = [
+    '-y',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-nostdin',
+    '-i',
+    inputPath,
+  ];
   if (audioInputPath) {
     base.push('-i', audioInputPath);
   }
+  const audioFilter = audioInputPath ? buildCutAudioFilter(cuts) : null;
   return [
     ...base,
-    ...(audioInputPath ? ['-map', '0:v:0', '-map', '1:a:0?'] : []),
+    ...(audioInputPath
+      ? audioFilter
+        ? ['-filter_complex', audioFilter, '-map', '0:v:0', '-map', '[a]']
+        : ['-map', '0:v:0', '-map', '1:a:0?']
+      : []),
+    ...(audioFilter ? ['-shortest'] : []),
     '-c:v',
     'libx264',
     '-preset',
@@ -124,22 +191,37 @@ export function buildMp4Args(
 
 /** VP9/Opus WebM, used when the source is not already a WebM.
  *  When `audioInputPath` is provided audio is sourced from the original
- *  recording rather than the rendered (video-only) WebM.
+ *  recording rather than the rendered (video-only) WebM, with `cuts` excised.
  */
 export function buildWebmArgs(
   inputPath: string,
   outputPath: string,
   quality: StudioExportQuality,
   audioInputPath?: string,
+  cuts?: readonly StudioExportCut[],
 ): string[] {
   const crf = quality === 'medium' ? '38' : '32';
-  const base: string[] = ['-y', '-hide_banner', '-loglevel', 'error', '-nostdin', '-i', inputPath];
+  const base: string[] = [
+    '-y',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-nostdin',
+    '-i',
+    inputPath,
+  ];
   if (audioInputPath) {
     base.push('-i', audioInputPath);
   }
+  const audioFilter = audioInputPath ? buildCutAudioFilter(cuts) : null;
   return [
     ...base,
-    ...(audioInputPath ? ['-map', '0:v:0', '-map', '1:a:0?'] : []),
+    ...(audioInputPath
+      ? audioFilter
+        ? ['-filter_complex', audioFilter, '-map', '0:v:0', '-map', '[a]']
+        : ['-map', '0:v:0', '-map', '1:a:0?']
+      : []),
+    ...(audioFilter ? ['-shortest'] : []),
     '-c:v',
     'libvpx-vp9',
     '-crf',
@@ -200,6 +282,41 @@ export function buildGifArgs(
 /** Injectable ffmpeg runner so orchestration can be tested without spawning. */
 export type FfmpegRunner = (args: string[]) => Promise<void>;
 
+/**
+ * Whether a media file carries at least one audio stream.
+ *
+ * Needed because the cut filter names the audio stream explicitly and ffmpeg
+ * refuses to build a filtergraph around a stream that does not exist — a
+ * microphone-less recording would otherwise fail the whole export, while the
+ * unfiltered `-map 1:a:0?` path quietly copes.
+ */
+export async function detectAudioStream(filePath: string): Promise<boolean> {
+  try {
+    await execFileAsync(
+      resolveFfmpegPath(),
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-nostdin',
+        '-i',
+        filePath,
+        '-map',
+        '0:a:0',
+        '-frames:a',
+        '1',
+        '-f',
+        'null',
+        '-',
+      ],
+      { windowsHide: true, timeout: 15_000, maxBuffer: 1024 * 1024 },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export interface TranscodeStudioVideoOptions {
   inputPath: string;
   outputPath: string;
@@ -212,6 +329,8 @@ export interface TranscodeStudioVideoOptions {
    * can merge its audio track with the composed video in a single pass.
    */
   audioInputPath?: string;
+  /** Source ranges already excised from the composed video, in ms. */
+  cuts?: readonly StudioExportCut[];
 }
 
 /**
@@ -223,11 +342,21 @@ export interface TranscodeStudioVideoOptions {
 export async function transcodeStudioVideo(
   options: TranscodeStudioVideoOptions,
   run: FfmpegRunner = runFfmpeg,
+  probeAudio: (filePath: string) => Promise<boolean> = detectAudioStream,
 ): Promise<void> {
   const { inputPath, outputPath } = options;
   const quality = options.quality ?? 'high';
 
   const { audioInputPath } = options;
+
+  // Only filter audio that actually exists; a silent recording has nothing to
+  // excise and must keep the optional `-map` behaviour.
+  const cuts =
+    options.cuts && options.cuts.length > 0 && audioInputPath
+      ? (await probeAudio(audioInputPath))
+        ? options.cuts
+        : undefined
+      : undefined;
 
   // If no audio needs merging, a WebM→WebM export with the same codec is a
   // straight copy (re-encoding would only lose quality).
@@ -241,12 +370,16 @@ export async function transcodeStudioVideo(
   }
 
   if (options.format === 'mp4') {
-    await run(buildMp4Args(inputPath, outputPath, quality, audioInputPath));
+    await run(
+      buildMp4Args(inputPath, outputPath, quality, audioInputPath, cuts),
+    );
     return;
   }
 
   if (options.format === 'webm') {
-    await run(buildWebmArgs(inputPath, outputPath, quality, audioInputPath));
+    await run(
+      buildWebmArgs(inputPath, outputPath, quality, audioInputPath, cuts),
+    );
     return;
   }
 

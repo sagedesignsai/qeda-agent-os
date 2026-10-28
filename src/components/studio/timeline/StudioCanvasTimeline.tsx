@@ -17,7 +17,9 @@ import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineTrackHeaders } from './TimelineTrackHeaders';
 import { TimelineCanvasViewport } from './TimelineCanvasViewport';
 import {
+  compositionDurationMs,
   convertTakeToTracks,
+  normalizeCuts,
   type StudioTake,
   type TimelineTrack,
 } from '@/lib/studio-types';
@@ -115,9 +117,10 @@ export function StudioCanvasTimeline({
       currentTakeIdRef.current = activeTake.id;
       lastSyncTimestampRef.current = activeTake.updatedAt || Date.now();
       const tracks = convertTakeToTracks(activeTake);
+      const cuts = normalizeCuts(activeTake.cuts ?? [], activeTake.durationMs);
       timelineStore.setTracksAndDuration(
         tracks,
-        activeTake.durationMs,
+        compositionDurationMs(activeTake.durationMs, cuts),
         isNewTake,
       );
     }

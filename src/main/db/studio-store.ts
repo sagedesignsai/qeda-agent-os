@@ -97,7 +97,10 @@ function rowToTake(row: StudioTakeRow): StudioTake {
     captions: parseJsonSafe<StudioCaption[]>(row.captions_json, []),
     effects: parseJsonSafe<StudioEffect[]>(row.effects_json, []),
     overlays: parseJsonSafe<StudioOverlay[]>(row.overlays_json, []),
-    videoCrop: parseJsonSafe<StudioVideoCrop | undefined>(row.video_crop_json, undefined),
+    videoCrop: parseJsonSafe<StudioVideoCrop | undefined>(
+      row.video_crop_json,
+      undefined,
+    ),
     styling: parseJsonSafe<StudioStyling>(
       row.styling_json,
       DEFAULT_STUDIO_STYLING,
@@ -152,12 +155,14 @@ export function listStudioTakes(
   if (projectId) {
     rows = db
       .prepare(
-        `${projection} WHERE t.project_id = ? ORDER BY t.created_at DESC LIMIT ? OFFSET ?`,
+        `${projection} WHERE t.project_id = ? ORDER BY t.created_at DESC, t.rowid DESC LIMIT ? OFFSET ?`,
       )
       .all(projectId, pageSize, pageOffset) as typeof rows;
   } else {
     rows = db
-      .prepare(`${projection} ORDER BY t.created_at DESC LIMIT ? OFFSET ?`)
+      .prepare(
+        `${projection} ORDER BY t.created_at DESC, t.rowid DESC LIMIT ? OFFSET ?`,
+      )
       .all(pageSize, pageOffset) as typeof rows;
   }
 
@@ -287,9 +292,10 @@ export function saveStudioTake(take: {
       'styling',
       'socialKit',
     ]);
-    const updates = Object.entries(columns).filter(([key]) =>
-      Object.prototype.hasOwnProperty.call(take, key) &&
-      take[key as keyof typeof take] !== undefined,
+    const updates = Object.entries(columns).filter(
+      ([key]) =>
+        Object.prototype.hasOwnProperty.call(take, key) &&
+        take[key as keyof typeof take] !== undefined,
     );
 
     if (updates.length > 0) {
@@ -356,28 +362,28 @@ export function saveStudioTake(take: {
         styling_json      = excluded.styling_json,
         social_kit_json   = excluded.social_kit_json,
         updated_at        = excluded.updated_at`,
-   ).run(
-     take.id,
-     merged.projectId,
-     merged.title,
-     merged.description,
-     merged.sourceType,
-     merged.sourceName,
-     merged.durationMs,
-     merged.videoPath,
-     merged.audioPath,
-     merged.mouseEventsPath,
-     JSON.stringify(merged.cuts),
-     JSON.stringify(merged.zooms),
-     JSON.stringify(merged.captions),
-     JSON.stringify(merged.effects),
-     JSON.stringify(merged.overlays),
-     merged.videoCrop ? JSON.stringify(merged.videoCrop) : null,
-     JSON.stringify(merged.styling),
-     merged.socialKit ? JSON.stringify(merged.socialKit) : null,
-     now,
-     now,
-   );
+  ).run(
+    take.id,
+    merged.projectId,
+    merged.title,
+    merged.description,
+    merged.sourceType,
+    merged.sourceName,
+    merged.durationMs,
+    merged.videoPath,
+    merged.audioPath,
+    merged.mouseEventsPath,
+    JSON.stringify(merged.cuts),
+    JSON.stringify(merged.zooms),
+    JSON.stringify(merged.captions),
+    JSON.stringify(merged.effects),
+    JSON.stringify(merged.overlays),
+    merged.videoCrop ? JSON.stringify(merged.videoCrop) : null,
+    JSON.stringify(merged.styling),
+    merged.socialKit ? JSON.stringify(merged.socialKit) : null,
+    now,
+    now,
+  );
 
   return getStudioTake(take.id)!;
 }

@@ -251,15 +251,23 @@ its tool set is paid for repeatedly.
 | Agent | Today | Ceiling |
 | --- | --- | --- |
 | Focus copilot | 34 | **42** |
-| Chat | 63 | **63** |
+| Chat | 101 | **105** |
 
-`allTools` spreads **every** registered group, so the chat count is the exact sum
-of the group sizes: filesystem 4, shell 1, clipboard 2, rag 4 (+ `indexPage`),
-web 2, workspace 12, services 6, repo 4, resources 4, tasks 17, documents-drafter
-6. Chat is the general surface; it is not a curated subset, and the task verbs
-included — the Document Drafter's six block tools are now shared with it the same
-way. Classifying a tool an agent does not expose is dead policy and the §5.2 test
-rejects it.
+`allTools` spreads **every** registered group, so the chat tool set is whatever
+the groups sum to — 101 names today, drawn from filesystem 4, shell 1, clipboard
+2, rag 7, web 2, workspace 12, services 6, repo 4, resources 4, tasks 17,
+documents-drafter 10, computer-use 14, browser-use 7, studio 10 and planning 2,
+plus `indexPage`. (A couple of names are registered by more than one group, so
+the parts add up to slightly more than the whole.) Chat is the general surface;
+it is not a curated subset, and the task verbs included — the Document Drafter's
+block tools are now shared with it the same way. Classifying a tool an agent does
+not expose is dead policy and the §5.2 test rejects it.
+
+The `studio` group is the Showcase Studio editing verbs, added so the chat agent
+can compose a demo it recorded itself (see the computer-use recorder in
+autonomous demo mode) rather than only the Studio copilot being able to. It is
+the one group where a chat call resolves against *state* it did not name: with no
+open take and no `takeId`, the verbs target the newest take.
 
 The chat ceiling is deliberately tight: with `allTools` open to every new group,
 it is the tripwire that makes a chat tool-set growth deliberate rather than

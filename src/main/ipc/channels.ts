@@ -1079,10 +1079,25 @@ export interface IpcChannels {
   /** The copilot may have changed tasks, blocks, or sessions — refresh. */
   'copilot:changed': void;
 
-  /** Get current working directory and git branch for rich prompt (Warp Pillar 2). */
+  /** Get current directory and Git context for the terminal composer. */
   'terminal:get-context-info': {
     req: { cwd?: string } | void;
-    res: { cwd: string; gitBranch: string | null };
+    res: {
+      cwd: string;
+      gitBranch: string | null;
+      gitRoot: string | null;
+      changedFiles: number;
+      additions: number;
+      deletions: number;
+    };
+  };
+  'terminal:list-directories': {
+    req: { cwd: string };
+    res: { parentDir: string | null; directories: string[] };
+  };
+  'terminal:set-session-cwd': {
+    req: { sessionId: string; cwd: string };
+    res: void;
   };
 
   // ── Raw PTY shell (Shell Mode & Shell Integration) ─────────────────────────
@@ -1334,7 +1349,36 @@ export interface IpcChannels {
   /** Broadcast when any take changes, created, updated or deleted. */
   'studio:changed': void;
 
-  // ── SoundLab (Brain Entrainment DAW) ──────────────────────────────────────
+  // ── Computer Use (screen capture + input) ──────────────────────────────────
+  'computer-use:get-screen-size': { req: void; res: { width: number; height: number } };
+  'computer-use:get-cursor-position': { req: void; res: { x: number; y: number } };
+  'computer-use:move-mouse': { req: { x: number; y: number }; res: { ok: boolean } };
+  'computer-use:click': {
+    req: { x: number; y: number; button?: 'left' | 'right' | 'middle' };
+    res: { ok: boolean };
+  };
+  'computer-use:double-click': { req: { x: number; y: number }; res: { ok: boolean } };
+  'computer-use:type-text': { req: { text: string }; res: { ok: boolean } };
+  'computer-use:press-key': {
+    req: { key: string; modifiers?: string[] };
+    res: { ok: boolean };
+  };
+  'computer-use:scroll': {
+    req: { x: number; y: number; deltaX: number; deltaY: number };
+    res: { ok: boolean };
+  };
+  'computer-use:capture-screenshot': {
+    req: { sourceId?: string } | void;
+    res: { dataUrl: string; width: number; height: number } | null;
+  };
+  'computer-use:get-active-window': { req: void; res: { title: string | null } };
+  'computer-use:is-allowed': {
+    req: void;
+    res: { allowed: boolean; reason?: string; activeWindow: string | null };
+  };
+  'computer-use:wait': { req: { ms: number }; res: { ok: boolean } };
+  /** Broadcast when computer-use state/settings change. */
+  'computer-use:changed': void;
   /** List saved sessions, optionally scoped by project. */
   'soundlab:list': {
     req: { projectId?: string | null } | void;

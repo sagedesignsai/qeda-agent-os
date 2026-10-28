@@ -177,13 +177,15 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
     const fitAddonRef = useRef<FitAddon | null>(null);
     const ptyIdRef = useRef<string | null>(null);
     const sessionIdRef = useRef<string | undefined>(sessionId);
-    sessionIdRef.current = sessionId;
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
     // The xterm instance is built in a mount effect, but the theme has to be
     // re-applied reactively. State bridges the two so `useXtermTheme` can hold
     // the observer open for as long as the emulator is alive.
     const [term, setTerm] = useState<Terminal | null>(null);
+    useEffect(() => {
+      sessionIdRef.current = sessionId;
+    }, [sessionId]);
     useXtermTheme(term);
 
     // Track session promotion from OSC 133
@@ -294,6 +296,7 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
         .then(({ ptyId }) => {
           ptyIdRef.current = ptyId;
           onReady?.(ptyId);
+          return undefined;
         });
 
       // xterm input → PTY write
@@ -357,9 +360,21 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
     return (
       <div
         ref={containerRef}
-        className={cn('size-full overflow-hidden bg-background p-1', className)}
+        role="button"
+        tabIndex={0}
+        aria-label="Terminal pane"
+        className={cn(
+          'size-full overflow-hidden rounded-md border border-border/60 bg-card/90 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]',
+          className,
+        )}
         // Let clicks through to xterm's own event handling
         onClick={() => termRef.current?.focus()}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            termRef.current?.focus();
+          }
+        }}
         {...props}
       />
     );

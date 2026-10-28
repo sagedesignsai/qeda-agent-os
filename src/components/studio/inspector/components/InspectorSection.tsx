@@ -10,9 +10,25 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React, { useState } from 'react';
+import React, { useState, useContext, createContext } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+
+/**
+ * Optional single-open accordion control.
+ *
+ * The inspector is a ~22% wide column, so leaving every section open turns it
+ * into a very long scroll. When the parent supplies this context, only the
+ * section whose title matches is expanded; without it each section keeps its
+ * own local state (which is what the primitive's unit tests exercise).
+ */
+export interface InspectorAccordionContextValue {
+  openTitle: string | null;
+  setOpenTitle: (title: string | null) => void;
+}
+
+export const InspectorAccordionContext =
+  createContext<InspectorAccordionContextValue | null>(null);
 
 interface InspectorSectionProps {
   title: string;
@@ -33,14 +49,26 @@ export function InspectorSection({
   className = '',
   headerAction,
 }: InspectorSectionProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const accordion = useContext(InspectorAccordionContext);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const isOpen = accordion
+    ? accordion.openTitle === title
+    : internalOpen;
+
+  const toggle = () => {
+    if (accordion) {
+      accordion.setOpenTitle(accordion.openTitle === title ? null : title);
+    } else {
+      setInternalOpen((prev) => !prev);
+    }
+  };
 
   return (
     <div className={`border-b border-border/40 ${className}`}>
       <div className="flex w-full items-center justify-between px-3.5 py-2 text-xs font-semibold text-foreground/90 hover:bg-muted/40 transition-colors select-none">
         <button
           type="button"
-          onClick={() => setIsOpen((prev) => !prev)}
+          onClick={toggle}
           className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer py-0.5"
           aria-expanded={isOpen}
         >
@@ -64,7 +92,7 @@ export function InspectorSection({
           {headerAction}
           <button
             type="button"
-            onClick={() => setIsOpen((prev) => !prev)}
+            onClick={toggle}
             aria-label={isOpen ? 'Collapse section' : 'Expand section'}
             className="p-1 rounded hover:bg-secondary/60 text-muted-foreground cursor-pointer"
           >

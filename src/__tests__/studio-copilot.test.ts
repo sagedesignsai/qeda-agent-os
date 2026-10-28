@@ -133,7 +133,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
           targetY: 0.35,
           reason: 'Highlight navbar interactive items',
         },
-        {} as any
+        {} as any,
       );
 
       expect(result.success).toBe(true);
@@ -163,7 +163,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
           targetX: 0.5,
           targetY: 0.5,
         },
-        {} as any
+        {} as any,
       );
       expect(addRes.success).toBe(true);
 
@@ -172,7 +172,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
 
       const removeRes = await (tools.removeKineticZoom as any).execute(
         { zoomId },
-        {} as any
+        {} as any,
       );
       expect(removeRes.success).toBe(true);
       expect(mockBroadcast).toHaveBeenCalledTimes(1);
@@ -193,7 +193,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
           endMs: 7500,
           reason: 'Dead air silence',
         },
-        {} as any
+        {} as any,
       );
 
       expect(cutRes.success).toBe(true);
@@ -227,7 +227,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
             },
           ],
         },
-        {} as any
+        {} as any,
       );
 
       expect(captionRes.success).toBe(true);
@@ -253,7 +253,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
           background: '#09090b',
           cameraEasing: 'snappy',
         },
-        {} as any
+        {} as any,
       );
 
       expect(styleRes.success).toBe(true);
@@ -278,10 +278,11 @@ describe('Studio Copilot AI Tools & Agent', () => {
           title: 'Introducing Studio Copilot',
           summary: 'Automate your video showcase directing with autonomous AI.',
           tweet: '🚀 Turn raw recordings into viral showcases with AI! #devrel',
-          changelog: '### Features\n- Added Studio Copilot with kinetic zoom tools',
+          changelog:
+            '### Features\n- Added Studio Copilot with kinetic zoom tools',
           linkedIn: 'Excited to announce our new Studio Video Copilot!',
         },
-        {} as any
+        {} as any,
       );
 
       expect(kitRes.success).toBe(true);
@@ -310,5 +311,78 @@ describe('Studio Copilot AI Tools & Agent', () => {
       expect(agent.tools.updateStyling).toBeDefined();
       expect(agent.tools.generateSocialKit).toBeDefined();
     });
+  });
+});
+
+describe('Studio tools on the chat surface', () => {
+  let db: Database.Database;
+
+  const makeTake = (id: string, title: string): StudioTake => ({
+    id,
+    projectId: null,
+    title,
+    description: null,
+    sourceType: 'screen',
+    sourceName: 'Screen',
+    durationMs: 9000,
+    videoPath: `/tmp/studio/${id}.mp4`,
+    audioPath: null,
+    mouseEventsPath: null,
+    cuts: [],
+    zooms: [],
+    captions: [],
+    styling: DEFAULT_STUDIO_STYLING,
+    socialKit: null,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    applyMigrations(db);
+    useTestDatabase(db);
+  });
+
+  afterEach(() => {
+    useTestDatabase(null as any);
+    db.close();
+  });
+
+  it('falls back to the newest take when the call names no id', async () => {
+    // The chat agent has no open take: it recorded one, so "edit the demo"
+    // has to resolve without it threading an id through every call.
+    saveStudioTake(makeTake('chat-take-1', 'First demo'));
+    saveStudioTake(makeTake('chat-take-2', 'Second demo'));
+
+    const tools = createStudioTools({
+      defaultToLatestTake: true,
+      includeContextTools: false,
+    });
+    const result = await (tools.getTakeDetails as any).execute({}, {});
+
+    expect(result.success).toBe(true);
+    expect(result.take.id).toBe('chat-take-2');
+    expect(result.take.highlights).toEqual([]);
+  });
+
+  it('leaves the copilot’s git and file context tools out of the chat set', () => {
+    const tools = createStudioTools({
+      defaultToLatestTake: true,
+      includeContextTools: false,
+    });
+
+    expect(tools.readFile).toBeUndefined();
+    expect(tools.gitStatus).toBeUndefined();
+    expect(tools.setCaptions).toBeDefined();
+    expect(tools.addKineticZoom).toBeDefined();
+  });
+
+  it('refuses to guess when neither an id nor an open take exists', async () => {
+    const tools = createStudioTools({ includeContextTools: false });
+    const result = await (tools.getTakeDetails as any).execute({}, {});
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/startDemoRecording/);
   });
 });

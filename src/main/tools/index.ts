@@ -25,7 +25,8 @@ export { indexPageTool } from './workspace-rag.js';
 export { serviceTools } from './services.js';
 export { resourceTools } from './resources.js';
 export { taskTools } from './tasks.js';
-export { documentDrafterTools } from './documents-drafter.js';
+export { computerUseTools } from './computer-use.js';
+export { browserUseTools } from './browser-use.js';
 
 export {
   createApprovalPolicy,
@@ -55,11 +56,26 @@ import { serviceTools } from './services.js';
 import { resourceTools } from './resources.js';
 import { taskTools } from './tasks.js';
 import { documentDrafterTools } from './documents-drafter.js';
+import { computerUseTools } from './computer-use.js';
+import { browserUseTools } from './browser-use.js';
+import { createStudioTools } from './studio.js';
 import { createPlanTools } from './plan.js';
 import { PlanManager } from '../ai/plan-manager.js';
 import { createApprovalPolicy } from './capability.js';
 import { chatToolPolicies } from './policies/chat.js';
 import { correspondenceToolPolicies } from './policies/correspondence.js';
+
+/**
+ * Showcase Studio's editing verbs, as the chat agent sees them.
+ *
+ * The chat surface has no open take — it recorded one with the computer-use
+ * recorder — so these resolve to the newest take unless the agent names one,
+ * and they omit the git/file context tools the Studio copilot gets.
+ */
+export const studioTools = createStudioTools({
+  defaultToLatestTake: true,
+  includeContextTools: false,
+});
 
 /** Every tool available to the chat agent. The copilot picks a subset. */
 export const allTools = {
@@ -74,6 +90,9 @@ export const allTools = {
   ...resourceTools,
   ...taskTools,
   ...documentDrafterTools,
+  ...computerUseTools,
+  ...browserUseTools,
+  ...studioTools,
   ...createPlanTools(new PlanManager()),
   indexPage: indexPageTool,
 };

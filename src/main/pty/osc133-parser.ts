@@ -26,6 +26,7 @@ export interface ParsedBlockEvent {
 }
 
 export interface Osc133Callbacks {
+  onPromptReady?: () => void;
   onCommandStart?: (command: string, cwd?: string) => void;
   onCommandOutput?: (chunk: string) => void;
   onCommandEnd?: (event: ParsedBlockEvent) => void;
@@ -124,6 +125,7 @@ export class Osc133Parser {
 
         case 'B': // Command input start
           this.state = 'input';
+          this.callbacks.onPromptReady?.();
           break;
 
         case 'C': // Command execution start

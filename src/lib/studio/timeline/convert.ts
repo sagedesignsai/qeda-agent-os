@@ -9,9 +9,17 @@
  * a drag/trim/split round-trips back into the take on commit.
  *
  * Invariants:
- *   - The `video` track is the only source of cuts; overlays live on their own
- *     `overlays` track so adding a picture-in-picture can never be mistaken for
- *     a silence gap.
+ *   - Every persisted element is authored in **source** time. The timeline is
+ *     projected into **composition** time through `timeline/ripple`, with cuts
+ *     excised, so a clip's `startMs` is where it plays in the output and
+ *     `sourceStartMs` is where it lives in the recording. Round-tripping goes
+ *     back through the same mapping.
+ *   - The `video` track is the only source of cuts, and its clips are laid out
+ *     contiguously: a cut is the *absence* of a source span, never a gap on the
+ *     ruler. `extractCutsFromTracks` therefore reads `sourceStartMs` /
+ *     `sourceDurationMs`, not timeline positions.
+ *   - Overlays live on their own track so adding a picture-in-picture can never
+ *     be mistaken for a silence gap.
  *   - The `effects` track holds both kinetic zooms and canvas effects; they are
  *     disambiguated by `payload.effectType` (absent ⇒ zoom).
  *   - Track order is stable (effects, captions, video, audio[, overlays]) so
@@ -33,6 +41,13 @@ import {
   effectTypeFromPayload,
   getStudioEffectDefinition,
 } from '../effects/catalog';
+import {
+  compRangeFromSource,
+  keptSegments,
+  normalizeCuts,
+  sourceRangeFromComp,
+  type RippleCut,
+} from './ripple';
 
 const EFFECTS_TRACK_ID = 'track-effects';
 const CAPTIONS_TRACK_ID = 'track-captions';
@@ -40,95 +55,125 @@ const VIDEO_TRACK_ID = 'track-video';
 const AUDIO_TRACK_ID = 'track-audio';
 const OVERLAYS_TRACK_ID = 'track-overlays';
 
-const MIN_TRACK_DURATION_MS = 4000;
-const MIN_CLIP_MS = 500;
-/** Gap below which two adjacent video clips are treated as continuous. */
+/** Gap below which two adjacent source spans are treated as continuous. */
 const CUT_GAP_TOLERANCE_MS = 50;
 
 // ── Direction A: take → tracks ────────────────────────────────────────────────
 
 export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
-  const duration = Math.max(take.durationMs, MIN_TRACK_DURATION_MS);
+  const sourceDuration = Math.max(0, take.durationMs);
+  const cuts = normalizeCuts(take.cuts ?? [], sourceDuration);
   const zooms = take.zooms ?? [];
   const captions = take.captions ?? [];
   const effects = take.effects ?? [];
   const overlays = take.overlays ?? [];
 
-  const zoomClips: TimelineClip[] = zooms.map((zoom) => ({
-    id: zoom.id,
-    trackId: EFFECTS_TRACK_ID,
-    name: `Zoom ${zoom.scale}x`,
-    startMs: zoom.startMs,
-    durationMs: Math.max(zoom.endMs - zoom.startMs, MIN_CLIP_MS),
-    sourceStartMs: zoom.startMs,
-    sourceDurationMs: zoom.endMs - zoom.startMs,
-    color: '#8b5cf6',
-    payload: {
-      effectType: 'zoom',
-      scale: zoom.scale,
-      targetX: zoom.targetX,
-      targetY: zoom.targetY,
-    },
-  }));
-
-  const effectClips: TimelineClip[] = effects.map((effect) => {
-    const definition = getStudioEffectDefinition(effect.type);
-    return {
-      id: effect.id,
-      trackId: EFFECTS_TRACK_ID,
-      name: definition?.label ?? effect.type,
-      startMs: effect.startMs,
-      durationMs: Math.max(effect.endMs - effect.startMs, MIN_CLIP_MS),
-      sourceStartMs: effect.startMs,
-      sourceDurationMs: effect.endMs - effect.startMs,
-      color: definition?.accent ?? '#8b5cf6',
-      payload: {
-        effectType: effect.type,
-        intensity: effect.intensity,
+  const zoomClips = zooms.flatMap((zoom): TimelineClip[] => {
+    const span = compRangeFromSource(
+      { startMs: zoom.startMs, endMs: zoom.endMs },
+      cuts,
+    );
+    if (!span) return [];
+    return [
+      {
+        id: zoom.id,
+        trackId: EFFECTS_TRACK_ID,
+        name: `Zoom ${zoom.scale}x`,
+        startMs: span.startMs,
+        durationMs: span.endMs - span.startMs,
+        sourceStartMs: zoom.startMs,
+        sourceDurationMs: Math.max(0, zoom.endMs - zoom.startMs),
+        color: '#8b5cf6',
+        payload: {
+          effectType: 'zoom',
+          scale: zoom.scale,
+          targetX: zoom.targetX,
+          targetY: zoom.targetY,
+        },
       },
-    };
+    ];
   });
 
-  const captionClips: TimelineClip[] = captions.map((caption) => ({
-    id: caption.id,
-    trackId: CAPTIONS_TRACK_ID,
-    name: caption.text,
-    startMs: caption.startMs,
-    durationMs: Math.max(caption.endMs - caption.startMs, MIN_CLIP_MS),
-    sourceStartMs: caption.startMs,
-    sourceDurationMs: caption.endMs - caption.startMs,
-    color: '#14b8a6',
-    payload: {
-      text: caption.text,
-    },
-  }));
+  const effectClips = effects.flatMap((effect): TimelineClip[] => {
+    const span = compRangeFromSource(
+      { startMs: effect.startMs, endMs: effect.endMs },
+      cuts,
+    );
+    if (!span) return [];
+    const definition = getStudioEffectDefinition(effect.type);
+    return [
+      {
+        id: effect.id,
+        trackId: EFFECTS_TRACK_ID,
+        name: definition?.label ?? effect.type,
+        startMs: span.startMs,
+        durationMs: span.endMs - span.startMs,
+        sourceStartMs: effect.startMs,
+        sourceDurationMs: Math.max(0, effect.endMs - effect.startMs),
+        color: definition?.accent ?? '#8b5cf6',
+        payload: {
+          effectType: effect.type,
+          intensity: effect.intensity,
+        },
+      },
+    ];
+  });
 
-  const overlayClips: TimelineClip[] = overlays.map((overlay) => ({
-    id: overlay.id,
-    trackId: OVERLAYS_TRACK_ID,
-    name:
-      overlay.kind === 'image'
-        ? 'Image Overlay'
-        : 'Video Overlay',
-    startMs: overlay.startMs,
-    durationMs: Math.max(overlay.endMs - overlay.startMs, MIN_CLIP_MS),
-    sourceStartMs: overlay.startMs,
-    sourceDurationMs: overlay.endMs - overlay.startMs,
-    color: overlay.kind === 'image' ? '#f59e0b' : '#0ea5e9',
-    payload: {
-      kind: overlay.kind,
-      srcPath: overlay.srcPath,
-      x: overlay.x,
-      y: overlay.y,
-      widthPct: overlay.widthPct,
-      opacity: overlay.opacity,
-      rotation: overlay.rotation,
-      cornerRadius: overlay.cornerRadius,
-    },
-  }));
+  const captionClips = captions.flatMap((caption): TimelineClip[] => {
+    const span = compRangeFromSource(
+      { startMs: caption.startMs, endMs: caption.endMs },
+      cuts,
+    );
+    if (!span) return [];
+    return [
+      {
+        id: caption.id,
+        trackId: CAPTIONS_TRACK_ID,
+        name: caption.text,
+        startMs: span.startMs,
+        durationMs: span.endMs - span.startMs,
+        sourceStartMs: caption.startMs,
+        sourceDurationMs: Math.max(0, caption.endMs - caption.startMs),
+        color: '#14b8a6',
+        payload: {
+          text: caption.text,
+        },
+      },
+    ];
+  });
 
-  const videoClips = buildVideoClips(take, duration);
-  const audioClips = buildAudioClips(take, duration, videoClips);
+  const overlayClips = overlays.flatMap((overlay): TimelineClip[] => {
+    const span = compRangeFromSource(
+      { startMs: overlay.startMs, endMs: overlay.endMs },
+      cuts,
+    );
+    if (!span) return [];
+    return [
+      {
+        id: overlay.id,
+        trackId: OVERLAYS_TRACK_ID,
+        name: overlay.kind === 'image' ? 'Image Overlay' : 'Video Overlay',
+        startMs: span.startMs,
+        durationMs: span.endMs - span.startMs,
+        sourceStartMs: overlay.startMs,
+        sourceDurationMs: Math.max(0, overlay.endMs - overlay.startMs),
+        color: overlay.kind === 'image' ? '#f59e0b' : '#0ea5e9',
+        payload: {
+          kind: overlay.kind,
+          srcPath: overlay.srcPath,
+          x: overlay.x,
+          y: overlay.y,
+          widthPct: overlay.widthPct,
+          opacity: overlay.opacity,
+          rotation: overlay.rotation,
+          cornerRadius: overlay.cornerRadius,
+        },
+      },
+    ];
+  });
+
+  const videoClips = buildVideoClips(take, sourceDuration, cuts);
+  const audioClips = buildAudioClips(take, videoClips);
 
   const tracks: TimelineTrack[] = [
     {
@@ -188,75 +233,49 @@ function segmentTitle(title: string, index: number): string {
   return `${title} [${index}]`;
 }
 
-function buildVideoClips(take: StudioTake, duration: number): TimelineClip[] {
-  const cuts = take.cuts ?? [];
-
-  if (cuts.length === 0) {
-    return [
-      {
-        id: `${take.id}-video-0`,
-        trackId: VIDEO_TRACK_ID,
-        name: take.title,
-        startMs: 0,
-        durationMs: duration,
-        sourceStartMs: 0,
-        sourceDurationMs: duration,
-        color: '#334155',
-      },
-    ];
-  }
-
-  const sortedCuts = [...cuts].sort((a, b) => a.startMs - b.startMs);
+/**
+ * Lay the surviving source spans out back-to-back in composition time.
+ *
+ * Contiguity is the point: a cut is expressed as a jump in `sourceStartMs`
+ * between neighbouring clips, so the ruler shows the length the viewer will
+ * actually get instead of a gap that nothing honours.
+ */
+function buildVideoClips(
+  take: StudioTake,
+  sourceDurationMs: number,
+  cuts: readonly RippleCut[],
+): TimelineClip[] {
+  const segments = keptSegments(sourceDurationMs, cuts);
   const clips: TimelineClip[] = [];
-  let currentMs = 0;
-  let clipIndex = 0;
+  let compCursor = 0;
 
-  for (const cut of sortedCuts) {
-    if (cut.startMs > currentMs) {
-      clips.push(
-        videoClipSegment(take, clipIndex++, currentMs, cut.startMs - currentMs),
-      );
-    }
-    currentMs = cut.endMs;
-  }
-
-  if (currentMs < duration) {
-    clips.push(
-      videoClipSegment(take, clipIndex++, currentMs, duration - currentMs),
-    );
+  for (const [index, segment] of segments.entries()) {
+    const durationMs = segment.endMs - segment.startMs;
+    if (durationMs <= 0) continue;
+    clips.push({
+      id: `${take.id}-video-${index}`,
+      trackId: VIDEO_TRACK_ID,
+      name: index === 0 ? take.title : segmentTitle(take.title, index),
+      startMs: compCursor,
+      durationMs,
+      sourceStartMs: segment.startMs,
+      sourceDurationMs: durationMs,
+      color: '#334155',
+    });
+    compCursor += durationMs;
   }
 
   return clips;
 }
 
-function videoClipSegment(
-  take: StudioTake,
-  index: number,
-  startMs: number,
-  durationMs: number,
-): TimelineClip {
-  return {
-    id: `${take.id}-video-${index}`,
-    trackId: VIDEO_TRACK_ID,
-    name: index === 0 ? take.title : segmentTitle(take.title, index),
-    startMs,
-    durationMs,
-    sourceStartMs: startMs,
-    sourceDurationMs: durationMs,
-    color: '#334155',
-  };
-}
-
 function buildAudioClips(
   take: StudioTake,
-  duration: number,
   videoClips: TimelineClip[],
 ): TimelineClip[] {
-  const source = videoClips.length > 0 ? videoClips : buildVideoClips(take, duration);
-  return source.map((clip, index) => ({
+  return videoClips.map((clip, index) => ({
     id: `${take.id}-audio-${index}`,
     trackId: AUDIO_TRACK_ID,
-    name: 'Microphone & System Audio',
+    name: 'Microphone',
     startMs: clip.startMs,
     durationMs: clip.durationMs,
     sourceStartMs: clip.sourceStartMs,
@@ -268,7 +287,83 @@ function buildAudioClips(
 
 // ── Direction B: tracks → model ───────────────────────────────────────────────
 
-export function extractZoomsFromTracks(tracks: TimelineTrack[]): StudioZoom[] {
+/**
+ * Project comp-time clips back onto the source axis they came from.
+ *
+ * A clip carries `sourceStartMs` for reference, but the timeline position is
+ * authoritative after a move, so the mapping always starts from `startMs` plus
+ * the current cut list.
+ */
+function clipSourceSpan(
+  clip: TimelineClip,
+  cuts: readonly RippleCut[],
+): { startMs: number; endMs: number } {
+  return sourceRangeFromComp(
+    { startMs: clip.startMs, endMs: clip.startMs + clip.durationMs },
+    cuts,
+  );
+}
+
+function roundSpan(span: { startMs: number; endMs: number }) {
+  return {
+    startMs: Math.round(span.startMs),
+    endMs: Math.round(span.endMs),
+  };
+}
+
+/**
+ * Derive the cut list from the video track.
+ *
+ * Only source spans matter: clips are contiguous on the ruler, so a gap here
+ * would mean two adjacent clips disagree about which part of the recording they
+ * show. That happens when a clip is deleted or an edge is trimmed inwards — the
+ * missing source range *is* the cut.
+ */
+export function extractCutsFromTracks(
+  tracks: TimelineTrack[],
+  sourceDurationMs: number,
+): StudioCut[] {
+  const videoTrack = tracks.find((track) => track.type === 'video');
+  if (!videoTrack || videoTrack.clips.length === 0) return [];
+
+  const sorted = [...videoTrack.clips].sort(
+    (a, b) => a.sourceStartMs - b.sourceStartMs,
+  );
+  const cuts: StudioCut[] = [];
+  let cursor = 0;
+
+  for (const clip of sorted) {
+    const start = Math.max(0, clip.sourceStartMs);
+    if (start > cursor + CUT_GAP_TOLERANCE_MS) {
+      cuts.push({
+        id: `cut-${Math.round(cursor)}-${Math.round(start)}`,
+        startMs: Math.round(cursor),
+        endMs: Math.round(start),
+        reason: 'manual',
+      });
+    }
+    cursor = Math.max(
+      cursor,
+      start + Math.max(0, clip.sourceDurationMs || clip.durationMs),
+    );
+  }
+
+  if (sourceDurationMs > cursor + CUT_GAP_TOLERANCE_MS) {
+    cuts.push({
+      id: `cut-${Math.round(cursor)}-${Math.round(sourceDurationMs)}`,
+      startMs: Math.round(cursor),
+      endMs: Math.round(sourceDurationMs),
+      reason: 'manual',
+    });
+  }
+
+  return normalizeCuts(cuts, sourceDurationMs);
+}
+
+export function extractZoomsFromTracks(
+  tracks: TimelineTrack[],
+  cuts: readonly RippleCut[] = [],
+): StudioZoom[] {
   const effectsTrack = tracks.find((track) => track.type === 'effects');
   if (!effectsTrack) return [];
 
@@ -279,31 +374,41 @@ export function extractZoomsFromTracks(tracks: TimelineTrack[]): StudioZoom[] {
       // StudioEffectType and are filtered out here.
       return effectTypeFromPayload(clip.payload) === null;
     })
-    .map((clip) => ({
-      id: clip.id,
-      startMs: Math.round(clip.startMs),
-      endMs: Math.round(clip.startMs + clip.durationMs),
-      scale: numberOr(clip.payload?.scale, 1.5),
-      targetX: numberOr(clip.payload?.targetX, 0.5),
-      targetY: numberOr(clip.payload?.targetY, 0.5),
-    }));
+    .map((clip) => {
+      const span = roundSpan(clipSourceSpan(clip, cuts));
+      return {
+        id: clip.id,
+        startMs: span.startMs,
+        endMs: span.endMs,
+        scale: numberOr(clip.payload?.scale, 1.5),
+        targetX: numberOr(clip.payload?.targetX, 0.5),
+        targetY: numberOr(clip.payload?.targetY, 0.5),
+      };
+    });
 }
 
 export function extractCaptionsFromTracks(
   tracks: TimelineTrack[],
+  cuts: readonly RippleCut[] = [],
 ): StudioCaption[] {
   const captionsTrack = tracks.find((track) => track.type === 'captions');
   if (!captionsTrack) return [];
 
-  return captionsTrack.clips.map((clip) => ({
-    id: clip.id,
-    startMs: Math.round(clip.startMs),
-    endMs: Math.round(clip.startMs + clip.durationMs),
-    text: clip.payload?.text || clip.name,
-  }));
+  return captionsTrack.clips.map((clip) => {
+    const span = roundSpan(clipSourceSpan(clip, cuts));
+    return {
+      id: clip.id,
+      startMs: span.startMs,
+      endMs: span.endMs,
+      text: clip.payload?.text || clip.name,
+    };
+  });
 }
 
-export function extractEffectsFromTracks(tracks: TimelineTrack[]): StudioEffect[] {
+export function extractEffectsFromTracks(
+  tracks: TimelineTrack[],
+  cuts: readonly RippleCut[] = [],
+): StudioEffect[] {
   const effectsTrack = tracks.find((track) => track.type === 'effects');
   if (!effectsTrack) return [];
 
@@ -311,11 +416,12 @@ export function extractEffectsFromTracks(tracks: TimelineTrack[]): StudioEffect[
   for (const clip of effectsTrack.clips) {
     const type = effectTypeFromPayload(clip.payload);
     if (!type) continue;
+    const span = roundSpan(clipSourceSpan(clip, cuts));
     effects.push({
       id: clip.id,
       type,
-      startMs: Math.round(clip.startMs),
-      endMs: Math.round(clip.startMs + clip.durationMs),
+      startMs: span.startMs,
+      endMs: span.endMs,
       intensity: numberOr(clip.payload?.intensity, 0.6),
     });
   }
@@ -324,6 +430,7 @@ export function extractEffectsFromTracks(tracks: TimelineTrack[]): StudioEffect[
 
 export function extractOverlaysFromTracks(
   tracks: TimelineTrack[],
+  cuts: readonly RippleCut[] = [],
 ): StudioOverlay[] {
   const overlaysTrack = tracks.find((track) => track.type === 'overlays');
   if (!overlaysTrack) return [];
@@ -332,12 +439,13 @@ export function extractOverlaysFromTracks(
   for (const clip of overlaysTrack.clips) {
     const srcPath = clip.payload?.srcPath || clip.payload?.filePath;
     if (!srcPath) continue;
+    const span = roundSpan(clipSourceSpan(clip, cuts));
     overlays.push({
       id: clip.id,
       kind: clip.payload?.kind === 'image' ? 'image' : 'video',
       srcPath,
-      startMs: Math.round(clip.startMs),
-      endMs: Math.round(clip.startMs + clip.durationMs),
+      startMs: span.startMs,
+      endMs: span.endMs,
       x: numberOr(clip.payload?.x, 0.5),
       y: numberOr(clip.payload?.y, 0.5),
       widthPct: numberOr(clip.payload?.widthPct, 0.42),
@@ -347,41 +455,6 @@ export function extractOverlaysFromTracks(
     });
   }
   return overlays;
-}
-
-export function extractCutsFromTracks(
-  tracks: TimelineTrack[],
-  totalDurationMs: number,
-): StudioCut[] {
-  const videoTrack = tracks.find((track) => track.type === 'video');
-  if (!videoTrack || videoTrack.clips.length === 0) return [];
-
-  const sorted = [...videoTrack.clips].sort((a, b) => a.startMs - b.startMs);
-  const cuts: StudioCut[] = [];
-  let currentMs = 0;
-
-  for (const clip of sorted) {
-    if (clip.startMs > currentMs + CUT_GAP_TOLERANCE_MS) {
-      cuts.push({
-        id: `cut-${Math.round(currentMs)}-${Math.round(clip.startMs)}`,
-        startMs: Math.round(currentMs),
-        endMs: Math.round(clip.startMs),
-        reason: 'manual',
-      });
-    }
-    currentMs = clip.startMs + clip.durationMs;
-  }
-
-  if (totalDurationMs > currentMs + CUT_GAP_TOLERANCE_MS) {
-    cuts.push({
-      id: `cut-${Math.round(currentMs)}-${Math.round(totalDurationMs)}`,
-      startMs: Math.round(currentMs),
-      endMs: Math.round(totalDurationMs),
-      reason: 'manual',
-    });
-  }
-
-  return cuts;
 }
 
 function numberOr(value: unknown, fallback: number): number {

@@ -244,14 +244,15 @@ export function CommandBlock({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.18, ease: 'easeOut' }}
         className={cn(
-          'rounded-xl border font-mono text-sm',
-          'bg-background text-foreground',
-          // Warp-style: thinner border on idle states, accent only on active
+          'overflow-hidden rounded-md border font-mono text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]',
+          'bg-card/80 text-foreground',
+          // Keep the app's semantic token system, but push the terminal feel by
+          // making the surface denser and more shell-like than a generic card.
           block.status === 'pending' ||
             block.status === 'running' ||
             block.status === 'error'
             ? meta.ring
-            : 'border-border/40',
+            : 'border-border/55',
           className,
         )}
         {...props}
@@ -286,8 +287,7 @@ export function CommandBlockHeader({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        // Warp-style: more compact header with tighter padding
-        'sticky top-0 z-10 flex items-center gap-2 border-b border-border/40 bg-background/95 backdrop-blur-xs px-3 py-2 rounded-t-xl',
+        'sticky top-0 z-10 flex items-center gap-2 border-b border-border/45 bg-background/90 px-3 py-1.5 backdrop-blur-xs',
         className,
       )}
     >
@@ -301,9 +301,9 @@ export function CommandBlockHeader({ className }: { className?: string }) {
       />
 
       {/* Command */}
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
         <span className="shrink-0 text-muted-foreground/75">$</span>
-        <span className="truncate text-foreground font-mono">
+        <span className="truncate font-mono text-[12px] font-medium tracking-[-0.01em] text-foreground">
           {block.command || '…'}
         </span>
       </div>
@@ -415,7 +415,7 @@ export function CommandBlockApproval({ className }: { className?: string }) {
         animate={{ opacity: 1, height: 'auto' }}
         exit={{ opacity: 0, height: 0 }}
         className={cn(
-          'border-b border-border/40 bg-amber-950/20 px-4 py-3',
+          'border-b border-border/45 bg-amber-500/5 px-4 py-3',
           className,
         )}
       >

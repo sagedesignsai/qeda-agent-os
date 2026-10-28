@@ -41,7 +41,10 @@ import {
 } from '@/components/terminal/XtermPane';
 import { useTerminalSession } from '@/hooks/use-terminal-session';
 import { useIpcEvent } from '@/hooks/use-ipc';
-import { parseComposerInput } from '@/lib/terminal-input';
+import {
+  parseComposerInput,
+  shouldRouteDirectCommandToPty,
+} from '@/lib/terminal-input';
 import type { TerminalBlock } from '@/main/ipc/channels';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,6 +76,7 @@ export function TerminalTab({
   onSessionAssigned,
 }: TerminalTabProps) {
   const xtermRef = useRef<XtermPaneHandle>(null);
+  const activePtyIdRef = useRef<string | null>(null);
 
   const [shellExited, setShellExited] = useState(false);
   const [hasVisitedShell, setHasVisitedShell] = useState(false);
@@ -104,31 +108,51 @@ export function TerminalTab({
   // When a fix is accepted, it goes into the composer rather than straight to
   // the shell — the user still presses Enter.
   const [draftCommand, setDraftCommand] = useState<string | undefined>();
+  const [interactivePtyCommand, setInteractivePtyCommand] = useState<
+    string | null
+  >(null);
+  const [lastPtyCommand, setLastPtyCommand] = useState<{
+    command: string;
+    exitCode: number | null;
+  } | null>(null);
+  const interactivePtyPtyIdRef = useRef<string | null>(null);
   const handleUseFix = useCallback((command: string) => {
     setDraftCommand(command);
+  }, []);
+
+  const handleRunInShell = useCallback((command: string) => {
+    setInteractivePtyCommand(command.trim() || null);
+    setLastPtyCommand(null);
   }, []);
 
   // Context info: cwd & git branch for Warp-style rich prompt
   const [contextInfo, setContextInfo] = useState<{
     cwd?: string;
     gitBranch?: string | null;
+    gitRoot?: string | null;
+    changedFiles?: number;
+    additions?: number;
+    deletions?: number;
   }>({});
 
   const refreshContext = useCallback((targetCwd?: string) => {
     void window.electron.ipc
-      .invoke<{ cwd: string; gitBranch: string | null }>(
-        'terminal:get-context-info',
-        {
-          cwd: targetCwd,
-        },
-      )
+      .invoke<{
+        cwd: string;
+        gitBranch: string | null;
+        gitRoot: string | null;
+        changedFiles: number;
+        additions: number;
+        deletions: number;
+      }>('terminal:get-context-info', { cwd: targetCwd })
       .then((info) => setContextInfo(info))
       .catch(() => {});
   }, []);
 
   // Update working directory whenever PTY shell reports OSC 7 directory changes
   useIpcEvent('pty:cwd-changed', (...args: unknown[]) => {
-    const { cwd } = args[0] as { cwd: string };
+    const { ptyId, cwd } = args[0] as { ptyId: string; cwd: string };
+    if (ptyId !== activePtyIdRef.current) return;
     refreshContext(cwd);
   });
 
@@ -151,6 +175,7 @@ export function TerminalTab({
     setShellExited(false);
     if (!sessionId) {
       setSessionCwd(undefined);
+      refreshContext();
       return;
     }
     void window.electron.ipc
@@ -161,6 +186,8 @@ export function TerminalTab({
         if (data?.cwd) {
           setSessionCwd(data.cwd);
           refreshContext(data.cwd);
+        } else {
+          refreshContext();
         }
         return undefined;
       })
@@ -228,6 +255,13 @@ export function TerminalTab({
     async (input: string) => {
       const intent = parseComposerInput(input);
 
+      if (intent.kind === 'command') {
+        if (shouldRouteDirectCommandToPty(input)) {
+          handleRunInShell(intent.command);
+          return;
+        }
+      }
+
       if (sessionId) {
         if (intent.kind === 'command') runCommand(intent.command);
         else runGoal(intent.text);
@@ -263,7 +297,15 @@ export function TerminalTab({
         toast.error('Could not create terminal session');
       }
     },
-    [sessionId, runGoal, runCommand, contextInfo, tabId, onSessionAssigned],
+    [
+      sessionId,
+      runGoal,
+      runCommand,
+      contextInfo,
+      tabId,
+      onSessionAssigned,
+      handleRunInShell,
+    ],
   );
 
   useEffect(() => {
@@ -279,6 +321,7 @@ export function TerminalTab({
   const hasBlocks = blocks.length > 0;
   const isDone = status === 'done' || status === 'error';
   const isRunning = status === 'running';
+  const runningBlock = blocks.find((block) => block.status === 'running');
 
   const pendingShellCmdRef = useRef<string | null>(null);
 
@@ -297,6 +340,7 @@ export function TerminalTab({
               cwd={sessionCwd || contextInfo.cwd}
               className="h-full"
               onReady={(ptyId) => {
+                activePtyIdRef.current = ptyId;
                 if (pendingShellCmdRef.current) {
                   const cmd = pendingShellCmdRef.current;
                   pendingShellCmdRef.current = null;
@@ -307,6 +351,7 @@ export function TerminalTab({
                 }
               }}
               onExit={(code) => {
+                activePtyIdRef.current = null;
                 setShellExited(true);
                 toast.info(`Shell exited with code ${code}`);
               }}
@@ -325,6 +370,102 @@ export function TerminalTab({
               </Button>
             </div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  if (interactivePtyCommand) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden rounded-lg border border-border/60 bg-background text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+        <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-background/80 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />
+            <p className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/75">
+              Interactive shell
+            </p>
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate font-mono text-[11px] text-muted-foreground/80">
+              {contextInfo.cwd
+                ? contextInfo.cwd.replace(/^\/home\/[^/]+/, '~')
+                : 'shell'}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 border-border/60 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (interactivePtyPtyIdRef.current) {
+                  void window.electron.ipc.invoke('pty:interrupt', {
+                    ptyId: interactivePtyPtyIdRef.current,
+                  });
+                }
+              }}
+            >
+              Stop
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col">
+          <XtermPane
+            key={`pty-${sessionId ?? tabId}-${interactivePtyCommand}`}
+            sessionId={sessionId}
+            cwd={sessionCwd || contextInfo.cwd}
+            className="h-full"
+            onReady={(ptyId) => {
+              interactivePtyPtyIdRef.current = ptyId;
+              void window.electron.ipc.invoke('pty:run-command', {
+                ptyId,
+                command: interactivePtyCommand,
+              });
+            }}
+            onExit={(code) => {
+              const command = interactivePtyCommand;
+              interactivePtyPtyIdRef.current = null;
+              setInteractivePtyCommand(null);
+              setLastPtyCommand({ command, exitCode: code });
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (lastPtyCommand) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background px-4 py-6 text-foreground">
+        <div className="w-full max-w-xl rounded-xl border border-border/60 bg-card/80 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="font-sans text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70">
+              Interactive command
+            </div>
+            <div className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+              exit {lastPtyCommand.exitCode ?? 'unknown'}
+            </div>
+          </div>
+          <p className="mb-4 font-mono text-sm text-foreground/90">
+            {lastPtyCommand.command}
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setLastPtyCommand(null)}
+            >
+              Dismiss
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => setInteractivePtyCommand(lastPtyCommand.command)}
+            >
+              Re-run in PTY
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -423,16 +564,31 @@ export function TerminalTab({
 
       {/* Goal input */}
       <div className="border-t border-border/60 p-3">
-        <div className="mx-auto max-w-3xl">
-          <TerminalGoalInput
-            onSubmit={handleGoalSubmit}
-            isRunning={isRunning}
-            disabled={isRunning}
-            prefill={draftCommand}
-            cwd={contextInfo.cwd}
-            gitBranch={contextInfo.gitBranch}
-          />
-        </div>
+        <TerminalGoalInput
+          onSubmit={handleGoalSubmit}
+          onRunInShell={handleRunInShell}
+          onStop={runningBlock ? () => stop(runningBlock.id) : undefined}
+          isRunning={isRunning}
+          disabled={isRunning}
+          prefill={draftCommand}
+          cwd={contextInfo.cwd}
+          gitBranch={contextInfo.gitBranch}
+          gitRoot={contextInfo.gitRoot}
+          changedFiles={contextInfo.changedFiles}
+          additions={contextInfo.additions}
+          deletions={contextInfo.deletions}
+          onCwdChange={(cwd) => {
+            setContextInfo((current) => ({ ...current, cwd }));
+            setSessionCwd(cwd);
+            if (sessionId) {
+              void window.electron.ipc.invoke('terminal:set-session-cwd', {
+                sessionId,
+                cwd,
+              });
+            }
+            refreshContext(cwd);
+          }}
+        />
       </div>
     </div>
   );

@@ -6,6 +6,13 @@
  *
  * All timeline and styling tools execute autonomously and immediately notify
  * the renderer via broadcastChanged() to refresh 60fps canvas previews.
+ *
+ * Two surfaces instantiate this factory. The Studio copilot always has an open
+ * take and gets the repo/filesystem context tools on top. The chat agent has no
+ * open take — it recorded one with the computer-use recorder — so it passes
+ * `takeId` per call and falls back to the most recent take when it does not,
+ * which is what makes "edit the demo we just recorded" work without the agent
+ * having to thread an id through every call.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -17,6 +24,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import {
   getStudioTake,
+  listStudioTakes,
   saveStudioTake,
   type StudioTake,
   type StudioZoom,
@@ -25,6 +33,7 @@ import {
   type StudioEffect,
   type MouseTrackerEvent,
 } from '../db/studio-store.js';
+import type { StudioHighlight } from '../studio-recorder.js';
 import { getProject } from '../db/projects.js';
 import { repoTools } from './repo.js';
 import { filesystemTools } from './filesystem.js';
@@ -34,21 +43,66 @@ export function getStudioStorageDir(takeId?: string): string {
   return takeId ? path.join(base, takeId) : base;
 }
 
+/**
+ * Default invalidation broadcast for surfaces with no window handle of their
+ * own — the chat agent, which edits takes while Studio is not even mounted.
+ *
+ * Late-bound and swallowed because the tool registry is imported by tests that
+ * never mock BrowserWindow, whereas a silent no-op here only costs a repaint.
+ */
+export function broadcastStudioChanged(): void {
+  try {
+    const { BrowserWindow } = require('electron');
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send('studio:changed');
+    }
+  } catch {
+    // No window is listening; the take is persisted regardless.
+  }
+}
+
 export interface CreateStudioToolsOptions {
-  activeTakeId: string;
+  /** Take a call acts on when it omits `takeId`. Absent on the chat surface. */
+  activeTakeId?: string;
+  /** Resolve to the newest take when no id is given (the chat surface). */
+  defaultToLatestTake?: boolean;
+  /** Include git/grep/file context tools; the copilot wants them, chat has its own. */
+  includeContextTools?: boolean;
   broadcastChanged?: () => void;
 }
 
 export function createStudioTools({
   activeTakeId,
+  defaultToLatestTake = false,
+  includeContextTools = true,
   broadcastChanged,
 }: CreateStudioToolsOptions) {
   const resolveTake = (id?: string): StudioTake | null => {
-    return getStudioTake(id || activeTakeId);
+    const target = id || activeTakeId;
+    if (target) return getStudioTake(target);
+    if (!defaultToLatestTake) return null;
+    const latest = listStudioTakes(null, 1, 0)[0];
+    return latest ? getStudioTake(latest.id) : null;
+  };
+
+  /**
+   * Highlights the recorder marked during capture, read back from the take's
+   * directory. They are the agent's timing anchors: the label is the caption it
+   * already chose, so re-reading them beats re-deriving the narrative.
+   */
+  const readHighlights = async (
+    take: StudioTake,
+  ): Promise<StudioHighlight[]> => {
+    try {
+      const file = path.join(getStudioStorageDir(take.id), 'highlights.json');
+      return JSON.parse(await fs.readFile(file, 'utf-8')) as StudioHighlight[];
+    } catch {
+      return [];
+    }
   };
 
   const notify = () => {
-    broadcastChanged?.();
+    (broadcastChanged ?? broadcastStudioChanged)();
   };
 
   return {
@@ -68,9 +122,11 @@ export function createStudioTools({
         if (!take) {
           return {
             success: false,
-            error: `Take ${takeId || activeTakeId} not found`,
+            error: `Take ${takeId || activeTakeId || '(latest)'} not found. Pass a takeId, or record one first with startDemoRecording.`,
           };
         }
+
+        const highlights = await readHighlights(take);
 
         let projectInfo = null;
         if (take.projectId) {
@@ -90,8 +146,10 @@ export function createStudioTools({
             id: take.id,
             title: take.title,
             description: take.description,
+            videoPath: take.videoPath,
             durationMs: take.durationMs,
             durationSec: Number((take.durationMs / 1000).toFixed(2)),
+            highlights,
             styling: take.styling,
             cutCount: take.cuts.length,
             cuts: take.cuts,
@@ -389,10 +447,7 @@ export function createStudioTools({
       description:
         'Removes a canvas effect by id, or clears every canvas effect from the timeline.',
       inputSchema: z.object({
-        effectId: z
-          .string()
-          .optional()
-          .describe('ID of the effect to remove'),
+        effectId: z.string().optional().describe('ID of the effect to remove'),
         clearAll: z
           .boolean()
           .optional()
@@ -696,12 +751,18 @@ export function createStudioTools({
     }),
 
     // ─── 7. Context Tools ─────────────────────────────────────────────────────
-
-    gitStatus: repoTools.gitStatus,
-    gitLog: repoTools.gitLog,
-    gitDiffStat: repoTools.gitDiffStat,
-    grepSearch: repoTools.grepSearch,
-    readFile: filesystemTools.readFile,
-    listDir: filesystemTools.listDir,
+    // Only for the Studio copilot, which reasons about the codebase behind the
+    // demo. The chat agent already has these names from its own groups, and
+    // spreading them twice would make the registry lie about its shape.
+    ...(includeContextTools
+      ? {
+          gitStatus: repoTools.gitStatus,
+          gitLog: repoTools.gitLog,
+          gitDiffStat: repoTools.gitDiffStat,
+          grepSearch: repoTools.grepSearch,
+          readFile: filesystemTools.readFile,
+          listDir: filesystemTools.listDir,
+        }
+      : {}),
   };
 }
