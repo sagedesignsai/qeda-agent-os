@@ -63,6 +63,7 @@ import {
   WifiOffIcon,
   LoaderIcon,
   KeyIcon,
+  ClockIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '../settings-store';
@@ -73,6 +74,7 @@ import type {
   McpServerStatus,
   McpServerPreset,
   BuilderEngine,
+  ServiceStatus,
 } from '@/main/ipc/channels';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
@@ -706,6 +708,11 @@ export function BuilderMcpView() {
 
   const [engine, setEngine] = useState<BuilderEngine>('local');
   const [maxSteps, setMaxSteps] = useState(DEFAULT_BUILDER_MAX_STEPS);
+  const [e2bTimeoutMs, setE2bTimeoutMs] = useState(3_600_000);
+  const [githubPat, setGithubPat] = useState('');
+  const [githubPatSet, setGithubPatSet] = useState(false);
+  const [e2bApiKey, setE2bApiKey] = useState('');
+  const [e2bApiKeySet, setE2bApiKeySet] = useState(false);
   const [servers, setServers] = useState<McpServerFormState[]>([]);
   const [statuses, setStatuses] = useState<McpServerStatus[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -722,10 +729,30 @@ export function BuilderMcpView() {
     seeded.current = true;
     setEngine(snapshot.builderEngine ?? 'local');
     setMaxSteps(normalizeBuilderMaxSteps(snapshot.builderMaxSteps));
+    setE2bTimeoutMs(snapshot.e2bSandboxTimeoutMs ?? 3_600_000);
+    setGithubPatSet(snapshot.githubPatSet ?? false);
     setServers(
       (snapshot.mcpServers ?? []).map((s) => settingsToFormState(s, s.id)),
     );
   }, [snapshot]);
+
+  // Load live service status so the E2B key presence badge stays fresh.
+  useEffect(() => {
+    let cancelled = false;
+    window.electron.ipc
+      .invoke<ServiceStatus[]>('services:list')
+      .then((list) => {
+        if (!cancelled) {
+          const e2b = list.find((s) => s.id === 'e2b');
+          setE2bApiKeySet(Boolean(e2b?.configured));
+        }
+        return list;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Load live statuses
   useEffect(() => {
@@ -735,7 +762,7 @@ export function BuilderMcpView() {
       .catch(() => undefined);
   }, []);
 
-  const handleEngineSave = useCallback(
+const handleEngineSave = useCallback(
     async (next: BuilderEngine) => {
       setEngine(next);
       try {
@@ -746,6 +773,64 @@ export function BuilderMcpView() {
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : 'Failed to save engine.',
+        );
+      }
+    },
+    [save],
+  );
+
+  const handleE2bTimeoutSave = useCallback(
+    async (raw: number) => {
+      const next = Math.min(86_400_000, Math.max(60_000, Math.floor(raw)));
+      setE2bTimeoutMs(next);
+      try {
+        await save({ e2bSandboxTimeoutMs: next });
+        toast.success(
+          `E2B sandbox timeout set to ${Math.round(next / 60_000)} minutes.`,
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to save timeout.',
+        );
+      }
+    },
+    [save],
+  );
+
+  const handleGithubPatSave = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim();
+      setGithubPat('');
+      setGithubPatSet(true);
+      try {
+        await save({ githubPat: trimmed });
+        toast.success(
+          trimmed
+            ? 'GitHub PAT saved for cloning private repos into the sandbox.'
+            : 'GitHub PAT cleared.',
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to save GitHub PAT.',
+        );
+      }
+    },
+    [save],
+  );
+
+  const handleE2bApiKeySave = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim();
+      setE2bApiKey('');
+      setE2bApiKeySet(true);
+      try {
+        await save({ serviceKeys: { e2b: trimmed } });
+        toast.success(
+          trimmed ? 'E2B API key saved.' : 'E2B API key cleared.',
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to save E2B key.',
         );
       }
     },
@@ -1083,6 +1168,139 @@ export function BuilderMcpView() {
             <OpencodeSetupCard />
           </>
         )}
+
+        {/* ── E2B sandbox ──────────────────────────────────────────────── */}
+        <Separator />
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-sm font-medium">E2B Cloud Sandbox</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Run Builder sessions inside an ephemeral E2B sandbox instead of
+              your local machine. Changes are captured as a git patch and
+              applied back to your repository when the session ends.
+            </p>
+          </div>
+
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card p-3">
+            <div className="grid gap-0.5">
+              <Label htmlFor="e2b-api-key" className="text-sm font-normal">
+                E2B API key
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Required to create sandboxes. Get one at{' '}
+                <a
+                  href="https://e2b.dev/docs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  e2b.dev/docs
+                </a>.
+              </p>
+            </div>
+            {e2bApiKeySet && (
+              <Badge variant="secondary" className="gap-1 text-xs">
+                <CheckCircleIcon className="size-3 text-green-500" />
+                Saved
+              </Badge>
+            )}
+          </div>
+          <div className="relative">
+            <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+            <Input
+              id="e2b-api-key"
+              type="password"
+              className="pl-8 text-sm"
+              placeholder={
+                e2bApiKeySet
+                  ? '••••••••••••••••'
+                  : 'Enter E2B_API_KEY…'
+              }
+              value={e2bApiKey}
+              onChange={(e) => setE2bApiKey(e.target.value)}
+              onBlur={() => void handleE2bApiKeySave(e2bApiKey)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-card p-3">
+            <div className="grid gap-0.5">
+              <Label htmlFor="github-pat" className="text-sm font-normal">
+                GitHub personal access token
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Used to clone private repositories into the sandbox. Stored
+                encrypted; never leaves the main process.
+              </p>
+            </div>
+            {githubPatSet && (
+              <Badge variant="secondary" className="gap-1 text-xs">
+                <CheckCircleIcon className="size-3 text-green-500" />
+                Saved
+              </Badge>
+            )}
+          </div>
+          <div className="relative">
+            <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+            <Input
+              id="github-pat"
+              type="password"
+              className="pl-8 text-sm"
+              placeholder={
+                githubPatSet
+                  ? '••••••••••••••••'
+                  : 'Enter GitHub PAT…'
+              }
+              value={githubPat}
+              onChange={(e) => setGithubPat(e.target.value)}
+              onBlur={() => void handleGithubPatSave(githubPat)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
+            <div className="grid gap-0.5">
+              <Label htmlFor="e2b-timeout" className="text-sm font-normal">
+                Sandbox timeout
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                Maximum lifetime of a single sandbox session. 1 minute to 24
+                hours; default 60 minutes.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Input
+                id="e2b-timeout"
+                type="number"
+                min={1}
+                max={1440}
+                step={5}
+                inputMode="numeric"
+                value={Math.round(e2bTimeoutMs / 60_000)}
+                onChange={(event) =>
+                  setE2bTimeoutMs(Number(event.target.value) * 60_000)
+                }
+                onBlur={() => void handleE2bTimeoutSave(e2bTimeoutMs)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') event.currentTarget.blur();
+                }}
+                className="h-8 w-20 shrink-0 text-sm tabular-nums"
+                aria-label="E2B sandbox timeout in minutes"
+              />
+              <span className="text-xs text-muted-foreground shrink-0">
+                min
+              </span>
+            </div>
+          </div>
+        </section>
       </div>
     </TooltipProvider>
   );

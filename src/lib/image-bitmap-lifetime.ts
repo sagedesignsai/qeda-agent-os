@@ -55,7 +55,9 @@ export function isBitmapClosed(bitmap: ImageBitmap): boolean {
  */
 export function closeBitmap(bitmap: ImageBitmap): void {
   markBitmapClosed(bitmap);
-  bitmap.close();
+  if (typeof bitmap.close === 'function') {
+    bitmap.close();
+  }
 }
 
 /**

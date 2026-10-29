@@ -100,6 +100,8 @@ export default function Builder() {
   const {
     chooseWorkspace: chooseSessionWorkspace,
     createSession: createBuilderSession,
+    detachSession: detachBuilderSession,
+    stopSession: stopBuilderSession,
     sendPrompt: sendBuilderPrompt,
   } = builderSession;
   const setDraftPrompt = workspace.setPrompt;
@@ -153,6 +155,7 @@ export default function Builder() {
   const [pendingWorkspaceSwitch, setPendingWorkspaceSwitch] = useState<{
     defaultPath?: string | null;
   } | null>(null);
+  const [confirmDiscardSession, setConfirmDiscardSession] = useState(false);
 
   // Only the folder the user picks in the dialog is ever bound; this just opens
   // the picker at the project's repo when there is one.
@@ -162,6 +165,7 @@ export default function Builder() {
         defaultPath === null
           ? undefined
           : (defaultPath ?? activeProject?.repo_path ?? undefined),
+        { runInSandbox: workspace.runInSandbox },
       );
       if (started?.workspace && activeProject?.id) {
         await registerCodeProject(started.workspace.directory);
@@ -173,6 +177,7 @@ export default function Builder() {
       activeProject?.repo_path,
       activeProject?.id,
       registerCodeProject,
+      workspace.runInSandbox,
     ],
   );
 
@@ -376,6 +381,21 @@ export default function Builder() {
     }
   }, [discardBuilderChanges]);
 
+  /**
+   * Disconnect releases the live feed but keeps the worktree, its uncommitted
+   * changes, and the persisted session row, so the next visit re-attaches.
+   * Deleting the session is the explicit, confirmed Discard action below.
+   */
+  const disconnectSession = useCallback(async () => {
+    const detached = await detachBuilderSession();
+    if (detached) {
+      toast.success('Builder session disconnected', {
+        description:
+          'Its worktree and uncommitted changes are kept. Open Builder again to re-attach.',
+      });
+    }
+  }, [detachBuilderSession]);
+
   const chatPanel = (
     <BuilderChatPanel
       status={runtime.status}
@@ -397,9 +417,12 @@ export default function Builder() {
       onModelChange={(value) => void builderModels.select(value)}
       onSend={builderSession.sendPrompt}
       onAbort={builderSession.abort}
-      onDisconnectSession={builderSession.stopSession}
+      onDisconnectSession={() => void disconnectSession()}
+      onDiscardSession={() => setConfirmDiscardSession(true)}
       onPermissionDecision={builderSession.replyPermission}
       onFormReply={builderSession.replyForm}
+      runInSandbox={workspace.runInSandbox}
+      onToggleSandbox={workspace.setRunInSandbox}
     />
   );
 
@@ -569,6 +592,34 @@ export default function Builder() {
               }}
             >
               Switch workspace
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmDiscardSession}
+        onOpenChange={setConfirmDiscardSession}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard this Builder session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This stops the session and deletes its isolated worktree. Any
+              changes you have not kept will be lost. Use Disconnect instead to
+              keep them for later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmDiscardSession(false);
+                void stopBuilderSession();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Discard session
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

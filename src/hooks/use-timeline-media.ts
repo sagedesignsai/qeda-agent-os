@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { isFiniteDurationSeconds, safeDurationMs } from '@/lib/studio-types';
 import { closeBitmap } from '@/lib/image-bitmap-lifetime';
+import type { IpcChannels } from '@/main/ipc/channels';
 
 // Waveform resolution: one peak per 12.5ms of media, i.e. ~80 peaks/second.
 const PEAKS_PER_SECOND = 80;
@@ -109,193 +110,227 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
       }
     };
 
-    extractionStartId = setTimeout(() => {
-      if (cancelled) return;
-      setIsExtractingWaveform(true);
+    const startBrowserSampling = () => {
+      extractionStartId = setTimeout(() => {
+        if (cancelled) return;
+        setIsExtractingWaveform(true);
+        void (async () => {
+          try {
+            const AudioCtx =
+              window.AudioContext ||
+              (window as unknown as { webkitAudioContext: typeof AudioContext })
+                .webkitAudioContext;
+            if (!AudioCtx) {
+              throw new Error('Web Audio API unavailable in this renderer');
+            }
+            audioCtx = new AudioCtx();
+
+            probe = document.createElement('video');
+            probe.src = videoUrl;
+            probe.muted = true;
+            probe.playsInline = true;
+            probe.preload = 'auto';
+            probe.crossOrigin = 'anonymous';
+            probe.style.position = 'fixed';
+            probe.style.width = '1px';
+            probe.style.height = '1px';
+            probe.style.opacity = '0';
+            probe.style.pointerEvents = 'none';
+            document.body.appendChild(probe);
+
+            await new Promise<void>((resolve, reject) => {
+              if (cancelled) return resolve();
+              const onLoaded = () => {
+                cleanup();
+                resolve();
+              };
+              const onFailed = () => {
+                cleanup();
+                reject(new Error('Media failed to load for waveform analysis'));
+              };
+              const cleanup = () => {
+                probe?.removeEventListener('loadedmetadata', onLoaded);
+                probe?.removeEventListener('error', onFailed);
+              };
+              probe?.addEventListener('loadedmetadata', onLoaded);
+              probe?.addEventListener('error', onFailed);
+            });
+            if (cancelled) return;
+
+            // Resolved after `loadedmetadata` so a properly-muxed file can use its
+            // own length. Headerless `MediaRecorder` webm reports `Infinity`, and
+            // the take's recorded duration is what bins the samples instead.
+            const totalDurationSec =
+              safeDurationMs(probe.duration, durationMs) / 1000;
+            if (!isFiniteDurationSeconds(totalDurationSec)) {
+              throw new Error('Media duration is unknown');
+            }
+
+            // Route the element through the graph instead of decoding bytes:
+            // `decodeAudioData` cannot demux a webm/Matroska container and always
+            // throws `EncodingError` for screen recordings.
+            const source = audioCtx.createMediaElementSource(probe);
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = ANALYSER_FFT_SIZE;
+            // Deliberately not connected to `audioCtx.destination` — the graph
+            // exists only to feed the analyser, so nothing is ever audible.
+            source.connect(analyser);
+
+            if (audioCtx.state === 'suspended') {
+              await audioCtx.resume();
+            }
+            if (audioCtx.state !== 'running') {
+              throw new Error(
+                'AudioContext could not be resumed (autoplay policy); no waveform',
+              );
+            }
+
+            // Target: ~80 peaks per second of duration, capped so a long recording
+            // does not allocate an unbounded buffer.
+            const totalPeaks = Math.max(
+              1,
+              Math.min(
+                Math.ceil(totalDurationSec * PEAKS_PER_SECOND),
+                MAX_PEAKS,
+              ),
+            );
+            const samples = new Uint8Array(analyser.fftSize);
+            // How much media one analyser window covers, in seconds.
+            const windowSec = analyser.fftSize / audioCtx.sampleRate;
+            const peaks = new Float32Array(totalPeaks);
+            const seen = new Uint8Array(totalPeaks);
+
+            // The analyser only sees what the decoder has produced, so the clip is
+            // walked at an accelerated rate instead of in real time.
+            probe.playbackRate = SAMPLING_PLAYBACK_RATE;
+            await probe.play();
+
+            const bucketSec = totalDurationSec / totalPeaks;
+
+            await new Promise<void>((resolve) => {
+              let settled = false;
+              const finish = () => {
+                if (settled) return;
+                settled = true;
+                cancelSampling();
+                resolve();
+              };
+
+              const step = () => {
+                if (cancelled || settled) return finish();
+
+                const elapsedSec = probe?.currentTime ?? 0;
+                if (
+                  probe?.ended ||
+                  elapsedSec >= totalDurationSec - bucketSec
+                ) {
+                  return finish();
+                }
+
+                analyser.getByteTimeDomainData(samples);
+                let sum = 0;
+                for (let i = 0; i < samples.length; i++) {
+                  sum += Math.abs(samples[i] - 128);
+                }
+                // Normalized to 0..1 against full scale, then boosted for legibility.
+                const amp = Math.min(1, (sum / samples.length / 128) * 2.5);
+
+                // The window is far wider than the media advanced since the last
+                // frame, so spread it across every bucket it covers. Without this
+                // the accelerated pass leaves most of the clip unsampled.
+                const firstBucket = Math.floor(elapsedSec / bucketSec);
+                const lastBucket = Math.floor(
+                  (elapsedSec + windowSec) / bucketSec,
+                );
+                for (let b = firstBucket; b <= lastBucket; b++) {
+                  if (b < 0 || b >= totalPeaks) continue;
+                  // Overlapping windows are common, so keep the loudest.
+                  if (!seen[b] || amp > peaks[b]) {
+                    peaks[b] = amp;
+                    seen[b] = 1;
+                  }
+                }
+
+                rafId = requestAnimationFrame(step);
+              };
+
+              probe?.addEventListener('ended', finish, { once: true });
+              rafId = requestAnimationFrame(step);
+              // A stalled decode must not leave the promise pending forever.
+              watchdogId = setTimeout(
+                finish,
+                (totalDurationSec / SAMPLING_PLAYBACK_RATE) * 1000 + 5000,
+              );
+            });
+            if (cancelled) return;
+
+            // Fast sampling skips buckets. Carry the last known peak forward so the
+            // drawn waveform stays continuous instead of dropping to zero.
+            let lastSeen = 0;
+            let hasSignal = false;
+            for (let i = 0; i < totalPeaks; i++) {
+              if (seen[i]) {
+                lastSeen = peaks[i];
+                hasSignal = true;
+              } else {
+                peaks[i] = lastSeen;
+              }
+            }
+
+            if (!cancelled) {
+              // A video with no decodable audio track produces pure silence; report
+              // "no waveform" rather than a flat line that looks like real audio.
+              setAudioPeaks(hasSignal ? peaks : null);
+            }
+          } catch (err) {
+            console.warn('Could not extract audio waveform from media:', err);
+            if (!cancelled) {
+              // Do not fabricate a plausible-looking waveform for failed/silent media.
+              setAudioPeaks(null);
+            }
+          } finally {
+            cancelSampling();
+            detachProbe();
+            if (audioCtx && audioCtx.state !== 'closed') {
+              try {
+                await audioCtx.close();
+              } catch {
+                // Context may already have closed during navigation.
+              }
+            }
+            if (!cancelled) {
+              setIsExtractingWaveform(false);
+            }
+          }
+        })();
+      }, 750);
+    };
+
+    const takeIdMatch = videoUrl.match(/qeda-media:\/\/studio\/([^?#/]+)/);
+    const takeId = takeIdMatch ? decodeURIComponent(takeIdMatch[1]) : null;
+
+    if (takeId && typeof window !== 'undefined' && window.electron?.ipc) {
       void (async () => {
         try {
-          const AudioCtx =
-            window.AudioContext ||
-            (window as unknown as { webkitAudioContext: typeof AudioContext })
-              .webkitAudioContext;
-          if (!AudioCtx) {
-            throw new Error('Web Audio API unavailable in this renderer');
-          }
-          audioCtx = new AudioCtx();
-
-          probe = document.createElement('video');
-          probe.src = videoUrl;
-          probe.muted = true;
-          probe.playsInline = true;
-          probe.preload = 'auto';
-          probe.crossOrigin = 'anonymous';
-          probe.style.position = 'fixed';
-          probe.style.width = '1px';
-          probe.style.height = '1px';
-          probe.style.opacity = '0';
-          probe.style.pointerEvents = 'none';
-          document.body.appendChild(probe);
-
-          await new Promise<void>((resolve, reject) => {
-            if (cancelled) return resolve();
-            const onLoaded = () => {
-              cleanup();
-              resolve();
-            };
-            const onFailed = () => {
-              cleanup();
-              reject(new Error('Media failed to load for waveform analysis'));
-            };
-            const cleanup = () => {
-              probe?.removeEventListener('loadedmetadata', onLoaded);
-              probe?.removeEventListener('error', onFailed);
-            };
-            probe?.addEventListener('loadedmetadata', onLoaded);
-            probe?.addEventListener('error', onFailed);
-          });
+          const sidecars = await window.electron.ipc.invoke<
+            IpcChannels['studio:get-media-sidecars']['res']
+          >('studio:get-media-sidecars', { takeId });
           if (cancelled) return;
-
-          // Resolved after `loadedmetadata` so a properly-muxed file can use its
-          // own length. Headerless `MediaRecorder` webm reports `Infinity`, and
-          // the take's recorded duration is what bins the samples instead.
-          const totalDurationSec =
-            safeDurationMs(probe.duration, durationMs) / 1000;
-          if (!isFiniteDurationSeconds(totalDurationSec)) {
-            throw new Error('Media duration is unknown');
-          }
-
-          // Route the element through the graph instead of decoding bytes:
-          // `decodeAudioData` cannot demux a webm/Matroska container and always
-          // throws `EncodingError` for screen recordings.
-          const source = audioCtx.createMediaElementSource(probe);
-          const analyser = audioCtx.createAnalyser();
-          analyser.fftSize = ANALYSER_FFT_SIZE;
-          // Deliberately not connected to `audioCtx.destination` — the graph
-          // exists only to feed the analyser, so nothing is ever audible.
-          source.connect(analyser);
-
-          if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
-          }
-          if (audioCtx.state !== 'running') {
-            throw new Error(
-              'AudioContext could not be resumed (autoplay policy); no waveform',
-            );
-          }
-
-          // Target: ~80 peaks per second of duration, capped so a long recording
-          // does not allocate an unbounded buffer.
-          const totalPeaks = Math.max(
-            1,
-            Math.min(Math.ceil(totalDurationSec * PEAKS_PER_SECOND), MAX_PEAKS),
-          );
-          const samples = new Uint8Array(analyser.fftSize);
-          // How much media one analyser window covers, in seconds.
-          const windowSec = analyser.fftSize / audioCtx.sampleRate;
-          const peaks = new Float32Array(totalPeaks);
-          const seen = new Uint8Array(totalPeaks);
-
-          // The analyser only sees what the decoder has produced, so the clip is
-          // walked at an accelerated rate instead of in real time.
-          probe.playbackRate = SAMPLING_PLAYBACK_RATE;
-          await probe.play();
-
-          const bucketSec = totalDurationSec / totalPeaks;
-
-          await new Promise<void>((resolve) => {
-            let settled = false;
-            const finish = () => {
-              if (settled) return;
-              settled = true;
-              cancelSampling();
-              resolve();
-            };
-
-            const step = () => {
-              if (cancelled || settled) return finish();
-
-              const elapsedSec = probe?.currentTime ?? 0;
-              if (probe?.ended || elapsedSec >= totalDurationSec - bucketSec) {
-                return finish();
-              }
-
-              analyser.getByteTimeDomainData(samples);
-              let sum = 0;
-              for (let i = 0; i < samples.length; i++) {
-                sum += Math.abs(samples[i] - 128);
-              }
-              // Normalized to 0..1 against full scale, then boosted for legibility.
-              const amp = Math.min(1, (sum / samples.length / 128) * 2.5);
-
-              // The window is far wider than the media advanced since the last
-              // frame, so spread it across every bucket it covers. Without this
-              // the accelerated pass leaves most of the clip unsampled.
-              const firstBucket = Math.floor(elapsedSec / bucketSec);
-              const lastBucket = Math.floor(
-                (elapsedSec + windowSec) / bucketSec,
-              );
-              for (let b = firstBucket; b <= lastBucket; b++) {
-                if (b < 0 || b >= totalPeaks) continue;
-                // Overlapping windows are common, so keep the loudest.
-                if (!seen[b] || amp > peaks[b]) {
-                  peaks[b] = amp;
-                  seen[b] = 1;
-                }
-              }
-
-              rafId = requestAnimationFrame(step);
-            };
-
-            probe?.addEventListener('ended', finish, { once: true });
-            rafId = requestAnimationFrame(step);
-            // A stalled decode must not leave the promise pending forever.
-            watchdogId = setTimeout(
-              finish,
-              (totalDurationSec / SAMPLING_PLAYBACK_RATE) * 1000 + 5000,
-            );
-          });
-          if (cancelled) return;
-
-          // Fast sampling skips buckets. Carry the last known peak forward so the
-          // drawn waveform stays continuous instead of dropping to zero.
-          let lastSeen = 0;
-          let hasSignal = false;
-          for (let i = 0; i < totalPeaks; i++) {
-            if (seen[i]) {
-              lastSeen = peaks[i];
-              hasSignal = true;
-            } else {
-              peaks[i] = lastSeen;
-            }
-          }
-
-          if (!cancelled) {
-            // A video with no decodable audio track produces pure silence; report
-            // "no waveform" rather than a flat line that looks like real audio.
-            setAudioPeaks(hasSignal ? peaks : null);
-          }
-        } catch (err) {
-          console.warn('Could not extract audio waveform from media:', err);
-          if (!cancelled) {
-            // Do not fabricate a plausible-looking waveform for failed/silent media.
-            setAudioPeaks(null);
-          }
-        } finally {
-          cancelSampling();
-          detachProbe();
-          if (audioCtx && audioCtx.state !== 'closed') {
-            try {
-              await audioCtx.close();
-            } catch {
-              // Context may already have closed during navigation.
-            }
-          }
-          if (!cancelled) {
+          if (sidecars?.peaks && sidecars.peaks.length > 0) {
+            setAudioPeaks(new Float32Array(sidecars.peaks));
             setIsExtractingWaveform(false);
+            return;
           }
+        } catch {
+          // Fall through
+        }
+        if (!cancelled) {
+          startBrowserSampling();
         }
       })();
-    }, 750);
+    } else {
+      startBrowserSampling();
+    }
 
     return () => {
       cancelled = true;
@@ -317,86 +352,153 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
     disposeBitmaps(bitmapsRef.current);
     setThumbnails(new Map());
     let cancelled = false;
-    setIsExtractingThumbnails(true);
-
-    const video = document.createElement('video');
-    video.src = videoUrl;
-    video.muted = true;
-    video.playsInline = true;
-    video.crossOrigin = 'anonymous';
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 120;
-    canvas.height = 68;
-    const ctx = canvas.getContext('2d');
-
-    const intervalSec = 1.5; // Snapshot every 1.5s
-    const totalDurationSec = Math.max(1, durationMs / 1000);
-    const targetTimes: number[] = [];
-
-    for (let t = 0.5; t < totalDurationSec; t += intervalSec) {
-      targetTimes.push(t);
-    }
-
+    let cleanupBrowserCapture: (() => void) | null = null;
     const resultMap = new Map<number, ImageBitmap>();
 
-    const captureNext = async (index: number) => {
-      if (cancelled || index >= targetTimes.length) {
-        if (!cancelled) {
-          bitmapsRef.current = resultMap;
-          setThumbnails(new Map(resultMap));
-          setIsExtractingThumbnails(false);
-        }
-        return;
+    const startBrowserCapture = () => {
+      setIsExtractingThumbnails(true);
+
+      const video = document.createElement('video');
+      video.src = videoUrl;
+      video.muted = true;
+      video.playsInline = true;
+      video.crossOrigin = 'anonymous';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 120;
+      canvas.height = 68;
+      const ctx = canvas.getContext('2d');
+
+      const intervalSec = 1.5; // Snapshot every 1.5s
+      const totalDurationSec = Math.max(1, durationMs / 1000);
+      const targetTimes: number[] = [];
+
+      for (let t = 0.5; t < totalDurationSec; t += intervalSec) {
+        targetTimes.push(t);
       }
 
-      const timeSec = targetTimes[index];
-      video.currentTime = timeSec;
-
-      const onSeeked = async () => {
-        video.removeEventListener('seeked', onSeeked);
-        if (cancelled || !ctx) return;
-
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        try {
-          const bitmap = await createImageBitmap(canvas);
-          if (cancelled) {
-            // Never published, so nothing can be holding it — but route the close
-            // through the registry anyway so no caller can reintroduce this bug.
-            closeBitmap(bitmap);
-            return;
+      const captureNext = async (index: number) => {
+        if (cancelled || index >= targetTimes.length) {
+          if (!cancelled) {
+            bitmapsRef.current = resultMap;
+            setThumbnails(new Map(resultMap));
+            setIsExtractingThumbnails(false);
           }
-          const slot = Math.floor(timeSec / intervalSec);
-          resultMap.set(slot, bitmap);
-          resultMap.set(Math.floor(timeSec * 1000), bitmap);
-        } catch {
-          // ignore bitmap error
+          return;
         }
-        captureNext(index + 1);
+
+        const timeSec = targetTimes[index];
+        video.currentTime = timeSec;
+
+        const onSeeked = async () => {
+          video.removeEventListener('seeked', onSeeked);
+          if (cancelled || !ctx) return;
+
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          try {
+            const bitmap = await createImageBitmap(canvas);
+            if (cancelled) {
+              closeBitmap(bitmap);
+              return;
+            }
+            const slot = Math.floor(timeSec / intervalSec);
+            resultMap.set(slot, bitmap);
+            resultMap.set(Math.floor(timeSec * 1000), bitmap);
+          } catch {
+            // Ignore bitmap error
+          }
+          captureNext(index + 1);
+        };
+
+        video.addEventListener('seeked', onSeeked, { once: true });
       };
 
-      video.addEventListener('seeked', onSeeked, { once: true });
+      video.addEventListener(
+        'loadedmetadata',
+        () => {
+          captureNext(0);
+        },
+        { once: true },
+      );
+
+      cleanupBrowserCapture = () => {
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+      };
     };
 
-    video.addEventListener(
-      'loadedmetadata',
-      () => {
-        captureNext(0);
-      },
-      { once: true },
-    );
+    const takeIdMatch = videoUrl.match(/qeda-media:\/\/studio\/([^?#/]+)/);
+    const takeId = takeIdMatch ? decodeURIComponent(takeIdMatch[1]) : null;
+
+    if (takeId && typeof window !== 'undefined' && window.electron?.ipc) {
+      void (async () => {
+        try {
+          const sidecars = await window.electron.ipc.invoke<
+            IpcChannels['studio:get-media-sidecars']['res']
+          >('studio:get-media-sidecars', { takeId });
+          if (cancelled) return;
+          if (sidecars?.filmstripUrl && sidecars.filmstripMeta) {
+            setIsExtractingThumbnails(true);
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.src = sidecars.filmstripUrl;
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve();
+              img.onerror = () =>
+                reject(new Error('Filmstrip image load failed'));
+            });
+            if (cancelled) return;
+
+            const { cols, tileW, tileH, intervalMs, totalTiles } =
+              sidecars.filmstripMeta;
+
+            for (let slot = 0; slot < totalTiles; slot++) {
+              if (cancelled) break;
+              const col = slot % cols;
+              const row = Math.floor(slot / cols);
+              const bitmap = await createImageBitmap(
+                img,
+                col * tileW,
+                row * tileH,
+                tileW,
+                tileH,
+              );
+              if (cancelled) {
+                closeBitmap(bitmap);
+                return;
+              }
+              resultMap.set(slot, bitmap);
+              resultMap.set(slot * intervalMs, bitmap);
+            }
+
+            if (!cancelled) {
+              bitmapsRef.current = resultMap;
+              setThumbnails(new Map(resultMap));
+              setIsExtractingThumbnails(false);
+              return;
+            }
+          }
+        } catch {
+          // Fall through
+        }
+        if (!cancelled) {
+          startBrowserCapture();
+        }
+      })();
+    } else {
+      startBrowserCapture();
+    }
 
     return () => {
       cancelled = true;
+      cleanupBrowserCapture?.();
       disposeBitmaps(resultMap);
       if (bitmapsRef.current === resultMap) {
         // Hand the ref a fresh map rather than the emptied one, so a later
         // dispose can never close the same objects a second time.
         bitmapsRef.current = new Map();
       }
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
     };
   }, [videoUrl, durationMs]);
 

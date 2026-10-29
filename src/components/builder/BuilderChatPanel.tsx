@@ -43,6 +43,7 @@ import {
   CircleAlertIcon,
   CircleDashedIcon,
   CircleHelpIcon,
+  CloudIcon,
   FolderGit2Icon,
   ShieldCheckIcon,
   WandSparklesIcon,
@@ -62,9 +63,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { BuilderActivityFeed } from '@/components/builder/BuilderActivityFeed';
 import { PlanPanel } from '@/components/plan/PlanPanel';
 import { useBuilderPlan } from '@/hooks/use-agent-plan';
+import { cn } from '@/lib/utils';
 import type { BuilderPermissionDecision } from '@/lib/builder-interactions';
 import type {
   BuilderSessionEvent,
@@ -125,7 +128,10 @@ interface BuilderChatPanelProps {
   onModelChange?: (key: string) => void;
   onSend?: (text: string) => void;
   onAbort?: () => void;
+  /** Detach the live feed without deleting the session or its worktree. */
   onDisconnectSession?: () => void;
+  /** Request the destructive stop-and-delete flow (confirmed by the page). */
+  onDiscardSession?: () => void;
   onPermissionDecision?: (
     requestId: string,
     decision: BuilderPermissionDecision,
@@ -135,6 +141,9 @@ interface BuilderChatPanelProps {
     answer?: Record<string, string | number | boolean | string[]>;
     cancel?: boolean;
   }) => void;
+  /** When true, the next session is created inside an E2B sandbox. */
+  runInSandbox?: boolean;
+  onToggleSandbox?: (next: boolean) => void;
 }
 
 /** How the composer explains itself when sending is possible. */
@@ -164,8 +173,11 @@ export function BuilderChatPanel({
   onSend,
   onAbort,
   onDisconnectSession = () => undefined,
+  onDiscardSession = () => undefined,
   onPermissionDecision = () => undefined,
   onFormReply = () => undefined,
+  runInSandbox = false,
+  onToggleSandbox,
 }: BuilderChatPanelProps) {
   const runtimeConnected = status?.state === 'connected';
   const canSend =
@@ -268,6 +280,7 @@ export function BuilderChatPanel({
                 workspace={workspace}
                 onPermission={onPermissionDecision}
                 onDisconnect={onDisconnectSession}
+                onDiscard={onDiscardSession}
                 onForm={onFormReply}
               />
             </div>
@@ -455,7 +468,7 @@ export function BuilderChatPanel({
                         {model.name} · {model.providerID}
                       </SelectItem>
                     ))}
-                  </SelectContent>
+</SelectContent>
                 </Select>
                 <Button
                   size="sm"
@@ -478,6 +491,30 @@ export function BuilderChatPanel({
                     {workspace ? 'Switch folder' : 'Choose folder'}
                   </span>
                 </Button>
+                {onToggleSandbox && (
+                  <label
+                    className="flex items-center gap-1.5 rounded-md border border-border/60 bg-card/45 px-2 py-1 text-xs text-muted-foreground"
+                    title={
+                      runInSandbox
+                        ? 'Run the next session inside an E2B sandbox.'
+                        : 'Run the next session on your local machine.'
+                    }
+                  >
+                    <CloudIcon
+                      className={cn(
+                        'size-3.5 shrink-0',
+                        runInSandbox ? 'text-primary' : 'text-muted-foreground/70',
+                      )}
+                    />
+                    <Switch
+                      size="sm"
+                      checked={runInSandbox}
+                      onCheckedChange={onToggleSandbox}
+                      disabled={creatingSession}
+                      aria-label="Run in E2B sandbox"
+                    />
+                  </label>
+                )}
               </PromptInputTools>
               <PromptInputSubmit
                 className="size-7 rounded-lg"

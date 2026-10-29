@@ -704,9 +704,10 @@ export function registerBuilderHandlers({
   /**
    * Release the running processes without destroying the session.
    *
-   * This is the window-close path: the worktree and the persisted context must
-   * outlive the app so a long run can be re-attached on next launch. Explicit
-   * `builder:session-stop` still uses `stopActive`, which deletes the worktree.
+   * Used by both window close and the explicit Disconnect action: the worktree
+   * and persisted context must outlive the app so a long run can be re-attached
+   * later. Explicit Discard (`builder:session-stop`) uses `stopActive`, which
+   * deletes the worktree.
    */
   const detachActive = async () => {
     if (persistTimer) {
@@ -1678,6 +1679,12 @@ export function registerBuilderHandlers({
         localEvent(session.id, { type: 'status', status: 'interrupted' }),
       );
     }
+  });
+
+  // Disconnect keeps the worktree and the persisted row so the user can
+  // re-attach; the explicit Discard action below is the destructive path.
+  ipcMain.handle('builder:session-detach', async () => {
+    await detachActive();
   });
 
   ipcMain.handle('builder:session-stop', async () => {

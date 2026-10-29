@@ -52,6 +52,7 @@ import type {
   StudioOverlay,
   StudioVideoCrop,
   MouseTrackerEvent,
+  StudioMediaProbe,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
 import type {
@@ -181,6 +182,7 @@ export type {
   StudioOverlay,
   StudioVideoCrop,
   MouseTrackerEvent,
+  StudioMediaProbe,
 };
 export type {
   StudioEffectType,
@@ -435,7 +437,12 @@ export interface IpcChannels {
   };
   /** Normalized live events for the active Builder-owned session. */
   'builder:session-event': BuilderSessionEvent;
-  /** Stop forwarding events without deleting the OpenCode session. */
+  /**
+   * Disconnect: release the active session without deleting its worktree or
+   * persisted context, so `builder:session-state` can re-attach later.
+   */
+  'builder:session-detach': { req: void; res: void };
+  /** Discard: stop the active session and delete its isolated worktree. */
   'builder:session-stop': { req: void; res: void };
   /**
    * Start a preview process Qeda owns, in the *active session's* workspace.
@@ -1301,11 +1308,48 @@ export interface IpcChannels {
   'studio:save-rendered-chunk': {
     req: {
       takeId: string;
-      chunkBase64: string;
+      chunkBase64?: string;
+      chunk?: ArrayBuffer | Uint8Array;
       isFirst?: boolean;
       isLast: boolean;
     };
     res: { ok: boolean; filePath: string };
+  };
+  /** Prepares native media: probe, dense-GOP intermediate, filmstrip sprite, and audio peaks. */
+  'studio:prep-media': {
+    req: { takeId: string; force?: boolean };
+    res: {
+      ok: boolean;
+      probe?: StudioMediaProbe | null;
+      optimizedPath?: string | null;
+      filmstripPath?: string | null;
+      waveformPath?: string | null;
+      error?: string;
+    };
+  };
+  /** Stream media prep progress updates. Declared as an event. */
+  'studio:media-progress': {
+    takeId: string;
+    stage: 'probing' | 'optimizing' | 'filmstrip' | 'waveform' | 'ready' | 'error';
+    progress: number;
+    error?: string;
+  };
+  /** Fetches prepared media sidecars (audio peaks & filmstrip metadata). */
+  'studio:get-media-sidecars': {
+    req: { takeId: string };
+    res: {
+      probe?: StudioMediaProbe | null;
+      peaks?: number[] | null;
+      filmstripUrl?: string | null;
+      filmstripMeta?: {
+        tileW: number;
+        tileH: number;
+        cols: number;
+        rows: number;
+        intervalMs: number;
+        totalTiles: number;
+      } | null;
+    };
   };
   /** Export video to MP4 or GIF via main process. */
   'studio:export-video': {

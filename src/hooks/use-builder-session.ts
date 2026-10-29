@@ -81,7 +81,11 @@ export function useBuilderSession() {
       try {
         const started = await window.electron.ipc.invoke<BuilderSessionStart>(
           'builder:session-create',
-          { directory, runInSandbox: options?.runInSandbox, remoteUrl: options?.remoteUrl },
+          {
+            directory,
+            runInSandbox: options?.runInSandbox,
+            remoteUrl: options?.remoteUrl,
+          },
         );
         setSession(started.session);
         setWorkspace(started.workspace);
@@ -111,7 +115,10 @@ export function useBuilderSession() {
    * React synthetic event instead of a path.
    */
   const chooseWorkspace = useCallback(
-    async (defaultPath?: string) => {
+    async (
+      defaultPath?: string,
+      options?: { runInSandbox?: boolean },
+    ) => {
       setError(null);
       const initialPath =
         typeof defaultPath === 'string' && defaultPath.trim()
@@ -127,7 +134,7 @@ export function useBuilderSession() {
           payload,
         );
         if (!directory) return null;
-        return await createSession(directory);
+        return await createSession(directory, options);
       } catch (cause) {
         setError(messageOf(cause));
         return null;
@@ -136,6 +143,26 @@ export function useBuilderSession() {
     [createSession],
   );
 
+  /**
+   * Disconnect: release the live session without deleting its worktree or
+   * persisted context. `builder:session-state` re-attaches it on the next
+   * visit, so this is the safe alternative to Discard.
+   */
+  const detachSession = useCallback(async (): Promise<boolean> => {
+    setError(null);
+    try {
+      await window.electron.ipc.invoke('builder:session-detach');
+      setSession(null);
+      setWorkspace(null);
+      setEvents([]);
+      return true;
+    } catch (cause) {
+      setError(messageOf(cause));
+      return false;
+    }
+  }, []);
+
+  /** Discard: stop the session and delete its isolated worktree. */
   const stopSession = useCallback(async () => {
     try {
       await window.electron.ipc.invoke('builder:session-stop');
@@ -229,6 +256,7 @@ export function useBuilderSession() {
     pendingResponse,
     chooseWorkspace,
     createSession,
+    detachSession,
     stopSession,
     sendPrompt,
     abort,

@@ -491,6 +491,11 @@ CREATE TABLE IF NOT EXISTS studio_takes (
   video_crop_json   TEXT,
   styling_json      TEXT,
   social_kit_json   TEXT,
+  probe_json        TEXT,
+  optimized_path    TEXT,
+  filmstrip_path    TEXT,
+  waveform_path     TEXT,
+  media_ready_at    INTEGER,
   created_at        INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at        INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -1129,6 +1134,11 @@ export function applyMigrations(db: {
     addColumn('studio_takes', 'effects_json', 'TEXT');
     addColumn('studio_takes', 'overlays_json', 'TEXT');
     addColumn('studio_takes', 'video_crop_json', 'TEXT');
+    addColumn('studio_takes', 'probe_json', 'TEXT');
+    addColumn('studio_takes', 'optimized_path', 'TEXT');
+    addColumn('studio_takes', 'filmstrip_path', 'TEXT');
+    addColumn('studio_takes', 'waveform_path', 'TEXT');
+    addColumn('studio_takes', 'media_ready_at', 'INTEGER');
 
     // `code_project_id` references code_projects, which is created in
     // MIGRATION_STATEMENTS above. On a legacy database that table does not

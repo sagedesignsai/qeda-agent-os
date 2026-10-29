@@ -85,7 +85,7 @@ export class PlanManager {
    * (the agent hasn't called createPlan), so the loop never exits prematurely
    * on an empty plan.
    */
-  stopCondition(): StopCondition<ToolSet> {
+  stopCondition(): StopCondition<ToolSet, any> {
     return () => {
       if (!this.plan || this.plan.items.length === 0) return false;
       return this.plan.items.every(

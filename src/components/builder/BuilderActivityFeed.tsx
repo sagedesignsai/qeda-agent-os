@@ -74,7 +74,10 @@ interface BuilderActivityFeedProps {
     requestId: string,
     decision: BuilderPermissionDecision,
   ) => void;
+  /** Detach the live feed and keep the session, worktree, and changes. */
   onDisconnect: () => void;
+  /** Request the destructive stop-and-delete flow (confirmed by the page). */
+  onDiscard: () => void;
   onForm: (reply: {
     formId: string;
     answer?: Record<string, string | number | boolean | string[]>;
@@ -89,6 +92,7 @@ export function BuilderActivityFeed({
   workspace = null,
   onPermission,
   onDisconnect,
+  onDiscard,
   onForm,
 }: BuilderActivityFeedProps) {
   const messages = useMemo(() => {
@@ -208,15 +212,26 @@ export function BuilderActivityFeed({
             </p>
           )}
         </div>
-        <Button
-          size="xs"
-          variant="ghost"
-          className="shrink-0 text-xs text-muted-foreground"
-          onClick={onDisconnect}
-          title="Disconnects the live feed but does not delete the OpenCode session."
-        >
-          Disconnect
-        </Button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-xs text-muted-foreground"
+            onClick={onDisconnect}
+            title="Detaches the live feed. The session, its worktree, and uncommitted changes are kept so you can re-attach."
+          >
+            Disconnect
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDiscard}
+            title="Stops the session and deletes its isolated worktree. Unkept changes are lost."
+          >
+            Discard
+          </Button>
+        </div>
       </div>
       {status?.type === 'status' && status.message && (
         <div

@@ -48,6 +48,17 @@ export interface SettingsSnapshot {
       hasHeaders: boolean;
     }
   >;
+  /**
+   * E2B sandbox session timeout in ms. Defaults to 3_600_000 (1 hour).
+   * Only meaningful when the Builder engine is OpenCode and the user opts
+   * into running a session inside a remote E2B sandbox.
+   */
+  e2bSandboxTimeoutMs: number;
+  /**
+   * Whether an encrypted GitHub PAT is stored for cloning private repos
+   * into the E2B sandbox. The value itself never leaves the main process.
+   */
+  githubPatSet: boolean;
 }
 
 const EMPTY: SettingsSnapshot = {
@@ -59,6 +70,8 @@ const EMPTY: SettingsSnapshot = {
   builderEngine: 'local',
   builderMaxSteps: DEFAULT_BUILDER_MAX_STEPS,
   mcpServers: [],
+  e2bSandboxTimeoutMs: 3_600_000,
+  githubPatSet: false,
 };
 
 interface SettingsStoreValue {

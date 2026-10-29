@@ -45,7 +45,6 @@ import { studioCanvasDims } from './geometry';
 import {
   computeCameraTarget,
   IDLE_CAMERA,
-  stepCamera,
   type StudioCameraState,
 } from './camera';
 import { drawStudioFrame, type StudioComposeInput } from './compose';
@@ -72,16 +71,6 @@ export interface RenderComposedVideoOptions {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 32768;
-  for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
 
 /** Wait for the video element to finish seeking to a specific time. */
 function seekTo(
@@ -188,7 +177,7 @@ export async function renderComposedStudioVideo(
 
   // 2. Load source video
   let video: HTMLVideoElement | null = null;
-  let totalDurationMs = 0;
+  let totalDurationMs: number;
 
   if (take.videoPath) {
     options?.onProgress?.(0.05, 'Loading source video media...');
@@ -196,7 +185,9 @@ export async function renderComposedStudioVideo(
     video.crossOrigin = 'anonymous';
     video.preload = 'auto';
     video.muted = true; // Muted for frame-seek; audio comes from source file via ffmpeg
-    video.src = `qeda-media://studio/${encodeURIComponent(take.id)}`;
+    const variantParam =
+      take.optimizedPath || take.mediaReadyAt ? '?variant=optimized' : '';
+    video.src = `qeda-media://studio/${encodeURIComponent(take.id)}${variantParam}`;
 
     await new Promise<void>((resolve, reject) => {
       const onLoaded = () => {
@@ -298,15 +289,13 @@ export async function renderComposedStudioVideo(
       const currentIsFirst = isFirstChunk;
       isFirstChunk = false;
       const p = (async () => {
-        const chunkBase64 = arrayBufferToBase64(
-          chunk.data.buffer.slice(
-            chunk.data.byteOffset,
-            chunk.data.byteOffset + chunk.data.byteLength,
-          ) as ArrayBuffer,
-        );
+        const slice = chunk.data.buffer.slice(
+          chunk.data.byteOffset,
+          chunk.data.byteOffset + chunk.data.byteLength,
+        ) as ArrayBuffer;
         await window.electron.ipc.invoke('studio:save-rendered-chunk', {
           takeId: take.id,
-          chunkBase64,
+          chunk: slice,
           isFirst: currentIsFirst,
           isLast: false,
         });
@@ -407,6 +396,21 @@ export async function renderComposedStudioVideo(
 
   options?.onProgress?.(0.12, 'Starting frame-by-frame export...');
 
+  const isProfiling =
+    (typeof process !== 'undefined' &&
+      Boolean(process.env?.STUDIO_EXPORT_PROFILE)) ||
+    (typeof window !== 'undefined' &&
+      Boolean((window as any).__STUDIO_EXPORT_PROFILE));
+
+  const profileTimings = isProfiling
+    ? {
+        seekMs: [] as number[],
+        drawMs: [] as number[],
+        encodeMs: [] as number[],
+        drainMs: [] as number[],
+      }
+    : null;
+
   for (let frameIndex = 0; frameIndex <= totalFrames; frameIndex++) {
     if (options?.signal?.aborted) {
       encoder.close();
@@ -423,6 +427,7 @@ export async function renderComposedStudioVideo(
     );
     const sourceMs = sourceFromComp(currentTimeMs, cuts);
 
+    const tSeek0 = profileTimings ? performance.now() : 0;
     // Seek video and overlay videos to this exact frame
     if (video) {
       const seekSec = Math.min(sourceMs / 1000, video.duration);
@@ -446,6 +451,9 @@ export async function renderComposedStudioVideo(
           // A broken overlay should not fail the whole export.
         }
       }
+    }
+    if (profileTimings) {
+      profileTimings.seekMs.push(performance.now() - tSeek0);
     }
 
     // Update camera state for this frame
@@ -502,6 +510,7 @@ export async function renderComposedStudioVideo(
       },
     };
 
+    const tDraw0 = profileTimings ? performance.now() : 0;
     drawStudioFrame(ctx, input);
 
     // Intro & Outro Motion Cards
@@ -526,8 +535,12 @@ export async function renderComposedStudioVideo(
         ch: dims.height,
       });
     }
+    if (profileTimings) {
+      profileTimings.drawMs.push(performance.now() - tDraw0);
+    }
 
     // Capture the drawn canvas as a VideoFrame and encode it
+    const tEnc0 = profileTimings ? performance.now() : 0;
     const videoFrame = new VideoFrame(canvas, {
       // Composition time: the muxer's timeline must match the shorter output.
       timestamp: Math.round(currentTimeMs * 1000), // μs
@@ -536,9 +549,13 @@ export async function renderComposedStudioVideo(
     pendingEncodes++;
     encoder.encode(videoFrame, { keyFrame: isKeyframe });
     videoFrame.close();
+    if (profileTimings) {
+      profileTimings.encodeMs.push(performance.now() - tEnc0);
+    }
 
     // Drain encoder and flush muxer every ENCODE_BATCH frames to stream data
     if (frameIndex % ENCODE_BATCH === 0 || frameIndex === totalFrames) {
+      const tDrain0 = profileTimings ? performance.now() : 0;
       // Wait for all outstanding encodes to complete
       await new Promise<void>((resolve) => {
         if (pendingEncodes === 0) {
@@ -562,6 +579,9 @@ export async function renderComposedStudioVideo(
       if (ipcPromises.length >= ENCODE_BATCH * 2) {
         await Promise.all(ipcPromises.splice(0, ipcPromises.length));
       }
+      if (profileTimings) {
+        profileTimings.drainMs.push(performance.now() - tDrain0);
+      }
     }
 
     // Progress reporting
@@ -583,6 +603,55 @@ export async function renderComposedStudioVideo(
   // Wait for all IPC writes to land
   options?.onProgress?.(0.98, 'Finalizing video file...');
   await Promise.all(ipcPromises);
+
+  if (profileTimings) {
+    const calcStats = (arr: number[]) => {
+      if (arr.length === 0) return { total: 0, p50: 0, p95: 0 };
+      const sorted = [...arr].sort((a, b) => a - b);
+      const total = sorted.reduce((sum, v) => sum + v, 0);
+      const p50 = sorted[Math.floor(sorted.length * 0.5)];
+      const p95 = sorted[Math.floor(sorted.length * 0.95)];
+      return { total, p50, p95 };
+    };
+    const seekStats = calcStats(profileTimings.seekMs);
+    const drawStats = calcStats(profileTimings.drawMs);
+    const encStats = calcStats(profileTimings.encodeMs);
+    const drainStats = calcStats(profileTimings.drainMs);
+    const grandTotal =
+      seekStats.total + drawStats.total + encStats.total + drainStats.total;
+    console.info('[studio-export-profile] Export Profile Summary:', {
+      frames: totalFrames,
+      totalWallTimeMs: grandTotal,
+      seek: {
+        ...seekStats,
+        pct:
+          grandTotal > 0
+            ? ((seekStats.total / grandTotal) * 100).toFixed(1) + '%'
+            : '0%',
+      },
+      draw: {
+        ...drawStats,
+        pct:
+          grandTotal > 0
+            ? ((drawStats.total / grandTotal) * 100).toFixed(1) + '%'
+            : '0%',
+      },
+      encode: {
+        ...encStats,
+        pct:
+          grandTotal > 0
+            ? ((encStats.total / grandTotal) * 100).toFixed(1) + '%'
+            : '0%',
+      },
+      drain: {
+        ...drainStats,
+        pct:
+          grandTotal > 0
+            ? ((drainStats.total / grandTotal) * 100).toFixed(1) + '%'
+            : '0%',
+      },
+    });
+  }
 
   // Signal the main process that all chunks have been written
   await window.electron.ipc.invoke('studio:save-rendered-chunk', {

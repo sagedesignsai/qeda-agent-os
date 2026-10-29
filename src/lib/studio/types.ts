@@ -174,6 +174,16 @@ export interface StudioVideoCrop {
   height: number;
 }
 
+export interface StudioMediaProbe {
+  durationMs: number;
+  width: number;
+  height: number;
+  fps: number;
+  rotation: number;
+  hasAudio: boolean;
+  keyframeIntervalMs?: number;
+}
+
 export interface StudioTake {
   id: string;
   projectId: string | null;
@@ -198,6 +208,12 @@ export interface StudioTake {
   styling: StudioStyling;
   socialKit: StudioSocialKit | null;
   fileSizeBytes?: number;
+  probeJson?: string | null;
+  probe?: StudioMediaProbe | null;
+  optimizedPath?: string | null;
+  filmstripPath?: string | null;
+  waveformPath?: string | null;
+  mediaReadyAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }

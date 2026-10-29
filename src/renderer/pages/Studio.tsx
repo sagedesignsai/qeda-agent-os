@@ -94,6 +94,7 @@ export default function Studio() {
     isProcessingDraft,
     isGeneratingSocialKit,
     exportProgress,
+    mediaPrepProgress,
     loadTake,
     loadMoreTakes,
     listSources,
@@ -645,6 +646,31 @@ export default function Studio() {
                 }}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Media Prep Progress Toast ──────────────────────────────────────── */}
+      {mediaPrepProgress && mediaPrepProgress.stage !== 'ready' && (
+        <div className="fixed top-4 right-4 z-50 max-w-sm bg-card/95 border border-border/80 shadow-2xl rounded-xl p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="size-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+            <SparklesIcon className="size-4 animate-spin" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-foreground truncate">
+              Preparing media
+            </p>
+            <p className="text-[11px] text-muted-foreground truncate">
+              {mediaPrepProgress.stage === 'probing' && 'Analyzing video file…'}
+              {mediaPrepProgress.stage === 'optimizing' &&
+                'Optimizing for fast seeking…'}
+              {mediaPrepProgress.stage === 'filmstrip' &&
+                'Generating thumbnails…'}
+              {mediaPrepProgress.stage === 'waveform' &&
+                'Extracting audio waveform…'}
+              {mediaPrepProgress.stage === 'error' &&
+                (mediaPrepProgress.message || 'Preparation failed')}
+            </p>
           </div>
         </div>
       )}

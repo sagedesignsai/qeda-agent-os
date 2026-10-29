@@ -82,6 +82,12 @@ export function registerSettingsHandlers({
       serviceKeysSet,
       // Builder engine selection — defaults to 'local' on fresh installs.
       builderEngine: s.builderEngine ?? 'local',
+      // E2B sandbox timeout. Only relevant when the Builder engine is OpenCode
+      // and the user opts into running a session inside a remote sandbox.
+      e2bSandboxTimeoutMs: s.e2bSandboxTimeoutMs ?? 3_600_000,
+      // Whether an encrypted GitHub PAT is stored for cloning private repos
+      // into the E2B sandbox. The value itself never leaves the main process.
+      githubPatSet: Boolean(s.githubPat),
       // MCP servers: strip secret env and header values, expose only presence.
       mcpServers: (s.mcpServers ?? []).map((srv) => ({
         id: srv.id,

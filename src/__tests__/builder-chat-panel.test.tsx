@@ -207,4 +207,28 @@ describe('BuilderChatPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop build' }));
     expect(onAbort).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps Disconnect separate from the destructive Discard action', () => {
+    const onDisconnectSession = jest.fn();
+    const onDiscardSession = jest.fn();
+    render(
+      <BuilderChatPanel
+        status={connected}
+        prompt=""
+        onPromptChange={jest.fn()}
+        workspace={workspace}
+        session={session}
+        onDisconnectSession={onDisconnectSession}
+        onDiscardSession={onDiscardSession}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(onDisconnectSession).toHaveBeenCalledTimes(1);
+    expect(onDiscardSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(onDiscardSession).toHaveBeenCalledTimes(1);
+    expect(onDisconnectSession).toHaveBeenCalledTimes(1);
+  });
 });

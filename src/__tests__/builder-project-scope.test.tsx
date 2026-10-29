@@ -62,10 +62,12 @@ jest.mock('@/hooks/use-builder-workspace', () => {
       return {
         surface: 'preview' as const,
         viewport: 'desktop' as const,
+        runInSandbox: false,
         setSurface: jest.fn(),
         setViewport: jest.fn(),
-        previewUrl: '',
         setPreviewUrl: jest.fn(),
+        setPreviewCommand: jest.fn(),
+        setRunInSandbox: jest.fn(),
         prompt,
         setPrompt,
         selectedFilePath,
@@ -148,6 +150,7 @@ function makeSessionApi() {
     pendingResponse: null,
     chooseWorkspace: jest.fn(),
     createSession: jest.fn(),
+    detachSession: jest.fn().mockResolvedValue(true),
     stopSession: jest.fn(),
     sendPrompt: jest.fn().mockResolvedValue(true),
     abort: jest.fn(),
@@ -189,6 +192,8 @@ describe('useBuilderSession.chooseWorkspace', () => {
     // the picker returned.
     expect(invoke).toHaveBeenCalledWith('builder:session-create', {
       directory: '/repo/vellum',
+      runInSandbox: undefined,
+      remoteUrl: undefined,
     });
   });
 
@@ -223,6 +228,27 @@ describe('useBuilderSession.chooseWorkspace', () => {
       'builder:session-create',
       expect.anything(),
     );
+  });
+});
+
+describe('useBuilderSession.detachSession', () => {
+  const { useBuilderSession: useRealBuilderSession } = jest.requireActual<
+    typeof import('@/hooks/use-builder-session')
+  >('@/hooks/use-builder-session');
+
+  it('releases the session over the detach channel without stopping it', async () => {
+    const invoke = installIpc();
+
+    const { result } = renderHook(() => useRealBuilderSession());
+    let detached: boolean | undefined;
+    await act(async () => {
+      detached = await result.current.detachSession();
+    });
+
+    expect(detached).toBe(true);
+    expect(invoke).toHaveBeenCalledWith('builder:session-detach');
+    expect(invoke).not.toHaveBeenCalledWith('builder:session-stop');
+    expect(result.current.session).toBeNull();
   });
 });
 
@@ -280,7 +306,10 @@ describe('Builder project scope', () => {
     fireEvent.click(
       await screen.findByRole('menuitem', { name: /^Vellum Core/ }),
     );
-    expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum');
+    expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
+      '/repo/vellum',
+      expect.objectContaining({ runInSandbox: false }),
+    );
   });
 
   it('starts the project repo and sends the welcome draft in one action', async () => {
@@ -317,7 +346,10 @@ describe('Builder project scope', () => {
     });
 
     await waitFor(() =>
-      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum'),
+      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
+        '/repo/vellum',
+        expect.objectContaining({ runInSandbox: false }),
+      ),
     );
     await waitFor(() =>
       expect(sessionApi.sendPrompt).toHaveBeenCalledWith(
@@ -349,7 +381,10 @@ describe('Builder project scope', () => {
     });
 
     await waitFor(() =>
-      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum'),
+      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
+        '/repo/vellum',
+        expect.objectContaining({ runInSandbox: false }),
+      ),
     );
     expect(textbox).toHaveValue('Create an internal application for sales.');
     expect(sessionApi.sendPrompt).not.toHaveBeenCalled();
@@ -368,7 +403,10 @@ describe('Builder project scope', () => {
     );
     // `null` means "no default of your own" — the page maps it to `undefined`
     // rather than letting the project repo become the fallback.
-    expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(undefined);
+    expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
+      undefined,
+      expect.objectContaining({ runInSandbox: false }),
+    );
   });
 
   it('confirms before replacing a live workspace and its worktree', async () => {
@@ -397,7 +435,65 @@ describe('Builder project scope', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Switch workspace' }));
     await waitFor(() =>
-      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith('/repo/vellum'),
+      expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
+        '/repo/vellum',
+        expect.objectContaining({ runInSandbox: false }),
+      ),
+    );
+  });
+
+  it('detaches a live session without stopping it', async () => {
+    installIpc();
+    sessionApi.session = {
+      id: 'ses_1',
+      title: 'Builder · vellum',
+      createdAt: 1,
+    };
+    sessionApi.workspace = {
+      directory: '/repo/vellum',
+      name: 'vellum',
+      branch: 'main',
+      dirty: false,
+      changedFileCount: 0,
+      worktreePath: '/tmp/qeda-builder-ses_1',
+    };
+    renderBuilder();
+    await screen.findAllByText('Vellum Core');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    await waitFor(() =>
+      expect(sessionApi.detachSession).toHaveBeenCalledTimes(1),
+    );
+    expect(sessionApi.stopSession).not.toHaveBeenCalled();
+  });
+
+  it('requires confirmation before discarding a live session', async () => {
+    installIpc();
+    sessionApi.session = {
+      id: 'ses_1',
+      title: 'Builder · vellum',
+      createdAt: 1,
+    };
+    sessionApi.workspace = {
+      directory: '/repo/vellum',
+      name: 'vellum',
+      branch: 'main',
+      dirty: false,
+      changedFileCount: 0,
+      worktreePath: '/tmp/qeda-builder-ses_1',
+    };
+    renderBuilder();
+    await screen.findAllByText('Vellum Core');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(
+      await screen.findByText('Discard this Builder session?'),
+    ).toBeInTheDocument();
+    expect(sessionApi.stopSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard session' }));
+    await waitFor(() =>
+      expect(sessionApi.stopSession).toHaveBeenCalledTimes(1),
     );
   });
 

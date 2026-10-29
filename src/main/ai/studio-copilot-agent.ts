@@ -149,10 +149,7 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
       ...tools,
       ...createPlanTools(planManager),
     },
-    stopWhen: [
-      isStepCount(25),
-      planManager.stopCondition(),
-    ],
+    stopWhen: [isStepCount(25), planManager.stopCondition()],
   });
 }
 

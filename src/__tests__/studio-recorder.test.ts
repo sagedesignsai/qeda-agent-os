@@ -41,6 +41,11 @@ describe('buildCaptureArgs', () => {
     expect(args).toContain(':0.0+16,32');
     expect(args[args.length - 1]).toBe(out);
     expect(args).toContain('+faststart');
+    expect(args).toContain('-g');
+    expect(args).toContain('30');
+    expect(args).toContain('-keyint_min');
+    expect(args).toContain('-scenecut');
+    expect(args).toContain('0');
   });
 
   it('drives gdigrab with its own offset flags, since it takes no display key', () => {

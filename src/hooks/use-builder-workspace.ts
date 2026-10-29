@@ -20,6 +20,13 @@ interface BuilderPreferences {
   viewport: BuilderViewport;
   /** Last custom preview command, kept per install so non-Node projects resume. */
   previewCommand: string;
+  /**
+   * When true, the next Builder session is created with `runInSandbox: true`,
+   * i.e. inside an ephemeral E2B sandbox rather than a local worktree. The
+   * preference is per-install; the actual sandbox creation still requires a
+   * configured E2B key and a resolvable git remote.
+   */
+  runInSandbox: boolean;
 }
 
 const STORAGE_KEY = 'qeda:builder:preferences:v1';
@@ -28,7 +35,7 @@ function readPreferences(): BuilderPreferences {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
     if (!value) {
-      return { surface: 'preview', viewport: 'desktop', previewCommand: '' };
+      return { surface: 'preview', viewport: 'desktop', previewCommand: '', runInSandbox: false };
     }
     const parsed = JSON.parse(value) as Partial<BuilderPreferences>;
     return {
@@ -42,9 +49,10 @@ function readPreferences(): BuilderPreferences {
           : 'desktop',
       previewCommand:
         typeof parsed.previewCommand === 'string' ? parsed.previewCommand : '',
+      runInSandbox: parsed.runInSandbox === true,
     };
   } catch {
-    return { surface: 'preview', viewport: 'desktop', previewCommand: '' };
+    return { surface: 'preview', viewport: 'desktop', previewCommand: '', runInSandbox: false };
   }
 }
 
@@ -73,11 +81,16 @@ export function useBuilderWorkspace() {
     setPreferences((current) => ({ ...current, previewCommand }));
   }, []);
 
+  const setRunInSandbox = useCallback((runInSandbox: boolean) => {
+    setPreferences((current) => ({ ...current, runInSandbox }));
+  }, []);
+
   return {
     ...preferences,
     setSurface,
     setViewport,
     setPreviewCommand,
+    setRunInSandbox,
     prompt,
     setPrompt,
     selectedFilePath,

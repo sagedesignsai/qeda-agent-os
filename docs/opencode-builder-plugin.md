@@ -105,9 +105,10 @@ worktree.
   `inspectBuilderWorkspace(directory, { autoInit: true })` path used by Local.
 - On restore, Qeda restarts the bridge, returns the persisted event buffer, and
   verifies that the worktree still exists before re-attaching.
-- `session-stop` interrupts the remote session, asks OpenCode to remove the
-  worktree, then falls back to local `git worktree remove`. Window close/detach
-  interrupts but preserves the worktree and persisted context for restore.
+- `session-stop` (Discard) interrupts the remote session, asks OpenCode to
+  remove the worktree, then falls back to local `git worktree remove`.
+  `session-detach` (Disconnect) and window close interrupt but preserve the
+  worktree and persisted context for restore.
 - OpenCode's global `filesystem.changed` events are mapped to Qeda's
   `file-changed` event, scoped to the active worktree and filtered for
   dependency/build noise. This is what refreshes Qeda's diff review after native

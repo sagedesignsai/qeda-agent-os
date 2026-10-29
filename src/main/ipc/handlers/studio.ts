@@ -14,7 +14,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { promises as fs } from 'node:fs';
+import { promises as fs, createWriteStream, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import {
   ipcMain,
@@ -24,6 +24,7 @@ import {
   screen,
   app,
   BrowserWindow,
+  powerSaveBlocker,
 } from 'electron';
 import { nanoid } from 'nanoid';
 import { generateObject } from 'ai';
@@ -35,11 +36,10 @@ import {
   hasStudioTake,
   saveStudioTake,
   deleteStudioTake,
+  updateStudioTakeMediaPrep,
   DEFAULT_STUDIO_STYLING,
   type StudioTake,
   type StudioTakeSummary,
-  type StudioZoom,
-  type StudioCaption,
   type StudioSocialKit,
   type MouseTrackerEvent,
 } from '../../db/studio-store.js';
@@ -48,6 +48,12 @@ import { getSettings } from '../../ai/settings.js';
 import { resolveModel } from '../../ai/provider.js';
 import { transcodeStudioVideo } from '../../studio-export.js';
 import { processStudioDraft } from '../../studio-draft.js';
+import { probeTake, ensureOptimizedMedia } from '../../studio-media-prep.js';
+import {
+  generateFilmstrip,
+  generateWaveform,
+  type FilmstripMeta,
+} from '../../studio-thumbs.js';
 
 // ── In-memory active recording telemetry ──────────────────────────────────────
 
@@ -60,6 +66,11 @@ interface ActiveRecordingSession {
 
 let activeTracker: ActiveRecordingSession | null = null;
 const MAX_MOUSE_TRACKER_EVENTS = 100_000;
+
+const activeChunkStreams = new Map<
+  string,
+  { stream: WriteStream; filePath: string }
+>();
 
 function getStudioDir(takeId?: string): string {
   const base = path.join(app.getPath('userData'), 'studio');
@@ -74,6 +85,49 @@ export function registerStudioHandlers({
   const broadcastChanged = () => {
     if (!mainWindow.isDestroyed()) {
       mainWindow.webContents.send('studio:changed');
+    }
+  };
+
+  const broadcastProgress = (
+    takeId: string,
+    stage:
+      'probing' | 'optimizing' | 'filmstrip' | 'waveform' | 'ready' | 'error',
+    progress: number,
+    error?: string,
+  ) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('studio:media-progress', {
+        takeId,
+        stage,
+        progress,
+        error,
+      });
+    }
+  };
+
+  const prepMediaPipeline = async (
+    take: StudioTake,
+    force = false,
+  ): Promise<void> => {
+    try {
+      broadcastProgress(take.id, 'probing', 0.1);
+      const probe = await probeTake(take.videoPath);
+      updateStudioTakeMediaPrep(take.id, { probeJson: JSON.stringify(probe) });
+
+      broadcastProgress(take.id, 'optimizing', 0.3);
+      await ensureOptimizedMedia(take, { force });
+
+      const currentTake = getStudioTake(take.id) || take;
+      broadcastProgress(take.id, 'filmstrip', 0.6);
+      await generateFilmstrip(currentTake);
+
+      broadcastProgress(take.id, 'waveform', 0.8);
+      await generateWaveform(currentTake);
+
+      broadcastProgress(take.id, 'ready', 1.0);
+    } catch (err: any) {
+      broadcastProgress(take.id, 'error', 0, err?.message || String(err));
+      throw err;
     }
   };
 
@@ -125,7 +179,97 @@ export function registerStudioHandlers({
   ipcMain.handle(
     'studio:get-take',
     (_e, { id }: { id: string }): StudioTake | null => {
-      return getStudioTake(id);
+      const take = getStudioTake(id);
+      if (take && !take.mediaReadyAt) {
+        // Trigger lazy backfill prep in the background without blocking the return
+        void (async () => {
+          try {
+            await prepMediaPipeline(take);
+          } catch (err) {
+            console.warn(
+              `[studio:media-prep] Lazy backfill failed for ${id}:`,
+              err,
+            );
+          }
+        })();
+      }
+      return take;
+    },
+  );
+
+  ipcMain.handle(
+    'studio:prep-media',
+    async (_e, { takeId, force }: { takeId: string; force?: boolean }) => {
+      const take = getStudioTake(takeId);
+      if (!take) {
+        return { ok: false, error: 'Take not found' };
+      }
+      try {
+        await prepMediaPipeline(take, force);
+        const updated = getStudioTake(takeId);
+        return {
+          ok: true,
+          probe: updated?.probe,
+          optimizedPath: updated?.optimizedPath,
+          filmstripPath: updated?.filmstripPath,
+          waveformPath: updated?.waveformPath,
+        };
+      } catch (err: any) {
+        return { ok: false, error: err?.message || String(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'studio:get-media-sidecars',
+    async (_e, { takeId }: { takeId: string }) => {
+      const take = getStudioTake(takeId);
+      if (!take) {
+        return {
+          probe: null,
+          peaks: null,
+          filmstripUrl: null,
+          filmstripMeta: null,
+        };
+      }
+
+      let peaks: number[] | null = null;
+      if (take.waveformPath) {
+        try {
+          const buf = await fs.readFile(take.waveformPath);
+          const f32 = new Float32Array(
+            buf.buffer,
+            buf.byteOffset,
+            buf.byteLength / 4,
+          );
+          peaks = Array.from(f32);
+        } catch {
+          // Ignore read error
+        }
+      }
+
+      let filmstripMeta: FilmstripMeta | null = null;
+      let filmstripUrl: string | null = null;
+      if (take.filmstripPath) {
+        try {
+          const metaPath = path.join(
+            path.dirname(take.filmstripPath),
+            'filmstrip.json',
+          );
+          const metaStr = await fs.readFile(metaPath, 'utf-8');
+          filmstripMeta = JSON.parse(metaStr);
+          filmstripUrl = `qeda-media://studio/${encodeURIComponent(take.id)}?variant=filmstrip`;
+        } catch {
+          // Ignore read error
+        }
+      }
+
+      return {
+        probe: take.probe ?? null,
+        peaks,
+        filmstripUrl,
+        filmstripMeta,
+      };
     },
   );
 
@@ -417,10 +561,13 @@ export function registerStudioHandlers({
       {
         takeId,
         chunkBase64,
+        chunk,
         isFirst,
+        isLast,
       }: {
         takeId: string;
-        chunkBase64: string;
+        chunkBase64?: string;
+        chunk?: ArrayBuffer | Uint8Array;
         isFirst?: boolean;
         isLast?: boolean;
       },
@@ -429,14 +576,53 @@ export function registerStudioHandlers({
       await fs.mkdir(takeDir, { recursive: true });
 
       const renderedPath = path.join(takeDir, 'rendered.webm');
-      if (chunkBase64) {
-        const buffer = Buffer.from(chunkBase64, 'base64');
-        if (isFirst) {
-          await fs.writeFile(renderedPath, buffer);
-        } else {
-          await fs.appendFile(renderedPath, buffer);
+      let entry = activeChunkStreams.get(takeId);
+
+      if (isFirst || !entry) {
+        if (entry) {
+          try {
+            entry.stream.end();
+          } catch {
+            // Ignore stream close error
+          }
         }
+        const stream = createWriteStream(renderedPath, { flags: 'w' });
+        entry = { stream, filePath: renderedPath };
+        activeChunkStreams.set(takeId, entry);
       }
+
+      let buffer: Buffer | null = null;
+      if (chunk) {
+        buffer = Buffer.isBuffer(chunk)
+          ? chunk
+          : chunk instanceof Uint8Array
+            ? Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+            : Buffer.from(chunk);
+      } else if (chunkBase64) {
+        buffer = Buffer.from(chunkBase64, 'base64');
+      }
+
+      if (buffer && buffer.length > 0) {
+        const stream = entry.stream;
+        await new Promise<void>((resolve, reject) => {
+          const flushed = stream.write(buffer, (err) => {
+            if (err) reject(err);
+            else resolve();
+          });
+          if (!flushed) {
+            stream.once('drain', resolve);
+          }
+        });
+      }
+
+      if (isLast) {
+        const stream = entry.stream;
+        await new Promise<void>((resolve) => {
+          stream.end(() => resolve());
+        });
+        activeChunkStreams.delete(takeId);
+      }
+
       return { ok: true, filePath: renderedPath };
     },
   );
@@ -509,16 +695,23 @@ export function registerStudioHandlers({
         finalOutputPath = filePath;
       }
 
+      let blockerId: number | null = null;
       try {
+        blockerId = powerSaveBlocker.start('prevent-app-suspension');
+        mainWindow.setProgressBar(0.5);
+
         // When the renderer has produced a composed rendered.webm, the source
         // video path carries the original audio track. Pass it as audioInputPath
         // so ffmpeg merges the audio with the composed video in one pass.
         // If effectiveInputPath IS the original (no composed render), audio is
         // already embedded so no separate merge is needed.
-        const hasComposedRender = effectiveInputPath === defaultRenderedPath ||
+        const hasComposedRender =
+          effectiveInputPath === defaultRenderedPath ||
           effectiveInputPath === (renderedVideoPath || '');
         const audioInputPath =
-          hasComposedRender && take.videoPath && take.videoPath !== effectiveInputPath
+          hasComposedRender &&
+          take.videoPath &&
+          take.videoPath !== effectiveInputPath
             ? take.videoPath
             : undefined;
 
@@ -545,6 +738,11 @@ export function registerStudioHandlers({
         return { ok: true, filePath: finalOutputPath };
       } catch (err) {
         return { ok: false, error: (err as Error).message };
+      } finally {
+        if (blockerId !== null && powerSaveBlocker.isStarted(blockerId)) {
+          powerSaveBlocker.stop(blockerId);
+        }
+        mainWindow.setProgressBar(-1);
       }
     },
   );

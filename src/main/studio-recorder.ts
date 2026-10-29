@@ -139,6 +139,8 @@ export function buildCaptureArgs(
     );
   }
 
+  const gop = String(Math.max(1, Math.round(geometry.fps || 30)));
+
   args.push(
     '-pix_fmt',
     'yuv420p',
@@ -148,6 +150,13 @@ export function buildCaptureArgs(
     'veryfast',
     '-crf',
     '23',
+    // Bound GOP to 1 second so every frame-accurate seek decodes <= 1s of media.
+    '-g',
+    gop,
+    '-keyint_min',
+    gop,
+    '-scenecut',
+    '0',
     // faststart makes the finished take seekable by the canvas preview.
     '-movflags',
     '+faststart',

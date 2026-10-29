@@ -27,6 +27,7 @@ import type {
   MouseTrackerEvent,
   StudioTake,
   StudioTakeSummary,
+  StudioMediaProbe,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
 
@@ -43,6 +44,7 @@ export type {
   MouseTrackerEvent,
   StudioTake,
   StudioTakeSummary,
+  StudioMediaProbe,
 };
 export { DEFAULT_STUDIO_STYLING };
 
@@ -66,6 +68,11 @@ interface StudioTakeRow {
   video_crop_json: string | null;
   styling_json: string | null;
   social_kit_json: string | null;
+  probe_json: string | null;
+  optimized_path: string | null;
+  filmstrip_path: string | null;
+  waveform_path: string | null;
+  media_ready_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -106,6 +113,12 @@ function rowToTake(row: StudioTakeRow): StudioTake {
       DEFAULT_STUDIO_STYLING,
     ),
     socialKit: parseJsonSafe<StudioSocialKit | null>(row.social_kit_json, null),
+    probeJson: row.probe_json,
+    probe: parseJsonSafe<StudioMediaProbe | null>(row.probe_json, null),
+    optimizedPath: row.optimized_path,
+    filmstripPath: row.filmstrip_path,
+    waveformPath: row.waveform_path,
+    mediaReadyAt: row.media_ready_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -204,11 +217,67 @@ export function hasStudioTake(id: string): boolean {
   );
 }
 
-export function getStudioVideoPath(id: string): string | null {
+export function getStudioVideoPath(
+  id: string,
+  variant: 'source' | 'optimized' | 'filmstrip' = 'source',
+): string | null {
   const row = getDb()
-    .prepare('SELECT video_path FROM studio_takes WHERE id = ?')
-    .get(id) as { video_path: string } | undefined;
-  return row?.video_path || null;
+    .prepare(
+      'SELECT video_path, optimized_path, filmstrip_path FROM studio_takes WHERE id = ?',
+    )
+    .get(id) as
+    | {
+        video_path: string;
+        optimized_path: string | null;
+        filmstrip_path: string | null;
+      }
+    | undefined;
+  if (!row) return null;
+  if (variant === 'optimized' && row.optimized_path) {
+    return row.optimized_path;
+  }
+  if (variant === 'filmstrip' && row.filmstrip_path) {
+    return row.filmstrip_path;
+  }
+  return row.video_path || null;
+}
+
+export function updateStudioTakeMediaPrep(
+  id: string,
+  updates: {
+    probeJson?: string | null;
+    optimizedPath?: string | null;
+    filmstripPath?: string | null;
+    waveformPath?: string | null;
+    mediaReadyAt?: number | null;
+  },
+): void {
+  const sets: string[] = ['updated_at = unixepoch()'];
+  const values: unknown[] = [];
+  if (updates.probeJson !== undefined) {
+    sets.push('probe_json = ?');
+    values.push(updates.probeJson);
+  }
+  if (updates.optimizedPath !== undefined) {
+    sets.push('optimized_path = ?');
+    values.push(updates.optimizedPath);
+  }
+  if (updates.filmstripPath !== undefined) {
+    sets.push('filmstrip_path = ?');
+    values.push(updates.filmstripPath);
+  }
+  if (updates.waveformPath !== undefined) {
+    sets.push('waveform_path = ?');
+    values.push(updates.waveformPath);
+  }
+  if (updates.mediaReadyAt !== undefined) {
+    sets.push('media_ready_at = ?');
+    values.push(updates.mediaReadyAt);
+  }
+  values.push(id);
+  getDb()
+    .prepare(`UPDATE studio_takes SET ${sets.join(', ')} WHERE id = ?`)
+    .run(...values);
 }
 
 /**

@@ -58,6 +58,19 @@ export function useStudio(
     statusText: string;
   } | null>(null);
 
+  // Media preparation progress (probe, optimize, filmstrip, waveform)
+  const [mediaPrepProgress, setMediaPrepProgress] = useState<{
+    takeId: string;
+    stage:
+      | 'probing'
+      | 'optimizing'
+      | 'filmstrip'
+      | 'waveform'
+      | 'ready'
+      | 'error';
+    message?: string;
+  } | null>(null);
+
   // Recording state
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
@@ -154,6 +167,31 @@ export function useStudio(
     refreshTakes();
     if (activeTake?.id) {
       loadTake(activeTake.id);
+    }
+  });
+
+  // Listen for native media prep progress events
+  useIpcEvent('studio:media-progress', (payload: unknown) => {
+    const data = payload as { takeId: string; stage: string; message?: string };
+    if (!data?.takeId || !data.stage) return;
+    setMediaPrepProgress({
+      takeId: data.takeId,
+      stage: data.stage as
+        | 'probing'
+        | 'optimizing'
+        | 'filmstrip'
+        | 'waveform'
+        | 'ready'
+        | 'error',
+      message: data.message,
+    });
+    // Auto-clear on ready/error after a short delay
+    if (data.stage === 'ready' || data.stage === 'error') {
+      setTimeout(() => {
+        setMediaPrepProgress((prev) =>
+          prev?.takeId === data.takeId ? null : prev,
+        );
+      }, 2000);
     }
   });
 
@@ -646,6 +684,7 @@ export function useStudio(
     isProcessingDraft,
     isGeneratingSocialKit,
     exportProgress,
+    mediaPrepProgress,
     loadTake,
     refreshTakes,
     loadMoreTakes,

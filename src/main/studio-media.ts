@@ -22,10 +22,7 @@ import {
   getStudioVideoPath,
   getStudioOverlaySource,
 } from './db/studio-store.js';
-import {
-  STUDIO_OVERLAY_HOST,
-  STUDIO_TAKE_HOST,
-} from '../lib/studio/media.js';
+import { STUDIO_OVERLAY_HOST, STUDIO_TAKE_HOST } from '../lib/studio/media.js';
 
 export const STUDIO_MEDIA_SCHEME = 'qeda-media';
 
@@ -81,8 +78,12 @@ function mediaType(filePath: string): string {
 }
 
 /** Resolve a request host+id to an allow-listed on-disk path. */
-function resolveMediaPath(hostname: string, id: string): string | null {
-  if (hostname === STUDIO_TAKE_HOST) return getStudioVideoPath(id);
+function resolveMediaPath(
+  hostname: string,
+  id: string,
+  variant: 'source' | 'optimized' | 'filmstrip' = 'source',
+): string | null {
+  if (hostname === STUDIO_TAKE_HOST) return getStudioVideoPath(id, variant);
   if (hostname === STUDIO_OVERLAY_HOST) return getStudioOverlaySource(id);
   return null;
 }
@@ -115,11 +116,40 @@ export function registerStudioMediaHandler(): void {
       return new Response(null, { status: 405 });
     }
 
-    const filePath = resolveMediaPath(url.hostname, id);
+    const variantParam = url.searchParams.get('variant');
+    const variant =
+      variantParam === 'optimized'
+        ? 'optimized'
+        : variantParam === 'filmstrip'
+          ? 'filmstrip'
+          : 'source';
+
+    let filePath = resolveMediaPath(url.hostname, id, variant);
+    if (!filePath && variant !== 'source') {
+      filePath = resolveMediaPath(url.hostname, id, 'source');
+    }
     if (!filePath) return new Response(null, { status: 404 });
 
     try {
-      const { size } = await fs.stat(filePath);
+      let size = 0;
+      try {
+        const stats = await fs.stat(filePath);
+        size = stats.size;
+      } catch {
+        // If variant was requested but missing on disk, fallback to source file
+        if (variant !== 'source') {
+          const sourcePath = resolveMediaPath(url.hostname, id, 'source');
+          if (sourcePath) {
+            const stats = await fs.stat(sourcePath);
+            filePath = sourcePath;
+            size = stats.size;
+          }
+        }
+      }
+      if (size === 0 && filePath) {
+        const stats = await fs.stat(filePath);
+        size = stats.size;
+      }
       const headers = new Headers({
         'accept-ranges': 'bytes',
         'access-control-allow-origin': '*',

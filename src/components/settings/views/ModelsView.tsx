@@ -45,13 +45,14 @@ import type { ProviderInfo, ServiceStatus } from '../../../main/ipc/channels';
 import { useSettingsStore } from '../settings-store';
 
 /** Display order + labels for the service categories. */
-const SERVICE_CATEGORIES: { id: ServiceStatus['category']; label: string }[] = [
-  { id: 'search', label: 'Web search' },
-  { id: 'scrape', label: 'Scraping' },
-  { id: 'docs', label: 'Documentation' },
-  { id: 'images', label: 'Images' },
-  { id: 'speech', label: 'Speech' },
-];
+  const SERVICE_CATEGORIES: { id: ServiceStatus['category']; label: string }[] = [
+    { id: 'search', label: 'Web search' },
+    { id: 'scrape', label: 'Scraping' },
+    { id: 'docs', label: 'Documentation' },
+    { id: 'images', label: 'Images' },
+    { id: 'speech', label: 'Speech' },
+    { id: 'sandbox', label: 'Sandbox' },
+  ];
 
 export function ModelsView() {
   const { snapshot, saving, save } = useSettingsStore();
