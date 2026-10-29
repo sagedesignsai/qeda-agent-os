@@ -6,7 +6,7 @@
       "type": "node",
       "request": "launch",
       "protocol": "inspector",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "bun",
       "runtimeArgs": [
         "run",
         "start",

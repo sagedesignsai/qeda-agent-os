@@ -6,7 +6,7 @@ const port = Number(process.env.SMOKE_PORT || 1213);
 const debugPort = Number(process.env.SMOKE_DEBUG_PORT || 9335);
 const windows = process.platform === 'win32';
 const child = spawn(
-  windows ? 'npm.cmd' : 'npm',
+  windows ? 'bun.cmd' : 'bun',
   [
     'start',
     '--',
@@ -44,7 +44,7 @@ child.on('error', (error) => {
 async function waitFor(check, description) {
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
-    if (exited) throw new Error(`npm start exited before ${description}`);
+    if (exited) throw new Error(`bun start exited before ${description}`);
     const value = await check();
     if (value) return value;
     await delay(250);

@@ -2,30 +2,30 @@
 
 Electron + React 19 + TypeScript desktop app ("local agent OS") forked from
 [electron-react-boilerplate](https://github.com/electron-react-boilerplate/electron-react-boilerplate).
-Node 24+ / npm 10+ are **hard-enforced** via `devEngines` (`onFail: "error"`).
+Bun 1+ is **hard-enforced** via `devEngines` (`onFail: "error"`).
 
 ## Commands
 
 ```bash
-npm install
+bun install
 cp .env.example .env.local    # optional; providers can also be set in Settings
-npm start                     # dev: main+preload+renderer HMR, renderer on localhost:1212
-npm run build                 # REQUIRED before npm test — see below
-npm test                      # jest, jsdom
-npm run lint                  # eslint (prettier is wired in as an eslint plugin)
-npm run lint:fix
+bun start                     # dev: main+preload+renderer HMR, renderer on localhost:1212
+bun run build                 # REQUIRED before bun test — see below
+bun test                      # jest, jsdom
+bun run lint                  # eslint (prettier is wired in as an eslint plugin)
+bun run lint:fix
 ```
 
-- **`npm test` fails without `npm run build` first.** `.erb/scripts/check-build-exists.ts`
+- **`bun test` fails without `bun run build` first.** `.erb/scripts/check-build-exists.ts`
   (a jest `setupFiles` entry) throws unless `release/app/dist/main/main.js` **and**
   `release/app/dist/renderer/renderer.js` exist. It is not a build-output dependency
   of the tests, just a hard guard.
-- Single test: `npx jest src/__tests__/projects-db` or `npm test -- -t "name"`.
-- **There is no `typecheck` script.** Use `npx tsc --noEmit -p tsconfig.json`
+- Single test: `bunx jest src/__tests__/projects-db` or `bun test -- -t "name"`.
+- **There is no `typecheck` script.** Use `bunx tsc --noEmit -p tsconfig.json`
   (TypeScript 7.x, i.e. the native compiler — much faster than tsc 5).
-- `npm run test:smoke` spawns a real `npm start` on `SMOKE_PORT` (1213) and probes
+- `bun run test:smoke` spawns a real `bun start` on `SMOKE_PORT` (1213) and probes
   the preload bridge over the Chrome debug port. Slower and flakier than unit tests.
-- `npm run theme:terminal` is a one-shot codemod that rewrites hardcoded Tailwind
+- `bun run theme:terminal` is a one-shot codemod that rewrites hardcoded Tailwind
   palette classes in the Terminal module to design tokens. **Dry run by default**;
   needs `--write` to apply.
 - No CI (`.github/` does not exist) and no pre-commit hooks — verification is
@@ -151,7 +151,7 @@ users broken.
 
 `release/app/package.json` is a separate manifest holding the native deps
 (`better-sqlite3`, `node-pty`, `sqlite-vec`). `electron.vite.config.ts` reads *that
-file* to build the `external` list, and `npm run rebuild` targets
+file* to build the `external` list, and `bun run rebuild` targets
 `--module-dir release/app`. **Add native modules there, not in the root
 `package.json`** — a root-only entry gets bundled and fails to load.
 

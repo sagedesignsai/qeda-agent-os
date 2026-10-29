@@ -9,13 +9,13 @@ const rendererPath = path.join(paths.distRendererPath, 'renderer.js');
 
 if (!fs.existsSync(mainPath)) {
   throw new Error(
-    'The main process is not built yet. Build it by running "npm run build"',
+    'The main process is not built yet. Build it by running "bun run build"',
   );
 }
 
 if (!fs.existsSync(rendererPath)) {
   throw new Error(
-    'The renderer process is not built yet. Build it by running "npm run build"',
+    'The renderer process is not built yet. Build it by running "bun run build"',
   );
 }
 

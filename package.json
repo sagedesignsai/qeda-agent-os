@@ -36,16 +36,16 @@
   "main": "./release/app/dist/main/main.js",
   "scripts": {
     "build": "electron-vite build",
-    "prebuild": "npm run build:opencode-plugin",
+    "prebuild": "bun run build:opencode-plugin",
     "build:opencode-plugin": "tsc -p plugins/qeda-builder/tsconfig.json",
-    "prestart": "npm run build:opencode-plugin",
-    "postinstall": "npm --prefix .erb/tooling ci && install-electron && electron-builder install-app-deps",
+    "prestart": "bun run build:opencode-plugin",
+    "postinstall": "cd .erb/tooling && bun install && cd ../.. && install-electron && electron-builder install-app-deps",
     "lint": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx,.cjs",
     "lint:fix": "cross-env NODE_ENV=development eslint . --ext .js,.jsx,.ts,.tsx,.cjs --fix",
     "theme:terminal": "node scripts/tokenize-terminal.mjs",
     "theme:terminal:write": "node scripts/tokenize-terminal.mjs --write",
-    "package": "npm run build && electron-builder build --publish never",
-    "package:appimage": "npm run build && electron-builder --linux AppImage --publish never",
+    "package": "bun run build && electron-builder build --publish never",
+    "package:appimage": "bun run build && electron-builder --linux AppImage --publish never",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "start": "electron-vite dev --watch",
     "test": "jest",
@@ -256,13 +256,13 @@
   },
   "devEngines": {
     "runtime": {
-      "name": "node",
-      "version": ">=22.0.0",
+      "name": "bun",
+      "version": ">=1.0.0",
       "onFail": "error"
     },
     "packageManager": {
-      "name": "npm",
-      "version": ">=10.0.0",
+      "name": "bun",
+      "version": ">=1.0.0",
       "onFail": "error"
     }
   },
@@ -278,8 +278,7 @@
     }
   },
   "engines": {
-    "node": ">=22.0.0",
-    "npm": ">=10.0.0"
+    "bun": ">=1.0.0"
   },
   "type": "commonjs"
 }

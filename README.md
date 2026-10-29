@@ -47,7 +47,7 @@ Built with electron-vite, React 19, TypeScript, and Tailwind CSS, layering a hig
 
 ## Requirements
 
-- Node.js 24+ and npm 10+
+- Bun 1+
 - Native modules (`better-sqlite3`, `sqlite-vec`) are declared in
   `release/app/package.json` and rebuilt/packaged by electron-builder. They are
   kept external to the main/preload bundles by `electron.vite.config.ts`.
@@ -55,9 +55,9 @@ Built with electron-vite, React 19, TypeScript, and Tailwind CSS, layering a hig
 ## Setup
 
 ```bash
-npm install
+bun install
 cp .env.example .env.local   # optional – providers can also be set in Settings
-npm start
+bun start
 ```
 
 `.env.local` is gitignored. **Never commit real credentials.**
@@ -73,13 +73,13 @@ with `safeStorage`).
 
 | Script               | Purpose                                             |
 | -------------------- | --------------------------------------------------- |
-| `npm start`          | Dev server with main/preload/renderer hot reload    |
-| `npm run build`      | Bundle main, preload and renderer                   |
-| `npm run preview`    | Build and run the production bundles locally        |
-| `npm run package`    | Build installers with electron-builder              |
-| `npm test`           | Jest (jsdom) unit tests                             |
-| `npm run test:smoke` | Boots the built app and verifies the preload bridge |
-| `npm run lint`       | ESLint                                              |
+| `bun start`          | Dev server with main/preload/renderer hot reload    |
+| `bun run build`      | Bundle main, preload and renderer                   |
+| `bun run preview`    | Build and run the production bundles locally        |
+| `bun run package`    | Build installers with electron-builder              |
+| `bun test`           | Jest (jsdom) unit tests                             |
+| `bun run test:smoke` | Boots the built app and verifies the preload bridge |
+| `bun run lint`       | ESLint                                              |
 
 ## Architecture
 
