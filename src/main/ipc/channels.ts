@@ -358,7 +358,6 @@ export interface IpcChannels {
   // Motion project bundles and recovery
   'motion:list-projects': { req: { includeMissing?: boolean } | void; res: { projects: MotionProjectSummary[] } };
   'motion:create-project': { req: { name: string; templateId?: string; blank?: boolean; output?: { width: number; height: number; fps: number }; duration?: number; background?: unknown }; res: { projectId: string; path: string } };
-  'motion:list-templates': { req: void; res: { templates: import('../../lib/motion/templates').MotionTemplate[] } };
   'motion:save-copy': { req: { document: MotionDocument; name?: string }; res: { projectId: string; path: string } };
   'motion:open-project': { req: { projectId: string }; res: MotionOpenResult };
   'motion:save-project': { req: { projectId: string; document: MotionDocument; expectedRevision: number; destructive?: boolean; forceBackup?: boolean }; res: { revision: number; savedAt: string; bytes: number } };
