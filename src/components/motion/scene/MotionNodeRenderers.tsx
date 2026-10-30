@@ -5,8 +5,9 @@
  * values arrive as node data; editor-only stage elements live in MotionSceneCanvas.
  */
 
-import { useEffect, useMemo, useRef, type ComponentType } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import { useThree } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import {
   CanvasTexture,
   LinearFilter,
@@ -18,6 +19,8 @@ import {
 import type { Group } from 'three';
 
 import { createMotionScreenArtwork } from '@/components/motion/scene/create-motion-screen-artwork';
+import { motionStore } from '@/hooks/use-motion-store';
+import { motionAssetUrl } from '@/lib/motion/assets';
 import type { MotionNode } from '@/lib/motion/types';
 
 export type MotionThreeNodeRenderer = ComponentType<{ node: MotionNode }>;
@@ -128,9 +131,17 @@ function TabletRenderer({ node }: { node: MotionNode }) {
 
 function ScreenRenderer({ node }: { node: MotionNode }) {
   const gl = useThree((state) => state.gl);
+  const [failedSource, setFailedSource] = useState<string | null>(null);
   const width = numberProp(node, 'width', 3.46);
   const height = numberProp(node, 'height', 1.947);
   const source = stringProp(node, 'source', stringProp(node, 'assetId', ''));
+  const projectId = motionStore.getDocument().meta.id;
+  const assetId = stringProp(node, 'assetId', source);
+  const asset = motionStore.getDocument().assets.find((item) => item.id === assetId);
+  const mediaSource = asset && asset.hash !== 'builtin'
+    ? motionAssetUrl(projectId, asset.id)
+    : source;
+  const loadFailed = failedSource === mediaSource;
   const texture = useMemo(() => {
     if (source === 'starter-dashboard' || source === 'builtin:starter-dashboard') {
       const next = new CanvasTexture(createMotionScreenArtwork());
@@ -141,15 +152,15 @@ function ScreenRenderer({ node }: { node: MotionNode }) {
       return next;
     }
 
-    if (!source) return null;
+    if (!mediaSource) return null;
 
-    const next = new TextureLoader().load(source);
+    const next = new TextureLoader().load(mediaSource, undefined, undefined, () => setFailedSource(mediaSource));
     next.colorSpace = SRGBColorSpace;
     next.magFilter = LinearFilter;
     next.minFilter = LinearMipmapLinearFilter;
     next.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy());
     return next;
-  }, [gl, source]);
+  }, [gl, mediaSource]);
 
   useEffect(() => () => texture?.dispose(), [texture]);
 
@@ -157,12 +168,29 @@ function ScreenRenderer({ node }: { node: MotionNode }) {
     <mesh>
       <planeGeometry args={[width, height]} />
       {texture ? (
-        <meshBasicMaterial map={texture} toneMapped={false} />
+        <meshBasicMaterial map={loadFailed ? null : texture} color={loadFailed ? '#ff00aa' : '#ffffff'} toneMapped={false} />
       ) : (
         <meshStandardMaterial color="#202633" roughness={0.7} />
       )}
+      {loadFailed && (
+        <Html center distanceFactor={5}>
+          <div className="min-w-40 rounded border border-fuchsia-400 bg-background/95 p-2 text-center text-xs shadow-lg">
+            <p className="font-medium text-fuchsia-600">Missing: {(asset?.name ?? assetId) || 'image'}</p>
+            {asset && <button type="button" className="mt-1 text-primary underline" onClick={() => void relinkScreenAsset(projectId, asset.id)}>Relink</button>}
+          </div>
+        </Html>
+      )}
     </mesh>
   );
+}
+
+async function relinkScreenAsset(projectId: string, assetId: string): Promise<void> {
+  const result = await window.electron.ipc.invoke<{
+    assetId: string; path: string; hash: string; byteSize: number; mimeType: string; matches: boolean;
+  } | null>('motion:relink-asset', { projectId, assetId });
+  if (!result) return;
+  const { matches: _matches, ...relink } = result;
+  motionStore.commit('Relink Motion asset', [{ op: 'asset.relink', ...relink }]);
 }
 
 function createTitleArtwork(text: string, color: string): HTMLCanvasElement {

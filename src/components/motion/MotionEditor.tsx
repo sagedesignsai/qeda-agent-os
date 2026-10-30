@@ -7,6 +7,7 @@
 
 import { useRef, useState } from 'react';
 import {
+  BoxesIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   PlusIcon,
@@ -17,6 +18,7 @@ import {
   type PanelImperativeHandle,
 } from 'react-resizable-panels';
 
+import { MotionAssetMarketplaceDialog } from '@/components/motion/assets/MotionAssetMarketplaceDialog';
 import { MotionInspector } from '@/components/motion/MotionInspector';
 import { MotionScenePanel } from '@/components/motion/MotionScenePanel';
 import { MotionTimeline } from '@/components/motion/MotionTimeline';
@@ -40,6 +42,7 @@ export function MotionEditor() {
   const { doc } = useMotionSnapshot();
   const [scenePanelCollapsed, setScenePanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const scenePanelRef = useRef<PanelImperativeHandle | null>(null);
   const inspectorPanelRef = useRef<PanelImperativeHandle | null>(null);
   const horizontalLayout = useDefaultLayout({
@@ -120,6 +123,10 @@ export function MotionEditor() {
               <DropdownMenuItem onSelect={addTrack}>
                 <PlusIcon data-icon="inline-start" />
                 Animation track
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
+                <BoxesIcon data-icon="inline-start" />
+                Browse asset library…
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -211,6 +218,13 @@ export function MotionEditor() {
           <MotionInspector />
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {marketplaceOpen && (
+        <MotionAssetMarketplaceDialog
+          projectId={doc.meta.id}
+          onClose={() => setMarketplaceOpen(false)}
+        />
+      )}
     </div>
   );
 }

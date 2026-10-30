@@ -7,10 +7,17 @@
 
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 
-import { getMotionProjectStore } from '../../motion/service.js';
+import { getMotionAssetStore, getMotionProjectStore } from '../../motion/service.js';
+import { MotionRemoteAssetClient } from '../../motion/remote-assets.js';
 
 export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
   const store = getMotionProjectStore();
+  const assets = getMotionAssetStore();
+  const remoteAssets = new MotionRemoteAssetClient(assets, {
+    onProgress: (progress) => {
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('motion:remote-import-progress', progress);
+    },
+  });
   const changed = () => {
     if (!mainWindow.isDestroyed()) mainWindow.webContents.send('motion:changed');
   };
@@ -99,4 +106,71 @@ export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: Bro
   });
   ipcMain.handle('motion:read-editor-state', async (_event, { projectId }: { projectId: string }) => ({ state: await store.readEditorState(projectId) }));
   ipcMain.handle('motion:write-editor-state', async (_event, { projectId, state }: { projectId: string; state: unknown }) => store.writeEditorState(projectId, state));
+
+  ipcMain.handle('motion:stage-assets', async (_event, { projectId, paths }: { projectId: string; paths: string[] }) => assets.stageAssets(projectId, paths));
+  ipcMain.handle('motion:pick-assets', async (_event, { projectId }: { projectId: string }) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Motion assets',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Motion assets', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif', 'mp4', 'mov', 'webm', 'mkv', 'mp3', 'wav', 'm4a', 'ogg', 'woff', 'woff2', 'ttf', 'otf', 'glb', 'gltf', 'hdr', 'exr'] }],
+    });
+    if (result.canceled) return { items: [], errors: [] };
+    return assets.stageAssets(projectId, result.filePaths);
+  });
+  ipcMain.handle('motion:commit-assets', async (_event, { projectId, items }: { projectId: string; items: import('../../motion/asset-store.js').MotionAssetCommit[] }) => assets.commitAssets(projectId, items));
+  ipcMain.handle('motion:cancel-import', async (_event, { projectId, importIds }: { projectId: string; importIds: string[] }) => assets.cancelImports(projectId, importIds));
+  ipcMain.handle('motion:inspect-assets', async (_event, { projectId }: { projectId: string }) => assets.inspectAssets(projectId));
+  ipcMain.handle('motion:relink-asset', async (_event, { projectId, assetId }: { projectId: string; assetId: string }) => {
+    const asset = (await store.openProject(projectId)).document.assets.find((item) => item.id === assetId);
+    if (!asset) throw new Error(`Asset "${assetId}" does not exist.`);
+    const choice = await dialog.showOpenDialog(mainWindow, {
+      title: `Relink ${asset.name}`,
+      properties: ['openFile'],
+      filters: [{ name: `${asset.kind} asset`, extensions: [asset.path.split('.').pop() ?? '*'] }],
+    });
+    if (choice.canceled || !choice.filePaths[0]) return null;
+    let result = await assets.relinkAsset(projectId, assetId, choice.filePaths[0]);
+    if (!result.matches) {
+      const confirmation = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['Relink anyway', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: 'This file is different from the original.',
+        detail: 'Relinking keeps the asset id and references, but replaces its stored content.',
+      });
+      if (confirmation.response !== 0) return null;
+      result = await assets.relinkAsset(projectId, assetId, choice.filePaths[0], true);
+    }
+    return { assetId, ...result };
+  });
+  ipcMain.handle('motion:reveal-asset', async (_event, { projectId, assetId }: { projectId: string; assetId: string }) => {
+    const filePath = await assets.revealAsset(projectId, assetId);
+    if (filePath) shell.showItemInFolder(filePath);
+  });
+  ipcMain.handle('motion:clean-unused-assets', async (_event, { projectId }: { projectId: string }) => assets.cleanUnusedFiles(projectId));
+
+  ipcMain.handle('motion:search-remote-assets', async (_event, req: {
+    provider: 'polyhaven';
+    query: string;
+    kind: 'model' | 'environment';
+    limit?: number;
+  }) => remoteAssets.search(req));
+  ipcMain.handle('motion:remote-asset-variants', async (_event, req: {
+    provider: 'polyhaven';
+    assetId: string;
+    kind: 'model' | 'environment';
+  }) => remoteAssets.variants(req));
+  ipcMain.handle('motion:import-remote-assets', async (_event, req: {
+    projectId: string;
+    provider: 'polyhaven';
+    assetId: string;
+    kind: 'model' | 'environment';
+    variantId: string;
+    requestId?: string;
+  }) => {
+    const { projectId, ...importRequest } = req;
+    return remoteAssets.import(projectId, importRequest);
+  });
+  ipcMain.handle('motion:cancel-remote-import', async (_event, { requestId }: { requestId: string }) => remoteAssets.cancelImport(requestId));
 }

@@ -11,7 +11,18 @@ import type { UIMessage } from 'ai';
 import type { Session } from '../db/sessions.js';
 import type { AppSettings } from '../ai/settings.js';
 import type { MotionDocument } from '../../lib/motion/types';
+import type { MotionAsset } from '../../lib/motion/types';
+import type { MotionAssetCommit, MotionImportError, MotionStagedAsset } from '../motion/asset-store.js';
 import type { MotionBackupSummary, MotionOpenResult, MotionProjectSummary } from '../motion/project-store.js';
+import type {
+  MotionRemoteAssetHit,
+  MotionRemoteAssetKind,
+  MotionRemoteImportResult,
+  MotionRemoteProgress,
+  MotionRemoteProvenance,
+  MotionRemoteProviderId,
+  MotionRemoteVariant,
+} from '../motion/remote-assets.js';
 import type {
   Notebook,
   Page,
@@ -332,6 +343,16 @@ export type ChatContext = {
 export type AgentIntent = 'chat' | 'research' | 'notebook';
 
 export type { MotionBackupSummary, MotionDocument, MotionOpenResult, MotionProjectSummary };
+export type { MotionAssetCommit, MotionImportError, MotionStagedAsset };
+export type {
+  MotionRemoteAssetHit,
+  MotionRemoteAssetKind,
+  MotionRemoteImportResult,
+  MotionRemoteProgress,
+  MotionRemoteProvenance,
+  MotionRemoteProviderId,
+  MotionRemoteVariant,
+};
 
 export interface IpcChannels {
   // Motion project bundles and recovery
@@ -353,6 +374,20 @@ export interface IpcChannels {
   'motion:reveal-project': { req: { projectId: string }; res: void };
   'motion:read-editor-state': { req: { projectId: string }; res: { state: unknown | null } };
   'motion:write-editor-state': { req: { projectId: string; state: unknown }; res: void };
+  'motion:stage-assets': { req: { projectId: string; paths: string[] }; res: { items: MotionStagedAsset[]; errors: MotionImportError[] } };
+  'motion:pick-assets': { req: { projectId: string }; res: { items: MotionStagedAsset[]; errors: MotionImportError[] } };
+  'motion:commit-assets': { req: { projectId: string; items: MotionAssetCommit[] }; res: { assets: MotionAsset[]; errors: MotionImportError[] } };
+  'motion:cancel-import': { req: { projectId: string; importIds: string[] }; res: void };
+  'motion:inspect-assets': { req: { projectId: string }; res: Array<{ assetId: string; missing: boolean; hashMatches: boolean }> };
+  'motion:relink-asset': { req: { projectId: string; assetId: string }; res: { assetId: string; path: string; hash: string; byteSize: number; mimeType: string; matches: boolean } | null };
+  'motion:reveal-asset': { req: { projectId: string; assetId: string }; res: void };
+  'motion:clean-unused-assets': { req: { projectId: string }; res: { directories: number; bytes: number } };
+  // Remote catalog: bytes are downloaded once, then staged and committed like a local import.
+  'motion:search-remote-assets': { req: { provider: MotionRemoteProviderId; query: string; kind: MotionRemoteAssetKind; limit?: number }; res: { hits: MotionRemoteAssetHit[]; total: number; providerCredit: string } };
+  'motion:remote-asset-variants': { req: { provider: MotionRemoteProviderId; assetId: string; kind: MotionRemoteAssetKind }; res: { variants: MotionRemoteVariant[]; license: string; attribution?: string; pageUrl: string; providerCredit: string } };
+  'motion:import-remote-assets': { req: { projectId: string; provider: MotionRemoteProviderId; assetId: string; kind: MotionRemoteAssetKind; variantId: string; requestId?: string }; res: MotionRemoteImportResult };
+  'motion:cancel-remote-import': { req: { requestId: string }; res: void };
+  'motion:remote-import-progress': { data: MotionRemoteProgress };
   'motion:changed': void;
 
   // OpenCode-powered coding Builder

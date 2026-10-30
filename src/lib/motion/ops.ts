@@ -55,6 +55,8 @@ export type MotionOpParams = {
   'document.rename': { name: string };
   'document.setOutput': { fps?: number; width?: number; height?: number };
   'asset.add': MotionAsset;
+  'asset.relink': { assetId: string; path: string; hash: string; byteSize: number; mimeType?: string };
+  'asset.remove': { assetId: string };
   'scene.node.add': {
     nodeId: string;
     type: string;
@@ -411,6 +413,54 @@ registerMotionOp<'asset.add'>({
     return { ...doc, assets: [...doc.assets, asset] };
   },
 });
+
+registerMotionOp<'asset.relink'>({
+  id: 'asset.relink',
+  summary: 'Relink an asset while preserving its id and references.',
+  risk: 'mutating',
+  params: z.object({
+    assetId: z.string().min(1), path: z.string().min(1), hash: z.string().regex(/^[a-f0-9]{64}$/),
+    byteSize: z.number().nonnegative(), mimeType: z.string().min(1).optional(),
+  }).strict(),
+  reduce: (doc, params) => {
+    const asset = doc.assets.find((candidate) => candidate.id === params.assetId);
+    if (!asset) throw new MotionOpError(`Asset "${params.assetId}" does not exist.`);
+    return {
+      ...doc,
+      assets: doc.assets.map((candidate) => candidate.id === params.assetId
+        ? { ...candidate, path: params.path, hash: params.hash, byteSize: params.byteSize, ...(params.mimeType ? { mimeType: params.mimeType } : {}) }
+        : candidate),
+    };
+  },
+});
+
+registerMotionOp<'asset.remove'>({
+  id: 'asset.remove',
+  summary: 'Remove an unused asset descriptor from the document.',
+  risk: 'destructive',
+  params: z.object({ assetId: z.string().min(1) }).strict(),
+  reduce: (doc, { assetId }) => {
+    if (!doc.assets.some((candidate) => candidate.id === assetId)) throw new MotionOpError(`Asset "${assetId}" does not exist.`);
+    const references = findAssetReferences(doc, assetId);
+    if (references.length) throw new MotionOpError(`Asset "${assetId}" is still referenced by ${references.join(', ')}.`);
+    return { ...doc, assets: doc.assets.filter((candidate) => candidate.id !== assetId) };
+  },
+});
+
+function findAssetReferences(value: unknown, assetId: string, path = '', found: string[] = []): string[] {
+  if (!value || typeof value !== 'object') return found;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => findAssetReferences(item, assetId, `${path}[${index}]`, found));
+    return found;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'assets') continue;
+    const childPath = path ? `${path}.${key}` : key;
+    if ((key === 'assetId' || key === 'logoAssetId') && child === assetId) found.push(childPath);
+    else findAssetReferences(child, assetId, childPath, found);
+  }
+  return found;
+}
 
 registerMotionOp<'scene.node.add'>({
   id: 'scene.node.add',

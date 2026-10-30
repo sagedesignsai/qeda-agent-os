@@ -9,8 +9,10 @@ import path from 'node:path';
 
 import { MotionProjectIndex } from './project-index.js';
 import { MotionProjectStore } from './project-store.js';
+import { MotionAssetStore } from './asset-store.js';
 
 let store: MotionProjectStore | null = null;
+let assetStore: MotionAssetStore | null = null;
 
 export function getMotionProjectStore(): MotionProjectStore {
   if (!store) {
@@ -18,4 +20,9 @@ export function getMotionProjectStore(): MotionProjectStore {
     store = new MotionProjectStore(directory, new MotionProjectIndex());
   }
   return store;
+}
+
+export function getMotionAssetStore(): MotionAssetStore {
+  if (!assetStore) assetStore = new MotionAssetStore(getMotionProjectStore());
+  return assetStore;
 }

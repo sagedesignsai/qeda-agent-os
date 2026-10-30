@@ -6,6 +6,10 @@
 
 import type { MotionAsset } from './types';
 
+export function motionAssetUrl(projectId: string, assetId: string): string {
+  return `qeda-media://motion/${encodeURIComponent(projectId)}/${encodeURIComponent(assetId)}`;
+}
+
 export function motionAssetFrameIndex(asset: MotionAsset, time: number): number {
   if (!Number.isFinite(time)) throw new Error('Motion asset time must be finite.');
   if (asset.kind !== 'image-sequence') throw new Error(`Motion asset "${asset.id}" is not an image sequence.`);
@@ -22,5 +26,5 @@ export function motionAssetFrameUrl(documentId: string, assetId: string, frameIn
   if (!Number.isInteger(frameIndex) || frameIndex < 0) {
     throw new Error('Motion asset frame index must be a non-negative integer.');
   }
-  return `qeda-media://motion/${encodeURIComponent(documentId)}/${encodeURIComponent(assetId)}/${frameIndex}`;
+  return `${motionAssetUrl(documentId, assetId)}/${frameIndex}`;
 }

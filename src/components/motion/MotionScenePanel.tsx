@@ -32,6 +32,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
+import { useMotionAssets } from '@/hooks/use-motion-assets';
 import type { MotionTrack } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
 
@@ -47,6 +48,7 @@ function trackIcon(track: MotionTrack) {
 
 export function MotionScenePanel() {
   const { doc, selection } = useMotionSnapshot();
+  const motionAssets = useMotionAssets(doc.meta.id);
   const [sceneExpanded, setSceneExpanded] = useState(true);
 
   const selectedTrackId = selection?.trackId;
@@ -217,30 +219,40 @@ export function MotionScenePanel() {
                     );
 
                   return (
-                    <button
+                    <div
                       key={asset.id}
-                      type="button"
-                      className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
-                      onClick={() => {
-                        const targetScreen = doc.scene.nodes.find((node) => node.type === 'screen.image');
-                        if (!targetScreen) return;
-                        motionStore.commit('Assign media to screen', [
-                          {
-                            op: 'scene.node.update',
-                            nodeId: targetScreen.id,
-                            props: { source: asset.id, assetId: asset.id },
-                          },
-                        ]);
-                      }}
-                      title={`Use ${asset.name} on the current screen`}
+                      className="group flex h-9 w-full items-center gap-2 rounded-md px-2 hover:bg-accent/50"
                     >
                       <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-xs">{asset.name}</span>
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 truncate text-left text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        onClick={() => {
+                          const targetScreen = doc.scene.nodes.find((node) => node.type === 'screen.image');
+                          if (!targetScreen) return;
+                          motionStore.commit('Assign media to screen', [
+                            { op: 'scene.node.update', nodeId: targetScreen.id, props: { source: asset.id, assetId: asset.id } },
+                          ]);
+                        }}
+                        title={`Use ${asset.name} on the current screen`}
+                      >{asset.name}</button>
                       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                        {asset.kind === 'image-sequence' ? `${asset.frameCount}f` : 'img'}
+                        {asset.kind === 'image-sequence' ? `${asset.frameCount}f` : asset.kind}
                       </span>
                       {isAssigned && <span className="text-[10px] text-muted-foreground">On screen</span>}
-                    </button>
+                      {motionAssets.missingIds.has(asset.id) && (
+                        <>
+                          <span className="text-[10px] text-destructive">Missing</span>
+                          <Button type="button" size="sm" variant="outline" className="h-6 px-1.5 text-[10px]" onClick={() => void motionAssets.relinkAsset(asset.id)}>Relink</Button>
+                        </>
+                      )}
+                      <Button type="button" size="icon" variant="ghost" className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Reveal ${asset.name}`} onClick={() => void window.electron.ipc.invoke<void>('motion:reveal-asset', { projectId: doc.meta.id, assetId: asset.id })}>
+                        <FolderIcon data-icon />
+                      </Button>
+                      <Button type="button" size="icon" variant="ghost" className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${asset.name}`} title="Remove unused asset" onClick={() => motionAssets.removeAsset(asset.id)}>
+                        <span aria-hidden="true">×</span>
+                      </Button>
+                    </div>
                   );
                 })}
               </div>
@@ -251,6 +263,17 @@ export function MotionScenePanel() {
                   Import images or image sequences to mount them on a screen.
                 </p>
               </div>
+            )}
+
+            {motionAssets.errors.length > 0 && (
+              <ul role="alert" className="mt-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2">
+                {motionAssets.errors.map((error, index) => (
+                  <li key={`${error.name}-${index}`} className="text-[10px] leading-relaxed text-destructive">
+                    <span className="font-medium">{error.name}:</span> {error.message}
+                  </li>
+                ))}
+                <li><button type="button" className="text-[10px] text-muted-foreground underline" onClick={motionAssets.clearErrors}>Dismiss</button></li>
+              </ul>
             )}
 
             <div className="mt-4 flex h-8 items-center justify-between px-1.5">
@@ -306,11 +329,16 @@ export function MotionScenePanel() {
                 size="sm"
                 variant="outline"
                 className="h-7"
-                disabled
-                title="Media import will be available when project-bundled asset storage is implemented."
+                disabled={motionAssets.isImporting}
+                onClick={() => void motionAssets.importAssets()}
               >
                 <PlusIcon data-icon="inline-start" />
-                Import media
+                {motionAssets.isImporting ? 'Importing…' : 'Import media'}
+              </Button>
+            </div>
+            <div className="mt-2 flex justify-center">
+              <Button type="button" size="sm" variant="ghost" className="h-7 text-[10px]" onClick={() => void motionAssets.cleanUnusedFiles()}>
+                Clean unused asset files…
               </Button>
             </div>
           </div>
