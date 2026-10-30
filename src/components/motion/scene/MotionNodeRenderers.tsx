@@ -130,9 +130,9 @@ function ScreenRenderer({ node }: { node: MotionNode }) {
   const gl = useThree((state) => state.gl);
   const width = numberProp(node, 'width', 3.46);
   const height = numberProp(node, 'height', 1.947);
-  const source = stringProp(node, 'source', '');
+  const source = stringProp(node, 'source', stringProp(node, 'assetId', ''));
   const texture = useMemo(() => {
-    if (source === 'starter-dashboard') {
+    if (source === 'starter-dashboard' || source === 'builtin:starter-dashboard') {
       const next = new CanvasTexture(createMotionScreenArtwork());
       next.colorSpace = SRGBColorSpace;
       next.magFilter = LinearFilter;

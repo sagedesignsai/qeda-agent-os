@@ -36,6 +36,12 @@ export type MotionSnapshot = {
 
 export type MotionCommitOptions = { approved?: boolean };
 
+export type MotionCommitResult = {
+  status: 'applied' | 'unchanged' | 'pending' | 'rejected';
+  document: MotionDocument;
+  error?: Error;
+};
+
 export class MotionStore {
   private doc: MotionDocument;
   private selection: MotionSelection = null;
@@ -107,30 +113,49 @@ export class MotionStore {
    * Apply ops. Destructive batches are held for approval instead of applied —
    * the return value says whether the document changed.
    */
-  commit(label: string, ops: MotionOpRequest[], options: MotionCommitOptions = {}): boolean {
-    if (ops.length === 0) return false;
+  commit(label: string, ops: MotionOpRequest[], options: MotionCommitOptions = {}): MotionCommitResult {
+    if (ops.length === 0) return { status: 'unchanged', document: this.doc };
 
-    const risk = batchRisk(ops);
+    let risk: ReturnType<typeof batchRisk>;
+    try {
+      risk = batchRisk(ops);
+    } catch (error) {
+      return { status: 'rejected', document: this.doc, error: error instanceof Error ? error : new Error(String(error)) };
+    }
     if (risk === 'destructive' && !options.approved) {
       this.pendingApproval = { label, ops };
       this.emit();
-      return false;
+      return { status: 'pending', document: this.doc };
     }
 
+    let next: MotionDocument;
+    try {
+      next = applyMotionOps(this.doc, ops, { now: new Date().toISOString() });
+    } catch (error) {
+      return { status: 'rejected', document: this.doc, error: error instanceof Error ? error : new Error(String(error)) };
+    }
+    if (next === this.doc) {
+      this.pendingApproval = null;
+      this.emit();
+      return { status: 'unchanged', document: this.doc };
+    }
     this.past = [...this.past.slice(-(HISTORY_LIMIT - 1)), this.doc];
     this.future = [];
-    this.doc = applyMotionOps(this.doc, ops, { now: new Date().toISOString() });
+    this.doc = next;
     this.pendingApproval = null;
     this.clampPlayhead();
     this.emit();
-    return true;
+    return { status: 'applied', document: this.doc };
   }
 
-  confirmPending(): void {
+  confirmPending(): MotionCommitResult | undefined {
     const pending = this.pendingApproval;
-    if (!pending) return;
+    if (!pending) return undefined;
     this.pendingApproval = null;
-    this.commit(pending.label, pending.ops, { approved: true });
+    const result = this.commit(pending.label, pending.ops, { approved: true });
+    if (result.status === 'rejected') this.pendingApproval = pending;
+    this.emit();
+    return result;
   }
 
   cancelPending(): void {
@@ -144,7 +169,7 @@ export class MotionStore {
     if (!previous) return;
     this.future = [this.doc, ...this.future].slice(0, HISTORY_LIMIT);
     this.past = this.past.slice(0, -1);
-    this.doc = previous;
+    this.doc = { ...previous, revision: this.doc.revision + 1 };
     this.clampPlayhead();
     this.emit();
   }
@@ -154,7 +179,7 @@ export class MotionStore {
     if (!next) return;
     this.past = [...this.past.slice(-(HISTORY_LIMIT - 1)), this.doc];
     this.future = this.future.slice(1);
-    this.doc = next;
+    this.doc = { ...next, revision: this.doc.revision + 1 };
     this.clampPlayhead();
     this.emit();
   }

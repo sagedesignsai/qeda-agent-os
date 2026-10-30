@@ -5,7 +5,7 @@
  * panel never owns or mutates scene data.
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AppWindowIcon,
   AudioLinesIcon,
@@ -32,7 +32,6 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
-import { createMotionId } from '@/lib/motion/ids';
 import type { MotionTrack } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
 
@@ -49,7 +48,6 @@ function trackIcon(track: MotionTrack) {
 export function MotionScenePanel() {
   const { doc, selection } = useMotionSnapshot();
   const [sceneExpanded, setSceneExpanded] = useState(true);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedTrackId = selection?.trackId;
   const clips = useMemo(
@@ -60,45 +58,6 @@ export function MotionScenePanel() {
     () => [...doc.assets].sort((a, b) => a.name.localeCompare(b.name)),
     [doc.assets],
   );
-
-  const handleImportMedia = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    if (files.length === 0) return;
-
-    const targetScreen = doc.scene.nodes.find((node) => node.type === 'screen.image');
-    const ops = files.flatMap((file) => {
-      const id = createMotionId('asset');
-      const mimeType = file.type || 'image/png';
-      const source =
-        typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
-          ? URL.createObjectURL(file)
-          : `data:${mimeType};base64,`;
-
-      const asset = {
-        id,
-        name: file.name,
-        kind: file.type.startsWith('image/') ? 'image' : 'image-sequence',
-        mimeType,
-        frameCount: 1,
-        fps: 30,
-        uri: source,
-      };
-
-      const opsForFile = [{ op: 'asset.add', ...asset } as const];
-      if (!targetScreen) return opsForFile;
-      return [
-        ...opsForFile,
-        {
-          op: 'scene.node.update',
-          nodeId: targetScreen.id,
-          props: { source },
-        } as const,
-      ];
-    });
-
-    motionStore.commit('Import media', ops);
-    event.target.value = '';
-  };
 
   return (
     <Tabs defaultValue="scene" className="flex h-full min-h-0 flex-col gap-0">
@@ -254,7 +213,7 @@ export function MotionScenePanel() {
                       (node) =>
                         node.type === 'screen.image' &&
                         typeof node.props.source === 'string' &&
-                        (node.props.source === asset.id || node.props.source === asset.uri),
+                        (node.props.assetId === asset.id || node.props.source === asset.id),
                     );
 
                   return (
@@ -269,7 +228,7 @@ export function MotionScenePanel() {
                           {
                             op: 'scene.node.update',
                             nodeId: targetScreen.id,
-                            props: { source: asset.uri ?? asset.id },
+                            props: { source: asset.id, assetId: asset.id },
                           },
                         ]);
                       }}
@@ -342,20 +301,13 @@ export function MotionScenePanel() {
             )}
 
             <div className="mt-4 flex justify-center">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                aria-label="Import motion media"
-                onChange={handleImportMedia}
-              />
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 className="h-7"
-                onClick={() => fileInputRef.current?.click()}
+                disabled
+                title="Media import will be available when project-bundled asset storage is implemented."
               >
                 <PlusIcon data-icon="inline-start" />
                 Import media

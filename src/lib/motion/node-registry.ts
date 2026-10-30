@@ -218,12 +218,15 @@ function registerBuiltins(): void {
     description: 'A flat image surface mounted on a device or placed in the scene.',
     propsSchema: z
       .object({
-        source: z.string().min(1),
+        source: z.string().min(1).optional(),
+        assetId: z.string().min(1).optional(),
+        missingAsset: z.boolean().optional(),
         width: z.number().positive(),
         height: z.number().positive(),
         fit: z.enum(['contain', 'cover', 'stretch']),
         opacity: z.number().min(0).max(1),
       })
+      .refine((props) => Boolean(props.source || props.assetId || props.missingAsset), 'An image asset reference is required.')
       .strict(),
     defaultProps: {
       source: 'starter-dashboard',

@@ -6,8 +6,8 @@
  */
 
 import { applyNodeProperty, MotionNodeError } from './node-registry';
-import { sampleTimeline } from './sample';
-import { channelKey, type MotionDocument, type MotionNode } from './types';
+import { sampleSceneTimeline } from './sample';
+import { channelKey, type MotionNode, type MotionScene, type MotionTimeline } from './types';
 
 export class MotionEvaluationError extends Error {
   constructor(message: string) {
@@ -18,18 +18,28 @@ export class MotionEvaluationError extends Error {
 
 export type MotionFrame = {
   time: number;
+  sceneId: string;
   nodes: MotionNode[];
 };
 
-export function evaluateMotionFrame(doc: MotionDocument, time: number): MotionFrame {
+export type MotionEvaluationScene = Pick<MotionScene, 'id' | 'nodes' | 'timeline'>;
+export type MotionEvaluationContext = { timeline?: MotionTimeline };
+
+export function evaluateMotionFrame(
+  scene: MotionEvaluationScene,
+  time: number,
+  context: MotionEvaluationContext = {},
+): MotionFrame {
   if (!Number.isFinite(time)) {
     throw new MotionEvaluationError('Frame time must be a finite number.');
   }
 
-  const nodes = new Map(doc.scene.nodes.map((node) => [node.id, node]));
-  const values = sampleTimeline(doc, time);
+  const timeline = context.timeline ?? scene.timeline as MotionTimeline;
+  const evaluatedScene = { ...scene, timeline } as MotionScene;
+  const nodes = new Map(scene.nodes.map((node) => [node.id, node]));
+  const values = sampleSceneTimeline(evaluatedScene, time);
 
-  for (const clip of doc.timeline.clips) {
+  for (const clip of timeline.clips) {
     for (const channel of clip.channels) {
       const key = channelKey(channel.targetId, channel.property);
       const value = values.get(key);
@@ -54,5 +64,5 @@ export function evaluateMotionFrame(doc: MotionDocument, time: number): MotionFr
     }
   }
 
-  return { time, nodes: doc.scene.nodes.map((node) => nodes.get(node.id) ?? node) };
+  return { time, sceneId: scene.id, nodes: scene.nodes.map((node) => nodes.get(node.id) ?? node) };
 }

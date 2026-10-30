@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Color, PerspectiveCamera } from 'three';
+import { Color, PerspectiveCamera, SRGBColorSpace } from 'three';
 import type { Group, Material, Object3D } from 'three';
 
 import {
@@ -163,7 +163,13 @@ function MotionFrameDriver({
   useEffect(() => clock.subscribe(invalidate), [clock, invalidate]);
 
   useFrame(() => {
-    const frame = evaluateMotionFrame(doc, clock.getTime());
+    const motionScene = doc.scenes.find((candidate) => candidate.id === doc.activeSceneId);
+    const frame = evaluateMotionFrame({
+      id: doc.activeSceneId,
+      nodes: doc.scene.nodes,
+      timeline: doc.timeline,
+      ...(motionScene ? { name: motionScene.name, cameraId: motionScene.cameraId } : {}),
+    }, clock.getTime());
     const opacityById = new Map<string, number>();
 
     for (const node of frame.nodes) {

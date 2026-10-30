@@ -17,7 +17,7 @@
  * independently editable; inlining would duplicate keyframes per interaction.
  */
 
-export const MOTION_SCHEMA_VERSION = 3;
+export const MOTION_SCHEMA_VERSION = 4;
 
 // ── Easing ───────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,8 @@ export type MotionClipPlacement = {
   clipId: string;
   /** Seconds on the document timeline. */
   start: number;
+  trimIn?: number;
+  duration?: number;
 };
 
 export type MotionTrack = {
@@ -97,6 +99,14 @@ export type MotionTimeline = {
   loop: MotionLoop;
   tracks: MotionTrack[];
   clips: MotionClip[];
+  workArea?: { enabled: boolean; start: number; end: number };
+  playMode?: 'once' | 'loop' | 'ping-pong';
+  audio?: MotionAudioPlacement[];
+};
+
+export type MotionAudioPlacement = {
+  id: string; assetId: string; start: number; trimIn: number; duration: number;
+  gain: number; muted: boolean; fadeIn: number; fadeOut: number;
 };
 
 // ── Document ─────────────────────────────────────────────────────────────────
@@ -127,14 +137,44 @@ export type MotionNode = {
   props: Record<string, unknown>;
 };
 
+export type MotionAssetKind = 'image' | 'image-sequence' | 'video' | 'audio' | 'font' | 'model' | 'environment';
+
 export type MotionAsset = {
   id: string;
   name: string;
-  kind: 'image' | 'image-sequence';
+  kind: MotionAssetKind;
   mimeType: string;
-  frameCount: number;
-  fps: number;
+  path: string;
+  hash: string;
+  byteSize: number;
+  width?: number;
+  height?: number;
+  frameCount?: number;
+  fps?: number;
+  duration?: number;
+  sourceName?: string;
+  createdAt: string;
+  metadata?: Record<string, unknown>;
+  /** Present only while migrating legacy in-memory v3 documents. */
   uri?: string;
+};
+
+export type MotionBrandColorToken = 'primary' | 'secondary' | 'accent' | 'background' | 'foreground' | 'muted';
+export type MotionFontRef = { family: string; assetId?: string; weight?: number; style?: 'normal' | 'italic' };
+export type MotionBrand = {
+  name: string;
+  colors: Record<MotionBrandColorToken, string>;
+  fonts: { heading: MotionFontRef; body: MotionFontRef; mono?: MotionFontRef };
+  logoAssetId?: string;
+  safeArea: { top: number; bottom: number; left: number; right: number };
+  cornerRadius: number;
+  defaults: { easing: MotionEasing; duration: number };
+};
+
+export type MotionScene = {
+  id: string; name: string; nodes: MotionNode[]; timeline: Omit<MotionTimeline, 'loop'> & { loop?: MotionLoop };
+  cameraId: string | null; background?: { type: 'color'; color: string } | { type: 'transparent' } | { type: 'environment'; assetId: string; intensity?: number; blur?: number };
+  stateMachines?: unknown[];
 };
 
 export type MotionMeta = {
@@ -147,8 +187,14 @@ export type MotionMeta = {
 
 export type MotionDocument = {
   schemaVersion: number;
+  revision: number;
   meta: MotionMeta;
+  brand: MotionBrand;
   assets: MotionAsset[];
+  scenes: MotionScene[];
+  activeSceneId: string;
+  sequence?: { duration: number; items: Array<{ id: string; sceneId: string; start: number; duration: number; transitionIn?: unknown; transitionOut?: unknown }> };
+  /** In-memory v3 compatibility aliases. The serializer writes only scenes[]. */
   scene: {
     nodes: MotionNode[];
   };

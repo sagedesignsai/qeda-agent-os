@@ -8,13 +8,14 @@ import type { MotionAsset } from './types';
 
 export function motionAssetFrameIndex(asset: MotionAsset, time: number): number {
   if (!Number.isFinite(time)) throw new Error('Motion asset time must be finite.');
-  if (!Number.isInteger(asset.frameCount) || asset.frameCount < 1) {
+  if (asset.kind !== 'image-sequence') throw new Error(`Motion asset "${asset.id}" is not an image sequence.`);
+  if (!Number.isInteger(asset.frameCount) || (asset.frameCount ?? 0) < 1) {
     throw new Error(`Motion asset "${asset.id}" must contain at least one frame.`);
   }
-  if (!Number.isFinite(asset.fps) || asset.fps <= 0) {
+  if (!Number.isFinite(asset.fps) || (asset.fps ?? 0) <= 0) {
     throw new Error(`Motion asset "${asset.id}" must have a positive frame rate.`);
   }
-  return Math.min(Math.floor(Math.max(0, time) * asset.fps), asset.frameCount - 1);
+  return Math.min(Math.floor(Math.max(0, time) * asset.fps!), asset.frameCount! - 1);
 }
 
 export function motionAssetFrameUrl(documentId: string, assetId: string, frameIndex: number): string {

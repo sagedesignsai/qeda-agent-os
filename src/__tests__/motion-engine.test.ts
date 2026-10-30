@@ -69,6 +69,20 @@ describe('3D Motion engine', () => {
     expect(() => parseMotionDocument(invalid)).toThrow('references missing parent');
   });
 
+  it('rejects transient asset URLs in stored assets and screen nodes', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const badAsset = {
+      ...doc,
+      assets: [{ id: 'asset', name: 'Image', kind: 'image', mimeType: 'image/png', path: 'data:image/png;base64,abc', hash: '', byteSize: 1, frameCount: 1, fps: 30, createdAt: NOW }],
+    };
+    expect(() => parseMotionDocument(badAsset)).toThrow(/assets\.0\.path/);
+    const badScreen = {
+      ...doc,
+      scene: { nodes: doc.scene.nodes.map((node) => node.id === 'screen_dashboard' ? { ...node, props: { ...node.props, assetId: 'data:image/png;base64,abc' } } : node) },
+    };
+    expect(() => parseMotionDocument(badScreen)).toThrow(/scene\.nodes\.2\.props\.assetId/);
+  });
+
   it('rejects animation channels unsupported by their registered node type', () => {
     const doc = createStarterMotionDocument(NOW);
     const clip = doc.timeline.clips.find((candidate) => candidate.id === 'clip_product_spin');
@@ -81,13 +95,14 @@ describe('3D Motion engine', () => {
 
   it('evaluates active animation onto copied nodes without mutating the document', () => {
     const doc = createStarterMotionDocument(NOW);
-    const frame = evaluateMotionFrame(doc, 4.5);
+    const scene = { id: doc.activeSceneId, nodes: doc.scene.nodes, timeline: doc.timeline };
+    const frame = evaluateMotionFrame(scene, 4.5);
 
     expect(frame.nodes.find((node) => node.id === 'product')?.transform.rotation[1]).toBeCloseTo(
       Math.PI * 2,
     );
     expect(doc.scene.nodes.find((node) => node.id === 'product')?.transform.rotation[1]).toBe(0);
-    expect(evaluateMotionFrame(doc, 4.5)).toEqual(frame);
+    expect(evaluateMotionFrame(scene, 4.5)).toEqual(frame);
   });
 
   it('rejects evaluated node properties outside their registered schema', () => {
@@ -97,7 +112,7 @@ describe('3D Motion engine', () => {
     if (!opacity) throw new Error('Starter document is missing the title opacity channel.');
     opacity.keyframes[1].value = 1.2;
 
-    expect(() => evaluateMotionFrame(doc, 1.3)).toThrow(MotionEvaluationError);
+    expect(() => evaluateMotionFrame({ id: doc.activeSceneId, nodes: doc.scene.nodes, timeline: doc.timeline }, 1.3)).toThrow(MotionEvaluationError);
   });
 
   it('adds and updates nodes only through validated operations', () => {

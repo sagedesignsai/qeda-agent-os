@@ -1,6 +1,7 @@
 import { cubicBezierEase } from '@/lib/motion/easing';
 import { sampleChannel, sampleKeyframes, sampleTimeline } from '@/lib/motion/sample';
 import { channelKey, type MotionDocument, type MotionKeyframe } from '@/lib/motion/types';
+import { DEFAULT_BRAND } from '@/lib/motion/defaults';
 
 const linear = { type: 'linear' as const };
 
@@ -49,6 +50,10 @@ describe('keyframe sampling', () => {
 function documentWith(tracks: MotionDocument['timeline']['tracks']): MotionDocument {
   return {
     schemaVersion: 2,
+    revision: 0,
+    brand: DEFAULT_BRAND,
+    scenes: [{ id: 'scene_main', name: 'Scene 1', nodes: [], timeline: { duration: 10, loop: { enabled: true, start: 0, end: 10 }, tracks, clips: [] }, cameraId: null }],
+    activeSceneId: 'scene_main',
     assets: [],
     scene: { nodes: [] },
     meta: {

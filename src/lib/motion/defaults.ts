@@ -11,7 +11,16 @@
 
 import { EASING_PRESETS } from './easing';
 import { createMotionNode } from './node-registry';
-import { MOTION_SCHEMA_VERSION, type MotionDocument, type MotionTimeline } from './types';
+import { MOTION_SCHEMA_VERSION, type MotionBrand, type MotionDocument, type MotionTimeline } from './types';
+
+export const DEFAULT_BRAND: MotionBrand = {
+  name: 'Untitled brand',
+  colors: { primary: '#5885f7', secondary: '#a88cf7', accent: '#59c7a6', background: '#10131b', foreground: '#f1f3f8', muted: '#828b9c' },
+  fonts: { heading: { family: 'ui-sans-serif', weight: 650 }, body: { family: 'ui-sans-serif', weight: 400 }, mono: { family: 'ui-monospace', weight: 400 } },
+  safeArea: { top: 0.06, bottom: 0.08, left: 0.06, right: 0.06 },
+  cornerRadius: 0.08,
+  defaults: { easing: { type: 'cubic', x1: 0.22, y1: 1, x2: 0.36, y2: 1 }, duration: 0.6 },
+};
 
 const linear = EASING_PRESETS.linear.value;
 const easeOut = EASING_PRESETS.easeOut.value;
@@ -34,13 +43,21 @@ export function createEmptyMotionDocument(options: CreateDocumentOptions = {}): 
   const timeline: MotionTimeline = {
     duration,
     loop: { enabled: true, start: 0, end: duration },
+    workArea: { enabled: false, start: 0, end: duration },
+    playMode: 'loop',
     tracks: [],
     clips: [],
+    audio: [],
   };
-  return {
+  const scene = { nodes: [] as ReturnType<typeof createMotionNode>[] };
+  const doc: MotionDocument = {
     schemaVersion: MOTION_SCHEMA_VERSION,
+    revision: 0,
+    brand: { ...DEFAULT_BRAND, colors: { ...DEFAULT_BRAND.colors }, fonts: { ...DEFAULT_BRAND.fonts }, safeArea: { ...DEFAULT_BRAND.safeArea }, defaults: { ...DEFAULT_BRAND.defaults } },
+    scenes: [{ id: 'scene_main', name: 'Scene 1', nodes: scene.nodes, timeline: { ...timeline, loop: undefined }, cameraId: null }],
+    activeSceneId: 'scene_main',
     assets: [],
-    scene: { nodes: [] },
+    scene,
     meta: {
       id: options.id ?? 'doc_local',
       name: options.name ?? 'Untitled motion',
@@ -54,6 +71,7 @@ export function createEmptyMotionDocument(options: CreateDocumentOptions = {}): 
     },
     timeline,
   };
+  return doc;
 }
 
 /**
@@ -63,6 +81,11 @@ export function createEmptyMotionDocument(options: CreateDocumentOptions = {}): 
  */
 export function createStarterMotionDocument(now?: string): MotionDocument {
   const doc = createEmptyMotionDocument({ id: 'doc_starter', name: 'Launch hero', now });
+  doc.assets = [{
+    id: 'builtin:starter-dashboard', name: 'Starter dashboard', kind: 'image', mimeType: 'image/svg+xml',
+    path: 'builtin/starter-dashboard', hash: 'builtin', byteSize: 0, frameCount: 1, fps: 30,
+    createdAt: now ?? new Date().toISOString(), metadata: { builtin: true },
+  }];
   doc.scene.nodes = [
     createMotionNode('camera.perspective', 'camera'),
     createMotionNode('device.tablet', 'product', { name: 'Product' }),
@@ -78,6 +101,8 @@ export function createStarterMotionDocument(now?: string): MotionDocument {
   doc.timeline = {
     duration: 6,
     loop: { enabled: true, start: 0, end: 6 },
+    workArea: { enabled: false, start: 0, end: 6 },
+    playMode: 'loop',
     tracks: [
       {
         id: 'trk_camera',
@@ -183,5 +208,17 @@ export function createStarterMotionDocument(now?: string): MotionDocument {
       },
     ],
   };
+  const clipDurations = new Map(doc.timeline.clips.map((clip) => [clip.id, clip.duration]));
+  doc.timeline.tracks = doc.timeline.tracks.map((track) => ({
+    ...track,
+    placements: track.placements.map((placement) => ({
+      ...placement, trimIn: 0, duration: clipDurations.get(placement.clipId) ?? 0,
+    })),
+  }));
+  doc.scenes = [{
+    id: 'scene_main', name: 'Scene 1', nodes: doc.scene.nodes,
+    timeline: { ...doc.timeline, loop: undefined, tracks: doc.timeline.tracks, clips: doc.timeline.clips },
+    cameraId: 'camera',
+  }];
   return doc;
 }

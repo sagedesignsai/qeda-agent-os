@@ -6,6 +6,7 @@ import {
   batchRisk,
   listMotionOps,
   requiresApproval,
+  collectNodeCascade,
 } from '@/lib/motion/ops';
 import { isKeyframesSorted } from '@/lib/motion/sample';
 import { findClip } from '@/lib/motion/types';
@@ -67,6 +68,66 @@ describe('motion op registry', () => {
       ?.channels.find((channel) => channel.id === 'chn_title_opacity')
       ?.keyframes.find((candidate) => candidate.id === 'kf_title_opacity_1');
     expect(keyframe?.time).toBe(2.4);
+  });
+
+  it('rejects added keys beyond the clip duration and accepts the endpoint', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const base = { op: 'keyframe.add' as const, clipId: 'clip_title_in', channelId: 'chn_title_opacity', keyframeId: 'kf_endpoint', value: 0.5 };
+    expect(() => applyMotionOp(doc, { ...base, time: 2.5 })).toThrow(MotionOpError);
+    expect(() => applyMotionOp(doc, { ...base, time: 2.4 })).not.toThrow();
+  });
+
+  it('collects a removal cascade while preserving unscoped tracks', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const result = collectNodeCascade(doc, 'product');
+    expect(result.nodeIds).toEqual(expect.arrayContaining(['product', 'screen_dashboard']));
+    expect(result.trackIds).toContain('trk_product');
+    expect(result.cameraIds).toEqual([]);
+    const next = applyMotionOp(doc, { op: 'scene.node.remove', nodeId: 'product' });
+    expect(next.timeline.tracks.some((track) => track.id === 'trk_product')).toBe(false);
+    expect(next.timeline.clips.every((clip) => clip.channels.every((channel) => channel.targetId !== 'product' && channel.targetId !== 'screen_dashboard'))).toBe(true);
+  });
+
+  it('clears the active camera reference when its node is removed', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const next = applyMotionOp(doc, { op: 'scene.node.remove', nodeId: 'camera' });
+    expect(next.scene.nodes.some((node) => node.id === 'camera')).toBe(false);
+    expect(next.scenes.find((scene) => scene.id === next.activeSceneId)?.cameraId).toBeNull();
+  });
+
+  it('removes a scene through the shared node cascade and keeps the active scene valid', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const sceneToDelete = { ...doc.scenes[0], id: 'scene_delete', name: 'Delete me' };
+    const withScene = { ...doc, scenes: [...doc.scenes, sceneToDelete] };
+    const next = applyMotionOp(withScene, { op: 'scene.remove', sceneId: 'scene_delete' });
+    expect(next.scenes.map((scene) => scene.id)).toEqual(['scene_main']);
+    expect(next.activeSceneId).toBe('scene_main');
+    expect(() => applyMotionOp(next, { op: 'scene.remove', sceneId: 'scene_main' })).toThrow(/at least one scene/);
+  });
+
+  it('rejects transient URLs in asset metadata', () => {
+    const doc = createStarterMotionDocument(NOW);
+    expect(() => applyMotionOp(doc, {
+      op: 'asset.add', id: 'asset_blob', name: 'blob', kind: 'image', mimeType: 'image/png', path: 'blob:https://example.test/id', hash: '', byteSize: 1, frameCount: 1, fps: 30, createdAt: NOW,
+    })).toThrow(MotionOpError);
+    expect(() => applyMotionOp(doc, {
+      op: 'asset.add', id: 'asset_bad_sequence', name: 'bad sequence', kind: 'image-sequence', mimeType: 'image/png', path: 'assets/sequence', hash: '', byteSize: 1, frameCount: 1, fps: 30, createdAt: NOW,
+    })).toThrow(/SEQUENCE_FRAME_COUNT/);
+  });
+
+  it.each([
+    { kind: 'image', path: 'assets/image.png', frameCount: 2, fps: 30, code: 'IMAGE_FRAME_COUNT' },
+    { kind: 'video', path: 'assets/video.mp4', code: 'VIDEO_METADATA_REQUIRED' },
+    { kind: 'audio', path: 'assets/audio.wav', code: 'AUDIO_DURATION_REQUIRED' },
+    { kind: 'font', path: 'assets/font.bin', code: 'FONT_FORMAT' },
+    { kind: 'model', path: 'assets/model.obj', code: 'MODEL_FORMAT' },
+    { kind: 'environment', path: 'assets/env.png', code: 'ENVIRONMENT_FORMAT' },
+  ])('validates kind-specific asset fields for $kind', ({ kind, path, code, ...metadata }) => {
+    const doc = createStarterMotionDocument(NOW);
+    expect(() => applyMotionOp(doc, {
+      op: 'asset.add', id: `asset_${kind}`, name: kind, kind, mimeType: 'application/octet-stream',
+      path, hash: '', byteSize: 1, createdAt: NOW, ...metadata,
+    } as never)).toThrow(code);
   });
 
   it('moves a placement between tracks', () => {

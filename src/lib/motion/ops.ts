@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { quantizeDocumentToFps } from './quantize';
 import { insertKeyframeSorted } from './sample';
 import { motionEasingSchema } from './schema';
+import { validateMotionDocument } from './schema';
 import {
   createMotionNode,
   hasAnimatableProperty,
@@ -71,6 +72,7 @@ export type MotionOpParams = {
     props?: Record<string, unknown>;
   };
   'scene.node.remove': { nodeId: string };
+  'scene.remove': { sceneId: string };
   'timeline.setDuration': { duration: number };
   'timeline.setLoop': { enabled?: boolean; start?: number; end?: number };
   /** Snap every key to the output frame grid. Explicit, never automatic. */
@@ -225,10 +227,39 @@ export function applyMotionOp(
   if (!entry) throw new MotionOpError(`Unknown op "${request.op}".`);
 
   const { op: _op, ...params } = request as { op: string } & AnyParams;
-  const next = entry.run(doc, params);
-  if (next === doc) return doc;
+  const reduced = entry.run(doc, params);
+  if (reduced === doc) return doc;
+  const activeScene = reduced.scenes.find((scene) => scene.id === reduced.activeSceneId);
+  const next = activeScene ? {
+    ...reduced,
+    scenes: reduced.scenes.map((scene) => scene.id === activeScene.id ? {
+      ...scene,
+      nodes: reduced.scene.nodes,
+      timeline: {
+        ...reduced.timeline,
+        loop: undefined,
+        workArea: {
+          enabled: reduced.timeline.loop.enabled,
+          start: reduced.timeline.loop.start,
+          end: reduced.timeline.loop.end,
+        },
+        playMode: reduced.timeline.loop.enabled ? 'loop' as const : 'once' as const,
+      },
+    } : scene),
+  } : reduced;
 
-  return { ...next, meta: { ...next.meta, updatedAt: options.now ?? doc.meta.updatedAt } };
+  if (process.env.NODE_ENV !== 'production') {
+    const errors = validateMotionDocument(next);
+    if (errors.length > 0) {
+      throw new MotionOpError(`Invalid result from ${request.op}: ${errors[0].path} (${errors[0].code}).`);
+    }
+  }
+
+  return {
+    ...next,
+    revision: doc.revision + 1,
+    meta: { ...next.meta, updatedAt: options.now ?? doc.meta.updatedAt },
+  };
 }
 
 export function applyMotionOps(
@@ -236,7 +267,8 @@ export function applyMotionOps(
   requests: readonly MotionOpRequest[],
   options: ApplyMotionOpsOptions = {},
 ): MotionDocument {
-  return requests.reduce((current, request) => applyMotionOp(current, request, options), doc);
+  const next = requests.reduce((current, request) => applyMotionOp(current, request, options), doc);
+  return next === doc ? doc : { ...next, revision: doc.revision + 1 };
 }
 
 // ── Immutable helpers ────────────────────────────────────────────────────────
@@ -266,17 +298,19 @@ function requireChannel(clip: MotionClip, channelId: string): MotionChannel {
 
 function validateNodeAssetReference(doc: MotionDocument, node: MotionNode): void {
   if (node.type !== 'screen.image') return;
-  const source = node.props.source;
+  const source = node.props.assetId ?? node.props.source;
   if (typeof source !== 'string') {
     throw new MotionOpError(`Screen node "${node.id}" references an unavailable image asset.`);
   }
 
-  const isBuiltIn = source === 'starter-dashboard';
-  const isAssetReference =
-    doc.assets.some((asset) => asset.id === source || asset.uri === source);
-  const isUrlReference = /^(blob:|data:|https?:|file:|qeda-media:)/i.test(source);
+  const isBuiltIn = source === 'starter-dashboard' || source === 'builtin:starter-dashboard';
+  const isAssetReference = doc.assets.some((asset) => asset.id === source);
+  const isTransientReference = /^(blob:|data:|https?:|file:|qeda-media:|\/)/i.test(source);
+  if (isTransientReference) {
+    throw new MotionOpError(`Screen node "${node.id}" must reference an asset id, not a URL or filesystem path.`);
+  }
 
-  if (!isBuiltIn && !isAssetReference && !isUrlReference) {
+  if (!isBuiltIn && !isAssetReference) {
     throw new MotionOpError(`Screen node "${node.id}" references an unavailable image asset.`);
   }
 }
@@ -361,19 +395,18 @@ registerMotionOp<'asset.add'>({
     .object({
       id: z.string().min(1),
       name: z.string().min(1),
-      kind: z.enum(['image', 'image-sequence']),
+      kind: z.enum(['image', 'image-sequence', 'video', 'audio', 'font', 'model', 'environment']),
       mimeType: z.string().min(1),
-      frameCount: z.number().int().positive(),
-      fps: z.number().positive(),
-      uri: z.string().min(1).optional(),
+      path: z.string().min(1), hash: z.string(), byteSize: z.number().nonnegative(),
+      width: z.number().positive().optional(), height: z.number().positive().optional(),
+      frameCount: z.number().int().positive().optional(), fps: z.number().positive().optional(),
+      duration: z.number().positive().optional(), sourceName: z.string().optional(),
+      createdAt: z.string(), metadata: z.record(z.string(), z.unknown()).optional(),
     })
     .strict(),
   reduce: (doc, asset) => {
     if (doc.assets.some((candidate) => candidate.id === asset.id)) {
       throw new MotionOpError(`Asset "${asset.id}" already exists.`);
-    }
-    if (asset.kind === 'image' && asset.frameCount !== 1) {
-      throw new MotionOpError('An image asset must contain exactly one frame.');
     }
     return { ...doc, assets: [...doc.assets, asset] };
   },
@@ -464,33 +497,98 @@ registerMotionOp<'scene.node.remove'>({
     if (!doc.scene.nodes.some((node) => node.id === nodeId)) {
       throw new MotionOpError(`Scene node "${nodeId}" does not exist.`);
     }
-    const removed = new Set([nodeId]);
-    let foundChild = true;
-    while (foundChild) {
-      foundChild = false;
-      for (const node of doc.scene.nodes) {
-        if (node.parentId && removed.has(node.parentId) && !removed.has(node.id)) {
-          removed.add(node.id);
-          foundChild = true;
-        }
-      }
-    }
+    const cascade = collectNodeCascade(doc, nodeId);
+    const removed = new Set(cascade.nodeIds);
+    const nodes = doc.scene.nodes.filter((node) => !removed.has(node.id));
+    const timeline: MotionTimeline = {
+      ...doc.timeline,
+      tracks: doc.timeline.tracks.filter((track) => !cascade.trackIds.includes(track.id)),
+      clips: doc.timeline.clips.map((clip) => ({
+        ...clip,
+        channels: clip.channels.filter((channel) => !removed.has(channel.targetId)),
+      })),
+    };
+    const active = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+    const cameraId = active?.cameraId && removed.has(active.cameraId) ? null : active?.cameraId;
     return {
       ...doc,
-      scene: { nodes: doc.scene.nodes.filter((node) => !removed.has(node.id)) },
-      timeline: {
-        ...doc.timeline,
-        tracks: doc.timeline.tracks.map((track) =>
-          track.targetId && removed.has(track.targetId) ? { ...track, targetId: null } : track,
-        ),
-        clips: doc.timeline.clips.map((clip) => ({
-          ...clip,
-          channels: clip.channels.filter((channel) => !removed.has(channel.targetId)),
-        })),
-      },
+      scene: { nodes },
+      timeline,
+      scenes: active ? doc.scenes.map((scene) => scene.id === active.id
+        ? { ...scene, nodes, timeline, cameraId: cameraId ?? null }
+        : scene) : doc.scenes,
     };
   },
 });
+
+registerMotionOp<'scene.remove'>({
+  id: 'scene.remove',
+  summary: 'Delete a scene and all of its nodes, tracks, clips, and camera references.',
+  risk: 'destructive',
+  params: z.object({ sceneId: z.string().min(1) }).strict(),
+  reduce: (doc, { sceneId }) => {
+    const target = doc.scenes.find((candidate) => candidate.id === sceneId);
+    if (!target) throw new MotionOpError(`Scene "${sceneId}" does not exist.`);
+    if (doc.scenes.length < 2) throw new MotionOpError('A Motion project must keep at least one scene.');
+    // Collecting each root makes the cascade semantics explicit and shared with node removal.
+    const targetView = { ...doc, scene: { nodes: target.nodes }, timeline: target.timeline as MotionTimeline };
+    const cascadedNodeIds = new Set<string>();
+    for (const node of target.nodes) {
+      for (const id of collectNodeCascade(targetView, node.id).nodeIds) cascadedNodeIds.add(id);
+    }
+    if (target.nodes.some((node) => !cascadedNodeIds.has(node.id))) {
+      throw new MotionOpError(`Scene "${sceneId}" has an incomplete node-removal cascade.`);
+    }
+    const scenes = doc.scenes.filter((candidate) => candidate.id !== sceneId);
+    const activeSceneId = doc.activeSceneId === sceneId ? scenes[0].id : doc.activeSceneId;
+    const active = scenes.find((candidate) => candidate.id === activeSceneId) ?? scenes[0];
+    const activeTimeline = active.timeline as MotionTimeline;
+    const legacyTimeline: MotionTimeline = activeTimeline.loop ? activeTimeline : {
+      ...activeTimeline,
+      loop: {
+        enabled: activeTimeline.workArea?.enabled ?? false,
+        start: activeTimeline.workArea?.start ?? 0,
+        end: activeTimeline.workArea?.end ?? activeTimeline.duration,
+      },
+    };
+    return {
+      ...doc,
+      scenes,
+      activeSceneId,
+      scene: { nodes: active.nodes },
+      timeline: legacyTimeline,
+      ...(doc.sequence ? { sequence: { ...doc.sequence, items: doc.sequence.items.filter((item) => item.sceneId !== sceneId) } } : {}),
+    };
+  },
+});
+
+/** Collect every entity that must be removed to keep a scene graph referentially sound. */
+export function collectNodeCascade(doc: MotionDocument, nodeId: string): {
+  nodeIds: string[];
+  trackIds: string[];
+  clipIds: string[];
+  cameraIds: string[];
+} {
+  const removed = new Set([nodeId]);
+  let foundChild = true;
+  while (foundChild) {
+    foundChild = false;
+    for (const node of doc.scene.nodes) {
+      if (node.parentId && removed.has(node.parentId) && !removed.has(node.id)) {
+        removed.add(node.id);
+        foundChild = true;
+      }
+    }
+  }
+  const clips = doc.timeline.clips.filter((clip) => clip.channels.some((channel) => removed.has(channel.targetId)));
+  return {
+    nodeIds: [...removed],
+    // Unscoped tracks are deliberately preserved.
+    trackIds: doc.timeline.tracks.filter((track) => track.targetId !== null && removed.has(track.targetId)).map((track) => track.id),
+    clipIds: clips.map((clip) => clip.id),
+    cameraIds: doc.scene.nodes.filter((node) => removed.has(node.id) && node.type.startsWith('camera.')).map((node) => node.id),
+  };
+}
 
 registerMotionOp<'timeline.setDuration'>({
   id: 'timeline.setDuration',
@@ -782,6 +880,9 @@ registerMotionOp<'keyframe.add'>({
   }),
   reduce: (doc, { clipId, channelId, keyframeId, time, value, easing }) => {
     const clip = requireClip(doc, clipId);
+    if (time > clip.duration) {
+      throw new MotionOpError(`Keyframe time ${time} exceeds clip duration ${clip.duration}.`);
+    }
     requireChannel(clip, channelId);
     return mapChannel(doc, clipId, channelId, (channel) => ({
       ...channel,

@@ -21,6 +21,7 @@ import {
   type MotionClipPlacement,
   type MotionDocument,
   type MotionKeyframe,
+  type MotionScene,
   type MotionTrack,
 } from './types';
 
@@ -149,6 +150,22 @@ export function sampleTimeline(doc: MotionDocument, time: number): Map<string, n
   const clipsById = clipsByIdOf(doc);
   const values = new Map<string, number>();
   for (const track of doc.timeline.tracks) {
+    if (track.muted) continue;
+    const active = activePlacement(track, clipsById, time);
+    if (!active) continue;
+    for (const channel of active.clip.channels) {
+      const value = sampleChannel(channel, active.localTime);
+      if (value !== undefined) values.set(channelKey(channel.targetId, channel.property), value);
+    }
+  }
+  return values;
+}
+
+/** Scene-scoped entry point used by the v4 evaluator; no project-level lookup. */
+export function sampleSceneTimeline(scene: MotionScene, time: number): Map<string, number> {
+  const clipsById = new Map(scene.timeline.clips.map((clip) => [clip.id, clip]));
+  const values = new Map<string, number>();
+  for (const track of scene.timeline.tracks) {
     if (track.muted) continue;
     const active = activePlacement(track, clipsById, time);
     if (!active) continue;

@@ -63,25 +63,12 @@ describe('Motion editor shell', () => {
     ).toBe('Hero device');
   });
 
-  it('imports media assets and attaches them to the active screen', () => {
+  it('keeps media import disabled until assets can be stored durably', () => {
     render(<MotionEditor />);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Assets' }));
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    expect(input).not.toBeNull();
-
-    const file = new File(['image-bytes'], 'hero.png', { type: 'image/png' });
-    Object.defineProperty(input, 'files', { value: [file], configurable: true });
-
-    fireEvent.change(input);
-
+    expect(screen.getByRole('button', { name: 'Import media' })).toBeDisabled();
     expect(motionStore.getDocument().assets).toHaveLength(1);
-    expect(motionStore.getDocument().assets[0]?.name).toBe('hero.png');
-    expect(
-      motionStore
-        .getDocument()
-        .scene.nodes.find((node) => node.id === 'screen_dashboard')?.props.source,
-    ).toContain('data:image/png;base64,');
   });
 
   it('collapses and restores the scene and inspector panels', () => {
