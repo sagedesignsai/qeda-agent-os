@@ -31,6 +31,7 @@ import Projects from './pages/Projects';
 import Documents from './pages/Documents';
 import Studio from './pages/Studio';
 import SoundLab from './pages/SoundLab';
+import Motion from './pages/Motion';
 import Workspace from './pages/Workspace';
 import Builder from './pages/Builder';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
@@ -63,23 +64,7 @@ export const routes: RouteObject[] = [
         ],
       },
 
-      {
-        path: 'onboarding',
-        element: (
-          <OnboardingDialog
-            open
-            onClose={() => {
-              // Prevent the user from escaping the empty-workspace state
-              // back to a blank app; the only out is creating or importing
-              // the first project.
-            }}
-            onOpenProject={() => {
-              // Creating the first project closes onboarding and leaves the
-              // user on the project they just created.
-            }}
-          />
-        ),
-      },
+      { path: 'onboarding', element: <OnboardingRoute /> },
 
       { path: 'tasks', element: <Tasks /> },
 
@@ -87,6 +72,11 @@ export const routes: RouteObject[] = [
       // no sub-params yet: the rail's project scope arrives as `?project=` via
       // `withScope`, exactly as it does for Tasks and Documents.
       { path: 'correspondence', element: <Correspondence /> },
+
+      // Motion (product-showcase 3D) is deliberately a separate route from
+      // Showcase Studio (/studio, screen captures). Same family of output,
+      // different engine — see docs/motion-studio-spec.md.
+      { path: 'motion', element: <Motion /> },
 
       { path: 'builder', element: <Builder /> },
 
@@ -192,4 +182,22 @@ function ProjectsHome() {
   }, [navigate]);
 
   return null;
+}
+
+/**
+ * The empty-workspace state. Onboarding is a dialog, so it needs a route that
+ * stays mounted until the flow is left; both of its exits navigate, otherwise
+ * skipping would leave the user on a route whose dialog is still `open`.
+ */
+function OnboardingRoute() {
+  const navigate = useNavigate();
+  return (
+    <OnboardingDialog
+      open
+      onClose={() => navigate('/projects', { replace: true })}
+      onOpenProject={(id) =>
+        navigate(`/projects/${encodeURIComponent(id)}`, { replace: true })
+      }
+    />
+  );
 }

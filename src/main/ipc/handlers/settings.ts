@@ -16,11 +16,11 @@ import {
   getSettings,
   saveSettings,
   setActiveProjectId,
-  resolveLaunchDefaultProjectIdDetailed,
   type AppSettings,
 } from '../../ai/settings';
 import { mcpManager } from '../../ai/mcp/manager';
 import { listServiceStatuses } from '../../services/keys';
+import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '../../../lib/builder-engine';
 import { type ProviderInfo } from '../channels';
 import { resetAgents } from '../agent-runtime';
 
@@ -55,15 +55,11 @@ export function registerSettingsHandlers({
       serviceKeysSet[status.id] = status.configured;
     }
 
-    // If no active project is persisted, pick one deterministically so the app
-    // does not sit on "no project selected" when there is an obvious choice
-    // (e.g. a fresh install with a single project). This is a one-time write on
-    // first read after launch, so a later explicit pick still wins.
-    const launchDefault = resolveLaunchDefaultProjectIdDetailed();
-    const activeProjectId = launchDefault.id ?? '';
-    if (launchDefault.changed && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('settings:changed');
-    }
+    // Reported exactly as persisted — deliberately NOT auto-picked. Launch
+    // routing needs to tell "nothing chosen yet" (open Projects so the user can
+    // pick) apart from "a project is active" (open Chat), so inventing a
+    // default here would erase that distinction.
+    const activeProjectId = s.activeProjectId ?? '';
 
     return {
       activeProvider: s.activeProvider,
@@ -85,6 +81,8 @@ export function registerSettingsHandlers({
       // E2B sandbox timeout. Only relevant when the Builder engine is OpenCode
       // and the user opts into running a session inside a remote sandbox.
       e2bSandboxTimeoutMs: s.e2bSandboxTimeoutMs ?? 3_600_000,
+      // Pinned OpenCode runtime template used by the sandbox engine.
+      e2bSandboxTemplate: s.e2bSandboxTemplate ?? DEFAULT_E2B_SANDBOX_TEMPLATE,
       // Whether an encrypted GitHub PAT is stored for cloning private repos
       // into the E2B sandbox. The value itself never leaves the main process.
       githubPatSet: Boolean(s.githubPat),
@@ -176,6 +174,16 @@ export function registerSettingsHandlers({
       merged.e2bSandboxTimeoutMs = incoming.e2bSandboxTimeoutMs;
     } else {
       merged.e2bSandboxTimeoutMs = current.e2bSandboxTimeoutMs;
+    }
+    // E2B sandbox template. Empty clears back to the pinned default.
+    if (Object.prototype.hasOwnProperty.call(incoming, 'e2bSandboxTemplate')) {
+      merged.e2bSandboxTemplate =
+        typeof incoming.e2bSandboxTemplate === 'string' &&
+        incoming.e2bSandboxTemplate.trim()
+          ? incoming.e2bSandboxTemplate.trim()
+          : undefined;
+    } else {
+      merged.e2bSandboxTemplate = current.e2bSandboxTemplate;
     }
     saveSettings(merged);
     resetAgents();

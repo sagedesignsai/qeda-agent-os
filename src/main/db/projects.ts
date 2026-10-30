@@ -536,27 +536,3 @@ export function countProjectTasks(id: string): number {
       .get(id) as { n: number }
   ).n;
 }
-
-/**
- * Pick a project to treat as the active default when none is persisted.
- *
- * Deterministic enough to feel like a sensible choice, not a surprise random
- * pick: newest first among the projects the user is still actively using,
- * skipping the Inbox (it is a capture bucket, not a working project).
- *
- * Returns null when there is nothing to choose — no projects at all, or only
- * the Inbox. Callers that use this as a last-reset to keep the app from sitting
- * on "no project selected" should still let that case remain empty.
- */
-export function pickDefaultActiveProject(): Project | null {
-  const projects = listProjects({ includeArchived: false });
-  const working = projects.filter((p) => p.id !== INBOX_PROJECT_ID);
-  if (working.length === 0) return null;
-
-  // Newest by created_at, tie-broken by id so the choice is stable.
-  working.sort((a, b) => {
-    if (a.created_at !== b.created_at) return b.created_at - a.created_at;
-    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-  });
-  return working[0];
-}

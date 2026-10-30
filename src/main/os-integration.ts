@@ -33,7 +33,7 @@ import {
 import log from 'electron-log';
 import path from 'node:path';
 import { getPage } from './db/workspace';
-import { listProjects } from './db/projects.js';
+import { listProjects } from './db/projects';
 import { countDueToday } from './db/tasks';
 
 const APP_ID = 'com.qeda.desktop';

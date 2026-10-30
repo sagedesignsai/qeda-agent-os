@@ -24,7 +24,10 @@ import {
 } from 'react';
 
 import type { BuilderEngine, McpServerSettings } from '@/main/ipc/channels';
-import { DEFAULT_BUILDER_MAX_STEPS } from '@/lib/builder-engine';
+import {
+  DEFAULT_BUILDER_MAX_STEPS,
+  DEFAULT_E2B_SANDBOX_TEMPLATE,
+} from '@/lib/builder-engine';
 
 /** The subset of `settings:get` the sections actually read. */
 export interface SettingsSnapshot {
@@ -54,6 +57,8 @@ export interface SettingsSnapshot {
    * into running a session inside a remote E2B sandbox.
    */
   e2bSandboxTimeoutMs: number;
+  /** E2B template alias used for OpenCode sandbox sessions. */
+  e2bSandboxTemplate: string;
   /**
    * Whether an encrypted GitHub PAT is stored for cloning private repos
    * into the E2B sandbox. The value itself never leaves the main process.
@@ -71,6 +76,7 @@ const EMPTY: SettingsSnapshot = {
   builderMaxSteps: DEFAULT_BUILDER_MAX_STEPS,
   mcpServers: [],
   e2bSandboxTimeoutMs: 3_600_000,
+  e2bSandboxTemplate: DEFAULT_E2B_SANDBOX_TEMPLATE,
   githubPatSet: false,
 };
 

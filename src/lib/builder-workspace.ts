@@ -45,6 +45,15 @@ export interface BuilderWorkspace {
    * Present for isolated sessions; null only for a legacy direct-mode session.
    */
   worktreePath: string | null;
+  /**
+   * True when the session runs in an ephemeral E2B sandbox.
+   *
+   * `directory` and `worktreePath` then point at the remote sandbox filesystem,
+   * not this machine. The renderer uses this flag to hide local-only surfaces
+   * (preview, file tree, Keep/Discard) instead of trying to read a path that
+   * does not exist locally.
+   */
+  sandbox?: boolean;
 }
 
 export interface BuilderDirectory {

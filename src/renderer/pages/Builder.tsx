@@ -72,6 +72,7 @@ import { useBuilderFiles } from '@/hooks/use-builder-files';
 import { useBuilderModels } from '@/hooks/use-builder-models';
 import { useBuilderCodeProjects } from '@/hooks/use-builder-code-projects';
 import { useBuilderWorkspace } from '@/hooks/use-builder-workspace';
+import { useBuilderSandboxPatchFailureToast } from '@/hooks/use-builder-sandbox-patch-failure';
 import { useDefaultLayout } from 'react-resizable-panels';
 import type { CodeProject } from '@/main/ipc/channels';
 
@@ -130,6 +131,12 @@ export default function Builder() {
 
   const preview = useBuilderPreview();
 
+  // A sandbox workspace lives in E2B. Localhost URLs found in tool output point
+  // inside the sandbox, not this machine, so they must never drive the iframe.
+  const sandboxActive = builderSession.workspace?.sandbox === true;
+
+  useBuilderSandboxPatchFailureToast();
+
   // The always-on half of the preview: a dev server the agent started inside a
   // turn announces its address in tool output, so the feed already knows about
   // it. No process of ours is needed to *detect* one — only to own one.
@@ -144,13 +151,16 @@ export default function Builder() {
   const qedaLive =
     preview.status.owner === 'qeda' &&
     (preview.status.state === 'starting' || preview.status.state === 'ready');
-  const previewUrl =
-    (qedaLive ? preview.status.url : null) ?? detectedUrl ?? '';
-  const previewOwner: BuilderPreviewOwner | null = qedaLive
-    ? 'qeda'
-    : detectedUrl
-      ? 'detected'
-      : null;
+  const previewUrl = sandboxActive
+    ? ''
+    : ((qedaLive ? preview.status.url : null) ?? detectedUrl ?? '');
+  const previewOwner: BuilderPreviewOwner | null = sandboxActive
+    ? null
+    : qedaLive
+      ? 'qeda'
+      : detectedUrl
+        ? 'detected'
+        : null;
 
   const [pendingWorkspaceSwitch, setPendingWorkspaceSwitch] = useState<{
     defaultPath?: string | null;
@@ -167,7 +177,11 @@ export default function Builder() {
           : (defaultPath ?? activeProject?.repo_path ?? undefined),
         { runInSandbox: workspace.runInSandbox },
       );
-      if (started?.workspace && activeProject?.id) {
+      if (
+        started?.workspace &&
+        activeProject?.id &&
+        !started.workspace.sandbox
+      ) {
         await registerCodeProject(started.workspace.directory);
       }
       return started;
@@ -443,7 +457,7 @@ export default function Builder() {
       }
       previewStarting={preview.starting}
       previewStopping={preview.stopping}
-      canStartPreview={Boolean(builderSession.workspace)}
+      canStartPreview={Boolean(builderSession.workspace) && !sandboxActive}
       previewCommand={workspace.previewCommand}
       onPreviewCommandChange={workspace.setPreviewCommand}
       onStartPreview={(command) =>

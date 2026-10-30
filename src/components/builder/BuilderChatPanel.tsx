@@ -401,6 +401,16 @@ export function BuilderChatPanel({
 
       <div className="shrink-0 border-t border-border/50 bg-background/90 p-3">
         <div className="mx-auto max-w-xl">
+          {workspace?.sandbox && (
+            <div className="mb-2 flex items-start gap-1.5 rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+              <CloudIcon className="mt-0.5 size-3.5 shrink-0 text-primary" />
+              <span>
+                Running in an E2B sandbox. Changes are captured as a patch and
+                applied when the session stops. Preview, local file browsing,
+                Keep/Discard, and qeda tools are unavailable here.
+              </span>
+            </div>
+          )}
           <PromptInput
             onSubmit={() => handleSubmit()}
             className="rounded-2xl border border-border/70 bg-card shadow-sm transition-colors focus-within:border-primary/40 focus-within:shadow-md focus-within:shadow-primary/5"
@@ -468,7 +478,7 @@ export function BuilderChatPanel({
                         {model.name} · {model.providerID}
                       </SelectItem>
                     ))}
-</SelectContent>
+                  </SelectContent>
                 </Select>
                 <Button
                   size="sm"
@@ -493,6 +503,7 @@ export function BuilderChatPanel({
                 </Button>
                 {onToggleSandbox && (
                   <label
+                    htmlFor="builder-run-in-sandbox"
                     className="flex items-center gap-1.5 rounded-md border border-border/60 bg-card/45 px-2 py-1 text-xs text-muted-foreground"
                     title={
                       runInSandbox
@@ -503,10 +514,13 @@ export function BuilderChatPanel({
                     <CloudIcon
                       className={cn(
                         'size-3.5 shrink-0',
-                        runInSandbox ? 'text-primary' : 'text-muted-foreground/70',
+                        runInSandbox
+                          ? 'text-primary'
+                          : 'text-muted-foreground/70',
                       )}
                     />
                     <Switch
+                      id="builder-run-in-sandbox"
                       size="sm"
                       checked={runInSandbox}
                       onCheckedChange={onToggleSandbox}

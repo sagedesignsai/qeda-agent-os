@@ -65,6 +65,7 @@ import {
   BrainCircuitIcon,
   WandSparklesIcon,
   SendIcon,
+  BoxIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjects } from '@/hooks/use-projects';
@@ -101,6 +102,9 @@ const NAV_ITEMS = [
   { to: '/workspace', label: 'Knowledge', icon: NotebookIcon },
   { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
+  // Motion renders staged 3D hero shots; Showcase Studio captures real footage.
+  // Adjacent in the rail, but separate tools with separate engines.
+  { to: '/motion', label: 'Motion', icon: BoxIcon },
   { to: '/soundlab', label: 'SoundLab', icon: BrainCircuitIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
   { to: '/builder', label: 'Builder', icon: WandSparklesIcon },

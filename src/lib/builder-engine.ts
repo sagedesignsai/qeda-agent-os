@@ -25,6 +25,15 @@ export const DEFAULT_BUILDER_MAX_STEPS = 200;
 /** Upper bound keeps a typo in Settings from producing an unbounded run. */
 export const MAX_BUILDER_MAX_STEPS = 1_000;
 
+/**
+ * Default E2B template for the OpenCode sandbox engine.
+ *
+ * Pinned to the OpenCode 2 runtime Qeda's client speaks. Operators can override
+ * it in Settings → Builder & MCP when their E2B account publishes a different
+ * versioned alias.
+ */
+export const DEFAULT_E2B_SANDBOX_TEMPLATE = 'e2b/opencode:v2.0.24';
+
 /** Normalize a persisted/user-entered step budget into the supported range. */
 export function normalizeBuilderMaxSteps(value: unknown): number {
   const parsed =

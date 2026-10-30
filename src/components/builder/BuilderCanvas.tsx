@@ -87,6 +87,7 @@
 import { useState } from 'react';
 import {
   AlertTriangleIcon,
+  CloudIcon,
   Code2Icon,
   ExternalLinkIcon,
   GitBranchIcon,
@@ -245,6 +246,7 @@ function PreviewIdleState({
   onPreviewCommandChange,
   onStart,
   onStop,
+  sandbox = false,
 }: {
   status: BuilderPreviewStatus;
   owner: BuilderPreviewOwner | null;
@@ -255,6 +257,7 @@ function PreviewIdleState({
   onPreviewCommandChange?: (command: string) => void;
   onStart?: (command?: string) => void;
   onStop?: () => void;
+  sandbox?: boolean;
 }) {
   const badge = IDLE_BADGE[status.state];
   const ownsProcess = owner === 'qeda';
@@ -263,13 +266,14 @@ function PreviewIdleState({
     (status.state === 'starting' || status.state === 'ready') &&
     Boolean(onStop);
 
-  const explanation =
-    status.message ??
-    (status.state === 'starting'
-      ? 'Running this project’s dev script. The address appears here as soon as it answers.'
-      : status.state === 'exited'
-        ? 'The dev script stopped before it served an address.'
-        : 'Start this project’s dev script and it loads here, resizable to desktop, tablet, or mobile.');
+  const explanation = sandbox
+    ? 'Preview is unavailable while the session runs in an E2B sandbox. Stop the session to apply its patch locally, then start a preview.'
+    : (status.message ??
+      (status.state === 'starting'
+        ? 'Running this project’s dev script. The address appears here as soon as it answers.'
+        : status.state === 'exited'
+          ? 'The dev script stopped before it served an address.'
+          : 'Start this project’s dev script and it loads here, resizable to desktop, tablet, or mobile.'));
 
   return (
     /* `min-h-full` plus its own `px-6 py-8`: the frame around this is
@@ -346,9 +350,11 @@ function PreviewIdleState({
               // panel owns the one folder call to action, so this canvas does
               // not repeat it.
               title={
-                canStart
-                  ? 'Start this project: leave blank for the detected script, or type a command.'
-                  : 'Choose a project folder first.'
+                sandbox
+                  ? 'Preview is unavailable in sandbox mode.'
+                  : canStart
+                    ? 'Start this project: leave blank for the detected script, or type a command.'
+                    : 'Choose a project folder first.'
               }
             >
               <PlayIcon className="size-3.5" />
@@ -469,19 +475,25 @@ export function BuilderCanvas({
               variant="outline"
               className="hidden h-5 shrink-0 items-center gap-1 border-border/70 px-1.5 text-xs font-normal text-muted-foreground md:inline-flex"
               title={
-                workspace.worktreePath
-                  ? 'Builder is working in an isolated Git worktree. Your source repository is unchanged until you keep the changes.'
-                  : 'This restored legacy session is working directly in the selected repository.'
+                workspace.sandbox
+                  ? 'Builder is working in an ephemeral E2B sandbox. Changes are captured as a patch and applied when the session stops.'
+                  : workspace.worktreePath
+                    ? 'Builder is working in an isolated Git worktree. Your source repository is unchanged until you keep the changes.'
+                    : 'This restored legacy session is working directly in the selected repository.'
               }
             >
-              {workspace.worktreePath ? (
+              {workspace.sandbox ? (
+                <CloudIcon className="size-3 text-primary" />
+              ) : workspace.worktreePath ? (
                 <ShieldCheckIcon className="size-3 text-emerald-600" />
               ) : (
                 <AlertTriangleIcon className="size-3 text-amber-600" />
               )}
-              {workspace.worktreePath
-                ? 'Isolated worktree'
-                : 'Direct repository'}
+              {workspace.sandbox
+                ? 'E2B sandbox'
+                : workspace.worktreePath
+                  ? 'Isolated worktree'
+                  : 'Direct repository'}
             </Badge>
           )}
         </div>
@@ -662,6 +674,7 @@ export function BuilderCanvas({
                     onPreviewCommandChange={onPreviewCommandChange}
                     onStart={onStartPreview}
                     onStop={onStopPreview}
+                    sandbox={workspace?.sandbox === true}
                   />
                 )}
               </div>
@@ -681,8 +694,8 @@ export function BuilderCanvas({
           loading={changesLoading}
           keeping={keeping}
           discarding={discarding}
-          onKeepAll={onKeepAll}
-          onDiscardAll={onDiscardAll}
+          onKeepAll={workspace?.sandbox ? undefined : onKeepAll}
+          onDiscardAll={workspace?.sandbox ? undefined : onDiscardAll}
         />
       )}
     </section>

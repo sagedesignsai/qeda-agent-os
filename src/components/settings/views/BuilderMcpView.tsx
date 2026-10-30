@@ -63,7 +63,6 @@ import {
   WifiOffIcon,
   LoaderIcon,
   KeyIcon,
-  ClockIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '../settings-store';
@@ -78,6 +77,7 @@ import type {
 } from '@/main/ipc/channels';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
+  DEFAULT_E2B_SANDBOX_TEMPLATE,
   MCP_SERVER_PRESETS,
   normalizeBuilderMaxSteps,
 } from '@/lib/builder-engine';
@@ -709,6 +709,7 @@ export function BuilderMcpView() {
   const [engine, setEngine] = useState<BuilderEngine>('local');
   const [maxSteps, setMaxSteps] = useState(DEFAULT_BUILDER_MAX_STEPS);
   const [e2bTimeoutMs, setE2bTimeoutMs] = useState(3_600_000);
+  const [e2bTemplate, setE2bTemplate] = useState(DEFAULT_E2B_SANDBOX_TEMPLATE);
   const [githubPat, setGithubPat] = useState('');
   const [githubPatSet, setGithubPatSet] = useState(false);
   const [e2bApiKey, setE2bApiKey] = useState('');
@@ -730,6 +731,7 @@ export function BuilderMcpView() {
     setEngine(snapshot.builderEngine ?? 'local');
     setMaxSteps(normalizeBuilderMaxSteps(snapshot.builderMaxSteps));
     setE2bTimeoutMs(snapshot.e2bSandboxTimeoutMs ?? 3_600_000);
+    setE2bTemplate(snapshot.e2bSandboxTemplate || DEFAULT_E2B_SANDBOX_TEMPLATE);
     setGithubPatSet(snapshot.githubPatSet ?? false);
     setServers(
       (snapshot.mcpServers ?? []).map((s) => settingsToFormState(s, s.id)),
@@ -762,7 +764,7 @@ export function BuilderMcpView() {
       .catch(() => undefined);
   }, []);
 
-const handleEngineSave = useCallback(
+  const handleEngineSave = useCallback(
     async (next: BuilderEngine) => {
       setEngine(next);
       try {
@@ -797,6 +799,22 @@ const handleEngineSave = useCallback(
     [save],
   );
 
+  const handleE2bTemplateSave = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim() || DEFAULT_E2B_SANDBOX_TEMPLATE;
+      setE2bTemplate(trimmed);
+      try {
+        await save({ e2bSandboxTemplate: trimmed });
+        toast.success(`E2B sandbox template set to "${trimmed}".`);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : 'Failed to save template.',
+        );
+      }
+    },
+    [save],
+  );
+
   const handleGithubPatSave = useCallback(
     async (value: string) => {
       const trimmed = value.trim();
@@ -825,9 +843,7 @@ const handleEngineSave = useCallback(
       setE2bApiKeySet(true);
       try {
         await save({ serviceKeys: { e2b: trimmed } });
-        toast.success(
-          trimmed ? 'E2B API key saved.' : 'E2B API key cleared.',
-        );
+        toast.success(trimmed ? 'E2B API key saved.' : 'E2B API key cleared.');
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : 'Failed to save E2B key.',
@@ -1195,7 +1211,8 @@ const handleEngineSave = useCallback(
                   className="underline underline-offset-2"
                 >
                   e2b.dev/docs
-                </a>.
+                </a>
+                .
               </p>
             </div>
             {e2bApiKeySet && (
@@ -1212,9 +1229,7 @@ const handleEngineSave = useCallback(
               type="password"
               className="pl-8 text-sm"
               placeholder={
-                e2bApiKeySet
-                  ? '••••••••••••••••'
-                  : 'Enter E2B_API_KEY…'
+                e2bApiKeySet ? '••••••••••••••••' : 'Enter E2B_API_KEY…'
               }
               value={e2bApiKey}
               onChange={(e) => setE2bApiKey(e.target.value)}
@@ -1251,9 +1266,7 @@ const handleEngineSave = useCallback(
               type="password"
               className="pl-8 text-sm"
               placeholder={
-                githubPatSet
-                  ? '••••••••••••••••'
-                  : 'Enter GitHub PAT…'
+                githubPatSet ? '••••••••••••••••' : 'Enter GitHub PAT…'
               }
               value={githubPat}
               onChange={(e) => setGithubPat(e.target.value)}
@@ -1263,6 +1276,30 @@ const handleEngineSave = useCallback(
                   event.currentTarget.blur();
                 }
               }}
+            />
+          </div>
+
+          <div className="rounded-lg border border-border bg-card p-3">
+            <div className="grid gap-0.5">
+              <Label htmlFor="e2b-template" className="text-sm font-normal">
+                Sandbox template
+              </Label>
+              <p className="text-[11px] text-muted-foreground">
+                E2B template that provides the OpenCode 2 runtime. Defaults to
+                the pinned version; change it only if your E2B account uses a
+                different alias.
+              </p>
+            </div>
+            <Input
+              id="e2b-template"
+              className="mt-2 h-8 text-sm"
+              value={e2bTemplate}
+              onChange={(event) => setE2bTemplate(event.target.value)}
+              onBlur={() => void handleE2bTemplateSave(e2bTemplate)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+              placeholder={DEFAULT_E2B_SANDBOX_TEMPLATE}
             />
           </div>
 

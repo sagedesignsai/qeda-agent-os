@@ -231,4 +231,21 @@ describe('BuilderChatPanel', () => {
     expect(onDiscardSession).toHaveBeenCalledTimes(1);
     expect(onDisconnectSession).toHaveBeenCalledTimes(1);
   });
+
+  it('explains the sandbox limitations beside the composer', () => {
+    render(
+      <BuilderChatPanel
+        status={connected}
+        prompt=""
+        onPromptChange={jest.fn()}
+        workspace={{ ...workspace, sandbox: true }}
+        session={session}
+      />,
+    );
+
+    expect(screen.getByText(/Running in an E2B sandbox/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Preview, local file browsing, Keep\/Discard/),
+    ).toBeInTheDocument();
+  });
 });

@@ -80,6 +80,7 @@ import {
   destroySandbox,
   capturePatch,
   applyPatchLocally,
+  savePatchFile,
   resolveSourceRemoteUrl,
   type E2bSandboxHandle,
 } from '../../sandbox/e2b.js';
@@ -116,6 +117,10 @@ function parseStoredArray<T>(value: string | null | undefined): T[] {
   } catch {
     return [];
   }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function registerBuilderHandlers({
@@ -605,6 +610,53 @@ export function registerBuilderHandlers({
       .catch(() => undefined);
   };
 
+  const emitSandboxPatchFailed = (payload: {
+    error: string;
+    savedPath?: string;
+  }) => {
+    if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('builder:sandbox-patch-failed', payload);
+    }
+  };
+
+  /**
+   * Capture the sandbox diff and apply it to the local repository before the
+   * sandbox is destroyed. Shared by stop and detach so both teardown paths
+   * preserve work and report an apply failure the same way.
+   */
+  const finalizeSandboxSession = async (
+    sandbox: E2bSandboxHandle,
+    repoDir: string,
+    localDir: string | null,
+  ): Promise<void> => {
+    try {
+      const patch = await capturePatch(sandbox, repoDir, sandbox.baseSha);
+      if (!patch.trim()) return;
+      if (!localDir) {
+        const savedPath = await savePatchFile(patch);
+        emitSandboxPatchFailed({
+          error:
+            'No local repository was recorded for this sandbox session. Apply the saved patch manually.',
+          savedPath,
+        });
+        return;
+      }
+      const result = await applyPatchLocally(localDir, patch);
+      if (!result.ok) {
+        emitSandboxPatchFailed({
+          error: `${result.error ?? 'git apply failed'} The sandbox started from ${sandbox.baseSha}; if your local HEAD has moved, apply the saved patch manually.`,
+          savedPath: result.savedPath,
+        });
+      }
+    } catch (error) {
+      emitSandboxPatchFailed({
+        error: `Could not capture changes from the sandbox: ${messageOf(error)}`,
+      });
+    } finally {
+      await destroySandbox(sandbox).catch(() => undefined);
+    }
+  };
+
   const stopActive = async () => {
     if (persistTimer) {
       clearTimeout(persistTimer);
@@ -648,40 +700,11 @@ export function registerBuilderHandlers({
     }
     // Sandboxed sessions: capture + apply patch, then destroy sandbox.
     if (prevEngine === 'opencode-sandbox' && prevSandbox) {
-      try {
-        const patch = await capturePatch(
-          prevSandbox,
-          prevRepo ?? prevSandbox.repoDir,
-        );
-        if (patch.trim()) {
-          const targetDir = prevSandboxLocalDir;
-          if (targetDir) {
-            const result = await applyPatchLocally(targetDir, patch);
-            if (!result.ok) {
-              // broadcast error with saved path? best-effort via mainWindow
-              if (
-                !mainWindow.isDestroyed() &&
-                !mainWindow.webContents.isDestroyed()
-              ) {
-                mainWindow.webContents.send('builder:sandbox-patch-failed', {
-                  error: result.error,
-                  savedPath: result.savedPath,
-                });
-              }
-            }
-          } else {
-            // No local target; persist patch.
-            const r = await applyPatchLocally(
-              app.getPath('userData'),
-              patch,
-            ).catch(() => ({ ok: false }));
-            void r;
-          }
-        }
-      } catch {
-        // ignore
-      }
-      await destroySandbox(prevSandbox).catch(() => undefined);
+      await finalizeSandboxSession(
+        prevSandbox,
+        prevRepo ?? prevSandbox.repoDir,
+        prevSandboxLocalDir,
+      );
     }
     if (prevWorktree && prevRepo && prevEngine !== 'opencode-sandbox') {
       if (prevEngine === 'opencode' && prevRuntime) {
@@ -749,21 +772,11 @@ export function registerBuilderHandlers({
     }
     // Sandboxed: attempt patch capture + apply before destroy.
     if (prevEngine === 'opencode-sandbox' && prevSandbox) {
-      try {
-        const patch = await capturePatch(
-          prevSandbox,
-          prevRepo ?? prevSandbox.repoDir,
-        );
-        if (patch.trim()) {
-          const targetDir = prevSandboxLocalDir;
-          if (targetDir) {
-            await applyPatchLocally(targetDir, patch).catch(() => undefined);
-          }
-        }
-      } catch {
-        // ignore
-      }
-      await destroySandbox(prevSandbox).catch(() => undefined);
+      await finalizeSandboxSession(
+        prevSandbox,
+        prevRepo ?? prevSandbox.repoDir,
+        prevSandboxLocalDir,
+      );
     }
     if (prevRuntime) {
       await prevRuntime.provider.dispose().catch(() => undefined);
@@ -812,6 +825,19 @@ export function registerBuilderHandlers({
       );
     }
     return { local: localSession, session };
+  };
+
+  /**
+   * Local review surfaces (preview, file tree, Keep/Discard) read paths on this
+   * machine. A sandbox session's workspace lives in E2B, so those handlers must
+   * refuse rather than probe a remote path like `/home/user/repo` locally.
+   */
+  const assertNotSandboxWorkspace = () => {
+    if (activeEngine === 'opencode-sandbox') {
+      throw new Error(
+        'This view is unavailable while the session runs in an E2B sandbox. Stop the session to apply its patch locally, then review the changes.',
+      );
+    }
   };
 
   // ── Channels ──────────────────────────────────────────────────────────────
@@ -991,6 +1017,7 @@ export function registerBuilderHandlers({
             remoteUrl: sourceRemoteUrl,
             githubToken,
             timeoutMs,
+            template: settings.e2bSandboxTemplate,
             envs,
           });
         } catch (error) {
@@ -1002,7 +1029,7 @@ export function registerBuilderHandlers({
 
         const result = await connectBuilderRuntime({
           baseUrl: sandbox.baseUrl,
-          headers: {},
+          headers: sandbox.headers,
         });
         if (!result.runtime) {
           await destroySandbox(sandbox).catch(() => undefined);
@@ -1011,7 +1038,7 @@ export function registerBuilderHandlers({
 
         opencodeRuntime = result.runtime;
         activeSandbox = sandbox;
-        activeSandboxLocalDir = directory;
+        activeSandboxLocalDir = workspace.directory;
 
         const sessionDirectory = sandbox.repoDir;
 
@@ -1045,6 +1072,7 @@ export function registerBuilderHandlers({
           ...workspace,
           directory: sandbox.repoDir,
           worktreePath: sandbox.repoDir,
+          sandbox: true,
         };
 
         activeSession = summary;
@@ -1056,16 +1084,9 @@ export function registerBuilderHandlers({
         qedaAgentChecked = true;
         resetPlanManager();
 
-        try {
-          await startSessionBridge();
-        } catch (error) {
-          await stopActive();
-          throw new Error(
-            `Builder could not start the Qeda bridge: ${error instanceof Error ? error.message : String(error)}`,
-            { cause: error },
-          );
-        }
-
+        // The host-local bridge binds 127.0.0.1 and is unreachable from E2B,
+        // so sandbox sessions deliberately skip it. The qeda_* plugin tools are
+        // unavailable there; workspace/review surfaces explain that in the UI.
         const controller = new AbortController();
         eventController = controller;
         void (async () => {
@@ -1754,6 +1775,7 @@ export function registerBuilderHandlers({
       _event,
       req?: { script?: string; command?: string },
     ): Promise<BuilderPreviewStatus> => {
+      assertNotSandboxWorkspace();
       if (!activeWorkspace) {
         throw new Error('Create a Builder session before starting a preview.');
       }
@@ -1784,6 +1806,7 @@ export function registerBuilderHandlers({
     async (): Promise<
       import('../../../lib/builder-workspace.js').BuilderFileNode[]
     > => {
+      assertNotSandboxWorkspace();
       if (!activeWorkspace) return [];
       return readWorkspaceFiles(
         activeWorkspace.worktreePath ?? activeWorkspace.directory,
@@ -1796,6 +1819,7 @@ export function registerBuilderHandlers({
     async (): Promise<
       import('../../../lib/builder-workspace.js').BuilderFileChange[]
     > => {
+      assertNotSandboxWorkspace();
       if (!activeWorkspace) return [];
       return readWorkspaceChanges(
         activeWorkspace.worktreePath ?? activeWorkspace.directory,
@@ -1806,6 +1830,7 @@ export function registerBuilderHandlers({
   ipcMain.handle(
     'builder:workspace-file-read',
     async (_event, { filePath }: { filePath: string }) => {
+      assertNotSandboxWorkspace();
       if (!activeWorkspace) {
         throw new Error('No active workspace. Choose a project folder first.');
       }
@@ -1815,6 +1840,7 @@ export function registerBuilderHandlers({
   );
 
   ipcMain.handle('builder:changes-keep', async () => {
+    assertNotSandboxWorkspace();
     if (!activeWorkspace) {
       throw new Error('No active workspace to apply changes from.');
     }
@@ -1837,6 +1863,7 @@ export function registerBuilderHandlers({
   });
 
   ipcMain.handle('builder:changes-discard', async () => {
+    assertNotSandboxWorkspace();
     if (!activeWorkspace) {
       throw new Error('No active workspace to discard changes in.');
     }

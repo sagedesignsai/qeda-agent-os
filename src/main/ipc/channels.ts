@@ -462,6 +462,12 @@ export interface IpcChannels {
   /** Fired on every preview state change (log lines included). */
   'builder:preview-changed': BuilderPreviewStatus;
   /**
+   * A sandbox session ended but its captured patch could not be applied to the
+   * local repository. `savedPath` points at the preserved patch file so the
+   * user can apply it manually.
+   */
+  'builder:sandbox-patch-failed': { error: string; savedPath?: string };
+  /**
    * Walk the active session's workspace directory and return a tree of files
    * that are tracked or untracked by git (i.e., not in .gitignore).
    * Returns an empty array when no session is bound.
