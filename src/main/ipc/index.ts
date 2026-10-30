@@ -77,6 +77,7 @@ import { registerBuilderHandlers } from './handlers/builder';
 import { registerOpencodeSetupHandlers } from './handlers/opencode-setup';
 import { registerCorrespondenceHandlers } from './handlers/correspondence';
 import { registerCorrespondenceCopilotHandlers } from './handlers/correspondence-copilot';
+import { registerMotionProjectsHandlers } from './handlers/motion-projects';
 
 /**
  * Register every request/response handler.
@@ -110,4 +111,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerOpencodeSetupHandlers();
   registerCorrespondenceHandlers({ mainWindow });
   registerCorrespondenceCopilotHandlers({ mainWindow });
+  registerMotionProjectsHandlers({ mainWindow });
 }

@@ -10,6 +10,8 @@
 import type { UIMessage } from 'ai';
 import type { Session } from '../db/sessions.js';
 import type { AppSettings } from '../ai/settings.js';
+import type { MotionDocument } from '../../lib/motion/types';
+import type { MotionBackupSummary, MotionOpenResult, MotionProjectSummary } from '../motion/project-store.js';
 import type {
   Notebook,
   Page,
@@ -329,7 +331,30 @@ export type ChatContext = {
  */
 export type AgentIntent = 'chat' | 'research' | 'notebook';
 
+export type { MotionBackupSummary, MotionDocument, MotionOpenResult, MotionProjectSummary };
+
 export interface IpcChannels {
+  // Motion project bundles and recovery
+  'motion:list-projects': { req: { includeMissing?: boolean } | void; res: { projects: MotionProjectSummary[] } };
+  'motion:create-project': { req: { name: string; templateId?: string; output?: { width: number; height: number; fps: number }; duration?: number; background?: unknown }; res: { projectId: string; path: string } };
+  'motion:save-copy': { req: { document: MotionDocument; name?: string }; res: { projectId: string; path: string } };
+  'motion:open-project': { req: { projectId: string }; res: MotionOpenResult };
+  'motion:save-project': { req: { projectId: string; document: MotionDocument; expectedRevision: number; destructive?: boolean; forceBackup?: boolean }; res: { revision: number; savedAt: string; bytes: number } };
+  'motion:rename-project': { req: { projectId: string; name: string }; res: { name: string } };
+  'motion:duplicate-project': { req: { projectId: string; name?: string }; res: { projectId: string } };
+  'motion:delete-project': { req: { projectId: string }; res: { trashed: boolean } };
+  'motion:locate-project': { req: { projectId: string }; res: { path: string } | null };
+  'motion:recover-project': { req: { projectId: string; action: 'recover' | 'discard' }; res: { document: MotionDocument; path: string } };
+  'motion:list-backups': { req: { projectId: string }; res: { backups: MotionBackupSummary[] } };
+  'motion:restore-backup': { req: { projectId: string; revision: number }; res: { document: MotionDocument; path: string } };
+  'motion:duplicate-for-repair': { req: { projectId: string }; res: { projectId: string } };
+  'motion:preserve-recovery-copy': { req: { projectId: string }; res: { path: string } };
+  'motion:rescan-projects': { req: void; res: { projects: MotionProjectSummary[] } };
+  'motion:reveal-project': { req: { projectId: string }; res: void };
+  'motion:read-editor-state': { req: { projectId: string }; res: { state: unknown | null } };
+  'motion:write-editor-state': { req: { projectId: string; state: unknown }; res: void };
+  'motion:changed': void;
+
   // OpenCode-powered coding Builder
   /** Inspect the registered local OpenCode service without starting/stopping it. */
   'builder:connection-status': {

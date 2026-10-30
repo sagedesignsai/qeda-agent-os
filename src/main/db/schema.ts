@@ -878,6 +878,25 @@ CREATE TABLE IF NOT EXISTS sequences (
 CREATE INDEX IF NOT EXISTS idx_sequences_project ON sequences(project_id);
 `;
 
+export const CREATE_MOTION_PROJECTS = `
+CREATE TABLE IF NOT EXISTS motion_projects (
+  id             TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  path           TEXT NOT NULL,
+  scene_count    INTEGER NOT NULL DEFAULT 1,
+  duration       REAL NOT NULL DEFAULT 0,
+  width          INTEGER NOT NULL DEFAULT 1920,
+  height         INTEGER NOT NULL DEFAULT 1080,
+  fps            INTEGER NOT NULL DEFAULT 30,
+  thumbnail_path TEXT,
+  last_opened_at TEXT,
+  updated_at     TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  missing        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_motion_projects_updated ON motion_projects(updated_at DESC);
+`;
+
 /**
  * sequence_steps – the plan, in order.
  *
@@ -991,6 +1010,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SEQUENCE_STEPS,
   CREATE_SEQUENCE_RUNS,
   CREATE_SEQUENCE_STEP_RUNS,
+  CREATE_MOTION_PROJECTS,
 ];
 
 /** Bookkeeping table for future schema versions. */
