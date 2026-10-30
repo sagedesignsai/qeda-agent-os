@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router';
 import { ArrowUpRightIcon, CopyIcon, FolderOpenIcon, PlusIcon, SearchIcon, Trash2Icon } from 'lucide-react';
 
 import type { MotionProjectSummary } from '@/main/ipc/channels';
+import { MOTION_TEMPLATES } from '@/lib/motion/templates';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -17,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PageHeader } from '@/components/PageHeader';
 
-type ProjectMode = 'starter' | 'blank';
+type ProjectMode = 'template' | 'blank';
 
 export default function MotionBrowser() {
   const navigate = useNavigate();
@@ -28,7 +29,8 @@ export default function MotionBrowser() {
   const [sort, setSort] = useState<'recent' | 'name' | 'duration'>('recent');
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
-  const [mode, setMode] = useState<ProjectMode>('starter');
+  const [mode, setMode] = useState<ProjectMode>('template');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('product-launch');
   const [creating, setCreating] = useState(false);
 
   const reload = useCallback(async () => {
@@ -65,7 +67,7 @@ export default function MotionBrowser() {
     try {
       const result = await window.electron.ipc.invoke<{ projectId: string; path: string }>('motion:create-project', {
         name: cleanName,
-        blank: mode === 'blank',
+        ...(mode === 'blank' ? { blank: true } : { templateId: selectedTemplateId }),
       });
       setCreateOpen(false);
       navigate(`/motion/${encodeURIComponent(result.projectId)}`);
@@ -127,7 +129,7 @@ export default function MotionBrowser() {
               <h1 className="mt-3 text-3xl font-semibold tracking-tight">Turn a scene into a story.</h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">Build a product showcase from editable scenes, animation, and your own media. Projects stay local and open offline.</p>
               <div className="mt-5 flex flex-wrap gap-2">
-                <Button type="button" onClick={() => { setMode('starter'); setName(''); setCreateOpen(true); }}><PlusIcon data-icon="inline-start" />Start with a composition</Button>
+                <Button type="button" onClick={() => { setMode('template'); setName(''); setCreateOpen(true); }}><PlusIcon data-icon="inline-start" />Start from a template</Button>
                 <Button type="button" variant="outline" onClick={() => { setMode('blank'); setName(''); setCreateOpen(true); }}>Start blank</Button>
               </div>
             </div>
@@ -190,9 +192,10 @@ export default function MotionBrowser() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" aria-pressed={mode === 'starter'} onClick={() => setMode('starter')} className={`rounded-lg border p-3 text-left ${mode === 'starter' ? 'border-primary bg-primary/5' : 'border-border/60'}`}><span className="block text-xs font-medium">Starter composition</span><span className="mt-1 block text-[10px] text-muted-foreground">A product scene with camera, lights, and animated title.</span></button>
+              <button type="button" aria-pressed={mode === 'template'} onClick={() => setMode('template')} className={`rounded-lg border p-3 text-left ${mode === 'template' ? 'border-primary bg-primary/5' : 'border-border/60'}`}><span className="block text-xs font-medium">Template</span><span className="mt-1 block text-[10px] text-muted-foreground">Choose an editable motion composition.</span></button>
               <button type="button" aria-pressed={mode === 'blank'} onClick={() => setMode('blank')} className={`rounded-lg border p-3 text-left ${mode === 'blank' ? 'border-primary bg-primary/5' : 'border-border/60'}`}><span className="block text-xs font-medium">Blank scene</span><span className="mt-1 block text-[10px] text-muted-foreground">A clean camera rig and headline, ready to customize.</span></button>
             </div>
+            {mode === 'template' && <div className="grid max-h-52 grid-cols-2 gap-2 overflow-y-auto pr-1" aria-label="Motion templates">{MOTION_TEMPLATES.map((template) => <button key={template.id} type="button" aria-pressed={selectedTemplateId === template.id} onClick={() => setSelectedTemplateId(template.id)} className={`rounded-md border p-2 text-left ${selectedTemplateId === template.id ? 'border-primary bg-primary/5' : 'border-border/60'}`}><span className="block text-[11px] font-medium">{template.name}</span><span className="mt-0.5 block text-[10px] text-muted-foreground">{template.description}</span><span className="mt-1 block text-[9px] text-muted-foreground">{template.category} · {template.duration}s · {template.width} × {template.height}</span></button>)}</div>}
             <label className="block space-y-1.5 text-xs font-medium">Project name<Input autoFocus value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createProject(); }} placeholder="Product launch" className="h-9" /></label>
           </div>
           <DialogFooter><Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button><Button type="button" disabled={!name.trim() || creating} onClick={() => void createProject()}>{creating ? 'Creating…' : 'Create project'}</Button></DialogFooter>
