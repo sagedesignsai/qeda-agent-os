@@ -105,6 +105,38 @@ describe('motion op registry', () => {
     expect(() => applyMotionOp(next, { op: 'scene.remove', sceneId: 'scene_main' })).toThrow(/at least one scene/);
   });
 
+  it('switches scenes and preserves an independent timeline and camera rig', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const rigIds = Object.fromEntries(doc.scene.nodes.filter((node) => node.type.startsWith('camera.') || node.type.startsWith('light.')).map((node, index) => [node.id, `rig_${index}`]));
+    const added = applyMotionOp(doc, { op: 'scene.add', sceneId: 'scene_blank', name: 'Blank', rigIdMap: rigIds });
+    expect(added.scenes[1].nodes.map((node) => node.type)).toEqual(expect.arrayContaining(['camera.perspective', 'light.ambient', 'light.directional', 'light.point']));
+    expect(added.scenes[1].timeline.tracks).toEqual([]);
+    const switched = applyMotionOp(added, { op: 'document.setActiveScene', sceneId: 'scene_blank' });
+    expect(switched.scene.nodes).toEqual(added.scenes[1].nodes);
+    expect(switched.timeline.tracks).toEqual([]);
+    expect(switched.timeline.duration).toBe(doc.timeline.duration);
+  });
+
+  it('duplicates a scene with a complete id map and can rename/reorder it', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const source = doc.scenes[0];
+    const ids = [
+      ...source.nodes.map((node) => node.id),
+      ...source.timeline.tracks.map((track) => track.id),
+      ...source.timeline.tracks.flatMap((track) => track.placements.map((placement) => placement.id)),
+      ...source.timeline.clips.map((clip) => clip.id),
+      ...source.timeline.clips.flatMap((clip) => clip.channels.map((channel) => channel.id)),
+      ...source.timeline.clips.flatMap((clip) => clip.channels.flatMap((channel) => channel.keyframes.map((key) => key.id))),
+    ];
+    const idMap = Object.fromEntries(ids.map((id, index) => [id, `copy_${index}`]));
+    const duplicate = applyMotionOp(doc, { op: 'scene.duplicate', sceneId: 'scene_copy', name: 'Copy', idMap });
+    expect(duplicate.scenes[1].nodes.map((node) => node.id)).not.toContain('product');
+    expect(duplicate.scenes[1].timeline.tracks[1].placements[0].clipId).toBe(idMap.clip_product_spin);
+    const renamed = applyMotionOp(duplicate, { op: 'scene.rename', sceneId: 'scene_copy', name: 'Final' });
+    const reordered = applyMotionOp(renamed, { op: 'scene.reorder', sceneId: 'scene_copy', index: 0 });
+    expect(reordered.scenes.map((scene) => scene.name)).toEqual(['Final', 'Scene 1']);
+  });
+
   it('rejects transient URLs in asset metadata', () => {
     const doc = createStarterMotionDocument(NOW);
     expect(() => applyMotionOp(doc, {
@@ -143,6 +175,21 @@ describe('motion op registry', () => {
     const destination = moved.timeline.tracks.find((track) => track.id === 'trk_product');
     expect(destination?.placements.map((placement) => placement.id)).toContain('plc_title');
     expect(destination?.placements.find((p) => p.id === 'plc_title')?.start).toBe(1.5);
+  });
+
+  it('trims placements without changing clip-local keys, then splits on the same source range', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const trimmed = applyMotionOp(doc, { op: 'placement.trim', trackId: 'trk_product', placementId: 'plc_product', start: 0.5, trimIn: 1, duration: 2 });
+    const placement = trimmed.timeline.tracks.find((track) => track.id === 'trk_product')?.placements[0];
+    expect(placement).toMatchObject({ start: 0.5, trimIn: 1, duration: 2 });
+    expect(findClip(trimmed, 'clip_product_spin')?.channels[0].keyframes).toEqual(findClip(doc, 'clip_product_spin')?.channels[0].keyframes);
+
+    const split = applyMotionOp(trimmed, { op: 'placement.split', trackId: 'trk_product', placementId: 'plc_product', newPlacementId: 'plc_product_2', atTime: 1.25 });
+    const placements = split.timeline.tracks.find((track) => track.id === 'trk_product')?.placements;
+    expect(placements).toEqual([
+      { id: 'plc_product', clipId: 'clip_product_spin', start: 0.5, trimIn: 1, duration: 0.75 },
+      { id: 'plc_product_2', clipId: 'clip_product_spin', start: 1.25, trimIn: 1.75, duration: 1.25 },
+    ]);
   });
 
   it('removes the placements that reference a deleted clip', () => {

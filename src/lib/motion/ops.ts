@@ -54,6 +54,7 @@ export const RISK_ORDER: Record<MotionOpRisk, number> = {
 export type MotionOpParams = {
   'document.rename': { name: string };
   'document.setOutput': { fps?: number; width?: number; height?: number };
+  'document.setActiveScene': { sceneId: string };
   'asset.add': MotionAsset;
   'asset.relink': { assetId: string; path: string; hash: string; byteSize: number; mimeType?: string };
   'asset.remove': { assetId: string };
@@ -74,7 +75,13 @@ export type MotionOpParams = {
     props?: Record<string, unknown>;
   };
   'scene.node.remove': { nodeId: string };
+  'scene.add': { sceneId: string; name: string; rigIdMap: Record<string, string> };
+  'scene.duplicate': { sceneId: string; name: string; idMap: Record<string, string> };
   'scene.remove': { sceneId: string };
+  'scene.rename': { sceneId: string; name: string };
+  'scene.reorder': { sceneId: string; index: number };
+  'scene.setCamera': { sceneId: string; cameraId: string | null };
+  'scene.setBackground': { sceneId: string; background: NonNullable<MotionDocument['scenes'][number]['background']> };
   'timeline.setDuration': { duration: number };
   'timeline.setLoop': { enabled?: boolean; start?: number; end?: number };
   /** Snap every key to the output frame grid. Explicit, never automatic. */
@@ -88,6 +95,8 @@ export type MotionOpParams = {
   'clip.setDuration': { clipId: string; duration: number };
   'placement.add': { trackId: string; placementId: string; clipId: string; start: number };
   'placement.move': { trackId: string; placementId: string; start: number; toTrackId?: string };
+  'placement.trim': { trackId: string; placementId: string; start?: number; trimIn?: number; duration?: number };
+  'placement.split': { trackId: string; placementId: string; newPlacementId: string; atTime: number };
   'placement.remove': { trackId: string; placementId: string };
   'channel.add': { clipId: string; channelId: string; targetId: string; property: string };
   'keyframe.add': {
@@ -144,6 +153,7 @@ type RegisteredOp = {
 };
 
 const registry = new Map<string, RegisteredOp>();
+const cloneMotionData = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 export type MotionOpDefinition<P extends MotionOpId> = {
   id: P;
@@ -500,7 +510,15 @@ registerMotionOp<'scene.node.add'>({
       props: { ...node.props, ...params.props },
     });
     validateNodeAssetReference(doc, next);
-    return { ...doc, scene: { nodes: [...doc.scene.nodes, next] } };
+    const nodes = [...doc.scene.nodes, next];
+    const active = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+    return {
+      ...doc,
+      scene: { nodes },
+      scenes: active ? doc.scenes.map((scene) => scene.id === active.id
+        ? { ...scene, nodes, ...(next.type.startsWith('camera.') && !scene.cameraId ? { cameraId: next.id } : {}) }
+        : scene) : doc.scenes,
+    };
   },
 });
 
@@ -611,6 +629,125 @@ registerMotionOp<'scene.remove'>({
     };
   },
 });
+
+registerMotionOp<'document.setActiveScene'>({
+  id: 'document.setActiveScene',
+  summary: 'Switch the active scene.',
+  risk: 'safe',
+  params: z.object({ sceneId: z.string().min(1) }).strict(),
+  reduce: (doc, { sceneId }) => {
+    const scene = doc.scenes.find((candidate) => candidate.id === sceneId);
+    if (!scene) throw new MotionOpError(`Scene "${sceneId}" does not exist.`);
+    if (sceneId === doc.activeSceneId) return doc;
+    const timeline = scene.timeline as MotionTimeline;
+    const loop = timeline.loop ?? {
+      enabled: timeline.workArea?.enabled ?? false,
+      start: timeline.workArea?.start ?? 0,
+      end: timeline.workArea?.end ?? timeline.duration,
+    };
+    return { ...doc, activeSceneId: sceneId, scene: { nodes: scene.nodes }, timeline: { ...timeline, loop } };
+  },
+});
+
+registerMotionOp<'scene.rename'>({
+  id: 'scene.rename', summary: 'Rename a scene.', risk: 'mutating',
+  params: z.object({ sceneId: z.string().min(1), name: z.string().trim().min(1).max(120) }).strict(),
+  reduce: (doc, { sceneId, name }) => {
+    if (!doc.scenes.some((scene) => scene.id === sceneId)) throw new MotionOpError(`Scene "${sceneId}" does not exist.`);
+    return { ...doc, scenes: doc.scenes.map((scene) => scene.id === sceneId ? { ...scene, name } : scene) };
+  },
+});
+
+registerMotionOp<'scene.reorder'>({
+  id: 'scene.reorder', summary: 'Change a scene’s position in the scene list.', risk: 'mutating',
+  params: z.object({ sceneId: z.string().min(1), index: z.number().int().nonnegative() }).strict(),
+  reduce: (doc, { sceneId, index }) => {
+    const from = doc.scenes.findIndex((scene) => scene.id === sceneId);
+    if (from < 0) throw new MotionOpError(`Scene "${sceneId}" does not exist.`);
+    const scenes = [...doc.scenes];
+    const [scene] = scenes.splice(from, 1);
+    scenes.splice(Math.min(index, scenes.length), 0, scene);
+    return scenes.every((candidate, i) => candidate === doc.scenes[i]) ? doc : { ...doc, scenes };
+  },
+});
+
+registerMotionOp<'scene.setCamera'>({
+  id: 'scene.setCamera', summary: 'Set the active camera for a scene.', risk: 'mutating',
+  params: z.object({ sceneId: z.string().min(1), cameraId: z.string().min(1).nullable() }).strict(),
+  reduce: (doc, { sceneId, cameraId }) => {
+    const scene = doc.scenes.find((candidate) => candidate.id === sceneId);
+    if (!scene) throw new MotionOpError(`Scene "${sceneId}" does not exist.`);
+    if (cameraId && !scene.nodes.some((node) => node.id === cameraId && node.type.startsWith('camera.'))) throw new MotionOpError(`Camera "${cameraId}" does not exist in scene "${sceneId}".`);
+    if (scene.cameraId === cameraId) return doc;
+    return { ...doc, scenes: doc.scenes.map((candidate) => candidate.id === sceneId ? { ...candidate, cameraId } : candidate) };
+  },
+});
+
+registerMotionOp<'scene.setBackground'>({
+  id: 'scene.setBackground', summary: 'Set a scene background.', risk: 'mutating',
+  params: z.object({
+    sceneId: z.string().min(1),
+    background: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('color'), color: z.string().min(1) }).strict(),
+      z.object({ type: z.literal('transparent') }).strict(),
+      z.object({ type: z.literal('environment'), assetId: z.string().min(1), intensity: z.number().optional(), blur: z.number().optional() }).strict(),
+    ]),
+  }).strict(),
+  reduce: (doc, { sceneId, background }) => {
+    if (!doc.scenes.some((scene) => scene.id === sceneId)) throw new MotionOpError(`Scene "${sceneId}" does not exist.`);
+    return { ...doc, scenes: doc.scenes.map((scene) => scene.id === sceneId ? { ...scene, background } : scene) };
+  },
+});
+
+registerMotionOp<'scene.add'>({
+  id: 'scene.add', summary: 'Create a scene with a copy of the current camera and light rig.', risk: 'safe',
+  params: z.object({ sceneId: z.string().min(1), name: z.string().trim().min(1).max(120), rigIdMap: z.record(z.string(), z.string()) }).strict(),
+  reduce: (doc, { sceneId, name, rigIdMap }) => {
+    if (doc.scenes.some((scene) => scene.id === sceneId)) throw new MotionOpError(`Scene "${sceneId}" already exists.`);
+    const nodes = doc.scene.nodes.filter((node) => node.type.startsWith('camera.') || node.type.startsWith('light.') || node.type === 'stage.ground')
+      .map((node) => ({ ...node, id: requiredMappedId(rigIdMap, node.id), parentId: null, transform: cloneMotionData(node.transform), props: cloneMotionData(node.props) }));
+    const source = doc.timeline;
+    const duration = source.duration;
+    const timeline: MotionTimeline = { duration, loop: { ...source.loop, start: 0, end: duration }, workArea: { enabled: false, start: 0, end: duration }, playMode: source.playMode ?? 'loop', tracks: [], clips: [], audio: [] };
+    const cameraId = nodes.find((node) => node.type.startsWith('camera.'))?.id ?? null;
+    const scene = { id: sceneId, name, nodes, timeline: { ...timeline, loop: undefined }, cameraId, background: doc.scenes.find((s) => s.id === doc.activeSceneId)?.background };
+    return { ...doc, scenes: [...doc.scenes, scene], activeSceneId: sceneId, scene: { nodes }, timeline };
+  },
+});
+
+registerMotionOp<'scene.duplicate'>({
+  id: 'scene.duplicate', summary: 'Duplicate a scene, including its nodes and timeline.', risk: 'safe',
+  params: z.object({ sceneId: z.string().min(1), name: z.string().trim().min(1).max(120), idMap: z.record(z.string(), z.string()) }).strict(),
+  reduce: (doc, { sceneId, name, idMap }) => {
+    if (doc.scenes.some((scene) => scene.id === sceneId)) throw new MotionOpError(`Scene "${sceneId}" already exists.`);
+    const source = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+    if (!source) throw new MotionOpError('The active scene does not exist.');
+    const mappedIds = Object.values(idMap);
+    if (new Set(mappedIds).size !== mappedIds.length) throw new MotionOpError('A scene duplicate must map every entity to a distinct id.');
+    const map = (id: string) => requiredMappedId(idMap, id);
+    const nodes = source.nodes.map((node) => ({ ...node, id: map(node.id), parentId: node.parentId ? map(node.parentId) : null, transform: cloneMotionData(node.transform), props: cloneMotionData(node.props) }));
+    const timeline = cloneMotionData(source.timeline) as MotionTimeline;
+    const duplicatedTimeline: MotionTimeline = {
+      ...timeline,
+      loop: timeline.loop ?? {
+        enabled: timeline.workArea?.enabled ?? false,
+        start: timeline.workArea?.start ?? 0,
+        end: timeline.workArea?.end ?? timeline.duration,
+      },
+      clips: timeline.clips.map((clip) => ({ ...clip, id: map(clip.id), channels: clip.channels.map((channel) => ({ ...channel, id: map(channel.id), targetId: map(channel.targetId), keyframes: channel.keyframes.map((key) => ({ ...key, id: map(key.id) })) })) })),
+      tracks: timeline.tracks.map((track) => ({ ...track, id: map(track.id), targetId: track.targetId ? map(track.targetId) : null, placements: track.placements.map((placement) => ({ ...placement, id: map(placement.id), clipId: map(placement.clipId) })) })),
+      audio: (timeline.audio ?? []).map((audio) => ({ ...audio, id: map(audio.id) })),
+    };
+    const duplicate = { ...source, id: sceneId, name, nodes, timeline: { ...duplicatedTimeline, loop: undefined }, cameraId: source.cameraId ? map(source.cameraId) : null };
+    return { ...doc, scenes: [...doc.scenes, duplicate], activeSceneId: sceneId, scene: { nodes }, timeline: duplicatedTimeline };
+  },
+});
+
+function requiredMappedId(idMap: Record<string, string>, sourceId: string): string {
+  const id = idMap[sourceId];
+  if (!id || id === sourceId) throw new MotionOpError(`A distinct id mapping is required for "${sourceId}".`);
+  return id;
+}
 
 /** Collect every entity that must be removed to keep a scene graph referentially sound. */
 export function collectNodeCascade(doc: MotionDocument, nodeId: string): {
@@ -866,6 +1003,46 @@ registerMotionOp<'placement.move'>({
         return current;
       }),
     });
+  },
+});
+
+registerMotionOp<'placement.trim'>({
+  id: 'placement.trim', summary: 'Trim a clip placement without changing its keyframes.', risk: 'mutating',
+  params: z.object({ trackId: z.string().min(1), placementId: z.string().min(1), start: z.number().nonnegative().optional(), trimIn: z.number().nonnegative().optional(), duration: z.number().positive().optional() }).strict(),
+  reduce: (doc, { trackId, placementId, ...patch }) => {
+    const track = doc.timeline.tracks.find((candidate) => candidate.id === trackId);
+    const placement = track?.placements.find((candidate) => candidate.id === placementId);
+    if (!track || !placement) throw new MotionOpError(`Placement "${placementId}" does not exist on track "${trackId}".`);
+    if (track.locked) throw new MotionOpError(`Track "${track.name}" is locked.`);
+    const clip = doc.timeline.clips.find((candidate) => candidate.id === placement.clipId);
+    if (!clip) throw new MotionOpError(`Clip "${placement.clipId}" does not exist.`);
+    const trimIn = patch.trimIn ?? placement.trimIn ?? 0;
+    const duration = patch.duration ?? placement.duration ?? clip.duration - trimIn;
+    if (trimIn + duration > clip.duration + 1e-9) throw new MotionOpError('Trim range must stay inside the source clip.');
+    const next = { ...placement, ...patch, trimIn, duration };
+    if (JSON.stringify(next) === JSON.stringify(placement)) return doc;
+    return withTimeline(doc, { ...doc.timeline, tracks: doc.timeline.tracks.map((item) => item.id === trackId ? { ...item, placements: item.placements.map((p) => p.id === placementId ? next : p) } : item) });
+  },
+});
+
+registerMotionOp<'placement.split'>({
+  id: 'placement.split', summary: 'Split a placement at a scene time while preserving its source trim.', risk: 'safe',
+  params: z.object({ trackId: z.string().min(1), placementId: z.string().min(1), newPlacementId: z.string().min(1), atTime: z.number().nonnegative() }).strict(),
+  reduce: (doc, { trackId, placementId, newPlacementId, atTime }) => {
+    const track = doc.timeline.tracks.find((candidate) => candidate.id === trackId);
+    const placement = track?.placements.find((candidate) => candidate.id === placementId);
+    if (!track || !placement) throw new MotionOpError(`Placement "${placementId}" does not exist on track "${trackId}".`);
+    if (track.locked) throw new MotionOpError(`Track "${track.name}" is locked.`);
+    if (doc.timeline.tracks.some((candidate) => candidate.placements.some((item) => item.id === newPlacementId))) throw new MotionOpError(`Placement "${newPlacementId}" already exists.`);
+    const clip = doc.timeline.clips.find((candidate) => candidate.id === placement.clipId);
+    if (!clip) throw new MotionOpError(`Clip "${placement.clipId}" does not exist.`);
+    const trimIn = placement.trimIn ?? 0;
+    const duration = placement.duration ?? clip.duration - trimIn;
+    const firstDuration = atTime - placement.start;
+    if (!(firstDuration > 0 && firstDuration < duration)) throw new MotionOpError('Split time must be strictly inside the visible placement.');
+    const first = { ...placement, trimIn, duration: firstDuration };
+    const second = { id: newPlacementId, clipId: placement.clipId, start: atTime, trimIn: trimIn + firstDuration, duration: duration - firstDuration };
+    return withTimeline(doc, { ...doc.timeline, tracks: doc.timeline.tracks.map((item) => item.id === trackId ? { ...item, placements: item.placements.flatMap((p) => p.id === placementId ? [first, second] : [p]) } : item) });
   },
 });
 

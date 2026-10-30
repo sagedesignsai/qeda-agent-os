@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { PlusIcon, Trash2Icon } from 'lucide-react';
+import { PlusIcon, ScissorsIcon, Trash2Icon } from 'lucide-react';
 
 import { CanvasTimeline } from '@/components/timeline/CanvasTimeline';
 import { TimelineRowHeaders } from '@/components/timeline/TimelineRowHeaders';
@@ -66,13 +66,14 @@ export function MotionTimeline({ className }: { className?: string }) {
         if (!target) return;
         const found = findPlacement(doc, target.placementId);
         if (!found) return;
+        const trimIn = found.placement.trimIn ?? 0;
         motionStore.commit('Move keyframe', [
           {
             op: 'keyframe.move',
             clipId: target.clipId,
             channelId: target.channelId,
             keyframeId: target.keyframeId,
-            time: Math.max(0, time - found.placement.start),
+            time: Math.max(0, trimIn + time - found.placement.start),
           },
         ]);
       },
@@ -153,7 +154,9 @@ export function MotionTimeline({ className }: { className?: string }) {
     const channel = clip?.channels.find((candidate) => candidate.id === channelId);
     if (!found || !clip || !channel) return;
 
-    const localTime = Math.min(Math.max(0, time - found.placement.start), clip.duration);
+    const trimIn = found.placement.trimIn ?? 0;
+    const visibleDuration = found.placement.duration ?? clip.duration - trimIn;
+    const localTime = Math.min(Math.max(trimIn, trimIn + time - found.placement.start), trimIn + visibleDuration);
     if (channel.keyframes.some((keyframe) => Math.abs(keyframe.time - localTime) < 1e-3)) return;
 
     motionStore.commit('Add keyframe', [
@@ -186,6 +189,36 @@ export function MotionTimeline({ className }: { className?: string }) {
       motionStore.commit('Delete track', [{ op: 'track.remove', trackId: selection.trackId }]);
     }
   }, [selection]);
+
+  const splitSelection = useCallback(() => {
+    if (selection?.kind !== 'placement') return;
+    motionStore.commit('Split clip placement', [{
+      op: 'placement.split',
+      trackId: selection.trackId,
+      placementId: selection.placementId,
+      newPlacementId: createMotionId('placement'),
+      atTime: motionStore.clock.getTime(),
+    }]);
+  }, [selection]);
+
+  const trimSelection = useCallback((edge: 'in' | 'out') => {
+    if (selection?.kind !== 'placement') return;
+    const found = findPlacement(doc, selection.placementId);
+    const clip = found && doc.timeline.clips.find((item) => item.id === found.placement.clipId);
+    if (!found || !clip) return;
+    const playhead = motionStore.clock.getTime();
+    const trimIn = found.placement.trimIn ?? 0;
+    const duration = found.placement.duration ?? clip.duration - trimIn;
+    if (edge === 'in') {
+      const delta = playhead - found.placement.start;
+      if (delta <= 0 || delta >= duration) return;
+      motionStore.commit('Trim clip start', [{ op: 'placement.trim', trackId: selection.trackId, placementId: selection.placementId, start: playhead, trimIn: trimIn + delta, duration: duration - delta }]);
+    } else {
+      const nextDuration = playhead - found.placement.start;
+      if (nextDuration <= 0 || nextDuration >= duration) return;
+      motionStore.commit('Trim clip end', [{ op: 'placement.trim', trackId: selection.trackId, placementId: selection.placementId, duration: nextDuration }]);
+    }
+  }, [doc, selection]);
 
   const loopEnabled = doc.timeline.loop.enabled;
   const offFrame = useMemo(() => countOffFrameKeyframes(doc), [doc]);
@@ -228,6 +261,20 @@ export function MotionTimeline({ className }: { className?: string }) {
               Align {offFrame}
             </Button>
           )}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1 px-2 text-[11px]"
+            onClick={splitSelection}
+            disabled={selection?.kind !== 'placement'}
+            title="Split the selected placement at the playhead"
+          >
+            <ScissorsIcon className="size-3" />
+            Split
+          </Button>
+          <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" onClick={() => trimSelection('in')} disabled={selection?.kind !== 'placement'} title="Trim the selected clip start to the playhead">Trim in</Button>
+          <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" onClick={() => trimSelection('out')} disabled={selection?.kind !== 'placement'} title="Trim the selected clip end to the playhead">Trim out</Button>
           <Button
             type="button"
             size="sm"
@@ -340,4 +387,3 @@ function selectionLabel(selection: MotionSelection): string {
   if (selection.kind === 'placement') return 'Clip selected';
   return 'Track selected';
 }
-

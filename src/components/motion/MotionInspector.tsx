@@ -15,6 +15,10 @@ import {
   SparklesIcon,
 } from 'lucide-react';
 
+import {
+  MotionPropertyFields,
+  MotionVector3Field,
+} from '@/components/motion/inspector/MotionPropertyFields';
 import { Badge } from '@/components/ui/badge';
 import {
   Collapsible,
@@ -34,7 +38,9 @@ import {
 } from '@/components/ui/select';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { EASING_PRESETS, easingLabel } from '@/lib/motion/easing';
+import { getMotionNodeType } from '@/lib/motion/node-registry';
 import { findClip, findTrack } from '@/lib/motion/types';
+import type { MotionVector3 } from '@/lib/motion/types';
 
 const RESOLUTIONS = [
   { value: '1920x1080', label: '1920 × 1080', width: 1920, height: 1080 },
@@ -51,7 +57,7 @@ export function MotionInspector() {
   const [selectionOpen, setSelectionOpen] = useState(true);
 
   const selectedData = useMemo(() => {
-    if (!selection) return null;
+    if (!selection || selection.kind === 'node') return null;
     const track = findTrack(doc, selection.trackId);
     if (!track) return null;
     if (selection.kind === 'track')
@@ -75,6 +81,26 @@ export function MotionInspector() {
       null;
     return { track, placement, clip, channel, keyframe };
   }, [doc, selection]);
+  const targetNode = useMemo(
+    () => selection?.kind === 'node'
+      ? doc.scene.nodes.find((node) => node.id === selection.nodeId) ?? null
+      : selectedData?.track.targetId
+        ? doc.scene.nodes.find(
+            (node) => node.id === selectedData.track.targetId,
+          ) ?? null
+        : null,
+    [doc.scene.nodes, selectedData?.track.targetId, selection],
+  );
+  const targetDefinition = targetNode
+    ? getMotionNodeType(targetNode.type)
+    : undefined;
+  const targetPropertyValues =
+    targetNode?.type === 'screen.image'
+      ? {
+          ...targetNode.props,
+          assetId: targetNode.props.assetId ?? targetNode.props.source,
+        }
+      : (targetNode?.props ?? {});
 
   const [trackName, setTrackName] = useState(selectedData?.track.name ?? '');
   const [keyValue, setKeyValue] = useState(
@@ -163,6 +189,33 @@ export function MotionInspector() {
           JSON.stringify(selectedData?.keyframe?.easing),
     )?.[0] ??
     (selectedData?.keyframe?.easing.type === 'cubic' ? 'custom' : 'linear');
+  const updateNodeTransform = (
+    property: 'position' | 'rotation' | 'scale',
+    value: MotionVector3,
+  ) => {
+    if (!targetNode) return;
+    const storedValue =
+      property === 'rotation'
+        ? value.map((axis) => (axis * Math.PI) / 180) as MotionVector3
+        : value;
+    motionStore.commit('Update object transform', [
+      {
+        op: 'scene.node.update',
+        nodeId: targetNode.id,
+        transform: { [property]: storedValue },
+      },
+    ]);
+  };
+  const updateNodeProperty = (property: string, value: unknown) => {
+    if (!targetNode) return;
+    const props: Record<string, unknown> = { [property]: value };
+    if (targetNode.type === 'screen.image' && property === 'assetId') {
+      props.source = value;
+    }
+    motionStore.commit('Update object property', [
+      { op: 'scene.node.update', nodeId: targetNode.id, props },
+    ]);
+  };
 
   return (
     <aside
@@ -176,7 +229,9 @@ export function MotionInspector() {
           variant={selectedData ? 'secondary' : 'outline'}
           className="ml-auto h-4 px-1.5 text-[9px]"
         >
-          {selectedData?.keyframe
+          {selection?.kind === 'node'
+            ? 'NODE'
+            : selectedData?.keyframe
             ? 'KEY'
             : selectedData?.clip
               ? 'CLIP'
@@ -196,7 +251,7 @@ export function MotionInspector() {
                 <BoxIcon className="size-3.5 text-muted-foreground" />
               )}
               <span className="flex-1 truncate">
-                {selectedData?.keyframe?.id ??
+                {targetNode?.name ?? selectedData?.keyframe?.id ??
                   selectedData?.clip?.name ??
                   selectedData?.track.name ??
                   'Selection'}
@@ -206,8 +261,9 @@ export function MotionInspector() {
               </span>
             </CollapsibleTrigger>
             <CollapsibleContent className="border-b border-border/50 p-3">
-              {selectedData ? (
-                <FieldGroup className="gap-3">
+              {selectedData || targetNode ? (
+                <>
+                  {selectedData && <FieldGroup className="gap-3">
                   <Field className="gap-1">
                     <FieldLabel
                       htmlFor="motion-track-name"
@@ -329,7 +385,56 @@ export function MotionInspector() {
                         </p>
                       </>
                     )}
-                </FieldGroup>
+                  </FieldGroup>}
+                  {targetNode && (
+                    <div className="mt-4 border-t border-border/50 pt-3">
+                      <h3 className="mb-2 text-[10px] font-medium text-muted-foreground">
+                        Transform
+                      </h3>
+                      <FieldGroup className="gap-2.5">
+                        <MotionVector3Field
+                          id="motion-transform-position"
+                          label="Position"
+                          value={targetNode.transform.position}
+                          onChange={(value) =>
+                            updateNodeTransform('position', value)
+                          }
+                        />
+                        <MotionVector3Field
+                          id="motion-transform-rotation"
+                          label="Rotation (degrees)"
+                          value={
+                            targetNode.transform.rotation.map(
+                              (axis) => (axis * 180) / Math.PI,
+                            ) as MotionVector3
+                          }
+                          onChange={(value) =>
+                            updateNodeTransform('rotation', value)
+                          }
+                        />
+                        <MotionVector3Field
+                          id="motion-transform-scale"
+                          label="Scale"
+                          value={targetNode.transform.scale}
+                          onChange={(value) =>
+                            updateNodeTransform('scale', value)
+                          }
+                        />
+                      </FieldGroup>
+                    </div>
+                  )}
+                  {targetNode && targetDefinition?.propertyHints && (
+                    <div className="mt-4 border-t border-border/50 pt-3">
+                      <MotionPropertyFields
+                        hints={targetDefinition.propertyHints}
+                        values={targetPropertyValues}
+                        assets={doc.assets}
+                        idPrefix={`motion-node-${targetNode.id}`}
+                        onChange={updateNodeProperty}
+                      />
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="rounded-md border border-dashed border-border/70 px-3 py-4 text-center">
                   <SparklesIcon className="mx-auto size-4 text-muted-foreground/70" />

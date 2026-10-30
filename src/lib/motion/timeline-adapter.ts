@@ -50,24 +50,32 @@ export function toTimelineModel(doc: MotionDocument): TimelineModel {
     for (const placement of track.placements) {
       const clip = clipsById.get(placement.clipId);
       if (!clip) continue;
+      const trimIn = placement.trimIn ?? 0;
+      const duration = placement.duration ?? clip.duration - trimIn;
+      const visibleEnd = trimIn + duration;
+      const channels = clip.channels.map((channel) => {
+        const visibleKeys = channel.keyframes.filter((keyframe) => keyframe.time >= trimIn - 1e-9 && keyframe.time <= visibleEnd + 1e-9);
+        return {
+          id: channel.id,
+          label: channel.property,
+          keys: visibleKeys.map((keyframe) => ({
+            id: motionKeyId(placement.id, channel.id, keyframe.id),
+            channelId: channel.id,
+            time: placement.start + (keyframe.time - trimIn),
+          })),
+        };
+      });
       items.push({
         id: placement.id,
         rowId: track.id,
         label: clip.name,
         start: placement.start,
-        duration: clip.duration,
+        duration,
         tone,
         locked: track.locked,
         dimmed: track.muted,
-        channels: clip.channels.map((channel) => ({
-          id: channel.id,
-          label: channel.property,
-          keys: channel.keyframes.map((keyframe) => ({
-            id: motionKeyId(placement.id, channel.id, keyframe.id),
-            channelId: channel.id,
-            time: placement.start + keyframe.time,
-          })),
-        })),
+        trimmedKeyCount: clip.channels.reduce((count, channel) => count + channel.keyframes.filter((keyframe) => keyframe.time < trimIn - 1e-9 || keyframe.time > visibleEnd + 1e-9).length, 0),
+        channels,
       });
     }
   }
@@ -136,6 +144,7 @@ export function timelineSelectionToMotion(
 /** Motion selection → neutral timeline selection. */
 export function motionSelectionToTimeline(selection: MotionSelection): TimelineSelection {
   if (!selection) return null;
+  if (selection.kind === 'node') return null;
   if (selection.kind === 'keyframe') {
     return {
       rowId: selection.trackId,

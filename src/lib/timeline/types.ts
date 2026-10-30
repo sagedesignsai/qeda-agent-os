@@ -61,6 +61,7 @@ export type TimelineItem = {
   tone?: TimelineTone;
   locked?: boolean;
   dimmed?: boolean;
+  trimmedKeyCount?: number;
   /** Optional per-property key rows drawn inside the item. */
   channels?: TimelineChannel[];
 };

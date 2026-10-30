@@ -17,7 +17,8 @@ export type MotionEntityKind =
   | 'placement'
   | 'channel'
   | 'keyframe'
-  | 'asset';
+  | 'asset'
+  | 'scene';
 
 const PREFIX: Record<MotionEntityKind, string> = {
   doc: 'doc',
@@ -27,6 +28,7 @@ const PREFIX: Record<MotionEntityKind, string> = {
   channel: 'chn',
   keyframe: 'kf',
   asset: 'asset',
+  scene: 'scene',
 };
 
 export function createMotionId(kind: MotionEntityKind): string {

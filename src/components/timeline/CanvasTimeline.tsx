@@ -178,7 +178,8 @@ function paintBase(ctx: CanvasRenderingContext2D, layout: TimelineLayout, palett
       ctx.fillStyle = palette.text;
       ctx.font = '500 11px ui-sans-serif, system-ui, sans-serif';
       ctx.textBaseline = 'top';
-      ctx.fillText(item.label, item.x + 8, item.y + 6);
+      const label = item.trimmedKeyCount > 0 ? `${item.label} · ${item.trimmedKeyCount} trimmed` : item.label;
+      ctx.fillText(label, item.x + 8, item.y + 6);
       ctx.restore();
     }
     ctx.globalAlpha = 1;

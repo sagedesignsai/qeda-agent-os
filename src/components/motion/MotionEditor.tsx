@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/resizable';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
+import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 
 export function MotionEditor() {
   const { doc } = useMotionSnapshot();
@@ -75,6 +76,36 @@ export function MotionEditor() {
     ]);
   };
 
+  const addNode = (type: string) => {
+    const definition = listMotionNodeTypes().find((item) => item.id === type);
+    if (!definition) return;
+    const nodeId = createMotionId('scene');
+    motionStore.commit(`Add ${definition.label}`, [{ op: 'scene.node.add', nodeId, type }]);
+  };
+
+  const createScene = (duplicate: boolean) => {
+    const sceneId = createMotionId('scene');
+    const sceneName = duplicate ? `${doc.scenes.find((scene) => scene.id === doc.activeSceneId)?.name ?? 'Scene'} copy` : `Scene ${doc.scenes.length + 1}`;
+    const ids = duplicate
+      ? [
+          ...doc.scene.nodes.map((node) => node.id),
+          ...doc.timeline.tracks.map((track) => track.id),
+          ...doc.timeline.tracks.flatMap((track) => track.placements.map((placement) => placement.id)),
+          ...doc.timeline.clips.map((clip) => clip.id),
+          ...doc.timeline.clips.flatMap((clip) => clip.channels.map((channel) => channel.id)),
+          ...doc.timeline.clips.flatMap((clip) => clip.channels.flatMap((channel) => channel.keyframes.map((key) => key.id))),
+          ...(doc.timeline.audio ?? []).map((audio) => audio.id),
+        ]
+      : doc.scene.nodes.filter((node) => node.type.startsWith('camera.') || node.type.startsWith('light.') || node.type === 'stage.ground').map((node) => node.id);
+    const idMap = Object.fromEntries(ids.map((id) => [id, createMotionId('scene')]));
+    motionStore.commit(duplicate ? 'Duplicate scene' : 'Add scene', [duplicate
+      ? { op: 'scene.duplicate', sceneId, name: sceneName, idMap }
+      : { op: 'scene.add', sceneId, name: sceneName, rigIdMap: idMap }]);
+  };
+
+  const activeScene = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+  const nodeTypes = listMotionNodeTypes();
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border/60 bg-card/40 px-2">
@@ -101,9 +132,27 @@ export function MotionEditor() {
           <span className="truncate px-1 text-xs font-medium text-foreground/90">
             {doc.meta.name}
           </span>
-          <span className="hidden rounded-sm border border-border/60 px-1.5 py-0.5 text-[10px] text-muted-foreground md:inline">
-            Scene
-          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="sm" className="h-7 max-w-44 px-2 text-xs">
+                <span className="truncate">{activeScene?.name ?? 'Scene'}</span>
+                <span className="ml-1 text-[10px] text-muted-foreground">{doc.timeline.duration.toFixed(1)}s</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              {doc.scenes.map((scene) => (
+                <DropdownMenuItem key={scene.id} onSelect={() => motionStore.commit('Switch scene', [{ op: 'document.setActiveScene', sceneId: scene.id }])}>
+                  {scene.id === doc.activeSceneId ? '✓ ' : ''}{scene.name} · {(scene.timeline.duration).toFixed(1)}s
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuItem onSelect={() => createScene(false)}>+ New scene</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => createScene(true)}>Duplicate scene</DropdownMenuItem>
+              {doc.scenes.length > 1 && activeScene && <DropdownMenuItem onSelect={() => {
+                const confirmation = window.prompt(`Delete “${activeScene.name}” (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`);
+                if (confirmation === activeScene.name) motionStore.commit('Delete scene', [{ op: 'scene.remove', sceneId: activeScene.id }], { approved: true });
+              }}>Delete “{activeScene?.name}”…</DropdownMenuItem>}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
@@ -124,6 +173,11 @@ export function MotionEditor() {
                 <PlusIcon data-icon="inline-start" />
                 Animation track
               </DropdownMenuItem>
+              {(['scene', 'camera', 'geometry', 'surface', 'model', 'lighting', 'stage'] as const).map((category) => {
+                const categoryNodes = nodeTypes.filter((node) => node.category === category);
+                if (!categoryNodes.length) return null;
+                return categoryNodes.map((node) => <DropdownMenuItem key={node.id} onSelect={() => addNode(node.id)}>{node.label}</DropdownMenuItem>);
+              })}
               <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
                 <BoxesIcon data-icon="inline-start" />
                 Browse asset library…

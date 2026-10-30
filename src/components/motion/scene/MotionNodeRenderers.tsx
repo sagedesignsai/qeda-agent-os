@@ -5,9 +5,9 @@
  * values arrive as node data; editor-only stage elements live in MotionSceneCanvas.
  */
 
-import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { useThree } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { Html, Text } from '@react-three/drei';
 import {
   CanvasTexture,
   LinearFilter,
@@ -16,7 +16,6 @@ import {
   Shape,
   TextureLoader,
 } from 'three';
-import type { Group } from 'three';
 
 import { createMotionScreenArtwork } from '@/components/motion/scene/create-motion-screen-artwork';
 import { motionStore } from '@/hooks/use-motion-store';
@@ -193,48 +192,25 @@ async function relinkScreenAsset(projectId: string, assetId: string): Promise<vo
   motionStore.commit('Relink Motion asset', [{ op: 'asset.relink', ...relink }]);
 }
 
-function createTitleArtwork(text: string, color: string): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1600;
-  canvas.height = 240;
-  const context = canvas.getContext('2d');
-  if (!context) throw new Error('Could not create the Motion title texture.');
-
-  context.font = '650 168px ui-sans-serif, system-ui, sans-serif';
-  context.textBaseline = 'middle';
-  context.textAlign = 'center';
-  context.fillStyle = color;
-  context.fillText(text, canvas.width / 2, canvas.height / 2, canvas.width - 40);
-  return canvas;
-}
-
 function TitleRenderer({ node }: { node: MotionNode }) {
   const text = stringProp(node, 'text', 'Product title');
   const color = stringProp(node, 'color', '#ffffff');
   const fontSize = numberProp(node, 'fontSize', 0.3);
-  const fontScaleRef = useRef<Group | null>(null);
-  const texture = useMemo(() => {
-    const next = new CanvasTexture(createTitleArtwork(text, color));
-    next.colorSpace = SRGBColorSpace;
-    next.minFilter = LinearMipmapLinearFilter;
-    next.magFilter = LinearFilter;
-    return next;
-  }, [color, text]);
-
-  useEffect(() => () => texture.dispose(), [texture]);
-
-  const setFontScaleGroup = (group: Group | null) => {
-    fontScaleRef.current = group;
-    if (group) group.userData.motionBaseFontSize = fontSize;
-  };
-
+  const opacity = numberProp(node, 'opacity', 1);
+  const isBody = node.type === 'text.body';
   return (
-    <group ref={setFontScaleGroup}>
-      <mesh>
-        <planeGeometry args={[fontSize * 6, fontSize]} />
-        <meshBasicMaterial map={texture} transparent toneMapped={false} />
-      </mesh>
-    </group>
+    <Text
+      fontSize={fontSize}
+      color={color}
+      fillOpacity={opacity}
+      maxWidth={isBody ? numberProp(node, 'maxWidth', 4) : 12}
+      textAlign={isBody ? stringProp(node, 'align', 'left') as 'left' | 'center' | 'right' : 'center'}
+      anchorX={isBody ? 'left' : 'center'}
+      anchorY="middle"
+      outlineWidth={0}
+    >
+      {text}
+    </Text>
   );
 }
 
@@ -268,6 +244,35 @@ function PointLightRenderer({ node }: { node: MotionNode }) {
   );
 }
 
+function ShapeRenderer({ node }: { node: MotionNode }) {
+  const width = numberProp(node, 'width', 1);
+  const height = numberProp(node, 'height', 1);
+  const ellipse = node.type === 'shape.ellipse';
+  const color = stringProp(node, 'color', '#5885f7');
+  const radius = Math.min(numberProp(node, 'cornerRadius', 0.06), width / 2, height / 2);
+  const shape = useMemo(() => ellipse ? null : roundedRectangle(width, height, radius), [ellipse, height, radius, width]);
+  return <mesh scale={ellipse ? [width / 2, height / 2, 1] : undefined}>
+    {ellipse ? <circleGeometry args={[1, 48]} /> : <shapeGeometry args={[shape!]} />}
+    <meshBasicMaterial color={color} transparent opacity={numberProp(node, 'opacity', 1)} toneMapped={false} />
+  </mesh>;
+}
+
+function GroundRenderer({ node }: { node: MotionNode }) {
+  const size = numberProp(node, 'size', 20);
+  return <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow={node.props.shadow !== false}>
+    <planeGeometry args={[size, size]} />
+    <meshStandardMaterial color={stringProp(node, 'color', '#171b24')} roughness={numberProp(node, 'roughness', 0.72)} metalness={numberProp(node, 'metalness', 0.08)} transparent={numberProp(node, 'opacity', 1) < 1} opacity={numberProp(node, 'opacity', 1)} />
+  </mesh>;
+}
+
+function MissingAssetRenderer({ node }: { node: MotionNode }) {
+  return <mesh userData={{ missingAsset: node.props.assetId }}>
+    <boxGeometry args={[0.8, 0.5, 0.08]} />
+    <meshBasicMaterial color="#d946ef" wireframe />
+    <Html center distanceFactor={5}><span className="rounded bg-background/90 px-2 py-1 text-xs text-destructive">Missing {node.name}</span></Html>
+  </mesh>;
+}
+
 function MissingRenderer({ node }: { node: MotionNode }) {
   return (
     <mesh userData={{ unresolvedNodeType: node.type }}>
@@ -280,8 +285,17 @@ function MissingRenderer({ node }: { node: MotionNode }) {
 registerMotionThreeRenderer('scene.group', GroupRenderer);
 registerMotionThreeRenderer('camera.perspective', CameraRenderer);
 registerMotionThreeRenderer('device.tablet', TabletRenderer);
+registerMotionThreeRenderer('device.phone', TabletRenderer);
+registerMotionThreeRenderer('device.laptop', TabletRenderer);
+registerMotionThreeRenderer('device.monitor', TabletRenderer);
 registerMotionThreeRenderer('screen.image', ScreenRenderer);
 registerMotionThreeRenderer('text.title', TitleRenderer);
+registerMotionThreeRenderer('text.body', TitleRenderer);
+registerMotionThreeRenderer('shape.rect', ShapeRenderer);
+registerMotionThreeRenderer('shape.ellipse', ShapeRenderer);
+registerMotionThreeRenderer('stage.ground', GroundRenderer);
+registerMotionThreeRenderer('model.gltf', MissingAssetRenderer);
+registerMotionThreeRenderer('screen.video', MissingAssetRenderer);
 registerMotionThreeRenderer('light.ambient', AmbientLightRenderer);
 registerMotionThreeRenderer('light.directional', DirectionalLightRenderer);
 registerMotionThreeRenderer('light.point', PointLightRenderer);

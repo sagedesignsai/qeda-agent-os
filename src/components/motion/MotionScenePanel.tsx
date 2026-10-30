@@ -51,7 +51,8 @@ export function MotionScenePanel() {
   const motionAssets = useMotionAssets(doc.meta.id);
   const [sceneExpanded, setSceneExpanded] = useState(true);
 
-  const selectedTrackId = selection?.trackId;
+  const selectedTrackId = selection && selection.kind !== 'node' ? selection.trackId : undefined;
+  const selectedNodeId = selection?.kind === 'node' ? selection.nodeId : undefined;
   const clips = useMemo(
     () => [...doc.timeline.clips].sort((a, b) => a.name.localeCompare(b.name)),
     [doc.timeline.clips],
@@ -88,13 +89,28 @@ export function MotionScenePanel() {
                   <ChevronRightIcon className="size-3.5" />
                 )}
                 <FolderIcon className="size-3.5" />
-                <span className="flex-1">Launch scene</span>
-                <span className="font-normal tabular-nums">
-                  {doc.timeline.tracks.length}
+                  <span className="flex-1">{doc.scenes.find((scene) => scene.id === doc.activeSceneId)?.name ?? 'Scene'}</span>
+                  <span className="font-normal tabular-nums">
+                    {doc.scene.nodes.length}
                 </span>
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-1">
                 <div className="ml-2 border-l border-border/60 pl-2">
+                  {doc.scene.nodes.map((node) => {
+                    const Icon = NODE_ICONS[node.id] ?? (node.type.startsWith('camera.') ? CameraIcon : node.type.startsWith('text.') ? TypeIcon : node.type.startsWith('screen.') ? AppWindowIcon : BoxIcon);
+                    const selected = selectedNodeId === node.id;
+                    return <div key={node.id} className={cn('group flex h-7 items-center rounded px-1', selected ? 'bg-accent text-accent-foreground' : 'text-foreground/80 hover:bg-accent/40')}>
+                      <button type="button" className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring" onClick={() => motionStore.setSelection({ kind: 'node', nodeId: node.id })} aria-pressed={selected} aria-label={`Select scene object ${node.name}`}>
+                        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{node.name}</span>
+                        <span className="ml-auto truncate text-[9px] text-muted-foreground">{node.type}</span>
+                      </button>
+                      <span className="flex opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+                        <Button type="button" variant="ghost" size="icon" className="size-5" aria-label={node.visible ? `Hide ${node.name}` : `Show ${node.name}`} onClick={() => motionStore.commit('Toggle object visibility', [{ op: 'scene.node.update', nodeId: node.id, visible: !node.visible }])}>{node.visible ? <EyeIcon data-icon /> : <EyeOffIcon data-icon />}</Button>
+                        <Button type="button" variant="ghost" size="icon" className="size-5" aria-label={node.locked ? `Unlock ${node.name}` : `Lock ${node.name}`} onClick={() => motionStore.commit('Toggle object lock', [{ op: 'scene.node.update', nodeId: node.id, locked: !node.locked }])}>{node.locked ? <LockKeyholeIcon data-icon /> : <LockKeyholeOpenIcon data-icon />}</Button>
+                      </span>
+                    </div>;
+                  })}
                   {doc.timeline.tracks.map((track) => {
                     const Icon = trackIcon(track);
                     const selected = selectedTrackId === track.id;

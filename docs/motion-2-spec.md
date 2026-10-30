@@ -2588,6 +2588,12 @@ The inspector is generated from the node registry. It has a stable order:
 - **Reset:** per-field reset to the type default; per-section reset with
   confirmation if it would remove animation.
 
+Motion uses an embedded, value-driven field kit rather than a floating debug
+panel. The controls take their type, label, range, options, and group from
+`propertyHints`; they keep drafts locally and commit a single Motion op when an
+edit is complete. `react-var-ui` is a reference for the compact, in-context
+control approach, not a runtime dependency.
+
 **Animation affordance**
 
 Every animatable property row has a diamond:

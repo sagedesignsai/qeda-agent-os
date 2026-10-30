@@ -21,6 +21,15 @@ jest.mock('@/components/motion/scene/MotionSceneCanvas', () => ({
   ),
 }));
 
+beforeAll(() => {
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  Object.defineProperty(globalThis, 'ResizeObserver', { configurable: true, value: ResizeObserverMock });
+});
+
 describe('Motion editor shell', () => {
   beforeEach(() => {
     motionStore.loadDocument(
@@ -63,11 +72,32 @@ describe('Motion editor shell', () => {
     ).toBe('Hero device');
   });
 
-  it('keeps media import disabled until assets can be stored durably', () => {
+  it('renders schema-hinted object controls and commits edits through Motion ops', () => {
+    render(<MotionEditor />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select scene object Product' }));
+    const widthInput = screen.getByLabelText('Width');
+
+    fireEvent.change(widthInput, { target: { value: '4.1' } });
+    expect(
+      motionStore
+        .getDocument()
+        .scene.nodes.find((node) => node.id === 'product')?.props.width,
+    ).toBe(3.82);
+
+    fireEvent.blur(widthInput);
+    expect(
+      motionStore
+        .getDocument()
+        .scene.nodes.find((node) => node.id === 'product')?.props.width,
+    ).toBe(4.1);
+  });
+
+  it('enables media import now that assets are stored durably', () => {
     render(<MotionEditor />);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Assets' }));
-    expect(screen.getByRole('button', { name: 'Import media' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Import media' })).toBeEnabled();
     expect(motionStore.getDocument().assets).toHaveLength(1);
   });
 

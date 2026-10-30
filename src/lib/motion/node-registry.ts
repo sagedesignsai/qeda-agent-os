@@ -7,10 +7,25 @@
 
 import { z } from 'zod';
 
-import type { MotionNode, MotionNodeTransform } from './types';
+import type {
+  MotionAssetKind,
+  MotionNode,
+  MotionNodeTransform,
+} from './types';
 
 const vector3Schema = z.tuple([z.number(), z.number(), z.number()]);
-export type MotionNodeCategory = 'scene' | 'camera' | 'geometry' | 'surface' | 'lighting';
+export type MotionNodeCategory = 'scene' | 'camera' | 'geometry' | 'surface' | 'lighting' | 'model' | 'stage';
+
+export type MotionPropertyHint = {
+  label?: string;
+  control?: 'text' | 'number' | 'slider' | 'color' | 'vector3' | 'asset' | 'select' | 'toggle';
+  min?: number;
+  max?: number;
+  step?: number;
+  group?: string;
+  assetKind?: MotionAssetKind;
+  options?: Array<{ value: string; label: string }>;
+};
 
 export type MotionNodeTypeDefinition = {
   id: string;
@@ -23,6 +38,7 @@ export type MotionNodeTypeDefinition = {
   defaultTransform?: Partial<MotionNodeTransform>;
   defaultName: string;
   allowedParents?: readonly string[];
+  propertyHints?: Readonly<Record<string, MotionPropertyHint>>;
 };
 
 export type MotionNodeTypeDescription = Pick<
@@ -33,6 +49,7 @@ export type MotionNodeTypeDescription = Pick<
   defaultTransform?: Partial<MotionNodeTransform>;
   properties: Record<string, unknown>;
   allowedParents?: readonly string[];
+  propertyHints?: Readonly<Record<string, MotionPropertyHint>>;
 };
 
 const identityTransform: MotionNodeTransform = {
@@ -73,6 +90,7 @@ export function listMotionNodeTypes(): MotionNodeTypeDescription[] {
       defaultTransform,
       propsSchema,
       allowedParents,
+      propertyHints,
     }) => ({
       id,
       label,
@@ -83,6 +101,7 @@ export function listMotionNodeTypes(): MotionNodeTypeDescription[] {
       ...(defaultTransform ? { defaultTransform } : {}),
       properties: z.toJSONSchema(propsSchema) as Record<string, unknown>,
       ...(allowedParents ? { allowedParents } : {}),
+      ...(propertyHints ? { propertyHints } : {}),
     }),
   );
 }
@@ -173,6 +192,9 @@ function registerBuiltins(): void {
       opacity: { description: 'Group opacity inherited by its child nodes.' },
     },
     defaultName: 'Group',
+    propertyHints: {
+      opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+    },
   });
   registerMotionNodeType({
     id: 'camera.perspective',
@@ -190,6 +212,11 @@ function registerBuiltins(): void {
     defaultTransform: { position: [3.7, 2.7, 5.1] },
     animatableProperties: { fov: { description: 'Vertical field of view in degrees.' } },
     defaultName: 'Camera',
+    propertyHints: {
+      fov: { label: 'Field of view', control: 'slider', min: 1, max: 179, step: 1, group: 'Lens' },
+      near: { label: 'Near clip', control: 'number', min: 0.001, step: 0.01, group: 'Lens' },
+      far: { label: 'Far clip', control: 'number', min: 0.01, step: 1, group: 'Lens' },
+    },
   });
   registerMotionNodeType({
     id: 'device.tablet',
@@ -210,6 +237,13 @@ function registerBuiltins(): void {
       opacity: { description: 'Device opacity from 0 to 1.' },
     },
     defaultName: 'Tablet',
+    propertyHints: {
+      width: { label: 'Width', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },
+      height: { label: 'Height', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },
+      depth: { label: 'Depth', control: 'number', min: 0.01, step: 0.01, group: 'Dimensions' },
+      bezel: { label: 'Bezel', control: 'number', min: 0, step: 0.01, group: 'Dimensions' },
+      opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+    },
   });
   registerMotionNodeType({
     id: 'screen.image',
@@ -241,6 +275,22 @@ function registerBuiltins(): void {
     },
     defaultName: 'Screen',
     allowedParents: ['device.tablet', 'scene.group'],
+    propertyHints: {
+      assetId: { label: 'Image', control: 'asset', assetKind: 'image', group: 'Content' },
+      width: { label: 'Width', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },
+      height: { label: 'Height', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },
+      fit: {
+        label: 'Fit',
+        control: 'select',
+        group: 'Content',
+        options: [
+          { value: 'contain', label: 'Fit inside' },
+          { value: 'cover', label: 'Fill frame' },
+          { value: 'stretch', label: 'Stretch' },
+        ],
+      },
+      opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+    },
   });
   registerMotionNodeType({
     id: 'text.title',
@@ -267,6 +317,12 @@ function registerBuiltins(): void {
     },
     defaultTransform: { position: [0, -1.7, 0] },
     defaultName: 'Title',
+    propertyHints: {
+      text: { label: 'Text', control: 'text', group: 'Content' },
+      color: { label: 'Color', control: 'color', group: 'Appearance' },
+      fontSize: { label: 'Font size', control: 'number', min: 0.01, step: 0.01, group: 'Typography' },
+      opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+    },
   });
   registerMotionNodeType({
     id: 'light.ambient',
@@ -284,6 +340,10 @@ function registerBuiltins(): void {
       intensity: { description: 'Light intensity.' },
     },
     defaultName: 'Ambient light',
+    propertyHints: {
+      intensity: { label: 'Intensity', control: 'slider', min: 0, max: 10, step: 0.1, group: 'Light' },
+      color: { label: 'Color', control: 'color', group: 'Light' },
+    },
   });
   registerMotionNodeType({
     id: 'light.directional',
@@ -303,6 +363,11 @@ function registerBuiltins(): void {
       intensity: { description: 'Light intensity.' },
     },
     defaultName: 'Key light',
+    propertyHints: {
+      intensity: { label: 'Intensity', control: 'slider', min: 0, max: 10, step: 0.1, group: 'Light' },
+      color: { label: 'Color', control: 'color', group: 'Light' },
+      castShadow: { label: 'Cast shadows', control: 'toggle', group: 'Light' },
+    },
   });
   registerMotionNodeType({
     id: 'light.point',
@@ -321,6 +386,71 @@ function registerBuiltins(): void {
       intensity: { description: 'Light intensity.' },
     },
     defaultName: 'Accent light',
+    propertyHints: {
+      intensity: { label: 'Intensity', control: 'slider', min: 0, max: 10, step: 0.1, group: 'Light' },
+      color: { label: 'Color', control: 'color', group: 'Light' },
+    },
+  });
+
+  const deviceSchema = z.object({ width: z.number().positive(), height: z.number().positive(), depth: z.number().positive(), bezel: z.number().nonnegative(), opacity: z.number().min(0).max(1) }).strict();
+  const deviceHints = {
+    width: { label: 'Width', control: 'number' as const, min: 0.1, step: 0.01, group: 'Dimensions' },
+    height: { label: 'Height', control: 'number' as const, min: 0.1, step: 0.01, group: 'Dimensions' },
+    depth: { label: 'Depth', control: 'number' as const, min: 0.01, step: 0.01, group: 'Dimensions' },
+    bezel: { label: 'Bezel', control: 'number' as const, min: 0, step: 0.01, group: 'Dimensions' },
+    opacity: { label: 'Opacity', control: 'slider' as const, min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  };
+  for (const device of [
+    { id: 'device.phone', label: 'Phone', size: { width: 1.25, height: 2.55, depth: 0.11, bezel: 0.09 } },
+    { id: 'device.laptop', label: 'Laptop', size: { width: 3.3, height: 2.1, depth: 0.16, bezel: 0.12 } },
+    { id: 'device.monitor', label: 'Monitor', size: { width: 3.7, height: 2.3, depth: 0.13, bezel: 0.1 } },
+  ]) {
+    registerMotionNodeType({
+      id: device.id, label: device.label, category: 'geometry', description: `A ${device.label.toLowerCase()} frame for a product scene.`,
+      propsSchema: deviceSchema, defaultProps: { ...device.size, opacity: 1 }, animatableProperties: { opacity: { description: 'Device opacity.' } }, defaultName: device.label, propertyHints: deviceHints,
+    });
+  }
+
+  registerMotionNodeType({
+    id: 'text.body', label: 'Body text', category: 'surface', description: 'Supporting copy rendered as a camera-facing text surface.',
+    propsSchema: z.object({ text: z.string(), color: z.string().min(1), fontSize: z.number().positive(), opacity: z.number().min(0).max(1), maxWidth: z.number().positive(), align: z.enum(['left', 'center', 'right']) }).strict(),
+    defaultProps: { text: 'Supporting copy', color: '#ffffff', fontSize: 0.16, opacity: 1, maxWidth: 4, align: 'left' },
+    animatableProperties: { opacity: { description: 'Text opacity.' }, fontSize: { description: 'Text size.' } }, defaultName: 'Body text',
+    propertyHints: { text: { label: 'Text', control: 'text', group: 'Content' }, color: { label: 'Color', control: 'color', group: 'Appearance' }, fontSize: { label: 'Font size', control: 'number', min: 0.01, step: 0.01, group: 'Typography' }, maxWidth: { label: 'Max width', control: 'number', min: 0.1, step: 0.1, group: 'Layout' }, align: { label: 'Alignment', control: 'select', group: 'Typography', options: [{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }] }, opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' } },
+  });
+
+  for (const shape of [
+    { id: 'shape.rect', label: 'Rectangle', radius: 0.06 },
+    { id: 'shape.ellipse', label: 'Ellipse', radius: 1 },
+  ]) {
+    registerMotionNodeType({
+      id: shape.id, label: shape.label, category: 'surface', description: `A solid ${shape.label.toLowerCase()} surface.`,
+      propsSchema: z.object({ width: z.number().positive(), height: z.number().positive(), color: z.string().min(1), cornerRadius: z.number().nonnegative(), opacity: z.number().min(0).max(1) }).strict(),
+      defaultProps: { width: 1, height: 1, color: '#5885f7', cornerRadius: shape.radius, opacity: 1 },
+      animatableProperties: { opacity: { description: 'Shape opacity.' } }, defaultName: shape.label,
+      propertyHints: { width: { label: 'Width', control: 'number', min: 0.01, step: 0.01, group: 'Dimensions' }, height: { label: 'Height', control: 'number', min: 0.01, step: 0.01, group: 'Dimensions' }, color: { label: 'Color', control: 'color', group: 'Appearance' }, cornerRadius: { label: 'Corner radius', control: 'number', min: 0, step: 0.01, group: 'Appearance' }, opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' } },
+    });
+  }
+
+  registerMotionNodeType({
+    id: 'stage.ground', label: 'Ground', category: 'stage', description: 'A renderable ground plane beneath scene content.',
+    propsSchema: z.object({ size: z.number().positive(), color: z.string().min(1), roughness: z.number().min(0).max(1), metalness: z.number().min(0).max(1), opacity: z.number().min(0).max(1), shadow: z.boolean() }).strict(),
+    defaultProps: { size: 20, color: '#171b24', roughness: 0.72, metalness: 0.08, opacity: 1, shadow: true }, animatableProperties: {}, defaultName: 'Ground', defaultTransform: { position: [0, -1.5, 0] },
+    propertyHints: { size: { label: 'Size', control: 'number', min: 1, step: 1, group: 'Surface' }, color: { label: 'Color', control: 'color', group: 'Surface' }, roughness: { label: 'Roughness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' }, metalness: { label: 'Metalness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' }, opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' }, shadow: { label: 'Receive shadow', control: 'toggle', group: 'Material' } },
+  });
+
+  registerMotionNodeType({
+    id: 'model.gltf', label: '3D model', category: 'model', description: 'A bundled glTF or GLB model.',
+    propsSchema: z.object({ assetId: z.string().min(1), missingAsset: z.boolean().optional(), opacity: z.number().min(0).max(1), castShadow: z.boolean(), receiveShadow: z.boolean() }).strict(),
+    defaultProps: { assetId: 'missing:model', missingAsset: true, opacity: 1, castShadow: true, receiveShadow: true }, animatableProperties: { opacity: { description: 'Model opacity.' } }, defaultName: '3D model',
+    propertyHints: { assetId: { label: 'Model', control: 'asset', assetKind: 'model', group: 'Content' }, opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' }, castShadow: { label: 'Cast shadows', control: 'toggle', group: 'Appearance' }, receiveShadow: { label: 'Receive shadows', control: 'toggle', group: 'Appearance' } },
+  });
+
+  registerMotionNodeType({
+    id: 'screen.video', label: 'Video screen', category: 'surface', description: 'A video surface mounted in the scene.',
+    propsSchema: z.object({ assetId: z.string().min(1), missingAsset: z.boolean().optional(), width: z.number().positive(), height: z.number().positive(), fit: z.enum(['contain', 'cover', 'stretch']), opacity: z.number().min(0).max(1), muted: z.boolean(), loop: z.boolean(), playbackRate: z.number().positive() }).strict(),
+    defaultProps: { assetId: 'missing:video', missingAsset: true, width: 3.46, height: 1.947, fit: 'contain', opacity: 1, muted: true, loop: true, playbackRate: 1 }, animatableProperties: { opacity: { description: 'Video surface opacity.' } }, defaultTransform: { position: [0, 0, 0.118] }, defaultName: 'Video screen',
+    propertyHints: { assetId: { label: 'Video', control: 'asset', assetKind: 'video', group: 'Content' }, width: { label: 'Width', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' }, height: { label: 'Height', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' }, fit: { label: 'Fit', control: 'select', group: 'Content', options: [{ value: 'contain', label: 'Fit inside' }, { value: 'cover', label: 'Fill frame' }, { value: 'stretch', label: 'Stretch' }] }, opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' }, muted: { label: 'Muted', control: 'toggle', group: 'Playback' }, loop: { label: 'Loop', control: 'toggle', group: 'Playback' }, playbackRate: { label: 'Playback rate', control: 'number', min: 0.1, max: 4, step: 0.1, group: 'Playback' } },
   });
 }
 

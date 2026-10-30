@@ -64,6 +64,7 @@ export type LaidOutItem = {
   rowIndex: number;
   itemId: string;
   label: string;
+  trimmedKeyCount: number;
   start: number;
   end: number;
   x: number;
@@ -208,6 +209,7 @@ export function layoutTimeline(input: TimelineLayoutInput): TimelineLayout {
         rowIndex: index,
         itemId: item.id,
         label: item.label,
+        trimmedKeyCount: item.trimmedKeyCount ?? 0,
         start: item.start,
         end: itemEnd,
         x: timeToX(item.start, view),

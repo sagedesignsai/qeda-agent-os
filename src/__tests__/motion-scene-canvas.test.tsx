@@ -4,6 +4,11 @@ jest.mock('@react-three/fiber', () => ({
   useThree: jest.fn(),
 }));
 
+jest.mock('@react-three/drei', () => ({
+  Html: () => null,
+  Text: () => null,
+}));
+
 jest.mock('three', () => ({
   Color: class Color {},
   PerspectiveCamera: class PerspectiveCamera {},
