@@ -7,6 +7,7 @@
 
 import { getMotionNodeType } from '../../lib/motion/node-registry';
 import type { MotionDocument, MotionScene } from '../../lib/motion/types';
+import type { MotionRenderRange } from './render-plan.js';
 
 export type MotionPreflightIssue = {
   severity: 'blocking' | 'warning';
@@ -18,7 +19,7 @@ export type MotionPreflightIssue = {
   action?: string;
 };
 
-export type MotionExportRange = { sceneId?: string; start: number; end: number };
+export type MotionExportRange = MotionRenderRange & { sceneId?: string };
 
 export type MotionPreflightOptions = {
   range?: MotionExportRange;
