@@ -7,6 +7,7 @@ jest.mock('@react-three/fiber', () => ({
 jest.mock('@react-three/drei', () => ({
   Html: () => null,
   Text: () => null,
+  TransformControls: ({ children }: { children: unknown }) => children,
 }));
 
 jest.mock('three', () => ({

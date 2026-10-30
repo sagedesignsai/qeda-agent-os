@@ -6,6 +6,8 @@
  */
 
 import { useEffect, useMemo, useRef } from 'react';
+import type { MutableRefObject } from 'react';
+import { TransformControls } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Color, PerspectiveCamera, SRGBColorSpace } from 'three';
 import type { Group, Material, Object3D } from 'three';
@@ -28,6 +30,9 @@ type MotionSceneCanvasProps = {
   stageColor: MotionStageColor;
   gridVisible: boolean;
   zoom: number;
+  selectedNodeId?: string;
+  onSelectNode?: (nodeId: string) => void;
+  onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
 };
 
 function numberProp(node: MotionNode, key: string, fallback: number): number {
@@ -49,15 +54,23 @@ function DocumentNode({
   node,
   childrenByParent,
   groups,
+  selectedNodeId,
+  onSelectNode,
+  onTransformNode,
+  transformingRef,
 }: {
   node: MotionNode;
   childrenByParent: Map<string | null, MotionNode[]>;
   groups: Map<string, Group>;
+  selectedNodeId?: string;
+  onSelectNode?: (nodeId: string) => void;
+  onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
+  transformingRef: MutableRefObject<boolean>;
 }) {
   const Renderer = getMotionThreeRenderer(node.type) ?? MissingRenderer;
   const childNodes = childrenByParent.get(node.id) ?? [];
 
-  return (
+  const group = (
     <group
       ref={(group) => {
         if (group) {
@@ -72,6 +85,10 @@ function DocumentNode({
       rotation={node.transform.rotation}
       scale={node.transform.scale}
       visible={node.visible}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        onSelectNode?.(node.id);
+      }}
     >
       <Renderer node={node} />
       {childNodes.map((child) => (
@@ -80,9 +97,32 @@ function DocumentNode({
           node={child}
           childrenByParent={childrenByParent}
           groups={groups}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={onSelectNode}
+          onTransformNode={onTransformNode}
+          transformingRef={transformingRef}
         />
       ))}
     </group>
+  );
+  if (selectedNodeId !== node.id || node.locked || node.type.startsWith('camera.')) return group;
+  return (
+    <TransformControls
+      mode="translate"
+      onMouseDown={() => { transformingRef.current = true; }}
+      onMouseUp={() => {
+        transformingRef.current = false;
+        const object = groups.get(node.id);
+        if (!object) return;
+        onTransformNode?.(node.id, {
+          position: [object.position.x, object.position.y, object.position.z],
+          rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+          scale: [object.scale.x, object.scale.y, object.scale.z],
+        });
+      }}
+    >
+      {group}
+    </TransformControls>
   );
 }
 
@@ -148,12 +188,14 @@ function MotionFrameDriver({
   viewMode,
   zoom,
   groups,
+  transformingRef,
 }: {
   doc: MotionDocument;
   clock: PlaybackClock;
   viewMode: MotionCameraView;
   zoom: number;
   groups: Map<string, Group>;
+  transformingRef: MutableRefObject<boolean>;
 }) {
   const invalidate = useThree((state) => state.invalidate);
   const camera = useThree((state) => state.camera);
@@ -176,9 +218,11 @@ function MotionFrameDriver({
       const group = groups.get(node.id);
       if (!group) continue;
 
-      group.position.set(...node.transform.position);
-      group.rotation.set(...node.transform.rotation);
-      group.scale.set(...node.transform.scale);
+      if (!transformingRef.current) {
+        group.position.set(...node.transform.position);
+        group.rotation.set(...node.transform.rotation);
+        group.scale.set(...node.transform.scale);
+      }
       group.visible = node.visible;
       opacityById.set(node.id, numberProp(node, 'opacity', 1));
       applyFontSize(group, node);
@@ -226,13 +270,20 @@ function DocumentScene({
   clock,
   viewMode,
   zoom,
+  selectedNodeId,
+  onSelectNode,
+  onTransformNode,
 }: {
   doc: MotionDocument;
   clock: PlaybackClock;
   viewMode: MotionCameraView;
   zoom: number;
+  selectedNodeId?: string;
+  onSelectNode?: (nodeId: string) => void;
+  onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
 }) {
   const groups = useMemo(() => new Map<string, Group>(), []);
+  const transformingRef = useRef(false);
   const childrenByParent = useMemo(() => indexNodes(doc.scene.nodes), [doc.scene.nodes]);
   const rootNodes = childrenByParent.get(null) ?? [];
 
@@ -249,6 +300,10 @@ function DocumentScene({
           node={node}
           childrenByParent={childrenByParent}
           groups={groups}
+          selectedNodeId={selectedNodeId}
+          onSelectNode={onSelectNode}
+          onTransformNode={onTransformNode}
+          transformingRef={transformingRef}
         />
       ))}
 
@@ -258,6 +313,7 @@ function DocumentScene({
         viewMode={viewMode}
         zoom={zoom}
         groups={groups}
+        transformingRef={transformingRef}
       />
     </>
   );
@@ -270,6 +326,9 @@ export function MotionSceneCanvas({
   stageColor,
   gridVisible,
   zoom,
+  selectedNodeId,
+  onSelectNode,
+  onTransformNode,
 }: MotionSceneCanvasProps) {
   return (
     <Canvas
@@ -298,7 +357,7 @@ export function MotionSceneCanvas({
           position={[0, -1.54, 0]}
         />
       )}
-      <DocumentScene doc={doc} clock={clock} viewMode={viewMode} zoom={zoom} />
+      <DocumentScene doc={doc} clock={clock} viewMode={viewMode} zoom={zoom} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onTransformNode={onTransformNode} />
     </Canvas>
   );
 }

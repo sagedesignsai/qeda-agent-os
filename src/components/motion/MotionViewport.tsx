@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
+import type { MotionNode } from '@/lib/motion/types';
 
 type StageTone = 'graphite' | 'slate' | 'paper';
 
@@ -40,7 +41,7 @@ const STAGE_COLORS: Record<StageTone, MotionStageColor> = {
 };
 
 export function MotionViewport() {
-  const { doc } = useMotionSnapshot();
+  const { doc, selection } = useMotionSnapshot();
   const [viewMode, setViewMode] = useState<MotionCameraView>('perspective');
   const [stageTone, setStageTone] = useState<StageTone>('graphite');
   const [gridVisible, setGridVisible] = useState(true);
@@ -175,6 +176,11 @@ export function MotionViewport() {
           stageColor={STAGE_COLORS[stageTone]}
           gridVisible={gridVisible}
           zoom={zoom}
+          selectedNodeId={selection?.kind === 'node' ? selection.nodeId : undefined}
+          onSelectNode={(nodeId) => motionStore.setSelection({ kind: 'node', nodeId })}
+          onTransformNode={(nodeId, transform: MotionNode['transform']) => {
+            motionStore.commit('Move scene object', [{ op: 'scene.node.update', nodeId, transform }]);
+          }}
         />
         <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border/70 bg-background/85 px-2 py-1 text-[10px] backdrop-blur">
           <span className="size-1.5 rounded-full bg-chart-3" />
