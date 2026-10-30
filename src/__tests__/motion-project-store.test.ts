@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createStarterMotionDocument } from '@/lib/motion/defaults';
+import { createBlankMotionDocument, createStarterMotionDocument } from '@/lib/motion/defaults';
 import { parseMotionDocument, serializeMotionDocument } from '@/lib/motion/schema';
 import { MotionProjectStore } from '@/main/motion/project-store';
 import type { MotionProjectIndexRow } from '@/main/motion/project-index';
@@ -44,6 +44,19 @@ describe('MotionProjectStore', () => {
     expect(serializeMotionDocument(parseMotionDocument(JSON.parse(canonical)))).toBe(canonical);
     expect(await fs.access(path.join(project.path, 'project.autosave.json')).then(() => true, () => false)).toBe(false);
     expect(store.listProjects()).toHaveLength(1);
+  });
+
+  it('persists a blank-project composition with a camera rig and headline', async () => {
+    const document = createBlankMotionDocument({ name: 'Fresh idea', duration: 8, width: 1080, height: 1920, fps: 30 });
+    const project = await store.createProject({ name: 'Fresh idea', document });
+    const opened = await store.openProject(project.id);
+
+    expect(opened.document.scene.nodes.map((node) => node.type)).toEqual([
+      'camera.perspective', 'light.ambient', 'light.directional', 'stage.ground', 'text.title',
+    ]);
+    expect(opened.document.activeSceneId).toBe(opened.document.scenes[0].id);
+    expect(opened.document.meta.output).toMatchObject({ width: 1080, height: 1920, fps: 30 });
+    expect(opened.document.timeline.duration).toBe(8);
   });
 
   it('offers a newer sidecar for recovery and commits it at a new revision', async () => {

@@ -12,6 +12,7 @@
  */
 
 import { useEffect } from 'react';
+import { useParams } from 'react-router';
 import { Redo2Icon, Undo2Icon } from 'lucide-react';
 
 import { MotionEditor } from '@/components/motion/MotionEditor';
@@ -21,8 +22,9 @@ import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { useMotionProject } from '@/hooks/use-motion-project';
 
 export default function Motion() {
+  const { projectId } = useParams();
   const { doc, canUndo, canRedo } = useMotionSnapshot();
-  const motionProject = useMotionProject();
+  const motionProject = useMotionProject(projectId);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

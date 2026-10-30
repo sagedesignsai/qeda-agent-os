@@ -15,7 +15,7 @@ import type { TimelineView } from '@/lib/timeline/types';
 type ProjectStatus = 'loading' | 'recovery' | 'ready' | 'error';
 type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'failed';
 
-export function useMotionProject() {
+export function useMotionProject(projectId?: string) {
   const [status, setStatus] = useState<ProjectStatus>('loading');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [project, setProject] = useState<MotionProjectSummary | null>(null);
@@ -32,10 +32,15 @@ export function useMotionProject() {
 
   useEffect(() => {
     let mounted = true;
+    setStatus('loading');
+    setError(null);
     const load = async () => {
       try {
         let { projects } = await window.electron.ipc.invoke<{ projects: MotionProjectSummary[] }>('motion:list-projects', { includeMissing: true });
-        let selected = projects.find((item) => !item.missing);
+        let selected = projectId
+          ? projects.find((item) => item.id === projectId)
+          : projects.find((item) => !item.missing);
+        if (projectId && !selected) throw new Error(`Motion project "${projectId}" was not found in the project list.`);
         if (!selected) {
           if (projects.length > 0) throw new Error('Motion projects are missing. Locate a project folder before creating another project.');
           const created = await window.electron.ipc.invoke<{ projectId: string; path: string }>('motion:create-project', { name: 'Launch hero' });
@@ -70,7 +75,7 @@ export function useMotionProject() {
     };
     void load();
     return () => { mounted = false; };
-  }, []);
+  }, [projectId]);
 
   const respondToRecovery = useCallback(async (action: 'recover' | 'discard') => {
     const id = recoveryProjectId.current;

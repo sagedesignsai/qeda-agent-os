@@ -9,6 +9,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 
 import { getMotionAssetStore, getMotionProjectStore } from '../../motion/service.js';
 import { MotionRemoteAssetClient } from '../../motion/remote-assets.js';
+import { createBlankMotionDocument } from '../../../lib/motion/defaults.js';
 
 export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
   const store = getMotionProjectStore();
@@ -28,8 +29,15 @@ export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: Bro
     return { projects: req?.includeMissing === false ? projects.filter((item) => !item.missing) : projects };
   });
 
-  ipcMain.handle('motion:create-project', async (_event, req: { name: string }) => {
-    const project = await store.createProject(req ?? {});
+  ipcMain.handle('motion:create-project', async (_event, req: { name: string; blank?: boolean; output?: { width: number; height: number; fps: number }; duration?: number }) => {
+    const document = req?.blank ? createBlankMotionDocument({
+      name: req.name,
+      width: req.output?.width,
+      height: req.output?.height,
+      fps: req.output?.fps,
+      duration: req.duration,
+    }) : undefined;
+    const project = await store.createProject({ name: req?.name, ...(document ? { document } : {}) });
     changed();
     return { projectId: project.id, path: project.path };
   });

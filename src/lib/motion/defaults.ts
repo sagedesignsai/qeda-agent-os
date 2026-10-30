@@ -74,6 +74,21 @@ export function createEmptyMotionDocument(options: CreateDocumentOptions = {}): 
   return doc;
 }
 
+/** A clean product scene for the browser's Blank project flow. */
+export function createBlankMotionDocument(options: CreateDocumentOptions = {}): MotionDocument {
+  const doc = createEmptyMotionDocument(options);
+  const nodes = [
+    createMotionNode('camera.perspective', 'camera'),
+    createMotionNode('light.ambient', 'light_ambient'),
+    createMotionNode('light.directional', 'light_key'),
+    createMotionNode('stage.ground', 'ground'),
+    createMotionNode('text.title', 'title', { name: 'Headline' }),
+  ];
+  doc.scene.nodes = nodes;
+  doc.scenes = doc.scenes.map((scene) => ({ ...scene, nodes, cameraId: 'camera' }));
+  return doc;
+}
+
 /**
  * The composition a new Motion project starts from: a product that spins, a
  * camera push, and a title fade — the Phase 1 demo in miniature, so the timeline

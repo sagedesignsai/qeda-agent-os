@@ -32,6 +32,7 @@ import Documents from './pages/Documents';
 import Studio from './pages/Studio';
 import SoundLab from './pages/SoundLab';
 import Motion from './pages/Motion';
+import MotionBrowser from './pages/MotionBrowser';
 import Workspace from './pages/Workspace';
 import Builder from './pages/Builder';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
@@ -76,7 +77,13 @@ export const routes: RouteObject[] = [
       // Motion (product-showcase 3D) is deliberately a separate route from
       // Showcase Studio (/studio, screen captures). Same family of output,
       // different engine — see docs/motion-studio-spec.md.
-      { path: 'motion', element: <Motion /> },
+      {
+        path: 'motion',
+        children: [
+          { index: true, element: <MotionBrowser /> },
+          { path: ':projectId', element: <Motion /> },
+        ],
+      },
 
       { path: 'builder', element: <Builder /> },
 
