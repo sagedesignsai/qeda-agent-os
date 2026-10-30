@@ -84,6 +84,7 @@ export type MotionOpParams = {
   'scene.setBackground': { sceneId: string; background: NonNullable<MotionDocument['scenes'][number]['background']> };
   'timeline.setDuration': { duration: number };
   'timeline.setLoop': { enabled?: boolean; start?: number; end?: number };
+  'timeline.setWorkArea': { enabled?: boolean; start?: number; end?: number };
   /** Snap every key to the output frame grid. Explicit, never automatic. */
   'timeline.quantizeToFps': { fps?: number };
   'track.add': { trackId: string; name: string; targetId?: string | null };
@@ -810,6 +811,26 @@ registerMotionOp<'timeline.setLoop'>({
     }
     return withTimeline(doc, {
       loop: { enabled: patch.enabled ?? current.enabled, start, end },
+    });
+  },
+});
+
+registerMotionOp<'timeline.setWorkArea'>({
+  id: 'timeline.setWorkArea',
+  summary: 'Set or toggle the work area used to select an export range.',
+  risk: 'mutating',
+  params: z.object({
+    enabled: z.boolean().optional(),
+    start: z.number().min(0).optional(),
+    end: z.number().min(0).optional(),
+  }),
+  reduce: (doc, patch) => {
+    const current = doc.timeline.workArea ?? { enabled: false, start: 0, end: doc.timeline.duration };
+    const start = patch.start ?? current.start;
+    const end = Math.min(patch.end ?? current.end, doc.timeline.duration);
+    if (end <= start) throw new MotionOpError('Work area end must be after its start.');
+    return withTimeline(doc, {
+      workArea: { enabled: patch.enabled ?? current.enabled, start, end },
     });
   },
 });

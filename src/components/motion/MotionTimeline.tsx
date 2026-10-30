@@ -244,6 +244,16 @@ export function MotionTimeline({ className }: { className?: string }) {
         />
 
         <div className="flex items-center gap-1.5">
+          {(() => {
+            const area = doc.timeline.workArea ?? { enabled: false, start: 0, end: doc.timeline.duration };
+            const playhead = motionStore.clock.getTime();
+            return <div className="flex items-center gap-0.5 border-r border-border/60 pr-1.5">
+              <Button type="button" size="sm" variant={area.enabled ? 'secondary' : 'ghost'} className="h-7 px-1.5 text-[10px]" aria-pressed={area.enabled} onClick={() => motionStore.commit('Toggle work area', [{ op: 'timeline.setWorkArea', enabled: !area.enabled }])}>Work area</Button>
+              <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" disabled={playhead >= area.end} title="Set work area start at playhead" onClick={() => motionStore.commit('Set work area start', [{ op: 'timeline.setWorkArea', start: playhead }])}>Set in</Button>
+              <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" disabled={playhead <= area.start} title="Set work area end at playhead" onClick={() => motionStore.commit('Set work area end', [{ op: 'timeline.setWorkArea', end: playhead }])}>Set out</Button>
+              {area.enabled && <span className="hidden text-[9px] tabular-nums text-muted-foreground xl:inline">{area.start.toFixed(2)}–{area.end.toFixed(2)}s</span>}
+            </div>;
+          })()}
           <span className="hidden text-[10px] text-muted-foreground sm:inline">
             {selection ? selectionLabel(selection) : 'Nothing selected'}
           </span>

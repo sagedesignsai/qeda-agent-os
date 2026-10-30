@@ -77,6 +77,15 @@ describe('motion op registry', () => {
     expect(() => applyMotionOp(doc, { ...base, time: 2.4 })).not.toThrow();
   });
 
+  it('sets a bounded work area and rejects collapsed ranges', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const inPoint = applyMotionOp(doc, { op: 'timeline.setWorkArea', start: 1.25 });
+    const bounded = applyMotionOp(inPoint, { op: 'timeline.setWorkArea', end: 4.5, enabled: true });
+    expect(bounded.timeline.workArea).toEqual({ enabled: true, start: 1.25, end: 4.5 });
+    expect(() => applyMotionOp(bounded, { op: 'timeline.setWorkArea', end: 1.25 })).toThrow(MotionOpError);
+    expect(() => applyMotionOp(doc, { op: 'timeline.setWorkArea', start: 7 })).toThrow(MotionOpError);
+  });
+
   it('collects a removal cascade while preserving unscoped tracks', () => {
     const doc = createStarterMotionDocument(NOW);
     const result = collectNodeCascade(doc, 'product');
