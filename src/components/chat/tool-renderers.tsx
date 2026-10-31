@@ -27,6 +27,9 @@ import {
   FileDiffIcon,
   FlaskConicalIcon,
   ListChecksIcon,
+  BoxIcon,
+  Layers3Icon,
+  WandSparklesIcon,
 } from 'lucide-react';
 import {
   Sources,
@@ -873,10 +876,50 @@ export function ResearchCitationsCard({ output }: { output: Output }) {
   );
 }
 
+function MotionPlanCard({
+  output,
+  namespace,
+}: {
+  output: Output;
+  namespace: string;
+}) {
+  const operationCount = asNumber(output.operationCount) ?? 0;
+  const requiresApproval = output.requiresApproval === true;
+  const risk = asString(output.risk) || 'safe';
+  const diff = (output.diff ?? {}) as Output;
+  const changed = asNumber(diff.changed) ?? asNumber(diff.totalChanges) ?? 0;
+  const Icon = namespace === 'motion.scene.director'
+    ? Layers3Icon
+    : namespace === 'motion.node.builder'
+      ? BoxIcon
+      : WandSparklesIcon;
+
+  return (
+    <CardShell>
+      <CardHeader
+        icon={<Icon className="size-4" />}
+        label={namespace.replace('motion.', '').replaceAll('.', ' / ')}
+        meta={<Badge variant={requiresApproval ? 'secondary' : 'outline'}>{risk}</Badge>}
+      />
+      <div className="space-y-2 px-3 py-3">
+        <p className="font-medium">Motion plan ready</p>
+        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <span>{operationCount} operation{operationCount === 1 ? '' : 's'}</span>
+          <span>{changed} document change{changed === 1 ? '' : 's'}</span>
+          {requiresApproval && <span>Approval required</span>}
+        </div>
+      </div>
+    </CardShell>
+  );
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /** Tool names that have a purpose-built renderer. */
 export const SPECIALIZED_TOOLS = new Set([
+  'motion_scene_director',
+  'motion_node_builder',
+  'motion_procedural_modeling',
   'advancedSearch',
   'scrapePage',
   'libraryDocs',
@@ -912,6 +955,12 @@ export function renderSpecializedTool(
   if (isFailed(data)) return null;
 
   switch (toolName) {
+    case 'motion_scene_director':
+      return <MotionPlanCard output={data} namespace="motion.scene.director" />;
+    case 'motion_node_builder':
+      return <MotionPlanCard output={data} namespace="motion.node.builder" />;
+    case 'motion_procedural_modeling':
+      return <MotionPlanCard output={data} namespace="motion.procedural.modeling" />;
     case 'startResearchRun':
       return <ResearchRunCard input={input} />;
     case 'recordSource':

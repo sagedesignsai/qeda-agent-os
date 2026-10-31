@@ -133,6 +133,9 @@ const createWindow = async () => {
     icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -170,7 +173,14 @@ const createWindow = async () => {
 
   // Open urls in the user's browser
   mainWindow.webContents.setWindowOpenHandler((edata) => {
-    shell.openExternal(edata.url);
+    try {
+      const url = new URL(edata.url);
+      if (url.protocol === 'https:' || url.protocol === 'http:') {
+        void shell.openExternal(url.toString());
+      }
+    } catch {
+      // Ignore malformed or unsupported external navigation requests.
+    }
     return { action: 'deny' };
   });
 

@@ -177,7 +177,7 @@ export class MotionProjectStore {
     } else if (sidecar && (!document || sidecar.revision > canonicalRevision)) {
       const readOnly = !(await this.isWritable(projectPath));
       return {
-        document: sidecar.document,
+        document: this.parseRecoveryDocument(sidecar.document, id),
         path: projectPath,
         dirty: true,
         readOnly,
@@ -212,7 +212,12 @@ export class MotionProjectStore {
       return this.openProject(id);
     }
     const canonical = await this.readCanonicalRevision(projectPath).catch(() => -1);
-    const recovered: MotionDocument = { ...sidecar.document, revision: Math.max(canonical, sidecar.revision) + 1 };
+    const recoveredDocument = this.parseRecoveryDocument(sidecar.document, id);
+    const recovered: MotionDocument = {
+      ...recoveredDocument,
+      revision: Math.max(canonical, sidecar.revision) + 1,
+      meta: { ...recoveredDocument.meta, updatedAt: this.now().toISOString() },
+    };
     await this.saveProject(id, recovered, { forceBackup: true });
     return this.openProject(id);
   }
@@ -440,6 +445,22 @@ export class MotionProjectStore {
       throw new MotionProjectError('Editor state exceeds the 256 KB limit.', 'MOTION_EDITOR_STATE_TOO_LARGE');
     }
     await writeFileAtomic(path.join(this.projectPath(id), 'editor-state.json'), serialized);
+  }
+
+  private parseRecoveryDocument(value: unknown, id: string): MotionDocument {
+    try {
+      const document = parseMotionDocument(value);
+      if (document.meta.id !== id) {
+        throw new MotionProjectError('The recovery document belongs to a different project.', 'MOTION_RECOVERY_ID_MISMATCH');
+      }
+      return document;
+    } catch (error) {
+      if (error instanceof MotionProjectError) throw error;
+      throw new MotionProjectError(
+        `The recovery document is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        'MOTION_RECOVERY_INVALID',
+      );
+    }
   }
 
   private async saveProjectUnlocked(

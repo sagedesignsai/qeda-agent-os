@@ -68,19 +68,23 @@ export interface CreateSandboxInput {
   template?: string;
 }
 
-function withGithubToken(remoteUrl: string, token?: string): string {
-  if (!token) return remoteUrl;
-  try {
-    const url = new URL(remoteUrl);
-    if (url.hostname === 'github.com' && url.protocol === 'https:') {
-      url.username = 'x-access-token';
-      url.password = token;
-      return url.toString();
-    }
-  } catch {
-    // fall through
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function validateRemoteUrl(remoteUrl: string): string {
+  const trimmed = remoteUrl.trim();
+  if (!trimmed || /[\\r\\n]/.test(trimmed)) {
+    throw new Error('Repository URL is invalid.');
   }
-  return remoteUrl;
+  const url = new URL(trimmed);
+  if (url.protocol !== 'https:' || url.hostname !== 'github.com') {
+    throw new Error('Only HTTPS GitHub repository URLs are supported.');
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new Error('Repository URL must not contain credentials or fragments.');
+  }
+  return url.toString();
 }
 
 function buildSandboxHeaders(
@@ -178,7 +182,10 @@ export async function createSandbox(
     OPENCODE_PASSWORD: password,
     OPENCODE_SERVER_PASSWORD: password,
   };
-  if (input.githubToken) envs.GITHUB_TOKEN = input.githubToken;
+  if (input.githubToken) {
+    envs.GITHUB_TOKEN = input.githubToken;
+    envs.GIT_HTTP_AUTH_HEADER = `Authorization: Bearer ${input.githubToken}`;
+  }
   // Forward the E2B key is not needed inside; opencode calls providers directly.
   // Provider keys are expected to be passed via input.envs.
 
@@ -204,8 +211,8 @@ export async function createSandbox(
     template = 'opencode';
   }
 
-  const cloneUrl = withGithubToken(input.remoteUrl, input.githubToken);
-  const dir = JSON.stringify(repoDir);
+  const cloneUrl = validateRemoteUrl(input.remoteUrl);
+  const dir = shellQuote(repoDir);
   const startCommand = [
     `cd ${dir} &&`,
     'if command -v opencode2 >/dev/null 2>&1; then',
@@ -218,10 +225,12 @@ export async function createSandbox(
 
   let baseSha: string;
   try {
-    const cloneResult = await sandbox.commands.run(
-      `git clone -- ${JSON.stringify(cloneUrl)} ${JSON.stringify(repoDir)}`,
-      { timeoutMs: 300_000 },
-    );
+    const cloneCommand = input.githubToken
+      ? `git -c http.extraHeader="$GIT_HTTP_AUTH_HEADER" clone -- ${shellQuote(cloneUrl)} ${shellQuote(repoDir)}`
+      : `git clone -- ${shellQuote(cloneUrl)} ${shellQuote(repoDir)}`;
+    const cloneResult = await sandbox.commands.run(cloneCommand, {
+      timeoutMs: 300_000,
+    });
     if (cloneResult.exitCode !== 0) {
       throw new Error(
         `Failed to clone repository into sandbox: ${cloneResult.stderr || cloneResult.stdout || 'unknown error'}`,
@@ -229,7 +238,7 @@ export async function createSandbox(
     }
 
     const headResult = await sandbox.commands.run(
-      `cd ${JSON.stringify(repoDir)} && git rev-parse HEAD`,
+      `cd ${shellQuote(repoDir)} && git rev-parse HEAD`,
       { timeoutMs: 30_000 },
     );
     if (headResult.exitCode !== 0) {

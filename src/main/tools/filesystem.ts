@@ -19,6 +19,24 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 
+const PROTECTED_PATH_PATTERNS = [
+  /(^|[\\/])\.ssh([\\/]|$)/i,
+  /(^|[\\/])\.gnupg([\\/]|$)/i,
+  /(^|[\\/])\.aws([\\/]|$)/i,
+  /(^|[\\/])\.config[\\/]gcloud([\\/]|$)/i,
+  /(^|[\\/])\.env(?:\.|$)/i,
+  /(^|[\\/])id_[^\\/]+$/i,
+  /(^|[\\/])[^\\/]*(?:credentials|secret|token|private[-_]?key)[^\\/]*$/i,
+];
+
+function resolveSafePath(input: string): string {
+  const resolved = path.resolve(input);
+  if (PROTECTED_PATH_PATTERNS.some((pattern) => pattern.test(resolved))) {
+    throw new Error('Access to credential and private-key files is blocked.');
+  }
+  return resolved;
+}
+
 // ─── Read File ────────────────────────────────────────────────────────────────
 
 export const readFileTool = tool({
@@ -31,7 +49,7 @@ export const readFileTool = tool({
       .describe('Text encoding to use when reading.'),
   }),
   execute: async ({ filePath, encoding }) => {
-    const resolved = path.resolve(filePath);
+    const resolved = resolveSafePath(filePath);
     try {
       const content = await fs.readFile(resolved, encoding as BufferEncoding);
       const stat = await fs.stat(resolved);
@@ -62,7 +80,7 @@ export const writeFileTool = tool({
       .describe('Automatically create missing parent directories.'),
   }),
   execute: async ({ filePath, content, createDirs }) => {
-    const resolved = path.resolve(filePath);
+    const resolved = resolveSafePath(filePath);
     try {
       if (createDirs) {
         await fs.mkdir(path.dirname(resolved), { recursive: true });
@@ -94,7 +112,7 @@ export const listDirTool = tool({
       .describe('Maximum depth when recursive = true.'),
   }),
   execute: async ({ dirPath, recursive, maxDepth }) => {
-    const resolved = path.resolve(dirPath);
+    const resolved = resolveSafePath(dirPath);
 
     async function walk(dir: string, depth: number): Promise<object[]> {
       const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -132,7 +150,7 @@ export const deleteFileTool = tool({
     filePath: z.string().describe('Absolute or relative path to the file.'),
   }),
   execute: async ({ filePath }) => {
-    const resolved = path.resolve(filePath);
+    const resolved = resolveSafePath(filePath);
     try {
       await fs.unlink(resolved);
       return { success: true, path: resolved };
