@@ -43,6 +43,7 @@ export { chatToolPolicies } from './policies/chat.js';
 export { copilotToolPolicies } from './policies/copilot.js';
 export { correspondenceToolPolicies } from './policies/correspondence.js';
 export { createPlanTools } from './plan.js';
+export { createMotionTools, type MotionToolContext } from './motion.js';
 
 import { filesystemTools } from './filesystem.js';
 import { shellTools } from './shell.js';
