@@ -5,7 +5,7 @@
  */
 
 import { createBlankMotionDocument } from '@/lib/motion/defaults';
-import { preflightMotionExport } from '@/main/motion/preflight';
+import { preflightMotionExport } from '@/lib/motion/export/preflight';
 
 describe('preflightMotionExport', () => {
   it('accepts a valid scene and reports no issues', () => {

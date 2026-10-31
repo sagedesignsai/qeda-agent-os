@@ -5,7 +5,7 @@
  */
 
 import { createMotionTemplate, MOTION_TEMPLATES } from '@/lib/motion/templates';
-import { preflightMotionExport } from '@/main/motion/preflight';
+import { preflightMotionExport } from '@/lib/motion/export/preflight';
 
 describe('Motion templates', () => {
   it('creates a fresh document matching each template manifest', () => {

@@ -4,7 +4,7 @@
  * Guards frame count and timestamps at exact and partial-frame range boundaries.
  */
 
-import { motionRenderFrameCount, motionRenderFrames } from '@/main/motion/render-plan';
+import { motionRenderFrameCount, motionRenderFrames } from '@/lib/motion/export/render-plan';
 
 describe('Motion render frame plan', () => {
   it('plans exact integer-duration ranges without an extra frame', () => {

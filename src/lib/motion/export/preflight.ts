@@ -1,13 +1,13 @@
 /**
- * main/motion/preflight.ts
+ * lib/motion/export/preflight.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Pure, renderer-independent export checks. The export host runs these against
- * its immutable document snapshot before creating an output file.
+ * Pure, renderer-independent export checks. Main runs these against its immutable
+ * snapshot and the editor runs the same function for live blocking feedback.
  */
 
-import { getMotionNodeType } from '../../lib/motion/node-registry';
-import type { MotionDocument, MotionScene } from '../../lib/motion/types';
-import type { MotionRenderRange } from './render-plan.js';
+import { getMotionNodeType } from '../node-registry';
+import type { MotionDocument, MotionScene } from '../types';
+import type { MotionRenderRange } from './render-plan';
 
 export type MotionPreflightIssue = {
   severity: 'blocking' | 'warning';

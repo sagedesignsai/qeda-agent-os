@@ -12,17 +12,13 @@ import path from 'node:path';
 
 import { serializeMotionDocument } from '../../lib/motion/schema';
 import type { MotionDocument } from '../../lib/motion/types';
-import { motionRenderFrameCount, type MotionRenderRange } from './render-plan.js';
+import type {
+  MotionRenderPhase,
+  MotionRenderProgress,
+} from '../../lib/motion/export/protocol.js';
+import { motionRenderFrameCount, type MotionRenderRange } from '../../lib/motion/export/render-plan.js';
 
-export type MotionRenderPhase = 'snapshot' | 'preflight' | 'prepare' | 'render' | 'finalize' | 'done' | 'failed' | 'cancelled';
-export type MotionRenderProgress = {
-  jobId: string;
-  phase: MotionRenderPhase;
-  frame: number;
-  frameCount: number;
-  fraction: number;
-  error?: string;
-};
+export type { MotionRenderPhase, MotionRenderProgress } from '../../lib/motion/export/protocol.js';
 
 export type MotionRenderJob = {
   id: string;
@@ -34,6 +30,7 @@ export type MotionRenderJob = {
   range: MotionRenderRange;
   fps: number;
   frameCount: number;
+  presetId?: string;
   phase: MotionRenderPhase;
   frame: number;
   error?: string;
@@ -61,58 +58,62 @@ export class MotionRenderJobs {
     document: MotionDocument;
     outputPath: string;
     range: MotionRenderRange;
+    /** Export fps may differ from the project's editing rate. */
+    fps?: number;
+    presetId?: string;
   }): Promise<MotionRenderJob> {
     if (this.starting || [...this.jobs.values()].some((job) => !['done', 'failed', 'cancelled'].includes(job.phase))) {
       throw new MotionRenderJobError('A Motion export is already running.', 'MOTION_EXPORT_BUSY');
     }
     this.starting = true;
     try {
-    if (options.document.meta.id !== options.projectId) {
-      throw new MotionRenderJobError('The export snapshot does not match the selected project.', 'MOTION_EXPORT_PROJECT_MISMATCH');
-    }
-    const fps = options.document.meta.output.fps;
-    const frameCount = motionRenderFrameCount(options.range, fps);
-    const outputPath = path.resolve(options.outputPath);
-    if (!path.extname(outputPath)) throw new MotionRenderJobError('The output file must have an extension.', 'MOTION_EXPORT_PATH_INVALID');
+      if (options.document.meta.id !== options.projectId) {
+        throw new MotionRenderJobError('The export snapshot does not match the selected project.', 'MOTION_EXPORT_PROJECT_MISMATCH');
+      }
+      const fps = options.fps ?? options.document.meta.output.fps;
+      const frameCount = motionRenderFrameCount(options.range, fps);
+      const outputPath = path.resolve(options.outputPath);
+      if (!path.extname(outputPath)) throw new MotionRenderJobError('The output file must have an extension.', 'MOTION_EXPORT_PATH_INVALID');
 
-    const id = this.createId();
-    if (this.jobs.has(id)) throw new MotionRenderJobError(`Render job id collision: ${id}`, 'MOTION_EXPORT_ID_COLLISION');
-    const jobDirectory = path.join(this.jobsDirectory, id);
-    const snapshotPath = path.join(jobDirectory, 'project.json');
-    const partPath = `${outputPath}.part`;
-    let handle: FileHandle | undefined;
-    let createdJobDirectory = false;
-    try {
-      await fs.mkdir(this.jobsDirectory, { recursive: true });
-      await fs.mkdir(jobDirectory);
-      createdJobDirectory = true;
-      await fs.writeFile(snapshotPath, serializeMotionDocument(options.document), { flag: 'wx' });
-      handle = await fs.open(partPath, 'wx');
-    } catch (error) {
-      await handle?.close().catch(() => undefined);
-      if (createdJobDirectory) await fs.rm(jobDirectory, { recursive: true, force: true }).catch(() => undefined);
-      throw new MotionRenderJobError(
-        error instanceof Error ? error.message : String(error),
-        'MOTION_EXPORT_OUTPUT_OPEN_FAILED',
-      );
-    }
+      const id = this.createId();
+      if (this.jobs.has(id)) throw new MotionRenderJobError(`Render job id collision: ${id}`, 'MOTION_EXPORT_ID_COLLISION');
+      const jobDirectory = path.join(this.jobsDirectory, id);
+      const snapshotPath = path.join(jobDirectory, 'project.json');
+      const partPath = `${outputPath}.part`;
+      let handle: FileHandle | undefined;
+      let createdJobDirectory = false;
+      try {
+        await fs.mkdir(this.jobsDirectory, { recursive: true });
+        await fs.mkdir(jobDirectory);
+        createdJobDirectory = true;
+        await fs.writeFile(snapshotPath, serializeMotionDocument(options.document), { flag: 'wx' });
+        handle = await fs.open(partPath, 'wx');
+      } catch (error) {
+        await handle?.close().catch(() => undefined);
+        if (createdJobDirectory) await fs.rm(jobDirectory, { recursive: true, force: true }).catch(() => undefined);
+        throw new MotionRenderJobError(
+          error instanceof Error ? error.message : String(error),
+          'MOTION_EXPORT_OUTPUT_OPEN_FAILED',
+        );
+      }
 
-    const job: MotionRenderJob = {
-      id,
-      projectId: options.projectId,
-      revision: options.document.revision,
-      outputPath,
-      partPath,
-      snapshotPath,
-      range: { ...options.range },
-      fps,
-      frameCount,
-      phase: 'prepare',
-      frame: 0,
-    };
-    this.jobs.set(id, job);
-    this.handles.set(id, handle);
-    return { ...job };
+      const job: MotionRenderJob = {
+        id,
+        projectId: options.projectId,
+        revision: options.document.revision,
+        outputPath,
+        partPath,
+        snapshotPath,
+        range: { ...options.range },
+        fps,
+        frameCount,
+        phase: 'prepare',
+        frame: 0,
+        ...(options.presetId ? { presetId: options.presetId } : {}),
+      };
+      this.jobs.set(id, job);
+      this.handles.set(id, handle);
+      return { ...job };
     } finally {
       this.starting = false;
     }
