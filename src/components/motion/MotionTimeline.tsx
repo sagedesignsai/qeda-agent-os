@@ -7,7 +7,7 @@
  * is only the translation layer between them.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PlusIcon, ScissorsIcon, Trash2Icon } from 'lucide-react';
 
 import { CanvasTimeline } from '@/components/timeline/CanvasTimeline';
@@ -26,6 +26,7 @@ import {
   toTimelineModel,
 } from '@/lib/motion/timeline-adapter';
 import { fitPxPerSecond, zoomAround } from '@/lib/timeline/time';
+import { resolveTimelineShortcut } from '@/lib/timeline/shortcuts';
 import type { MotionSelection } from '@/lib/motion/types';
 import type { TimelineEditHandlers, TimelineSelection } from '@/lib/timeline/types';
 import { cn } from '@/lib/utils';
@@ -79,6 +80,20 @@ export function MotionTimeline({ className }: { className?: string }) {
       },
       onLoopChange: (range) => {
         motionStore.commit('Loop range', [{ op: 'timeline.setLoop', start: range.start, end: range.end }]);
+      },
+      onTrimItem: (itemId, values) => {
+        const found = findPlacement(doc, itemId);
+        if (!found) return;
+        motionStore.commit('Trim clip', [
+          {
+            op: 'placement.trim',
+            trackId: found.track.id,
+            placementId: itemId,
+            start: values.start,
+            trimIn: values.trimIn,
+            duration: values.duration,
+          },
+        ]);
       },
       onZoomChange: (next) => motionStore.setView(next),
       onScrollChange: (scrollSeconds) => motionStore.setView({ ...view, scrollSeconds }),
@@ -222,6 +237,50 @@ export function MotionTimeline({ className }: { className?: string }) {
 
   const loopEnabled = doc.timeline.loop.enabled;
   const offFrame = useMemo(() => countOffFrameKeyframes(doc), [doc]);
+  const fps = doc.meta.output.fps;
+
+  const stepFrame = useCallback(
+    (direction: -1 | 1) => {
+      motionStore.clock.pause();
+      motionStore.seek(motionStore.clock.getTime() + direction / fps);
+    },
+    [fps],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const command = resolveTimelineShortcut(event, {
+        editable: Boolean(
+          target &&
+            (target.isContentEditable ||
+              ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)),
+        ),
+      });
+      if (!command) return;
+      event.preventDefault();
+      switch (command.type) {
+        case 'toggle-play':
+          motionStore.togglePlay();
+          break;
+        case 'play-from-start':
+          motionStore.seek(0);
+          motionStore.play();
+          break;
+        case 'step':
+          stepFrame(command.direction);
+          break;
+        case 'go-to-start':
+          motionStore.seek(0);
+          break;
+        case 'go-to-end':
+          motionStore.seek(doc.timeline.duration);
+          break;
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [doc.timeline.duration, stepFrame]);
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)}>
@@ -229,7 +288,7 @@ export function MotionTimeline({ className }: { className?: string }) {
         <TimelineTransport
           clock={motionStore.clock}
           duration={doc.timeline.duration}
-          fps={doc.meta.output.fps}
+          fps={fps}
           loopEnabled={loopEnabled}
           snapEnabled={snapEnabled}
           onToggleLoop={() =>
@@ -238,6 +297,9 @@ export function MotionTimeline({ className }: { className?: string }) {
             ])
           }
           onToggleSnap={() => setSnapEnabled((previous) => !previous)}
+          onStep={stepFrame}
+          onGoToStart={() => motionStore.seek(0)}
+          onGoToEnd={() => motionStore.seek(doc.timeline.duration)}
           onZoomIn={() => zoomBy(1.3)}
           onZoomOut={() => zoomBy(1 / 1.3)}
           onZoomFit={zoomToFit}

@@ -19,6 +19,8 @@ describe('Motion timeline adapter trim projection', () => {
     const item = toTimelineModel(trimmed).items.find((candidate) => candidate.id === 'plc_product');
 
     expect(item?.duration).toBe(2);
+    expect(item?.trimIn).toBe(1);
+    expect(item?.sourceDuration).toBe(5);
     expect(item?.trimmedKeyCount).toBe(4);
     const liftChannel = item?.channels?.find((channel) => channel.id === 'chn_product_lift');
     expect(liftChannel?.keys.map((key) => key.time)).toEqual([2.4]);

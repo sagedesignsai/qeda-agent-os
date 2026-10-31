@@ -62,6 +62,10 @@ export type TimelineItem = {
   locked?: boolean;
   dimmed?: boolean;
   trimmedKeyCount?: number;
+  /** Clip-local offset of the visible content, so handles can trim without moving keys. */
+  trimIn?: number;
+  /** Full source length in seconds; bounds the right trim handle when known. */
+  sourceDuration?: number;
   /** Optional per-property key rows drawn inside the item. */
   channels?: TimelineChannel[];
 };
@@ -103,6 +107,11 @@ export type TimelineEditHandlers = {
   /** Called once per drag, on pointer-up — one undo entry, no per-move clones. */
   onMoveItem?(itemId: string, start: number, rowId: string): void;
   onMoveKey?(keyId: string, time: number): void;
+  /** Trim or slip an item edge; values are final and already bounded. */
+  onTrimItem?(
+    itemId: string,
+    values: { edge: 'start' | 'end'; start: number; duration: number; trimIn: number },
+  ): void;
   onLoopChange?(range: TimelineLoopRange): void;
   onZoomChange?(view: TimelineView): void;
   onScrollChange?(scrollSeconds: number): void;

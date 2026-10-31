@@ -65,6 +65,8 @@ export type LaidOutItem = {
   itemId: string;
   label: string;
   trimmedKeyCount: number;
+  trimIn: number;
+  sourceDuration?: number;
   start: number;
   end: number;
   x: number;
@@ -210,6 +212,8 @@ export function layoutTimeline(input: TimelineLayoutInput): TimelineLayout {
         itemId: item.id,
         label: item.label,
         trimmedKeyCount: item.trimmedKeyCount ?? 0,
+        trimIn: item.trimIn ?? 0,
+        ...(typeof item.sourceDuration === 'number' ? { sourceDuration: item.sourceDuration } : {}),
         start: item.start,
         end: itemEnd,
         x: timeToX(item.start, view),

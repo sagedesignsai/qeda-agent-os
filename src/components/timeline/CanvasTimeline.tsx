@@ -39,6 +39,11 @@ import {
   xToTime,
   zoomAround,
 } from '@/lib/timeline/time';
+import {
+  resolveTimelineTrim,
+  type TimelineTrimOrigin,
+  type TimelineTrimResult,
+} from '@/lib/timeline/trim';
 import type {
   TimelineClock,
   TimelineEditHandlers,
@@ -256,6 +261,14 @@ type DragState =
       originalStart: number;
       originalRowId: string;
       grabSeconds: number;
+    }
+  | {
+      kind: 'trim';
+      item: LaidOutItem;
+      edge: 'start' | 'end';
+      origin: TimelineTrimOrigin;
+      preview: TimelineTrimResult;
+      guide: number | null;
     };
 
 function paintOverlay(
@@ -292,6 +305,20 @@ function paintOverlay(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
+  }
+
+  if (drag?.kind === 'trim') {
+    const x = timeToX(drag.preview.start, layout.view);
+    const y = drag.item.y;
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = palette.playhead;
+    ctx.fillRect(x, y, Math.max(1, drag.preview.duration * layout.view.pxPerSecond), drag.item.height);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = palette.playhead;
+    ctx.setLineDash([4, 3]);
+    roundRect(ctx, x, y, Math.max(2, drag.preview.duration * layout.view.pxPerSecond), drag.item.height, 6);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   if (drag?.kind === 'key') {
@@ -506,6 +533,28 @@ export function CanvasTimeline({
       case 'item':
         handlers?.onSelect?.({ rowId: hit.item.rowId, itemId: hit.item.itemId });
         if (!hit.item.locked) {
+          if (hit.edge) {
+            dragRef.current = {
+              kind: 'trim',
+              item: hit.item,
+              edge: hit.edge,
+              origin: {
+                start: hit.item.start,
+                duration: hit.item.end - hit.item.start,
+                trimIn: hit.item.trimIn,
+                ...(typeof hit.item.sourceDuration === 'number'
+                  ? { sourceDuration: hit.item.sourceDuration }
+                  : {}),
+              },
+              preview: {
+                start: hit.item.start,
+                duration: hit.item.end - hit.item.start,
+                trimIn: hit.item.trimIn,
+              },
+              guide: null,
+            };
+            break;
+          }
           dragRef.current = {
             kind: 'item',
             item: hit.item,
@@ -537,7 +586,9 @@ export function CanvasTimeline({
           : hit.type === 'key'
             ? 'grab'
             : hit.type === 'item'
-              ? 'grab'
+              ? hit.edge
+                ? 'ew-resize'
+                : 'grab'
               : hit.type === 'loop-start' || hit.type === 'loop-end'
                 ? 'ew-resize'
                 : 'default';
@@ -545,7 +596,7 @@ export function CanvasTimeline({
     }
 
     const time = xToTime(point.x, viewRef.current);
-    const bypassSnap = event.shiftKey || !snap;
+    const bypassSnap = event.altKey || !snap;
 
     switch (drag.kind) {
       case 'scrub':
@@ -613,6 +664,38 @@ export function CanvasTimeline({
         };
         break;
       }
+      case 'trim': {
+        // Trimming bypasses snapping with Shift so Alt stays free for slip.
+        let edgeTime = time;
+        let guide: number | null = null;
+        if (!(event.shiftKey || !snap)) {
+          const snapped = snapToCandidates(
+            time,
+            snapCandidatesFor(layoutRef.current, {
+              playhead: clock.getTime(),
+              excludeItemId: drag.item.itemId,
+            }),
+            viewRef.current,
+          );
+          edgeTime =
+            snapped.target === null ? quantizeToFrame(time, layoutRef.current.fps) : snapped.time;
+          guide = snapped.target;
+        }
+        const edgeEnd = drag.origin.start + drag.origin.duration;
+        const delta = drag.edge === 'start' ? edgeTime - drag.origin.start : edgeTime - edgeEnd;
+        dragRef.current = {
+          ...drag,
+          preview: resolveTimelineTrim({
+            edge: drag.edge,
+            delta,
+            origin: drag.origin,
+            slip: drag.edge === 'start' && event.altKey,
+            fps: layoutRef.current.fps,
+          }),
+          guide,
+        };
+        break;
+      }
     }
     drawOverlay();
   };
@@ -633,6 +716,15 @@ export function CanvasTimeline({
         drag.rowId !== drag.originalRowId
       ) {
         handlers?.onMoveItem?.(drag.item.itemId, drag.start, drag.rowId);
+      }
+    } else if (drag?.kind === 'trim') {
+      const { preview, origin } = drag;
+      if (
+        Math.abs(preview.start - origin.start) > 1e-6 ||
+        Math.abs(preview.duration - origin.duration) > 1e-6 ||
+        Math.abs(preview.trimIn - origin.trimIn) > 1e-6
+      ) {
+        handlers?.onTrimItem?.(drag.item.itemId, { edge: drag.edge, ...preview });
       }
     } else if (drag?.kind === 'loop') {
       handlers?.onLoopChange?.(drag.range);

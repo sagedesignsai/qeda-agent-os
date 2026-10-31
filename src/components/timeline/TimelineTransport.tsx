@@ -10,7 +10,17 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { PauseIcon, PlayIcon, RepeatIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PauseIcon,
+  PlayIcon,
+  RepeatIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { formatSeconds, formatTimecode } from '@/lib/timeline/time';
@@ -39,6 +49,9 @@ export type TimelineTransportProps = {
   snapEnabled?: boolean;
   onToggleLoop?: () => void;
   onToggleSnap?: () => void;
+  onStep?: (direction: -1 | 1) => void;
+  onGoToStart?: () => void;
+  onGoToEnd?: () => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onZoomFit?: () => void;
@@ -53,6 +66,9 @@ export function TimelineTransport({
   snapEnabled = true,
   onToggleLoop,
   onToggleSnap,
+  onStep,
+  onGoToStart,
+  onGoToEnd,
   onZoomIn,
   onZoomOut,
   onZoomFit,
@@ -73,10 +89,58 @@ export function TimelineTransport({
         size="icon"
         variant="ghost"
         className="size-7"
+        aria-label="Go to start"
+        title="Go to start (Home)"
+        disabled={!onGoToStart}
+        onClick={() => onGoToStart?.()}
+      >
+        <SkipBackIcon className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        aria-label="Step back one frame"
+        title="Step back one frame (,)"
+        disabled={!onStep}
+        onClick={() => onStep?.(-1)}
+      >
+        <ChevronLeftIcon className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="size-7"
         aria-label={playing ? 'Pause' : 'Play'}
         onClick={() => clock.toggle()}
       >
         {playing ? <PauseIcon className="size-3.5" /> : <PlayIcon className="size-3.5" />}
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        aria-label="Step forward one frame"
+        title="Step forward one frame (.)"
+        disabled={!onStep}
+        onClick={() => onStep?.(1)}
+      >
+        <ChevronRightIcon className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        className="size-7"
+        aria-label="Go to end"
+        title="Go to end (End)"
+        disabled={!onGoToEnd}
+        onClick={() => onGoToEnd?.()}
+      >
+        <SkipForwardIcon className="size-3.5" />
       </Button>
 
       <TimecodeReadout clock={clock} fps={fps} />

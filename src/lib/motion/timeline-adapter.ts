@@ -71,6 +71,8 @@ export function toTimelineModel(doc: MotionDocument): TimelineModel {
         label: clip.name,
         start: placement.start,
         duration,
+        trimIn,
+        sourceDuration: clip.duration,
         tone,
         locked: track.locked,
         dimmed: track.muted,
