@@ -138,6 +138,20 @@ export type MotionValidationError = { code: string; path: string };
 /** Ordered cross-reference and domain validation shared by parsing and op reducers. */
 export function validateMotionDocument(doc: MotionDocument): MotionValidationError[] {
   const errors: MotionValidationError[] = [];
+  const activeScene = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+  // The compatibility aliases are derived state. Validate the canonical scene so
+  // stale aliases cannot hide invalid edits or make validation depend on load order.
+  if (activeScene) {
+    const timeline = {
+      ...activeScene.timeline,
+      loop: activeScene.timeline.loop ?? {
+        enabled: false,
+        start: 0,
+        end: activeScene.timeline.duration,
+      },
+    };
+    doc = { ...doc, scene: { nodes: activeScene.nodes }, timeline };
+  }
   if (doc.schemaVersion !== MOTION_SCHEMA_VERSION) errors.push({ code: 'SCHEMA_VERSION', path: 'schemaVersion' });
   const assetIds = new Set<string>();
   for (let i = 0; i < doc.assets.length; i += 1) {

@@ -269,22 +269,25 @@ export function applyMotionOp(
           scene.id === activeScene.id
             ? {
                 ...scene,
-                nodes: reduced.scene.nodes,
+                nodes: activeScene.nodes,
                 timeline: {
-                  ...reduced.timeline,
-                  loop: undefined,
-                  workArea: reduced.timeline.workArea ?? {
-                    enabled: reduced.timeline.loop.enabled,
-                    start: reduced.timeline.loop.start,
-                    end: reduced.timeline.loop.end,
-                  },
-                  playMode:
-                    reduced.timeline.playMode ??
-                    (reduced.timeline.loop.enabled ? ('loop' as const) : ('once' as const)),
+                  ...activeScene.timeline,
+                  loop: activeScene.timeline.loop,
+                  workArea: activeScene.timeline.workArea,
+                  playMode: activeScene.timeline.playMode,
                 },
               }
             : scene,
         ),
+        scene: { nodes: activeScene.nodes },
+        timeline: {
+          ...activeScene.timeline,
+          loop: activeScene.timeline.loop ?? {
+            enabled: false,
+            start: 0,
+            end: activeScene.timeline.duration,
+          },
+        },
       }
     : reduced;
 
@@ -314,10 +317,16 @@ export function applyMotionOps(
 
 // ── Immutable helpers ────────────────────────────────────────────────────────
 
-const withTimeline = (doc: MotionDocument, patch: Partial<MotionTimeline>): MotionDocument => ({
-  ...doc,
-  timeline: { ...doc.timeline, ...patch },
-});
+const withTimeline = (doc: MotionDocument, patch: Partial<MotionTimeline>): MotionDocument => {
+  const timeline = { ...doc.timeline, ...patch };
+  return {
+    ...doc,
+    timeline,
+    scenes: doc.scenes.map((scene) =>
+      scene.id === doc.activeSceneId ? { ...scene, timeline: { ...scene.timeline, ...patch } } : scene,
+    ),
+  };
+};
 
 function requireTrack(doc: MotionDocument, trackId: string): MotionTrack {
   const track = doc.timeline.tracks.find((candidate) => candidate.id === trackId);
@@ -818,20 +827,16 @@ registerMotionOp<'scene.node.duplicate'>({
         assertAvailable(placementId);
         return { trackId: track.id, placement: { ...cloneMotionData(placement), id: placementId, clipId: idMap.clips![placement.clipId] } };
       });
-      next = {
-        ...next,
-        timeline: {
-          ...next.timeline,
-          clips: [...next.timeline.clips, ...clips],
-          tracks: next.timeline.tracks.map((track) => ({
-            ...track,
-            placements: sortPlacements([
-              ...track.placements,
-              ...copiedPlacements.filter((item) => item.trackId === track.id).map((item) => item.placement),
-            ]),
-          })),
-        },
-      };
+      next = withTimeline(next, {
+        clips: [...next.timeline.clips, ...clips],
+        tracks: next.timeline.tracks.map((track) => ({
+          ...track,
+          placements: sortPlacements([
+            ...track.placements,
+            ...copiedPlacements.filter((item) => item.trackId === track.id).map((item) => item.placement),
+          ]),
+        })),
+      });
     }
     return next;
   },
