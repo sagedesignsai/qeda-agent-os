@@ -228,7 +228,11 @@ function sameSelection(a: MotionSelection, b: MotionSelection): boolean {
   if (a === b) return true;
   if (!a || !b) return false;
   if (a.kind !== b.kind) return false;
-  if (a.kind === 'node' && b.kind === 'node') return a.nodeId === b.nodeId;
+  if (a.kind === 'node' && b.kind === 'node') {
+    const left = a.selectedNodeIds ?? [a.nodeId];
+    const right = b.selectedNodeIds ?? [b.nodeId];
+    return a.nodeId === b.nodeId && left.length === right.length && left.every((id, i) => id === right[i]);
+  }
   if (a.kind === 'track' && b.kind === 'track') return a.trackId === b.trackId;
   if (a.kind === 'placement' && b.kind === 'placement') {
     return a.placementId === b.placementId && a.trackId === b.trackId;

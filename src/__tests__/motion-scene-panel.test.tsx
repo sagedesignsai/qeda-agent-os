@@ -78,6 +78,55 @@ describe('MotionScenePanel hierarchy', () => {
     expect(motionStore.getSnapshot().selection).toEqual({ kind: 'node', nodeId: 'product' });
   });
 
+  it('renames a node on double-click and commits the edit through an op', () => {
+    render(<MotionScenePanel />);
+    const product = screen.getByRole('button', { name: 'Select scene object Product' });
+    fireEvent.doubleClick(product);
+    const input = screen.getByRole('textbox', { name: 'Rename Product' });
+    fireEvent.change(input, { target: { value: 'Tablet rig' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(motionStore.getDocument().scene.nodes.find((node) => node.id === 'product')?.name).toBe(
+      'Tablet rig',
+    );
+    expect(motionStore.getSnapshot().canUndo).toBe(true);
+  });
+
+  it('supports shift-range and modifier-toggle node selection', () => {
+    render(<MotionScenePanel />);
+    const product = screen.getByRole('button', { name: 'Select scene object Product' });
+    const title = screen.getByRole('button', { name: 'Select scene object Title' });
+    const dashboard = screen.getByRole('button', { name: 'Select scene object Dashboard screen' });
+    fireEvent.click(product);
+    fireEvent.click(title, { shiftKey: true });
+
+    expect(motionStore.getSnapshot().selection).toEqual({
+      kind: 'node',
+      nodeId: 'title',
+      selectedNodeIds: ['product', 'screen_dashboard', 'title'],
+    });
+    expect(product).toHaveAttribute('aria-pressed', 'true');
+    expect(dashboard).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(dashboard, { ctrlKey: true });
+    expect(motionStore.getSnapshot().selection).toEqual({
+      kind: 'node',
+      nodeId: 'title',
+      selectedNodeIds: ['product', 'title'],
+    });
+  });
+
+  it('duplicates the selected subtree with its animation through the op registry', () => {
+    render(<MotionScenePanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate Product' }));
+
+    const doc = motionStore.getDocument();
+    const copy = doc.scene.nodes.find((node) => node.name === 'Product Copy');
+    expect(copy).toBeDefined();
+    expect(doc.scene.nodes.some((node) => node.parentId === copy?.id)).toBe(true);
+    expect(doc.timeline.clips.some((clip) => clip.name === 'Product spin Copy')).toBe(true);
+  });
+
   it('marks animated nodes with a visible dot', () => {
     render(<MotionScenePanel />);
     const row = screen.getByRole('button', { name: 'Select scene object Product' });

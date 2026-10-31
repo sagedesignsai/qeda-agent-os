@@ -34,6 +34,7 @@ type MotionPropertyFieldsProps = {
   values: Readonly<Record<string, unknown>>;
   assets?: readonly MotionAsset[];
   idPrefix?: string;
+  mixedProperties?: ReadonlySet<string>;
   onChange: (property: string, value: PropertyValue) => void;
 };
 
@@ -284,11 +285,13 @@ export function MotionVector3Field({
   id,
   label,
   value,
+  mixed = false,
   onChange,
 }: {
   id: string;
   label: string;
   value: MotionVector3;
+  mixed?: boolean;
   onChange: (value: MotionVector3) => void;
 }) {
   const [draft, setDraft] = useState(value.map(String));
@@ -308,9 +311,10 @@ export function MotionVector3Field({
 
   return (
     <Field className="gap-1">
-      <FieldLabel className="text-[10px] text-muted-foreground">
-        {label}
-      </FieldLabel>
+        <FieldLabel className="flex items-center gap-2 text-[10px] text-muted-foreground">
+          {label}
+          {mixed && <span className="font-normal">Mixed</span>}
+        </FieldLabel>
       <div className="grid grid-cols-3 gap-1">
         {AXES.map((axis, index) => (
           <Input
@@ -520,6 +524,7 @@ export function MotionPropertyFields({
   values,
   assets = [],
   idPrefix = 'motion-property',
+  mixedProperties = new Set(),
   onChange,
 }: MotionPropertyFieldsProps) {
   const groups = useMemo(() => {
@@ -542,15 +547,21 @@ export function MotionPropertyFields({
           </h3>
           <FieldGroup className="gap-2.5">
             {fields.map(([property, hint]) => (
-              <MotionPropertyField
-                key={property}
-                id={`${idPrefix}-${property}`}
-                label={hint.label ?? property}
-                hint={hint}
-                value={values[property]}
-                assets={assets}
-                onChange={(next) => onChange(property, next)}
-              />
+              <div key={property}>
+                {mixedProperties.has(property) && (
+                  <span className="mb-1 block text-[9px] font-medium text-muted-foreground">
+                    Mixed values across selection
+                  </span>
+                )}
+                <MotionPropertyField
+                  id={`${idPrefix}-${property}`}
+                  label={hint.label ?? property}
+                  hint={hint}
+                  value={values[property]}
+                  assets={assets}
+                  onChange={(next) => onChange(property, next)}
+                />
+              </div>
             ))}
           </FieldGroup>
         </section>

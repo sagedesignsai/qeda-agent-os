@@ -5,7 +5,7 @@
  * drag-to-reparent emits one op; this panel never mutates scene data directly.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   DndContext,
   useDraggable,
@@ -21,6 +21,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ClapperboardIcon,
+  CopyIcon,
   EyeIcon,
   EyeOffIcon,
   FolderIcon,
@@ -42,6 +43,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { useMotionAssets } from '@/hooks/use-motion-assets';
+import { createMotionId } from '@/lib/motion/ids';
 import {
   buildMotionHierarchy,
   checkMotionReparent,
@@ -67,9 +69,31 @@ export function MotionScenePanel() {
   const [sceneExpanded, setSceneExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
+  const [altPressed, setAltPressed] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Alt') setAltPressed(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Alt') setAltPressed(false);
+    };
+    const onWindowBlur = () => setAltPressed(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onWindowBlur);
+    };
+  }, []);
 
   const selectedTrackId = selection && selection.kind !== 'node' ? selection.trackId : undefined;
-  const selectedNodeId = selection?.kind === 'node' ? selection.nodeId : undefined;
+  const selectedNodeIds = selection?.kind === 'node'
+    ? selection.selectedNodeIds ?? [selection.nodeId]
+    : [];
   const clips = useMemo(
     () => [...doc.timeline.clips].sort((a, b) => a.name.localeCompare(b.name)),
     [doc.timeline.clips],
@@ -86,11 +110,12 @@ export function MotionScenePanel() {
     const checks = new Map<string, { allowed: boolean; reason: string }>();
     if (!draggingNodeId) return checks;
     for (const node of doc.scene.nodes) {
-      const result = checkMotionReparent(doc.scene.nodes, draggingNodeId, node.id);
+      const targetParentId = altPressed ? node.id : node.parentId;
+      const result = checkMotionReparent(doc.scene.nodes, draggingNodeId, targetParentId);
       checks.set(node.id, result.allowed ? { allowed: true, reason: '' } : result);
     }
     return checks;
-  }, [draggingNodeId, doc.scene.nodes]);
+  }, [altPressed, draggingNodeId, doc.scene.nodes]);
   const animatedNodeIds = useMemo(() => {
     const ids = new Set<string>();
     for (const clip of doc.timeline.clips) {
@@ -110,19 +135,116 @@ export function MotionScenePanel() {
     });
   };
 
+  const selectNode = (nodeId: string, event: React.MouseEvent<HTMLButtonElement>) => {
+    if (event.shiftKey && selectionAnchor) {
+      const from = rows.findIndex((row) => row.node.id === selectionAnchor);
+      const to = rows.findIndex((row) => row.node.id === nodeId);
+      if (from >= 0 && to >= 0) {
+        const low = Math.min(from, to);
+        const high = Math.max(from, to);
+        const selectedNodeIds = rows.slice(low, high + 1).map((row) => row.node.id);
+        motionStore.setSelection({ kind: 'node', nodeId, selectedNodeIds });
+        return;
+      }
+    }
+    if (event.metaKey || event.ctrlKey) {
+      const selected = new Set(selectedNodeIds);
+      if (selected.has(nodeId)) selected.delete(nodeId);
+      else selected.add(nodeId);
+      const ids = [...selected];
+      if (ids.length === 0) motionStore.setSelection(null);
+      else motionStore.setSelection({
+        kind: 'node',
+        nodeId: selected.has(nodeId) ? nodeId : ids[ids.length - 1],
+        ...(ids.length > 1 ? { selectedNodeIds: ids } : {}),
+      });
+      setSelectionAnchor(nodeId);
+      return;
+    }
+    motionStore.setSelection({ kind: 'node', nodeId });
+    setSelectionAnchor(nodeId);
+  };
+
   const onDragEnd = (event: DragEndEvent) => {
     setDraggingNodeId(null);
     const nodeId = event.active.data.current?.nodeId;
     if (typeof nodeId !== 'string' || !event.over) return;
-    const parentId = event.over.data.current?.parentId ?? null;
-    if (typeof parentId !== 'string' && parentId !== null) return;
-    if (!checkMotionReparent(doc.scene.nodes, nodeId, parentId).allowed) return;
-    motionStore.commit('Reparent object', [{ op: 'scene.node.reparent', nodeId, parentId }]);
+    const data = event.over.data.current;
+    const targetNodeId = typeof data?.targetNodeId === 'string' ? data.targetNodeId : null;
+    const target = targetNodeId
+      ? doc.scene.nodes.find((node) => node.id === targetNodeId)
+      : undefined;
+    if (target?.id === nodeId) return;
+    const parentId = altPressed && target ? target.id : target?.parentId ?? null;
+    const check = checkMotionReparent(doc.scene.nodes, nodeId, parentId);
+    if (!check.allowed) return;
+
+    const source = doc.scene.nodes.find((node) => node.id === nodeId);
+    if (!source) return;
+    if (!target) {
+      const rootCount = doc.scene.nodes.filter((node) => node.parentId === null && node.id !== nodeId).length;
+      motionStore.commit('Move object to scene root', [
+        { op: 'scene.node.reparent', nodeId, parentId: null },
+        { op: 'scene.node.reorder', nodeId, toIndex: rootCount },
+      ]);
+      return;
+    }
+
+    const after = event.delta.y > 0;
+    const remainingSiblings = doc.scene.nodes.filter(
+      (node) => node.parentId === parentId && node.id !== nodeId,
+    );
+    const targetIndex = remainingSiblings.findIndex((node) => node.id === target.id);
+    const toIndex = Math.max(0, targetIndex + (after ? 1 : 0));
+    const ops = [] as Array<
+      | { op: 'scene.node.reparent'; nodeId: string; parentId: string | null }
+      | { op: 'scene.node.reorder'; nodeId: string; toIndex: number }
+    >;
+    if (source.parentId !== parentId) ops.push({ op: 'scene.node.reparent', nodeId, parentId });
+    ops.push({ op: 'scene.node.reorder', nodeId, toIndex: Math.min(toIndex, remainingSiblings.length) });
+    motionStore.commit(altPressed ? 'Reparent object' : 'Reorder object', ops);
   };
 
   const onDragStart = (event: DragStartEvent) => {
-    const nodeId = event.active.data.current?.nodeId;
+      const nodeId = event.active.data.current?.nodeId;
     setDraggingNodeId(typeof nodeId === 'string' ? nodeId : null);
+  };
+
+  const duplicateNode = (nodeId: string) => {
+    const subtree = [doc.scene.nodes.find((node) => node.id === nodeId)].filter(
+      (node): node is MotionNode => Boolean(node),
+    );
+    for (let index = 0; index < subtree.length; index += 1) {
+      const parentId = subtree[index].id;
+      subtree.push(...doc.scene.nodes.filter((node) => node.parentId === parentId));
+    }
+    const subtreeIds = new Set(subtree.map((node) => node.id));
+    const matchingClips = doc.timeline.clips.flatMap((clip) => {
+      const channels = clip.channels.filter((channel) => subtreeIds.has(channel.targetId));
+      return channels.length ? [{ clip, channels }] : [];
+    });
+    const clipIds = new Set(matchingClips.map(({ clip }) => clip.id));
+    const placements = doc.timeline.tracks.flatMap((track) =>
+      track.placements.filter((placement) => clipIds.has(placement.clipId)),
+    );
+    const channels = matchingClips.flatMap(({ channels: matching }) => matching);
+    const keyframes = channels.flatMap((channel) => channel.keyframes);
+    const nodeMap = Object.fromEntries(
+      subtree.map((node) => [node.id, `node_${createMotionId('doc')}`]),
+    );
+    motionStore.commit('Duplicate scene object', [{
+      op: 'scene.node.duplicate',
+      nodeId,
+      newRootId: nodeMap[nodeId],
+      includeAnimation: true,
+      idMap: {
+        nodes: nodeMap,
+        clips: Object.fromEntries(matchingClips.map(({ clip }) => [clip.id, createMotionId('clip')])),
+        placements: Object.fromEntries(placements.map((placement) => [placement.id, createMotionId('placement')])),
+        channels: Object.fromEntries(channels.map((channel) => [channel.id, createMotionId('channel')])),
+        keyframes: Object.fromEntries(keyframes.map((key) => [key.id, createMotionId('keyframe')])),
+      },
+    }]);
   };
 
   return (
@@ -165,11 +287,13 @@ export function MotionScenePanel() {
                         key={row.node.id}
                         row={row}
                         rows={rows}
-                        selected={selectedNodeId === row.node.id}
+                        selected={selectedNodeIds.includes(row.node.id)}
                         collapsed={collapsed.has(row.node.id)}
                         animated={animatedNodeIds.has(row.node.id)}
                         missingAsset={missingAssetFor(row.node, motionAssets.missingIds)}
                         dropCheck={dropChecks.get(row.node.id)}
+                        onSelectNode={selectNode}
+                        onDuplicate={duplicateNode}
                         onToggleCollapsed={toggleCollapsed}
                       />
                     ))}
@@ -485,6 +609,8 @@ function SceneNodeRow({
   animated,
   missingAsset,
   dropCheck,
+  onSelectNode,
+  onDuplicate,
   onToggleCollapsed,
 }: {
   row: MotionHierarchyRow;
@@ -494,12 +620,16 @@ function SceneNodeRow({
   animated: boolean;
   missingAsset: boolean;
   dropCheck?: { allowed: boolean; reason: string };
+  onSelectNode: (nodeId: string, event: React.MouseEvent<HTMLButtonElement>) => void;
+  onDuplicate: (nodeId: string) => void;
   onToggleCollapsed: (nodeId: string) => void;
 }) {
   const { node, depth, childIds } = row;
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(node.name);
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `motion-drop-${node.id}`,
-    data: { parentId: node.id },
+    data: { targetNodeId: node.id, parentId: node.parentId },
     disabled: !dropCheck?.allowed,
   });
   const {
@@ -551,6 +681,18 @@ function SceneNodeRow({
     focusNode(childIds[0]);
   };
 
+  const commitName = () => {
+    const name = draftName.trim();
+    setRenaming(false);
+    if (!name || name === node.name) {
+      setDraftName(node.name);
+      return;
+    }
+    motionStore.commit('Rename scene object', [
+      { op: 'scene.node.update', nodeId: node.id, name },
+    ]);
+  };
+
   return (
     <div
       ref={setDropRef}
@@ -592,33 +734,66 @@ function SceneNodeRow({
       ) : (
         <span className="size-4 shrink-0" />
       )}
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        onClick={() => motionStore.setSelection({ kind: 'node', nodeId: node.id })}
-        aria-pressed={selected}
-        aria-label={`Select scene object ${node.name}`}
-        data-motion-node-id={node.id}
-        onKeyDown={onTreeKeyDown}
-      >
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate">{node.name}</span>
-        {animated && (
-          <span
-            className="size-1.5 shrink-0 rounded-full bg-primary"
-            aria-label="Animated"
-            title="Animated"
-          />
-        )}
-        {missingAsset && (
-          <TriangleAlertIcon
-            className="size-3 shrink-0 text-destructive"
-            aria-label="Missing media asset"
-          />
-        )}
-        <span className="ml-auto truncate text-[9px] text-muted-foreground">{node.type}</span>
-      </button>
+      {renaming ? (
+        <input
+          autoFocus
+          aria-label={`Rename ${node.name}`}
+          className="h-6 min-w-0 flex-1 rounded border border-ring bg-background px-1 text-xs outline-none"
+          value={draftName}
+          onChange={(event) => setDraftName(event.target.value)}
+          onBlur={commitName}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === 'Enter') event.currentTarget.blur();
+            if (event.key === 'Escape') {
+              setDraftName(node.name);
+              setRenaming(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={(event) => onSelectNode(node.id, event)}
+          onDoubleClick={() => {
+            setDraftName(node.name);
+            setRenaming(true);
+          }}
+          aria-pressed={selected}
+          aria-label={`Select scene object ${node.name}`}
+          data-motion-node-id={node.id}
+          onKeyDown={onTreeKeyDown}
+        >
+          <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">{node.name}</span>
+          {animated && (
+            <span
+              className="size-1.5 shrink-0 rounded-full bg-primary"
+              aria-label="Animated"
+              title="Animated"
+            />
+          )}
+          {missingAsset && (
+            <TriangleAlertIcon
+              className="size-3 shrink-0 text-destructive"
+              aria-label="Missing media asset"
+            />
+          )}
+          <span className="ml-auto truncate text-[9px] text-muted-foreground">{node.type}</span>
+        </button>
+      )}
       <span className="flex opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="size-5"
+          aria-label={`Duplicate ${node.name}`}
+          onClick={() => onDuplicate(node.id)}
+        >
+          <CopyIcon data-icon />
+        </Button>
         <Button
           type="button"
           variant="ghost"

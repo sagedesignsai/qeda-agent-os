@@ -209,7 +209,7 @@ export type MotionDocument = {
  * has to know the other's shape.
  */
 export type MotionSelection =
-  | { kind: 'node'; nodeId: string }
+  | { kind: 'node'; nodeId: string; selectedNodeIds?: readonly string[] }
   | { kind: 'track'; trackId: string }
   | { kind: 'placement'; trackId: string; placementId: string }
   | {

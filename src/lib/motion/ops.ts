@@ -80,6 +80,19 @@ export type MotionOpParams = {
   };
   'scene.node.remove': { nodeId: string };
   'scene.node.reparent': { nodeId: string; parentId: string | null; preserveWorld?: boolean };
+  'scene.node.reorder': { nodeId: string; toIndex: number };
+  'scene.node.duplicate': {
+    nodeId: string;
+    newRootId: string;
+    idMap: {
+      nodes: Record<string, string>;
+      clips?: Record<string, string>;
+      placements?: Record<string, string>;
+      channels?: Record<string, string>;
+      keyframes?: Record<string, string>;
+    };
+    includeAnimation?: boolean;
+  };
   'scene.add': { sceneId: string; name: string; rigIdMap: Record<string, string> };
   'scene.duplicate': { sceneId: string; name: string; idMap: Record<string, string> };
   'scene.remove': { sceneId: string };
@@ -659,6 +672,159 @@ registerMotionOp<'scene.node.reparent'>({
       doc,
       nodes.map((candidate) => (candidate.id === nodeId ? next : candidate)),
     );
+  },
+});
+
+registerMotionOp<'scene.node.reorder'>({
+  id: 'scene.node.reorder',
+  summary: 'Change a node position among its siblings.',
+  risk: 'mutating',
+  params: z.object({ nodeId: z.string().min(1), toIndex: z.number().int().nonnegative() }).strict(),
+  reduce: (doc, { nodeId, toIndex }) => {
+    const nodes = doc.scene.nodes;
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) throw new MotionOpError(`Scene node "${nodeId}" does not exist.`);
+    const siblings = nodes.filter((candidate) => candidate.parentId === node.parentId);
+    if (toIndex >= siblings.length) {
+      throw new MotionOpError(`Sibling index ${toIndex} is out of range.`);
+    }
+    const fromIndex = siblings.findIndex((candidate) => candidate.id === nodeId);
+    if (fromIndex === toIndex) return doc;
+    const reordered = [...siblings];
+    reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, node);
+    let siblingIndex = 0;
+    const nextNodes = nodes.map((candidate) =>
+      candidate.parentId === node.parentId ? reordered[siblingIndex++] : candidate,
+    );
+    return withMotionSceneNodes(doc, nextNodes);
+  },
+});
+
+registerMotionOp<'scene.node.duplicate'>({
+  id: 'scene.node.duplicate',
+  summary: 'Duplicate a node subtree with caller-provided ids.',
+  risk: 'safe',
+  params: z.object({
+    nodeId: z.string().min(1),
+    newRootId: z.string().min(1),
+    idMap: z.object({
+      nodes: z.record(z.string(), z.string().min(1)),
+      clips: z.record(z.string(), z.string().min(1)).optional(),
+      placements: z.record(z.string(), z.string().min(1)).optional(),
+      channels: z.record(z.string(), z.string().min(1)).optional(),
+      keyframes: z.record(z.string(), z.string().min(1)).optional(),
+    }).strict(),
+    includeAnimation: z.boolean().optional(),
+  }).strict(),
+  reduce: (doc, { nodeId, newRootId, idMap, includeAnimation = false }) => {
+    const sourceRoot = doc.scene.nodes.find((node) => node.id === nodeId);
+    if (!sourceRoot) throw new MotionOpError(`Scene node "${nodeId}" does not exist.`);
+
+    const subtree = [sourceRoot];
+    for (let index = 0; index < subtree.length; index += 1) {
+      const parentId = subtree[index].id;
+      for (const child of doc.scene.nodes) {
+        if (child.parentId === parentId) subtree.push(child);
+      }
+    }
+    const subtreeIds = new Set(subtree.map((node) => node.id));
+    for (const node of subtree) {
+      const mapped = idMap.nodes[node.id];
+      if (!mapped || mapped === node.id) {
+        throw new MotionOpError(`A distinct node id mapping is required for "${node.id}".`);
+      }
+      if (doc.scene.nodes.some((candidate) => candidate.id === mapped)) {
+        throw new MotionOpError(`Duplicate node id "${mapped}" already exists.`);
+      }
+    }
+    if (newRootId !== idMap.nodes[nodeId]) {
+      throw new MotionOpError('newRootId must match the root node mapping.');
+    }
+    const mappedNodeIds = Object.values(idMap.nodes);
+    if (new Set(mappedNodeIds).size !== mappedNodeIds.length) {
+      throw new MotionOpError('A node duplicate must map every node to a distinct id.');
+    }
+
+    const copies = subtree.map((node, index) => ({
+      ...cloneMotionData(node),
+      id: idMap.nodes[node.id],
+      parentId: index === 0 ? node.parentId : (node.parentId ? idMap.nodes[node.parentId] : null),
+      name: index === 0 ? `${node.name} Copy` : node.name,
+    }));
+    let next = withMotionSceneNodes(doc, [...doc.scene.nodes, ...copies]);
+
+    if (includeAnimation) {
+      const relevantClips = doc.timeline.clips.flatMap((clip) => {
+        const channels = clip.channels.filter((channel) => subtreeIds.has(channel.targetId));
+        return channels.length ? [{ clip, channels }] : [];
+      });
+      const relevantClipIds = new Set(relevantClips.map(({ clip }) => clip.id));
+      const placements = doc.timeline.tracks.flatMap((track) =>
+        track.placements
+          .filter((placement) => relevantClipIds.has(placement.clipId))
+          .map((placement) => ({ track, placement })),
+      );
+      const requireMapped = (map: Record<string, string> | undefined, id: string, kind: string) => {
+        const mapped = map?.[id];
+        if (!mapped || mapped === id) {
+          throw new MotionOpError(`A distinct ${kind} id mapping is required for "${id}".`);
+        }
+        return mapped;
+      };
+      const createdIds = new Set<string>(mappedNodeIds);
+      const assertAvailable = (id: string) => {
+        if (createdIds.has(id) || doc.timeline.clips.some((clip) => clip.id === id) ||
+            doc.timeline.tracks.some((track) => track.id === id) ||
+            doc.timeline.tracks.some((track) => track.placements.some((item) => item.id === id))) {
+          throw new MotionOpError(`Duplicate animation id "${id}" already exists or is reused.`);
+        }
+        createdIds.add(id);
+      };
+      const clips = relevantClips.map(({ clip, channels }) => {
+        const clipId = requireMapped(idMap.clips, clip.id, 'clip');
+        assertAvailable(clipId);
+        return {
+          ...cloneMotionData(clip),
+          id: clipId,
+          name: `${clip.name} Copy`,
+          channels: channels.map((channel) => {
+            const channelId = requireMapped(idMap.channels, channel.id, 'channel');
+            assertAvailable(channelId);
+            return {
+              ...cloneMotionData(channel),
+              id: channelId,
+              targetId: idMap.nodes[channel.targetId],
+              keyframes: channel.keyframes.map((key) => {
+                const keyframeId = requireMapped(idMap.keyframes, key.id, 'keyframe');
+                assertAvailable(keyframeId);
+                return { ...cloneMotionData(key), id: keyframeId };
+              }),
+            };
+          }),
+        };
+      });
+      const copiedPlacements = placements.map(({ track, placement }) => {
+        const placementId = requireMapped(idMap.placements, placement.id, 'placement');
+        assertAvailable(placementId);
+        return { trackId: track.id, placement: { ...cloneMotionData(placement), id: placementId, clipId: idMap.clips![placement.clipId] } };
+      });
+      next = {
+        ...next,
+        timeline: {
+          ...next.timeline,
+          clips: [...next.timeline.clips, ...clips],
+          tracks: next.timeline.tracks.map((track) => ({
+            ...track,
+            placements: sortPlacements([
+              ...track.placements,
+              ...copiedPlacements.filter((item) => item.trackId === track.id).map((item) => item.placement),
+            ]),
+          })),
+        },
+      };
+    }
+    return next;
   },
 });
 

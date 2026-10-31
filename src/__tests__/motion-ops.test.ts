@@ -152,6 +152,73 @@ describe('motion op registry', () => {
     expect(active?.nodes.find((node) => node.id === 'product')?.visible).toBe(false);
   });
 
+  it('reorders a node among siblings without changing its parent', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const rootIds = doc.scene.nodes.filter((node) => node.parentId === null).map((node) => node.id);
+    const next = applyMotionOp(doc, {
+      op: 'scene.node.reorder',
+      nodeId: rootIds[2],
+      toIndex: 0,
+    });
+    expect(next.scene.nodes.filter((node) => node.parentId === null).map((node) => node.id)).toEqual([
+      rootIds[2],
+      rootIds[0],
+      rootIds[1],
+      ...rootIds.slice(3),
+    ]);
+  });
+
+  it('duplicates a subtree with distinct ids and remaps child parents', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const next = applyMotionOp(doc, {
+      op: 'scene.node.duplicate',
+      nodeId: 'product',
+      newRootId: 'product_copy',
+      idMap: { nodes: { product: 'product_copy', screen_dashboard: 'screen_dashboard_copy' } },
+    });
+    expect(next.scene.nodes.find((node) => node.id === 'product_copy')).toMatchObject({
+      parentId: null,
+      name: 'Product Copy',
+    });
+    expect(next.scene.nodes.find((node) => node.id === 'screen_dashboard_copy')?.parentId).toBe(
+      'product_copy',
+    );
+  });
+
+  it('duplicates targeted animation only when requested, with all ids remapped', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const clips = doc.timeline.clips.flatMap((clip) => {
+      const channels = clip.channels.filter((channel) => channel.targetId === 'product');
+      return channels.length ? [{ clip, channels }] : [];
+    });
+    const clipIdMap = Object.fromEntries(clips.map(({ clip }, index) => [clip.id, `clip_copy_${index}`]));
+    const channels = clips.flatMap(({ channels: matching }) => matching);
+    const placements = doc.timeline.tracks.flatMap((track) =>
+      track.placements.filter((placement) => clipIdMap[placement.clipId]),
+    );
+    const keyframes = channels.flatMap((channel) => channel.keyframes);
+    const next = applyMotionOp(doc, {
+      op: 'scene.node.duplicate',
+      nodeId: 'product',
+      newRootId: 'product_copy',
+      includeAnimation: true,
+      idMap: {
+        nodes: { product: 'product_copy', screen_dashboard: 'screen_dashboard_copy' },
+        clips: clipIdMap,
+        placements: Object.fromEntries(placements.map((placement, index) => [placement.id, `placement_copy_${index}`])),
+        channels: Object.fromEntries(channels.map((channel, index) => [channel.id, `channel_copy_${index}`])),
+        keyframes: Object.fromEntries(keyframes.map((key, index) => [key.id, `key_copy_${index}`])),
+      },
+    });
+
+    const copiedChannels = next.timeline.clips
+      .filter((clip) => Object.values(clipIdMap).includes(clip.id))
+      .flatMap((clip) => clip.channels);
+    expect(copiedChannels.length).toBe(channels.length);
+    expect(copiedChannels.every((channel) => channel.targetId === 'product_copy')).toBe(true);
+    expect(next.timeline.tracks.flatMap((track) => track.placements).some((item) => item.id.startsWith('placement_copy_'))).toBe(true);
+  });
+
   it('collects a removal cascade while preserving unscoped tracks', () => {
     const doc = createStarterMotionDocument(NOW);
     const result = collectNodeCascade(doc, 'product');

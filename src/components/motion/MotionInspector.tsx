@@ -91,6 +91,16 @@ export function MotionInspector() {
         : null,
     [doc.scene.nodes, selectedData?.track.targetId, selection],
   );
+  const selectedNodeIds = selection?.kind === 'node'
+    ? selection.selectedNodeIds ?? [selection.nodeId]
+    : targetNode ? [targetNode.id] : [];
+  const targetNodes = useMemo(
+    () => selectedNodeIds.flatMap((id) => {
+      const node = doc.scene.nodes.find((candidate) => candidate.id === id);
+      return node ? [node] : [];
+    }),
+    [doc.scene.nodes, selectedNodeIds],
+  );
   const targetDefinition = targetNode
     ? getMotionNodeType(targetNode.type)
     : undefined;
@@ -101,6 +111,21 @@ export function MotionInspector() {
           assetId: targetNode.props.assetId ?? targetNode.props.source,
         }
       : (targetNode?.props ?? {});
+  const mixedPropertyIds = useMemo(() => {
+    if (!targetDefinition || targetNodes.length < 2 || targetNodes.some((node) => node.type !== targetNode?.type)) {
+      return new Set<string>();
+    }
+    return new Set(
+      Object.keys(targetDefinition.propertyHints ?? {}).filter((property) => {
+        const values = targetNodes.map((node) =>
+          node.type === 'screen.image' && property === 'assetId'
+            ? node.props.assetId ?? node.props.source
+            : node.props[property],
+        );
+        return values.some((value) => JSON.stringify(value) !== JSON.stringify(values[0]));
+      }),
+    );
+  }, [targetDefinition, targetNode?.type, targetNodes]);
 
   const [trackName, setTrackName] = useState(selectedData?.track.name ?? '');
   const [keyValue, setKeyValue] = useState(
@@ -193,28 +218,25 @@ export function MotionInspector() {
     property: 'position' | 'rotation' | 'scale',
     value: MotionVector3,
   ) => {
-    if (!targetNode) return;
+    if (!targetNode || targetNodes.length === 0) return;
     const storedValue =
       property === 'rotation'
         ? value.map((axis) => (axis * Math.PI) / 180) as MotionVector3
         : value;
-    motionStore.commit('Update object transform', [
-      {
+    motionStore.commit('Update object transform', targetNodes.map((node) => ({
         op: 'scene.node.update',
-        nodeId: targetNode.id,
+        nodeId: node.id,
         transform: { [property]: storedValue },
-      },
-    ]);
+      })));
   };
   const updateNodeProperty = (property: string, value: unknown) => {
     if (!targetNode) return;
-    const props: Record<string, unknown> = { [property]: value };
-    if (targetNode.type === 'screen.image' && property === 'assetId') {
-      props.source = value;
-    }
-    motionStore.commit('Update object property', [
-      { op: 'scene.node.update', nodeId: targetNode.id, props },
-    ]);
+    const compatibleNodes = targetNodes.filter((node) => node.type === targetNode.type);
+    motionStore.commit('Update object property', compatibleNodes.map((node) => {
+      const props: Record<string, unknown> = { [property]: value };
+      if (node.type === 'screen.image' && property === 'assetId') props.source = value;
+      return { op: 'scene.node.update' as const, nodeId: node.id, props };
+    }));
   };
 
   return (
@@ -396,6 +418,7 @@ export function MotionInspector() {
                           id="motion-transform-position"
                           label="Position"
                           value={targetNode.transform.position}
+                          mixed={targetNodes.some((node) => JSON.stringify(node.transform.position) !== JSON.stringify(targetNode.transform.position))}
                           onChange={(value) =>
                             updateNodeTransform('position', value)
                           }
@@ -408,6 +431,7 @@ export function MotionInspector() {
                               (axis) => (axis * 180) / Math.PI,
                             ) as MotionVector3
                           }
+                          mixed={targetNodes.some((node) => JSON.stringify(node.transform.rotation) !== JSON.stringify(targetNode.transform.rotation))}
                           onChange={(value) =>
                             updateNodeTransform('rotation', value)
                           }
@@ -416,6 +440,7 @@ export function MotionInspector() {
                           id="motion-transform-scale"
                           label="Scale"
                           value={targetNode.transform.scale}
+                          mixed={targetNodes.some((node) => JSON.stringify(node.transform.scale) !== JSON.stringify(targetNode.transform.scale))}
                           onChange={(value) =>
                             updateNodeTransform('scale', value)
                           }
@@ -429,6 +454,7 @@ export function MotionInspector() {
                         hints={targetDefinition.propertyHints}
                         values={targetPropertyValues}
                         assets={doc.assets}
+                        mixedProperties={mixedPropertyIds}
                         idPrefix={`motion-node-${targetNode.id}`}
                         onChange={updateNodeProperty}
                       />
