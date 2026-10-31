@@ -65,8 +65,14 @@ export default defineConfig({
       minify: 'esbuild',
       sourcemap: true,
       rollupOptions: {
-        input: path.join(root, 'src/renderer/index.html'),
-        output: { entryFileNames: 'renderer.js' },
+        input: {
+          renderer: path.join(root, 'src/renderer/index.html'),
+          'motion-render': path.join(root, 'src/renderer/motion-render.html'),
+        },
+        output: {
+          entryFileNames: (chunk) =>
+            chunk.name.includes('motion-render') ? 'motion-render.js' : 'renderer.js',
+        },
         // shadcn/ui components ship a `'use client'` directive that is a no-op
         // outside of React Server Components.
         onwarn(warning, warn) {
