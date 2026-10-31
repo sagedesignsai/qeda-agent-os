@@ -47,8 +47,10 @@ export type TimelineTransportProps = {
   fps: number;
   loopEnabled?: boolean;
   snapEnabled?: boolean;
+  playMode?: 'once' | 'loop' | 'ping-pong';
   onToggleLoop?: () => void;
   onToggleSnap?: () => void;
+  onPlayModeChange?: (mode: 'once' | 'loop' | 'ping-pong') => void;
   onStep?: (direction: -1 | 1) => void;
   onGoToStart?: () => void;
   onGoToEnd?: () => void;
@@ -64,8 +66,10 @@ export function TimelineTransport({
   fps,
   loopEnabled = false,
   snapEnabled = true,
+  playMode = 'once',
   onToggleLoop,
   onToggleSnap,
+  onPlayModeChange,
   onStep,
   onGoToStart,
   onGoToEnd,
@@ -158,8 +162,21 @@ export function TimelineTransport({
         onClick={onToggleLoop}
       >
         <RepeatIcon className="size-3" />
-        Loop
+        Work area
       </Button>
+
+      <select
+        aria-label="Playback mode"
+        className="h-7 rounded-md border border-border/60 bg-background px-1.5 text-[11px]"
+        value={playMode}
+        onChange={(event) =>
+          onPlayModeChange?.(event.target.value as 'once' | 'loop' | 'ping-pong')
+        }
+      >
+        <option value="once">Once</option>
+        <option value="loop">Loop</option>
+        <option value="ping-pong">Ping-pong</option>
+      </select>
 
       <Button
         type="button"

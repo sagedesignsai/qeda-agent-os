@@ -90,6 +90,7 @@ export type MotionOpParams = {
   'timeline.setDuration': { duration: number };
   'timeline.setLoop': { enabled?: boolean; start?: number; end?: number };
   'timeline.setWorkArea': { enabled?: boolean; start?: number; end?: number };
+  'timeline.setPlayMode': { playMode: 'once' | 'loop' | 'ping-pong' };
   /** Snap every key to the output frame grid. Explicit, never automatic. */
   'timeline.quantizeToFps': { fps?: number };
   'track.add': { trackId: string; name: string; targetId?: string | null };
@@ -261,7 +262,7 @@ export function applyMotionOp(
           start: reduced.timeline.loop.start,
           end: reduced.timeline.loop.end,
         },
-        playMode: reduced.timeline.loop.enabled ? 'loop' as const : 'once' as const,
+        playMode: reduced.timeline.playMode ?? (reduced.timeline.loop.enabled ? 'loop' as const : 'once' as const),
       },
     } : scene),
   } : reduced;
@@ -903,6 +904,17 @@ registerMotionOp<'timeline.setWorkArea'>({
     return withTimeline(doc, {
       workArea: { enabled: patch.enabled ?? current.enabled, start, end },
     });
+  },
+});
+
+registerMotionOp<'timeline.setPlayMode'>({
+  id: 'timeline.setPlayMode',
+  summary: 'Choose once, loop, or ping-pong playback.',
+  risk: 'mutating',
+  params: z.object({ playMode: z.enum(['once', 'loop', 'ping-pong']) }).strict(),
+  reduce: (doc, { playMode }) => {
+    if (doc.timeline.playMode === playMode) return doc;
+    return withTimeline(doc, { playMode });
   },
 });
 

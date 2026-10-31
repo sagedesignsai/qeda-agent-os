@@ -19,6 +19,7 @@ type Canceller = (handle: number) => void;
 
 export type PlaybackClockOptions = {
   duration: () => number;
+  playMode?: () => 'once' | 'loop' | 'ping-pong';
   /** Loop playback inside the loop range (or the whole document). */
   loopRange?: () => { start: number; end: number } | null;
   schedule?: Scheduler;
@@ -43,6 +44,7 @@ export class PlaybackClock implements TimelineClock {
   private listeners = new Set<() => void>();
   private handle: number | null = null;
   private lastNow: number | null = null;
+  private direction: 1 | -1 = 1;
   private readonly options: PlaybackClockOptions;
 
   constructor(options: PlaybackClockOptions) {
@@ -80,7 +82,14 @@ export class PlaybackClock implements TimelineClock {
     if (this.playing) return;
     const duration = this.duration();
     if (duration <= 0) return;
-    if (this.time >= duration) this.time = 0;
+    const mode = this.options.playMode?.() ?? 'once';
+    const range = this.options.loopRange?.() ?? null;
+    const start = range?.start ?? 0;
+    const end = range?.end ?? duration;
+    if (mode === 'once' && this.time >= duration) this.time = 0;
+    else if (mode === 'loop' && this.time >= end) this.time = start;
+    else if (mode === 'ping-pong' && this.time >= end) this.direction = -1;
+    else if (mode === 'ping-pong' && this.time <= start) this.direction = 1;
     this.playing = true;
     this.lastNow = null;
     this.emit();
@@ -116,23 +125,32 @@ export class PlaybackClock implements TimelineClock {
     const delta = Math.max(0, (nowMs - last) / 1000);
     if (delta === 0) return;
 
-    let next = this.time + delta;
+    const mode = this.options.playMode?.() ?? 'once';
+    let next = this.time + delta * (mode === 'ping-pong' ? this.direction : 1);
     const range = this.options.loopRange?.() ?? null;
-    if (range && range.end > range.start) {
-      const inside = this.time >= range.start - 1e-6 && this.time <= range.end;
-      if (inside && next > range.end) {
-        const span = range.end - range.start;
-        next = range.start + ((next - range.start) % span);
+    const start = mode === 'once' ? 0 : (range?.start ?? 0);
+    const end = mode === 'once' ? duration : (range?.end ?? duration);
+    if (mode === 'loop' && end > start) {
+      if (next > end) next = start + ((next - end) % (end - start));
+    } else if (mode === 'ping-pong' && end > start) {
+      while (next > end || next < start) {
+        if (next > end) {
+          next = end - (next - end);
+          this.direction = -1;
+        } else if (next < start) {
+          next = start + (start - next);
+          this.direction = 1;
+        }
       }
-    } else if (next >= duration) {
-      next = duration;
-      this.time = duration;
+    } else if (next >= end) {
+      next = end;
+      this.time = end;
       this.playing = false;
       this.emit();
       return;
     }
 
-    this.time = Math.min(next, duration);
+    this.time = Math.min(Math.max(next, 0), duration);
     this.emit();
   }
 

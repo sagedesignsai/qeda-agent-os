@@ -235,7 +235,7 @@ export function MotionTimeline({ className }: { className?: string }) {
     }
   }, [doc, selection]);
 
-  const loopEnabled = doc.timeline.loop.enabled;
+  const loopEnabled = doc.timeline.workArea?.enabled ?? false;
   const offFrame = useMemo(() => countOffFrameKeyframes(doc), [doc]);
   const fps = doc.meta.output.fps;
 
@@ -291,12 +291,18 @@ export function MotionTimeline({ className }: { className?: string }) {
           fps={fps}
           loopEnabled={loopEnabled}
           snapEnabled={snapEnabled}
+          playMode={doc.timeline.playMode ?? 'once'}
           onToggleLoop={() =>
-            motionStore.commit('Toggle loop', [
-              { op: 'timeline.setLoop', enabled: !loopEnabled },
+            motionStore.commit('Toggle work area', [
+              { op: 'timeline.setWorkArea', enabled: !loopEnabled },
             ])
           }
           onToggleSnap={() => setSnapEnabled((previous) => !previous)}
+          onPlayModeChange={(playMode) =>
+            motionStore.commit('Change playback mode', [
+              { op: 'timeline.setPlayMode', playMode },
+            ])
+          }
           onStep={stepFrame}
           onGoToStart={() => motionStore.seek(0)}
           onGoToEnd={() => motionStore.seek(doc.timeline.duration)}

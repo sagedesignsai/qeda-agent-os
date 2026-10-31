@@ -318,6 +318,12 @@ export const motionDocumentSchema = z.object({
       start: z.number().nonnegative(),
       end: z.number().nonnegative(),
     }),
+    workArea: z.object({
+      enabled: z.boolean(),
+      start: z.number().nonnegative(),
+      end: z.number().nonnegative(),
+    }).optional(),
+    playMode: z.enum(['once', 'loop', 'ping-pong']).optional(),
     tracks: z.array(trackSchema),
     clips: z.array(clipSchema),
   }),

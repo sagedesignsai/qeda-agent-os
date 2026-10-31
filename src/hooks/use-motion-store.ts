@@ -58,9 +58,10 @@ export class MotionStore {
     this.doc = doc;
     this.clock = new PlaybackClock({
       duration: () => this.doc.timeline.duration,
+      playMode: () => this.doc.timeline.playMode ?? 'once',
       loopRange: () =>
-        this.doc.timeline.loop.enabled
-          ? { start: this.doc.timeline.loop.start, end: this.doc.timeline.loop.end }
+        this.doc.timeline.workArea?.enabled
+          ? { start: this.doc.timeline.workArea.start, end: this.doc.timeline.workArea.end }
           : null,
     });
     this.snapshot = this.buildSnapshot();
