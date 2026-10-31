@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { PlusIcon, ScissorsIcon, Trash2Icon } from 'lucide-react';
+import { CopyIcon, PlusIcon, ScissorsIcon, Trash2Icon } from 'lucide-react';
 
 import { CanvasTimeline } from '@/components/timeline/CanvasTimeline';
 import { TimelineRowHeaders } from '@/components/timeline/TimelineRowHeaders';
@@ -27,7 +27,7 @@ import {
 } from '@/lib/motion/timeline-adapter';
 import { fitPxPerSecond, zoomAround } from '@/lib/timeline/time';
 import { resolveTimelineCanvasShortcut, resolveTimelineShortcut } from '@/lib/timeline/shortcuts';
-import type { MotionSelection } from '@/lib/motion/types';
+import type { MotionEasing, MotionSelection } from '@/lib/motion/types';
 import type { TimelineEditHandlers, TimelineSelection } from '@/lib/timeline/types';
 import { cn } from '@/lib/utils';
 
@@ -45,6 +45,12 @@ export function MotionTimeline({ className }: { className?: string }) {
       return true;
     }
   });
+  const [keyClipboard, setKeyClipboard] = useState<Array<{
+    property: string;
+    offset: number;
+    value: number;
+    easing: MotionEasing;
+  }>>([]);
 
   const model = useMemo(() => toTimelineModel(doc), [doc]);
   const timelineSelection = useMemo(() => motionSelectionToTimeline(selection), [selection]);
@@ -218,6 +224,59 @@ export function MotionTimeline({ className }: { className?: string }) {
     ]);
   }, [doc, selection]);
 
+  const copyKeyframes = useCallback(() => {
+    if (selection?.kind !== 'keyframe') return;
+    const keyIds = selection.selectedKeyIds ?? [
+      `${selection.placementId}::${selection.channelId}::${selection.keyframeId}`,
+    ];
+    const copied = keyIds.flatMap((keyId) => {
+      const target = resolveKeyTarget(doc, keyId);
+      if (!target) return [];
+      const placement = findPlacement(doc, target.placementId);
+      const clip = doc.timeline.clips.find((candidate) => candidate.id === target.clipId);
+      const channel = clip?.channels.find((candidate) => candidate.id === target.channelId);
+      const key = channel?.keyframes.find((candidate) => candidate.id === target.keyframeId);
+      if (!placement || !clip || !channel || !key) return [];
+      const sceneTime = placement.placement.start + key.time - (placement.placement.trimIn ?? 0);
+      return [{ property: channel.property, sceneTime, value: key.value, easing: { ...key.easing } }];
+    });
+    if (copied.length === 0) return;
+    const origin = Math.min(...copied.map((key) => key.sceneTime));
+    setKeyClipboard(copied.map(({ sceneTime, ...key }) => ({ ...key, offset: sceneTime - origin })));
+  }, [doc, selection]);
+
+  const pasteKeyframes = useCallback(() => {
+    const placementId = selection?.kind === 'keyframe' || selection?.kind === 'placement'
+      ? selection.placementId
+      : null;
+    if (!placementId || keyClipboard.length === 0) return;
+    const placementRef = findPlacement(doc, placementId);
+    const clip = placementRef
+      ? doc.timeline.clips.find((candidate) => candidate.id === placementRef.placement.clipId)
+      : null;
+    if (!placementRef || !clip) return;
+    const playhead = motionStore.clock.getTime();
+    const trimIn = placementRef.placement.trimIn ?? 0;
+    const visibleEnd = placementRef.placement.start + (placementRef.placement.duration ?? clip.duration - trimIn);
+    const ops = keyClipboard.flatMap((copied) => {
+      const channel = clip.channels.find((candidate) => candidate.property === copied.property);
+      if (!channel) return [];
+      const sceneTime = playhead + copied.offset;
+      if (sceneTime < placementRef.placement.start || sceneTime > visibleEnd) return [];
+      const time = trimIn + sceneTime - placementRef.placement.start;
+      return [{
+        op: 'keyframe.add' as const,
+        clipId: clip.id,
+        channelId: channel.id,
+        keyframeId: createMotionId('keyframe'),
+        time,
+        value: copied.value,
+        easing: { ...copied.easing },
+      }];
+    });
+    if (ops.length) motionStore.commit('Paste keyframes', ops);
+  }, [doc, keyClipboard, selection]);
+
   const toggleSnap = useCallback(() => {
     setSnapEnabled((enabled) => {
       const next = !enabled;
@@ -331,12 +390,22 @@ export function MotionTimeline({ className }: { className?: string }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
+      const editable = Boolean(
+        target &&
+          (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)),
+      );
+      if (!editable && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && selection?.kind === 'keyframe') {
+        event.preventDefault();
+        copyKeyframes();
+        return;
+      }
+      if (!editable && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        pasteKeyframes();
+        return;
+      }
       const command = resolveTimelineShortcut(event, {
-        editable: Boolean(
-          target &&
-            (target.isContentEditable ||
-              ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)),
-        ),
+        editable,
       });
       if (!command) return;
       event.preventDefault();
@@ -361,7 +430,7 @@ export function MotionTimeline({ className }: { className?: string }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [doc.timeline.duration, stepFrame]);
+  }, [copyKeyframes, doc.timeline.duration, pasteKeyframes, selection, stepFrame]);
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)}>
@@ -444,6 +513,30 @@ export function MotionTimeline({ className }: { className?: string }) {
           >
             <PlusIcon className="size-3" />
             Key
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            aria-label="Copy keyframes"
+            title="Copy selected keyframes (Ctrl/Cmd+C)"
+            onClick={copyKeyframes}
+            disabled={selection?.kind !== 'keyframe'}
+          >
+            <CopyIcon className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            aria-label="Paste keyframes"
+            title="Paste keyframes at the playhead (Ctrl/Cmd+V)"
+            onClick={pasteKeyframes}
+            disabled={keyClipboard.length === 0 || (selection?.kind !== 'keyframe' && selection?.kind !== 'placement')}
+          >
+            <PlusIcon className="size-3.5" />
           </Button>
           <Button
             type="button"
