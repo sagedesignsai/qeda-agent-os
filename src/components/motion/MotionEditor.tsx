@@ -10,6 +10,7 @@ import {
   BoxesIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  DownloadIcon,
   PlusIcon,
   RectangleHorizontalIcon,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
 } from 'react-resizable-panels';
 
 import { MotionAssetMarketplaceDialog } from '@/components/motion/assets/MotionAssetMarketplaceDialog';
+import { MotionExportDialog } from '@/components/motion/export/MotionExportDialog';
 import { MotionInspector } from '@/components/motion/MotionInspector';
 import { MotionScenePanel } from '@/components/motion/MotionScenePanel';
 import { MotionTimeline } from '@/components/motion/MotionTimeline';
@@ -36,6 +38,7 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
+import { useMotionExport } from '@/hooks/use-motion-export';
 import { createMotionId } from '@/lib/motion/ids';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 
@@ -44,6 +47,8 @@ export function MotionEditor() {
   const [scenePanelCollapsed, setScenePanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportState = useMotionExport();
   const scenePanelRef = useRef<PanelImperativeHandle | null>(null);
   const inspectorPanelRef = useRef<PanelImperativeHandle | null>(null);
   const horizontalLayout = useDefaultLayout({
@@ -186,6 +191,22 @@ export function MotionEditor() {
           </DropdownMenu>
           <Button
             type="button"
+            variant={exportState.busy ? 'secondary' : 'outline'}
+            size="sm"
+            className="h-7 gap-1.5 px-2"
+            aria-label="Export composition"
+            onClick={() => setExportOpen(true)}
+          >
+            <DownloadIcon data-icon="inline-start" />
+            Export
+            {exportState.busy && (
+              <span className="text-[10px] tabular-nums">
+                {Math.round((exportState.progress?.fraction ?? 0) * 100)}%
+              </span>
+            )}
+          </Button>
+          <Button
+            type="button"
             variant="ghost"
             size="icon"
             className="size-7"
@@ -277,6 +298,14 @@ export function MotionEditor() {
         <MotionAssetMarketplaceDialog
           projectId={doc.meta.id}
           onClose={() => setMarketplaceOpen(false)}
+        />
+      )}
+
+      {exportOpen && (
+        <MotionExportDialog
+          doc={doc}
+          state={exportState}
+          onClose={() => setExportOpen(false)}
         />
       )}
     </div>
