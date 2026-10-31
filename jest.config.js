@@ -27,7 +27,7 @@ module.exports = {
     '^electron$': '<rootDir>/.erb/mocks/electronMock.js',
     '^@opencode/client(/.*)?$': '<rootDir>/.erb/mocks/opencodeClientMock.js',
     '^@nut-tree-fork/nut-js$': '<rootDir>/.erb/mocks/nutJsMock.js',
-    '^@ai-sdk/(.*)$': '<rootDir>/.erb/mocks/aiMock.js',
+    '^mediabunny$': '<rootDir>/.erb/mocks/mediabunnyMock.js',    '^@ai-sdk/(.*)$': '<rootDir>/.erb/mocks/aiMock.js',
     '^ai$': '<rootDir>/.erb/mocks/aiMock.js',
   },
   setupFiles: ['./.erb/scripts/check-build-exists.ts'],
