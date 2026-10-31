@@ -2,6 +2,20 @@ import { createStarterMotionDocument } from '@/lib/motion/defaults';
 import { MotionStore } from '@/hooks/use-motion-store';
 
 describe('MotionStore commit lifecycle', () => {
+  it('keeps Auto-key off by default and persists an explicit user preference', () => {
+    window.localStorage.removeItem('motion.autoKey');
+    const first = new MotionStore(createStarterMotionDocument());
+    expect(first.getSnapshot().autoKeyEnabled).toBe(false);
+    first.setAutoKeyEnabled(true);
+    expect(window.localStorage.getItem('motion.autoKey')).toBe('on');
+    first.dispose();
+
+    const restored = new MotionStore(createStarterMotionDocument());
+    expect(restored.getSnapshot().autoKeyEnabled).toBe(true);
+    restored.setAutoKeyEnabled(false);
+    restored.dispose();
+  });
+
   it('does not create history for a no-op and preserves the document reference', () => {
     const store = new MotionStore(createStarterMotionDocument());
     const initial = store.getDocument();

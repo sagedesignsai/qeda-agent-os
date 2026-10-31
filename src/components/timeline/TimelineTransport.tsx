@@ -47,9 +47,11 @@ export type TimelineTransportProps = {
   fps: number;
   loopEnabled?: boolean;
   snapEnabled?: boolean;
+  autoKeyEnabled?: boolean;
   playMode?: 'once' | 'loop' | 'ping-pong';
   onToggleLoop?: () => void;
   onToggleSnap?: () => void;
+  onToggleAutoKey?: () => void;
   onPlayModeChange?: (mode: 'once' | 'loop' | 'ping-pong') => void;
   onStep?: (direction: -1 | 1) => void;
   onGoToStart?: () => void;
@@ -66,9 +68,11 @@ export function TimelineTransport({
   fps,
   loopEnabled = false,
   snapEnabled = true,
+  autoKeyEnabled = false,
   playMode = 'once',
   onToggleLoop,
   onToggleSnap,
+  onToggleAutoKey,
   onPlayModeChange,
   onStep,
   onGoToStart,
@@ -187,6 +191,18 @@ export function TimelineTransport({
         onClick={onToggleSnap}
       >
         Snap
+      </Button>
+
+      <Button
+        type="button"
+        size="sm"
+        variant={autoKeyEnabled ? 'secondary' : 'ghost'}
+        className="h-7 px-2 text-[11px]"
+        aria-pressed={autoKeyEnabled}
+        onClick={onToggleAutoKey}
+        title="Automatically key animatable inspector edits"
+      >
+        Auto-key
       </Button>
 
       <div className="mx-1 h-4 w-px bg-border" />

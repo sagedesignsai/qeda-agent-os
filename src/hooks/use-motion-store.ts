@@ -32,6 +32,7 @@ export type MotionSnapshot = {
   canUndo: boolean;
   canRedo: boolean;
   pendingApproval: MotionPendingApproval | null;
+  autoKeyEnabled: boolean;
 };
 
 export type MotionCommitOptions = { approved?: boolean };
@@ -49,6 +50,7 @@ export class MotionStore {
   private past: MotionDocument[] = [];
   private future: MotionDocument[] = [];
   private pendingApproval: MotionPendingApproval | null = null;
+  private autoKeyEnabled = this.readAutoKeyPreference();
   private listeners = new Set<() => void>();
   private snapshot: MotionSnapshot;
 
@@ -100,6 +102,27 @@ export class MotionStore {
     if (sameSelection(this.selection, selection)) return;
     this.selection = selection;
     this.emit();
+  }
+
+  setAutoKeyEnabled(enabled: boolean): void {
+    if (this.autoKeyEnabled === enabled) return;
+    this.autoKeyEnabled = enabled;
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('motion.autoKey', enabled ? 'on' : 'off');
+      }
+    } catch {
+      // Keep the preference for this session if browser storage is unavailable.
+    }
+    this.emit();
+  }
+
+  private readAutoKeyPreference(): boolean {
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem('motion.autoKey') === 'on';
+    } catch {
+      return false;
+    }
   }
 
   setView(view: TimelineView): void {
@@ -215,6 +238,7 @@ export class MotionStore {
       canUndo: this.past.length > 0,
       canRedo: this.future.length > 0,
       pendingApproval: this.pendingApproval,
+      autoKeyEnabled: this.autoKeyEnabled,
     };
   }
 

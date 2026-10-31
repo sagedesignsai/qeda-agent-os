@@ -35,7 +35,7 @@ const MIN_PX_PER_SECOND = 4;
 const MAX_PX_PER_SECOND = 4000;
 
 export function MotionTimeline({ className }: { className?: string }) {
-  const { doc, selection, view, pendingApproval } = useMotionSnapshot();
+  const { doc, selection, view, pendingApproval, autoKeyEnabled } = useMotionSnapshot();
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [scrollY, setScrollY] = useState(0);
   const [snapEnabled, setSnapEnabled] = useState(() => {
@@ -441,6 +441,7 @@ export function MotionTimeline({ className }: { className?: string }) {
           fps={fps}
           loopEnabled={loopEnabled}
           snapEnabled={snapEnabled}
+          autoKeyEnabled={autoKeyEnabled}
           playMode={doc.timeline.playMode ?? 'once'}
           onToggleLoop={() =>
             motionStore.commit('Toggle work area', [
@@ -448,6 +449,7 @@ export function MotionTimeline({ className }: { className?: string }) {
             ])
           }
           onToggleSnap={toggleSnap}
+          onToggleAutoKey={() => motionStore.setAutoKeyEnabled(!autoKeyEnabled)}
           onPlayModeChange={(playMode) =>
             motionStore.commit('Change playback mode', [
               { op: 'timeline.setPlayMode', playMode },

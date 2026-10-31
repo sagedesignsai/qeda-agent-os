@@ -37,10 +37,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
+import { createMotionId } from '@/lib/motion/ids';
+import { createMotionAutoKeyOps } from '@/lib/motion/auto-key';
 import { EASING_PRESETS, easingLabel } from '@/lib/motion/easing';
-import { getMotionNodeType } from '@/lib/motion/node-registry';
+import { getMotionNodeType, hasAnimatableProperty } from '@/lib/motion/node-registry';
 import { findClip, findTrack } from '@/lib/motion/types';
-import type { MotionVector3 } from '@/lib/motion/types';
+import type { MotionEasing, MotionVector3 } from '@/lib/motion/types';
 
 const RESOLUTIONS = [
   { value: '1920x1080', label: '1920 × 1080', width: 1920, height: 1080 },
@@ -52,7 +54,7 @@ const RESOLUTIONS = [
 const FPS_OPTIONS = [24, 30, 60];
 
 export function MotionInspector() {
-  const { doc, selection } = useMotionSnapshot();
+  const { doc, selection, autoKeyEnabled } = useMotionSnapshot();
   const [outputOpen, setOutputOpen] = useState(true);
   const [selectionOpen, setSelectionOpen] = useState(true);
 
@@ -131,15 +133,24 @@ export function MotionInspector() {
   const [keyValue, setKeyValue] = useState(
     String(selectedData?.keyframe?.value ?? ''),
   );
+  const [customEasing, setCustomEasing] = useState<Extract<MotionEasing, { type: 'cubic' }>>(
+    selectedData?.keyframe?.easing.type === 'cubic'
+      ? selectedData.keyframe.easing
+      : { type: 'cubic', x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+  );
 
   useEffect(() => {
     setTrackName(selectedData?.track.name ?? '');
     setKeyValue(String(selectedData?.keyframe?.value ?? ''));
+    setCustomEasing(selectedData?.keyframe?.easing.type === 'cubic'
+      ? selectedData.keyframe.easing
+      : { type: 'cubic', x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 });
   }, [
     selectedData?.track.id,
     selectedData?.track.name,
     selectedData?.keyframe?.id,
-    selectedData?.keyframe?.value,
+      selectedData?.keyframe?.value,
+      selectedData?.keyframe?.easing,
   ]);
 
   const resolutionValue = `${doc.meta.output.width}x${doc.meta.output.height}`;
@@ -194,6 +205,20 @@ export function MotionInspector() {
   const setEasing = (value: string) => {
     if (!selectedData?.keyframe || !selectedData.clip || !selectedData.channel)
       return;
+    if (value === 'custom') {
+      const easing = selectedData.keyframe.easing.type === 'cubic'
+        ? selectedData.keyframe.easing
+        : { type: 'cubic' as const, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 };
+      setCustomEasing(easing);
+      motionStore.commit('Set custom keyframe easing', [{
+        op: 'keyframe.setEasing',
+        clipId: selectedData.clip.id,
+        channelId: selectedData.channel.id,
+        keyframeId: selectedData.keyframe.id,
+        easing,
+      }]);
+      return;
+    }
     const preset = EASING_PRESETS[value as keyof typeof EASING_PRESETS];
     if (!preset) return;
     motionStore.commit('Set keyframe easing', [
@@ -205,6 +230,23 @@ export function MotionInspector() {
         easing: preset.value,
       },
     ]);
+  };
+  const commitCustomEasing = () => {
+    if (!selectedData?.keyframe || !selectedData.clip || !selectedData.channel) return;
+    if (![customEasing.x1, customEasing.y1, customEasing.x2, customEasing.y2].every(Number.isFinite) ||
+        customEasing.x1 < 0 || customEasing.x1 > 1 || customEasing.x2 < 0 || customEasing.x2 > 1) {
+      setCustomEasing(selectedData.keyframe.easing.type === 'cubic'
+        ? selectedData.keyframe.easing
+        : { type: 'cubic', x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 });
+      return;
+    }
+    motionStore.commit('Set custom keyframe easing', [{
+      op: 'keyframe.setEasing',
+      clipId: selectedData.clip.id,
+      channelId: selectedData.channel.id,
+      keyframeId: selectedData.keyframe.id,
+      easing: customEasing,
+    }]);
   };
   const easingPresetId =
     Object.entries(EASING_PRESETS).find(
@@ -223,6 +265,26 @@ export function MotionInspector() {
       property === 'rotation'
         ? value.map((axis) => (axis * Math.PI) / 180) as MotionVector3
         : value;
+    if (autoKeyEnabled) {
+      const axes = ['x', 'y', 'z'] as const;
+      const changes = targetNodes.flatMap((node) => axes.flatMap((axis, index) => {
+        const path = `${property}.${axis}`;
+        return hasAnimatableProperty(node.type, path)
+          ? [{ nodeId: node.id, property: path, value: storedValue[index] }]
+          : [];
+      }));
+      const autoOps = createMotionAutoKeyOps(doc, changes, motionStore.clock.getTime(), {
+        track: () => createMotionId('track'),
+        clip: () => createMotionId('clip'),
+        placement: () => createMotionId('placement'),
+        channel: () => createMotionId('channel'),
+        keyframe: () => createMotionId('keyframe'),
+      });
+      if (autoOps.length) {
+        motionStore.commit('Auto-key object transform', autoOps);
+        return;
+      }
+    }
     motionStore.commit('Update object transform', targetNodes.map((node) => ({
         op: 'scene.node.update',
         nodeId: node.id,
@@ -232,6 +294,24 @@ export function MotionInspector() {
   const updateNodeProperty = (property: string, value: unknown) => {
     if (!targetNode) return;
     const compatibleNodes = targetNodes.filter((node) => node.type === targetNode.type);
+    if (autoKeyEnabled && typeof value === 'number') {
+      const changes = compatibleNodes.flatMap((node) =>
+        hasAnimatableProperty(node.type, property)
+          ? [{ nodeId: node.id, property, value }]
+          : [],
+      );
+      const autoOps = createMotionAutoKeyOps(doc, changes, motionStore.clock.getTime(), {
+        track: () => createMotionId('track'),
+        clip: () => createMotionId('clip'),
+        placement: () => createMotionId('placement'),
+        channel: () => createMotionId('channel'),
+        keyframe: () => createMotionId('keyframe'),
+      });
+      if (autoOps.length) {
+        motionStore.commit('Auto-key object property', autoOps);
+        return;
+      }
+    }
     motionStore.commit('Update object property', compatibleNodes.map((node) => {
       const props: Record<string, unknown> = { [property]: value };
       if (node.type === 'screen.image' && property === 'assetId') props.source = value;
@@ -385,11 +465,7 @@ export function MotionInspector() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectGroup>
-                                {easingPresetId === 'custom' && (
-                                  <SelectItem value="custom" disabled>
-                                    Custom curve
-                                  </SelectItem>
-                                )}
+                                <SelectItem value="custom">Custom cubic curve</SelectItem>
                                 {Object.entries(EASING_PRESETS).map(
                                   ([id, preset]) => (
                                     <SelectItem key={id} value={id}>
@@ -401,6 +477,40 @@ export function MotionInspector() {
                             </SelectContent>
                           </Select>
                         </Field>
+                        {easingPresetId === 'custom' && (
+                          <div className="grid grid-cols-4 gap-1" aria-label="Custom cubic easing controls">
+                            {([
+                              ['x1', 'X1'],
+                              ['y1', 'Y1'],
+                              ['x2', 'X2'],
+                              ['y2', 'Y2'],
+                            ] as const).map(([axis, label]) => (
+                              <Field key={axis} className="gap-1">
+                                <FieldLabel htmlFor={`motion-easing-${axis}`} className="text-[9px] text-muted-foreground">
+                                  {label}
+                                </FieldLabel>
+                                <Input
+                                  id={`motion-easing-${axis}`}
+                                  aria-label={`Easing ${label}`}
+                                  type="number"
+                                  min={axis.startsWith('x') ? 0 : undefined}
+                                  max={axis.startsWith('x') ? 1 : undefined}
+                                  step="0.01"
+                                  value={customEasing[axis]}
+                                  onChange={(event) => setCustomEasing((current) => ({
+                                    ...current,
+                                    [axis]: Number(event.target.value),
+                                  }))}
+                                  onBlur={commitCustomEasing}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') event.currentTarget.blur();
+                                  }}
+                                  className="h-7 min-w-0 px-1 text-center text-[10px] tabular-nums"
+                                />
+                              </Field>
+                            ))}
+                          </div>
+                        )}
                         <p className="text-[10px] text-muted-foreground">
                           At {selectedData.keyframe.time.toFixed(3)}s ·{' '}
                           {easingLabel(selectedData.keyframe.easing)}
