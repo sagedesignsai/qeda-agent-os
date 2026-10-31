@@ -10,6 +10,7 @@ import {
 } from '@/lib/motion/ops';
 import { isKeyframesSorted } from '@/lib/motion/sample';
 import { findClip } from '@/lib/motion/types';
+import { motionWorldMatrix } from '@/lib/motion/transforms';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -84,6 +85,71 @@ describe('motion op registry', () => {
     expect(bounded.timeline.workArea).toEqual({ enabled: true, start: 1.25, end: 4.5 });
     expect(() => applyMotionOp(bounded, { op: 'timeline.setWorkArea', end: 1.25 })).toThrow(MotionOpError);
     expect(() => applyMotionOp(doc, { op: 'timeline.setWorkArea', start: 7 })).toThrow(MotionOpError);
+  });
+
+  it('reparents a node under a translated group without moving it in world space', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const withGroup = applyMotionOp(doc, {
+      op: 'scene.node.add',
+      nodeId: 'grp_rig',
+      type: 'scene.group',
+      transform: { position: [2, 1, 0] },
+    });
+    const before = motionWorldMatrix(withGroup.scene.nodes, 'product');
+    const moved = applyMotionOp(withGroup, { op: 'scene.node.reparent', nodeId: 'product', parentId: 'grp_rig' });
+    const product = moved.scene.nodes.find((node) => node.id === 'product');
+
+    expect(product?.parentId).toBe('grp_rig');
+    expect(product?.transform.position[0]).toBeCloseTo(-2);
+    expect(product?.transform.position[1]).toBeCloseTo(-1);
+    motionWorldMatrix(moved.scene.nodes, 'product').forEach((value, index) =>
+      expect(value).toBeCloseTo(before[index], 6),
+    );
+  });
+
+  it('reparents back to the scene root and restores the world transform', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const withGroup = applyMotionOp(doc, {
+      op: 'scene.node.add',
+      nodeId: 'grp_rig',
+      type: 'scene.group',
+      transform: { position: [2, 1, 0] },
+    });
+    const nested = applyMotionOp(withGroup, { op: 'scene.node.reparent', nodeId: 'product', parentId: 'grp_rig' });
+    const root = applyMotionOp(nested, { op: 'scene.node.reparent', nodeId: 'product', parentId: null });
+    const original = motionWorldMatrix(doc.scene.nodes, 'product');
+
+    expect(root.scene.nodes.find((node) => node.id === 'product')?.parentId).toBeNull();
+    motionWorldMatrix(root.scene.nodes, 'product').forEach((value, index) =>
+      expect(value).toBeCloseTo(original[index], 6),
+    );
+  });
+
+  it('refuses cycle-forming and disallowed parents', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const withGroup = applyMotionOp(doc, {
+      op: 'scene.node.add',
+      nodeId: 'grp_rig',
+      type: 'scene.group',
+    });
+    const nested = applyMotionOp(withGroup, { op: 'scene.node.reparent', nodeId: 'product', parentId: 'grp_rig' });
+
+    expect(() =>
+      applyMotionOp(nested, { op: 'scene.node.reparent', nodeId: 'grp_rig', parentId: 'screen_dashboard' }),
+    ).toThrow(/descendant/);
+    expect(() =>
+      applyMotionOp(nested, { op: 'scene.node.reparent', nodeId: 'screen_dashboard', parentId: 'title' }),
+    ).toThrow(/cannot be parented/);
+    expect(() =>
+      applyMotionOp(nested, { op: 'scene.node.reparent', nodeId: 'product', parentId: 'product' }),
+    ).toThrow(/own parent/);
+  });
+
+  it('keeps node edits in the scene list so switching scenes does not revert them', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const updated = applyMotionOp(doc, { op: 'scene.node.update', nodeId: 'product', visible: false });
+    const active = updated.scenes.find((scene) => scene.id === updated.activeSceneId);
+    expect(active?.nodes.find((node) => node.id === 'product')?.visible).toBe(false);
   });
 
   it('collects a removal cascade while preserving unscoped tracks', () => {

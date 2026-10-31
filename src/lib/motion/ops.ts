@@ -28,6 +28,10 @@ import {
   getMotionNodeType,
   validateMotionNode,
 } from './node-registry';
+import {
+  motionLocalTransformForWorld,
+  motionWorldMatrix,
+} from './transforms';
 import type {
   MotionChannel,
   MotionClip,
@@ -75,6 +79,7 @@ export type MotionOpParams = {
     props?: Record<string, unknown>;
   };
   'scene.node.remove': { nodeId: string };
+  'scene.node.reparent': { nodeId: string; parentId: string | null; preserveWorld?: boolean };
   'scene.add': { sceneId: string; name: string; rigIdMap: Record<string, string> };
   'scene.duplicate': { sceneId: string; name: string; idMap: Record<string, string> };
   'scene.remove': { sceneId: string };
@@ -473,6 +478,21 @@ function findAssetReferences(value: unknown, assetId: string, path = '', found: 
   return found;
 }
 
+/**
+ * `doc.scene` is the active-scene compatibility view; the scenes array is the
+ * persisted document. Node edits must update both or switching scenes reverts them.
+ */
+export function withMotionSceneNodes(doc: MotionDocument, nodes: MotionNode[]): MotionDocument {
+  const active = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+  return {
+    ...doc,
+    scene: { nodes },
+    scenes: active
+      ? doc.scenes.map((scene) => (scene.id === active.id ? { ...scene, nodes } : scene))
+      : doc.scenes,
+  };
+}
+
 registerMotionOp<'scene.node.add'>({
   id: 'scene.node.add',
   summary: 'Add a registered scene node using its type defaults.',
@@ -548,12 +568,10 @@ registerMotionOp<'scene.node.update'>({
     });
     validateNodeAssetReference(doc, next);
     if (JSON.stringify(current) === JSON.stringify(next)) return doc;
-    return {
-      ...doc,
-      scene: {
-        nodes: doc.scene.nodes.map((node) => (node.id === nodeId ? next : node)),
-      },
-    };
+    return withMotionSceneNodes(
+      doc,
+      doc.scene.nodes.map((node) => (node.id === nodeId ? next : node)),
+    );
   },
 });
 
@@ -587,6 +605,59 @@ registerMotionOp<'scene.node.remove'>({
         ? { ...scene, nodes, timeline, cameraId: cameraId ?? null }
         : scene) : doc.scenes,
     };
+  },
+});
+
+registerMotionOp<'scene.node.reparent'>({
+  id: 'scene.node.reparent',
+  summary: 'Move a scene node under a new parent, preserving its world transform.',
+  risk: 'mutating',
+  params: z
+    .object({
+      nodeId: z.string().min(1),
+      parentId: z.string().min(1).nullable(),
+      preserveWorld: z.boolean().optional(),
+    })
+    .strict(),
+  reduce: (doc, { nodeId, parentId, preserveWorld = true }) => {
+    const node = doc.scene.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) throw new MotionOpError(`Scene node "${nodeId}" does not exist.`);
+    if (parentId === nodeId) {
+      throw new MotionOpError(`Node "${nodeId}" cannot be its own parent.`);
+    }
+
+    const nodes = doc.scene.nodes;
+    const parent = parentId ? nodes.find((candidate) => candidate.id === parentId) : null;
+    if (parentId && !parent) throw new MotionOpError(`Parent node "${parentId}" does not exist.`);
+
+    // A descendant cannot become the parent; that would detach the subtree.
+    const ancestors = new Set<string>();
+    let cursor = parent;
+    while (cursor && !ancestors.has(cursor.id)) {
+      ancestors.add(cursor.id);
+      const nextParentId: string | null = cursor.parentId;
+      cursor = nextParentId
+        ? nodes.find((candidate) => candidate.id === nextParentId) ?? null
+        : null;
+    }
+    if (ancestors.has(nodeId)) {
+      throw new MotionOpError(`Node "${parentId}" is a descendant of "${nodeId}" and cannot become its parent.`);
+    }
+
+    const allowedParents = getMotionNodeType(node.type)?.allowedParents;
+    if (parent && allowedParents && !allowedParents.includes(parent.type)) {
+      throw new MotionOpError(`Node type "${node.type}" cannot be parented to "${parent.type}".`);
+    }
+
+    const transform = preserveWorld
+      ? motionLocalTransformForWorld(nodes, parentId ?? null, motionWorldMatrix(nodes, nodeId))
+      : node.transform;
+    const next = validateMotionNode({ ...node, parentId: parentId ?? null, transform });
+    if (JSON.stringify(node) === JSON.stringify(next)) return doc;
+    return withMotionSceneNodes(
+      doc,
+      nodes.map((candidate) => (candidate.id === nodeId ? next : candidate)),
+    );
   },
 });
 
