@@ -127,6 +127,7 @@ export function timelineSelectionToMotion(
         clipId: found.placement.clipId,
         channelId: keyRef.channelId,
         keyframeId: keyRef.keyframeId,
+        ...(selection.keyIds?.length ? { selectedKeyIds: selection.keyIds } : {}),
       };
     }
   }
@@ -152,6 +153,7 @@ export function motionSelectionToTimeline(selection: MotionSelection): TimelineS
       rowId: selection.trackId,
       itemId: selection.placementId,
       keyId: motionKeyId(selection.placementId, selection.channelId, selection.keyframeId),
+      ...(selection.selectedKeyIds ? { keyIds: selection.selectedKeyIds } : {}),
     };
   }
   if (selection.kind === 'placement') {

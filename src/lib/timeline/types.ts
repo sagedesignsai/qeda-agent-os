@@ -86,6 +86,7 @@ export type TimelineSelection = {
   rowId?: string;
   itemId?: string;
   keyId?: string;
+  keyIds?: readonly string[];
 } | null;
 
 /**
@@ -107,6 +108,7 @@ export type TimelineEditHandlers = {
   /** Called once per drag, on pointer-up — one undo entry, no per-move clones. */
   onMoveItem?(itemId: string, start: number, rowId: string): void;
   onMoveKey?(keyId: string, time: number): void;
+  onMoveKeys?(keys: readonly { keyId: string; time: number }[]): void;
   /** Trim or slip an item edge; values are final and already bounded. */
   onTrimItem?(
     itemId: string,

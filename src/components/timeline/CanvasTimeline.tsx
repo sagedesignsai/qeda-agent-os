@@ -44,6 +44,7 @@ import {
   type TimelineTrimOrigin,
   type TimelineTrimResult,
 } from '@/lib/timeline/trim';
+import { resolveTimelineKeySelection } from '@/lib/timeline/selection';
 import type {
   TimelineClock,
   TimelineEditHandlers,
@@ -251,7 +252,15 @@ function paintBase(ctx: CanvasRenderingContext2D, layout: TimelineLayout, palett
 type DragState =
   | { kind: 'scrub' }
   | { kind: 'loop'; edge: 'start' | 'end'; range: { start: number; end: number } }
-  | { kind: 'key'; key: LaidOutKey; time: number; guide: number | null; originalTime: number }
+  | {
+      kind: 'key';
+      key: LaidOutKey;
+      time: number;
+      guide: number | null;
+      originalTime: number;
+      selectedKeys: LaidOutKey[];
+      movedKeys?: Array<{ keyId: string; time: number }>;
+    }
   | {
       kind: 'item';
       item: LaidOutItem;
@@ -382,6 +391,7 @@ export type CanvasTimelineProps = {
   snap?: boolean;
   className?: string;
   handlers?: TimelineEditHandlers;
+  onKeyboardModeKeyDown?: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
 };
 
 export function CanvasTimeline({
@@ -393,12 +403,14 @@ export function CanvasTimeline({
   snap = true,
   className,
   handlers,
+  onKeyboardModeKeyDown,
 }: CanvasTimelineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const baseRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
   const paletteRef = useRef<Palette | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const keySelectionAnchorRef = useRef<string | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
   const layout = useMemo(
@@ -521,15 +533,52 @@ export function CanvasTimeline({
         dragRef.current = { kind: 'scrub' };
         break;
       case 'key':
-        handlers?.onSelect?.({ rowId: hit.key.rowId, itemId: hit.key.itemId, keyId: hit.key.keyId });
-        dragRef.current = {
-          kind: 'key',
-          key: hit.key,
-          time: hit.key.time,
-          guide: null,
-          originalTime: hit.key.time,
-        };
+        {
+          const orderedKeys = layoutRef.current.keys
+            .filter((key) => key.itemId === hit.key.itemId)
+            .sort((a, b) => a.time - b.time)
+            .map((key) => key.keyId);
+          const nextSelection = resolveTimelineKeySelection({
+            clickedKeyId: hit.key.keyId,
+            orderedKeyIds: orderedKeys,
+            currentKeyId: selection?.keyId,
+            currentKeyIds: selection?.keyIds,
+            anchorKeyId: keySelectionAnchorRef.current,
+            shiftKey: event.shiftKey,
+            toggleKey: event.metaKey || event.ctrlKey,
+          });
+          keySelectionAnchorRef.current = nextSelection.anchorKeyId;
+          if (nextSelection.keyIds.length === 0 || !nextSelection.keyIds.includes(hit.key.keyId)) {
+            handlers?.onSelect?.(nextSelection.keyIds.length ? {
+              rowId: hit.key.rowId,
+              itemId: hit.key.itemId,
+              keyId: nextSelection.primaryKeyId ?? hit.key.keyId,
+              ...(nextSelection.keyIds.length > 1 ? { keyIds: nextSelection.keyIds } : {}),
+            } : null);
+            dragRef.current = null;
+            break;
+          }
+          const keyIds = nextSelection.keyIds;
+          handlers?.onSelect?.({
+            rowId: hit.key.rowId,
+            itemId: hit.key.itemId,
+            keyId: nextSelection.primaryKeyId ?? hit.key.keyId,
+            ...(keyIds.length > 1 ? { keyIds } : {}),
+          });
+          const selectedKeys = keyIds.flatMap((keyId) => {
+            const key = layoutRef.current.keysById.get(keyId);
+            return key ? [key] : [];
+          });
+          dragRef.current = {
+            kind: 'key',
+            key: hit.key,
+            time: hit.key.time,
+            guide: null,
+            originalTime: hit.key.time,
+            selectedKeys,
+          };
         break;
+        }
       case 'item':
         handlers?.onSelect?.({ rowId: hit.item.rowId, itemId: hit.item.itemId });
         if (!hit.item.locked) {
@@ -630,12 +679,20 @@ export function CanvasTimeline({
           // Rive-style: land on a neighbour when close, otherwise land on a frame.
           next =
             snapped.target === null
-              ? quantizeToFrame(next, layoutRef.current.fps)
+              ? model.duration <= 60 ? quantizeToFrame(next, layoutRef.current.fps) : next
               : snapped.time;
           next = Math.min(Math.max(next, lo), hi);
           guide = snapped.target;
         }
-        dragRef.current = { ...drag, time: next, guide };
+        const delta = next - drag.key.time;
+        const movedKeys = drag.selectedKeys.map((key) => {
+          const keyItem = layoutRef.current.itemsById.get(key.itemId);
+          return {
+            keyId: key.keyId,
+            time: Math.min(Math.max(key.time + delta, keyItem?.start ?? 0), keyItem?.end ?? model.duration),
+          };
+        });
+        dragRef.current = { ...drag, time: next, guide, movedKeys };
         break;
       }
       case 'item': {
@@ -652,7 +709,7 @@ export function CanvasTimeline({
           );
           next =
             snapped.target === null
-              ? quantizeToFrame(next, layoutRef.current.fps)
+              ? model.duration <= 60 ? quantizeToFrame(next, layoutRef.current.fps) : next
               : snapped.time;
           guide = snapped.target;
         }
@@ -677,8 +734,9 @@ export function CanvasTimeline({
             }),
             viewRef.current,
           );
-          edgeTime =
-            snapped.target === null ? quantizeToFrame(time, layoutRef.current.fps) : snapped.time;
+          edgeTime = snapped.target === null
+            ? model.duration <= 60 ? quantizeToFrame(time, layoutRef.current.fps) : time
+            : snapped.time;
           guide = snapped.target;
         }
         const edgeEnd = drag.origin.start + drag.origin.duration;
@@ -708,7 +766,10 @@ export function CanvasTimeline({
     }
     if (drag?.kind === 'key') {
       if (Math.abs(drag.time - drag.originalTime) > 1e-6) {
-        handlers?.onMoveKey?.(drag.key.keyId, drag.time);
+        const movedKeys = drag.movedKeys
+          ?? [{ keyId: drag.key.keyId, time: drag.time }];
+        if (movedKeys.length > 1) handlers?.onMoveKeys?.(movedKeys);
+        else handlers?.onMoveKey?.(drag.key.keyId, drag.time);
       }
     } else if (drag?.kind === 'item') {
       if (
@@ -738,10 +799,14 @@ export function CanvasTimeline({
       <canvas
         ref={overlayRef}
         className="absolute inset-0 h-full w-full touch-none"
+        tabIndex={0}
+        role="application"
+        aria-label="Timeline. Focus and use left or right arrows to move the playhead, brackets to set the work area, and K to add a keyframe."
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onKeyDown={onKeyboardModeKeyDown}
       />
     </div>
   );

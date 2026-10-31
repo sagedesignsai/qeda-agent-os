@@ -219,6 +219,7 @@ export type MotionSelection =
       clipId: string;
       channelId: string;
       keyframeId: string;
+      selectedKeyIds?: readonly string[];
     }
   | null;
 

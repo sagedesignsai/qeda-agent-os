@@ -26,7 +26,7 @@ import {
   toTimelineModel,
 } from '@/lib/motion/timeline-adapter';
 import { fitPxPerSecond, zoomAround } from '@/lib/timeline/time';
-import { resolveTimelineShortcut } from '@/lib/timeline/shortcuts';
+import { resolveTimelineCanvasShortcut, resolveTimelineShortcut } from '@/lib/timeline/shortcuts';
 import type { MotionSelection } from '@/lib/motion/types';
 import type { TimelineEditHandlers, TimelineSelection } from '@/lib/timeline/types';
 import { cn } from '@/lib/utils';
@@ -38,7 +38,13 @@ export function MotionTimeline({ className }: { className?: string }) {
   const { doc, selection, view, pendingApproval } = useMotionSnapshot();
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [scrollY, setScrollY] = useState(0);
-  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapEnabled, setSnapEnabled] = useState(() => {
+    try {
+      return window.localStorage.getItem('motion.timeline.snap') !== 'off';
+    } catch {
+      return true;
+    }
+  });
 
   const model = useMemo(() => toTimelineModel(doc), [doc]);
   const timelineSelection = useMemo(() => motionSelectionToTimeline(selection), [selection]);
@@ -77,6 +83,32 @@ export function MotionTimeline({ className }: { className?: string }) {
             time: Math.max(0, trimIn + time - found.placement.start),
           },
         ]);
+      },
+      onMoveKeys: (keys) => {
+        const opsByEntity = new Map<string, {
+          op: 'keyframe.move';
+          clipId: string;
+          channelId: string;
+          keyframeId: string;
+          time: number;
+        }>();
+        for (const { keyId, time } of keys) {
+          const target = resolveKeyTarget(doc, keyId);
+          if (!target) continue;
+          const found = findPlacement(doc, target.placementId);
+          if (!found) continue;
+          const entityKey = `${target.clipId}::${target.channelId}::${target.keyframeId}`;
+          if (opsByEntity.has(entityKey)) continue;
+          opsByEntity.set(entityKey, {
+            op: 'keyframe.move' as const,
+            clipId: target.clipId,
+            channelId: target.channelId,
+            keyframeId: target.keyframeId,
+            time: Math.max(0, (found.placement.trimIn ?? 0) + time - found.placement.start),
+          });
+        }
+        const ops = [...opsByEntity.values()];
+        if (ops.length) motionStore.commit('Move keyframes', ops);
       },
       onLoopChange: (range) => {
         motionStore.commit('Loop range', [{ op: 'timeline.setLoop', start: range.start, end: range.end }]);
@@ -186,16 +218,65 @@ export function MotionTimeline({ className }: { className?: string }) {
     ]);
   }, [doc, selection]);
 
+  const toggleSnap = useCallback(() => {
+    setSnapEnabled((enabled) => {
+      const next = !enabled;
+      try {
+        window.localStorage.setItem('motion.timeline.snap', next ? 'on' : 'off');
+      } catch {
+        // If browser storage is unavailable, this editor session still toggles.
+      }
+      return next;
+    });
+  }, []);
+
+  const onKeyboardModeKeyDown = useCallback((event: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const command = resolveTimelineCanvasShortcut(event);
+    if (!command) return;
+    const time = motionStore.clock.getTime();
+    const frame = 1 / doc.meta.output.fps;
+    switch (command.type) {
+      case 'step-playhead':
+        event.preventDefault();
+        motionStore.pause();
+        motionStore.seek(time + command.direction * frame);
+        break;
+      case 'set-work-area-edge': {
+        const area = doc.timeline.workArea ?? { enabled: false, start: 0, end: doc.timeline.duration };
+        if (command.edge === 'start') {
+          const start = Math.max(0, Math.min(time, area.end - frame));
+          motionStore.commit('Set work area start', [{ op: 'timeline.setWorkArea', enabled: true, start }]);
+        } else {
+          const end = Math.min(doc.timeline.duration, Math.max(time, area.start + frame));
+          motionStore.commit('Set work area end', [{ op: 'timeline.setWorkArea', enabled: true, end }]);
+        }
+        event.preventDefault();
+        break;
+      }
+      case 'add-keyframe':
+        event.preventDefault();
+        addKeyframe();
+        break;
+    }
+  }, [addKeyframe, doc.meta.output.fps, doc.timeline.duration, doc.timeline.workArea]);
+
   const deleteSelection = useCallback(() => {
     if (selection?.kind === 'keyframe') {
-      motionStore.commit('Delete keyframe', [
-        {
+      const keyIds = selection.selectedKeyIds ?? [
+        `${selection.placementId}::${selection.channelId}::${selection.keyframeId}`,
+      ];
+      const unique = new Map<string, { op: 'keyframe.remove'; clipId: string; channelId: string; keyframeId: string }>();
+      for (const keyId of keyIds) {
+        const target = resolveKeyTarget(doc, keyId);
+        if (!target) continue;
+        unique.set(`${target.clipId}::${target.channelId}::${target.keyframeId}`, {
           op: 'keyframe.remove',
-          clipId: selection.clipId,
-          channelId: selection.channelId,
-          keyframeId: selection.keyframeId,
-        },
-      ]);
+          clipId: target.clipId,
+          channelId: target.channelId,
+          keyframeId: target.keyframeId,
+        });
+      }
+      motionStore.commit('Delete keyframes', [...unique.values()]);
     } else if (selection?.kind === 'placement') {
       motionStore.commit('Delete clip placement', [
         { op: 'placement.remove', trackId: selection.trackId, placementId: selection.placementId },
@@ -203,7 +284,7 @@ export function MotionTimeline({ className }: { className?: string }) {
     } else if (selection?.kind === 'track') {
       motionStore.commit('Delete track', [{ op: 'track.remove', trackId: selection.trackId }]);
     }
-  }, [selection]);
+  }, [doc, selection]);
 
   const splitSelection = useCallback(() => {
     if (selection?.kind !== 'placement') return;
@@ -297,7 +378,7 @@ export function MotionTimeline({ className }: { className?: string }) {
               { op: 'timeline.setWorkArea', enabled: !loopEnabled },
             ])
           }
-          onToggleSnap={() => setSnapEnabled((previous) => !previous)}
+          onToggleSnap={toggleSnap}
           onPlayModeChange={(playMode) =>
             motionStore.commit('Change playback mode', [
               { op: 'timeline.setPlayMode', playMode },
@@ -444,6 +525,7 @@ export function MotionTimeline({ className }: { className?: string }) {
             snap={snapEnabled}
             scrollY={scrollY}
             handlers={handlers}
+            onKeyboardModeKeyDown={onKeyboardModeKeyDown}
           />
         </div>
       </div>

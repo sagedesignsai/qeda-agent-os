@@ -97,6 +97,32 @@ describe('timeline layout', () => {
     expect(bodyHit.type).toBe('item');
   });
 
+  it('paints every key in a multi-key selection as selected', () => {
+    const layout = layoutTimeline({
+      model: {
+        duration: 5,
+        rows: [{ id: 'row', name: 'Track' }],
+        items: [{
+          id: 'item', rowId: 'row', label: 'Clip', start: 0, duration: 5,
+          channels: [{ id: 'channel', label: 'x', keys: [
+            { id: 'key-a', time: 1 },
+            { id: 'key-b', time: 2 },
+            { id: 'key-c', time: 3 },
+          ] }],
+        }],
+      },
+      view,
+      width: 800,
+      height: 400,
+      selection: { rowId: 'row', itemId: 'item', keyId: 'key-a', keyIds: ['key-a', 'key-c'] },
+    });
+    expect(layout.keys.map((key) => [key.keyId, key.selected])).toEqual([
+      ['key-a', true],
+      ['key-b', false],
+      ['key-c', true],
+    ]);
+  });
+
   it('excludes the dragged entity from its own snap candidates', () => {
     const model: TimelineModel = {
       duration: 10,

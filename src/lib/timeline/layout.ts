@@ -130,7 +130,7 @@ export type TimelineHit =
 
 const isSelected = (selection: TimelineSelection, itemId: string, keyId?: string): boolean => {
   if (!selection) return false;
-  if (keyId) return selection.keyId === keyId;
+  if (keyId) return selection.keyId === keyId || Boolean(selection.keyIds?.includes(keyId));
   return selection.keyId === undefined && selection.itemId === itemId;
 };
 

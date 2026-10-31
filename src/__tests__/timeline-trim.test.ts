@@ -6,7 +6,7 @@
  */
 
 import { resolveTimelineTrim } from '@/lib/timeline/trim';
-import { resolveTimelineShortcut } from '@/lib/timeline/shortcuts';
+import { resolveTimelineCanvasShortcut, resolveTimelineShortcut } from '@/lib/timeline/shortcuts';
 
 const origin = { start: 2, duration: 3, trimIn: 1, sourceDuration: 5 };
 
@@ -77,5 +77,28 @@ describe('resolveTimelineShortcut', () => {
     expect(resolveTimelineShortcut({ key: ' ', ctrlKey: true })).toBeNull();
     expect(resolveTimelineShortcut({ key: ' ', altKey: true })).toBeNull();
     expect(resolveTimelineShortcut({ key: 'k' })).toBeNull();
+  });
+});
+
+describe('resolveTimelineCanvasShortcut', () => {
+  it('exposes keyboard-only timeline navigation, work-area, and key commands', () => {
+    expect(resolveTimelineCanvasShortcut({ key: 'ArrowLeft' })).toEqual({
+      type: 'step-playhead',
+      direction: -1,
+    });
+    expect(resolveTimelineCanvasShortcut({ key: 'ArrowRight' })).toEqual({
+      type: 'step-playhead',
+      direction: 1,
+    });
+    expect(resolveTimelineCanvasShortcut({ key: '[' })).toEqual({
+      type: 'set-work-area-edge',
+      edge: 'start',
+    });
+    expect(resolveTimelineCanvasShortcut({ key: ']' })).toEqual({
+      type: 'set-work-area-edge',
+      edge: 'end',
+    });
+    expect(resolveTimelineCanvasShortcut({ key: 'K' })).toEqual({ type: 'add-keyframe' });
+    expect(resolveTimelineCanvasShortcut({ key: 'ArrowLeft', altKey: true })).toBeNull();
   });
 });
