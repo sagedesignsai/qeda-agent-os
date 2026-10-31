@@ -30,6 +30,7 @@
   ],
   "include": [
     "src",
+    "scripts",
     ".erb/configs",
     ".erb/scripts",
     "eslint.config.js",

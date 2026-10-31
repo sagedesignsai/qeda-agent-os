@@ -49,6 +49,7 @@
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "start": "electron-vite dev --watch",
     "test": "jest",
+    "test:export": "electron scripts/export-smoke.cjs",
     "test:smoke": "node .erb/scripts/smoke-test.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "electron-vite preview"

@@ -25,6 +25,10 @@ bun run lint:fix
   (TypeScript 7.x, i.e. the native compiler — much faster than tsc 5).
 - `bun run test:smoke` spawns a real `bun start` on `SMOKE_PORT` (1213) and probes
   the preload bridge over the Chrome debug port. Slower and flakier than unit tests.
+- `bun run test:export` is the opt-in Motion encode check. jsdom has no
+  `VideoEncoder`, so it bundles `scripts/export-smoke/harness.ts`, runs it in a
+  hidden headless Electron window, and demuxes the result with Mediabunny's
+  `Input`. It is the only way to verify a real codec/container pair.
 - `bun run theme:terminal` is a one-shot codemod that rewrites hardcoded Tailwind
   palette classes in the Terminal module to design tokens. **Dry run by default**;
   needs `--write` to apply.
