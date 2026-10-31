@@ -58,6 +58,26 @@ describe('MotionScenePanel hierarchy', () => {
     expect(motionStore.getSnapshot().selection).toEqual({ kind: 'node', nodeId: 'title' });
   });
 
+  it('navigates the visible hierarchy with arrow keys', () => {
+    render(<MotionScenePanel />);
+    const product = screen.getByRole('button', { name: 'Select scene object Product' });
+    product.focus();
+
+    fireEvent.keyDown(product, { key: 'ArrowRight' });
+    const dashboard = screen.getByRole('button', {
+      name: 'Select scene object Dashboard screen',
+    });
+    expect(dashboard).toHaveFocus();
+    expect(motionStore.getSnapshot().selection).toEqual({
+      kind: 'node',
+      nodeId: 'screen_dashboard',
+    });
+
+    fireEvent.keyDown(dashboard, { key: 'ArrowLeft' });
+    expect(product).toHaveFocus();
+    expect(motionStore.getSnapshot().selection).toEqual({ kind: 'node', nodeId: 'product' });
+  });
+
   it('marks animated nodes with a visible dot', () => {
     render(<MotionScenePanel />);
     const row = screen.getByRole('button', { name: 'Select scene object Product' });

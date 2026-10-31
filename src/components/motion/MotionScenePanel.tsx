@@ -159,11 +159,12 @@ export function MotionScenePanel() {
               </CollapsibleTrigger>
               <CollapsibleContent className="pt-1">
                 <DndContext onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDraggingNodeId(null)}>
-                  <div className="ml-2 border-l border-border/60 pl-2">
+                  <div data-motion-scene-tree className="ml-2 border-l border-border/60 pl-2">
                     {rows.map((row) => (
                       <SceneNodeRow
                         key={row.node.id}
                         row={row}
+                        rows={rows}
                         selected={selectedNodeId === row.node.id}
                         collapsed={collapsed.has(row.node.id)}
                         animated={animatedNodeIds.has(row.node.id)}
@@ -478,6 +479,7 @@ function missingAssetFor(node: MotionNode, missingIds: ReadonlySet<string>): boo
 
 function SceneNodeRow({
   row,
+  rows,
   selected,
   collapsed,
   animated,
@@ -486,6 +488,7 @@ function SceneNodeRow({
   onToggleCollapsed,
 }: {
   row: MotionHierarchyRow;
+  rows: readonly MotionHierarchyRow[];
   selected: boolean;
   collapsed: boolean;
   animated: boolean;
@@ -510,6 +513,43 @@ function SceneNodeRow({
     data: { nodeId: node.id },
   });
   const Icon = nodeIcon(node);
+
+  const onTreeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+
+    const visibleRows = rows;
+    const index = visibleRows.findIndex((candidate) => candidate.node.id === node.id);
+    const focusNode = (nodeId: string | undefined) => {
+      if (!nodeId) return;
+      motionStore.setSelection({ kind: 'node', nodeId });
+      const button = Array.from(
+        event.currentTarget
+          .closest('[data-motion-scene-tree]')
+          ?.querySelectorAll<HTMLButtonElement>('[data-motion-node-id]') ?? [],
+      ).find((candidate) => candidate.dataset.motionNodeId === nodeId);
+      button?.focus();
+    };
+
+    if (event.key === 'ArrowUp') {
+      focusNode(visibleRows[index - 1]?.node.id);
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      focusNode(visibleRows[index + 1]?.node.id);
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      if (childIds.length > 0 && !collapsed) onToggleCollapsed(node.id);
+      else if (node.parentId) focusNode(node.parentId);
+      return;
+    }
+    if (collapsed && childIds.length > 0) {
+      onToggleCollapsed(node.id);
+      return;
+    }
+    focusNode(childIds[0]);
+  };
 
   return (
     <div
@@ -558,6 +598,8 @@ function SceneNodeRow({
         onClick={() => motionStore.setSelection({ kind: 'node', nodeId: node.id })}
         aria-pressed={selected}
         aria-label={`Select scene object ${node.name}`}
+        data-motion-node-id={node.id}
+        onKeyDown={onTreeKeyDown}
       >
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{node.name}</span>
