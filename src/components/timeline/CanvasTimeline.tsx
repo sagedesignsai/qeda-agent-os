@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  DOPE_KEY_RADIUS,
   hitTestTimeline,
   layoutTimeline,
   normalizeLoopRange,
@@ -124,7 +125,124 @@ function roundRect(
   ctx.closePath();
 }
 
+function paintDopeSheetBase(ctx: CanvasRenderingContext2D, layout: TimelineLayout, palette: Palette): void {
+  const { width, height } = layout;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = palette.background;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, RULER_HEIGHT, width, height - RULER_HEIGHT);
+  ctx.clip();
+
+  // Rows with alternating backgrounds
+  for (const row of layout.rows) {
+    ctx.fillStyle = row.index % 2 === 0 ? palette.lane : palette.laneAlt;
+    ctx.fillRect(0, row.y, width, row.height);
+    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = palette.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, Math.round(row.y + row.height) + 0.5);
+    ctx.lineTo(width, Math.round(row.y + row.height) + 0.5);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  if (layout.loop) {
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = palette.playhead;
+    ctx.fillRect(layout.loop.x, RULER_HEIGHT, layout.loop.width, height - RULER_HEIGHT);
+    ctx.globalAlpha = 1;
+  }
+
+  // Thin bars (items) — 2px horizontal lines from first to last keyframe
+  for (const item of layout.items) {
+    const tone = palette.tones[item.tone] ?? palette.tones.primary;
+    const barWidth = Math.max(2, item.width);
+    ctx.globalAlpha = item.muted ? 0.3 : 0.6;
+
+    ctx.fillStyle = tone;
+    ctx.fillRect(item.x, item.y, barWidth, item.height);
+
+    // Highlight selected bars
+    if (item.selected) {
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = palette.playhead;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(item.x, item.y, barWidth, item.height);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Keyframe diamonds on bar center lines
+  for (const key of layout.keys) {
+    ctx.save();
+    ctx.translate(Math.round(key.x), Math.round(key.y));
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = key.selected ? palette.playhead : palette.key;
+    ctx.strokeStyle = key.selected ? palette.playhead : palette.border;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.95;
+    ctx.fillRect(-DOPE_KEY_RADIUS, -DOPE_KEY_RADIUS, DOPE_KEY_RADIUS * 2, DOPE_KEY_RADIUS * 2);
+    ctx.globalAlpha = key.selected ? 1 : 0.7;
+    ctx.strokeRect(-DOPE_KEY_RADIUS, -DOPE_KEY_RADIUS, DOPE_KEY_RADIUS * 2, DOPE_KEY_RADIUS * 2);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // Ruler last: lanes scroll underneath it.
+  ctx.fillStyle = palette.ruler;
+  ctx.fillRect(0, 0, width, RULER_HEIGHT);
+
+  if (layout.loop) {
+    const loopY = RULER_HEIGHT - 7;
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = palette.playhead;
+    ctx.fillRect(layout.loop.x, loopY, layout.loop.width, 4);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = palette.playhead;
+    for (const handleX of [layout.loop.x, layout.loop.x + layout.loop.width]) {
+      ctx.fillRect(Math.round(handleX) - 1, loopY - 2, 2, 8);
+    }
+  }
+
+  for (const tick of layout.ticks) {
+    ctx.globalAlpha = tick.major ? 0.5 : 0.22;
+    ctx.strokeStyle = palette.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(tick.x, RULER_HEIGHT - (tick.major ? 8 : 4));
+    ctx.lineTo(tick.x, RULER_HEIGHT);
+    ctx.stroke();
+    if (tick.label) {
+      ctx.globalAlpha = 0.75;
+      ctx.fillStyle = palette.muted;
+      ctx.font = '500 10px ui-sans-serif, system-ui, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText(tick.label, tick.x + 4, 4);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = palette.border;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, RULER_HEIGHT + 0.5);
+  ctx.lineTo(width, RULER_HEIGHT + 0.5);
+  ctx.stroke();
+}
+
 function paintBase(ctx: CanvasRenderingContext2D, layout: TimelineLayout, palette: Palette): void {
+  // Dope sheet mode uses thin bars and smaller keyframes
+  if (layout.dopeSheet) {
+    paintDopeSheetBase(ctx, layout, palette);
+    return;
+  }
+
   const { width, height } = layout;
 
   ctx.clearRect(0, 0, width, height);
@@ -392,6 +510,8 @@ export type CanvasTimelineProps = {
   className?: string;
   handlers?: TimelineEditHandlers;
   onKeyboardModeKeyDown?: (event: React.KeyboardEvent<HTMLCanvasElement>) => void;
+  /** Collapsed group IDs for dope sheet mode. */
+  collapsedGroups?: Set<string>;
 };
 
 export function CanvasTimeline({
@@ -404,6 +524,7 @@ export function CanvasTimeline({
   className,
   handlers,
   onKeyboardModeKeyDown,
+  collapsedGroups,
 }: CanvasTimelineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const baseRef = useRef<HTMLCanvasElement | null>(null);
@@ -422,8 +543,9 @@ export function CanvasTimeline({
         height: size.height,
         scrollY,
         selection,
+        collapsedGroups,
       }),
-    [model, view, size.width, size.height, scrollY, selection],
+    [model, view, size.width, size.height, scrollY, selection, collapsedGroups],
   );
 
   // Keep the latest layout reachable from handlers without re-binding them.
@@ -487,15 +609,30 @@ export function CanvasTimeline({
       event.preventDefault();
       const rect = element.getBoundingClientRect();
       const current = viewRef.current;
-      if (event.shiftKey) {
-        handlers?.onScrollRows?.(event.deltaY);
-        return;
-      }
+      const layout = layoutRef.current;
+
+      // Determine if vertical scrolling is needed: track content overflows the visible area.
+      const contentHeight = layout?.contentHeight ?? 0;
+      const visibleHeight = size.height;
+      const needsVerticalScroll = contentHeight > visibleHeight;
+
       if (event.ctrlKey || event.metaKey) {
+        // Ctrl/Cmd + wheel: zoom
         const anchorX = event.clientX - rect.left;
         const next = zoomAround(current, anchorX, current.pxPerSecond * Math.exp(-event.deltaY * 0.002));
         handlers?.onZoomChange?.(clampScroll(next, rect.width, model.duration));
+      } else if (needsVerticalScroll && !event.shiftKey) {
+        // Plain wheel: scroll rows vertically when content overflows
+        handlers?.onScrollRows?.(event.deltaY);
+      } else if (event.shiftKey) {
+        // Shift + wheel: scroll horizontally (time axis)
+        const delta = event.deltaX / current.pxPerSecond;
+        handlers?.onScrollChange?.(
+          clampScroll({ ...current, scrollSeconds: current.scrollSeconds + delta }, rect.width, model.duration)
+            .scrollSeconds,
+        );
       } else {
+        // Fallback: horizontal scroll when no vertical overflow
         const delta = (event.deltaX || event.deltaY) / current.pxPerSecond;
         handlers?.onScrollChange?.(
           clampScroll({ ...current, scrollSeconds: current.scrollSeconds + delta }, rect.width, model.duration)
@@ -505,7 +642,7 @@ export function CanvasTimeline({
     };
     element.addEventListener('wheel', onWheel, { passive: false });
     return () => element.removeEventListener('wheel', onWheel);
-  }, [handlers, model.duration]);
+  }, [handlers, model.duration, size.height]);
 
   const pointOf = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();

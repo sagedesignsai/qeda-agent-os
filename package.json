@@ -35,8 +35,9 @@
   ],
   "main": "./release/app/dist/main/main.js",
   "scripts": {
-    "build": "electron-vite build",
-    "prebuild": "bun run build:opencode-plugin",
+    "build": "NODE_OPTIONS='--max-old-space-size=8192' electron-vite build",
+    "build:light": "VITE_BUILD_SOURCEMAP=false NODE_OPTIONS='--max-old-space-size=8192' electron-vite build",
+    "prebuild": "NODE_OPTIONS='--max-old-space-size=4096' bun run build:opencode-plugin",
     "build:opencode-plugin": "tsc -p plugins/qeda-builder/tsconfig.json",
     "prestart": "bun run build:opencode-plugin",
     "postinstall": "cd .erb/tooling && bun install && cd ../.. && install-electron && electron-builder install-app-deps",

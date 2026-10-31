@@ -14,12 +14,8 @@ import { createStarterMotionDocument } from '../../lib/motion/defaults';
 import { parseMotionDocument, serializeMotionDocument } from '../../lib/motion/schema';
 import type { MotionDocument } from '../../lib/motion/types';
 import type { MotionProjectIndex, MotionProjectIndexRow } from './project-index.js';
-
-const writeFileAtomic = require('write-file-atomic') as (
-  file: string,
-  data: string | Uint8Array,
-  options?: Record<string, unknown>,
-) => Promise<void>;
+// v8 exports the writer as module.exports; a named `writeFile` import is undefined in Electron's bundle.
+import writeFileAtomic from 'write-file-atomic';
 const properLockfile = require('proper-lockfile') as {
   lock: (file: string, options: Record<string, unknown>) => Promise<() => Promise<void>>;
 };

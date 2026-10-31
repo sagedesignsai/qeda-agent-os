@@ -274,7 +274,7 @@ function registerBuiltins(): void {
       opacity: { description: 'Surface opacity from 0 to 1.' },
     },
     defaultName: 'Screen',
-    allowedParents: ['device.tablet', 'scene.group'],
+    allowedParents: ['device.tablet', 'device.phone', 'scene.group'],
     propertyHints: {
       assetId: { label: 'Image', control: 'asset', assetKind: 'image', group: 'Content' },
       width: { label: 'Width', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },

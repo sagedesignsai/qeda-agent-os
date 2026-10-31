@@ -6,12 +6,14 @@
 
 import { createMotionTemplate, MOTION_TEMPLATES } from '@/lib/motion/templates';
 import { preflightMotionExport } from '@/lib/motion/export/preflight';
+import { parseMotionDocument } from '@/lib/motion/schema';
 
 describe('Motion templates', () => {
   it('creates a fresh document matching each template manifest', () => {
     const documents = [];
     for (const template of MOTION_TEMPLATES) {
       const document = createMotionTemplate(template.id);
+      expect(() => parseMotionDocument(JSON.parse(JSON.stringify(document)))).not.toThrow();
       expect(document.meta.name).toBe(template.name);
       expect(document.meta.output).toMatchObject({ width: template.width, height: template.height, fps: 30 });
       expect(document.timeline.duration).toBe(template.duration);

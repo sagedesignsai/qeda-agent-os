@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  MoreHorizontalIcon,
   PauseIcon,
   PlayIcon,
   RepeatIcon,
@@ -20,9 +21,20 @@ import {
   SkipForwardIcon,
   ZoomInIcon,
   ZoomOutIcon,
+  Maximize2 as ZoomFitIcon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { formatSeconds, formatTimecode } from '@/lib/timeline/time';
 import type { TimelineClock } from '@/lib/timeline/types';
 import { cn } from '@/lib/utils';
@@ -91,7 +103,8 @@ export function TimelineTransport({
   }, [clock]);
 
   return (
-    <div className={cn('flex items-center gap-1.5', className)}>
+    <div className={cn('flex items-center gap-1', className)}>
+      {/* Playback controls */}
       <Button
         type="button"
         size="icon"
@@ -151,85 +164,70 @@ export function TimelineTransport({
         <SkipForwardIcon className="size-3.5" />
       </Button>
 
+      {/* Timecode */}
       <TimecodeReadout clock={clock} fps={fps} />
       <span className="text-[10px] text-muted-foreground">/ {formatSeconds(duration)}</span>
-      <span className="text-[10px] text-muted-foreground/60">{Math.round(fps)} fps</span>
 
-      <div className="mx-1 h-4 w-px bg-border" />
-
-      <Button
-        type="button"
-        size="sm"
-        variant={loopEnabled ? 'secondary' : 'ghost'}
-        className="h-7 gap-1 px-2 text-[11px]"
-        aria-pressed={loopEnabled}
-        onClick={onToggleLoop}
-      >
-        <RepeatIcon className="size-3" />
-        Work area
-      </Button>
-
-      <select
-        aria-label="Playback mode"
-        className="h-7 rounded-md border border-border/60 bg-background px-1.5 text-[11px]"
-        value={playMode}
-        onChange={(event) =>
-          onPlayModeChange?.(event.target.value as 'once' | 'loop' | 'ping-pong')
-        }
-      >
-        <option value="once">Once</option>
-        <option value="loop">Loop</option>
-        <option value="ping-pong">Ping-pong</option>
-      </select>
-
-      <Button
-        type="button"
-        size="sm"
-        variant={snapEnabled ? 'secondary' : 'ghost'}
-        className="h-7 px-2 text-[11px]"
-        aria-pressed={snapEnabled}
-        onClick={onToggleSnap}
-      >
-        Snap
-      </Button>
-
-      <Button
-        type="button"
-        size="sm"
-        variant={autoKeyEnabled ? 'secondary' : 'ghost'}
-        className="h-7 px-2 text-[11px]"
-        aria-pressed={autoKeyEnabled}
-        onClick={onToggleAutoKey}
-        title="Automatically key animatable inspector edits"
-      >
-        Auto-key
-      </Button>
-
-      <div className="mx-1 h-4 w-px bg-border" />
-
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="size-7"
-        aria-label="Zoom out"
-        onClick={onZoomOut}
-      >
-        <ZoomOutIcon className="size-3.5" />
-      </Button>
-      <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={onZoomFit}>
-        Fit
-      </Button>
-      <Button
-        type="button"
-        size="icon"
-        variant="ghost"
-        className="size-7"
-        aria-label="Zoom in"
-        onClick={onZoomIn}
-      >
-        <ZoomInIcon className="size-3.5" />
-      </Button>
+      {/* Settings dropdown — consolidates work area, play mode, snap, auto-key, and zoom */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" size="icon" variant="ghost" className="size-7" aria-label="Timeline settings" title="Timeline settings">
+            <MoreHorizontalIcon className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-48">
+          <DropdownMenuLabel>Playback</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem
+            checked={loopEnabled}
+            onCheckedChange={onToggleLoop}
+          >
+            <RepeatIcon className="size-3.5" data-icon />
+            Work Area
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuGroup>
+            <DropdownMenuItem onClick={() => onPlayModeChange?.('once')} className={playMode === 'once' ? 'bg-accent' : ''}>
+              Once
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onPlayModeChange?.('loop')} className={playMode === 'loop' ? 'bg-accent' : ''}>
+              Loop
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onPlayModeChange?.('ping-pong')} className={playMode === 'ping-pong' ? 'bg-accent' : ''}>
+              Ping-pong
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Editing</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuCheckboxItem
+            checked={snapEnabled}
+            onCheckedChange={onToggleSnap}
+          >
+            Snap to Grid
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={autoKeyEnabled}
+            onCheckedChange={onToggleAutoKey}
+          >
+            Auto-key
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Zoom</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onZoomOut}>
+            <ZoomOutIcon className="size-3.5" data-icon />
+            Zoom Out
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onZoomFit}>
+            <ZoomFitIcon className="size-3.5" data-icon />
+            Fit
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onZoomIn}>
+            <ZoomInIcon className="size-3.5" data-icon />
+            Zoom In
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

@@ -48,10 +48,31 @@ export function createMotionTemplate(templateId: string): MotionDocument {
   doc.timeline.duration = template.duration;
   doc.timeline.loop.end = template.duration;
   doc.timeline.workArea = { enabled: false, start: 0, end: template.duration };
-  doc.timeline.clips = doc.timeline.clips.map((clip) => ({ ...clip, duration: Math.min(clip.duration, template.duration) }));
+  const clipTimeScale = new Map<string, number>();
+  doc.timeline.clips = doc.timeline.clips.map((clip) => {
+    const duration = Math.min(clip.duration, template.duration);
+    const timeScale = duration / clip.duration;
+    clipTimeScale.set(clip.id, timeScale);
+    return {
+      ...clip,
+      duration,
+      channels: clip.channels.map((channel) => ({
+        ...channel,
+        keyframes: channel.keyframes.map((keyframe) => ({
+          ...keyframe,
+          time: keyframe.time * timeScale,
+        })),
+      })),
+    };
+  });
   doc.timeline.tracks = doc.timeline.tracks.map((track) => ({
     ...track,
-    placements: track.placements.map((placement) => ({ ...placement, duration: Math.min(placement.duration ?? template.duration, template.duration) })),
+    placements: track.placements.map((placement) => {
+      const clip = doc.timeline.clips.find((candidate) => candidate.id === placement.clipId);
+      const duration = placement.duration ?? clip?.duration ?? template.duration;
+      const timeScale = clipTimeScale.get(placement.clipId) ?? 1;
+      return { ...placement, duration: Math.min(duration * timeScale, template.duration) };
+    }),
   }));
   const title = doc.scene.nodes.find((node) => node.id === 'title');
   if (title) title.props.text = template.name;
@@ -66,6 +87,12 @@ export function createMotionTemplate(templateId: string): MotionDocument {
       const phone = createMotionNode('device.phone', 'product', { name: 'Phone' });
       doc.scene.nodes[productIndex] = phone;
     }
+    const screen = doc.scene.nodes.find((node) => node.id === 'screen_dashboard');
+    if (screen) {
+      screen.props.width = 1.07;
+      screen.props.height = 2.37;
+      screen.transform.position = [0, 0, 0.066];
+    }
   } else if (templateId === 'model-reveal') {
     const productIndex = doc.scene.nodes.findIndex((node) => node.id === 'product');
     if (productIndex >= 0) {
@@ -75,6 +102,7 @@ export function createMotionTemplate(templateId: string): MotionDocument {
       model.transform.scale = [1.05, 1.05, 1.05];
       doc.scene.nodes[productIndex] = model;
     }
+    doc.scene.nodes = doc.scene.nodes.filter((node) => node.id !== 'screen_dashboard');
   } else if (templateId === 'logo-sting') {
     doc.scene.nodes = doc.scene.nodes.filter((node) => !['product', 'screen_dashboard', 'light_point'].includes(node.id));
     if (title) {

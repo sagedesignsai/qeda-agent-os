@@ -22,6 +22,7 @@ import {
   visibleTimeRange,
   xToTime,
 } from './time';
+import { layoutDopeSheet } from './dopesheet';
 import type {
   TimelineLoopRange,
   TimelineModel,
@@ -33,6 +34,7 @@ import type {
 
 export const RULER_HEIGHT = 26;
 export const ROW_HEIGHT = 64;
+export { DOPE_ROW_HEIGHT, DOPE_GROUP_HEIGHT, DOPE_KEY_RADIUS } from './dopesheet';
 export const ITEM_INSET_Y = 5;
 export const KEY_RADIUS = 4.5;
 export const KEY_ROW_TOP = 22;
@@ -108,6 +110,8 @@ export type TimelineLayout = {
   loop: { x: number; width: number; start: number; end: number } | null;
   /** Vertical extent of all rows, so the pane knows how far it can scroll. */
   contentHeight: number;
+  /** True when layout was produced by the dope sheet transformer. */
+  dopeSheet?: boolean;
 };
 
 export type TimelineLayoutInput = {
@@ -117,6 +121,8 @@ export type TimelineLayoutInput = {
   height: number;
   scrollY?: number;
   selection?: TimelineSelection;
+  /** Collapsed group IDs for dope sheet mode. */
+  collapsedGroups?: Set<string>;
 };
 
 export type TimelineHit =
@@ -137,6 +143,10 @@ const isSelected = (selection: TimelineSelection, itemId: string, keyId?: string
 // ── Layout ───────────────────────────────────────────────────────────────────
 
 export function layoutTimeline(input: TimelineLayoutInput): TimelineLayout {
+  // Route to dope sheet layout when the flag is set
+  if (input.model.dopeSheet) {
+    return layoutDopeSheet(input);
+  }
   const { model, view, width, height } = input;
   const scrollY = input.scrollY ?? 0;
   const selection = input.selection ?? null;

@@ -5,7 +5,7 @@
  * drag-to-reparent emits one op; this panel never mutates scene data directly.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   useDraggable,
@@ -39,6 +39,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
@@ -51,6 +60,7 @@ import {
 } from '@/lib/motion/hierarchy';
 import type { MotionNode, MotionTrack } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
+import type { MotionContextTarget } from '@/hooks/use-motion-context-menu';
 
 function nodeIcon(node: MotionNode) {
   if (node.type.startsWith('camera.')) return CameraIcon;
@@ -210,6 +220,12 @@ export function MotionScenePanel() {
     setDraggingNodeId(typeof nodeId === 'string' ? nodeId : null);
   };
 
+  const deleteNode = (nodeId: string) => {
+    motionStore.commit('Delete scene object', [
+      { op: 'scene.node.remove', nodeId },
+    ]);
+  };
+
   const duplicateNode = (nodeId: string) => {
     const subtree = [doc.scene.nodes.find((node) => node.id === nodeId)].filter(
       (node): node is MotionNode => Boolean(node),
@@ -247,6 +263,9 @@ export function MotionScenePanel() {
     }]);
   };
 
+  const sceneContextMenuTarget = useRef<MotionContextTarget | null>(null);
+  const trackContextMenuTarget = useRef<MotionContextTarget | null>(null);
+
   return (
     <Tabs defaultValue="scene" className="flex h-full min-h-0 flex-col gap-0">
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-border/60 px-2">
@@ -283,19 +302,75 @@ export function MotionScenePanel() {
                 <DndContext onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDraggingNodeId(null)}>
                   <div data-motion-scene-tree className="ml-2 border-l border-border/60 pl-2">
                     {rows.map((row) => (
-                      <SceneNodeRow
+                      <ContextMenu
                         key={row.node.id}
-                        row={row}
-                        rows={rows}
-                        selected={selectedNodeIds.includes(row.node.id)}
-                        collapsed={collapsed.has(row.node.id)}
-                        animated={animatedNodeIds.has(row.node.id)}
-                        missingAsset={missingAssetFor(row.node, motionAssets.missingIds)}
-                        dropCheck={dropChecks.get(row.node.id)}
-                        onSelectNode={selectNode}
-                        onDuplicate={duplicateNode}
-                        onToggleCollapsed={toggleCollapsed}
-                      />
+                      >
+                        <ContextMenuTrigger asChild>
+                          <div
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              sceneContextMenuTarget.current = { type: 'scene-node', nodeId: row.node.id };
+                            }}
+                          >
+                            <SceneNodeRow
+                              row={row}
+                              rows={rows}
+                              selected={selectedNodeIds.includes(row.node.id)}
+                              collapsed={collapsed.has(row.node.id)}
+                              animated={animatedNodeIds.has(row.node.id)}
+                              missingAsset={missingAssetFor(row.node, motionAssets.missingIds)}
+                              dropCheck={dropChecks.get(row.node.id)}
+                              onSelectNode={selectNode}
+                              onDuplicate={duplicateNode}
+                              onToggleCollapsed={toggleCollapsed}
+                            />
+                          </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-44">
+                          <ContextMenuItem onSelect={() => {
+                            const node = doc.scene.nodes.find((n) => n.id === row.node.id);
+                            if (node) motionStore.setSelection({ kind: 'node', nodeId: node.id });
+                          }}>
+                            Rename
+                            <ContextMenuShortcut>F2</ContextMenuShortcut>
+                          </ContextMenuItem>
+                          <ContextMenuItem onSelect={() => duplicateNode(row.node.id)}>
+                            Duplicate
+                            <ContextMenuShortcut>Ctrl+D</ContextMenuShortcut>
+                          </ContextMenuItem>
+                          <ContextMenuItem variant="destructive" onSelect={() => deleteNode(row.node.id)}>
+                            Delete
+                            <ContextMenuShortcut>Del</ContextMenuShortcut>
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuCheckboxItem
+                            checked={row.node.visible ?? true}
+                            onSelect={() =>
+                              motionStore.commit('Toggle object visibility', [
+                                { op: 'scene.node.update', nodeId: row.node.id, visible: !(row.node.visible ?? true) },
+                              ])
+                            }
+                          >
+                            Visible
+                          </ContextMenuCheckboxItem>
+                          <ContextMenuCheckboxItem
+                            checked={row.node.locked ?? false}
+                            onSelect={() =>
+                              motionStore.commit('Toggle object lock', [
+                                { op: 'scene.node.update', nodeId: row.node.id, locked: !(row.node.locked ?? false) },
+                              ])
+                            }
+                          >
+                            Locked
+                          </ContextMenuCheckboxItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onSelect={() => {
+                            motionStore.setSelection({ kind: 'node', nodeId: row.node.id });
+                          }}>
+                            Focus in Viewport
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                     ))}
                     {doc.scene.nodes.length === 0 && (
                       <p className="px-2 py-3 text-[11px] text-muted-foreground">
@@ -307,68 +382,110 @@ export function MotionScenePanel() {
                       const Icon = trackIcon(track);
                       const selected = selectedTrackId === track.id;
                       return (
-                        <div
+                        <ContextMenu
                           key={track.id}
-                          className={cn(
-                            'group flex h-7 items-center gap-1 rounded px-1.5 text-xs',
-                            selected
-                              ? 'bg-accent text-accent-foreground'
-                              : 'text-foreground/80 hover:bg-accent/40',
-                          )}
                         >
-                          <button
-                            type="button"
-                            className="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                            onClick={() =>
-                              motionStore.setSelection({
-                                kind: 'track',
-                                trackId: track.id,
-                              })
-                            }
-                            aria-pressed={selected}
-                            aria-label={`Select ${track.name}`}
-                            title={`Select ${track.name}`}
-                          >
-                            <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                            <span className="truncate">{track.name}</span>
-                          </button>
-                          <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-5"
-                              aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
-                              title={track.muted ? 'Unmute track' : 'Mute track'}
-                              onClick={() =>
-                                motionStore.commit('Toggle track mute', [
-                                  { op: 'track.update', trackId: track.id, muted: !track.muted },
-                                ])
-                              }
-                            >
-                              {track.muted ? <EyeOffIcon data-icon /> : <EyeIcon data-icon />}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-5"
-                              aria-label={track.locked ? `Unlock ${track.name}` : `Lock ${track.name}`}
-                              title={track.locked ? 'Unlock track' : 'Lock track'}
-                              onClick={() =>
-                                motionStore.commit('Toggle track lock', [
-                                  { op: 'track.update', trackId: track.id, locked: !track.locked },
-                                ])
-                              }
-                            >
-                              {track.locked ? (
-                                <LockKeyholeIcon data-icon />
-                              ) : (
-                                <LockKeyholeOpenIcon data-icon />
+                          <ContextMenuTrigger asChild>
+                            <div
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                trackContextMenuTarget.current = { type: 'scene-track', trackId: track.id };
+                              }}
+                              className={cn(
+                                'group flex h-7 items-center gap-1 rounded px-1.5 text-xs',
+                                selected
+                                  ? 'bg-accent text-accent-foreground'
+                                  : 'text-foreground/80 hover:bg-accent/40',
                               )}
-                            </Button>
-                          </span>
-                        </div>
+                            >
+                              <button
+                                type="button"
+                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                onClick={() =>
+                                  motionStore.setSelection({
+                                    kind: 'track',
+                                    trackId: track.id,
+                                  })
+                                }
+                                aria-pressed={selected}
+                                aria-label={`Select ${track.name}`}
+                                title={`Select ${track.name}`}
+                              >
+                                <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                                <span className="truncate">{track.name}</span>
+                              </button>
+                              <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-5"
+                                  aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
+                                  title={track.muted ? 'Unmute track' : 'Mute track'}
+                                  onClick={() =>
+                                    motionStore.commit('Toggle track mute', [
+                                      { op: 'track.update', trackId: track.id, muted: !track.muted },
+                                    ])
+                                  }
+                                >
+                                  {track.muted ? <EyeOffIcon data-icon /> : <EyeIcon data-icon />}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-5"
+                                  aria-label={track.locked ? `Unlock ${track.name}` : `Lock ${track.name}`}
+                                  title={track.locked ? 'Unlock track' : 'Lock track'}
+                                  onClick={() =>
+                                    motionStore.commit('Toggle track lock', [
+                                      { op: 'track.update', trackId: track.id, locked: !track.locked },
+                                    ])
+                                  }
+                                >
+                                  {track.locked ? (
+                                    <LockKeyholeIcon data-icon />
+                                  ) : (
+                                    <LockKeyholeOpenIcon data-icon />
+                                  )}
+                                </Button>
+                              </span>
+                            </div>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-40">
+                            <ContextMenuItem onSelect={() =>
+                              motionStore.setSelection({ kind: 'track', trackId: track.id })
+                            }>
+                              Select Track
+                            </ContextMenuItem>
+                            <ContextMenuCheckboxItem
+                              checked={track.muted ?? false}
+                              onSelect={() =>
+                                motionStore.commit('Toggle track mute', [
+                                  { op: 'track.update', trackId: track.id, muted: !(track.muted ?? false) },
+                                ])
+                              }
+                            >
+                              Muted
+                            </ContextMenuCheckboxItem>
+                            <ContextMenuCheckboxItem
+                              checked={track.locked ?? false}
+                              onSelect={() =>
+                                motionStore.commit('Toggle track lock', [
+                                  { op: 'track.update', trackId: track.id, locked: !(track.locked ?? false) },
+                                ])
+                              }
+                            >
+                              Locked
+                            </ContextMenuCheckboxItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem variant="destructive" onSelect={() =>
+                              motionStore.commit('Delete track', [{ op: 'track.remove', trackId: track.id }])
+                            }>
+                              Delete Track
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
                       );
                     })}
                     {doc.timeline.tracks.length === 0 && (

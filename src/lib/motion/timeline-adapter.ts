@@ -40,7 +40,7 @@ export function parseMotionKeyId(keyId: string): MotionKeyRef | null {
   return { placementId, channelId, keyframeId };
 }
 
-export function toTimelineModel(doc: MotionDocument): TimelineModel {
+export function toTimelineModel(doc: MotionDocument, options?: { dopeSheet?: boolean }): TimelineModel {
   const clipsById = new Map(doc.timeline.clips.map((clip) => [clip.id, clip]));
   const items: TimelineItem[] = [];
 
@@ -95,6 +95,7 @@ export function toTimelineModel(doc: MotionDocument): TimelineModel {
       locked: track.locked,
     })),
     items,
+    dopeSheet: options?.dopeSheet,
   };
 }
 

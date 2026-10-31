@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createBlankMotionDocument, createStarterMotionDocument } from '@/lib/motion/defaults';
+import { createMotionTemplate } from '@/lib/motion/templates';
 import { parseMotionDocument, serializeMotionDocument } from '@/lib/motion/schema';
 import { MotionProjectStore } from '@/main/motion/project-store';
 import type { MotionProjectIndexRow } from '@/main/motion/project-index';
@@ -57,6 +58,17 @@ describe('MotionProjectStore', () => {
     expect(opened.document.activeSceneId).toBe(opened.document.scenes[0].id);
     expect(opened.document.meta.output).toMatchObject({ width: 1080, height: 1920, fps: 30 });
     expect(opened.document.timeline.duration).toBe(8);
+  });
+
+  it('creates and reopens the phone template with its screen parent intact', async () => {
+    const document = createMotionTemplate('app-store-preview');
+    const project = await store.createProject({ name: 'Phone launch', document });
+    const opened = await store.openProject(project.id);
+    const phone = opened.document.scene.nodes.find((node) => node.id === 'product');
+    const screen = opened.document.scene.nodes.find((node) => node.id === 'screen_dashboard');
+
+    expect(phone?.type).toBe('device.phone');
+    expect(screen?.parentId).toBe('product');
   });
 
   it('offers a newer sidecar for recovery and commits it at a new revision', async () => {

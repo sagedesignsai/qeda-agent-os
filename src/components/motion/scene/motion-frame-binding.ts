@@ -131,10 +131,10 @@ export function applyMotionFrame({
   applyOpacity(scene, 1, opacityById);
 
   const cameraNode = frame.nodes.find((node) => node.type === 'camera.perspective');
-  if (cameraNode && camera instanceof PerspectiveCamera) {
-    const fov = motionNumberProp(cameraNode, 'fov', camera.fov);
-    const near = motionNumberProp(cameraNode, 'near', camera.near);
-    const far = motionNumberProp(cameraNode, 'far', camera.far);
+  if (camera instanceof PerspectiveCamera) {
+    const fov = cameraNode ? motionNumberProp(cameraNode, 'fov', camera.fov) : camera.fov;
+    const near = cameraNode ? motionNumberProp(cameraNode, 'near', camera.near) : camera.near;
+    const far = cameraNode ? motionNumberProp(cameraNode, 'far', camera.far) : camera.far;
     camera.fov = fov;
     camera.near = near;
     camera.far = far;
@@ -147,7 +147,7 @@ export function applyMotionFrame({
     if (viewMode === 'front') {
       camera.position.set(0, 0, 6.1 / zoom);
       camera.lookAt(0, 0, 0);
-    } else {
+    } else if (cameraNode) {
       camera.position.set(
         cameraNode.transform.position[0] / zoom,
         cameraNode.transform.position[1] / zoom,
@@ -157,6 +157,10 @@ export function applyMotionFrame({
       camera.rotateX(cameraNode.transform.rotation[0]);
       camera.rotateY(cameraNode.transform.rotation[1]);
       camera.rotateZ(cameraNode.transform.rotation[2]);
+    } else {
+      // No camera node in the document — use the Canvas default position.
+      camera.position.set(3.7 / zoom, 2.7 / zoom, 5.1 / zoom);
+      camera.lookAt(0, 0, 0);
     }
   }
 }

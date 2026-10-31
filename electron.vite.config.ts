@@ -20,7 +20,7 @@ export default defineConfig({
   main: {
     build: {
       outDir: 'release/app/dist/main',
-      sourcemap: true,
+      sourcemap: process.env.VITE_BUILD_SOURCEMAP !== 'false',
       externalizeDeps: false,
       rollupOptions: {
         input: path.join(root, 'src/main/main.ts'),
@@ -32,7 +32,7 @@ export default defineConfig({
   preload: {
     build: {
       outDir: 'release/app/dist/preload',
-      sourcemap: true,
+      sourcemap: process.env.VITE_BUILD_SOURCEMAP !== 'false',
       externalizeDeps: false,
       rollupOptions: {
         input: path.join(root, 'src/main/preload.ts'),
@@ -63,7 +63,7 @@ export default defineConfig({
       outDir: path.join(root, 'release/app/dist/renderer'),
       emptyOutDir: true,
       minify: 'esbuild',
-      sourcemap: true,
+      sourcemap: process.env.VITE_BUILD_SOURCEMAP !== 'false',
       rollupOptions: {
         input: {
           renderer: path.join(root, 'src/renderer/index.html'),

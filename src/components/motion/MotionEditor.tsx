@@ -5,11 +5,13 @@
  * panel owns only its own view state and delegates document edits to Motion ops.
  */
 
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BoxesIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
   DownloadIcon,
   PlusIcon,
   RectangleHorizontalIcon,
@@ -46,15 +48,56 @@ export function MotionEditor() {
   const { doc } = useMotionSnapshot();
   const [scenePanelCollapsed, setScenePanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [timelineCollapsed, setTimelineCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem('motion.timeline.collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const exportState = useMotionExport();
   const scenePanelRef = useRef<PanelImperativeHandle | null>(null);
   const inspectorPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const timelinePanelRef = useRef<PanelImperativeHandle | null>(null);
   const horizontalLayout = useDefaultLayout({
     id: 'motion-layout-horizontal-v1',
   });
-  const verticalLayout = useDefaultLayout({ id: 'motion-layout-vertical-v1' });
+  const verticalLayout = useDefaultLayout({ id: 'motion-layout-vertical-v2' });
+
+  const toggleTimelineCollapse = useCallback(() => {
+    const panel = timelinePanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      panel.expand();
+      setTimelineCollapsed(false);
+    } else {
+      panel.collapse();
+      setTimelineCollapsed(true);
+    }
+  }, []);
+
+  // Persist timeline collapsed state to localStorage
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('motion.timeline.collapsed', String(timelineCollapsed));
+    } catch {
+      // Storage unavailable — no-op
+    }
+  }, [timelineCollapsed]);
+
+  // Keyboard shortcut: Ctrl/Cmd+Shift+T to toggle timeline collapse
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 't') {
+        event.preventDefault();
+        toggleTimelineCollapse();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleTimelineCollapse]);
 
   const togglePanel = (
     ref: typeof scenePanelRef,
@@ -161,6 +204,25 @@ export function MotionEditor() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            aria-label={
+              timelineCollapsed ? 'Expand timeline' : 'Collapse timeline'
+            }
+            title={
+              timelineCollapsed ? 'Expand timeline (Ctrl+Shift+T)' : 'Collapse timeline (Ctrl+Shift+T)'
+            }
+            onClick={toggleTimelineCollapse}
+          >
+            {timelineCollapsed ? (
+              <ChevronDownIcon data-icon />
+            ) : (
+              <ChevronUpIcon data-icon />
+            )}
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -228,69 +290,78 @@ export function MotionEditor() {
       </div>
 
       <ResizablePanelGroup
-        orientation="horizontal"
+        orientation="vertical"
         className="min-h-0 flex-1"
-        {...horizontalLayout}
+        {...verticalLayout}
       >
+        {/* Top panel: horizontal group (scene | viewport | inspector) */}
         <ResizablePanel
-          id="motion-scene-panel"
-          panelRef={scenePanelRef}
-          defaultSize="20%"
-          minSize="180px"
-          maxSize="32%"
-          collapsible
-          collapsedSize="0px"
-          onResize={(size) => setScenePanelCollapsed(size.inPixels <= 1)}
-          className="min-w-0"
-        >
-          <MotionScenePanel />
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-
-        <ResizablePanel
-          id="motion-workspace-panel"
-          defaultSize="58%"
-          minSize="320px"
-          className="min-w-0"
+          id="motion-top-panel"
+          defaultSize="66%"
+          minSize="200px"
+          className="min-h-0"
         >
           <ResizablePanelGroup
-            orientation="vertical"
+            orientation="horizontal"
             className="min-h-0"
-            {...verticalLayout}
+            {...horizontalLayout}
           >
             <ResizablePanel
-              id="motion-viewport-panel"
-              defaultSize="66%"
+              id="motion-scene-panel"
+              panelRef={scenePanelRef}
+              defaultSize="20%"
               minSize="180px"
-              className="min-h-0"
+              maxSize="32%"
+              collapsible
+              collapsedSize="0px"
+              onResize={(size) => setScenePanelCollapsed(size.inPixels <= 1)}
+              className="min-w-0"
+            >
+              <MotionScenePanel />
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+
+            <ResizablePanel
+              id="motion-viewport-panel"
+              defaultSize="58%"
+              minSize="320px"
+              className="min-w-0 min-h-0"
             >
               <MotionViewport />
             </ResizablePanel>
+
             <ResizableHandle withHandle />
             <ResizablePanel
-              id="motion-timeline-panel"
-              defaultSize="34%"
-              minSize="190px"
-              className="min-h-0"
+              id="motion-inspector-panel"
+              panelRef={inspectorPanelRef}
+              defaultSize="22%"
+              minSize="210px"
+              maxSize="36%"
+              collapsible
+              collapsedSize="0px"
+              onResize={(size) => setInspectorCollapsed(size.inPixels <= 1)}
+              className="min-w-0"
             >
-              <MotionTimeline />
+              <MotionInspector />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>
 
         <ResizableHandle withHandle />
+
+        {/* Bottom panel: full-width timeline */}
         <ResizablePanel
-          id="motion-inspector-panel"
-          panelRef={inspectorPanelRef}
-          defaultSize="22%"
-          minSize="210px"
-          maxSize="36%"
+          id="motion-timeline-panel"
+          panelRef={timelinePanelRef}
+          defaultSize="34%"
+          minSize="48px"
+          maxSize="50%"
           collapsible
-          collapsedSize="0px"
-          onResize={(size) => setInspectorCollapsed(size.inPixels <= 1)}
-          className="min-w-0"
+          collapsedSize="48px"
+          onResize={(size) => setTimelineCollapsed(size.inPixels <= 48)}
+          className="min-h-0"
         >
-          <MotionInspector />
+          <MotionTimeline collapsed={timelineCollapsed} onExpand={toggleTimelineCollapse} />
         </ResizablePanel>
       </ResizablePanelGroup>
 

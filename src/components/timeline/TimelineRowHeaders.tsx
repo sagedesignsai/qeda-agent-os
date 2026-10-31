@@ -6,11 +6,14 @@
  * Headers are DOM, not canvas, because they hold focusable controls. They share
  * the canvas's row height and scroll offset so the two columns stay locked
  * together without either one measuring the other.
+ *
+ * In Dope Sheet mode, rows are hierarchical: collapsible node groups with
+ * indented property channel rows.
  */
 
-import { LockIcon, LockOpenIcon, Trash2Icon, VolumeXIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronRightIcon, LockIcon, LockOpenIcon, Trash2Icon, VolumeXIcon } from 'lucide-react';
 
-import { ROW_HEIGHT, RULER_HEIGHT } from '@/lib/timeline/layout';
+import { DOPE_ROW_HEIGHT, DOPE_GROUP_HEIGHT, ROW_HEIGHT, RULER_HEIGHT } from '@/lib/timeline/layout';
 import type { TimelineModel, TimelineSelection } from '@/lib/timeline/types';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +25,12 @@ export type TimelineRowHeadersProps = {
   onToggleMute?: (rowId: string) => void;
   onToggleLock?: (rowId: string) => void;
   onRemove?: (rowId: string) => void;
+  /** Dope sheet mode: hierarchical rows with collapsible groups. */
+  dopeSheet?: boolean;
+  /** Collapsed group IDs for dope sheet mode. */
+  collapsedGroups?: Set<string>;
+  /** Toggle a group's collapsed state. */
+  onToggleGroup?: (groupId: string) => void;
 };
 
 export function TimelineRowHeaders({
@@ -32,7 +41,21 @@ export function TimelineRowHeaders({
   onToggleMute,
   onToggleLock,
   onRemove,
+  dopeSheet,
+  collapsedGroups,
+  onToggleGroup,
 }: TimelineRowHeadersProps) {
+  if (dopeSheet) {
+    return (
+      <div className="relative h-full w-44 shrink-0 overflow-hidden border-r border-border/60 bg-sidebar">
+        <div className="h-[26px] border-b border-border/60" style={{ height: RULER_HEIGHT }} />
+        <div style={{ transform: `translateY(-${scrollY}px)` }}>
+          {renderDopeSheetHeaders(model, selection, collapsedGroups, onToggleGroup)}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative h-full w-44 shrink-0 overflow-hidden border-r border-border/60 bg-sidebar">
       <div className="h-[26px] border-b border-border/60" style={{ height: RULER_HEIGHT }} />
@@ -120,4 +143,90 @@ export function TimelineRowHeaders({
       </div>
     </div>
   );
+}
+
+function renderDopeSheetHeaders(
+  model: TimelineModel,
+  selection: TimelineSelection,
+  collapsedGroups: Set<string> | undefined,
+  onToggleGroup: ((groupId: string) => void) | undefined,
+) {
+  // Group rows by their track (which maps to a node in Motion)
+  const groups = new Map<string, { row: typeof model.rows[0]; properties: string[] }>();
+
+  for (const item of model.items) {
+    const channels = item.channels ?? [];
+    for (const channel of channels) {
+      const row = model.rows.find((r) => r.id === item.rowId);
+      if (!row) continue;
+      let group = groups.get(item.rowId);
+      if (!group) {
+        group = { row, properties: [] };
+        groups.set(item.rowId, group);
+      }
+      if (!group.properties.includes(channel.label)) {
+        group.properties.push(channel.label);
+      }
+    }
+  }
+
+  const elements: JSX.Element[] = [];
+  let index = 0;
+
+  for (const [groupId, group] of groups) {
+    const isCollapsed = collapsedGroups?.has(groupId) ?? false;
+
+    // Group header row
+    elements.push(
+      <div
+        key={`${groupId}:group`}
+        className="group flex items-center gap-1 border-b border-border/40 px-2 text-[11px] font-medium hover:bg-accent/30"
+        style={{ height: DOPE_GROUP_HEIGHT }}
+      >
+        <button
+          type="button"
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => onToggleGroup?.(groupId)}
+          aria-label={isCollapsed ? `Expand ${group.row.name}` : `Collapse ${group.row.name}`}
+        >
+          {isCollapsed ? (
+            <ChevronRightIcon className="size-3" />
+          ) : (
+            <ChevronDownIcon className="size-3" />
+          )}
+        </button>
+        <span className="truncate text-foreground">{group.row.name}</span>
+        <span className="ml-auto text-[9px] text-muted-foreground/70">
+          {group.properties.length} prop{group.properties.length !== 1 ? 's' : ''}
+        </span>
+      </div>,
+    );
+    index += 1;
+
+    // Property rows
+    if (!isCollapsed) {
+      for (const property of group.properties) {
+        elements.push(
+          <div
+            key={`${groupId}:${property}`}
+            className="flex items-center gap-1 border-b border-border/20 px-2 pl-7 text-[10px] text-muted-foreground hover:bg-accent/20"
+            style={{ height: DOPE_ROW_HEIGHT }}
+          >
+            <span className="truncate">{property}</span>
+          </div>,
+        );
+        index += 1;
+      }
+    }
+  }
+
+  if (elements.length === 0) {
+    return (
+      <div className="flex items-center justify-center px-2 text-[10px] text-muted-foreground/50" style={{ height: DOPE_ROW_HEIGHT }}>
+        No animated properties
+      </div>
+    );
+  }
+
+  return <>{elements}</>;
 }

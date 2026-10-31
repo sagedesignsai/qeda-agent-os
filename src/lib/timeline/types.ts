@@ -76,6 +76,8 @@ export type TimelineModel = {
   rows: TimelineRow[];
   items: TimelineItem[];
   loop?: TimelineLoopRange | null;
+  /** When true, the layout and painting switch to dope sheet mode. */
+  dopeSheet?: boolean;
 };
 
 /**

@@ -21,6 +21,7 @@ import {
   motionNumberProp,
   type MotionCameraView,
 } from '@/components/motion/scene/motion-frame-binding';
+import { subscribeMotionFrameClock } from '@/components/motion/scene/motion-frame-clock';
 import type { MotionDocument, MotionNode } from '@/lib/motion/types';
 import type { PlaybackClock } from '@/lib/timeline/clock';
 
@@ -45,6 +46,8 @@ type MotionSceneCanvasProps = {
   dpr?: number;
   preserveDrawingBuffer?: boolean;
   onCanvasReady?: (canvas: HTMLCanvasElement) => void;
+  /** Called after the first successful frame render. */
+  onReady?: () => void;
 };
 
 function indexNodes(nodes: MotionNode[]): Map<string | null, MotionNode[]> {
@@ -162,8 +165,28 @@ function MotionFrameDriver({
   const camera = useThree((state) => state.camera);
   const scene = useThree((state) => state.scene);
   const lastProjection = useRef<string | null>(null);
+  const initialized = useRef(false);
 
-  useEffect(() => clock.subscribe(invalidate), [clock, invalidate]);
+  useEffect(
+    () => subscribeMotionFrameClock(clock, invalidate),
+    [clock, invalidate],
+  );
+
+  // In R3F demand mode, `useFrame` only runs after `invalidate()` is called.
+  // The clock subscription fires `invalidate()` on tick, but the very first
+  // frame must be triggered manually — and only after `useFrame` has registered
+  // in the current commit.  A zero-timeout ensures the microtask queue has
+  // flushed so `useFrame` is guaranteed to be present.
+  useEffect(() => {
+    if (initialized.current) return;
+    initialized.current = true;
+    const id = setTimeout(() => invalidate(), 0);
+    return () => clearTimeout(id);
+  }, [invalidate]);
+
+  useEffect(() => {
+    invalidate();
+  }, [doc, invalidate, viewMode, zoom]);
 
   useFrame(() => {
     applyMotionFrame({
@@ -257,7 +280,9 @@ export function MotionSceneCanvas({
   dpr = 1.75,
   preserveDrawingBuffer = false,
   onCanvasReady,
+  onReady,
 }: MotionSceneCanvasProps) {
+  const readyCalled = useRef(false);
   return (
     <Canvas
       aria-label="Three-dimensional Motion document scene"
@@ -288,6 +313,19 @@ export function MotionSceneCanvas({
         />
       )}
       <DocumentScene doc={doc} clock={clock} viewMode={viewMode} zoom={zoom} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onTransformNode={onTransformNode} showEditorStage={showEditorStage} />
+      <MotionReadySignal onReady={onReady} readyCalled={readyCalled} />
     </Canvas>
   );
+}
+
+function MotionReadySignal({ onReady, readyCalled }: { onReady?: () => void; readyCalled: MutableRefObject<boolean> }) {
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    if (readyCalled.current) return;
+    readyCalled.current = true;
+    // Signal ready after the first frame has been invalidated and rendered
+    const id = setTimeout(() => onReady?.(), 100);
+    return () => clearTimeout(id);
+  }, [onReady, readyCalled, invalidate]);
+  return null;
 }

@@ -4,9 +4,12 @@
  * Preview controls and stage chrome for the document-driven 3D scene.
  */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  BoxIcon,
+  CameraIcon,
   Grid2X2Icon,
+  Loader2Icon,
   MinusIcon,
   MonitorIcon,
   PlusIcon,
@@ -21,6 +24,17 @@ import type {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import {
   Select,
   SelectContent,
   SelectGroup,
@@ -30,6 +44,8 @@ import {
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
+import { createMotionId } from '@/lib/motion/ids';
+import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 import type { MotionNode } from '@/lib/motion/types';
 
 type StageTone = 'graphite' | 'slate' | 'paper';
@@ -46,6 +62,45 @@ export function MotionViewport() {
   const [stageTone, setStageTone] = useState<StageTone>('graphite');
   const [gridVisible, setGridVisible] = useState(true);
   const [zoom, setZoom] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const loadingTimer = useRef<number | null>(null);
+
+  const addNode = (type: string) => {
+    const definition = listMotionNodeTypes().find((item) => item.id === type);
+    if (!definition) return;
+    const nodeId = createMotionId('scene');
+    motionStore.commit('Add scene object', [
+      {
+        op: 'scene.node.add',
+        nodeId,
+        type,
+        name: definition.label,
+        parentId: null,
+        props: definition.defaultProps ?? {},
+      },
+    ]);
+  };
+
+  const handleCanvasReady = useCallback(() => {
+    // Clear any pending timer to avoid race on doc change
+    if (loadingTimer.current) {
+      clearTimeout(loadingTimer.current);
+      loadingTimer.current = null;
+    }
+    // Short delay so the user doesn't see a flash
+    loadingTimer.current = window.setTimeout(() => setLoading(false), 300);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (loadingTimer.current) clearTimeout(loadingTimer.current);
+    };
+  }, []);
+
+  // Reset loading when the document changes (new scene needs init)
+  useEffect(() => {
+    setLoading(true);
+  }, [doc.meta.id]);
 
   return (
     <section
@@ -168,53 +223,107 @@ export function MotionViewport() {
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <MotionSceneCanvas
-          doc={doc}
-          clock={motionStore.clock}
-          viewMode={viewMode}
-          stageColor={STAGE_COLORS[stageTone]}
-          gridVisible={gridVisible}
-          zoom={zoom}
-          selectedNodeId={selection?.kind === 'node' ? selection.nodeId : undefined}
-          onSelectNode={(nodeId, modifiers) => {
-            if (!nodeId) {
-              motionStore.setSelection(null);
-              return;
-            }
-            const current = motionStore.getSnapshot().selection;
-            const selected = new Set(
-              current?.kind === 'node'
-                ? current.selectedNodeIds ?? [current.nodeId]
-                : [],
-            );
-            if (modifiers?.shiftKey) selected.add(nodeId);
-            else if (modifiers?.ctrlKey || modifiers?.metaKey) {
-              if (selected.has(nodeId)) selected.delete(nodeId);
-              else selected.add(nodeId);
-            } else {
-              motionStore.setSelection({ kind: 'node', nodeId });
-              return;
-            }
-            const ids = [...selected];
-            if (ids.length === 0) motionStore.setSelection(null);
-            else motionStore.setSelection({
-              kind: 'node',
-              nodeId: ids.includes(nodeId) ? nodeId : ids[ids.length - 1],
-              ...(ids.length > 1 ? { selectedNodeIds: ids } : {}),
-            });
-          }}
-          onTransformNode={(nodeId, transform: MotionNode['transform']) => {
-            motionStore.commit('Move scene object', [{ op: 'scene.node.update', nodeId, transform }]);
-          }}
-        />
-        <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border/70 bg-background/85 px-2 py-1 text-[10px] backdrop-blur">
-          <span className="size-1.5 rounded-full bg-chart-3" />
-          <span className="text-muted-foreground">3D scene</span>
-          <span className="text-border">/</span>
-          <span className="text-muted-foreground">Document scene</span>
-        </div>
-      </div>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            {loading && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Loading scene …</span>
+                </div>
+              </div>
+            )}
+            <MotionSceneCanvas
+              doc={doc}
+              clock={motionStore.clock}
+              viewMode={viewMode}
+              stageColor={STAGE_COLORS[stageTone]}
+              gridVisible={gridVisible}
+              zoom={zoom}
+              selectedNodeId={selection?.kind === 'node' ? selection.nodeId : undefined}
+              onSelectNode={(nodeId, modifiers) => {
+                if (!nodeId) {
+                  motionStore.setSelection(null);
+                  return;
+                }
+                const current = motionStore.getSnapshot().selection;
+                const selected = new Set(
+                  current?.kind === 'node'
+                    ? current.selectedNodeIds ?? [current.nodeId]
+                    : [],
+                );
+                if (modifiers?.shiftKey) selected.add(nodeId);
+                else if (modifiers?.ctrlKey || modifiers?.metaKey) {
+                  if (selected.has(nodeId)) selected.delete(nodeId);
+                  else selected.add(nodeId);
+                } else {
+                  motionStore.setSelection({ kind: 'node', nodeId });
+                  return;
+                }
+                const ids = [...selected];
+                if (ids.length === 0) motionStore.setSelection(null);
+                else motionStore.setSelection({
+                  kind: 'node',
+                  nodeId: ids.includes(nodeId) ? nodeId : ids[ids.length - 1],
+                  ...(ids.length > 1 ? { selectedNodeIds: ids } : {}),
+                });
+              }}
+              onTransformNode={(nodeId, transform: MotionNode['transform']) => {
+                motionStore.commit('Move scene object', [{ op: 'scene.node.update', nodeId, transform }]);
+              }}
+              onReady={handleCanvasReady}
+            />
+            <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-2 rounded-md border border-border/70 bg-background/85 px-2 py-1 text-[10px] backdrop-blur">
+              <span className="size-1.5 rounded-full bg-chart-3" />
+              <span className="text-muted-foreground">3D scene</span>
+              <span className="text-border">/</span>
+              <span className="text-muted-foreground">Document scene</span>
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-44">
+          <ContextMenuItem onSelect={() => {
+            setViewMode('perspective');
+            setZoom(1);
+          }}>
+            Reset Camera
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuCheckboxItem
+            checked={gridVisible}
+            onSelect={() => setGridVisible((v) => !v)}
+          >
+            Show Grid
+          </ContextMenuCheckboxItem>
+          {selection?.kind === 'node' && (
+            <ContextMenuItem onSelect={() => {
+              motionStore.setSelection({ kind: 'node', nodeId: selection.nodeId });
+            }}>
+              Focus Selected
+            </ContextMenuItem>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>Add Node</ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-36">
+              {listMotionNodeTypes().map((nodeType) => (
+                <ContextMenuItem
+                  key={nodeType.id}
+                  onSelect={() => addNode(nodeType.id)}
+                >
+                  {nodeType.id.startsWith('camera.') ? (
+                    <CameraIcon className="size-3.5" />
+                  ) : (
+                    <BoxIcon className="size-3.5" />
+                  )}
+                  {nodeType.label}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        </ContextMenuContent>
+      </ContextMenu>
 
       <div className="flex h-6 shrink-0 items-center justify-between border-t border-border/60 px-2.5 text-[10px] text-muted-foreground">
         <span>Live scene · scrubbing updates the preview</span>

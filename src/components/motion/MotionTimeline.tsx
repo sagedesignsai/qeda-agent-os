@@ -8,12 +8,39 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CopyIcon, PlusIcon, ScissorsIcon, Trash2Icon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, CopyIcon, ListTodoIcon, MoreHorizontalIcon, PlusIcon, ScissorsIcon, TableIcon, Trash2Icon } from 'lucide-react';
 
 import { CanvasTimeline } from '@/components/timeline/CanvasTimeline';
 import { TimelineRowHeaders } from '@/components/timeline/TimelineRowHeaders';
 import { TimelineTransport } from '@/components/timeline/TimelineTransport';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuPortal,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
 import { countOffFrameKeyframes } from '@/lib/motion/quantize';
@@ -25,16 +52,62 @@ import {
   timelineSelectionToMotion,
   toTimelineModel,
 } from '@/lib/motion/timeline-adapter';
+import { DOPE_ROW_HEIGHT, DOPE_GROUP_HEIGHT, ROW_HEIGHT, hitTestTimeline, layoutTimeline } from '@/lib/timeline/layout';
 import { fitPxPerSecond, zoomAround } from '@/lib/timeline/time';
 import { resolveTimelineCanvasShortcut, resolveTimelineShortcut } from '@/lib/timeline/shortcuts';
 import type { MotionEasing, MotionSelection } from '@/lib/motion/types';
-import type { TimelineEditHandlers, TimelineSelection } from '@/lib/timeline/types';
+import type { TimelineEditHandlers, TimelineModel, TimelineSelection } from '@/lib/timeline/types';
 import { cn } from '@/lib/utils';
 
 const MIN_PX_PER_SECOND = 4;
 const MAX_PX_PER_SECOND = 4000;
 
-export function MotionTimeline({ className }: { className?: string }) {
+/**
+ * Compute the total vertical content height for a dopesheet layout.
+ * Counts group header rows (DOPE_GROUP_HEIGHT) and property channel rows
+ * (DOPE_ROW_HEIGHT), respecting collapsed groups — same logic as
+ * `layoutDopeSheet` in `dopesheet.ts`.
+ */
+function computeDopeSheetContentHeight(model: TimelineModel, collapsedGroups: Set<string>): number {
+  // Group items by row (track), then count channels with keys per group
+  const groupChannelCounts = new Map<string, number>();
+  for (const row of model.rows) {
+    const itemsInRow = model.items.filter((item) => item.rowId === row.id);
+    let channelCount = 0;
+    for (const item of itemsInRow) {
+      const channels = item.channels ?? [];
+      for (const channel of channels) {
+        if (channel.keys.length > 0) {
+          channelCount += 1;
+        }
+      }
+    }
+    if (channelCount > 0) {
+      groupChannelCounts.set(row.id, channelCount);
+    }
+  }
+
+  let height = 0;
+  for (const [groupId, channelCount] of groupChannelCounts) {
+    // Group header row
+    height += DOPE_GROUP_HEIGHT;
+    // Property rows (only if group is not collapsed)
+    if (!collapsedGroups.has(groupId)) {
+      height += channelCount * DOPE_ROW_HEIGHT;
+    }
+  }
+  return height;
+}
+
+export function MotionTimeline({
+  className,
+  collapsed,
+  onExpand,
+}: {
+  className?: string;
+  collapsed?: boolean;
+  onExpand?: () => void;
+}) {
   const { doc, selection, view, pendingApproval, autoKeyEnabled } = useMotionSnapshot();
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [scrollY, setScrollY] = useState(0);
@@ -45,6 +118,14 @@ export function MotionTimeline({ className }: { className?: string }) {
       return true;
     }
   });
+  const [dopeSheet, setDopeSheet] = useState(() => {
+    try {
+      return window.localStorage.getItem('motion.timeline.dopesheet') === 'on';
+    } catch {
+      return false;
+    }
+  });
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [keyClipboard, setKeyClipboard] = useState<Array<{
     property: string;
     offset: number;
@@ -52,7 +133,9 @@ export function MotionTimeline({ className }: { className?: string }) {
     easing: MotionEasing;
   }>>([]);
 
-  const model = useMemo(() => toTimelineModel(doc), [doc]);
+  const [timelineContextMenuTarget, setTimelineContextMenuTarget] = useState<ReturnType<typeof hitTestTimeline> | null>(null);
+
+  const model = useMemo(() => toTimelineModel(doc, { dopeSheet }), [doc, dopeSheet]);
   const timelineSelection = useMemo(() => motionSelectionToTimeline(selection), [selection]);
 
   const handlers = useMemo<TimelineEditHandlers>(
@@ -135,9 +218,22 @@ export function MotionTimeline({ className }: { className?: string }) {
       },
       onZoomChange: (next) => motionStore.setView(next),
       onScrollChange: (scrollSeconds) => motionStore.setView({ ...view, scrollSeconds }),
-      onScrollRows: (deltaPx) => setScrollY((previous) => Math.max(0, previous + deltaPx)),
+      onScrollRows: (deltaPx) => {
+        setScrollY((previous) => {
+          let contentHeight: number;
+          if (dopeSheet) {
+            // Dope sheet: count group headers + property channel rows, respecting collapsed groups
+            contentHeight = computeDopeSheetContentHeight(model, collapsedGroups);
+          } else {
+            contentHeight = model.rows.length * ROW_HEIGHT;
+          }
+          const visibleHeight = paneRef.current?.clientHeight ?? 0;
+          const maxScroll = Math.max(0, contentHeight - visibleHeight);
+          return Math.min(maxScroll, Math.max(0, previous + deltaPx));
+        });
+      },
     }),
-    [doc, view],
+    [doc, view, model.rows.length, model.items, dopeSheet, collapsedGroups],
   );
 
   const zoomBy = useCallback(
@@ -289,6 +385,27 @@ export function MotionTimeline({ className }: { className?: string }) {
     });
   }, []);
 
+  const toggleDopeSheet = useCallback(() => {
+    setDopeSheet((enabled) => {
+      const next = !enabled;
+      try {
+        window.localStorage.setItem('motion.timeline.dopesheet', next ? 'on' : 'off');
+      } catch {
+        // If browser storage is unavailable, this editor session still toggles.
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleGroup = useCallback((groupId: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }, []);
+
   const onKeyboardModeKeyDown = useCallback((event: React.KeyboardEvent<HTMLCanvasElement>) => {
     const command = resolveTimelineCanvasShortcut(event);
     if (!command) return;
@@ -432,9 +549,65 @@ export function MotionTimeline({ className }: { className?: string }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [copyKeyframes, doc.timeline.duration, pasteKeyframes, selection, stepFrame]);
 
+  // Playhead position as a fraction for the progress bar
+  const currentTime = motionStore.clock.getTime();
+  const playheadProgress = doc.timeline.duration > 0 ? (currentTime / doc.timeline.duration) * 100 : 0;
+  const currentFrame = Math.round(currentTime * fps);
+  const totalFrames = Math.round(doc.timeline.duration * fps);
+
+  // When collapsed, render only a slim transport bar so the panel can shrink to ~48px.
+  if (collapsed) {
+    return (
+      <div className={cn('flex min-h-0 flex-col bg-background', className)}>
+        <div className="flex h-10 min-h-0 items-center gap-2 px-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0"
+            aria-label="Expand timeline"
+            title="Expand timeline"
+            onClick={onExpand}
+          >
+            <ChevronUpIcon data-icon />
+          </Button>
+          <TimelineTransport
+            clock={motionStore.clock}
+            duration={doc.timeline.duration}
+            fps={fps}
+            loopEnabled={loopEnabled}
+            snapEnabled={snapEnabled}
+            autoKeyEnabled={autoKeyEnabled}
+            playMode={doc.timeline.playMode ?? 'once'}
+            onToggleLoop={() =>
+              motionStore.commit('Toggle work area', [
+                { op: 'timeline.setWorkArea', enabled: !loopEnabled },
+              ])
+            }
+            onToggleSnap={toggleSnap}
+            onToggleAutoKey={() => motionStore.setAutoKeyEnabled(!autoKeyEnabled)}
+            onPlayModeChange={(playMode) =>
+              motionStore.commit('Change playback mode', [
+                { op: 'timeline.setPlayMode', playMode },
+              ])
+            }
+            onStep={stepFrame}
+            onGoToStart={() => motionStore.seek(0)}
+            onGoToEnd={() => motionStore.seek(doc.timeline.duration)}
+            onZoomIn={() => zoomBy(1.3)}
+            onZoomOut={() => zoomBy(1 / 1.3)}
+            onZoomFit={zoomToFit}
+          />
+        </div>
+        <Progress value={playheadProgress} className="h-2 px-2 pb-1" />
+      </div>
+    );
+  }
+
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)}>
-      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-2">
+      <div className="flex h-10 shrink-0 items-center justify-between gap-1 border-b border-border/60 px-2">
+        {/* Left: Transport controls */}
         <TimelineTransport
           clock={motionStore.clock}
           duration={doc.timeline.duration}
@@ -463,20 +636,16 @@ export function MotionTimeline({ className }: { className?: string }) {
           onZoomFit={zoomToFit}
         />
 
-        <div className="flex items-center gap-1.5">
-          {(() => {
-            const area = doc.timeline.workArea ?? { enabled: false, start: 0, end: doc.timeline.duration };
-            const playhead = motionStore.clock.getTime();
-            return <div className="flex items-center gap-0.5 border-r border-border/60 pr-1.5">
-              <Button type="button" size="sm" variant={area.enabled ? 'secondary' : 'ghost'} className="h-7 px-1.5 text-[10px]" aria-pressed={area.enabled} onClick={() => motionStore.commit('Toggle work area', [{ op: 'timeline.setWorkArea', enabled: !area.enabled }])}>Work area</Button>
-              <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" disabled={playhead >= area.end} title="Set work area start at playhead" onClick={() => motionStore.commit('Set work area start', [{ op: 'timeline.setWorkArea', start: playhead }])}>Set in</Button>
-              <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" disabled={playhead <= area.start} title="Set work area end at playhead" onClick={() => motionStore.commit('Set work area end', [{ op: 'timeline.setWorkArea', end: playhead }])}>Set out</Button>
-              {area.enabled && <span className="hidden text-[9px] tabular-nums text-muted-foreground xl:inline">{area.start.toFixed(2)}–{area.end.toFixed(2)}s</span>}
-            </div>;
-          })()}
-          <span className="hidden text-[10px] text-muted-foreground sm:inline">
-            {selection ? selectionLabel(selection) : 'Nothing selected'}
-          </span>
+        {/* Right: Consolidated action menus */}
+        <div className="flex items-center gap-1">
+          {/* Selection badge */}
+          {selection && (
+            <Badge variant="secondary" className="h-5 text-[10px] px-1.5">
+              {selectionLabel(selection)}
+            </Badge>
+          )}
+
+          {/* Off-frame align button */}
           {offFrame > 0 && (
             <Button
               type="button"
@@ -491,69 +660,173 @@ export function MotionTimeline({ className }: { className?: string }) {
               Align {offFrame}
             </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 px-2 text-[11px]"
-            onClick={splitSelection}
-            disabled={selection?.kind !== 'placement'}
-            title="Split the selected placement at the playhead"
-          >
-            <ScissorsIcon className="size-3" />
-            Split
-          </Button>
-          <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" onClick={() => trimSelection('in')} disabled={selection?.kind !== 'placement'} title="Trim the selected clip start to the playhead">Trim in</Button>
-          <Button type="button" size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" onClick={() => trimSelection('out')} disabled={selection?.kind !== 'placement'} title="Trim the selected clip end to the playhead">Trim out</Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-7 gap-1 px-2 text-[11px]"
-            onClick={addKeyframe}
-            title="Add a keyframe at the playhead"
-          >
-            <PlusIcon className="size-3" />
-            Key
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            aria-label="Copy keyframes"
-            title="Copy selected keyframes (Ctrl/Cmd+C)"
-            onClick={copyKeyframes}
-            disabled={selection?.kind !== 'keyframe'}
-          >
-            <CopyIcon className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            aria-label="Paste keyframes"
-            title="Paste keyframes at the playhead (Ctrl/Cmd+V)"
-            onClick={pasteKeyframes}
-            disabled={keyClipboard.length === 0 || (selection?.kind !== 'keyframe' && selection?.kind !== 'placement')}
-          >
-            <PlusIcon className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            aria-label="Delete selection"
-            onClick={deleteSelection}
-            disabled={!selection}
-          >
-            <Trash2Icon className="size-3.5" />
-          </Button>
-          <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={addTrack}>
-            Track
-          </Button>
+
+          {/* Clip editing dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]">
+                <ScissorsIcon className="size-3" />
+                Clip
+                <ChevronDownIcon className="size-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>Clip Editing</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={splitSelection}
+                disabled={selection?.kind !== 'placement'}
+              >
+                <ScissorsIcon className="size-3.5" data-icon />
+                Split at Playhead
+                <DropdownMenuShortcut>Ctrl+Shift+S</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => trimSelection('in')}
+                disabled={selection?.kind !== 'placement'}
+              >
+                Trim In
+                <DropdownMenuShortcut>Ctrl+[</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => trimSelection('out')}
+                disabled={selection?.kind !== 'placement'}
+              >
+                Trim Out
+                <DropdownMenuShortcut>Ctrl+]</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={addTrack}>
+                <PlusIcon className="size-3.5" data-icon />
+                Add Track
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Keyframe editing dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]">
+                <PlusIcon className="size-3" />
+                Keyframe
+                <ChevronDownIcon className="size-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuLabel>Keyframe Editing</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={addKeyframe}>
+                <PlusIcon className="size-3.5" data-icon />
+                Add Keyframe
+                <DropdownMenuShortcut>K</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={copyKeyframes}
+                disabled={selection?.kind !== 'keyframe'}
+              >
+                <CopyIcon className="size-3.5" data-icon />
+                Copy Keyframe
+                <DropdownMenuShortcut>Ctrl+C</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={pasteKeyframes}
+                disabled={keyClipboard.length === 0 || (selection?.kind !== 'keyframe' && selection?.kind !== 'placement')}
+              >
+                <PlusIcon className="size-3.5" data-icon />
+                Paste Keyframe
+                <DropdownMenuShortcut>Ctrl+V</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={deleteSelection}
+                disabled={!selection}
+                className="text-destructive"
+              >
+                <Trash2Icon className="size-3.5" data-icon />
+                Delete Selection
+                <DropdownMenuShortcut>Del</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Settings dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="ghost" className="h-7 gap-1 px-2 text-[11px]">
+                <MoreHorizontalIcon className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuLabel>Settings</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={snapEnabled}
+                onCheckedChange={toggleSnap}
+              >
+                Snap to Grid
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={autoKeyEnabled}
+                onCheckedChange={() => motionStore.setAutoKeyEnabled(!autoKeyEnabled)}
+              >
+                Auto-key
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              {(() => {
+                const area = doc.timeline.workArea ?? { enabled: false, start: 0, end: doc.timeline.duration };
+                const playhead = motionStore.clock.getTime();
+                return (
+                  <>
+                    <DropdownMenuCheckboxItem
+                      checked={area.enabled}
+                      onCheckedChange={() => motionStore.commit('Toggle work area', [{ op: 'timeline.setWorkArea', enabled: !area.enabled }])}
+                    >
+                      Work Area
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuItem
+                      disabled={playhead >= area.end}
+                      onClick={() => motionStore.commit('Set work area start', [{ op: 'timeline.setWorkArea', start: playhead }])}
+                    >
+                      Set work area in
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={playhead <= area.start}
+                      onClick={() => motionStore.commit('Set work area end', [{ op: 'timeline.setWorkArea', end: playhead }])}
+                    >
+                      Set work area out
+                    </DropdownMenuItem>
+                    {area.enabled && (
+                      <div className="px-2 py-1 text-[10px] tabular-nums text-muted-foreground">
+                        {area.start.toFixed(2)}–{area.end.toFixed(2)}s
+                      </div>
+                    )}
+                    <DropdownMenuSeparator />
+                  </>
+                );
+              })()}
+              <DropdownMenuLabel>View Mode</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <TableIcon className="size-3.5" data-icon />
+                  Timeline View
+                </DropdownMenuSubTrigger>
+                <DropdownMenuPortal>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onClick={() => setDopeSheet(false)}>
+                      <TableIcon className="size-3.5" data-icon />
+                      Timeline
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setDopeSheet(true)}>
+                      <ListTodoIcon className="size-3.5" data-icon />
+                      Dope Sheet
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuPortal>
+              </DropdownMenuSub>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -591,6 +864,9 @@ export function MotionTimeline({ className }: { className?: string }) {
           model={model}
           selection={timelineSelection}
           scrollY={scrollY}
+          dopeSheet={dopeSheet}
+          collapsedGroups={collapsedGroups}
+          onToggleGroup={toggleGroup}
           onSelect={(next) => motionStore.setSelection(timelineSelectionToMotion(doc, next))}
           onToggleMute={(rowId) => {
             const track = doc.timeline.tracks.find((candidate) => candidate.id === rowId);
@@ -611,26 +887,191 @@ export function MotionTimeline({ className }: { className?: string }) {
           }
         />
 
-        <div className="relative min-w-0 flex-1">
-          <CanvasTimeline
-            model={model}
-            view={view}
-            selection={timelineSelection}
-            clock={motionStore.clock}
-            snap={snapEnabled}
-            scrollY={scrollY}
-            handlers={handlers}
-            onKeyboardModeKeyDown={onKeyboardModeKeyDown}
-          />
-        </div>
+        <ContextMenu
+          onOpenChange={(open) => {
+            if (!open) setTimelineContextMenuTarget(null);
+          }}
+        >
+          <ContextMenuTrigger asChild>
+            <div
+              onContextMenu={(e: React.MouseEvent) => {
+                e.preventDefault();
+                const rect = paneRef.current?.querySelector('canvas')?.getBoundingClientRect();
+                if (!rect) return;
+                const layout = layoutTimeline({ model, view, width: rect.width, height: rect.height, scrollY, selection: timelineSelection, collapsedGroups });
+                const hit = hitTestTimeline(layout, e.clientX - rect.left, e.clientY - rect.top);
+                setTimelineContextMenuTarget(hit);
+              }}
+              className="relative min-w-0 flex-1"
+            >
+              <CanvasTimeline
+                model={model}
+                view={view}
+                selection={timelineSelection}
+                clock={motionStore.clock}
+                snap={snapEnabled}
+                scrollY={scrollY}
+                collapsedGroups={collapsedGroups}
+                handlers={handlers}
+                onKeyboardModeKeyDown={onKeyboardModeKeyDown}
+              />
+            </div>
+          </ContextMenuTrigger>
+          {timelineContextMenuTarget && (
+            <ContextMenuContent className="w-44">
+              {timelineContextMenuTarget.type === 'ruler' && (
+                <>
+                  <ContextMenuItem onSelect={() => motionStore.seek(0)}>
+                    Go to Start
+                    <ContextMenuShortcut>Home</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => motionStore.seek(doc.timeline.duration)}>
+                    Go to End
+                    <ContextMenuShortcut>End</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onSelect={() => zoomBy(1.3)}>
+                    Zoom In
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => zoomBy(1 / 1.3)}>
+                    Zoom Out
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={zoomToFit}>
+                    Zoom to Fit
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onSelect={() => {
+                    const time = timelineContextMenuTarget.time;
+                    motionStore.commit('Set work area here', [
+                      { op: 'timeline.setWorkArea', enabled: true, start: Math.max(0, time - 1), end: Math.min(doc.timeline.duration, time + 1) },
+                    ]);
+                  }}>
+                    Set Work Area Here
+                  </ContextMenuItem>
+                </>
+              )}
+              {timelineContextMenuTarget.type === 'item' && (
+                <>
+                  <ContextMenuItem onSelect={splitSelection}>
+                    Split at Playhead
+                    <ContextMenuShortcut>Ctrl+B</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => trimSelection('in')}>
+                    Trim In
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => trimSelection('out')}>
+                    Trim Out
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem onSelect={copyKeyframes}>
+                    Copy
+                    <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuItem variant="destructive" onSelect={deleteSelection}>
+                    Delete
+                    <ContextMenuShortcut>Del</ContextMenuShortcut>
+                  </ContextMenuItem>
+                </>
+              )}
+              {timelineContextMenuTarget.type === 'key' && (
+                <>
+                  <ContextMenuItem onSelect={addKeyframe}>
+                    Add Keyframe
+                    <ContextMenuShortcut>K</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={copyKeyframes}>
+                    Copy Keyframe
+                    <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={pasteKeyframes} disabled={keyClipboard.length === 0}>
+                    Paste Keyframe
+                    <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem variant="destructive" onSelect={deleteSelection}>
+                    Delete Keyframe
+                    <ContextMenuShortcut>Del</ContextMenuShortcut>
+                  </ContextMenuItem>
+                </>
+              )}
+              {timelineContextMenuTarget.type === 'row' && (
+                <>
+                  <ContextMenuItem onSelect={addKeyframe}>
+                    Add Keyframe at Playhead
+                    <ContextMenuShortcut>K</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuSeparator />
+                  {(() => {
+                    const track = doc.timeline.tracks.find((t) => t.id === timelineContextMenuTarget.rowId);
+                    if (!track) return null;
+                    return (
+                      <>
+                        <ContextMenuCheckboxItem
+                          checked={track.muted ?? false}
+                          onSelect={() =>
+                            motionStore.commit('Toggle track mute', [
+                              { op: 'track.update', trackId: track.id, muted: !(track.muted ?? false) },
+                            ])
+                          }
+                        >
+                          Muted
+                        </ContextMenuCheckboxItem>
+                        <ContextMenuCheckboxItem
+                          checked={track.locked ?? false}
+                          onSelect={() =>
+                            motionStore.commit('Toggle track lock', [
+                              { op: 'track.update', trackId: track.id, locked: !(track.locked ?? false) },
+                            ])
+                          }
+                        >
+                          Locked
+                        </ContextMenuCheckboxItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem variant="destructive" onSelect={() =>
+                          motionStore.commit('Delete track', [{ op: 'track.remove', trackId: track.id }])
+                        }>
+                          Delete Track
+                        </ContextMenuItem>
+                      </>
+                    );
+                  })()}
+                </>
+              )}
+              {timelineContextMenuTarget.type === 'empty' && (
+                <>
+                  <ContextMenuItem onSelect={addKeyframe}>
+                    Add Keyframe at Playhead
+                    <ContextMenuShortcut>K</ContextMenuShortcut>
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={zoomToFit}>
+                    Zoom to Fit
+                  </ContextMenuItem>
+                </>
+              )}
+            </ContextMenuContent>
+          )}
+        </ContextMenu>
       </div>
 
       <div className="flex h-6 shrink-0 items-center justify-between border-t border-border/60 px-3 text-[10px] text-muted-foreground">
-        <span>
-          {doc.timeline.tracks.length} tracks · {doc.timeline.clips.length} clips ·{' '}
-          {doc.meta.output.width}×{doc.meta.output.height}
-        </span>
-        <span className="tabular-nums">{Math.round(view.pxPerSecond)} px/s</span>
+        <div className="flex items-center gap-2">
+          <span>
+            {doc.timeline.tracks.length} tracks · {doc.timeline.clips.length} clips
+          </span>
+          <Separator orientation="vertical" className="h-3" />
+          <span className="tabular-nums">
+            Frame {currentFrame} / {totalFrames}
+          </span>
+          <Separator orientation="vertical" className="h-3" />
+          <span>
+            {doc.meta.output.width}×{doc.meta.output.height}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 tabular-nums">
+          <span>{Math.round(view.pxPerSecond)} px/s</span>
+          <Separator orientation="vertical" className="h-3" />
+          <span>{Math.round((view.pxPerSecond / fitPxPerSecond(doc.timeline.duration, paneRef.current?.clientWidth ?? 1200)) * 100)}%</span>
+        </div>
       </div>
     </div>
   );

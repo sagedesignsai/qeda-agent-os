@@ -208,6 +208,7 @@ function TitleRenderer({ node }: { node: MotionNode }) {
       anchorX={isBody ? 'left' : 'center'}
       anchorY="middle"
       outlineWidth={0}
+      characters="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!? '()-"
     >
       {text}
     </Text>
