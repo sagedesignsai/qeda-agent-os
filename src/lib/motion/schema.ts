@@ -198,7 +198,7 @@ export function validateMotionDocument(doc: MotionDocument): MotionValidationErr
     }
     if (node.type === 'screen.image' && !node.props.missingAsset) {
       const assetId = node.props.assetId ?? node.props.source;
-      if (typeof assetId === 'string' && assetId !== 'starter-dashboard' && assetId !== 'builtin:starter-dashboard' && !assetIds.has(assetId)) {
+      if (typeof assetId === 'string' && assetId !== 'starter-dashboard' && assetId !== 'builtin:starter-dashboard' && !/^(blob:|data:|https?:|file:|qeda-media:|\/)/i.test(assetId) && !assetIds.has(assetId)) {
         errors.push({ code: 'ASSET_REFERENCE_MISSING', path: `scene.nodes.${i}.props.assetId` });
       }
     }
@@ -520,18 +520,34 @@ export function migrateMotionDocument(
 }
 
 function hydrateV4CompatibilityView(raw: Record<string, unknown>): Record<string, unknown> {
-  if (raw.schemaVersion !== 4 || raw.scene || raw.timeline) return raw;
+  if (raw.schemaVersion !== 4) return raw;
   const scenes = raw.scenes as Array<Record<string, unknown>> | undefined;
   const activeSceneId = typeof raw.activeSceneId === 'string' ? raw.activeSceneId : '';
-  const active = scenes?.find((scene) => scene.id === activeSceneId) ?? scenes?.[0];
+  const activeIndex = scenes?.findIndex((scene) => scene.id === activeSceneId) ?? -1;
+  const index = activeIndex >= 0 ? activeIndex : 0;
+  const active = scenes?.[index];
   if (!active) return raw;
-  const timeline = cloneData(active.timeline as Record<string, unknown>);
-  const workArea = timeline.workArea as { enabled?: boolean; start?: number; end?: number } | undefined;
-  timeline.loop = {
+
+  const nextScenes = scenes.map((scene, sceneIndex) => {
+    if (sceneIndex !== index) return scene;
+    return {
+      ...scene,
+      ...(raw.scene && typeof raw.scene === 'object'
+        ? { nodes: cloneData((raw.scene as { nodes?: unknown }).nodes ?? scene.nodes) }
+        : {}),
+      ...(raw.timeline && typeof raw.timeline === 'object'
+        ? { timeline: cloneData(raw.timeline as Record<string, unknown>) }
+        : {}),
+    };
+  });
+  const activeNodes = nextScenes[index].nodes;
+  const activeTimeline = cloneData(nextScenes[index].timeline as Record<string, unknown>);
+  const workArea = activeTimeline.workArea as { enabled?: boolean; start?: number; end?: number } | undefined;
+  activeTimeline.loop = {
     enabled: Boolean(workArea?.enabled), start: Number(workArea?.start ?? 0),
-    end: Number(workArea?.end ?? timeline.duration ?? 0),
+    end: Number(workArea?.end ?? activeTimeline.duration ?? 0),
   };
-  return { ...raw, scene: { nodes: active.nodes }, timeline };
+  return { ...raw, scenes: nextScenes, scene: { nodes: activeNodes }, timeline: activeTimeline };
 }
 
 export function parseMotionDocument(raw: unknown): MotionDocument {
@@ -555,6 +571,9 @@ export function parseMotionDocument(raw: unknown): MotionDocument {
     }
     if (first.code === 'CHANNEL_PROPERTY_UNSUPPORTED') {
       throw new MotionSchemaError(`Animation channel targets unsupported property at ${first.path}.`);
+    }
+    if (first.code === 'TRANSIENT_ASSET_URL') {
+      throw new MotionSchemaError(`Stored asset URL is not allowed at ${first.path}.`);
     }
     throw new MotionSchemaError(`Project file is invalid at ${first.path}: ${first.code}.`);
   }
@@ -626,7 +645,7 @@ export function parseMotionDocument(raw: unknown): MotionDocument {
     if (node.type !== 'screen.image' || node.props.missingAsset) continue;
     const source = node.props.assetId ?? node.props.source;
     if (typeof source !== 'string' || source === 'starter-dashboard' || source === 'builtin:starter-dashboard') continue;
-    if (!assetIds.has(source)) {
+    if (!/^(blob:|data:|https?:|file:|qeda-media:|\/)/i.test(source) && !assetIds.has(source)) {
       throw new MotionSchemaError(
         `Screen node "${node.id}" references missing image asset "${source}".`,
       );

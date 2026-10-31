@@ -248,7 +248,7 @@ export function requiresApproval(ops: readonly MotionOpRequest[]): boolean {
 
 // ── Apply ────────────────────────────────────────────────────────────────────
 
-export type ApplyMotionOpsOptions = { now?: string };
+export type ApplyMotionOpsOptions = { now?: string; commitRevision?: boolean };
 
 export function applyMotionOp(
   doc: MotionDocument,
@@ -298,11 +298,12 @@ export function applyMotionOp(
     }
   }
 
-  return {
+  const committed = {
     ...next,
-    revision: doc.revision + 1,
     meta: { ...next.meta, updatedAt: options.now ?? doc.meta.updatedAt },
   };
+  if (options.commitRevision === false) return committed;
+  return { ...committed, revision: doc.revision + 1 };
 }
 
 export function applyMotionOps(
@@ -310,9 +311,23 @@ export function applyMotionOps(
   requests: readonly MotionOpRequest[],
   options: ApplyMotionOpsOptions = {},
 ): MotionDocument {
-  // Each reduced operation owns one revision increment. A batch is an atomic
-  // sequence of those operations, not an additional document mutation.
-  return requests.reduce((current, request) => applyMotionOp(current, request, options), doc);
+  if (requests.length === 0) return doc;
+  const reduced = requests.reduce(
+    (current, request) => applyMotionOp(current, request, { ...options, commitRevision: false }),
+    doc,
+  );
+  if (reduced === doc) return doc;
+  if (process.env.NODE_ENV !== 'production') {
+    const errors = validateMotionDocument(reduced);
+    if (errors.length > 0) {
+      throw new MotionOpError(`Invalid batch result: ${errors[0].path} (${errors[0].code}).`);
+    }
+  }
+  return {
+    ...reduced,
+    revision: doc.revision + 1,
+    meta: { ...reduced.meta, updatedAt: options.now ?? doc.meta.updatedAt },
+  };
 }
 
 // ── Immutable helpers ────────────────────────────────────────────────────────

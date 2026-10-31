@@ -1,60 +1,10 @@
-/**
- * lib/motion/engine-contract.ts
- * ─────────────────────────────────────────────────────────────────────────────
- * Versioned, JSON-serializable discovery and execution surface for AI clients,
- * editor integrations, and future MCP tools.
- */
-
 import { z } from 'zod';
 
 import { listMotionNodeTypes } from './node-registry';
-import {
-  applyMotionOps,
-  batchRisk,
-  listMotionOps,
-  type MotionOpRequest,
-  type MotionOpRisk,
-} from './ops';
-import { MOTION_SCHEMA_VERSION, type MotionDocument } from './types';
-
-export const MOTION_ENGINE_CONTRACT_VERSION = 1;
-
-export type MotionEngineManifest = {
-  contractVersion: number;
-  engine: string;
-  documentSchemaVersion: number;
-  nodes: ReturnType<typeof listMotionNodeTypes>;
-  operations: Array<{
-    id: string;
-    summary: string;
-    risk: MotionOpRisk;
-    parameters: Record<string, unknown>;
-  }>;
-};
-
-export function describeMotionEngine(): MotionEngineManifest {
-  return {
-    contractVersion: MOTION_ENGINE_CONTRACT_VERSION,
-    engine: 'qeda-motion',
-    documentSchemaVersion: MOTION_SCHEMA_VERSION,
-    nodes: listMotionNodeTypes(),
-    operations: listMotionOps().map(({ id, summary, risk, params }) => {
-      const parameters = z.toJSONSchema(params) as Record<string, unknown>;
-      return {
-        id,
-        summary,
-        risk,
-        parameters: { ...parameters, additionalProperties: false },
-      };
-    }),
-  };
-}
-
-export type MotionCommandResult = {
-  document: MotionDocument;
-  risk: MotionOpRisk;
-  requiresApproval: boolean;
-};
+import { applyMotionOps, listMotionOps, type MotionOpRequest } from './ops';
+import { applyMotionCommand as applyPlanned, planMotionCommand as createPlan, type MotionPlan } from './plan';
+import { MOTION_SCHEMA_VERSION } from './types';
+import type { MotionDocument } from './types';
 
 export class MotionCommandError extends Error {
   constructor(message: string) {
@@ -63,37 +13,85 @@ export class MotionCommandError extends Error {
   }
 }
 
-export type MotionCommandPlan = {
-  preview: MotionDocument;
-  risk: MotionOpRisk;
-  requiresApproval: boolean;
+export type MotionEngineManifest = {
+  contractVersion: 2;
+  engine: 'qeda-motion';
+  documentSchemaVersion: number;
+  nodes: ReturnType<typeof listMotionNodeTypes>;
+  operations: Array<{
+    id: string;
+    summary: string;
+    risk: string;
+    sceneScoped: boolean;
+    parameters: Record<string, unknown>;
+    since: string;
+    deprecated?: boolean;
+  }>;
+  recipes: Array<{ id: string; label: string; description: string; params: Record<string, unknown> }>;
 };
+
+function jsonSchema(params: z.ZodType): Record<string, unknown> {
+  return z.toJSONSchema(params) as Record<string, unknown>;
+}
+
+export function describeMotionEngine(): MotionEngineManifest {
+  return {
+    contractVersion: 2,
+    engine: 'qeda-motion',
+    documentSchemaVersion: MOTION_SCHEMA_VERSION,
+    nodes: listMotionNodeTypes(),
+    operations: listMotionOps().map((operation) => ({
+      id: operation.id,
+      summary: operation.summary,
+      risk: operation.risk,
+      sceneScoped: operation.id.startsWith('scene.') || operation.id.startsWith('timeline.') || operation.id.startsWith('track.') || operation.id.startsWith('clip.') || operation.id.startsWith('placement.') || operation.id.startsWith('channel.') || operation.id.startsWith('keyframe.'),
+      parameters: jsonSchema(operation.params),
+      since: 'motion-2/phase-1.5',
+      ...(operation.id === 'timeline.setLoop' ? { deprecated: true } : {}),
+    })),
+    recipes: [],
+  };
+}
+
+export const createMotionEngineManifest = describeMotionEngine;
 
 export function planMotionCommand(
   doc: MotionDocument,
   requests: readonly MotionOpRequest[],
-  options: { now?: string; approved?: boolean } = {},
-): MotionCommandPlan {
-  const risk = batchRisk(requests);
-  return {
-    preview: applyMotionOps(doc, requests, options),
-    risk,
-    requiresApproval: risk === 'destructive',
-  };
+  options: { now?: string; summary?: string } = {},
+): MotionPlan {
+  try {
+    return createPlan(doc, requests, options);
+  } catch (error) {
+    throw new MotionCommandError(error instanceof Error ? error.message : String(error));
+  }
 }
 
 export function applyMotionCommand(
   doc: MotionDocument,
-  requests: readonly MotionOpRequest[],
-  options: { now?: string; approved?: boolean } = {},
-): MotionCommandResult {
-  const plan = planMotionCommand(doc, requests, options);
-  if (plan.requiresApproval && !options.approved) {
-    throw new MotionCommandError('This Motion command is destructive and requires user approval.');
+  command: readonly MotionOpRequest[] | MotionPlan,
+  options: { now?: string; approved?: boolean; approvalToken?: string; confirmedDestructive?: boolean } = {},
+): { document: MotionDocument; revision: number; applied: number; diff?: MotionPlan['diff'] } {
+  const commandIsOps = Array.isArray(command);
+  const plan: MotionPlan = commandIsOps
+    ? planMotionCommand(doc, command as readonly MotionOpRequest[], { now: options.now })
+    : (command as MotionPlan);
+  if (plan.requiresApproval && options.approved !== true && options.confirmedDestructive !== true) {
+    throw new MotionCommandError('MOTION_APPROVAL_REQUIRED: Confirm the destructive change before applying it.');
   }
-  return {
-    document: plan.preview,
-    risk: plan.risk,
-    requiresApproval: plan.requiresApproval,
-  };
+  try {
+    if (commandIsOps) {
+      const requests = command as readonly MotionOpRequest[];
+      const document = applyMotionOps(doc, requests, { now: options.now });
+      return { document, revision: document.revision, applied: requests.length, diff: plan.diff };
+    }
+    return applyPlanned(doc, command as MotionPlan, {
+      now: options.now,
+      approvalToken: options.approvalToken,
+      confirmedDestructive: options.confirmedDestructive ?? options.approved,
+    });
+  } catch (error) {
+    throw new MotionCommandError(error instanceof Error ? error.message : String(error));
+  }
 }
+
