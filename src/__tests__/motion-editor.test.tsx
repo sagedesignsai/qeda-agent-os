@@ -11,6 +11,12 @@ import { MotionEditor } from '@/components/motion/MotionEditor';
 import { motionStore } from '@/hooks/use-motion-store';
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
 
+const mockMotionProject = {
+  saveStatus: 'saved' as const,
+  readOnly: false,
+  saveNow: jest.fn().mockResolvedValue(true),
+};
+
 jest.mock('@/components/motion/MotionTimeline', () => ({
   MotionTimeline: () => <div data-testid="motion-timeline" />,
 }));
@@ -38,7 +44,7 @@ describe('Motion editor shell', () => {
   });
 
   it('composes the scene, preview, timeline and inspector panels', () => {
-    render(<MotionEditor />);
+    render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
     expect(screen.getByRole('tab', { name: 'Scene' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Assets' })).toBeInTheDocument();
@@ -56,7 +62,7 @@ describe('Motion editor shell', () => {
   });
 
   it('selects a scene track and edits it through the Motion op registry', () => {
-    render(<MotionEditor />);
+    render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Product' }));
     const nameInput = screen.getByLabelText('Track name');
@@ -73,7 +79,7 @@ describe('Motion editor shell', () => {
   });
 
   it('renders schema-hinted object controls and commits edits through Motion ops', () => {
-    render(<MotionEditor />);
+    render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select scene object Product' }));
     const widthInput = screen.getByLabelText('Width');
@@ -94,7 +100,7 @@ describe('Motion editor shell', () => {
   });
 
   it('enables media import now that assets are stored durably', () => {
-    render(<MotionEditor />);
+    render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Assets' }));
     expect(screen.getByRole('button', { name: 'Import media' })).toBeEnabled();
@@ -102,7 +108,7 @@ describe('Motion editor shell', () => {
   });
 
   it('collapses and restores the scene and inspector panels', () => {
-    render(<MotionEditor />);
+    render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide scene panel' }));
     expect(

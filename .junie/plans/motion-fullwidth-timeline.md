@@ -353,3 +353,14 @@ Fix the `onScrollRows` handler in `MotionTimeline.tsx` so dopesheet mode can scr
 - **Fix**: Added `computeDopeSheetContentHeight()` helper that counts group headers (`DOPE_GROUP_HEIGHT`) and property channel rows (`DOPE_ROW_HEIGHT`), respecting collapsed groups — matching the logic in `layoutDopeSheet()`.
 - Updated `onScrollRows` to use `computeDopeSheetContentHeight()` when `dopeSheet` is true.
 - Added `model.items` and `collapsedGroups` to the `handlers` dependency array so the callback updates when the dopesheet row count changes.
+
+---
+
+## Single Header Bar — Delivery Steps
+
+### ✓ Step 6: Merge dual headers into one compact bar
+Consolidate the `PageHeader` in `Motion.tsx` and the editor header in `MotionEditor.tsx` into a single `h-8` bar.
+- Remove `PageHeader` from `Motion.tsx`, pass its unique props (`canUndo`, `canRedo`, `motionProject`) to `MotionEditor`.
+- Merge all controls into one row: scene panel toggle, document name, scene selector, save status, Save, Undo/Redo, timeline collapse, Add dropdown, Export, inspector toggle.
+- Reduce header height from `h-9` (36px) to `h-8` (32px) and button sizes from `size-7` to `size-6` for maximum screen real estate.
+- Update tests to pass the new required props.

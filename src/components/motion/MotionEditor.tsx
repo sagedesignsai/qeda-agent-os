@@ -14,7 +14,9 @@ import {
   ChevronUpIcon,
   DownloadIcon,
   PlusIcon,
+  Redo2Icon,
   RectangleHorizontalIcon,
+  Undo2Icon,
 } from 'lucide-react';
 import {
   useDefaultLayout,
@@ -44,7 +46,19 @@ import { useMotionExport } from '@/hooks/use-motion-export';
 import { createMotionId } from '@/lib/motion/ids';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 
-export function MotionEditor() {
+type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'failed';
+
+interface MotionEditorProps {
+  canUndo: boolean;
+  canRedo: boolean;
+  motionProject: {
+    saveStatus: SaveStatus;
+    readOnly: boolean;
+    saveNow: () => Promise<boolean>;
+  };
+}
+
+export function MotionEditor({ canUndo, canRedo, motionProject }: MotionEditorProps) {
   const { doc } = useMotionSnapshot();
   const [scenePanelCollapsed, setScenePanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
@@ -156,88 +170,112 @@ export function MotionEditor() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border/60 bg-card/40 px-2">
-        <div className="flex min-w-0 items-center gap-1">
+      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 bg-card/40 px-1.5">
+        {/* Left: panel toggle, document, scene */}
+        <div className="flex min-w-0 items-center gap-0.5">
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7"
-            aria-label={
-              scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'
-            }
-            title={
-              scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'
-            }
+            className="size-6"
+            aria-label={scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'}
+            title={scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'}
             onClick={() => togglePanel(scenePanelRef, setScenePanelCollapsed)}
           >
-            {scenePanelCollapsed ? (
-              <RectangleHorizontalIcon data-icon />
-            ) : (
-              <ChevronLeftIcon data-icon />
-            )}
+            {scenePanelCollapsed ? <RectangleHorizontalIcon className="size-3.5" /> : <ChevronLeftIcon className="size-3.5" />}
           </Button>
-          <span className="truncate px-1 text-xs font-medium text-foreground/90">
+          <span className="truncate px-0.5 text-[11px] font-medium text-foreground/90">
             {doc.meta.name}
           </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="sm" className="h-7 max-w-44 px-2 text-xs">
+              <Button type="button" variant="ghost" size="sm" className="h-6 max-w-36 px-1.5 text-[11px]">
                 <span className="truncate">{activeScene?.name ?? 'Scene'}</span>
-                <span className="ml-1 text-[10px] text-muted-foreground">{doc.timeline.duration.toFixed(1)}s</span>
+                <span className="ml-0.5 text-[10px] text-muted-foreground">{doc.timeline.duration.toFixed(1)}s</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               {doc.scenes.map((scene) => (
                 <DropdownMenuItem key={scene.id} onSelect={() => motionStore.commit('Switch scene', [{ op: 'document.setActiveScene', sceneId: scene.id }])}>
-                  {scene.id === doc.activeSceneId ? '✓ ' : ''}{scene.name} · {(scene.timeline.duration).toFixed(1)}s
+                  {scene.id === doc.activeSceneId ? '\u2713 ' : ''}{scene.name} \u00b7 {(scene.timeline.duration).toFixed(1)}s
                 </DropdownMenuItem>
               ))}
               <DropdownMenuItem onSelect={() => createScene(false)}>+ New scene</DropdownMenuItem>
               <DropdownMenuItem onSelect={() => createScene(true)}>Duplicate scene</DropdownMenuItem>
               {doc.scenes.length > 1 && activeScene && <DropdownMenuItem onSelect={() => {
-                const confirmation = window.prompt(`Delete “${activeScene.name}” (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`);
+                const confirmation = window.prompt(`Delete "${activeScene.name}" (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`);
                 if (confirmation === activeScene.name) motionStore.commit('Delete scene', [{ op: 'scene.remove', sceneId: activeScene.id }], { approved: true });
-              }}>Delete “{activeScene?.name}”…</DropdownMenuItem>}
+              }}>Delete scene...</DropdownMenuItem>}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Center spacer */}
+        <div className="flex-1" />
+
+        {/* Right: save, undo/redo, actions, panel toggles */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          {/* Save status and button */}
+          <span className="mr-0.5 text-[10px] text-muted-foreground" role="status" aria-live="polite">
+            {motionProject.readOnly ? 'Read only' : motionProject.saveStatus === 'saving' ? 'Saving...' : motionProject.saveStatus === 'failed' ? 'Save failed' : motionProject.saveStatus === 'unsaved' ? 'Unsaved' : 'Saved'}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[11px]"
+            onClick={() => void motionProject.saveNow()}
+            disabled={motionProject.readOnly || motionProject.saveStatus === 'saving'}
+          >
+            Save
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-6"
+            aria-label="Undo"
+            disabled={!canUndo}
+            onClick={() => motionStore.undo()}
+          >
+            <Undo2Icon className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-6"
+            aria-label="Redo"
+            disabled={!canRedo}
+            onClick={() => motionStore.redo()}
+          >
+            <Redo2Icon className="size-3.5" />
+          </Button>
+
+          {/* Timeline collapse */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7"
-            aria-label={
-              timelineCollapsed ? 'Expand timeline' : 'Collapse timeline'
-            }
-            title={
-              timelineCollapsed ? 'Expand timeline (Ctrl+Shift+T)' : 'Collapse timeline (Ctrl+Shift+T)'
-            }
+            className="size-6"
+            aria-label={timelineCollapsed ? 'Expand timeline' : 'Collapse timeline'}
+            title={timelineCollapsed ? 'Expand timeline (Ctrl+Shift+T)' : 'Collapse timeline (Ctrl+Shift+T)'}
             onClick={toggleTimelineCollapse}
           >
-            {timelineCollapsed ? (
-              <ChevronDownIcon data-icon />
-            ) : (
-              <ChevronUpIcon data-icon />
-            )}
+            {timelineCollapsed ? <ChevronDownIcon className="size-3.5" /> : <ChevronUpIcon className="size-3.5" />}
           </Button>
+
+          {/* Add dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1.5 px-2"
-              >
-                <PlusIcon data-icon="inline-start" />
+              <Button type="button" size="sm" variant="outline" className="h-6 gap-1 px-1.5 text-[11px]">
+                <PlusIcon className="size-3" />
                 Add
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={addTrack}>
-                <PlusIcon data-icon="inline-start" />
+                <PlusIcon className="size-3.5" />
                 Animation track
               </DropdownMenuItem>
               {(['scene', 'camera', 'geometry', 'surface', 'model', 'lighting', 'stage'] as const).map((category) => {
@@ -246,20 +284,22 @@ export function MotionEditor() {
                 return categoryNodes.map((node) => <DropdownMenuItem key={node.id} onSelect={() => addNode(node.id)}>{node.label}</DropdownMenuItem>);
               })}
               <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
-                <BoxesIcon data-icon="inline-start" />
-                Browse asset library…
+                <BoxesIcon className="size-3.5" />
+                Browse asset library...
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Export */}
           <Button
             type="button"
             variant={exportState.busy ? 'secondary' : 'outline'}
             size="sm"
-            className="h-7 gap-1.5 px-2"
+            className="h-6 gap-1 px-1.5 text-[11px]"
             aria-label="Export composition"
             onClick={() => setExportOpen(true)}
           >
-            <DownloadIcon data-icon="inline-start" />
+            <DownloadIcon className="size-3" />
             Export
             {exportState.busy && (
               <span className="text-[10px] tabular-nums">
@@ -267,24 +307,18 @@ export function MotionEditor() {
               </span>
             )}
           </Button>
+
+          {/* Inspector toggle */}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7"
-            aria-label={
-              inspectorCollapsed ? 'Show inspector' : 'Hide inspector'
-            }
+            className="size-6"
+            aria-label={inspectorCollapsed ? 'Show inspector' : 'Hide inspector'}
             title={inspectorCollapsed ? 'Show inspector' : 'Hide inspector'}
-            onClick={() =>
-              togglePanel(inspectorPanelRef, setInspectorCollapsed)
-            }
+            onClick={() => togglePanel(inspectorPanelRef, setInspectorCollapsed)}
           >
-            {inspectorCollapsed ? (
-              <RectangleHorizontalIcon data-icon />
-            ) : (
-              <ChevronRightIcon data-icon />
-            )}
+            {inspectorCollapsed ? <RectangleHorizontalIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
           </Button>
         </div>
       </div>
