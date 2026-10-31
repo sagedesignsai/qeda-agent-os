@@ -177,7 +177,33 @@ export function MotionViewport() {
           gridVisible={gridVisible}
           zoom={zoom}
           selectedNodeId={selection?.kind === 'node' ? selection.nodeId : undefined}
-          onSelectNode={(nodeId) => motionStore.setSelection({ kind: 'node', nodeId })}
+          onSelectNode={(nodeId, modifiers) => {
+            if (!nodeId) {
+              motionStore.setSelection(null);
+              return;
+            }
+            const current = motionStore.getSnapshot().selection;
+            const selected = new Set(
+              current?.kind === 'node'
+                ? current.selectedNodeIds ?? [current.nodeId]
+                : [],
+            );
+            if (modifiers?.shiftKey) selected.add(nodeId);
+            else if (modifiers?.ctrlKey || modifiers?.metaKey) {
+              if (selected.has(nodeId)) selected.delete(nodeId);
+              else selected.add(nodeId);
+            } else {
+              motionStore.setSelection({ kind: 'node', nodeId });
+              return;
+            }
+            const ids = [...selected];
+            if (ids.length === 0) motionStore.setSelection(null);
+            else motionStore.setSelection({
+              kind: 'node',
+              nodeId: ids.includes(nodeId) ? nodeId : ids[ids.length - 1],
+              ...(ids.length > 1 ? { selectedNodeIds: ids } : {}),
+            });
+          }}
           onTransformNode={(nodeId, transform: MotionNode['transform']) => {
             motionStore.commit('Move scene object', [{ op: 'scene.node.update', nodeId, transform }]);
           }}

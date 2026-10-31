@@ -35,7 +35,10 @@ type MotionSceneCanvasProps = {
   gridVisible: boolean;
   zoom: number;
   selectedNodeId?: string;
-  onSelectNode?: (nodeId: string) => void;
+  onSelectNode?: (
+    nodeId: string | null,
+    modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  ) => void;
   onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
   /** Export renders without the editor floor; the document's own nodes remain. */
   showEditorStage?: boolean;
@@ -67,7 +70,10 @@ function DocumentNode({
   childrenByParent: Map<string | null, MotionNode[]>;
   groups: Map<string, Group>;
   selectedNodeId?: string;
-  onSelectNode?: (nodeId: string) => void;
+  onSelectNode?: (
+    nodeId: string | null,
+    modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  ) => void;
   onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
   transformingRef: MutableRefObject<boolean>;
 }) {
@@ -91,7 +97,14 @@ function DocumentNode({
       visible={node.visible}
       onPointerDown={(event) => {
         event.stopPropagation();
-        onSelectNode?.(node.id);
+        if (!node.locked) {
+          const native = event.nativeEvent;
+          onSelectNode?.(node.id, {
+            shiftKey: native.shiftKey,
+            ctrlKey: native.ctrlKey,
+            metaKey: native.metaKey,
+          });
+        }
       }}
     >
       <Renderer node={node} />
@@ -184,7 +197,10 @@ function DocumentScene({
   viewMode: MotionCameraView;
   zoom: number;
   selectedNodeId?: string;
-  onSelectNode?: (nodeId: string) => void;
+  onSelectNode?: (
+    nodeId: string | null,
+    modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  ) => void;
   onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
   showEditorStage?: boolean;
 }) {
@@ -262,6 +278,7 @@ export function MotionSceneCanvas({
         gl.outputColorSpace = SRGBColorSpace;
         onCanvasReady?.(gl.domElement);
       }}
+      onPointerMissed={() => onSelectNode?.(null)}
     >
       <color attach="background" args={[stageColor]} />
       {gridVisible && (
