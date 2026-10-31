@@ -389,6 +389,18 @@ export interface IpcChannels {
   'motion:cancel-remote-import': { req: { requestId: string }; res: void };
   'motion:remote-import-progress': { data: MotionRemoteProgress };
   'motion:changed': void;
+  // Export: the editor starts/cancels; the hidden render window reports chunks.
+  'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
+  'motion:pick-export-path': { req: { projectName: string; presetId: string }; res: { path: string } | null };
+  'motion:reveal-export': { req: { path: string }; res: void };
+  'motion:export-cancel': { req: { jobId: string }; res: void };
+  'motion:export-progress': { data: import('../motion/render-jobs').MotionRenderProgress };
+  'motion:export-cancel-requested': { data: { jobId: string } };
+  'motion:export-job': { req: { jobId: string }; res: import('../../lib/motion/export/protocol').MotionRenderJobPayload };
+  'motion:export-chunk': { req: { jobId: string; data: Uint8Array; position: number }; res: void };
+  'motion:export-report': { req: { jobId: string; phase: 'preflight' | 'prepare' | 'render' | 'finalize'; frame?: number }; res: import('../motion/render-jobs').MotionRenderProgress };
+  'motion:export-complete': { req: { jobId: string }; res: { outputPath: string } };
+  'motion:export-failed': { req: { jobId: string; message: string }; res: void };
 
   // OpenCode-powered coding Builder
   /** Inspect the registered local OpenCode service without starting/stopping it. */
