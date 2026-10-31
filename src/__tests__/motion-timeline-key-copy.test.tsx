@@ -20,6 +20,7 @@ jest.mock('@/components/timeline/TimelineRowHeaders', () => ({
 }));
 
 beforeEach(() => {
+  motionStore.setAutoKeyEnabled(false);
   motionStore.loadDocument(createStarterMotionDocument('2026-01-01T00:00:00.000Z'));
   motionStore.seek(2);
   motionStore.setSelection({
@@ -35,6 +36,10 @@ beforeEach(() => {
 describe('Motion timeline keyframe clipboard', () => {
   it('copies keys and pastes them at the playhead with one new undoable op batch', () => {
     render(<MotionTimeline />);
+    const autoKey = screen.getByRole('button', { name: 'Auto-key' });
+    expect(autoKey).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(autoKey);
+    expect(motionStore.getSnapshot().autoKeyEnabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Copy keyframes' }));
     motionStore.setSelection({ kind: 'placement', trackId: 'trk_product', placementId: 'plc_product' });
     fireEvent.click(screen.getByRole('button', { name: 'Paste keyframes' }));
