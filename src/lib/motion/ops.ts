@@ -262,23 +262,31 @@ export function applyMotionOp(
   const reduced = entry.run(doc, params);
   if (reduced === doc) return doc;
   const activeScene = reduced.scenes.find((scene) => scene.id === reduced.activeSceneId);
-  const next = activeScene ? {
-    ...reduced,
-    scenes: reduced.scenes.map((scene) => scene.id === activeScene.id ? {
-      ...scene,
-      nodes: reduced.scene.nodes,
-      timeline: {
-        ...reduced.timeline,
-        loop: undefined,
-        workArea: {
-          enabled: reduced.timeline.loop.enabled,
-          start: reduced.timeline.loop.start,
-          end: reduced.timeline.loop.end,
-        },
-        playMode: reduced.timeline.playMode ?? (reduced.timeline.loop.enabled ? 'loop' as const : 'once' as const),
-      },
-    } : scene),
-  } : reduced;
+  const next = activeScene
+    ? {
+        ...reduced,
+        scenes: reduced.scenes.map((scene) =>
+          scene.id === activeScene.id
+            ? {
+                ...scene,
+                nodes: reduced.scene.nodes,
+                timeline: {
+                  ...reduced.timeline,
+                  loop: undefined,
+                  workArea: reduced.timeline.workArea ?? {
+                    enabled: reduced.timeline.loop.enabled,
+                    start: reduced.timeline.loop.start,
+                    end: reduced.timeline.loop.end,
+                  },
+                  playMode:
+                    reduced.timeline.playMode ??
+                    (reduced.timeline.loop.enabled ? ('loop' as const) : ('once' as const)),
+                },
+              }
+            : scene,
+        ),
+      }
+    : reduced;
 
   if (process.env.NODE_ENV !== 'production') {
     const errors = validateMotionDocument(next);
@@ -299,8 +307,9 @@ export function applyMotionOps(
   requests: readonly MotionOpRequest[],
   options: ApplyMotionOpsOptions = {},
 ): MotionDocument {
-  const next = requests.reduce((current, request) => applyMotionOp(current, request, options), doc);
-  return next === doc ? doc : { ...next, revision: doc.revision + 1 };
+  // Each reduced operation owns one revision increment. A batch is an atomic
+  // sequence of those operations, not an additional document mutation.
+  return requests.reduce((current, request) => applyMotionOp(current, request, options), doc);
 }
 
 // ── Immutable helpers ────────────────────────────────────────────────────────
