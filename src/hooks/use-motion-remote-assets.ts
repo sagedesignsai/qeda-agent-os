@@ -133,10 +133,17 @@ export function useMotionRemoteAssets(projectId: string) {
       if (staged.errors.length) setImportErrors(staged.errors);
       const commits: MotionAssetCommit[] = staged.items.flatMap((item) => {
         if (item.kind === 'unknown') return [];
+        const prov = staged.provenance[item.importId];
+        if (!prov) return [{ importId: item.importId, kind: item.kind }];
+        // The document schema rejects any string value that looks like an absolute
+        // URL (blob:, https:, file:, etc.) in asset metadata. The provenance
+        // sourceUrl and upstreamUrl are download URLs that are not needed once the
+        // asset is staged locally, so strip them before persisting.
+        const { sourceUrl, upstreamUrl, ...safeProvenance } = prov;
         return [{
           importId: item.importId,
           kind: item.kind,
-          ...(staged.provenance[item.importId] ? { metadata: { ...staged.provenance[item.importId] } } : {}),
+          metadata: safeProvenance,
         }];
       });
       if (!commits.length) return false;

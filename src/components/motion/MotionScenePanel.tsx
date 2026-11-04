@@ -1,11 +1,12 @@
 /**
  * components/motion/MotionScenePanel.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Scene hierarchy and reusable clip library. Rows select Motion entities and
- * drag-to-reparent emits one op; this panel never mutates scene data directly.
+ * VS Code Explorer-style Motion Scene Panel. Single unified view with the
+ * scene hierarchy as the main section and Tracks/Assets/Clips as collapsible
+ * bottom sections (like VS Code's Outline and Timeline panels).
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   DndContext,
   useDraggable,
@@ -34,14 +35,10 @@ import {
   PlusIcon,
   TriangleAlertIcon,
   TypeIcon,
+  WandSparklesIcon,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -52,9 +49,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { useMotionAssets } from '@/hooks/use-motion-assets';
+import { useMotionSceneSearch } from '@/hooks/use-motion-scene-search';
+import { MotionScenePanelHeader } from './MotionScenePanelHeader';
 import { createMotionId } from '@/lib/motion/ids';
 import { getMotionNodeType } from '@/lib/motion/node-registry';
 import {
@@ -64,10 +62,8 @@ import {
 } from '@/lib/motion/hierarchy';
 import type { MotionNode, MotionTrack } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
-import type { MotionContextTarget } from '@/hooks/use-motion-context-menu';
 
 function nodeIcon(node: MotionNode) {
-  // Category comes from the registry so new node types inherit a sensible icon.
   const category = getMotionNodeType(node.type)?.category;
   if (node.type.startsWith('text.')) return TypeIcon;
   if (category === 'camera') return CameraIcon;
@@ -78,18 +74,28 @@ function nodeIcon(node: MotionNode) {
   return BoxIcon;
 }
 
-function trackIcon(track: MotionTrack) {
+function trackIcon(_track: MotionTrack) {
   return BoxIcon;
 }
 
 export function MotionScenePanel() {
   const { doc, selection } = useMotionSnapshot();
   const motionAssets = useMotionAssets(doc.meta.id);
+
+  // Search state
+  const { searchValue, onSearchChange, filteredNodes, filteredTracks } = useMotionSceneSearch({
+    nodes: doc.scene.nodes,
+    tracks: doc.timeline.tracks,
+  });
+
+  // Expand/collapse state
   const [sceneExpanded, setSceneExpanded] = useState(true);
-  const [tracksExpanded, setTracksExpanded] = useState(true);
-  const [assetsExpanded, setAssetsExpanded] = useState(true);
-  const [clipsExpanded, setClipsExpanded] = useState(true);
+  const [tracksExpanded, setTracksExpanded] = useState(false);
+  const [assetsExpanded, setAssetsExpanded] = useState(false);
+  const [clipsExpanded, setClipsExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+
+  // Selection state
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
   const [altPressed, setAltPressed] = useState(false);
@@ -112,22 +118,26 @@ export function MotionScenePanel() {
     };
   }, []);
 
-  const selectedTrackId = selection && selection.kind !== 'node' ? selection.trackId : undefined;
-  const selectedNodeIds = selection?.kind === 'node'
-    ? selection.selectedNodeIds ?? [selection.nodeId]
-    : [];
+  const selectedTrackId =
+    selection && selection.kind !== 'node' ? selection.trackId : undefined;
+  const selectedNodeIds =
+    selection?.kind === 'node' ? selection.selectedNodeIds ?? [selection.nodeId] : [];
+
   const clips = useMemo(
     () => [...doc.timeline.clips].sort((a, b) => a.name.localeCompare(b.name)),
     [doc.timeline.clips],
   );
+
   const assets = useMemo(
     () => [...doc.assets].sort((a, b) => a.name.localeCompare(b.name)),
     [doc.assets],
   );
+
   const rows = useMemo(
-    () => buildMotionHierarchy(doc.scene.nodes, collapsed),
-    [doc.scene.nodes, collapsed],
+    () => buildMotionHierarchy(filteredNodes, collapsed),
+    [filteredNodes, collapsed],
   );
+
   const dropChecks = useMemo(() => {
     const checks = new Map<string, { allowed: boolean; reason: string }>();
     if (!draggingNodeId) return checks;
@@ -138,6 +148,7 @@ export function MotionScenePanel() {
     }
     return checks;
   }, [altPressed, draggingNodeId, doc.scene.nodes]);
+
   const animatedNodeIds = useMemo(() => {
     const ids = new Set<string>();
     for (const clip of doc.timeline.clips) {
@@ -175,11 +186,12 @@ export function MotionScenePanel() {
       else selected.add(nodeId);
       const ids = [...selected];
       if (ids.length === 0) motionStore.setSelection(null);
-      else motionStore.setSelection({
-        kind: 'node',
-        nodeId: selected.has(nodeId) ? nodeId : ids[ids.length - 1],
-        ...(ids.length > 1 ? { selectedNodeIds: ids } : {}),
-      });
+      else
+        motionStore.setSelection({
+          kind: 'node',
+          nodeId: selected.has(nodeId) ? nodeId : ids[ids.length - 1],
+          ...(ids.length > 1 ? { selectedNodeIds: ids } : {}),
+        });
       setSelectionAnchor(nodeId);
       return;
     }
@@ -204,7 +216,9 @@ export function MotionScenePanel() {
     const source = doc.scene.nodes.find((node) => node.id === nodeId);
     if (!source) return;
     if (!target) {
-      const rootCount = doc.scene.nodes.filter((node) => node.parentId === null && node.id !== nodeId).length;
+      const rootCount = doc.scene.nodes.filter(
+        (node) => node.parentId === null && node.id !== nodeId,
+      ).length;
       motionStore.commit('Move object to scene root', [
         { op: 'scene.node.reparent', nodeId, parentId: null },
         { op: 'scene.node.reorder', nodeId, toIndex: rootCount },
@@ -223,19 +237,21 @@ export function MotionScenePanel() {
       | { op: 'scene.node.reorder'; nodeId: string; toIndex: number }
     >;
     if (source.parentId !== parentId) ops.push({ op: 'scene.node.reparent', nodeId, parentId });
-    ops.push({ op: 'scene.node.reorder', nodeId, toIndex: Math.min(toIndex, remainingSiblings.length) });
+    ops.push({
+      op: 'scene.node.reorder',
+      nodeId,
+      toIndex: Math.min(toIndex, remainingSiblings.length),
+    });
     motionStore.commit(altPressed ? 'Reparent object' : 'Reorder object', ops);
   };
 
   const onDragStart = (event: DragStartEvent) => {
-      const nodeId = event.active.data.current?.nodeId;
+    const nodeId = event.active.data.current?.nodeId;
     setDraggingNodeId(typeof nodeId === 'string' ? nodeId : null);
   };
 
   const deleteNode = (nodeId: string) => {
-    motionStore.commit('Delete scene object', [
-      { op: 'scene.node.remove', nodeId },
-    ]);
+    motionStore.commit('Delete scene object', [{ op: 'scene.node.remove', nodeId }]);
   };
 
   const duplicateNode = (nodeId: string) => {
@@ -260,68 +276,99 @@ export function MotionScenePanel() {
     const nodeMap = Object.fromEntries(
       subtree.map((node) => [node.id, `node_${createMotionId('doc')}`]),
     );
-    motionStore.commit('Duplicate scene object', [{
-      op: 'scene.node.duplicate',
-      nodeId,
-      newRootId: nodeMap[nodeId],
-      includeAnimation: true,
-      idMap: {
-        nodes: nodeMap,
-        clips: Object.fromEntries(matchingClips.map(({ clip }) => [clip.id, createMotionId('clip')])),
-        placements: Object.fromEntries(placements.map((placement) => [placement.id, createMotionId('placement')])),
-        channels: Object.fromEntries(channels.map((channel) => [channel.id, createMotionId('channel')])),
-        keyframes: Object.fromEntries(keyframes.map((key) => [key.id, createMotionId('keyframe')])),
+    motionStore.commit('Duplicate scene object', [
+      {
+        op: 'scene.node.duplicate',
+        nodeId,
+        newRootId: nodeMap[nodeId],
+        includeAnimation: true,
+        idMap: {
+          nodes: nodeMap,
+          clips: Object.fromEntries(
+            matchingClips.map(({ clip }) => [clip.id, createMotionId('clip')]),
+          ),
+          placements: Object.fromEntries(
+            placements.map((placement) => [placement.id, createMotionId('placement')]),
+          ),
+          channels: Object.fromEntries(
+            channels.map((channel) => [channel.id, createMotionId('channel')]),
+          ),
+          keyframes: Object.fromEntries(
+            keyframes.map((key) => [key.id, createMotionId('keyframe')]),
+          ),
+        },
       },
-    }]);
+    ]);
   };
 
-  const sceneContextMenuTarget = useRef<MotionContextTarget | null>(null);
-  const trackContextMenuTarget = useRef<MotionContextTarget | null>(null);
-
   return (
-    <Tabs defaultValue="scene" className="flex h-full min-h-0 flex-col gap-0">
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-border/60 px-2">
-        <TabsList className="h-7 gap-0.5 rounded-md bg-transparent p-0">
-          <TabsTrigger value="scene" className="h-7 flex-none px-2 text-xs">
-            Scene
-          </TabsTrigger>
-          <TabsTrigger value="assets" className="h-7 flex-none px-2 text-xs">
-            Assets
-          </TabsTrigger>
-        </TabsList>
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Header — VS Code Explorer style */}
+      <div className="flex h-8 shrink-0 items-center px-3 border-b border-border/40">
+        <span className="text-[11px] font-semibold text-foreground/90">Explorer</span>
+        <div className="ml-auto flex items-center gap-0.5">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-5 text-muted-foreground/70 hover:text-foreground"
+            aria-label="Add node"
+            title="Add node"
+            onClick={() => {
+              const event = new KeyboardEvent('keydown', { key: 'a', shiftKey: true });
+              window.dispatchEvent(event);
+            }}
+          >
+            <PlusIcon className="size-3" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-5 text-muted-foreground/70 hover:text-foreground"
+            aria-label="AI suggestions"
+            title="AI suggestions"
+          >
+            <WandSparklesIcon className="size-3" />
+          </Button>
+        </div>
       </div>
 
-      <TabsContent value="scene" forceMount className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
-          <div className="min-h-0">
-            {/* VS Code-style collapsible: Scene objects */}
-            <Collapsible open={sceneExpanded} onOpenChange={setSceneExpanded}>
-              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
-                {sceneExpanded ? (
-                  <ChevronDownIcon className="size-3" />
-                ) : (
-                  <ChevronRightIcon className="size-3" />
-                )}
-                <span className="flex-1">Scene objects</span>
-                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
-                  {doc.scene.nodes.length}
-                </span>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="border-t border-border/40">
-                  <DndContext onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDraggingNodeId(null)}>
-                    <div data-motion-scene-tree className="p-2">
-                    {rows.map((row) => (
-                      <ContextMenu
-                        key={row.node.id}
-                      >
+      {/* Search */}
+      <MotionScenePanelHeader searchValue={searchValue} onSearchChange={onSearchChange} />
+
+      {/* Main content area — scrollable tree */}
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="min-h-0 flex flex-col">
+          {/* Scene Objects — main section (like project folder in VS Code) */}
+          <div>
+            <button
+              type="button"
+              className="flex w-full items-center gap-1 px-2 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              onClick={() => setSceneExpanded((v) => !v)}
+            >
+              {sceneExpanded ? (
+                <ChevronDownIcon className="size-3.5 shrink-0 text-foreground/70" />
+              ) : (
+                <ChevronRightIcon className="size-3.5 shrink-0 text-foreground/70" />
+              )}
+              <span className="text-[11px] font-semibold text-foreground">
+                {doc.meta.name}
+              </span>
+            </button>
+
+            {sceneExpanded && (
+              <DndContext
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onDragCancel={() => setDraggingNodeId(null)}
+              >
+                <div data-motion-scene-tree className="min-h-0">
+                  {rows.map((row) => (
+                    <div key={row.node.id}>
+                      <ContextMenu>
                         <ContextMenuTrigger asChild>
-                          <div
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              sceneContextMenuTarget.current = { type: 'scene-node', nodeId: row.node.id };
-                            }}
-                          >
+                          <div>
                             <SceneNodeRow
                               row={row}
                               rows={rows}
@@ -337,10 +384,13 @@ export function MotionScenePanel() {
                           </div>
                         </ContextMenuTrigger>
                         <ContextMenuContent className="w-44">
-                          <ContextMenuItem onSelect={() => {
-                            const node = doc.scene.nodes.find((n) => n.id === row.node.id);
-                            if (node) motionStore.setSelection({ kind: 'node', nodeId: node.id });
-                          }}>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              const node = doc.scene.nodes.find((n) => n.id === row.node.id);
+                              if (node)
+                                motionStore.setSelection({ kind: 'node', nodeId: node.id });
+                            }}
+                          >
                             Rename
                             <ContextMenuShortcut>F2</ContextMenuShortcut>
                           </ContextMenuItem>
@@ -348,7 +398,10 @@ export function MotionScenePanel() {
                             Duplicate
                             <ContextMenuShortcut>Ctrl+D</ContextMenuShortcut>
                           </ContextMenuItem>
-                          <ContextMenuItem variant="destructive" onSelect={() => deleteNode(row.node.id)}>
+                          <ContextMenuItem
+                            variant="destructive"
+                            onSelect={() => deleteNode(row.node.id)}
+                          >
                             Delete
                             <ContextMenuShortcut>Del</ContextMenuShortcut>
                           </ContextMenuItem>
@@ -357,7 +410,11 @@ export function MotionScenePanel() {
                             checked={row.node.visible ?? true}
                             onSelect={() =>
                               motionStore.commit('Toggle object visibility', [
-                                { op: 'scene.node.update', nodeId: row.node.id, visible: !(row.node.visible ?? true) },
+                                {
+                                  op: 'scene.node.update',
+                                  nodeId: row.node.id,
+                                  visible: !(row.node.visible ?? true),
+                                },
                               ])
                             }
                           >
@@ -367,403 +424,253 @@ export function MotionScenePanel() {
                             checked={row.node.locked ?? false}
                             onSelect={() =>
                               motionStore.commit('Toggle object lock', [
-                                { op: 'scene.node.update', nodeId: row.node.id, locked: !(row.node.locked ?? false) },
+                                {
+                                  op: 'scene.node.update',
+                                  nodeId: row.node.id,
+                                  locked: !(row.node.locked ?? false),
+                                },
                               ])
                             }
                           >
                             Locked
                           </ContextMenuCheckboxItem>
                           <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => {
-                            motionStore.setSelection({ kind: 'node', nodeId: row.node.id });
-                          }}>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              motionStore.setSelection({ kind: 'node', nodeId: row.node.id });
+                            }}
+                          >
                             Focus in Viewport
                           </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
-                    ))}
-                    {doc.scene.nodes.length === 0 && (
-                      <p className="px-2 py-3 text-[11px] text-muted-foreground">
-                        Add a scene object to begin.
-                      </p>
-                    )}
-                    {draggingNodeId && <RootDropZone />}
                     </div>
-                  </DndContext>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* VS Code-style collapsible: Tracks */}
-            <Collapsible open={tracksExpanded} onOpenChange={setTracksExpanded}>
-              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
-                {tracksExpanded ? (
-                  <ChevronDownIcon className="size-3" />
-                ) : (
-                  <ChevronRightIcon className="size-3" />
-                )}
-                <span className="flex-1">Tracks</span>
-                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
-                  {doc.timeline.tracks.length}
-                </span>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="border-t border-border/40 p-2">
-                  {doc.timeline.tracks.length > 0 ? (
-                    <div className="space-y-0.5">
-                      {doc.timeline.tracks.map((track) => {
-                        const Icon = trackIcon(track);
-                        const selected = selectedTrackId === track.id;
-                        return (
-                          <ContextMenu
-                            key={track.id}
-                          >
-                            <ContextMenuTrigger asChild>
-                              <div
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  trackContextMenuTarget.current = { type: 'scene-track', trackId: track.id };
-                                }}
-                                className={cn(
-                                  'group flex h-7 items-center gap-1 rounded px-1.5 text-xs',
-                                  selected
-                                    ? 'bg-accent text-accent-foreground'
-                                    : 'text-foreground/80 hover:bg-accent/40',
-                                )}
-                              >
-                                <button
-                                  type="button"
-                                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                                  onClick={() =>
-                                    motionStore.setSelection({
-                                      kind: 'track',
-                                      trackId: track.id,
-                                    })
-                                  }
-                                  aria-pressed={selected}
-                                  aria-label={`Select ${track.name}`}
-                                  title={`Select ${track.name}`}
-                                >
-                                  <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                                  <span className="truncate">{track.name}</span>
-                                </button>
-                                <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-5"
-                                    aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
-                                    title={track.muted ? 'Unmute track' : 'Mute track'}
-                                    onClick={() =>
-                                      motionStore.commit('Toggle track mute', [
-                                        { op: 'track.update', trackId: track.id, muted: !track.muted },
-                                      ])
-                                    }
-                                  >
-                                    {track.muted ? <EyeOffIcon data-icon /> : <EyeIcon data-icon />}
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-5"
-                                    aria-label={track.locked ? `Unlock ${track.name}` : `Lock ${track.name}`}
-                                    title={track.locked ? 'Unlock track' : 'Lock track'}
-                                    onClick={() =>
-                                      motionStore.commit('Toggle track lock', [
-                                        { op: 'track.update', trackId: track.id, locked: !track.locked },
-                                      ])
-                                    }
-                                  >
-                                    {track.locked ? (
-                                      <LockKeyholeIcon data-icon />
-                                    ) : (
-                                      <LockKeyholeOpenIcon data-icon />
-                                    )}
-                                  </Button>
-                                </span>
-                              </div>
-                            </ContextMenuTrigger>
-                            <ContextMenuContent className="w-40">
-                              <ContextMenuItem onSelect={() =>
-                                motionStore.setSelection({ kind: 'track', trackId: track.id })
-                              }>
-                                Select Track
-                              </ContextMenuItem>
-                              <ContextMenuCheckboxItem
-                                checked={track.muted ?? false}
-                                onSelect={() =>
-                                  motionStore.commit('Toggle track mute', [
-                                    { op: 'track.update', trackId: track.id, muted: !(track.muted ?? false) },
-                                  ])
-                                }
-                              >
-                                Muted
-                              </ContextMenuCheckboxItem>
-                              <ContextMenuCheckboxItem
-                                checked={track.locked ?? false}
-                                onSelect={() =>
-                                  motionStore.commit('Toggle track lock', [
-                                    { op: 'track.update', trackId: track.id, locked: !(track.locked ?? false) },
-                                  ])
-                                }
-                              >
-                                Locked
-                              </ContextMenuCheckboxItem>
-                              <ContextMenuSeparator />
-                              <ContextMenuItem variant="destructive" onSelect={() =>
-                                motionStore.commit('Delete track', [{ op: 'track.remove', trackId: track.id }])
-                              }>
-                                Delete Track
-                              </ContextMenuItem>
-                            </ContextMenuContent>
-                          </ContextMenu>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="px-2 py-3 text-[11px] text-muted-foreground">
-                      Add an animation track to start shaping this scene.
+                  ))}
+                  {filteredNodes.length === 0 && !searchValue && (
+                    <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                      Add a scene object to begin.
                     </p>
                   )}
+                  {filteredNodes.length === 0 && searchValue && (
+                    <p className="px-4 py-3 text-[11px] text-muted-foreground">
+                      No objects match "{searchValue}".
+                    </p>
+                  )}
+                  {draggingNodeId && <RootDropZone />}
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
+              </DndContext>
+            )}
           </div>
-        </ScrollArea>
-      </TabsContent>
 
-      <TabsContent value="assets" forceMount className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
-          <div className="min-h-0">
-            {/* VS Code-style collapsible: Imported media */}
-            <Collapsible open={assetsExpanded} onOpenChange={setAssetsExpanded}>
-              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
-                {assetsExpanded ? (
-                  <ChevronDownIcon className="size-3" />
+          {/* Bottom sections — VS Code Outline/Timeline style */}
+          {filteredTracks.length > 0 && (
+            <div className="border-t border-border/40">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1 px-2 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring hover:bg-accent/30"
+                onClick={() => setTracksExpanded((v) => !v)}
+              >
+                {tracksExpanded ? (
+                  <ChevronDownIcon className="size-3.5 shrink-0 text-foreground/70" />
                 ) : (
-                  <ChevronRightIcon className="size-3" />
+                  <ChevronRightIcon className="size-3.5 shrink-0 text-foreground/70" />
                 )}
-                <span className="flex-1">Imported media</span>
-                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
-                  {assets.length}
+                <span className="text-[11px] font-semibold text-foreground">Tracks</span>
+                <span className="text-[10px] tabular-nums text-muted-foreground/70">
+                  {filteredTracks.length}
                 </span>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="border-t border-border/40 p-2">
-                  {assets.length > 0 ? (
-              <div className="space-y-1">
-                {assets.map((asset) => {
-                  const isAssigned = doc.scene.nodes.some(
-                    (node) =>
-                      node.type === 'screen.image' &&
-                      (node.props.assetId === asset.id || node.props.source === asset.id),
-                  );
-
-                  return (
-                    <div
-                      key={asset.id}
-                      className="group flex h-9 w-full items-center gap-2 rounded-md px-2 hover:bg-accent/50"
-                    >
-                      <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              </button>
+              {tracksExpanded && (
+                <div className="pb-1">
+                  {filteredTracks.map((track) => {
+                    const Icon = trackIcon(track);
+                    const selected = selectedTrackId === track.id;
+                    return (
                       <button
+                        key={track.id}
                         type="button"
-                        className="min-w-0 flex-1 truncate text-left text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        onClick={() => {
-                          const targetScreen = doc.scene.nodes.find(
-                            (node) => node.type === 'screen.image',
-                          );
-                          if (!targetScreen) return;
-                          motionStore.commit('Assign media to screen', [
-                            {
-                              op: 'scene.node.update',
-                              nodeId: targetScreen.id,
-                              props: { assetId: asset.id },
-                            },
-                          ]);
-                        }}
-                        title={`Use ${asset.name} on the current screen`}
-                      >
-                        {asset.name}
-                      </button>
-                      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                        {asset.kind === 'image-sequence' ? `${asset.frameCount}f` : asset.kind}
-                      </span>
-                      {isAssigned && (
-                        <span className="text-[10px] text-muted-foreground">On screen</span>
-                      )}
-                      {motionAssets.missingIds.has(asset.id) && (
-                        <>
-                          <span className="text-[10px] text-destructive">Missing</span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-1.5 text-[10px]"
-                            onClick={() => void motionAssets.relinkAsset(asset.id)}
-                          >
-                            Relink
-                          </Button>
-                        </>
-                      )}
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                        aria-label={`Reveal ${asset.name}`}
+                        className={cn(
+                          'group flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring',
+                          selected
+                            ? 'bg-accent text-accent-foreground'
+                            : 'text-foreground/80 hover:bg-accent/40',
+                        )}
                         onClick={() =>
-                          void window.electron.ipc.invoke<void>('motion:reveal-asset', {
-                            projectId: doc.meta.id,
-                            assetId: asset.id,
+                          motionStore.setSelection({
+                            kind: 'track',
+                            trackId: track.id,
                           })
                         }
+                        aria-pressed={selected}
+                        aria-label={`Select ${track.name}`}
+                        title={`Select ${track.name}`}
                       >
-                        <FolderIcon data-icon />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                        aria-label={`Remove ${asset.name}`}
-                        title="Remove unused asset"
-                        onClick={() => motionAssets.removeAsset(asset.id)}
-                      >
-                        <span aria-hidden="true">×</span>
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-2 px-4 py-6 text-center">
-                <FolderIcon className="size-5 text-muted-foreground/70" />
-                <p className="text-[11px] text-muted-foreground">
-                  Import images or image sequences to mount them on a screen.
-                </p>
-              </div>
-            )}
-
-            {motionAssets.errors.length > 0 && (
-              <ul
-                role="alert"
-                className="mt-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-2"
-              >
-                {motionAssets.errors.map((error, index) => (
-                  <li
-                    key={`${error.name}-${index}`}
-                    className="text-[10px] leading-relaxed text-destructive"
-                  >
-                    <span className="font-medium">{error.name}:</span> {error.message}
-                  </li>
-                ))}
-                <li>
-                  <button
-                    type="button"
-                    className="text-[10px] text-muted-foreground underline"
-                    onClick={motionAssets.clearErrors}
-                  >
-                    Dismiss
-                  </button>
-                </li>
-              </ul>
-            )}
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* VS Code-style collapsible: Motion clips */}
-            <Collapsible open={clipsExpanded} onOpenChange={setClipsExpanded}>
-              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
-                {clipsExpanded ? (
-                  <ChevronDownIcon className="size-3" />
-                ) : (
-                  <ChevronRightIcon className="size-3" />
-                )}
-                <span className="flex-1">Motion clips</span>
-                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
-                  {clips.length}
-                </span>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="border-t border-border/40 p-2">
-                  {clips.length > 0 ? (
-                    <div className="space-y-1">
-                      {clips.map((clip) => {
-                        const track = doc.timeline.tracks.find((candidate) =>
-                          candidate.placements.some((placement) => placement.clipId === clip.id),
-                        );
-                        return (
-                          <button
-                            type="button"
-                            key={clip.id}
-                            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
-                            onClick={() => {
-                              const placement = track?.placements.find(
-                                (item) => item.clipId === clip.id,
-                              );
-                              if (track && placement) {
-                                motionStore.setSelection({
-                                  kind: 'placement',
+                        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate text-left">{track.name}</span>
+                        <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            aria-label={
+                              track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`
+                            }
+                            title={track.muted ? 'Unmute track' : 'Mute track'}
+                            className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'size-5')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              motionStore.commit('Toggle track mute', [
+                                {
+                                  op: 'track.update',
                                   trackId: track.id,
-                                  placementId: placement.id,
-                                });
+                                  muted: !track.muted,
+                                },
+                              ]);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                motionStore.commit('Toggle track mute', [
+                                  {
+                                    op: 'track.update',
+                                    trackId: track.id,
+                                    muted: !track.muted,
+                                  },
+                                ]);
                               }
                             }}
-                            title={track ? `Select ${clip.name} on ${track.name}` : clip.name}
                           >
-                            <ClapperboardIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 flex-1 truncate text-xs">{clip.name}</span>
-                            <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                              {clip.duration.toFixed(1)}s
-                            </span>
-                            <AudioLinesIcon className="size-3 shrink-0 text-muted-foreground/70" />
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="px-2 py-3 text-[11px] text-muted-foreground">
-                      Clips you create will appear here.
-                    </p>
-                  )}
+                            {track.muted ? (
+                              <EyeOffIcon data-icon />
+                            ) : (
+                              <EyeIcon data-icon />
+                            )}
+                          </div>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            aria-label={
+                              track.locked ? `Unlock ${track.name}` : `Lock ${track.name}`
+                            }
+                            title={track.locked ? 'Unlock track' : 'Lock track'}
+                            className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'size-5')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              motionStore.commit('Toggle track lock', [
+                                {
+                                  op: 'track.update',
+                                  trackId: track.id,
+                                  locked: !track.locked,
+                                },
+                              ]);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                motionStore.commit('Toggle track lock', [
+                                  {
+                                    op: 'track.update',
+                                    trackId: track.id,
+                                    locked: !track.locked,
+                                  },
+                                ]);
+                              }
+                            }}
+                          >
+                            {track.locked ? (
+                              <LockKeyholeIcon data-icon />
+                            ) : (
+                              <LockKeyholeOpenIcon data-icon />
+                            )}
+                          </div>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* Action buttons */}
-            <div className="px-2 py-2 space-y-2">
-              <div className="flex justify-center">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7"
-                  disabled={motionAssets.isImporting}
-                  onClick={() => void motionAssets.importAssets()}
-                >
-                  <PlusIcon data-icon="inline-start" />
-                  {motionAssets.isImporting ? 'Importing…' : 'Import media'}
-                </Button>
-              </div>
-              <div className="flex justify-center">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-[10px]"
-                  onClick={() => void motionAssets.cleanUnusedFiles()}
-                >
-                  Clean unused asset files…
-                </Button>
-              </div>
+              )}
             </div>
-          </div>
-        </ScrollArea>
-      </TabsContent>
-    </Tabs>
+          )}
+
+          {/* Assets section */}
+          {assets.length > 0 && (
+            <div className="border-t border-border/40">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1 px-2 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring hover:bg-accent/30"
+                onClick={() => setAssetsExpanded((v) => !v)}
+              >
+                {assetsExpanded ? (
+                  <ChevronDownIcon className="size-3.5 shrink-0 text-foreground/70" />
+                ) : (
+                  <ChevronRightIcon className="size-3.5 shrink-0 text-foreground/70" />
+                )}
+                <span className="text-[11px] font-semibold text-foreground">Assets</span>
+                <span className="text-[10px] tabular-nums text-muted-foreground/70">
+                  {assets.length}
+                </span>
+              </button>
+              {assetsExpanded && (
+                <div className="pb-1">
+                  {assets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="group flex h-7 w-full items-center gap-2 rounded px-1.5 text-xs hover:bg-accent/50"
+                    >
+                      <FolderIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{asset.name}</span>
+                      <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
+                        {asset.kind}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Clips section */}
+          {clips.length > 0 && (
+            <div className="border-t border-border/40">
+              <button
+                type="button"
+                className="flex w-full items-center gap-1 px-2 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring hover:bg-accent/30"
+                onClick={() => setClipsExpanded((v) => !v)}
+              >
+                {clipsExpanded ? (
+                  <ChevronDownIcon className="size-3.5 shrink-0 text-foreground/70" />
+                ) : (
+                  <ChevronRightIcon className="size-3.5 shrink-0 text-foreground/70" />
+                )}
+                <span className="text-[11px] font-semibold text-foreground">Clips</span>
+                <span className="text-[10px] tabular-nums text-muted-foreground/70">
+                  {clips.length}
+                </span>
+              </button>
+              {clipsExpanded && (
+                <div className="pb-1">
+                  {clips.map((clip) => (
+                    <button
+                      type="button"
+                      key={clip.id}
+                      className="flex h-7 w-full items-center gap-1.5 rounded px-1.5 text-left text-xs outline-none hover:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <ClapperboardIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{clip.name}</span>
+                      <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
+                        {clip.duration.toFixed(1)}s
+                      </span>
+                      <AudioLinesIcon className="size-3 shrink-0 text-muted-foreground/70" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 
@@ -803,13 +710,7 @@ function SceneNodeRow({
     data: { targetNodeId: node.id, parentId: node.parentId },
     disabled: !dropCheck?.allowed,
   });
-  const {
-    setNodeRef: setDragRef,
-    listeners,
-    attributes,
-    transform,
-    isDragging,
-  } = useDraggable({
+  const { setNodeRef: setDragRef, listeners, attributes, transform, isDragging } = useDraggable({
     id: `motion-drag-${node.id}`,
     data: { nodeId: node.id },
   });
@@ -869,9 +770,7 @@ function SceneNodeRow({
       ref={setDropRef}
       className={cn(
         'group flex h-7 items-center rounded px-1',
-        selected
-          ? 'bg-accent text-accent-foreground'
-          : 'text-foreground/80 hover:bg-accent/40',
+        selected ? 'bg-accent text-accent-foreground' : 'text-foreground/80 hover:bg-accent/40',
         isOver && 'ring-1 ring-primary',
         isDragging && 'opacity-50',
       )}
@@ -885,7 +784,9 @@ function SceneNodeRow({
         type="button"
         aria-label={`Drag ${node.name}`}
         className="flex size-4 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground/60 opacity-0 outline-none focus-visible:opacity-100 group-hover:opacity-100"
-        style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined}
+        style={
+          transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
+        }
       >
         <GripVerticalIcon className="size-3" />
       </button>
@@ -896,11 +797,7 @@ function SceneNodeRow({
           aria-label={collapsed ? `Expand ${node.name}` : `Collapse ${node.name}`}
           onClick={() => onToggleCollapsed(node.id)}
         >
-          {collapsed ? (
-            <ChevronRightIcon className="size-3" />
-          ) : (
-            <ChevronDownIcon className="size-3" />
-          )}
+          {collapsed ? <ChevronRightIcon className="size-3" /> : <ChevronDownIcon className="size-3" />}
         </button>
       ) : (
         <span className="size-4 shrink-0" />
@@ -927,6 +824,7 @@ function SceneNodeRow({
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
           onClick={(event) => onSelectNode(node.id, event)}
+          onKeyDown={onTreeKeyDown}
           onDoubleClick={() => {
             setDraftName(node.name);
             setRenaming(true);
@@ -934,7 +832,6 @@ function SceneNodeRow({
           aria-pressed={selected}
           aria-label={`Select scene object ${node.name}`}
           data-motion-node-id={node.id}
-          onKeyDown={onTreeKeyDown}
         >
           <Icon className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="truncate">{node.name}</span>

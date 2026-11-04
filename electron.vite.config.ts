@@ -18,6 +18,11 @@ const external = [
 
 export default defineConfig({
   main: {
+    resolve: {
+      alias: {
+        '@': path.join(root, 'src'),
+      },
+    },
     build: {
       outDir: 'release/app/dist/main',
       sourcemap: process.env.VITE_BUILD_SOURCEMAP !== 'false',
@@ -30,6 +35,11 @@ export default defineConfig({
     },
   },
   preload: {
+    resolve: {
+      alias: {
+        '@': path.join(root, 'src'),
+      },
+    },
     build: {
       outDir: 'release/app/dist/preload',
       sourcemap: process.env.VITE_BUILD_SOURCEMAP !== 'false',

@@ -3,10 +3,10 @@ import { z } from 'zod';
 import {
   describeMotionEngine,
   planMotionCommand,
-} from '@/lib/motion/engine-contract';
-import { applyMotionCommand, type MotionApplyResult } from '@/lib/motion/plan';
-import type { MotionDocument, MotionNodeTransform } from '@/lib/motion/types';
-import type { MotionOpRequest } from '@/lib/motion/ops';
+} from '../../lib/motion/engine-contract.js';
+import { applyMotionCommand, type MotionApplyResult } from '../../lib/motion/plan.js';
+import type { MotionDocument, MotionNodeTransform } from '../../lib/motion/types.js';
+import type { MotionOpRequest } from '../../lib/motion/ops.js';
 
 const vectorSchema = z.tuple([z.number(), z.number(), z.number()]);
 const transformSchema: z.ZodType<Partial<MotionNodeTransform>> = z

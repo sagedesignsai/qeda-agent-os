@@ -324,7 +324,10 @@ export function validateMotionDocument(doc: MotionDocument): MotionValidationErr
       for (const [key, entry] of Object.entries(value)) scanForEphemeralUrls(entry, `${path}.${key}`);
     }
   };
-  scanForEphemeralUrls({ meta: doc.meta, brand: doc.brand, assets: doc.assets, scenes: doc.scenes, sequence: doc.sequence }, 'document');
+  // Asset `path` is a filesystem path (starts with `/`), not a portable URL —
+  // strip it so the scan only catches blob:, data:, https:, etc. in metadata.
+  const assetsForScan = doc.assets.map(({ path: _path, ...rest }) => rest);
+  scanForEphemeralUrls({ meta: doc.meta, brand: doc.brand, assets: assetsForScan, scenes: doc.scenes, sequence: doc.sequence }, 'document');
   return errors;
 }
 
