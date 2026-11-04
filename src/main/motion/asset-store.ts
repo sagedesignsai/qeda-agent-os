@@ -412,6 +412,37 @@ export class MotionAssetStore {
     }
   }
 
+  /**
+   * Resolve a glTF sidecar (buffer or texture) next to the model's own file.
+   * GLTFLoader requests them relative to the model URL, so the renderer cannot
+   * address them through `resolveAsset`. Confined to the model's own directory
+   * and only reachable for `model` assets.
+   */
+  async resolveAssetFile(
+    projectId: string,
+    assetId: string,
+    relativePath: string,
+  ): Promise<{ path: string; mimeType: string; hash: string } | null> {
+    if (!isSafeRelativeAssetPath(relativePath)) return null;
+    const opened = await this.projects.openProject(projectId);
+    const asset = opened.document.assets.find((item) => item.id === assetId);
+    if (!asset || asset.kind !== 'model' || asset.hash === 'builtin' || !asset.path || !asset.path.startsWith('assets/') || !isSafeRelativeAssetPath(asset.path)) return null;
+    try {
+      const root = await fs.realpath(this.projects.getProjectDirectory(projectId));
+      const modelPath = path.resolve(root, ...asset.path.split('/'));
+      if (!isInside(root, modelPath)) return null;
+      const modelDirectory = await fs.realpath(path.dirname(modelPath));
+      if (!isInside(root, modelDirectory)) return null;
+      const requestedPath = path.resolve(modelDirectory, ...relativePath.split('/'));
+      const resolvedPath = await fs.realpath(requestedPath);
+      if (!isInside(modelDirectory, resolvedPath) || !(await fs.stat(resolvedPath)).isFile()) return null;
+      const mimeType = classifyMotionAsset(resolvedPath)?.mimeType ?? 'application/octet-stream';
+      return { path: resolvedPath, mimeType, hash: asset.hash };
+    } catch {
+      return null;
+    }
+  }
+
   async resolveAssetFrame(projectId: string, assetId: string, frameIndex: number): Promise<{ path: string; mimeType: string; hash: string } | null> {
     if (!Number.isInteger(frameIndex) || frameIndex < 0) return null;
     const opened = await this.projects.openProject(projectId);

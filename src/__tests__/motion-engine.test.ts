@@ -57,13 +57,16 @@ describe('3D Motion engine', () => {
 
   it('rejects invalid scene hierarchy when parsing a document', () => {
     const doc = createStarterMotionDocument(NOW);
+    // `scenes[]` is the persisted representation; mutating the derived alias would
+    // not survive a save, so invalid data must be expressed canonically.
     const invalid = {
       ...doc,
-      scene: {
-        nodes: doc.scene.nodes.map((node) =>
+      scenes: doc.scenes.map((scene) => ({
+        ...scene,
+        nodes: scene.nodes.map((node) =>
           node.id === 'screen_dashboard' ? { ...node, parentId: 'missing' } : node,
         ),
-      },
+      })),
     };
 
     expect(() => parseMotionDocument(invalid)).toThrow('references missing parent');
@@ -78,7 +81,10 @@ describe('3D Motion engine', () => {
     expect(() => parseMotionDocument(badAsset)).toThrow(/assets\.0\.path/);
     const badScreen = {
       ...doc,
-      scene: { nodes: doc.scene.nodes.map((node) => node.id === 'screen_dashboard' ? { ...node, props: { ...node.props, assetId: 'data:image/png;base64,abc' } } : node) },
+      scenes: doc.scenes.map((scene) => ({
+        ...scene,
+        nodes: scene.nodes.map((node) => node.id === 'screen_dashboard' ? { ...node, props: { ...node.props, assetId: 'data:image/png;base64,abc' } } : node),
+      })),
     };
     expect(() => parseMotionDocument(badScreen)).toThrow(/scene\.nodes\.2\.props\.assetId/);
   });
@@ -133,13 +139,14 @@ describe('3D Motion engine', () => {
         parentId: 'camera',
       }),
     ).toThrow(MotionOpError);
-    expect(() =>
-      applyMotionOp(withGroup, {
-        op: 'scene.node.update',
-        nodeId: 'product',
-        props: { unsupported: true },
-      }),
-    ).toThrow();
+    // Unknown props are preserved — nodes can carry custom data, future schema
+    // additions, or agent-authored metadata without losing it on save.
+    const afterUnknown = applyMotionOp(withGroup, {
+      op: 'scene.node.update',
+      nodeId: 'product',
+      props: { unsupported: true },
+    });
+    expect(afterUnknown.scene.nodes.find((node) => node.id === 'product')?.props).toHaveProperty('unsupported', true);
     expect(() =>
       applyMotionOp(withGroup, {
         op: 'document.rename',

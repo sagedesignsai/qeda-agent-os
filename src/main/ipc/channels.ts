@@ -1550,6 +1550,30 @@ export interface IpcChannels {
   /** Pushed when the studio copilot creates or updates its plan. */
   'studio-copilot:plan-event': { data: AgentPlanEvent };
 
+  // ── Motion Copilot (AI Motion Scene Director Agent) ──────────────────────
+  /** Run one motion copilot turn. Streams back over `motion-copilot:stream-*`. */
+  'motion-copilot:chat': {
+    req: {
+      messages: UIMessage[];
+      context: {
+        projectId?: string;
+      };
+    };
+    res: void;
+  };
+  'motion-copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'motion-copilot:stream-done': { runId: string };
+  'motion-copilot:stream-error': { error: string };
+  'motion-copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  /** Pushed when the motion copilot creates or updates its plan. */
+  'motion-copilot:plan-event': { data: AgentPlanEvent };
+
   // ── Document Drafter (Professional Document Drafting Agent) ───────────────
   /**
    * Run one document drafter turn. Streams back over `document-drafter:stream-*`.

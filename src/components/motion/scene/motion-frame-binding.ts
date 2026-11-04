@@ -135,10 +135,12 @@ export function applyMotionFrame({
     const fov = cameraNode ? motionNumberProp(cameraNode, 'fov', camera.fov) : camera.fov;
     const near = cameraNode ? motionNumberProp(cameraNode, 'near', camera.near) : camera.near;
     const far = cameraNode ? motionNumberProp(cameraNode, 'far', camera.far) : camera.far;
+    const zoom = cameraNode ? motionNumberProp(cameraNode, 'zoom', 1) : 1;
     camera.fov = fov;
     camera.near = near;
     camera.far = far;
-    const projection = `${fov}:${near}:${far}`;
+    camera.zoom = zoom;
+    const projection = `${fov}:${near}:${far}:${zoom}`;
     if (!cachedProjection || cachedProjection.current !== projection) {
       camera.updateProjectionMatrix();
       if (cachedProjection) cachedProjection.current = projection;

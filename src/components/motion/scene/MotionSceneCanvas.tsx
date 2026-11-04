@@ -51,17 +51,22 @@ type MotionSceneCanvasProps = {
 };
 
 function indexNodes(nodes: MotionNode[]): Map<string | null, MotionNode[]> {
+  const ids = new Set(nodes.map((node) => node.id));
   const children = new Map<string | null, MotionNode[]>();
   for (const node of nodes) {
-    const siblings = children.get(node.parentId) ?? [];
+    // Mirror the scene panel: an orphan is shown at the root rather than vanishing.
+    const parentId = node.parentId && ids.has(node.parentId) ? node.parentId : null;
+    const siblings = children.get(parentId) ?? [];
     siblings.push(node);
-    children.set(node.parentId, siblings);
+    children.set(parentId, siblings);
   }
   return children;
 }
 
 function DocumentNode({
   node,
+  doc,
+  clock,
   childrenByParent,
   groups,
   selectedNodeId,
@@ -70,6 +75,10 @@ function DocumentNode({
   transformingRef,
 }: {
   node: MotionNode;
+  /** Passed to renderers so they resolve assets from the document on screen. */
+  doc: MotionDocument;
+  /** The running playhead, so media bindings can lock video to it. */
+  clock: PlaybackClock;
   childrenByParent: Map<string | null, MotionNode[]>;
   groups: Map<string, Group>;
   selectedNodeId?: string;
@@ -110,11 +119,13 @@ function DocumentNode({
         }
       }}
     >
-      <Renderer node={node} />
+      <Renderer node={node} document={doc} clock={clock} />
       {childNodes.map((child) => (
         <DocumentNode
           key={child.id}
           node={child}
+          doc={doc}
+          clock={clock}
           childrenByParent={childrenByParent}
           groups={groups}
           selectedNodeId={selectedNodeId}
@@ -245,6 +256,8 @@ function DocumentScene({
         <DocumentNode
           key={node.id}
           node={node}
+          doc={doc}
+          clock={clock}
           childrenByParent={childrenByParent}
           groups={groups}
           selectedNodeId={selectedNodeId}

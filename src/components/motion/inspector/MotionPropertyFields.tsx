@@ -50,6 +50,33 @@ type MotionPropertyFieldProps = {
 const ASSET_NONE = '__motion_no_asset__';
 const AXES = ['x', 'y', 'z'] as const;
 
+/**
+ * Section order for the generated inspector. Hints declare a group, but the
+ * registry is spread across per-type modules, so ordering must be global or the
+ * same panel would reorder itself when a definition moves.
+ */
+const GROUP_ORDER = [
+  'Content',
+  'Dimensions',
+  'Layout',
+  'Typography',
+  'Appearance',
+  'Material',
+  'Shading',
+  'Shadow',
+  'Light',
+  'Attenuation',
+  'Lens',
+  'Playback',
+  'Surface',
+  'Properties',
+];
+
+function groupRank(group: string): number {
+  const index = GROUP_ORDER.indexOf(group);
+  return index === -1 ? GROUP_ORDER.length : index;
+}
+
 function clamp(value: number, min?: number, max?: number): number {
   return Math.min(max ?? Infinity, Math.max(min ?? -Infinity, value));
 }
@@ -535,7 +562,7 @@ export function MotionPropertyFields({
       fields.push([property, hint]);
       grouped.set(group, fields);
     }
-    return [...grouped.entries()];
+    return [...grouped.entries()].sort(([a], [b]) => groupRank(a) - groupRank(b));
   }, [hints]);
 
   return (

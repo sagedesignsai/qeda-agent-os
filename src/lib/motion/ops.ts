@@ -607,6 +607,11 @@ registerMotionOp<'scene.node.update'>({
   reduce: (doc, { nodeId, ...patch }) => {
     const current = doc.scene.nodes.find((node) => node.id === nodeId);
     if (!current) throw new MotionOpError(`Scene node "${nodeId}" does not exist.`);
+    // A lock protects content, not bookkeeping: name/visibility/lock edits stay
+    // available so the node can always be unlocked.
+    if (current.locked && (patch.transform !== undefined || patch.props !== undefined)) {
+      throw new MotionOpError(`Node "${nodeId}" is locked.`);
+    }
     const next = validateMotionNode({
       ...current,
       ...patch,
@@ -628,8 +633,12 @@ registerMotionOp<'scene.node.remove'>({
   risk: 'destructive',
   params: z.object({ nodeId: z.string().min(1) }).strict(),
   reduce: (doc, { nodeId }) => {
-    if (!doc.scene.nodes.some((node) => node.id === nodeId)) {
+    const target = doc.scene.nodes.find((node) => node.id === nodeId);
+    if (!target) {
       throw new MotionOpError(`Scene node "${nodeId}" does not exist.`);
+    }
+    if (target.locked) {
+      throw new MotionOpError(`Node "${nodeId}" is locked.`);
     }
     const cascade = collectNodeCascade(doc, nodeId);
     const removed = new Set(cascade.nodeIds);
@@ -643,7 +652,7 @@ registerMotionOp<'scene.node.remove'>({
       })),
     };
     const active = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
-    const cameraId = active?.cameraId && removed.has(active.cameraId) ? null : active?.cameraId;
+    const cameraId = active?.cameraId && cascade.cameraIds.includes(active.cameraId) ? null : active?.cameraId;
     return {
       ...doc,
       scene: { nodes },
@@ -669,6 +678,7 @@ registerMotionOp<'scene.node.reparent'>({
   reduce: (doc, { nodeId, parentId, preserveWorld = true }) => {
     const node = doc.scene.nodes.find((candidate) => candidate.id === nodeId);
     if (!node) throw new MotionOpError(`Scene node "${nodeId}" does not exist.`);
+    if (node.locked) throw new MotionOpError(`Node "${nodeId}" is locked.`);
     if (parentId === nodeId) {
       throw new MotionOpError(`Node "${nodeId}" cannot be its own parent.`);
     }
@@ -972,11 +982,13 @@ registerMotionOp<'scene.add'>({
   params: z.object({ sceneId: z.string().min(1), name: z.string().trim().min(1).max(120), rigIdMap: z.record(z.string(), z.string()) }).strict(),
   reduce: (doc, { sceneId, name, rigIdMap }) => {
     if (doc.scenes.some((scene) => scene.id === sceneId)) throw new MotionOpError(`Scene "${sceneId}" already exists.`);
-    const nodes = doc.scene.nodes.filter((node) => node.type.startsWith('camera.') || node.type.startsWith('light.') || node.type === 'stage.ground')
+    const sourceScene = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+    const nodes = (sourceScene?.nodes ?? doc.scene.nodes)
+      .filter((node) => node.type.startsWith('camera.') || node.type.startsWith('light.') || node.type === 'stage.ground')
       .map((node) => ({ ...node, id: requiredMappedId(rigIdMap, node.id), parentId: null, transform: cloneMotionData(node.transform), props: cloneMotionData(node.props) }));
     const source = doc.timeline;
     const duration = source.duration;
-    const timeline: MotionTimeline = { duration, loop: { ...source.loop, start: 0, end: duration }, workArea: { enabled: false, start: 0, end: duration }, playMode: source.playMode ?? 'loop', tracks: [], clips: [], audio: [] };
+    const timeline: MotionTimeline = { duration, loop: { enabled: false, start: 0, end: duration }, workArea: { enabled: false, start: 0, end: duration }, playMode: source.playMode ?? 'loop', tracks: [], clips: [], audio: [] };
     const cameraId = nodes.find((node) => node.type.startsWith('camera.'))?.id ?? null;
     const scene = { id: sceneId, name, nodes, timeline: { ...timeline, loop: undefined }, cameraId, background: doc.scenes.find((s) => s.id === doc.activeSceneId)?.background };
     return { ...doc, scenes: [...doc.scenes, scene], activeSceneId: sceneId, scene: { nodes }, timeline };
@@ -1070,15 +1082,17 @@ registerMotionOp<'timeline.setLoop'>({
     end: z.number().min(0).optional(),
   }),
   reduce: (doc, patch) => {
-    const current = doc.timeline.loop;
+    // `loop` is a derived mirror of the persisted work area: serialization drops
+    // it and load rebuilds it, so this deprecated alias must write the work area
+    // or the range would be lost on the next save.
+    const current = doc.timeline.workArea ?? { enabled: false, start: 0, end: doc.timeline.duration };
     const start = patch.start ?? current.start;
     const end = Math.min(patch.end ?? current.end, doc.timeline.duration);
     if (end <= start) {
       throw new MotionOpError('Loop end must be after loop start.');
     }
-    return withTimeline(doc, {
-      loop: { enabled: patch.enabled ?? current.enabled, start, end },
-    });
+    const next = { enabled: patch.enabled ?? current.enabled, start, end };
+    return withTimeline(doc, { workArea: next, loop: next });
   },
 });
 

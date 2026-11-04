@@ -208,7 +208,10 @@ export function registerStudioMediaHandler(): void {
 /** Serves only index-backed committed assets or short-lived staged imports. */
 export async function serveMotionMediaRequest(
   request: Request,
-  assetStore: Pick<ReturnType<typeof getMotionAssetStore>, 'resolveAsset' | 'resolveAssetFrame' | 'resolveStaged'> = getMotionAssetStore(),
+  assetStore: Pick<
+    ReturnType<typeof getMotionAssetStore>,
+    'resolveAsset' | 'resolveAssetFile' | 'resolveAssetFrame' | 'resolveStaged'
+  > = getMotionAssetStore(),
 ): Promise<Response> {
   const url = new URL(request.url);
   const staging = url.hostname === 'motion-staging';
@@ -238,6 +241,10 @@ export async function serveMotionMediaRequest(
     media = await assetStore.resolveAsset(segments[0], segments[1]);
   } else if (!staging && segments.length === 3 && /^\d+$/.test(segments[2])) {
     media = await assetStore.resolveAssetFrame(segments[0], segments[1], Number(segments[2]));
+  } else if (!staging && segments.length > 2) {
+    // glTF sidecars: GLTFLoader resolves buffer/texture URIs relative to the model
+    // URL, so `scene.bin` and friends arrive as extra path segments.
+    media = await assetStore.resolveAssetFile(segments[0], segments[1], segments.slice(2).join('/'));
   }
   if (!media) return new Response(null, { status: 404 });
 

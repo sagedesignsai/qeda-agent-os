@@ -79,6 +79,7 @@ import { registerCorrespondenceHandlers } from './handlers/correspondence';
 import { registerCorrespondenceCopilotHandlers } from './handlers/correspondence-copilot';
 import { registerMotionProjectsHandlers } from './handlers/motion-projects';
 import { registerMotionExportHandlers } from './handlers/motion-export';
+import { registerMotionCopilotHandlers } from './handlers/motion-copilot';
 
 /**
  * Register every request/response handler.
@@ -114,4 +115,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerCorrespondenceCopilotHandlers({ mainWindow });
   registerMotionProjectsHandlers({ mainWindow });
   registerMotionExportHandlers({ mainWindow });
+  registerMotionCopilotHandlers({ mainWindow });
 }

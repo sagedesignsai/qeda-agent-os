@@ -26,6 +26,7 @@ import {
   EyeOffIcon,
   FolderIcon,
   GripVerticalIcon,
+  LightbulbIcon,
   LockKeyholeIcon,
   LockKeyholeOpenIcon,
   PlusIcon,
@@ -53,6 +54,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { useMotionAssets } from '@/hooks/use-motion-assets';
 import { createMotionId } from '@/lib/motion/ids';
+import { getMotionNodeType } from '@/lib/motion/node-registry';
 import {
   buildMotionHierarchy,
   checkMotionReparent,
@@ -63,9 +65,12 @@ import { cn } from '@/lib/utils';
 import type { MotionContextTarget } from '@/hooks/use-motion-context-menu';
 
 function nodeIcon(node: MotionNode) {
-  if (node.type.startsWith('camera.')) return CameraIcon;
+  // Category comes from the registry so new node types inherit a sensible icon.
+  const category = getMotionNodeType(node.type)?.category;
   if (node.type.startsWith('text.')) return TypeIcon;
-  if (node.type.startsWith('screen.')) return AppWindowIcon;
+  if (category === 'camera') return CameraIcon;
+  if (category === 'lighting') return LightbulbIcon;
+  if (category === 'surface') return AppWindowIcon;
   return BoxIcon;
 }
 
@@ -519,7 +524,6 @@ export function MotionScenePanel() {
                   const isAssigned = doc.scene.nodes.some(
                     (node) =>
                       node.type === 'screen.image' &&
-                      typeof node.props.source === 'string' &&
                       (node.props.assetId === asset.id || node.props.source === asset.id),
                   );
 
@@ -541,7 +545,7 @@ export function MotionScenePanel() {
                             {
                               op: 'scene.node.update',
                               nodeId: targetScreen.id,
-                              props: { source: asset.id, assetId: asset.id },
+                              props: { assetId: asset.id },
                             },
                           ]);
                         }}

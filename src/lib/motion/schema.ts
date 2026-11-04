@@ -133,7 +133,7 @@ const sceneV4Schema = z.object({
   stateMachines: z.array(z.unknown()).optional(),
 });
 
-export type MotionValidationError = { code: string; path: string };
+export type MotionValidationError = { code: string; path: string; detail?: string };
 
 /** Ordered cross-reference and domain validation shared by parsing and op reducers. */
 export function validateMotionDocument(doc: MotionDocument): MotionValidationError[] {
@@ -189,7 +189,7 @@ export function validateMotionDocument(doc: MotionDocument): MotionValidationErr
     const node = doc.scene.nodes[i];
     if (nodeIds.has(node.id)) errors.push({ code: 'NODE_ID_DUPLICATE', path: `scene.nodes.${i}.id` });
     nodeIds.add(node.id);
-    try { validateMotionNode(node); } catch { errors.push({ code: 'NODE_PROPS_INVALID', path: `scene.nodes.${i}.props` }); }
+    try { validateMotionNode(node); } catch (err) { errors.push({ code: 'NODE_PROPS_INVALID', path: `scene.nodes.${i}.props`, detail: err instanceof Error ? err.message : String(err) }); }
     if (node.type === 'screen.image' && typeof node.props.source === 'string' && /^(blob:|data:)/i.test(node.props.source)) {
       errors.push({ code: 'TRANSIENT_ASSET_URL', path: `scene.nodes.${i}.props.source` });
     }
@@ -206,6 +206,9 @@ export function validateMotionDocument(doc: MotionDocument): MotionValidationErr
   for (let i = 0; i < doc.scene.nodes.length; i += 1) {
     const node = doc.scene.nodes[i];
     if (node.parentId && !nodeIds.has(node.parentId)) errors.push({ code: 'PARENT_MISSING', path: `scene.nodes.${i}.parentId` });
+    const parentNode = node.parentId ? doc.scene.nodes.find((candidate) => candidate.id === node.parentId) : undefined;
+    const allowedParents = getMotionNodeType(node.type)?.allowedParents;
+    if (parentNode && allowedParents && !allowedParents.includes(parentNode.type)) errors.push({ code: 'PARENT_TYPE_NOT_ALLOWED', path: `scene.nodes.${i}.parentId` });
     const seen = new Set([node.id]);
     let parentId = node.parentId;
     while (parentId && nodeIds.has(parentId)) {
@@ -276,7 +279,34 @@ export function validateMotionDocument(doc: MotionDocument): MotionValidationErr
     for (let j = 0; j < scene.nodes.length; j += 1) {
       const node = scene.nodes[j];
       if (node.parentId && !ids.has(node.parentId)) errors.push({ code: 'PARENT_MISSING', path: `scenes.${i}.nodes.${j}.parentId` });
-      try { validateMotionNode(node); } catch { errors.push({ code: 'NODE_PROPS_INVALID', path: `scenes.${i}.nodes.${j}.props` }); }
+      try { validateMotionNode(node); } catch (err) { errors.push({ code: 'NODE_PROPS_INVALID', path: `scenes.${i}.nodes.${j}.props`, detail: err instanceof Error ? err.message : String(err) }); }
+      const parent = node.parentId ? scene.nodes.find((candidate) => candidate.id === node.parentId) : undefined;
+      const allowedParents = getMotionNodeType(node.type)?.allowedParents;
+      if (parent && allowedParents && !allowedParents.includes(parent.type)) {
+        errors.push({ code: 'PARENT_TYPE_NOT_ALLOWED', path: `scenes.${i}.nodes.${j}.parentId` });
+      }
+      const seen = new Set([node.id]);
+      let cursor = node.parentId;
+      while (cursor && ids.has(cursor)) {
+        if (seen.has(cursor)) { errors.push({ code: 'PARENT_CYCLE', path: `scenes.${i}.nodes.${j}.parentId` }); break; }
+        seen.add(cursor);
+        cursor = scene.nodes.find((candidate) => candidate.id === cursor)?.parentId ?? null;
+      }
+    }
+    // Hiding a scene from the editor must not hide its referential problems from
+    // export, which can render any scene by id.
+    for (let c = 0; c < scene.timeline.clips.length; c += 1) {
+      const clip = scene.timeline.clips[c];
+      const propertyKeys = new Set<string>();
+      for (let j = 0; j < clip.channels.length; j += 1) {
+        const channel = clip.channels[j];
+        const target = scene.nodes.find((node) => node.id === channel.targetId);
+        if (!target) errors.push({ code: 'CHANNEL_TARGET_MISSING', path: `scenes.${i}.timeline.clips.${c}.channels.${j}.targetId` });
+        else if (!hasAnimatableProperty(target.type, channel.property)) errors.push({ code: 'CHANNEL_PROPERTY_UNSUPPORTED', path: `scenes.${i}.timeline.clips.${c}.channels.${j}.property` });
+        const propertyKey = `${channel.targetId}\0${channel.property}`;
+        if (propertyKeys.has(propertyKey)) errors.push({ code: 'CHANNEL_DUPLICATE_PROPERTY', path: `scenes.${i}.timeline.clips.${c}.channels.${j}` });
+        propertyKeys.add(propertyKey);
+      }
     }
   }
   const scanForEphemeralUrls = (value: unknown, path: string): void => {
@@ -528,18 +558,10 @@ function hydrateV4CompatibilityView(raw: Record<string, unknown>): Record<string
   const active = scenes?.[index];
   if (!active) return raw;
 
-  const nextScenes = scenes.map((scene, sceneIndex) => {
-    if (sceneIndex !== index) return scene;
-    return {
-      ...scene,
-      ...(raw.scene && typeof raw.scene === 'object'
-        ? { nodes: cloneData((raw.scene as { nodes?: unknown }).nodes ?? scene.nodes) }
-        : {}),
-      ...(raw.timeline && typeof raw.timeline === 'object'
-        ? { timeline: cloneData(raw.timeline as Record<string, unknown>) }
-        : {}),
-    };
-  });
+  // `scenes[]` is canonical and `scene`/`timeline` are derived aliases. Preferring
+  // the aliases here would let a stale in-memory view overwrite the active scene,
+  // because the save path re-parses the live document that still carries them.
+  const nextScenes = scenes;
   const activeNodes = nextScenes[index].nodes;
   const activeTimeline = cloneData(nextScenes[index].timeline as Record<string, unknown>);
   const workArea = activeTimeline.workArea as { enabled?: boolean; start?: number; end?: number } | undefined;
@@ -574,6 +596,9 @@ export function parseMotionDocument(raw: unknown): MotionDocument {
     }
     if (first.code === 'TRANSIENT_ASSET_URL') {
       throw new MotionSchemaError(`Stored asset URL is not allowed at ${first.path}.`);
+    }
+    if (first.code === 'NODE_PROPS_INVALID') {
+      throw new MotionSchemaError(`Project file is invalid at ${first.path}: ${first.code}.${first.detail ? ` ${first.detail}` : ''}`);
     }
     throw new MotionSchemaError(`Project file is invalid at ${first.path}: ${first.code}.`);
   }

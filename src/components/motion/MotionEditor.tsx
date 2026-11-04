@@ -16,7 +16,9 @@ import {
   PlusIcon,
   Redo2Icon,
   RectangleHorizontalIcon,
+  SparklesIcon,
   Undo2Icon,
+  XIcon,
 } from 'lucide-react';
 import {
   useDefaultLayout,
@@ -24,6 +26,8 @@ import {
 } from 'react-resizable-panels';
 
 import { MotionAssetMarketplaceDialog } from '@/components/motion/assets/MotionAssetMarketplaceDialog';
+import { MotionCommandBar } from '@/components/motion/MotionCommandBar';
+import { MotionCopilotPanel } from '@/components/motion/MotionCopilotPanel';
 import { MotionExportDialog } from '@/components/motion/export/MotionExportDialog';
 import { MotionInspector } from '@/components/motion/MotionInspector';
 import { MotionScenePanel } from '@/components/motion/MotionScenePanel';
@@ -43,6 +47,8 @@ import {
 } from '@/components/ui/resizable';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { useMotionExport } from '@/hooks/use-motion-export';
+import { useMotionCopilot } from '@/hooks/use-motion-copilot';
+import { useIpcEvent } from '@/hooks/use-ipc';
 import { createMotionId } from '@/lib/motion/ids';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 
@@ -58,19 +64,26 @@ interface MotionEditorProps {
   };
 }
 
-export function MotionEditor({ canUndo, canRedo, motionProject }: MotionEditorProps) {
+export function MotionEditor({
+  canUndo,
+  canRedo,
+  motionProject,
+}: MotionEditorProps) {
   const { doc } = useMotionSnapshot();
   const [scenePanelCollapsed, setScenePanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [timelineCollapsed, setTimelineCollapsed] = useState(() => {
     try {
-      return window.localStorage.getItem('motion.timeline.collapsed') === 'true';
+      return (
+        window.localStorage.getItem('motion.timeline.collapsed') === 'true'
+      );
     } catch {
       return false;
     }
   });
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const exportState = useMotionExport();
   const scenePanelRef = useRef<PanelImperativeHandle | null>(null);
   const inspectorPanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -95,7 +108,10 @@ export function MotionEditor({ canUndo, canRedo, motionProject }: MotionEditorPr
   // Persist timeline collapsed state to localStorage
   useEffect(() => {
     try {
-      window.localStorage.setItem('motion.timeline.collapsed', String(timelineCollapsed));
+      window.localStorage.setItem(
+        'motion.timeline.collapsed',
+        String(timelineCollapsed),
+      );
     } catch {
       // Storage unavailable — no-op
     }
@@ -104,7 +120,11 @@ export function MotionEditor({ canUndo, canRedo, motionProject }: MotionEditorPr
   // Keyboard shortcut: Ctrl/Cmd+Shift+T to toggle timeline collapse
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 't') {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === 't'
+      ) {
         event.preventDefault();
         toggleTimelineCollapse();
       }
@@ -142,262 +162,476 @@ export function MotionEditor({ canUndo, canRedo, motionProject }: MotionEditorPr
     const definition = listMotionNodeTypes().find((item) => item.id === type);
     if (!definition) return;
     const nodeId = createMotionId('scene');
-    motionStore.commit(`Add ${definition.label}`, [{ op: 'scene.node.add', nodeId, type }]);
+    motionStore.commit(`Add ${definition.label}`, [
+      { op: 'scene.node.add', nodeId, type },
+    ]);
   };
 
   const createScene = (duplicate: boolean) => {
     const sceneId = createMotionId('scene');
-    const sceneName = duplicate ? `${doc.scenes.find((scene) => scene.id === doc.activeSceneId)?.name ?? 'Scene'} copy` : `Scene ${doc.scenes.length + 1}`;
+    const sceneName = duplicate
+      ? `${doc.scenes.find((scene) => scene.id === doc.activeSceneId)?.name ?? 'Scene'} copy`
+      : `Scene ${doc.scenes.length + 1}`;
     const ids = duplicate
       ? [
           ...doc.scene.nodes.map((node) => node.id),
           ...doc.timeline.tracks.map((track) => track.id),
-          ...doc.timeline.tracks.flatMap((track) => track.placements.map((placement) => placement.id)),
+          ...doc.timeline.tracks.flatMap((track) =>
+            track.placements.map((placement) => placement.id),
+          ),
           ...doc.timeline.clips.map((clip) => clip.id),
-          ...doc.timeline.clips.flatMap((clip) => clip.channels.map((channel) => channel.id)),
-          ...doc.timeline.clips.flatMap((clip) => clip.channels.flatMap((channel) => channel.keyframes.map((key) => key.id))),
+          ...doc.timeline.clips.flatMap((clip) =>
+            clip.channels.map((channel) => channel.id),
+          ),
+          ...doc.timeline.clips.flatMap((clip) =>
+            clip.channels.flatMap((channel) =>
+              channel.keyframes.map((key) => key.id),
+            ),
+          ),
           ...(doc.timeline.audio ?? []).map((audio) => audio.id),
         ]
-      : doc.scene.nodes.filter((node) => node.type.startsWith('camera.') || node.type.startsWith('light.') || node.type === 'stage.ground').map((node) => node.id);
-    const idMap = Object.fromEntries(ids.map((id) => [id, createMotionId('scene')]));
-    motionStore.commit(duplicate ? 'Duplicate scene' : 'Add scene', [duplicate
-      ? { op: 'scene.duplicate', sceneId, name: sceneName, idMap }
-      : { op: 'scene.add', sceneId, name: sceneName, rigIdMap: idMap }]);
+      : doc.scene.nodes
+          .filter(
+            (node) =>
+              node.type.startsWith('camera.') ||
+              node.type.startsWith('light.') ||
+              node.type === 'stage.ground',
+          )
+          .map((node) => node.id);
+    const idMap = Object.fromEntries(
+      ids.map((id) => [id, createMotionId('scene')]),
+    );
+    motionStore.commit(duplicate ? 'Duplicate scene' : 'Add scene', [
+      duplicate
+        ? { op: 'scene.duplicate', sceneId, name: sceneName, idMap }
+        : { op: 'scene.add', sceneId, name: sceneName, rigIdMap: idMap },
+    ]);
   };
 
-  const activeScene = doc.scenes.find((scene) => scene.id === doc.activeSceneId);
+  const activeScene = doc.scenes.find(
+    (scene) => scene.id === doc.activeSceneId,
+  );
   const nodeTypes = listMotionNodeTypes();
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 bg-card/40 px-1.5">
-        {/* Left: panel toggle, document, scene */}
-        <div className="flex min-w-0 items-center gap-0.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label={scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'}
-            title={scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'}
-            onClick={() => togglePanel(scenePanelRef, setScenePanelCollapsed)}
-          >
-            {scenePanelCollapsed ? <RectangleHorizontalIcon className="size-3.5" /> : <ChevronLeftIcon className="size-3.5" />}
-          </Button>
-          <span className="truncate px-0.5 text-[11px] font-medium text-foreground/90">
-            {doc.meta.name}
-          </span>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="sm" className="h-6 max-w-36 px-1.5 text-[11px]">
-                <span className="truncate">{activeScene?.name ?? 'Scene'}</span>
-                <span className="ml-0.5 text-[10px] text-muted-foreground">{doc.timeline.duration.toFixed(1)}s</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {doc.scenes.map((scene) => (
-                <DropdownMenuItem key={scene.id} onSelect={() => motionStore.commit('Switch scene', [{ op: 'document.setActiveScene', sceneId: scene.id }])}>
-                  {scene.id === doc.activeSceneId ? '\u2713 ' : ''}{scene.name} \u00b7 {(scene.timeline.duration).toFixed(1)}s
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <div
+        className={`flex flex-1 flex-col min-h-0 transition-[padding-right] duration-300 ease-in-out ${
+          copilotOpen ? 'pr-80' : ''
+        }`}
+      >
+        <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 bg-card/40 px-1.5">
+          {/* Left: panel toggle, document, scene */}
+          <div className="flex min-w-0 items-center gap-0.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label={
+                scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'
+              }
+              title={
+                scenePanelCollapsed ? 'Show scene panel' : 'Hide scene panel'
+              }
+              onClick={() => togglePanel(scenePanelRef, setScenePanelCollapsed)}
+            >
+              {scenePanelCollapsed ? (
+                <RectangleHorizontalIcon className="size-3.5" />
+              ) : (
+                <ChevronLeftIcon className="size-3.5" />
+              )}
+            </Button>
+            <span className="truncate px-0.5 text-[11px] font-medium text-foreground/90">
+              {doc.meta.name}
+            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 max-w-36 px-1.5 text-[11px]"
+                >
+                  <span className="truncate">
+                    {activeScene?.name ?? 'Scene'}
+                  </span>
+                  <span className="ml-0.5 text-[10px] text-muted-foreground">
+                    {doc.timeline.duration.toFixed(1)}s
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {doc.scenes.map((scene) => (
+                  <DropdownMenuItem
+                    key={scene.id}
+                    onSelect={() =>
+                      motionStore.commit('Switch scene', [
+                        { op: 'document.setActiveScene', sceneId: scene.id },
+                      ])
+                    }
+                  >
+                    {scene.id === doc.activeSceneId ? '\u2713 ' : ''}
+                    {scene.name} \u00b7 {scene.timeline.duration.toFixed(1)}s
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem onSelect={() => createScene(false)}>
+                  + New scene
                 </DropdownMenuItem>
-              ))}
-              <DropdownMenuItem onSelect={() => createScene(false)}>+ New scene</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => createScene(true)}>Duplicate scene</DropdownMenuItem>
-              {doc.scenes.length > 1 && activeScene && <DropdownMenuItem onSelect={() => {
-                const confirmation = window.prompt(`Delete "${activeScene.name}" (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`);
-                if (confirmation === activeScene.name) motionStore.commit('Delete scene', [{ op: 'scene.remove', sceneId: activeScene.id }], { approved: true });
-              }}>Delete scene...</DropdownMenuItem>}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuItem onSelect={() => createScene(true)}>
+                  Duplicate scene
+                </DropdownMenuItem>
+                {doc.scenes.length > 1 && activeScene && (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      const confirmation = window.prompt(
+                        `Delete "${activeScene.name}" (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`,
+                      );
+                      if (confirmation === activeScene.name)
+                        motionStore.commit(
+                          'Delete scene',
+                          [{ op: 'scene.remove', sceneId: activeScene.id }],
+                          { approved: true },
+                        );
+                    }}
+                  >
+                    Delete scene...
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* Command bar */}
+          <MotionCommandBar
+            onToggleScenePanel={() =>
+              togglePanel(scenePanelRef, setScenePanelCollapsed)
+            }
+            onToggleInspector={() =>
+              togglePanel(inspectorPanelRef, setInspectorCollapsed)
+            }
+            onToggleTimeline={toggleTimelineCollapse}
+            scenePanelCollapsed={scenePanelCollapsed}
+            inspectorCollapsed={inspectorCollapsed}
+            timelineCollapsed={timelineCollapsed}
+            onOpenMarketplace={() => setMarketplaceOpen(true)}
+            onOpenExport={() => setExportOpen(true)}
+            onCreateScene={() => createScene(false)}
+            onDuplicateScene={() => createScene(true)}
+            onSwitchScene={(sceneId) =>
+              motionStore.commit('Switch scene', [
+                { op: 'document.setActiveScene', sceneId },
+              ])
+            }
+            onDeleteScene={() => {
+              if (!activeScene || doc.scenes.length <= 1) return;
+              const confirmation = window.prompt(
+                `Delete "${activeScene.name}" (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`,
+              );
+              if (confirmation === activeScene.name)
+                motionStore.commit(
+                  'Delete scene',
+                  [{ op: 'scene.remove', sceneId: activeScene.id }],
+                  { approved: true },
+                );
+            }}
+            scenes={doc.scenes.map((s) => ({ id: s.id, name: s.name }))}
+            activeSceneId={doc.activeSceneId}
+            onAddNode={addNode}
+            onAddTrack={addTrack}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onSave={() => void motionProject.saveNow()}
+          />
+
+          {/* Center spacer */}
+          <div className="flex-1" />
+
+          {/* Right: save, undo/redo, actions, panel toggles */}
+          <div className="flex shrink-0 items-center gap-0.5">
+            {/* Save status and button */}
+            <span
+              className="mr-0.5 text-[10px] text-muted-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              {motionProject.readOnly
+                ? 'Read only'
+                : motionProject.saveStatus === 'saving'
+                  ? 'Saving...'
+                  : motionProject.saveStatus === 'failed'
+                    ? 'Save failed'
+                    : motionProject.saveStatus === 'unsaved'
+                      ? 'Unsaved'
+                      : 'Saved'}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[11px]"
+              onClick={() => void motionProject.saveNow()}
+              disabled={
+                motionProject.readOnly || motionProject.saveStatus === 'saving'
+              }
+            >
+              Save
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6"
+              aria-label="Undo"
+              disabled={!canUndo}
+              onClick={() => motionStore.undo()}
+            >
+              <Undo2Icon className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-6"
+              aria-label="Redo"
+              disabled={!canRedo}
+              onClick={() => motionStore.redo()}
+            >
+              <Redo2Icon className="size-3.5" />
+            </Button>
+
+            {/* Timeline collapse */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label={
+                timelineCollapsed ? 'Expand timeline' : 'Collapse timeline'
+              }
+              title={
+                timelineCollapsed
+                  ? 'Expand timeline (Ctrl+Shift+T)'
+                  : 'Collapse timeline (Ctrl+Shift+T)'
+              }
+              onClick={toggleTimelineCollapse}
+            >
+              {timelineCollapsed ? (
+                <ChevronDownIcon className="size-3.5" />
+              ) : (
+                <ChevronUpIcon className="size-3.5" />
+              )}
+            </Button>
+
+            {/* Add dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-6 gap-1 px-1.5 text-[11px]"
+                >
+                  <PlusIcon className="size-3" />
+                  Add
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={addTrack}>
+                  <PlusIcon className="size-3.5" />
+                  Animation track
+                </DropdownMenuItem>
+                {(
+                  [
+                    'scene',
+                    'camera',
+                    'geometry',
+                    'surface',
+                    'model',
+                    'lighting',
+                    'stage',
+                  ] as const
+                ).map((category) => {
+                  const categoryNodes = nodeTypes.filter(
+                    (node) => node.category === category,
+                  );
+                  if (!categoryNodes.length) return null;
+                  return categoryNodes.map((node) => (
+                    <DropdownMenuItem
+                      key={node.id}
+                      onSelect={() => addNode(node.id)}
+                    >
+                      {node.label}
+                    </DropdownMenuItem>
+                  ));
+                })}
+                <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
+                  <BoxesIcon className="size-3.5" />
+                  Browse asset library...
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Export */}
+            <Button
+              type="button"
+              variant={exportState.busy ? 'secondary' : 'outline'}
+              size="sm"
+              className="h-6 gap-1 px-1.5 text-[11px]"
+              aria-label="Export composition"
+              onClick={() => setExportOpen(true)}
+            >
+              <DownloadIcon className="size-3" />
+              Export
+              {exportState.busy && (
+                <span className="text-[10px] tabular-nums">
+                  {Math.round((exportState.progress?.fraction ?? 0) * 100)}%
+                </span>
+              )}
+            </Button>
+
+            {/* Inspector toggle */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              aria-label={
+                inspectorCollapsed ? 'Show inspector' : 'Hide inspector'
+              }
+              title={inspectorCollapsed ? 'Show inspector' : 'Hide inspector'}
+              onClick={() =>
+                togglePanel(inspectorPanelRef, setInspectorCollapsed)
+              }
+            >
+              {inspectorCollapsed ? (
+                <RectangleHorizontalIcon className="size-3.5" />
+              ) : (
+                <ChevronRightIcon className="size-3.5" />
+              )}
+            </Button>
+
+            {/* Copilot toggle */}
+            <Button
+              type="button"
+              variant={copilotOpen ? 'secondary' : 'ghost'}
+              size="icon"
+              className="size-6"
+              aria-label="Toggle Motion Copilot"
+              title="Toggle Motion Copilot"
+              onClick={() => setCopilotOpen((open) => !open)}
+            >
+              <SparklesIcon className="size-3.5" />
+            </Button>
+          </div>
         </div>
 
-        {/* Center spacer */}
-        <div className="flex-1" />
+        <ResizablePanelGroup
+          orientation="vertical"
+          className="min-h-0 flex-1"
+          {...verticalLayout}
+        >
+          {/* Top panel: horizontal group (scene | viewport | inspector) */}
+          <ResizablePanel
+            id="motion-top-panel"
+            defaultSize="66%"
+            minSize="200px"
+            className="min-h-0"
+          >
+            <ResizablePanelGroup
+              orientation="horizontal"
+              className="min-h-0"
+              {...horizontalLayout}
+            >
+              <ResizablePanel
+                id="motion-scene-panel"
+                panelRef={scenePanelRef}
+                defaultSize="20%"
+                minSize="180px"
+                maxSize="32%"
+                collapsible
+                collapsedSize="0px"
+                onResize={(size) => setScenePanelCollapsed(size.inPixels <= 1)}
+                className="min-w-0"
+              >
+                <MotionScenePanel />
+              </ResizablePanel>
+              <ResizableHandle withHandle />
 
-        {/* Right: save, undo/redo, actions, panel toggles */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          {/* Save status and button */}
-          <span className="mr-0.5 text-[10px] text-muted-foreground" role="status" aria-live="polite">
-            {motionProject.readOnly ? 'Read only' : motionProject.saveStatus === 'saving' ? 'Saving...' : motionProject.saveStatus === 'failed' ? 'Save failed' : motionProject.saveStatus === 'unsaved' ? 'Unsaved' : 'Saved'}
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-[11px]"
-            onClick={() => void motionProject.saveNow()}
-            disabled={motionProject.readOnly || motionProject.saveStatus === 'saving'}
-          >
-            Save
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-6"
-            aria-label="Undo"
-            disabled={!canUndo}
-            onClick={() => motionStore.undo()}
-          >
-            <Undo2Icon className="size-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-6"
-            aria-label="Redo"
-            disabled={!canRedo}
-            onClick={() => motionStore.redo()}
-          >
-            <Redo2Icon className="size-3.5" />
-          </Button>
+              <ResizablePanel
+                id="motion-viewport-panel"
+                defaultSize="58%"
+                minSize="320px"
+                className="min-w-0 min-h-0"
+              >
+                <MotionViewport />
+              </ResizablePanel>
 
-          {/* Timeline collapse */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label={timelineCollapsed ? 'Expand timeline' : 'Collapse timeline'}
-            title={timelineCollapsed ? 'Expand timeline (Ctrl+Shift+T)' : 'Collapse timeline (Ctrl+Shift+T)'}
-            onClick={toggleTimelineCollapse}
-          >
-            {timelineCollapsed ? <ChevronDownIcon className="size-3.5" /> : <ChevronUpIcon className="size-3.5" />}
-          </Button>
+              <ResizableHandle withHandle />
+              <ResizablePanel
+                id="motion-inspector-panel"
+                panelRef={inspectorPanelRef}
+                defaultSize="22%"
+                minSize="210px"
+                maxSize="36%"
+                collapsible
+                collapsedSize="0px"
+                onResize={(size) => setInspectorCollapsed(size.inPixels <= 1)}
+                className="min-w-0"
+              >
+                <MotionInspector />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </ResizablePanel>
 
-          {/* Add dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="outline" className="h-6 gap-1 px-1.5 text-[11px]">
-                <PlusIcon className="size-3" />
-                Add
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={addTrack}>
-                <PlusIcon className="size-3.5" />
-                Animation track
-              </DropdownMenuItem>
-              {(['scene', 'camera', 'geometry', 'surface', 'model', 'lighting', 'stage'] as const).map((category) => {
-                const categoryNodes = nodeTypes.filter((node) => node.category === category);
-                if (!categoryNodes.length) return null;
-                return categoryNodes.map((node) => <DropdownMenuItem key={node.id} onSelect={() => addNode(node.id)}>{node.label}</DropdownMenuItem>);
-              })}
-              <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
-                <BoxesIcon className="size-3.5" />
-                Browse asset library...
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ResizableHandle withHandle />
 
-          {/* Export */}
-          <Button
-            type="button"
-            variant={exportState.busy ? 'secondary' : 'outline'}
-            size="sm"
-            className="h-6 gap-1 px-1.5 text-[11px]"
-            aria-label="Export composition"
-            onClick={() => setExportOpen(true)}
+          {/* Bottom panel: full-width timeline */}
+          <ResizablePanel
+            id="motion-timeline-panel"
+            panelRef={timelinePanelRef}
+            defaultSize="34%"
+            minSize="48px"
+            maxSize="50%"
+            collapsible
+            collapsedSize="48px"
+            onResize={(size) => setTimelineCollapsed(size.inPixels <= 48)}
+            className="min-h-0"
           >
-            <DownloadIcon className="size-3" />
-            Export
-            {exportState.busy && (
-              <span className="text-[10px] tabular-nums">
-                {Math.round((exportState.progress?.fraction ?? 0) * 100)}%
-              </span>
-            )}
-          </Button>
-
-          {/* Inspector toggle */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-6"
-            aria-label={inspectorCollapsed ? 'Show inspector' : 'Hide inspector'}
-            title={inspectorCollapsed ? 'Show inspector' : 'Hide inspector'}
-            onClick={() => togglePanel(inspectorPanelRef, setInspectorCollapsed)}
-          >
-            {inspectorCollapsed ? <RectangleHorizontalIcon className="size-3.5" /> : <ChevronRightIcon className="size-3.5" />}
-          </Button>
-        </div>
+            <MotionTimeline
+              collapsed={timelineCollapsed}
+              onExpand={toggleTimelineCollapse}
+            />
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
 
-      <ResizablePanelGroup
-        orientation="vertical"
-        className="min-h-0 flex-1"
-        {...verticalLayout}
+      {/* Copilot slide-in overlay */}
+      <div
+        className={`absolute top-0 right-0 h-full w-80 z-50 transition-transform duration-300 ease-in-out ${
+          copilotOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
       >
-        {/* Top panel: horizontal group (scene | viewport | inspector) */}
-        <ResizablePanel
-          id="motion-top-panel"
-          defaultSize="66%"
-          minSize="200px"
-          className="min-h-0"
-        >
-          <ResizablePanelGroup
-            orientation="horizontal"
-            className="min-h-0"
-            {...horizontalLayout}
-          >
-            <ResizablePanel
-              id="motion-scene-panel"
-              panelRef={scenePanelRef}
-              defaultSize="20%"
-              minSize="180px"
-              maxSize="32%"
-              collapsible
-              collapsedSize="0px"
-              onResize={(size) => setScenePanelCollapsed(size.inPixels <= 1)}
-              className="min-w-0"
+        <div className="flex h-full flex-col bg-card/95 backdrop-blur-md border-l border-border/60 shadow-2xl">
+          <div className="flex h-8 shrink-0 items-center justify-between border-b border-border/40 px-3">
+            <span className="text-[11px] font-semibold text-foreground">
+              Motion Copilot
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6"
+              onClick={() => setCopilotOpen(false)}
             >
-              <MotionScenePanel />
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-
-            <ResizablePanel
-              id="motion-viewport-panel"
-              defaultSize="58%"
-              minSize="320px"
-              className="min-w-0 min-h-0"
-            >
-              <MotionViewport />
-            </ResizablePanel>
-
-            <ResizableHandle withHandle />
-            <ResizablePanel
-              id="motion-inspector-panel"
-              panelRef={inspectorPanelRef}
-              defaultSize="22%"
-              minSize="210px"
-              maxSize="36%"
-              collapsible
-              collapsedSize="0px"
-              onResize={(size) => setInspectorCollapsed(size.inPixels <= 1)}
-              className="min-w-0"
-            >
-              <MotionInspector />
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </ResizablePanel>
-
-        <ResizableHandle withHandle />
-
-        {/* Bottom panel: full-width timeline */}
-        <ResizablePanel
-          id="motion-timeline-panel"
-          panelRef={timelinePanelRef}
-          defaultSize="34%"
-          minSize="48px"
-          maxSize="50%"
-          collapsible
-          collapsedSize="48px"
-          onResize={(size) => setTimelineCollapsed(size.inPixels <= 48)}
-          className="min-h-0"
-        >
-          <MotionTimeline collapsed={timelineCollapsed} onExpand={toggleTimelineCollapse} />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+              <XIcon className="size-3.5" />
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <MotionCopilotContent doc={doc} />
+          </div>
+        </div>
+      </div>
 
       {marketplaceOpen && (
         <MotionAssetMarketplaceDialog
@@ -414,5 +648,49 @@ export function MotionEditor({ canUndo, canRedo, motionProject }: MotionEditorPr
         />
       )}
     </div>
+  );
+}
+
+/**
+ * MotionCopilotContent — wires the copilot hook to the panel UI.
+ * Lives here so it can access `doc` without prop-drilling through the tab bar.
+ */
+function MotionCopilotContent({
+  doc,
+}: {
+  doc: import('@/lib/motion/types').MotionDocument;
+}) {
+  const {
+    messages,
+    status,
+    error,
+    plan,
+    sendMessage,
+    respondToApproval,
+    clearMessages,
+    fallbackNotice,
+    dismissFallbackNotice,
+  } = useMotionCopilot({
+    projectId: doc.meta.id,
+    document: doc,
+  });
+
+  // Refresh the editor when the copilot mutates the document
+  useIpcEvent('motion:changed', () => {
+    // motionStore will re-emit on the next render cycle
+  });
+
+  return (
+    <MotionCopilotPanel
+      messages={messages}
+      status={status}
+      error={error}
+      plan={plan}
+      sendMessage={sendMessage}
+      respondToApproval={respondToApproval}
+      clearMessages={clearMessages}
+      fallbackNotice={fallbackNotice ?? null}
+      dismissFallbackNotice={dismissFallbackNotice}
+    />
   );
 }

@@ -314,7 +314,6 @@ export function MotionInspector() {
     }
     motionStore.commit('Update object property', compatibleNodes.map((node) => {
       const props: Record<string, unknown> = { [property]: value };
-      if (node.type === 'screen.image' && property === 'assetId') props.source = value;
       return { op: 'scene.node.update' as const, nodeId: node.id, props };
     }));
   };

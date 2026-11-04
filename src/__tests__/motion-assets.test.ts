@@ -162,6 +162,13 @@ describe('Motion assets', () => {
     await projects.saveProject(project.id, withModel);
     expect(await fs.readFile(path.join(project.path, 'assets', model.id, 'data', 'mesh.bin'))).toEqual(Buffer.from([1, 2, 3, 4]));
     expect(await assets.resolveAsset(project.id, model.id)).toMatchObject({ mimeType: 'model/gltf+json', hash: model.hash });
+
+    // GLTFLoader fetches sidecars relative to the model URL.
+    expect(await assets.resolveAssetFile(project.id, model.id, 'data/mesh.bin')).toMatchObject({ path: expect.stringContaining('mesh.bin'), hash: model.hash });
+    expect(await assets.resolveAssetFile(project.id, model.id, '../scene.gltf')).toBeNull();
+    expect(await assets.resolveAssetFile(project.id, model.id, 'data/../scene.gltf')).toBeNull();
+    expect(await assets.resolveAssetFile(project.id, model.id, '/etc/passwd')).toBeNull();
+    expect(await assets.resolveAssetFile(project.id, 'asset_unknown', 'data/mesh.bin')).toBeNull();
   });
 
   it('builds stable sequence frame indices and media URLs', () => {

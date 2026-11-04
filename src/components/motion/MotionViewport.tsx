@@ -66,18 +66,9 @@ export function MotionViewport() {
   const loadingTimer = useRef<number | null>(null);
 
   const addNode = (type: string) => {
-    const definition = listMotionNodeTypes().find((item) => item.id === type);
-    if (!definition) return;
-    const nodeId = createMotionId('scene');
+    if (!listMotionNodeTypes().some((item) => item.id === type)) return;
     motionStore.commit('Add scene object', [
-      {
-        op: 'scene.node.add',
-        nodeId,
-        type,
-        name: definition.label,
-        parentId: null,
-        props: definition.defaultProps ?? {},
-      },
+      { op: 'scene.node.add', nodeId: createMotionId('scene'), type },
     ]);
   };
 

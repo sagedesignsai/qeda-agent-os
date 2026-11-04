@@ -94,7 +94,8 @@ export type PlanEventChannel =
   | 'studio-copilot:plan-event'
   | 'soundlab-copilot:plan-event'
   | 'correspondence-copilot:plan-event'
-  | 'terminal:plan-event';
+  | 'terminal:plan-event'
+  | 'motion-copilot:plan-event';
 
 /**
  * Live subscription to any *:plan-event channel.
