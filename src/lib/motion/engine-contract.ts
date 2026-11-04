@@ -5,6 +5,7 @@ import { applyMotionOps, listMotionOps, type MotionOpRequest } from './ops';
 import { applyMotionCommand as applyPlanned, planMotionCommand as createPlan, type MotionPlan } from './plan';
 import { MOTION_SCHEMA_VERSION } from './types';
 import type { MotionDocument } from './types';
+import type { MotionRuntimeDefinition, MotionRuntimeEvent, MotionRuntimeInputs, MotionRuntimeState } from './runtime';
 
 export class MotionCommandError extends Error {
   constructor(message: string) {
@@ -28,6 +29,19 @@ export type MotionEngineManifest = {
     deprecated?: boolean;
   }>;
   recipes: Array<{ id: string; label: string; description: string; params: Record<string, unknown> }>;
+  runtime: {
+    inputs: string;
+    state: string;
+    events: string;
+    definitions: string;
+    deterministic: true;
+    contextTypes: {
+      inputs: MotionRuntimeInputs;
+      state: MotionRuntimeState;
+      events: MotionRuntimeEvent[];
+      definition: MotionRuntimeDefinition;
+    };
+  };
 };
 
 function jsonSchema(params: z.ZodType): Record<string, unknown> {
@@ -50,6 +64,19 @@ export function describeMotionEngine(): MotionEngineManifest {
       ...(operation.id === 'timeline.setLoop' ? { deprecated: true } : {}),
     })),
     recipes: [],
+    runtime: {
+      inputs: 'Explicit boolean, number, and string inputs.',
+      state: 'Serializable runtime state kept separate from editor state.',
+      events: 'Ordered typed events supplied by the host runtime.',
+      definitions: 'State-machine definitions are additive and renderer-independent.',
+      deterministic: true,
+      contextTypes: {
+        inputs: {},
+        state: {},
+        events: [],
+        definition: { id: 'runtime-definition', initialState: 'initial', states: ['initial'], transitions: [] },
+      },
+    },
   };
 }
 

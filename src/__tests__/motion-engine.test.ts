@@ -5,7 +5,7 @@ import {
   planMotionCommand,
 } from '@/lib/motion/engine-contract';
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
-import { evaluateMotionFrame, MotionEvaluationError } from '@/lib/motion/evaluate';
+import { evaluateMotionFrame, evaluateMotionRuntimeFrame, MotionEvaluationError } from '@/lib/motion/evaluate';
 import { MotionOpError, applyMotionOp } from '@/lib/motion/ops';
 import { parseMotionDocument } from '@/lib/motion/schema';
 import { MOTION_SCHEMA_VERSION } from '@/lib/motion/types';
@@ -109,6 +109,24 @@ describe('3D Motion engine', () => {
     );
     expect(doc.scene.nodes.find((node) => node.id === 'product')?.transform.rotation[1]).toBe(0);
     expect(evaluateMotionFrame(scene, 4.5)).toEqual(frame);
+  });
+
+  it('exposes deterministic runtime snapshots without editor state', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const scene = { id: doc.activeSceneId, nodes: doc.scene.nodes, timeline: doc.timeline };
+    const snapshot = evaluateMotionRuntimeFrame(scene, 2, {
+      inputs: { hovered: true },
+      state: { mode: 'intro' },
+      events: [{ type: 'pointer.enter' }],
+    });
+
+    expect(snapshot.sceneId).toBe(doc.activeSceneId);
+    expect(snapshot.inputs).toEqual({ hovered: true });
+    expect(snapshot.state).toEqual({ mode: 'intro' });
+    expect(snapshot.nodes).not.toBe(doc.scene.nodes);
+    expect(() => evaluateMotionRuntimeFrame(scene, 2, { events: [{ type: ' ' }] })).toThrow(
+      'non-empty type',
+    );
   });
 
   it('rejects evaluated node properties outside their registered schema', () => {
