@@ -19,7 +19,9 @@ export type MotionNodeCategory =
   | 'scene'
   | 'camera'
   | 'geometry'
+  | 'product'
   | 'surface'
+  | 'ui'
   | 'lighting'
   | 'model'
   | 'stage';
@@ -31,12 +33,14 @@ export type MotionNodeCategory =
  */
 export type MotionPropertyHint = {
   label?: string;
-  control?: 'text' | 'number' | 'slider' | 'color' | 'vector3' | 'asset' | 'select' | 'toggle';
+  control?: 'text' | 'textarea' | 'number' | 'slider' | 'color' | 'vector3' | 'asset' | 'select' | 'segmented' | 'toggle';
   min?: number;
   max?: number;
   step?: number;
   group?: string;
   assetKind?: MotionAssetKind;
+  /** The prop may be absent, so the asset picker offers an explicit "No asset". */
+  optional?: boolean;
   options?: Array<{ value: string; label: string }>;
 };
 

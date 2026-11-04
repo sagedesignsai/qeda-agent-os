@@ -21,7 +21,7 @@ describe('Motion templates', () => {
       expect(document.scene.nodes.some((node) => node.type === 'camera.perspective')).toBe(true);
       documents.push(document);
     }
-    expect(MOTION_TEMPLATES).toHaveLength(6);
+    expect(MOTION_TEMPLATES).toHaveLength(9);
     expect(documents[0].scene.nodes).not.toBe(documents[1].scene.nodes);
   });
 
@@ -38,6 +38,25 @@ describe('Motion templates', () => {
     expect(logo.scene.nodes.some((node) => node.id === 'product')).toBe(false);
     expect(logo.scene.nodes.find((node) => node.id === 'title')?.props.text).toBe('Your brand');
     expect(phone.scene.nodes.find((node) => node.id === 'title')?.props.text).toBe('App Store preview');
+  });
+
+  it('composes the showcase scenes from the merch and software node families', () => {
+    const software = createMotionTemplate('software-launch');
+    expect(software.scene.nodes.find((node) => node.id === 'browser')?.type).toBe('ui.browser');
+    expect(software.scene.nodes.find((node) => node.id === 'browser_screen')?.parentId).toBe('browser');
+    expect(software.scene.nodes.find((node) => node.id === 'code_card')?.type).toBe('ui.code');
+    expect(software.scene.nodes.find((node) => node.id === 'callout')?.type).toBe('ui.annotation');
+    expect(software.scene.nodes.some((node) => node.type === 'stage.backdrop')).toBe(true);
+
+    const merch = createMotionTemplate('merch-drop');
+    expect(merch.scene.nodes.find((node) => node.id === 'mug')?.type).toBe('product.mug');
+    expect(merch.scene.nodes.find((node) => node.id === 'bottle')?.type).toBe('product.bottle');
+    expect(merch.scene.nodes.find((node) => node.id === 'merch_box')?.type).toBe('product.box');
+    expect(merch.scene.nodes.find((node) => node.id === 'pedestal')?.type).toBe('stage.pedestal');
+
+    const flatlay = createMotionTemplate('merch-flatlay');
+    expect(flatlay.meta.output).toMatchObject({ width: 1080, height: 1080 });
+    expect(flatlay.scene.nodes.find((node) => node.id === 'apparel')?.type).toBe('product.apparel');
   });
 
   it('rejects unknown template ids', () => {

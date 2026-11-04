@@ -29,20 +29,35 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   AlertTriangleIcon,
+  ArchiveRestoreIcon,
   Code2Icon,
   GitCompareArrowsIcon,
   Globe2Icon,
   LayoutTemplateIcon,
   LineChartIcon,
+  Loader2Icon,
   SparklesIcon,
+  Trash2Icon,
 } from 'lucide-react';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { BuilderCodebasePicker } from '@/components/builder/BuilderCodebasePicker';
+import { useBuilderSessionHistory } from '@/hooks/use-builder-session-history';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import type { CodeProject } from '@/main/ipc/channels';
 import type { BuilderConnectionStatus } from '@/lib/builder-types';
 
@@ -243,7 +258,201 @@ export function BuilderWelcome({
             Keep or discard from the diff
           </TrustNote>
         </p>
+
+        {/* Recent sessions section */}
+        <RecentSessionsSection />
       </div>
+    </div>
+  );
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function RecentSessionsSection() {
+  const {
+    sessions,
+    worktrees,
+    loading,
+    restoreSession,
+    deleteSession,
+    cleanupWorktree,
+  } = useBuilderSessionHistory();
+
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+
+  const orphanedWorktrees = worktrees.filter((w) => w.orphaned);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground/50">
+        <Loader2Icon className="size-3 animate-spin" />
+        <span>Loading history…</span>
+      </div>
+    );
+  }
+
+  if (sessions.length === 0 && orphanedWorktrees.length === 0) return null;
+
+  return (
+    <div className="w-full max-w-2xl space-y-4">
+      {sessions.length > 0 && (
+        <div className="rounded-lg border border-border/40 bg-card/30 p-3">
+          <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+            Recent sessions
+          </h3>
+          <div className="space-y-1.5">
+            {sessions.slice(0, 5).map((session) => (
+              <div
+                key={session.id}
+                className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-accent/30"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {session.title || session.workspace_name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {session.repo_directory}
+                    {session.branch ? ` · ${session.branch}` : ''}
+                  </p>
+                </div>
+                <div className="ml-3 flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-muted-foreground/70">
+                    {formatRelativeTime(session.created_at * 1000)}
+                  </span>
+                  <span
+                    className={cn(
+                      'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                      session.status === 'detached'
+                        ? 'bg-blue-500/10 text-blue-600'
+                        : session.status === 'discarded'
+                          ? 'bg-muted text-muted-foreground'
+                          : 'bg-green-500/10 text-green-600',
+                    )}
+                  >
+                    {session.status}
+                  </span>
+                  {session.status === 'detached' && (
+                    <button
+                      type="button"
+                      onClick={() => restoreSession(session.id)}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      title="Restore session"
+                    >
+                      <ArchiveRestoreIcon className="size-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDeleteConfirm({
+                        id: session.id,
+                        title: session.title || session.workspace_name,
+                      })
+                    }
+                    className="rounded p-1 text-muted-foreground/50 hover:bg-destructive/10 hover:text-destructive"
+                    title="Delete session and worktree"
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {orphanedWorktrees.length > 0 && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-600">
+            <AlertTriangleIcon className="size-3" />
+            Orphaned worktrees
+          </h3>
+          <p className="mb-2 text-xs text-muted-foreground">
+            These worktrees are not linked to any active session. Clean them up
+            to free disk space.
+          </p>
+          <div className="space-y-1">
+            {orphanedWorktrees.map((wt) => (
+              <div
+                key={wt.path}
+                className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-accent/30"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs text-foreground">
+                    {wt.path.split('/').pop()}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {formatSize(wt.sizeBytes)} ·{' '}
+                    {formatRelativeTime(wt.ageMs)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => cleanupWorktree(wt.path)}
+                  className="ml-2 rounded p-1 text-muted-foreground/50 hover:bg-destructive/10 hover:text-destructive shrink-0"
+                  title="Remove worktree"
+                >
+                  <Trash2Icon className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog
+        open={deleteConfirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete{' '}
+              <span className="font-medium text-foreground">
+                {deleteConfirm?.title}
+              </span>{' '}
+              and remove its isolated worktree. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (deleteConfirm) {
+                  await deleteSession(deleteConfirm.id, true);
+                  setDeleteConfirm(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

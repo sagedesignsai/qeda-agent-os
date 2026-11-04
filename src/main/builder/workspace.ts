@@ -824,3 +824,85 @@ export async function discardWorktreeChanges(
   // Remove untracked files the agent created.
   await git(worktreeDirectory, ['clean', '-fd']);
 }
+
+// ─── Worktree scanning ────────────────────────────────────────────────────────
+
+/**
+ * Recursively sum directory size. Skips symlinks to avoid counting the same
+ * bytes twice (worktrees share the object store via hardlinks).
+ */
+async function dirSize(dir: string): Promise<number> {
+  let total = 0;
+  try {
+    const entries = await fs.opendir(dir);
+    for await (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      try {
+        const stat = await fs.stat(fullPath);
+        if (stat.isDirectory() && !entry.isSymbolicLink()) {
+          total += await dirSize(fullPath);
+        } else if (stat.isFile()) {
+          total += stat.size;
+        }
+      } catch {
+        // Skip files we can't stat.
+      }
+    }
+  } catch {
+    // Directory gone — size is zero.
+  }
+  return total;
+}
+
+/**
+ * Scan the builder-worktrees parent directory for worktree folders and report
+ * their status. A worktree is "orphaned" when no active or detached session
+ * references its path.
+ *
+ * `registeredWorktrees` is the set of worktree paths currently owned by a
+ * session (passed in from the IPC handler so this module stays DB-free).
+ */
+export async function listBuilderWorktrees(
+  parentDirectory: string,
+  registeredWorktrees: Set<string>,
+): Promise<import('../../lib/builder-session.js').BuilderWorktreeEntry[]> {
+  const entries: import('../../lib/builder-session').BuilderWorktreeEntry[] = [];
+  try {
+    const dirs = await fs.readdir(parentDirectory, { withFileTypes: true });
+    for (const dir of dirs) {
+      if (!dir.isDirectory()) continue;
+      const fullPath = path.join(parentDirectory, dir.name);
+      const stat = await fs.stat(fullPath).catch(() => null);
+      if (!stat) continue;
+
+      const sizeBytes = await dirSize(fullPath);
+      const ageMs = Date.now() - stat.mtimeMs;
+      const orphaned = !registeredWorktrees.has(fullPath);
+
+      entries.push({
+        path: fullPath,
+        sessionId: orphaned ? null : null,
+        repoDirectory: null,
+        sizeBytes,
+        ageMs,
+        orphaned,
+      });
+    }
+  } catch {
+    // Parent directory doesn't exist yet — no worktrees.
+  }
+  return entries;
+}
+
+/**
+ * Remove a worktree directory entirely. Idempotent: a missing directory is
+ * treated as success.
+ */
+export async function removeBuilderWorktreeDir(dirPath: string): Promise<boolean> {
+  try {
+    await fs.rm(dirPath, { recursive: true, force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}

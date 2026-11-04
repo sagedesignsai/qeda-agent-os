@@ -126,3 +126,38 @@ export interface BuilderFormReply {
   answer?: Record<string, string | number | boolean | string[]>;
   cancel?: boolean;
 }
+
+/** A row from the session history table, returned by `builder:sessions:list`. */
+export interface BuilderSessionHistoryEntry {
+  id: string;
+  opencode_session_id: string;
+  title: string;
+  repo_directory: string;
+  worktree_path: string | null;
+  workspace_name: string;
+  branch: string | null;
+  engine: 'local' | 'opencode' | 'opencode-sandbox';
+  status: 'active' | 'detached' | 'discarded' | 'orphaned';
+  created_at: number;
+  ended_at: number | null;
+}
+
+/** An entry from the worktree scan, returned by `builder:worktrees:list`. */
+export interface BuilderWorktreeEntry {
+  path: string;
+  sessionId: string | null;
+  repoDirectory: string | null;
+  sizeBytes: number;
+  ageMs: number;
+  orphaned: boolean;
+}
+
+/** Summary of an active session, returned by `builder:sessions:active-list`. */
+export interface BuilderActiveSessionSummary {
+  id: string;
+  title: string;
+  repoDirectory: string;
+  branch: string | null;
+  running: boolean;
+  isFocused: boolean;
+}

@@ -103,7 +103,7 @@ describe('Motion property fields', () => {
     expect(screen.getByLabelText('Position X')).toHaveValue(1);
     expect(screen.getByLabelText('Position Y')).toHaveValue(2);
     expect(screen.getByLabelText('Position Z')).toHaveValue(3);
-    expect(screen.getByRole('combobox', { name: 'Image' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Image' })).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Fit' })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Cast shadows' })).toBeChecked();
   });

@@ -36,40 +36,65 @@ export function useBuilderSession() {
   const [error, setError] = useState<string | null>(null);
   const [pendingResponse, setPendingResponse] = useState<string | null>(null);
 
-  const mergeEvents = useCallback((incoming: BuilderSessionEvent[]) => {
-    if (incoming.length === 0) return;
-    setEvents((current) => {
-      const seen = new Set(current.map((event) => event.eventId));
-      const additions = incoming.filter((event) => !seen.has(event.eventId));
-      if (additions.length === 0) return current;
-      return [...current, ...additions].slice(-1000);
-    });
-  }, []);
+  const mergeEvents = useCallback(
+    (incoming: BuilderSessionEvent[]) => {
+      if (incoming.length === 0) return;
+      setEvents((current) => {
+        const seen = new Set(current.map((event) => event.eventId));
+        // Filter by session ID so events from other sessions don't pollute the
+        // active session's feed. When there's no session yet (first load),
+        // accept all events so the initial re-attach still works.
+        const currentSessionId = session?.id ?? null;
+        const additions = incoming.filter((event) => {
+          if (seen.has(event.eventId)) return false;
+          if (currentSessionId && event.sessionId !== currentSessionId) return false;
+          return true;
+        });
+        if (additions.length === 0) return current;
+        return [...current, ...additions].slice(-1000);
+      });
+    },
+    [session],
+  );
+
+  const reattach = useCallback(async () => {
+    try {
+      const state = await window.electron.ipc.invoke<BuilderSessionState>(
+        'builder:session-state',
+      );
+      setSession(state.session);
+      setWorkspace(state.workspace);
+      setEvents([]);
+      mergeEvents(state.events);
+    } catch (cause) {
+      setError(messageOf(cause));
+    } finally {
+      setRestoring(false);
+    }
+  }, [mergeEvents]);
 
   useEffect(() => {
-    const unsubscribe = window.electron.ipc.on(
+    const unsubscribeEvent = window.electron.ipc.on(
       'builder:session-event',
       (event) => {
         mergeEvents([event as BuilderSessionEvent]);
       },
     );
+    // When the focused session changes (via the switcher), re-fetch the
+    // session state so the hook reflects the new target.
+    const unsubscribeChanged = window.electron.ipc.on(
+      'builder:sessions:changed',
+      () => {
+        void reattach();
+      },
+    );
     // Re-attach to whatever the main process still has buffered.
-    void (async () => {
-      try {
-        const state = await window.electron.ipc.invoke<BuilderSessionState>(
-          'builder:session-state',
-        );
-        setSession(state.session);
-        setWorkspace(state.workspace);
-        mergeEvents(state.events);
-      } catch (cause) {
-        setError(messageOf(cause));
-      } finally {
-        setRestoring(false);
-      }
-    })();
-    return unsubscribe;
-  }, [mergeEvents]);
+    void reattach();
+    return () => {
+      unsubscribeEvent();
+      unsubscribeChanged();
+    };
+  }, [mergeEvents, reattach]);
 
   const createSession = useCallback(
     async (

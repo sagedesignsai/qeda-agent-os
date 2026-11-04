@@ -1,8 +1,9 @@
 /**
  * lib/motion/nodes/surfaces.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Media surfaces. `source` remains accepted on images only so a pre-v4 in-memory
- * document still validates; `assetId` is the field everything reads and writes.
+ * Media surfaces. `assetId` is the field everything reads and writes, including
+ * the defaults; `source` stays in the image schema only so a pre-v4 in-memory
+ * document still validates.
  */
 
 import { z } from 'zod';
@@ -11,7 +12,7 @@ import type { MotionNodeTypeDefinition, MotionPropertyHint } from './definition'
 
 const fitHint: MotionPropertyHint = {
   label: 'Fit',
-  control: 'select',
+  control: 'segmented',
   group: 'Content',
   options: [
     { value: 'contain', label: 'Fit inside' },
@@ -41,7 +42,7 @@ export const screenImage: MotionNodeTypeDefinition = {
       'An image asset reference is required.',
     ),
   defaultProps: {
-    source: 'starter-dashboard',
+    assetId: 'builtin:starter-dashboard',
     width: 3.46,
     height: 1.947,
     fit: 'contain',
@@ -51,7 +52,14 @@ export const screenImage: MotionNodeTypeDefinition = {
   defaultTransform: { position: [0, 0, 0.118] },
   animatableProperties: { opacity: { description: 'Surface opacity from 0 to 1.' } },
   defaultName: 'Screen',
-  allowedParents: ['device.tablet', 'device.phone', 'device.laptop', 'device.monitor', 'scene.group'],
+  allowedParents: [
+    'device.tablet',
+    'device.phone',
+    'device.laptop',
+    'device.monitor',
+    'ui.browser',
+    'scene.group',
+  ],
   propertyHints: {
     assetId: { label: 'Image', control: 'asset', assetKind: 'image', group: 'Content' },
     width: { label: 'Width', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },

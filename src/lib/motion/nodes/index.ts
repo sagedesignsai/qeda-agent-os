@@ -11,16 +11,22 @@ import type { MotionNodeTypeDefinition } from './definition';
 import { deviceNodes } from './geometry';
 import { lightAmbient, lightDirectional, lightPoint } from './lighting';
 import { modelGltf } from './model';
+import { geometryPrimitives } from './primitives';
+import { productNodes } from './product';
 import { sceneGroup } from './scene';
 import { shapeEllipse, shapeRect } from './shapes';
-import { stageGround } from './stage';
+import { stageBackdrop, stageGround, stagePedestal } from './stage';
 import { screenImage, screenVideo } from './surfaces';
 import { textBody, textTitle } from './text';
+import { uiNodes } from './ui';
 
 export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
   sceneGroup,
   cameraPerspective,
   ...deviceNodes,
+  ...geometryPrimitives,
+  ...productNodes,
+  ...uiNodes,
   screenImage,
   screenVideo,
   textTitle,
@@ -28,6 +34,8 @@ export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
   shapeRect,
   shapeEllipse,
   stageGround,
+  stagePedestal,
+  stageBackdrop,
   modelGltf,
   lightAmbient,
   lightDirectional,

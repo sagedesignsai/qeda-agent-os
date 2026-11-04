@@ -28,6 +28,13 @@ jest.mock('@/components/motion/scene/MotionSceneCanvas', () => ({
 }));
 
 beforeAll(() => {
+  window.electron = {
+    ipc: {
+      invoke: jest.fn().mockResolvedValue(null),
+      on: jest.fn().mockReturnValue(() => {}),
+    },
+  } as unknown as typeof window.electron;
+
   class ResizeObserverMock {
     observe() {}
     unobserve() {}

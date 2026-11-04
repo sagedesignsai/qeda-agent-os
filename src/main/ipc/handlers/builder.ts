@@ -62,6 +62,8 @@ import {
   removeBuilderWorktree,
   applyWorktreeChanges,
   discardWorktreeChanges,
+  listBuilderWorktrees,
+  removeBuilderWorktreeDir,
 } from '../../builder/workspace';
 import {
   cloneGitCodeProject,
@@ -69,7 +71,7 @@ import {
 } from '../../builder/code-projects';
 import { indexCodeProjectFiles } from '../../tools/rag';
 import { normalizeBuilderSessionEvent } from '../../builder/session-events';
-import { BuilderPreview } from '../../builder/preview';
+import { BuilderSessionManager } from '../../builder/session-manager';
 import {
   createLocalBuilderSession,
   LocalBuilderSession,
@@ -85,16 +87,22 @@ import {
   type E2bSandboxHandle,
 } from '../../sandbox/e2b.js';
 import { assertQedaToolSession } from '../../opencode/session-binding';
-import { PlanManager } from '../../ai/plan-manager';
 import type { AgentPlan, PlanItemStatus } from '../../../lib/agent-plan';
 import {
   getActiveBuilderSession,
   saveActiveBuilderSession,
   saveActiveBuilderSessionContext,
   deleteActiveBuilderSession,
+  listBuilderSessionHistory,
+  deleteBuilderSessionHistory,
+  getBuilderSessionHistory,
+  archiveActiveSession,
+  saveBuilderSessionToHistory,
+  type BuilderSessionHistoryRecord,
 } from '../../db/builder-sessions';
 import { getSettings } from '../../ai/settings';
 import type { ModelMessage } from 'ai';
+import { EMPTY_PREVIEW_STATUS } from '../../../lib/builder-preview';
 import type { BuilderPreviewStatus } from '../../../lib/builder-preview';
 import type { BuilderWorkspace } from '../../../lib/builder-workspace';
 import type {
@@ -102,22 +110,9 @@ import type {
   BuilderSessionStart,
   BuilderSessionState,
   BuilderSessionSummary,
+  BuilderSessionHistoryEntry,
+  BuilderWorktreeEntry,
 } from '../../../lib/builder-session';
-
-/** Upper bound on buffered events so a long session cannot grow unbounded. */
-const EVENT_BUFFER_LIMIT = 2_000;
-/** Only the newest events are persisted; older history is not worth the bytes. */
-const PERSISTED_EVENT_LIMIT = 500;
-
-function parseStoredArray<T>(value: string | null | undefined): T[] {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return [];
-  }
-}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -128,11 +123,14 @@ export function registerBuilderHandlers({
 }: {
   mainWindow: BrowserWindow;
 }): void {
-  // ── Active-session state ──────────────────────────────────────────────────
+  // ── Multi-session registry ────────────────────────────────────────────────
 
-  /** OpenCode runtime; null when using local engine or no session. */
-  let opencodeRuntime: BuilderRuntime | null = null;
-  /** Authenticated localhost bridge the Qeda plugin calls into. */
+  /** Map of session ID → BuilderSessionManager for all active sessions. */
+  const sessions = new Map<string, BuilderSessionManager>();
+  /** The "focused" session is the default target for channels without an explicit ID. */
+  let focusedSessionId: string | null = null;
+
+  /** Authenticated localhost bridge the Qeda plugin calls into (singleton per window). */
   let bridge: Bridge | null = null;
   const bridgeConfigPath = path.join(
     app.getPath('userData'),
@@ -142,128 +140,54 @@ export function registerBuilderHandlers({
   const clearBridgeConfig = async () => {
     await fs.rm(bridgeConfigPath, { force: true }).catch(() => undefined);
   };
-  /** Local engine session; null when using OpenCode engine or no session. */
-  let localSession: LocalBuilderSession | null = null;
-  /** Plan state for the OpenCode agent's qeda_plan_* bridge tools. */
-  let planManager: PlanManager | null = null;
-  /** Only attempt to switch a restored/legacy session onto the Qeda agent once. */
-  let qedaAgentChecked = false;
-
-  let activeSession: BuilderSessionSummary | null = null;
-  let activeWorkspace: BuilderWorkspace | null = null;
-  /** Absolute path of the isolated git worktree, or null when not isolated. */
-  let activeWorktreePath: string | null = null;
-  /** Which engine owns the active session. */
-  let activeEngine: 'local' | 'opencode' | 'opencode-sandbox' | null = null;
-  /** E2B sandbox handle for sandboxed sessions. */
-  let activeSandbox: E2bSandboxHandle | null = null;
-  /** Local directory to apply captured patch to on stop. */
-  let activeSandboxLocalDir: string | null = null;
-
-  let eventController: AbortController | null = null;
-  let eventBuffer: BuilderSessionEvent[] = [];
-  let running = false;
-  let localEventSeq = 0;
-  let persistTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // ── Preview (engine-agnostic) ─────────────────────────────────────────────
 
   /**
-   * The one preview Qeda owns for this window. Started by the renderer, owned
-   * by main, so it survives route changes and can be torn down deterministically
-   * on session stop, workspace switch, or app quit.
+   * Create a new BuilderSessionManager instance.
    */
-  const preview = new BuilderPreview();
-  preview.subscribe((status: BuilderPreviewStatus) => {
-    if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('builder:preview-changed', status);
-    }
-  });
-
-  // ── Durable context ───────────────────────────────────────────────────────
-
-  /**
-   * Persist the Local conversation and the event tail that lets a restarted
-   * renderer rebuild the feed. Writes are debounced because `broadcast` fires
-   * for every token delta; `flushPersistedContext` is called at terminal
-   * statuses and on shutdown.
-   */
-  const flushPersistedContext = () => {
-    if (persistTimer) {
-      clearTimeout(persistTimer);
-      persistTimer = null;
-    }
-    if (!activeSession) return;
-    saveActiveBuilderSessionContext({
-      ...(localSession
-        ? { messagesJson: JSON.stringify(localSession.getMessages()) }
-        : {}),
-      eventsJson: JSON.stringify(eventBuffer.slice(-PERSISTED_EVENT_LIMIT)),
+  const createManager = (): BuilderSessionManager =>
+    new BuilderSessionManager({
+      onBroadcast: (event: BuilderSessionEvent) => {
+        if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+          mainWindow.webContents.send('builder:session-event', event);
+        }
+      },
+      onPersistContext: (messagesJson?: string, eventsJson?: string) => {
+        saveActiveBuilderSessionContext({ messagesJson, eventsJson });
+      },
+      mainWindow,
     });
-  };
 
-  const schedulePersistedContext = () => {
-    if (!activeSession || persistTimer) return;
-    persistTimer = setTimeout(() => {
-      persistTimer = null;
-      flushPersistedContext();
-    }, 300);
-    persistTimer.unref?.();
-  };
-
-  // ── Event broadcasting ────────────────────────────────────────────────────
-
-  const broadcast = (event: BuilderSessionEvent) => {
-    eventBuffer.push(event);
-    if (eventBuffer.length > EVENT_BUFFER_LIMIT) {
-      eventBuffer.splice(0, eventBuffer.length - EVENT_BUFFER_LIMIT);
-    }
-    if (event.type === 'status') {
-      running = event.status === 'running' || event.status === 'retrying';
-    }
-    if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send('builder:session-event', event);
-    }
-    if (
-      event.type === 'status' &&
-      (event.status === 'idle' ||
-        event.status === 'interrupted' ||
-        event.status === 'failed')
-    ) {
-      flushPersistedContext();
-    } else {
-      schedulePersistedContext();
-    }
+  /**
+   * Get the focused session manager, or null if none.
+   */
+  const getFocusedManager = (): BuilderSessionManager | null => {
+    if (!focusedSessionId) return null;
+    return sessions.get(focusedSessionId) ?? null;
   };
 
   /**
-   * A renderer-originated event (the echoed user prompt, optimistic run state).
-   * Gets a locally unique id so the buffer can still dedupe by eventId.
+   * Set the focused session ID.
    */
-  const localEvent = (
-    sessionId: string,
-    rest:
-      | { type: 'user-prompt'; text: string }
-      | { type: 'status'; status: 'running' | 'interrupted' }
-      | { type: 'error'; message: string }
-      | { type: 'plan-created'; plan: AgentPlan }
-      | {
-          type: 'plan-item-updated';
-          itemId: string;
-          status: PlanItemStatus;
-        },
-  ): BuilderSessionEvent =>
-    ({
-      sessionId,
-      eventId: `local-${Date.now()}-${++localEventSeq}`,
-      createdAt: Date.now(),
-      ...rest,
-    }) as BuilderSessionEvent;
+  const setFocusedSession = (id: string) => {
+    if (sessions.has(id)) {
+      focusedSessionId = id;
+    }
+  };
+
+  // ── Helper: get or create manager for the focused session ──────────────────
+
+  const ensureFocusedManager = (): BuilderSessionManager => {
+    let mgr = getFocusedManager();
+    if (!mgr) {
+      mgr = createManager();
+      mgr.sessionId = `local-${Date.now().toString(36)}`;
+      sessions.set(mgr.sessionId, mgr);
+      focusedSessionId = mgr.sessionId;
+    }
+    return mgr;
+  };
 
   // ── Qeda bridge helpers (OpenCode engine) ─────────────────────────────────
-
-  const activeBuilderDirectory = (): string | null =>
-    activeWorktreePath ?? activeWorkspace?.directory ?? null;
 
   const realDirectory = async (value: string): Promise<string> => {
     try {
@@ -279,17 +203,18 @@ export function registerBuilderHandlers({
    * worktree, then always act on the worktree.
    */
   const resolveActiveDirectory = async (
+    mgr: BuilderSessionManager,
     candidate?: unknown,
   ): Promise<string> => {
-    if (!activeWorkspace) {
+    if (!mgr.workspace) {
       throw new Error('Create a Builder session before using Qeda tools.');
     }
-    const active = activeWorktreePath ?? activeWorkspace.directory;
+    const active = mgr.worktreePath ?? mgr.workspace.directory;
     if (typeof candidate === 'string' && candidate.trim()) {
       const resolved = await realDirectory(candidate);
       const allowed = new Set([
         await realDirectory(active),
-        await realDirectory(activeWorkspace.directory),
+        await realDirectory(mgr.workspace.directory),
       ]);
       if (!allowed.has(resolved)) {
         throw new Error(
@@ -313,10 +238,11 @@ export function registerBuilderHandlers({
       return codeProject;
     }
 
+    const mgr = getFocusedManager();
     const candidates = [
       typeof input.directory === 'string' ? input.directory : null,
-      activeBuilderDirectory(),
-      activeWorkspace?.directory ?? null,
+      mgr?.activeBuilderDirectory() ?? null,
+      mgr?.workspace?.directory ?? null,
     ].filter((value): value is string => Boolean(value));
     for (const candidate of candidates) {
       const resolved = await realDirectory(candidate);
@@ -331,16 +257,16 @@ export function registerBuilderHandlers({
   };
 
   const projectInfo = async (body: unknown) => {
-    const directory = await resolveActiveDirectory(
-      body && typeof body === 'object'
-        ? (body as { directory?: unknown }).directory
-        : undefined,
-    );
+    const mgr = getFocusedManager();
+    const directory = mgr?.activeBuilderDirectory() ?? mgr?.workspace?.directory;
+    if (!directory) {
+      throw new Error('No active Builder workspace.');
+    }
     const codeProject =
       findCodeProjectByDirectory(directory) ??
-      (activeWorkspace
+      (mgr?.workspace
         ? findCodeProjectByDirectory(
-            await realDirectory(activeWorkspace.directory),
+            await realDirectory(mgr.workspace.directory),
           )
         : null);
     const project =
@@ -350,7 +276,7 @@ export function registerBuilderHandlers({
       listProjects().find(
         (item) =>
           item.repo_path === directory ||
-          item.repo_path === activeWorkspace?.directory,
+          item.repo_path === mgr?.workspace?.directory,
       ) ??
       null;
     const codeProjects = project
@@ -364,8 +290,8 @@ export function registerBuilderHandlers({
       name: project?.name ?? null,
       description: project?.description ?? null,
       directory,
-      sourceDirectory: activeWorkspace?.directory ?? null,
-      worktreePath: activeWorktreePath,
+      sourceDirectory: mgr?.workspace?.directory ?? null,
+      worktreePath: mgr?.worktreePath ?? null,
       codeProjects: codeProjects.map((item) => ({
         id: item.id,
         name: item.name,
@@ -376,18 +302,6 @@ export function registerBuilderHandlers({
         indexError: item.index_error,
       })),
     };
-  };
-
-  const resetPlanManager = () => {
-    planManager = new PlanManager((event) => {
-      if (!activeSession) return;
-      broadcast(localEvent(activeSession.id, event));
-    });
-  };
-
-  const requirePlanManager = (): PlanManager => {
-    if (!planManager) resetPlanManager();
-    return planManager as PlanManager;
   };
 
   const indexCodeProject = async (body: unknown) => {
@@ -418,13 +332,14 @@ export function registerBuilderHandlers({
     string,
     (body: unknown) => Promise<unknown>
   > => {
+    const mgr = getFocusedManager();
     const routes: Record<string, (body: unknown) => Promise<unknown>> = {
       '/ping': async (body) => {
         const message = (body as { message?: string })?.message ?? '';
         return { reply: `${message} (qeda)` };
       },
       '/session/bind': async (body) => {
-        if (!activeSession) {
+        if (!mgr?.session) {
           throw new Error('No active Qeda Builder session.');
         }
         const input = (body ?? {}) as {
@@ -433,30 +348,31 @@ export function registerBuilderHandlers({
         };
         if (
           typeof input.sessionID === 'string' &&
-          input.sessionID !== activeSession.id
+          input.sessionID !== mgr.session.id
         ) {
           throw new Error(
             'This OpenCode session is not bound to the active Qeda Builder session.',
           );
         }
         if (typeof input.directory === 'string' && input.directory.trim()) {
-          await resolveActiveDirectory(input.directory);
+          await resolveActiveDirectory(mgr, input.directory);
         }
         return {
-          sessionId: activeSession.id,
-          directory: activeBuilderDirectory(),
-          worktreePath: activeWorktreePath,
+          sessionId: mgr.session.id,
+          directory: mgr.activeBuilderDirectory(),
+          worktreePath: mgr.worktreePath,
         };
       },
-      '/preview/status': async () => preview.getStatus(),
+      '/preview/status': async () => mgr?.preview.getStatus() ?? { state: 'idle' },
       '/preview/start': async (body) => {
+        if (!mgr) throw new Error('No active session.');
         const input = (body ?? {}) as {
           directory?: unknown;
           script?: string;
           command?: string;
         };
-        const directory = await resolveActiveDirectory(input.directory);
-        const status = await preview.start({
+        const directory = await resolveActiveDirectory(mgr, input.directory);
+        const status = await mgr.preview.start({
           directory,
           script: input.script,
           command: input.command,
@@ -464,8 +380,9 @@ export function registerBuilderHandlers({
         return status;
       },
       '/preview/stop': async () => {
-        await preview.stop();
-        return preview.getStatus();
+        if (!mgr) throw new Error('No active session.');
+        await mgr.preview.stop();
+        return mgr.preview.getStatus();
       },
       '/index': async (body) => indexCodeProject(body),
       '/index/status': async (body) => {
@@ -482,6 +399,7 @@ export function registerBuilderHandlers({
       },
       '/project/info': async (body) => projectInfo(body),
       '/plan/create': async (body) => {
+        if (!mgr) throw new Error('No active session.');
         const input = (body ?? {}) as { items?: unknown };
         if (!Array.isArray(input.items) || input.items.length === 0) {
           throw new Error('A plan needs at least one item.');
@@ -498,10 +416,12 @@ export function registerBuilderHandlers({
           }
           return { id: value.id.trim(), title: value.title.trim() };
         });
-        const plan = requirePlanManager().createPlan(items);
+        mgr.resetPlanManager();
+        const plan = mgr.requirePlanManager().createPlan(items);
         return { plan };
       },
       '/plan/update': async (body) => {
+        if (!mgr) throw new Error('No active session.');
         const input = (body ?? {}) as { id?: unknown; status?: unknown };
         const statuses: PlanItemStatus[] = [
           'pending',
@@ -517,7 +437,7 @@ export function registerBuilderHandlers({
         ) {
           throw new Error('A plan update needs an item id and a valid status.');
         }
-        const manager = requirePlanManager();
+        const manager = mgr.requirePlanManager();
         const before = manager.getSnapshot();
         const existed =
           before?.items.some((item) => item.id === input.id) ?? false;
@@ -527,17 +447,21 @@ export function registerBuilderHandlers({
           plan: manager.getSnapshot(),
         };
       },
-      '/plan/status': async () => ({
-        plan: requirePlanManager().getSnapshot(),
-      }),
+      '/plan/status': async () => {
+        if (!mgr) throw new Error('No active session.');
+        return {
+          plan: mgr.requirePlanManager().getSnapshot(),
+        };
+      },
     };
 
     // The plugin loads globally: OpenCode exposes qeda_* tools in every
     // session. Reject calls that do not come from the Qeda-created session
     // before they can read or mutate Qeda's active workspace.
+    const sessionId = mgr?.session?.id ?? null;
     for (const [route, handler] of Object.entries(routes)) {
       routes[route] = async (body) => {
-        assertQedaToolSession(body, activeSession?.id ?? null);
+        assertQedaToolSession(body, sessionId);
         return handler(body);
       };
     }
@@ -545,6 +469,7 @@ export function registerBuilderHandlers({
   };
 
   const startSessionBridge = async () => {
+    const mgr = getFocusedManager();
     if (bridge) {
       await bridge.stop().catch(() => undefined);
       bridge = null;
@@ -557,16 +482,16 @@ export function registerBuilderHandlers({
       JSON.stringify({
         url: activeBridge.url,
         token: activeBridge.token,
-        sessionId: activeSession?.id ?? null,
-        directory: activeBuilderDirectory(),
-        worktreePath: activeWorktreePath,
+        sessionId: mgr?.session?.id ?? null,
+        directory: mgr?.activeBuilderDirectory() ?? null,
+        worktreePath: mgr?.worktreePath ?? null,
       }),
       { mode: 0o600 },
     );
     await fs.chmod(bridgeConfigPath, 0o600).catch(() => undefined);
-    if (opencodeRuntime) {
-      opencodeRuntime.bridgeUrl = activeBridge.url;
-      opencodeRuntime.bridgeToken = activeBridge.token;
+    if (mgr?.opencodeRuntime) {
+      mgr.opencodeRuntime.bridgeUrl = activeBridge.url;
+      mgr.opencodeRuntime.bridgeToken = activeBridge.token;
     }
   };
 
@@ -657,48 +582,48 @@ export function registerBuilderHandlers({
     }
   };
 
+  /**
+   * Stop the focused session: discard worktree, archive to history, clear DB.
+   */
   const stopActive = async () => {
-    if (persistTimer) {
-      clearTimeout(persistTimer);
-      persistTimer = null;
+    const mgr = getFocusedManager();
+    if (!mgr) return;
+
+    const prevEngine = mgr.engine;
+    const prevWorktree = mgr.worktreePath;
+    const prevRepo = mgr.workspace?.directory ?? null;
+    const prevSandbox = mgr.sandbox;
+    const prevSandboxLocalDir = mgr.sandboxLocalDir;
+    const prevRuntime = mgr.opencodeRuntime;
+    const prevSession = mgr.session;
+
+    // Archive to history before clearing
+    if (mgr.session) {
+      archiveActiveSession('discarded');
     }
-    eventController?.abort();
-    eventController = null;
-    await preview.stop();
+
+    mgr.stop();
+
     if (bridge) {
       await bridge.stop().catch(() => undefined);
       bridge = null;
     }
     await clearBridgeConfig();
 
-    const prevRuntime = opencodeRuntime;
-    const prevLocal = localSession;
-    const prevSession = activeSession;
-    const prevEngine = activeEngine;
-    const prevWorktree = activeWorktreePath;
-    const prevRepo = activeWorkspace?.directory ?? null;
-    const prevSandbox = activeSandbox;
-    const prevSandboxLocalDir = activeSandboxLocalDir;
+    // Remove from registry
+    sessions.delete(mgr.sessionId);
+    if (focusedSessionId === mgr.sessionId) {
+      focusedSessionId = sessions.size > 0 ? (sessions.keys().next().value ?? null) : null;
+    }
 
-    opencodeRuntime = null;
-    localSession = null;
-    activeSession = null;
-    activeWorkspace = null;
-    activeWorktreePath = null;
-    activeEngine = null;
-    activeSandbox = null;
-    activeSandboxLocalDir = null;
-    eventBuffer = [];
-    running = false;
-    planManager = null;
-    qedaAgentChecked = false;
-
-    deleteActiveBuilderSession();
+    // Notify renderer that the session list changed
+    if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('builder:sessions:changed');
+    }
 
     if (prevEngine === 'opencode' || prevEngine === 'opencode-sandbox') {
       await interruptOpenCodeSession(prevRuntime, prevSession);
     }
-    // Sandboxed sessions: capture + apply patch, then destroy sandbox.
     if (prevEngine === 'opencode-sandbox' && prevSandbox) {
       await finalizeSandboxSession(
         prevSandbox,
@@ -719,58 +644,51 @@ export function registerBuilderHandlers({
     if (prevRuntime) {
       await prevRuntime.provider.dispose().catch(() => undefined);
     }
-    if (prevLocal) {
-      await prevLocal.stop().catch(() => undefined);
-    }
+    // Local session stop is handled by mgr.stop() which clears the reference;
+    // the caller needs to call prevLocal.stop() for full cleanup.
   };
 
   /**
-   * Release the running processes without destroying the session.
-   *
-   * Used by both window close and the explicit Disconnect action: the worktree
-   * and persisted context must outlive the app so a long run can be re-attached
-   * later. Explicit Discard (`builder:session-stop`) uses `stopActive`, which
-   * deletes the worktree.
+   * Detach the focused session: preserve worktree and DB, archive to history.
    */
   const detachActive = async () => {
-    if (persistTimer) {
-      clearTimeout(persistTimer);
-      persistTimer = null;
+    const mgr = getFocusedManager();
+    if (!mgr) return;
+
+    const prevEngine = mgr.engine;
+    const prevRuntime = mgr.opencodeRuntime;
+    const prevSession = mgr.session;
+    const prevRepo = mgr.workspace?.directory ?? null;
+    const prevSandbox = mgr.sandbox;
+    const prevSandboxLocalDir = mgr.sandboxLocalDir;
+
+    // Archive to history before clearing
+    if (mgr.session) {
+      archiveActiveSession('detached');
     }
-    eventController?.abort();
-    eventController = null;
-    await preview.stop();
+
+    mgr.detach();
+
     if (bridge) {
       await bridge.stop().catch(() => undefined);
       bridge = null;
     }
     await clearBridgeConfig();
-    flushPersistedContext();
 
-    const prevRuntime = opencodeRuntime;
-    const prevLocal = localSession;
-    const prevSession = activeSession;
-    const prevEngine = activeEngine;
-    const prevRepo = activeWorkspace?.directory ?? null;
-    const prevSandbox = activeSandbox;
-    const prevSandboxLocalDir = activeSandboxLocalDir;
+    // Remove from registry
+    sessions.delete(mgr.sessionId);
+    if (focusedSessionId === mgr.sessionId) {
+      focusedSessionId = sessions.size > 0 ? (sessions.keys().next().value ?? null) : null;
+    }
 
-    opencodeRuntime = null;
-    localSession = null;
-    activeSession = null;
-    activeWorkspace = null;
-    activeWorktreePath = null;
-    activeEngine = null;
-    activeSandbox = null;
-    activeSandboxLocalDir = null;
-    eventBuffer = [];
-    running = false;
-    planManager = null;
+    // Notify renderer that the session list changed
+    if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('builder:sessions:changed');
+    }
 
     if (prevEngine === 'opencode' || prevEngine === 'opencode-sandbox') {
       await interruptOpenCodeSession(prevRuntime, prevSession);
     }
-    // Sandboxed: attempt patch capture + apply before destroy.
     if (prevEngine === 'opencode-sandbox' && prevSandbox) {
       await finalizeSandboxSession(
         prevSandbox,
@@ -781,50 +699,57 @@ export function registerBuilderHandlers({
     if (prevRuntime) {
       await prevRuntime.provider.dispose().catch(() => undefined);
     }
-    if (prevLocal) {
-      // Abort only: `stop()` would remove the worktree we are preserving.
-      prevLocal.abort();
-    }
   };
 
   // ── Guard helpers ─────────────────────────────────────────────────────────
 
   const requireSession = (): BuilderSessionSummary => {
-    if (!activeSession) {
+    const mgr = getFocusedManager();
+    if (!mgr?.session) {
       throw new Error(
         'Create a Builder session bound to a workspace before sending a prompt.',
       );
     }
-    return activeSession;
+    return mgr.session;
   };
 
   const requireOpenCodeSession = (): {
     runtime: BuilderRuntime;
     session: BuilderSessionSummary;
   } => {
-    const session = requireSession();
+    const mgr = getFocusedManager();
+    if (!mgr?.session) {
+      throw new Error(
+        'Create a Builder session bound to a workspace before sending a prompt.',
+      );
+    }
     if (
-      !opencodeRuntime ||
-      (activeEngine !== 'opencode' && activeEngine !== 'opencode-sandbox')
+      !mgr.opencodeRuntime ||
+      (mgr.engine !== 'opencode' && mgr.engine !== 'opencode-sandbox')
     ) {
       throw new Error(
         'This operation requires an OpenCode Builder session. Switch the engine in Settings → Builder & MCP.',
       );
     }
-    return { runtime: opencodeRuntime, session };
+    return { runtime: mgr.opencodeRuntime, session: mgr.session };
   };
 
   const requireLocalSession = (): {
     local: LocalBuilderSession;
     session: BuilderSessionSummary;
   } => {
-    const session = requireSession();
-    if (!localSession || activeEngine !== 'local') {
+    const mgr = getFocusedManager();
+    if (!mgr?.session) {
+      throw new Error(
+        'Create a Builder session bound to a workspace before sending a prompt.',
+      );
+    }
+    if (!mgr.localSession || mgr.engine !== 'local') {
       throw new Error(
         'This operation requires a Local Builder session. Switch the engine in Settings → Builder & MCP.',
       );
     }
-    return { local: localSession, session };
+    return { local: mgr.localSession, session: mgr.session };
   };
 
   /**
@@ -833,7 +758,8 @@ export function registerBuilderHandlers({
    * refuse rather than probe a remote path like `/home/user/repo` locally.
    */
   const assertNotSandboxWorkspace = () => {
-    if (activeEngine === 'opencode-sandbox') {
+    const mgr = getFocusedManager();
+    if (mgr?.engine === 'opencode-sandbox') {
       throw new Error(
         'This view is unavailable while the session runs in an E2B sandbox. Stop the session to apply its patch locally, then review the changes.',
       );
@@ -982,6 +908,10 @@ export function registerBuilderHandlers({
       await stopActive();
 
       const engine = getSettings().builderEngine ?? 'local';
+      const mgr = createManager();
+      mgr.sessionId = `local-${Date.now().toString(36)}`;
+      sessions.set(mgr.sessionId, mgr);
+      focusedSessionId = mgr.sessionId;
 
       // ── E2B sandbox path ───────────────────────────────────────────────────
       if (runInSandbox) {
@@ -1036,14 +966,14 @@ export function registerBuilderHandlers({
           throw new Error(result.status.message);
         }
 
-        opencodeRuntime = result.runtime;
-        activeSandbox = sandbox;
-        activeSandboxLocalDir = workspace.directory;
+        mgr.opencodeRuntime = result.runtime;
+        mgr.sandbox = sandbox;
+        mgr.sandboxLocalDir = workspace.directory;
 
         const sessionDirectory = sandbox.repoDir;
 
         const createSession = (agent?: string) =>
-          opencodeRuntime!.client.session.create({
+          mgr.opencodeRuntime!.client.session.create({
             title: `Builder · ${workspace.name}`,
             location: { directory: sessionDirectory },
             ...(agent ? { agent } : {}),
@@ -1075,26 +1005,22 @@ export function registerBuilderHandlers({
           sandbox: true,
         };
 
-        activeSession = summary;
-        activeWorkspace = boundWorkspace;
-        activeWorktreePath = sandbox.repoDir;
-        activeEngine = 'opencode-sandbox';
-        eventBuffer = [];
-        running = false;
-        qedaAgentChecked = true;
-        resetPlanManager();
+        mgr.session = summary;
+        mgr.workspace = boundWorkspace;
+        mgr.worktreePath = sandbox.repoDir;
+        mgr.engine = 'opencode-sandbox';
 
         // The host-local bridge binds 127.0.0.1 and is unreachable from E2B,
         // so sandbox sessions deliberately skip it. The qeda_* plugin tools are
         // unavailable there; workspace/review surfaces explain that in the UI.
         const controller = new AbortController();
-        eventController = controller;
+        mgr.eventController = controller;
         void (async () => {
           try {
-            for await (const event of opencodeRuntime!.client.event.subscribe({
+            for await (const event of mgr.opencodeRuntime!.client.event.subscribe({
               signal: controller.signal,
             })) {
-              if (controller.signal.aborted || eventController !== controller) {
+              if (controller.signal.aborted || mgr.eventController !== controller) {
                 return;
               }
               const normalized = normalizeBuilderSessionEvent(
@@ -1104,12 +1030,12 @@ export function registerBuilderHandlers({
                   directory: sessionDirectory,
                 },
               );
-              if (normalized) broadcast(normalized);
+              if (normalized) mgr.broadcast(normalized);
             }
           } catch (error) {
-            if (!controller.signal.aborted && eventController === controller) {
-              broadcast(
-                localEvent(ocSession.id, {
+            if (!controller.signal.aborted && mgr.eventController === controller) {
+              mgr.broadcast(
+                mgr.localEvent({
                   type: 'error',
                   message:
                     error instanceof Error ? error.message : String(error),
@@ -1135,27 +1061,22 @@ export function registerBuilderHandlers({
 
       // ── Local engine path ─────────────────────────────────────────────────
       if (engine === 'local') {
-        const worktreeParentDirectory = path.join(
-          app.getPath('userData'),
-          'builder-worktrees',
-        );
+        const worktreeParentDirectory = BuilderSessionManager.getWorktreeParentDirectory();
         const {
           session,
           summary,
           workspace: boundWorkspace,
         } = await createLocalBuilderSession({
           workspaceDirectory: workspace.directory,
-          onEvent: broadcast,
+          onEvent: (event: BuilderSessionEvent) => mgr.broadcast(event),
           worktreeParentDirectory,
         });
 
-        localSession = session;
-        activeSession = summary;
-        activeWorkspace = boundWorkspace;
-        activeWorktreePath = boundWorkspace.worktreePath ?? null;
-        activeEngine = 'local';
-        eventBuffer = [];
-        running = false;
+        mgr.localSession = session;
+        mgr.session = summary;
+        mgr.workspace = boundWorkspace;
+        mgr.worktreePath = boundWorkspace.worktreePath ?? null;
+        mgr.engine = 'local';
 
         saveActiveBuilderSession({
           opencode_session_id: summary.id, // reuses the same col as local id
@@ -1177,14 +1098,14 @@ export function registerBuilderHandlers({
       const result = await connectBuilderRuntime();
       if (!result.runtime) throw new Error(result.status.message);
 
-      opencodeRuntime = result.runtime;
+      mgr.opencodeRuntime = result.runtime;
 
       let worktreePath: string;
       try {
         const locationHeaders = {
           'x-opencode-directory': encodeURIComponent(workspace.directory),
         };
-        const projects = await opencodeRuntime.client.project.list({
+        const projects = await mgr.opencodeRuntime.client.project.list({
           headers: locationHeaders,
         });
         const opencodeProject = projects.find(
@@ -1195,15 +1116,9 @@ export function registerBuilderHandlers({
             'OpenCode could not associate the selected folder with a project. Open the folder in OpenCode once, then try again.',
           );
         }
-        // Ask OpenCode for a Qeda-owned worktree location first so Local and
-        // OpenCode sessions share the same cleanup/telemetry convention. Fall
-        // back to OpenCode's default location if it rejects the path.
         const worktreeName = `qeda-builder-${Date.now().toString(36)}`;
-        const worktreeParent = path.join(
-          app.getPath('userData'),
-          'builder-worktrees',
-        );
-        const worktree = await opencodeRuntime.client.worktree
+        const worktreeParent = BuilderSessionManager.getWorktreeParentDirectory();
+        const worktree = await mgr.opencodeRuntime.client.worktree
           .create(
             {
               projectID: opencodeProject.id,
@@ -1213,15 +1128,15 @@ export function registerBuilderHandlers({
             { headers: locationHeaders },
           )
           .catch(() =>
-            opencodeRuntime!.client.worktree.create(
+            mgr.opencodeRuntime!.client.worktree.create(
               { projectID: opencodeProject.id },
               { headers: locationHeaders },
             ),
           );
         worktreePath = worktree.directory;
       } catch (error) {
-        await opencodeRuntime.provider.dispose().catch(() => undefined);
-        opencodeRuntime = null;
+        await mgr.opencodeRuntime.provider.dispose().catch(() => undefined);
+        mgr.opencodeRuntime = null;
         throw new Error(
           `Builder could not create an isolated workspace, so it did not start. Your repository was not changed. ${error instanceof Error ? error.message : String(error)}`,
           { cause: error },
@@ -1231,7 +1146,7 @@ export function registerBuilderHandlers({
       const sessionDirectory = worktreePath ?? workspace.directory;
 
       const createSession = (agent?: string) =>
-        opencodeRuntime!.client.session.create({
+        mgr.opencodeRuntime!.client.session.create({
           title: `Builder · ${workspace.name}`,
           location: { directory: sessionDirectory },
           ...(agent ? { agent } : {}),
@@ -1239,8 +1154,6 @@ export function registerBuilderHandlers({
 
       let ocSession;
       try {
-        // Select Qeda's parity agent when the plugin is installed. Older
-        // installs (or a host without the plugin) fall back to the default.
         try {
           ocSession = await createSession('qeda-builder');
         } catch {
@@ -1267,14 +1180,11 @@ export function registerBuilderHandlers({
         worktreePath,
       };
 
-      activeSession = summary;
-      activeWorkspace = boundWorkspace;
-      activeWorktreePath = worktreePath;
-      activeEngine = 'opencode';
-      eventBuffer = [];
-      running = false;
-      qedaAgentChecked = true;
-      resetPlanManager();
+      mgr.session = summary;
+      mgr.workspace = boundWorkspace;
+      mgr.worktreePath = worktreePath;
+      mgr.engine = 'opencode';
+      mgr.resetPlanManager();
 
       try {
         await startSessionBridge();
@@ -1286,15 +1196,14 @@ export function registerBuilderHandlers({
         );
       }
 
-      // Subscribe to OpenCode event stream.
       const controller = new AbortController();
-      eventController = controller;
+      mgr.eventController = controller;
       void (async () => {
         try {
-          for await (const event of opencodeRuntime!.client.event.subscribe({
+          for await (const event of mgr.opencodeRuntime!.client.event.subscribe({
             signal: controller.signal,
           })) {
-            if (controller.signal.aborted || eventController !== controller) {
+            if (controller.signal.aborted || mgr.eventController !== controller) {
               return;
             }
             const normalized = normalizeBuilderSessionEvent(
@@ -1302,12 +1211,12 @@ export function registerBuilderHandlers({
               ocSession.id,
               { directory: sessionDirectory },
             );
-            if (normalized) broadcast(normalized);
+            if (normalized) mgr.broadcast(normalized);
           }
         } catch (error) {
-          if (!controller.signal.aborted && eventController === controller) {
-            broadcast(
-              localEvent(ocSession.id, {
+          if (!controller.signal.aborted && mgr.eventController === controller) {
+            mgr.broadcast(
+              mgr.localEvent({
                 type: 'error',
                 message: error instanceof Error ? error.message : String(error),
               }),
@@ -1336,16 +1245,11 @@ export function registerBuilderHandlers({
   ipcMain.handle(
     'builder:session-state',
     async (): Promise<BuilderSessionState> => {
-      // Fast path: already live in memory.
-      if (activeSession) {
-        return {
-          session: activeSession,
-          workspace: activeWorkspace,
-          events: eventBuffer,
-        };
+      const mgr = getFocusedManager();
+      if (mgr?.session) {
+        return mgr.getSessionState();
       }
 
-      // Restore path: check DB for a persisted session.
       const persisted = getActiveBuilderSession();
       if (!persisted) {
         return { session: null, workspace: null, events: [] };
@@ -1355,33 +1259,35 @@ export function registerBuilderHandlers({
         'local' | 'opencode' | 'opencode-sandbox';
 
       if (engine === 'opencode-sandbox') {
-        // Ephemeral sandbox cannot survive app restart.
         deleteActiveBuilderSession();
         return { session: null, workspace: null, events: [] };
       }
-      // context and event tail are persisted, and the worktree lives under
-      // userData instead of the OS temp dir. If either is gone there is nothing
-      // honest to re-attach, so the stale row is removed.
+
+      const restoredMgr = createManager();
+      restoredMgr.sessionId = `local-${Date.now().toString(36)}`;
+      sessions.set(restoredMgr.sessionId, restoredMgr);
+      focusedSessionId = restoredMgr.sessionId;
+
       if (engine === 'local') {
         if (!persisted.worktree_path) {
           deleteActiveBuilderSession();
+          sessions.delete(restoredMgr.sessionId);
           return { session: null, workspace: null, events: [] };
         }
         try {
           const worktreeStat = await fs.stat(persisted.worktree_path);
           if (!worktreeStat.isDirectory()) throw new Error('not a directory');
-          const source = await inspectBuilderWorkspace(
-            persisted.repo_directory,
-          );
+          const source = await inspectBuilderWorkspace(persisted.repo_directory);
           const restoredWorkspace: BuilderWorkspace = {
             ...source,
             worktreePath: persisted.worktree_path,
           };
+          const { parseStoredArray } = await import('../../builder/session-manager.js');
           const restored = new LocalBuilderSession(
             persisted.opencode_session_id,
             restoredWorkspace,
             persisted.worktree_path,
-            broadcast,
+            (event: BuilderSessionEvent) => restoredMgr.broadcast(event),
             undefined,
             {
               id: persisted.opencode_session_id,
@@ -1391,23 +1297,19 @@ export function registerBuilderHandlers({
             },
           );
 
-          localSession = restored;
-          activeSession = restored.getSummary();
-          activeWorkspace = restoredWorkspace;
-          activeWorktreePath = persisted.worktree_path;
-          activeEngine = 'local';
-          eventBuffer = parseStoredArray<BuilderSessionEvent>(
+          restoredMgr.localSession = restored;
+          restoredMgr.session = restored.getSummary();
+          restoredMgr.workspace = restoredWorkspace;
+          restoredMgr.worktreePath = persisted.worktree_path;
+          restoredMgr.engine = 'local';
+          restoredMgr.eventBuffer = parseStoredArray<BuilderSessionEvent>(
             persisted.events_json,
           );
-          running = false;
 
-          return {
-            session: activeSession,
-            workspace: activeWorkspace,
-            events: eventBuffer,
-          };
+          return restoredMgr.getSessionState();
         } catch {
           deleteActiveBuilderSession();
+          sessions.delete(restoredMgr.sessionId);
           return { session: null, workspace: null, events: [] };
         }
       }
@@ -1417,6 +1319,7 @@ export function registerBuilderHandlers({
         const result = await connectBuilderRuntime();
         if (!result.runtime) {
           deleteActiveBuilderSession();
+          sessions.delete(restoredMgr.sessionId);
           return { session: null, workspace: null, events: [] };
         }
 
@@ -1432,10 +1335,11 @@ export function registerBuilderHandlers({
         } catch {
           deleteActiveBuilderSession();
           await result.runtime.provider.dispose().catch(() => undefined);
+          sessions.delete(restoredMgr.sessionId);
           return { session: null, workspace: null, events: [] };
         }
 
-        opencodeRuntime = result.runtime;
+        restoredMgr.opencodeRuntime = result.runtime;
         const summary: BuilderSessionSummary = {
           id: ocSession.id,
           title: ocSession.title ?? persisted.title,
@@ -1456,30 +1360,27 @@ export function registerBuilderHandlers({
             if (!stat.isDirectory()) throw new Error('not a directory');
           } catch {
             deleteActiveBuilderSession();
-            await opencodeRuntime.provider.dispose().catch(() => undefined);
-            opencodeRuntime = null;
+            await restoredMgr.opencodeRuntime.provider.dispose().catch(() => undefined);
+            sessions.delete(restoredMgr.sessionId);
             return { session: null, workspace: null, events: [] };
           }
         }
 
-        activeSession = summary;
-        activeWorkspace = restoredWorkspace;
-        activeWorktreePath = persisted.worktree_path;
-        activeEngine = 'opencode';
-        eventBuffer = parseStoredArray<BuilderSessionEvent>(
+        restoredMgr.session = summary;
+        restoredMgr.workspace = restoredWorkspace;
+        restoredMgr.worktreePath = persisted.worktree_path;
+        restoredMgr.engine = 'opencode';
+        const { parseStoredArray } = await import('../../builder/session-manager.js');
+        restoredMgr.eventBuffer = parseStoredArray<BuilderSessionEvent>(
           persisted.events_json,
         );
-        running = false;
-        qedaAgentChecked = false;
-        resetPlanManager();
+        restoredMgr.resetPlanManager();
 
         try {
           await startSessionBridge();
         } catch (error) {
-          // Keep the coding session usable; Qeda tools surface their own
-          // actionable error until a new session restarts the bridge.
-          broadcast(
-            localEvent(ocSession.id, {
+          restoredMgr.broadcast(
+            restoredMgr.localEvent({
               type: 'error',
               message: `Qeda tools are unavailable for this restored session: ${
                 error instanceof Error ? error.message : String(error)
@@ -1491,25 +1392,25 @@ export function registerBuilderHandlers({
         const sessionDirectory =
           persisted.worktree_path ?? persisted.repo_directory;
         const controller = new AbortController();
-        eventController = controller;
+        restoredMgr.eventController = controller;
         void (async () => {
           try {
-            for await (const event of opencodeRuntime!.client.event.subscribe({
+            for await (const event of restoredMgr.opencodeRuntime!.client.event.subscribe({
               signal: controller.signal,
             })) {
-              if (controller.signal.aborted || eventController !== controller)
+              if (controller.signal.aborted || restoredMgr.eventController !== controller)
                 return;
               const normalized = normalizeBuilderSessionEvent(
                 event,
                 ocSession.id,
                 { directory: sessionDirectory },
               );
-              if (normalized) broadcast(normalized);
+              if (normalized) restoredMgr.broadcast(normalized);
             }
           } catch (error) {
-            if (!controller.signal.aborted && eventController === controller) {
-              broadcast(
-                localEvent(ocSession.id, {
+            if (!controller.signal.aborted && restoredMgr.eventController === controller) {
+              restoredMgr.broadcast(
+                restoredMgr.localEvent({
                   type: 'error',
                   message:
                     error instanceof Error ? error.message : String(error),
@@ -1519,13 +1420,10 @@ export function registerBuilderHandlers({
           }
         })();
 
-        return {
-          session: summary,
-          workspace: restoredWorkspace,
-          events: eventBuffer,
-        };
+        return restoredMgr.getSessionState();
       } catch {
         deleteActiveBuilderSession();
+        sessions.delete(restoredMgr.sessionId);
         return { session: null, workspace: null, events: [] };
       }
     },
@@ -1539,10 +1437,10 @@ export function registerBuilderHandlers({
       models: Array<{ providerID: string; id: string; name: string }>;
       selected: { providerID: string; id: string; name: string } | null;
     }> => {
-      // Local engine: expose the current settings model as the only option.
-      if (activeEngine === 'local') {
+      const mgr = getFocusedManager();
+      if (mgr?.engine === 'local') {
         const s = getSettings();
-        const sel = localSession?.getModel() ?? {
+        const sel = mgr.localSession?.getModel() ?? {
           providerID: s.activeProvider,
           id: s.activeModel,
           name: `${s.activeProvider} / ${s.activeModel}`,
@@ -1554,7 +1452,7 @@ export function registerBuilderHandlers({
       }
 
       const { runtime: rt, session } = requireOpenCodeSession();
-      const directory = activeWorktreePath ?? activeWorkspace?.directory;
+      const directory = mgr?.activeBuilderDirectory();
       if (!directory) throw new Error('No active Builder workspace.');
 
       const location = { directory };
@@ -1593,18 +1491,19 @@ export function registerBuilderHandlers({
       _event,
       { providerID, modelID }: { providerID: string; modelID: string },
     ) => {
-      if (activeEngine === 'local') {
+      const mgr = getFocusedManager();
+      if (mgr?.engine === 'local') {
         const { local } = requireLocalSession();
         local.setModel(providerID, modelID);
         return;
       }
 
       const { runtime: rt, session } = requireOpenCodeSession();
-      if (running)
+      if (mgr?.running)
         throw new Error(
           'Wait for the current turn to finish before changing models.',
         );
-      const directory = activeWorktreePath ?? activeWorkspace?.directory;
+      const directory = mgr?.activeBuilderDirectory();
       if (!directory) throw new Error('No active Builder workspace.');
 
       const available = await rt.client.model.list({
@@ -1633,8 +1532,9 @@ export function registerBuilderHandlers({
   ipcMain.handle(
     'builder:prompt',
     async (_event, { text }: { text: string }) => {
+      const mgr = getFocusedManager();
       const session = requireSession();
-      if (!activeWorkspace?.worktreePath) {
+      if (!mgr?.workspace?.worktreePath) {
         throw new Error(
           'This legacy session is not isolated. Choose a repository again to start a protected Builder session.',
         );
@@ -1642,39 +1542,26 @@ export function registerBuilderHandlers({
       const trimmed = typeof text === 'string' ? text.trim() : '';
       if (!trimmed) throw new Error('Write a prompt before sending.');
 
-      if (activeEngine === 'local') {
+      if (mgr.engine === 'local') {
         const { local } = requireLocalSession();
-        // Local engine emits its own user-prompt and status events directly via
-        // the onEvent callback wired at session creation — no echo needed here.
         await local.prompt(trimmed);
         return;
       }
 
-      // OpenCode path.
       const { runtime: rt } = requireOpenCodeSession();
-      if (!qedaAgentChecked) {
-        qedaAgentChecked = true;
-        await rt.client.session
-          .switchAgent({ sessionID: session.id, agent: 'qeda-builder' })
-          .catch(() => {
-            // The plugin may be installed after this session was restored.
-            // Retry on the next prompt instead of latching the fallback.
-            qedaAgentChecked = false;
-          });
-      }
-      resetPlanManager();
-      broadcast(localEvent(session.id, { type: 'user-prompt', text: trimmed }));
-      running = true;
-      broadcast(localEvent(session.id, { type: 'status', status: 'running' }));
+      mgr.resetPlanManager();
+      mgr.broadcast(mgr.localEvent({ type: 'user-prompt', text: trimmed }));
+      mgr.running = true;
+      mgr.broadcast(mgr.localEvent({ type: 'status', status: 'running' }));
       try {
         await rt.client.session.prompt({
           sessionID: session.id,
           text: trimmed,
         });
       } catch (error) {
-        running = false;
+        mgr.running = false;
         const message = error instanceof Error ? error.message : String(error);
-        broadcast(localEvent(session.id, { type: 'error', message }));
+        mgr.broadcast(mgr.localEvent({ type: 'error', message }));
         throw new Error(message, { cause: error });
       }
     },
@@ -1683,9 +1570,10 @@ export function registerBuilderHandlers({
   // ── Abort ─────────────────────────────────────────────────────────────────
 
   ipcMain.handle('builder:abort', async () => {
+    const mgr = getFocusedManager();
     const session = requireSession();
 
-    if (activeEngine === 'local') {
+    if (mgr?.engine === 'local') {
       const { local } = requireLocalSession();
       local.abort();
       return;
@@ -1695,10 +1583,10 @@ export function registerBuilderHandlers({
     try {
       await rt.client.session.interrupt({ sessionID: session.id });
     } finally {
-      running = false;
-      broadcast(
-        localEvent(session.id, { type: 'status', status: 'interrupted' }),
-      );
+      if (mgr) {
+        mgr.running = false;
+        mgr.broadcast(mgr.localEvent({ type: 'status', status: 'interrupted' }));
+      }
     }
   });
 
@@ -1720,7 +1608,8 @@ export function registerBuilderHandlers({
       _event,
       payload: { requestId: string; decision: 'once' | 'always' | 'reject' },
     ) => {
-      if (activeEngine === 'local') {
+      const mgr = getFocusedManager();
+      if (mgr?.engine === 'local') {
         const { local } = requireLocalSession();
         local.replyPermission(payload.requestId, payload.decision);
         return;
@@ -1765,9 +1654,10 @@ export function registerBuilderHandlers({
 
   // ── Preview (engine-agnostic) ─────────────────────────────────────────────
 
-  ipcMain.handle('builder:preview-status', (): BuilderPreviewStatus =>
-    preview.getStatus(),
-  );
+  ipcMain.handle('builder:preview-status', (): BuilderPreviewStatus => {
+    const mgr = getFocusedManager();
+    return mgr?.preview.getStatus() ?? EMPTY_PREVIEW_STATUS;
+  });
 
   ipcMain.handle(
     'builder:preview-start',
@@ -1776,12 +1666,13 @@ export function registerBuilderHandlers({
       req?: { script?: string; command?: string },
     ): Promise<BuilderPreviewStatus> => {
       assertNotSandboxWorkspace();
-      if (!activeWorkspace) {
+      const mgr = getFocusedManager();
+      if (!mgr?.workspace) {
         throw new Error('Create a Builder session before starting a preview.');
       }
-      const previewDir = activeWorktreePath ?? activeWorkspace.directory;
+      const previewDir = mgr.worktreePath ?? mgr.workspace.directory;
       await inspectBuilderWorkspace(previewDir);
-      return preview.start({
+      return mgr.preview.start({
         directory: previewDir,
         script: req?.script,
         command: req?.command,
@@ -1789,9 +1680,11 @@ export function registerBuilderHandlers({
     },
   );
 
-  ipcMain.handle('builder:preview-stop', (): Promise<BuilderPreviewStatus> =>
-    preview.stop(),
-  );
+  ipcMain.handle('builder:preview-stop', (): Promise<BuilderPreviewStatus> => {
+    const mgr = getFocusedManager();
+    if (!mgr) throw new Error('No active session.');
+    return mgr.preview.stop();
+  });
 
   ipcMain.handle('builder:preview-open', (_event, { url }: { url: string }) => {
     if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
@@ -1807,9 +1700,10 @@ export function registerBuilderHandlers({
       import('../../../lib/builder-workspace.js').BuilderFileNode[]
     > => {
       assertNotSandboxWorkspace();
-      if (!activeWorkspace) return [];
+      const mgr = getFocusedManager();
+      if (!mgr?.workspace) return [];
       return readWorkspaceFiles(
-        activeWorkspace.worktreePath ?? activeWorkspace.directory,
+        mgr.workspace.worktreePath ?? mgr.workspace.directory,
       );
     },
   );
@@ -1820,9 +1714,10 @@ export function registerBuilderHandlers({
       import('../../../lib/builder-workspace.js').BuilderFileChange[]
     > => {
       assertNotSandboxWorkspace();
-      if (!activeWorkspace) return [];
+      const mgr = getFocusedManager();
+      if (!mgr?.workspace) return [];
       return readWorkspaceChanges(
-        activeWorkspace.worktreePath ?? activeWorkspace.directory,
+        mgr.workspace.worktreePath ?? mgr.workspace.directory,
       );
     },
   );
@@ -1831,31 +1726,31 @@ export function registerBuilderHandlers({
     'builder:workspace-file-read',
     async (_event, { filePath }: { filePath: string }) => {
       assertNotSandboxWorkspace();
-      if (!activeWorkspace) {
+      const mgr = getFocusedManager();
+      if (!mgr?.workspace) {
         throw new Error('No active workspace. Choose a project folder first.');
       }
-      const root = activeWorkspace.worktreePath ?? activeWorkspace.directory;
+      const root = mgr.workspace.worktreePath ?? mgr.workspace.directory;
       return readWorkspaceFileContent(root, filePath);
     },
   );
 
   ipcMain.handle('builder:changes-keep', async () => {
     assertNotSandboxWorkspace();
-    if (!activeWorkspace) {
+    const mgr = getFocusedManager();
+    if (!mgr?.workspace) {
       throw new Error('No active workspace to apply changes from.');
     }
-    const { worktreePath, directory } = activeWorkspace;
+    const { worktreePath, directory } = mgr.workspace;
     if (!worktreePath) {
       throw new Error(
         'Keep is unavailable because this legacy session is working directly in your repository.',
       );
     }
     const paths = await applyWorktreeChanges(directory, worktreePath);
-    // The source tree's dirty count changed; refresh the bound workspace so the
-    // canvas identity bar does not keep reporting the pre-Keep state.
     try {
       const refreshed = await inspectBuilderWorkspace(directory);
-      activeWorkspace = { ...refreshed, worktreePath };
+      mgr.workspace = { ...refreshed, worktreePath };
     } catch {
       // Keep succeeded; a stale count is cosmetic and self-corrects on restart.
     }
@@ -1864,32 +1759,322 @@ export function registerBuilderHandlers({
 
   ipcMain.handle('builder:changes-discard', async () => {
     assertNotSandboxWorkspace();
-    if (!activeWorkspace) {
+    const mgr = getFocusedManager();
+    if (!mgr?.workspace) {
       throw new Error('No active workspace to discard changes in.');
     }
-    if (!activeWorkspace.worktreePath) {
+    if (!mgr.workspace.worktreePath) {
       throw new Error(
         'Discard is unavailable because this legacy session is working directly in your repository. Review and restore its changes manually.',
       );
     }
-    await discardWorktreeChanges(activeWorkspace.worktreePath);
+    await discardWorktreeChanges(mgr.workspace.worktreePath);
     try {
-      const refreshed = await inspectBuilderWorkspace(
-        activeWorkspace.directory,
-      );
-      activeWorkspace = {
+      const refreshed = await inspectBuilderWorkspace(mgr.workspace.directory);
+      mgr.workspace = {
         ...refreshed,
-        worktreePath: activeWorkspace.worktreePath,
+        worktreePath: mgr.workspace.worktreePath,
       };
     } catch {
       // Cosmetic; the worktree itself is already reset.
     }
   });
 
+  // ── Session management channels ────────────────────────────────────────────
+
+  ipcMain.handle('builder:sessions:list', async (): Promise<BuilderSessionHistoryEntry[]> => {
+    return listBuilderSessionHistory();
+  });
+
+  ipcMain.handle(
+    'builder:sessions:restore',
+    async (_event, { id }: { id: string }): Promise<BuilderSessionState> => {
+      const record = getBuilderSessionHistory(id);
+      if (!record) {
+        throw new Error('Session not found in history.');
+      }
+      // Restore by re-creating the active session row
+      saveActiveBuilderSession({
+        opencode_session_id: record.opencode_session_id,
+        title: record.title,
+        repo_directory: record.repo_directory,
+        worktree_path: record.worktree_path,
+        workspace_name: record.workspace_name,
+        branch: record.branch,
+        engine: record.engine,
+        created_at: record.created_at,
+      });
+      // Update status to active
+      try {
+        const { getDb } = await import('../../db/client.js');
+        getDb().prepare(
+          `UPDATE builder_session_history SET status = 'active', ended_at = NULL WHERE id = ?`,
+        ).run(id);
+      } catch { /* best effort */ }
+
+      // Clear focused session so session-state will restore from DB
+      focusedSessionId = null;
+      sessions.clear();
+
+      // Reuse the session-state restore logic
+      const persisted = getActiveBuilderSession();
+      if (!persisted) {
+        return { session: null, workspace: null, events: [] };
+      }
+
+      const engine = (persisted.engine ?? 'opencode') as
+        | 'local'
+        | 'opencode'
+        | 'opencode-sandbox';
+
+      if (engine === 'opencode-sandbox') {
+        deleteActiveBuilderSession();
+        return { session: null, workspace: null, events: [] };
+      }
+
+      const restoredMgr = createManager();
+      restoredMgr.sessionId = `local-${Date.now().toString(36)}`;
+      sessions.set(restoredMgr.sessionId, restoredMgr);
+      focusedSessionId = restoredMgr.sessionId;
+
+      if (engine === 'local') {
+        if (!persisted.worktree_path) {
+          deleteActiveBuilderSession();
+          sessions.delete(restoredMgr.sessionId);
+          return { session: null, workspace: null, events: [] };
+        }
+        try {
+          const worktreeStat = await fs.stat(persisted.worktree_path);
+          if (!worktreeStat.isDirectory()) throw new Error('not a directory');
+          const source = await inspectBuilderWorkspace(persisted.repo_directory);
+          const restoredWorkspace: BuilderWorkspace = {
+            ...source,
+            worktreePath: persisted.worktree_path,
+          };
+          const { parseStoredArray } = await import(
+            '../../builder/session-manager.js'
+          );
+          const restored = new LocalBuilderSession(
+            persisted.opencode_session_id,
+            restoredWorkspace,
+            persisted.worktree_path,
+            (event: BuilderSessionEvent) => restoredMgr.broadcast(event),
+            undefined,
+            {
+              id: persisted.opencode_session_id,
+              title: persisted.title,
+              createdAt: persisted.created_at,
+              messages: parseStoredArray<ModelMessage>(persisted.messages_json),
+            },
+          );
+
+          restoredMgr.localSession = restored;
+          restoredMgr.session = restored.getSummary();
+          restoredMgr.workspace = restoredWorkspace;
+          restoredMgr.worktreePath = persisted.worktree_path;
+          restoredMgr.engine = 'local';
+          const { parseStoredArray: psa } = await import(
+            '../../builder/session-manager.js'
+          );
+          restoredMgr.eventBuffer = psa<BuilderSessionEvent>(
+            persisted.events_json,
+          );
+
+          return restoredMgr.getSessionState();
+        } catch {
+          deleteActiveBuilderSession();
+          sessions.delete(restoredMgr.sessionId);
+          return { session: null, workspace: null, events: [] };
+        }
+      }
+
+      // OpenCode sessions: try to reconnect
+      try {
+        const result = await connectBuilderRuntime();
+        if (!result.runtime) {
+          deleteActiveBuilderSession();
+          sessions.delete(restoredMgr.sessionId);
+          return { session: null, workspace: null, events: [] };
+        }
+
+        let ocSession: {
+          id: string;
+          title?: string;
+          time: { created: number };
+        };
+        try {
+          ocSession = await result.runtime.client.session.get({
+            sessionID: persisted.opencode_session_id,
+          });
+        } catch {
+          deleteActiveBuilderSession();
+          await result.runtime.provider.dispose().catch(() => undefined);
+          sessions.delete(restoredMgr.sessionId);
+          return { session: null, workspace: null, events: [] };
+        }
+
+        restoredMgr.opencodeRuntime = result.runtime;
+        const summary: BuilderSessionSummary = {
+          id: ocSession.id,
+          title: ocSession.title ?? persisted.title,
+          createdAt: ocSession.time.created,
+        };
+        const restoredWorkspace: BuilderWorkspace = {
+          directory: persisted.repo_directory,
+          name: persisted.workspace_name,
+          branch: persisted.branch,
+          dirty: false,
+          changedFileCount: 0,
+          worktreePath: persisted.worktree_path,
+        };
+
+        if (persisted.worktree_path) {
+          try {
+            const stat = await fs.stat(persisted.worktree_path);
+            if (!stat.isDirectory()) throw new Error('not a directory');
+          } catch {
+            deleteActiveBuilderSession();
+            await restoredMgr.opencodeRuntime
+              .provider.dispose()
+              .catch(() => undefined);
+            sessions.delete(restoredMgr.sessionId);
+            return { session: null, workspace: null, events: [] };
+          }
+        }
+
+        restoredMgr.session = summary;
+        restoredMgr.workspace = restoredWorkspace;
+        restoredMgr.worktreePath = persisted.worktree_path;
+        restoredMgr.engine = 'opencode';
+        const { parseStoredArray } = await import(
+          '../../builder/session-manager.js'
+        );
+        restoredMgr.eventBuffer = parseStoredArray<BuilderSessionEvent>(
+          persisted.events_json,
+        );
+        restoredMgr.resetPlanManager();
+
+        try {
+          await startSessionBridge();
+        } catch (error) {
+          restoredMgr.broadcast(
+            restoredMgr.localEvent({
+              type: 'error',
+              message: `Qeda tools unavailable: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            }),
+          );
+        }
+
+        const sessionDirectory =
+          persisted.worktree_path ?? persisted.repo_directory;
+        const controller = new AbortController();
+        restoredMgr.eventController = controller;
+        void (async () => {
+          try {
+            for await (const event of restoredMgr.opencodeRuntime!.client.event
+              .subscribe({ signal: controller.signal })) {
+              if (
+                controller.signal.aborted ||
+                restoredMgr.eventController !== controller
+              )
+                return;
+              const normalized = normalizeBuilderSessionEvent(
+                event,
+                ocSession.id,
+                { directory: sessionDirectory },
+              );
+              if (normalized) restoredMgr.broadcast(normalized);
+            }
+          } catch (error) {
+            if (
+              !controller.signal.aborted &&
+              restoredMgr.eventController === controller
+            ) {
+              restoredMgr.broadcast(
+                restoredMgr.localEvent({
+                  type: 'error',
+                  message:
+                    error instanceof Error ? error.message : String(error),
+                }),
+              );
+            }
+          }
+        })();
+
+        return restoredMgr.getSessionState();
+      } catch {
+        deleteActiveBuilderSession();
+        sessions.delete(restoredMgr.sessionId);
+        return { session: null, workspace: null, events: [] };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'builder:sessions:delete',
+    async (_event, { id, deleteWorktree }: { id: string; deleteWorktree?: boolean }): Promise<boolean> => {
+      const record = getBuilderSessionHistory(id);
+      if (record?.worktree_path && deleteWorktree) {
+        await removeBuilderWorktreeDir(record.worktree_path).catch(() => undefined);
+      }
+      return deleteBuilderSessionHistory(id);
+    },
+  );
+
+  ipcMain.handle(
+    'builder:sessions:focus',
+    async (_event, { id }: { id: string }): Promise<void> => {
+      setFocusedSession(id);
+      if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('builder:sessions:changed');
+      }
+    },
+  );
+
+  ipcMain.handle('builder:worktrees:list', async (): Promise<BuilderWorktreeEntry[]> => {
+    const parentDir = BuilderSessionManager.getWorktreeParentDirectory();
+    const registered = new Set<string>();
+    for (const mgr of sessions.values()) {
+      if (mgr.worktreePath) registered.add(mgr.worktreePath);
+    }
+    return listBuilderWorktrees(parentDir, registered);
+  });
+
+  ipcMain.handle(
+    'builder:worktrees:cleanup',
+    async (_event, { path: worktreePath }: { path: string }): Promise<boolean> => {
+      return removeBuilderWorktreeDir(worktreePath);
+    },
+  );
+
+  ipcMain.handle(
+    'builder:sessions:active-list',
+    async (): Promise<import('../../../lib/builder-session.js').BuilderActiveSessionSummary[]> => {
+      const summaries: import('../../../lib/builder-session.js').BuilderActiveSessionSummary[] = [];
+      for (const [id, mgr] of sessions.entries()) {
+        if (!mgr.session) continue;
+        summaries.push({
+          id,
+          title: mgr.session.title,
+          repoDirectory: mgr.workspace?.directory ?? '',
+          branch: mgr.workspace?.branch ?? null,
+          running: mgr.running,
+          isFocused: id === focusedSessionId,
+        });
+      }
+      return summaries;
+    },
+  );
+
   // ── Cleanup ───────────────────────────────────────────────────────────────
 
   mainWindow.once('closed', () => {
-    preview.dispose();
+    for (const mgr of sessions.values()) {
+      mgr.dispose();
+    }
+    sessions.clear();
     void detachActive();
   });
 }

@@ -26,13 +26,13 @@ const typographyShape = {
 
 const textHints: Record<string, MotionPropertyHint> = {
   text: { label: 'Text', control: 'text', group: 'Content' },
-  fontAssetId: { label: 'Font', control: 'asset', assetKind: 'font', group: 'Typography' },
+  fontAssetId: { label: 'Font', control: 'asset', assetKind: 'font', group: 'Typography', optional: true },
   fontSize: { label: 'Font size', control: 'number', min: 0.01, step: 0.01, group: 'Typography' },
   letterSpacing: { label: 'Letter spacing', control: 'number', step: 0.01, group: 'Typography' },
   lineHeight: { label: 'Line height', control: 'number', min: 0.1, step: 0.05, group: 'Typography' },
   align: {
     label: 'Alignment',
-    control: 'select',
+    control: 'segmented',
     group: 'Typography',
     options: [
       { value: 'left', label: 'Left' },

@@ -80,6 +80,7 @@ import { registerCorrespondenceCopilotHandlers } from './handlers/correspondence
 import { registerMotionProjectsHandlers } from './handlers/motion-projects';
 import { registerMotionExportHandlers } from './handlers/motion-export';
 import { registerMotionCopilotHandlers } from './handlers/motion-copilot';
+import { registerModelBuilderHandlers } from './handlers/model-builder';
 
 /**
  * Register every request/response handler.
@@ -116,4 +117,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMotionProjectsHandlers({ mainWindow });
   registerMotionExportHandlers({ mainWindow });
   registerMotionCopilotHandlers({ mainWindow });
+  registerModelBuilderHandlers({ mainWindow });
 }

@@ -15,10 +15,8 @@ import {
   SparklesIcon,
 } from 'lucide-react';
 
-import {
-  MotionPropertyFields,
-  MotionVector3Field,
-} from '@/components/motion/inspector/MotionPropertyFields';
+import { MotionPropertyFields } from '@/components/motion/inspector/MotionPropertyFields';
+import { TransformControls } from '@/components/motion/inspector/controls/transform-controls';
 import { Badge } from '@/components/ui/badge';
 import {
   Collapsible,
@@ -42,6 +40,7 @@ import { createMotionAutoKeyOps } from '@/lib/motion/auto-key';
 import { EASING_PRESETS, easingLabel } from '@/lib/motion/easing';
 import { getMotionNodeType, hasAnimatableProperty } from '@/lib/motion/node-registry';
 import { findClip, findTrack } from '@/lib/motion/types';
+import type { MotionOpRequest } from '@/lib/motion/ops';
 import type { MotionEasing, MotionVector3 } from '@/lib/motion/types';
 
 const RESOLUTIONS = [
@@ -57,6 +56,7 @@ export function MotionInspector() {
   const { doc, selection, autoKeyEnabled } = useMotionSnapshot();
   const [outputOpen, setOutputOpen] = useState(true);
   const [selectionOpen, setSelectionOpen] = useState(true);
+  const [commitError, setCommitError] = useState<string | null>(null);
 
   const selectedData = useMemo(() => {
     if (!selection || selection.kind === 'node') return null;
@@ -114,20 +114,20 @@ export function MotionInspector() {
         }
       : (targetNode?.props ?? {});
   const mixedPropertyIds = useMemo(() => {
-    if (!targetDefinition || targetNodes.length < 2 || targetNodes.some((node) => node.type !== targetNode?.type)) {
-      return new Set<string>();
-    }
+    if (!targetDefinition || targetNodes.length < 2) return new Set<string>();
     return new Set(
       Object.keys(targetDefinition.propertyHints ?? {}).filter((property) => {
-        const values = targetNodes.map((node) =>
-          node.type === 'screen.image' && property === 'assetId'
-            ? node.props.assetId ?? node.props.source
-            : node.props[property],
+        // A property only counts as uniform when every selected node declares it
+        // and holds the same value; otherwise an edit would land on a subset.
+        const compatible = targetNodes.filter(
+          (node) => getMotionNodeType(node.type)?.propertyHints?.[property] !== undefined,
         );
+        if (compatible.length !== targetNodes.length) return true;
+        const values = compatible.map((node) => node.props[property]);
         return values.some((value) => JSON.stringify(value) !== JSON.stringify(values[0]));
       }),
     );
-  }, [targetDefinition, targetNode?.type, targetNodes]);
+  }, [targetDefinition, targetNodes]);
 
   const [trackName, setTrackName] = useState(selectedData?.track.name ?? '');
   const [keyValue, setKeyValue] = useState(
@@ -138,6 +138,8 @@ export function MotionInspector() {
       ? selectedData.keyframe.easing
       : { type: 'cubic', x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
   );
+
+  useEffect(() => setCommitError(null), [selection]);
 
   useEffect(() => {
     setTrackName(selectedData?.track.name ?? '');
@@ -168,6 +170,17 @@ export function MotionInspector() {
         ...RESOLUTIONS,
       ];
 
+  /** Commit through the op registry and keep rejections visible in the panel. */
+  const runCommit = (label: string, ops: MotionOpRequest[]) => {
+    const result = motionStore.commit(label, ops);
+    setCommitError(
+      result.status === 'rejected'
+        ? result.error?.message ?? 'Change rejected by the Motion engine.'
+        : null,
+    );
+    return result;
+  };
+
   const saveTrackName = () => {
     const name = trackName.trim();
     if (
@@ -178,7 +191,7 @@ export function MotionInspector() {
       setTrackName(selectedData?.track.name ?? '');
       return;
     }
-    motionStore.commit('Rename track', [
+    runCommit('Rename track', [
       { op: 'track.update', trackId: selectedData.track.id, name },
     ]);
   };
@@ -191,7 +204,7 @@ export function MotionInspector() {
       setKeyValue(String(selectedData.keyframe.value));
       return;
     }
-    motionStore.commit('Set keyframe value', [
+    runCommit('Set keyframe value', [
       {
         op: 'keyframe.setValue',
         clipId: selectedData.clip.id,
@@ -210,7 +223,7 @@ export function MotionInspector() {
         ? selectedData.keyframe.easing
         : { type: 'cubic' as const, x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 };
       setCustomEasing(easing);
-      motionStore.commit('Set custom keyframe easing', [{
+      runCommit('Set custom keyframe easing', [{
         op: 'keyframe.setEasing',
         clipId: selectedData.clip.id,
         channelId: selectedData.channel.id,
@@ -221,7 +234,7 @@ export function MotionInspector() {
     }
     const preset = EASING_PRESETS[value as keyof typeof EASING_PRESETS];
     if (!preset) return;
-    motionStore.commit('Set keyframe easing', [
+    runCommit('Set keyframe easing', [
       {
         op: 'keyframe.setEasing',
         clipId: selectedData.clip.id,
@@ -240,7 +253,7 @@ export function MotionInspector() {
         : { type: 'cubic', x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 });
       return;
     }
-    motionStore.commit('Set custom keyframe easing', [{
+    runCommit('Set custom keyframe easing', [{
       op: 'keyframe.setEasing',
       clipId: selectedData.clip.id,
       channelId: selectedData.channel.id,
@@ -281,11 +294,11 @@ export function MotionInspector() {
         keyframe: () => createMotionId('keyframe'),
       });
       if (autoOps.length) {
-        motionStore.commit('Auto-key object transform', autoOps);
+        runCommit('Auto-key object transform', autoOps);
         return;
       }
     }
-    motionStore.commit('Update object transform', targetNodes.map((node) => ({
+    runCommit('Update object transform', targetNodes.map((node) => ({
         op: 'scene.node.update',
         nodeId: node.id,
         transform: { [property]: storedValue },
@@ -293,7 +306,12 @@ export function MotionInspector() {
   };
   const updateNodeProperty = (property: string, value: unknown) => {
     if (!targetNode) return;
-    const compatibleNodes = targetNodes.filter((node) => node.type === targetNode.type);
+    // Apply to every selected node whose type declares the property, so a
+    // heterogeneous selection edits the same prop instead of a silent subset.
+    const compatibleNodes = targetNodes.filter(
+      (node) => getMotionNodeType(node.type)?.propertyHints?.[property] !== undefined,
+    );
+    if (compatibleNodes.length === 0) return;
     if (autoKeyEnabled && typeof value === 'number') {
       const changes = compatibleNodes.flatMap((node) =>
         hasAnimatableProperty(node.type, property)
@@ -308,11 +326,11 @@ export function MotionInspector() {
         keyframe: () => createMotionId('keyframe'),
       });
       if (autoOps.length) {
-        motionStore.commit('Auto-key object property', autoOps);
+        runCommit('Auto-key object property', autoOps);
         return;
       }
     }
-    motionStore.commit('Update object property', compatibleNodes.map((node) => {
+    runCommit('Update object property', compatibleNodes.map((node) => {
       const props: Record<string, unknown> = { [property]: value };
       return { op: 'scene.node.update' as const, nodeId: node.id, props };
     }));
@@ -344,6 +362,14 @@ export function MotionInspector() {
 
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col">
+          {commitError && (
+            <p
+              role="alert"
+              className="mx-3 mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-[10px] leading-relaxed text-destructive"
+            >
+              {commitError}
+            </p>
+          )}
           <Collapsible open={selectionOpen} onOpenChange={setSelectionOpen}>
             <CollapsibleTrigger className="flex h-8 w-full items-center gap-2 border-b border-border/50 px-3 text-left text-[11px] font-medium hover:bg-accent/30">
               {selectedData?.keyframe ? (
@@ -522,39 +548,36 @@ export function MotionInspector() {
                       <h3 className="mb-2 text-[10px] font-medium text-muted-foreground">
                         Transform
                       </h3>
-                      <FieldGroup className="gap-2.5">
-                        <MotionVector3Field
-                          id="motion-transform-position"
-                          label="Position"
-                          value={targetNode.transform.position}
-                          mixed={targetNodes.some((node) => JSON.stringify(node.transform.position) !== JSON.stringify(targetNode.transform.position))}
-                          onChange={(value) =>
-                            updateNodeTransform('position', value)
-                          }
-                        />
-                        <MotionVector3Field
-                          id="motion-transform-rotation"
-                          label="Rotation (degrees)"
-                          value={
-                            targetNode.transform.rotation.map(
-                              (axis) => (axis * 180) / Math.PI,
-                            ) as MotionVector3
-                          }
-                          mixed={targetNodes.some((node) => JSON.stringify(node.transform.rotation) !== JSON.stringify(targetNode.transform.rotation))}
-                          onChange={(value) =>
-                            updateNodeTransform('rotation', value)
-                          }
-                        />
-                        <MotionVector3Field
-                          id="motion-transform-scale"
-                          label="Scale"
-                          value={targetNode.transform.scale}
-                          mixed={targetNodes.some((node) => JSON.stringify(node.transform.scale) !== JSON.stringify(targetNode.transform.scale))}
-                          onChange={(value) =>
-                            updateNodeTransform('scale', value)
-                          }
-                        />
-                      </FieldGroup>
+                      {targetNode.locked && (
+                        <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
+                          Locked — unlock this node in the scene panel to edit.
+                        </p>
+                      )}
+                      <TransformControls
+                        idPrefix="motion-transform"
+                        position={targetNode.transform.position}
+                        rotation={
+                          targetNode.transform.rotation.map(
+                            (axis) => (axis * 180) / Math.PI,
+                          ) as MotionVector3
+                        }
+                        scale={targetNode.transform.scale}
+                        mixed={{
+                          position: targetNodes.some((node) => JSON.stringify(node.transform.position) !== JSON.stringify(targetNode.transform.position)),
+                          rotation: targetNodes.some((node) => JSON.stringify(node.transform.rotation) !== JSON.stringify(targetNode.transform.rotation)),
+                          scale: targetNodes.some((node) => JSON.stringify(node.transform.scale) !== JSON.stringify(targetNode.transform.scale)),
+                        }}
+                        disabled={targetNode.locked}
+                        onPositionChange={(value) =>
+                          updateNodeTransform('position', value)
+                        }
+                        onRotationChange={(value) =>
+                          updateNodeTransform('rotation', value)
+                        }
+                        onScaleChange={(value) =>
+                          updateNodeTransform('scale', value)
+                        }
+                      />
                     </div>
                   )}
                   {targetNode && targetDefinition?.propertyHints && (
@@ -565,6 +588,7 @@ export function MotionInspector() {
                         assets={doc.assets}
                         mixedProperties={mixedPropertyIds}
                         idPrefix={`motion-node-${targetNode.id}`}
+                        disabled={targetNode.locked}
                         onChange={updateNodeProperty}
                       />
                     </div>
@@ -609,7 +633,7 @@ export function MotionInspector() {
                         (item) => item.value === value,
                       );
                       if (!resolution) return;
-                      motionStore.commit('Set output resolution', [
+                      runCommit('Set output resolution', [
                         {
                           op: 'document.setOutput',
                           width: resolution.width,
@@ -647,7 +671,7 @@ export function MotionInspector() {
                   <Select
                     value={String(doc.meta.output.fps)}
                     onValueChange={(value) =>
-                      motionStore.commit('Set output frame rate', [
+                      runCommit('Set output frame rate', [
                         { op: 'document.setOutput', fps: Number(value) },
                       ])
                     }

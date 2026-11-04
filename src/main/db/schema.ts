@@ -569,6 +569,34 @@ CREATE TABLE IF NOT EXISTS builder_sessions (
 );
 `;
 
+/**
+ * Session history — archives Builder sessions before they are stopped or
+ * replaced. Unlike `builder_sessions` (a singleton row), this table keeps
+ * every session so the user can browse, restore, or delete past work.
+ *
+ * `status` tracks the lifecycle: `active` (currently running), `detached`
+ * (user disconnected but worktree preserved), `discarded` (user deleted the
+ * session and worktree), `orphaned` (worktree found on disk with no matching
+ * session record).
+ */
+export const CREATE_BUILDER_SESSION_HISTORY = `
+CREATE TABLE IF NOT EXISTS builder_session_history (
+  id                  TEXT PRIMARY KEY,
+  opencode_session_id TEXT NOT NULL,
+  title               TEXT NOT NULL DEFAULT '',
+  repo_directory      TEXT NOT NULL,
+  worktree_path       TEXT,
+  workspace_name      TEXT NOT NULL DEFAULT '',
+  branch              TEXT,
+  engine              TEXT NOT NULL DEFAULT 'opencode',
+  status              TEXT NOT NULL DEFAULT 'detached',
+  created_at          INTEGER NOT NULL,
+  ended_at            INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_builder_history_created
+  ON builder_session_history(created_at DESC);
+`;
+
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────
 
 /**
@@ -1000,6 +1028,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SOUNDLAB_SESSIONS,
   CREATE_SOUNDLAB_TRACKS,
   CREATE_BUILDER_SESSIONS,
+  CREATE_BUILDER_SESSION_HISTORY,
   CREATE_CONTACTS,
   CREATE_CONTACT_CHANNELS,
   CREATE_CORRESPONDENCE_MESSAGES,

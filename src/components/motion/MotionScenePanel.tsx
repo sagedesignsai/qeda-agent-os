@@ -26,9 +26,11 @@ import {
   EyeOffIcon,
   FolderIcon,
   GripVerticalIcon,
+  LayoutPanelTopIcon,
   LightbulbIcon,
   LockKeyholeIcon,
   LockKeyholeOpenIcon,
+  PackageIcon,
   PlusIcon,
   TriangleAlertIcon,
   TypeIcon,
@@ -70,6 +72,8 @@ function nodeIcon(node: MotionNode) {
   if (node.type.startsWith('text.')) return TypeIcon;
   if (category === 'camera') return CameraIcon;
   if (category === 'lighting') return LightbulbIcon;
+  if (category === 'product') return PackageIcon;
+  if (category === 'ui') return LayoutPanelTopIcon;
   if (category === 'surface') return AppWindowIcon;
   return BoxIcon;
 }
@@ -82,6 +86,9 @@ export function MotionScenePanel() {
   const { doc, selection } = useMotionSnapshot();
   const motionAssets = useMotionAssets(doc.meta.id);
   const [sceneExpanded, setSceneExpanded] = useState(true);
+  const [tracksExpanded, setTracksExpanded] = useState(true);
+  const [assetsExpanded, setAssetsExpanded] = useState(true);
+  const [clipsExpanded, setClipsExpanded] = useState(true);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
@@ -282,30 +289,28 @@ export function MotionScenePanel() {
             Assets
           </TabsTrigger>
         </TabsList>
-        <span className="text-[10px] tabular-nums text-muted-foreground">
-          {doc.timeline.tracks.length}
-        </span>
       </div>
 
       <TabsContent value="scene" forceMount className="min-h-0 flex-1">
         <ScrollArea className="h-full">
-          <div className="p-2">
+          <div className="min-h-0">
+            {/* VS Code-style collapsible: Scene objects */}
             <Collapsible open={sceneExpanded} onOpenChange={setSceneExpanded}>
-              <CollapsibleTrigger className="flex h-7 w-full items-center gap-1 rounded px-1.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground">
+              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
                 {sceneExpanded ? (
-                  <ChevronDownIcon className="size-3.5" />
+                  <ChevronDownIcon className="size-3" />
                 ) : (
-                  <ChevronRightIcon className="size-3.5" />
+                  <ChevronRightIcon className="size-3" />
                 )}
-                <FolderIcon className="size-3.5" />
-                <span className="flex-1">
-                  {doc.scenes.find((scene) => scene.id === doc.activeSceneId)?.name ?? 'Scene'}
+                <span className="flex-1">Scene objects</span>
+                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
+                  {doc.scene.nodes.length}
                 </span>
-                <span className="font-normal tabular-nums">{doc.scene.nodes.length}</span>
               </CollapsibleTrigger>
-              <CollapsibleContent className="pt-1">
-                <DndContext onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDraggingNodeId(null)}>
-                  <div data-motion-scene-tree className="ml-2 border-l border-border/60 pl-2">
+              <CollapsibleContent>
+                <div className="border-t border-border/40">
+                  <DndContext onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDraggingNodeId(null)}>
+                    <div data-motion-scene-tree className="p-2">
                     {rows.map((row) => (
                       <ContextMenu
                         key={row.node.id}
@@ -383,123 +388,146 @@ export function MotionScenePanel() {
                       </p>
                     )}
                     {draggingNodeId && <RootDropZone />}
-                    {doc.timeline.tracks.map((track) => {
-                      const Icon = trackIcon(track);
-                      const selected = selectedTrackId === track.id;
-                      return (
-                        <ContextMenu
-                          key={track.id}
-                        >
-                          <ContextMenuTrigger asChild>
-                            <div
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                trackContextMenuTarget.current = { type: 'scene-track', trackId: track.id };
-                              }}
-                              className={cn(
-                                'group flex h-7 items-center gap-1 rounded px-1.5 text-xs',
-                                selected
-                                  ? 'bg-accent text-accent-foreground'
-                                  : 'text-foreground/80 hover:bg-accent/40',
-                              )}
-                            >
-                              <button
-                                type="button"
-                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                                onClick={() =>
-                                  motionStore.setSelection({
-                                    kind: 'track',
-                                    trackId: track.id,
-                                  })
-                                }
-                                aria-pressed={selected}
-                                aria-label={`Select ${track.name}`}
-                                title={`Select ${track.name}`}
+                    </div>
+                  </DndContext>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* VS Code-style collapsible: Tracks */}
+            <Collapsible open={tracksExpanded} onOpenChange={setTracksExpanded}>
+              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
+                {tracksExpanded ? (
+                  <ChevronDownIcon className="size-3" />
+                ) : (
+                  <ChevronRightIcon className="size-3" />
+                )}
+                <span className="flex-1">Tracks</span>
+                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
+                  {doc.timeline.tracks.length}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="border-t border-border/40 p-2">
+                  {doc.timeline.tracks.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {doc.timeline.tracks.map((track) => {
+                        const Icon = trackIcon(track);
+                        const selected = selectedTrackId === track.id;
+                        return (
+                          <ContextMenu
+                            key={track.id}
+                          >
+                            <ContextMenuTrigger asChild>
+                              <div
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  trackContextMenuTarget.current = { type: 'scene-track', trackId: track.id };
+                                }}
+                                className={cn(
+                                  'group flex h-7 items-center gap-1 rounded px-1.5 text-xs',
+                                  selected
+                                    ? 'bg-accent text-accent-foreground'
+                                    : 'text-foreground/80 hover:bg-accent/40',
+                                )}
                               >
-                                <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                                <span className="truncate">{track.name}</span>
-                              </button>
-                              <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                                <Button
+                                <button
                                   type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-5"
-                                  aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
-                                  title={track.muted ? 'Unmute track' : 'Mute track'}
+                                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
                                   onClick={() =>
-                                    motionStore.commit('Toggle track mute', [
-                                      { op: 'track.update', trackId: track.id, muted: !track.muted },
-                                    ])
+                                    motionStore.setSelection({
+                                      kind: 'track',
+                                      trackId: track.id,
+                                    })
                                   }
+                                  aria-pressed={selected}
+                                  aria-label={`Select ${track.name}`}
+                                  title={`Select ${track.name}`}
                                 >
-                                  {track.muted ? <EyeOffIcon data-icon /> : <EyeIcon data-icon />}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-5"
-                                  aria-label={track.locked ? `Unlock ${track.name}` : `Lock ${track.name}`}
-                                  title={track.locked ? 'Unlock track' : 'Lock track'}
-                                  onClick={() =>
-                                    motionStore.commit('Toggle track lock', [
-                                      { op: 'track.update', trackId: track.id, locked: !track.locked },
-                                    ])
-                                  }
-                                >
-                                  {track.locked ? (
-                                    <LockKeyholeIcon data-icon />
-                                  ) : (
-                                    <LockKeyholeOpenIcon data-icon />
-                                  )}
-                                </Button>
-                              </span>
-                            </div>
-                          </ContextMenuTrigger>
-                          <ContextMenuContent className="w-40">
-                            <ContextMenuItem onSelect={() =>
-                              motionStore.setSelection({ kind: 'track', trackId: track.id })
-                            }>
-                              Select Track
-                            </ContextMenuItem>
-                            <ContextMenuCheckboxItem
-                              checked={track.muted ?? false}
-                              onSelect={() =>
-                                motionStore.commit('Toggle track mute', [
-                                  { op: 'track.update', trackId: track.id, muted: !(track.muted ?? false) },
-                                ])
-                              }
-                            >
-                              Muted
-                            </ContextMenuCheckboxItem>
-                            <ContextMenuCheckboxItem
-                              checked={track.locked ?? false}
-                              onSelect={() =>
-                                motionStore.commit('Toggle track lock', [
-                                  { op: 'track.update', trackId: track.id, locked: !(track.locked ?? false) },
-                                ])
-                              }
-                            >
-                              Locked
-                            </ContextMenuCheckboxItem>
-                            <ContextMenuSeparator />
-                            <ContextMenuItem variant="destructive" onSelect={() =>
-                              motionStore.commit('Delete track', [{ op: 'track.remove', trackId: track.id }])
-                            }>
-                              Delete Track
-                            </ContextMenuItem>
-                          </ContextMenuContent>
-                        </ContextMenu>
-                      );
-                    })}
-                    {doc.timeline.tracks.length === 0 && (
-                      <p className="px-2 py-3 text-[11px] text-muted-foreground">
-                        Add an animation track to start shaping this scene.
-                      </p>
-                    )}
-                  </div>
-                </DndContext>
+                                  <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="truncate">{track.name}</span>
+                                </button>
+                                <span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-5"
+                                    aria-label={track.muted ? `Unmute ${track.name}` : `Mute ${track.name}`}
+                                    title={track.muted ? 'Unmute track' : 'Mute track'}
+                                    onClick={() =>
+                                      motionStore.commit('Toggle track mute', [
+                                        { op: 'track.update', trackId: track.id, muted: !track.muted },
+                                      ])
+                                    }
+                                  >
+                                    {track.muted ? <EyeOffIcon data-icon /> : <EyeIcon data-icon />}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-5"
+                                    aria-label={track.locked ? `Unlock ${track.name}` : `Lock ${track.name}`}
+                                    title={track.locked ? 'Unlock track' : 'Lock track'}
+                                    onClick={() =>
+                                      motionStore.commit('Toggle track lock', [
+                                        { op: 'track.update', trackId: track.id, locked: !track.locked },
+                                      ])
+                                    }
+                                  >
+                                    {track.locked ? (
+                                      <LockKeyholeIcon data-icon />
+                                    ) : (
+                                      <LockKeyholeOpenIcon data-icon />
+                                    )}
+                                  </Button>
+                                </span>
+                              </div>
+                            </ContextMenuTrigger>
+                            <ContextMenuContent className="w-40">
+                              <ContextMenuItem onSelect={() =>
+                                motionStore.setSelection({ kind: 'track', trackId: track.id })
+                              }>
+                                Select Track
+                              </ContextMenuItem>
+                              <ContextMenuCheckboxItem
+                                checked={track.muted ?? false}
+                                onSelect={() =>
+                                  motionStore.commit('Toggle track mute', [
+                                    { op: 'track.update', trackId: track.id, muted: !(track.muted ?? false) },
+                                  ])
+                                }
+                              >
+                                Muted
+                              </ContextMenuCheckboxItem>
+                              <ContextMenuCheckboxItem
+                                checked={track.locked ?? false}
+                                onSelect={() =>
+                                  motionStore.commit('Toggle track lock', [
+                                    { op: 'track.update', trackId: track.id, locked: !(track.locked ?? false) },
+                                  ])
+                                }
+                              >
+                                Locked
+                              </ContextMenuCheckboxItem>
+                              <ContextMenuSeparator />
+                              <ContextMenuItem variant="destructive" onSelect={() =>
+                                motionStore.commit('Delete track', [{ op: 'track.remove', trackId: track.id }])
+                              }>
+                                Delete Track
+                              </ContextMenuItem>
+                            </ContextMenuContent>
+                          </ContextMenu>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="px-2 py-3 text-[11px] text-muted-foreground">
+                      Add an animation track to start shaping this scene.
+                    </p>
+                  )}
+                </div>
               </CollapsibleContent>
             </Collapsible>
           </div>
@@ -508,17 +536,23 @@ export function MotionScenePanel() {
 
       <TabsContent value="assets" forceMount className="min-h-0 flex-1">
         <ScrollArea className="h-full">
-          <div className="p-2">
-            <div className="mb-2 flex h-7 items-center justify-between px-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground">
-                Imported media
-              </span>
-              <span className="text-[10px] tabular-nums text-muted-foreground">
-                {assets.length}
-              </span>
-            </div>
-
-            {assets.length > 0 ? (
+          <div className="min-h-0">
+            {/* VS Code-style collapsible: Imported media */}
+            <Collapsible open={assetsExpanded} onOpenChange={setAssetsExpanded}>
+              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
+                {assetsExpanded ? (
+                  <ChevronDownIcon className="size-3" />
+                ) : (
+                  <ChevronRightIcon className="size-3" />
+                )}
+                <span className="flex-1">Imported media</span>
+                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
+                  {assets.length}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="border-t border-border/40 p-2">
+                  {assets.length > 0 ? (
               <div className="space-y-1">
                 {assets.map((asset) => {
                   const isAssigned = doc.scene.nodes.some(
@@ -636,79 +670,95 @@ export function MotionScenePanel() {
                 </li>
               </ul>
             )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
 
-            <div className="mt-4 flex h-8 items-center justify-between px-1.5">
-              <span className="text-[11px] font-medium text-muted-foreground">
-                Motion clips
-              </span>
-              <span className="text-[10px] tabular-nums text-muted-foreground">
-                {clips.length}
-              </span>
-            </div>
-            {clips.length > 0 ? (
-              <div className="space-y-1">
-                {clips.map((clip) => {
-                  const track = doc.timeline.tracks.find((candidate) =>
-                    candidate.placements.some((placement) => placement.clipId === clip.id),
-                  );
-                  return (
-                    <button
-                      type="button"
-                      key={clip.id}
-                      className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
-                      onClick={() => {
-                        const placement = track?.placements.find(
-                          (item) => item.clipId === clip.id,
+            {/* VS Code-style collapsible: Motion clips */}
+            <Collapsible open={clipsExpanded} onOpenChange={setClipsExpanded}>
+              <CollapsibleTrigger className="flex w-full items-center gap-1 px-2 py-1.5 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 hover:text-foreground">
+                {clipsExpanded ? (
+                  <ChevronDownIcon className="size-3" />
+                ) : (
+                  <ChevronRightIcon className="size-3" />
+                )}
+                <span className="flex-1">Motion clips</span>
+                <span className="text-[10px] font-normal tabular-nums text-muted-foreground/70">
+                  {clips.length}
+                </span>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <div className="border-t border-border/40 p-2">
+                  {clips.length > 0 ? (
+                    <div className="space-y-1">
+                      {clips.map((clip) => {
+                        const track = doc.timeline.tracks.find((candidate) =>
+                          candidate.placements.some((placement) => placement.clipId === clip.id),
                         );
-                        if (track && placement) {
-                          motionStore.setSelection({
-                            kind: 'placement',
-                            trackId: track.id,
-                            placementId: placement.id,
-                          });
-                        }
-                      }}
-                      title={track ? `Select ${clip.name} on ${track.name}` : clip.name}
-                    >
-                      <ClapperboardIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-xs">{clip.name}</span>
-                      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-                        {clip.duration.toFixed(1)}s
-                      </span>
-                      <AudioLinesIcon className="size-3 shrink-0 text-muted-foreground/70" />
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="px-2 py-3 text-[11px] text-muted-foreground">
-                Clips you create will appear here.
-              </p>
-            )}
+                        return (
+                          <button
+                            type="button"
+                            key={clip.id}
+                            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-left hover:bg-accent/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+                            onClick={() => {
+                              const placement = track?.placements.find(
+                                (item) => item.clipId === clip.id,
+                              );
+                              if (track && placement) {
+                                motionStore.setSelection({
+                                  kind: 'placement',
+                                  trackId: track.id,
+                                  placementId: placement.id,
+                                });
+                              }
+                            }}
+                            title={track ? `Select ${clip.name} on ${track.name}` : clip.name}
+                          >
+                            <ClapperboardIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 truncate text-xs">{clip.name}</span>
+                            <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                              {clip.duration.toFixed(1)}s
+                            </span>
+                            <AudioLinesIcon className="size-3 shrink-0 text-muted-foreground/70" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="px-2 py-3 text-[11px] text-muted-foreground">
+                      Clips you create will appear here.
+                    </p>
+                  )}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
 
-            <div className="mt-4 flex justify-center">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7"
-                disabled={motionAssets.isImporting}
-                onClick={() => void motionAssets.importAssets()}
-              >
-                <PlusIcon data-icon="inline-start" />
-                {motionAssets.isImporting ? 'Importing…' : 'Import media'}
-              </Button>
-            </div>
-            <div className="mt-2 flex justify-center">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 text-[10px]"
-                onClick={() => void motionAssets.cleanUnusedFiles()}
-              >
-                Clean unused asset files…
-              </Button>
+            {/* Action buttons */}
+            <div className="px-2 py-2 space-y-2">
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  disabled={motionAssets.isImporting}
+                  onClick={() => void motionAssets.importAssets()}
+                >
+                  <PlusIcon data-icon="inline-start" />
+                  {motionAssets.isImporting ? 'Importing…' : 'Import media'}
+                </Button>
+              </div>
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-[10px]"
+                  onClick={() => void motionAssets.cleanUnusedFiles()}
+                >
+                  Clean unused asset files…
+                </Button>
+              </div>
             </div>
           </div>
         </ScrollArea>

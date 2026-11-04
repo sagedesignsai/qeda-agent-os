@@ -15,6 +15,9 @@ import type { MotionAsset } from '../../lib/motion/types';
 import type { MotionAssetCommit, MotionImportError, MotionStagedAsset } from '../motion/asset-store.js';
 import type { MotionBackupSummary, MotionOpenResult, MotionProjectSummary } from '../motion/project-store.js';
 import type {
+  MotionLocalModelEntry,
+} from '../motion/local-models.js';
+import type {
   MotionRemoteAssetHit,
   MotionRemoteAssetKind,
   MotionRemoteImportResult,
@@ -225,9 +228,12 @@ import type {
   BuilderModelOption,
 } from '../../lib/builder-types.js';
 import type {
+  BuilderActiveSessionSummary,
   BuilderSessionEvent,
+  BuilderSessionHistoryEntry,
   BuilderSessionStart,
   BuilderSessionState,
+  BuilderWorktreeEntry,
 } from '../../lib/builder-session.js';
 import type {
   BuilderWorkspace,
@@ -246,11 +252,14 @@ export type {
   BuilderModelOption,
 } from '../../lib/builder-types.js';
 export type {
+  BuilderActiveSessionSummary,
   BuilderSessionEvent,
+  BuilderSessionHistoryEntry,
   BuilderSessionStart,
   BuilderSessionState,
   BuilderSessionSummary,
   BuilderFormReply,
+  BuilderWorktreeEntry,
 } from '../../lib/builder-session.js';
 export type {
   BuilderWorkspace,
@@ -344,6 +353,7 @@ export type AgentIntent = 'chat' | 'research' | 'notebook';
 
 export type { MotionBackupSummary, MotionDocument, MotionOpenResult, MotionProjectSummary };
 export type { MotionAssetCommit, MotionImportError, MotionStagedAsset };
+export type { MotionLocalModelEntry };
 export type {
   MotionRemoteAssetHit,
   MotionRemoteAssetKind,
@@ -388,6 +398,9 @@ export interface IpcChannels {
   'motion:import-remote-assets': { req: { projectId: string; provider: MotionRemoteProviderId; assetId: string; kind: MotionRemoteAssetKind; variantId: string; requestId?: string }; res: MotionRemoteImportResult };
   'motion:cancel-remote-import': { req: { requestId: string }; res: void };
   'motion:remote-import-progress': { data: MotionRemoteProgress };
+  // Local model library: pre-installed GLB models shipped with the app.
+  'motion:list-local-models': { req: void; res: MotionLocalModelEntry[] };
+  'motion:import-local-model': { req: { projectId: string; modelId: string }; res: { items: MotionStagedAsset[]; errors: MotionImportError[] } };
   'motion:changed': void;
   // Export: the editor starts/cancels; the hidden render window reports chunks.
   'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
@@ -571,6 +584,31 @@ export interface IpcChannels {
    * remove the worktree — the session can continue.
    */
   'builder:changes-discard': { req: void; res: void };
+
+  // Builder session management
+  'builder:sessions:list': {
+    req: void;
+    res: BuilderSessionHistoryEntry[];
+  };
+  'builder:sessions:restore': {
+    req: { id: string };
+    res: BuilderSessionState;
+  };
+  'builder:sessions:delete': {
+    req: { id: string; deleteWorktree?: boolean };
+    res: boolean;
+  };
+  'builder:sessions:focus': {
+    req: { id: string };
+    res: void;
+  };
+  'builder:worktrees:list': { req: void; res: BuilderWorktreeEntry[] };
+  'builder:worktrees:cleanup': { req: { path: string }; res: boolean };
+  'builder:sessions:active-list': {
+    req: void;
+    res: BuilderActiveSessionSummary[];
+  };
+  'builder:sessions:changed': { data: void };
 
   // Session management
   'sessions:list': {
@@ -1573,6 +1611,32 @@ export interface IpcChannels {
   };
   /** Pushed when the motion copilot creates or updates its plan. */
   'motion-copilot:plan-event': { data: AgentPlanEvent };
+
+  // ── Model Builder (AI 3D Model Builder Agent) ────────────────────────────
+  /** Run one model builder turn. Streams back over `model-builder:stream-*`. */
+  'model-builder:chat': {
+    req: {
+      messages: UIMessage[];
+      context: {
+        document: MotionDocument;
+      };
+    };
+    res: void;
+  };
+  'model-builder:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'model-builder:stream-done': { runId: string };
+  'model-builder:stream-error': { error: string };
+  'model-builder:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  /** Pushed when the model builder creates or updates its plan. */
+  'model-builder:plan-event': { data: AgentPlanEvent };
+  /** Pushed after a turn completes with the updated ephemeral document. */
+  'model-builder:doc-updated': { document: MotionDocument };
 
   // ── Document Drafter (Professional Document Drafting Agent) ───────────────
   /**

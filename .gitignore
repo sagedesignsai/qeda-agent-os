@@ -24,6 +24,9 @@ node_modules
 .env.*
 !.env.example
 
+# Downloaded reference 3D models (see assets/models/README.md); keep the manifest, not the binaries.
+assets/models/**/*.glb
+
 release/app/dist
 /plugins/qeda-builder/dist
 release/build

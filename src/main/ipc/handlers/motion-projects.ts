@@ -8,6 +8,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 
 import { getMotionAssetStore, getMotionProjectStore } from '../../motion/service.js';
+import { listLocalModels, resolveLocalModelPath } from '../../motion/local-models.js';
 import { MotionRemoteAssetClient } from '../../motion/remote-assets.js';
 import { createBlankMotionDocument } from '../../../lib/motion/defaults.js';
 import { createMotionTemplate } from '../../../lib/motion/templates.js';
@@ -182,4 +183,12 @@ export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: Bro
     return remoteAssets.import(projectId, importRequest);
   });
   ipcMain.handle('motion:cancel-remote-import', async (_event, { requestId }: { requestId: string }) => remoteAssets.cancelImport(requestId));
+
+  // Local model library
+  ipcMain.handle('motion:list-local-models', async () => listLocalModels());
+  ipcMain.handle('motion:import-local-model', async (_event, { projectId, modelId }: { projectId: string; modelId: string }) => {
+    const modelPath = resolveLocalModelPath(modelId);
+    if (!modelPath) return { items: [], errors: [{ name: modelId, code: 'MOTION_IMPORT_UNREADABLE', message: 'Local model not found.' }] };
+    return assets.stageAssets(projectId, [modelPath]);
+  });
 }

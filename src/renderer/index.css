@@ -9,6 +9,7 @@
 @source '../hooks';
 @source '../lib';
 @source '../stores';
+@source '../components/model-builder';
 
 @custom-variant dark (&:is(.dark *));
 

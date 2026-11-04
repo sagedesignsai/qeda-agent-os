@@ -79,6 +79,15 @@ module.exports = [
     },
   },
   {
+    // React Three Fiber uses custom JSX elements (mesh, boxGeometry, etc.)
+    // and props (castShadow, receiveShadow, args) that the React plugin
+    // doesn't recognize. Disable the rule for the scene node renderers.
+    files: ['src/components/motion/scene/nodes/**/*.{ts,tsx}'],
+    rules: {
+      'react/no-unknown-property': 'off',
+    },
+  },
+  {
     files: ['src/**/__tests__/**/*.{ts,tsx}', '**/*.test.{ts,tsx}'],
     plugins: { jest },
     languageOptions: { globals: globals.jest },

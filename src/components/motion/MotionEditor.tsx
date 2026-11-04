@@ -7,7 +7,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  BoxesIcon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -25,10 +24,12 @@ import {
   type PanelImperativeHandle,
 } from 'react-resizable-panels';
 
+import { MotionAddNodeDialog } from '@/components/motion/MotionAddNodeDialog';
 import { MotionAssetMarketplaceDialog } from '@/components/motion/assets/MotionAssetMarketplaceDialog';
 import { MotionCommandBar } from '@/components/motion/MotionCommandBar';
 import { MotionCopilotPanel } from '@/components/motion/MotionCopilotPanel';
 import { MotionExportDialog } from '@/components/motion/export/MotionExportDialog';
+import { ModelBuilderDialog } from '@/components/model-builder/ModelBuilderDialog';
 import { MotionInspector } from '@/components/motion/MotionInspector';
 import { MotionScenePanel } from '@/components/motion/MotionScenePanel';
 import { MotionTimeline } from '@/components/motion/MotionTimeline';
@@ -69,7 +70,7 @@ export function MotionEditor({
   canRedo,
   motionProject,
 }: MotionEditorProps) {
-  const { doc } = useMotionSnapshot();
+  const { doc, selection } = useMotionSnapshot();
   const [scenePanelCollapsed, setScenePanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [timelineCollapsed, setTimelineCollapsed] = useState(() => {
@@ -82,7 +83,9 @@ export function MotionEditor({
     }
   });
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
+  const [addNodeOpen, setAddNodeOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [modelBuilderOpen, setModelBuilderOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const exportState = useMotionExport();
   const scenePanelRef = useRef<PanelImperativeHandle | null>(null);
@@ -132,6 +135,25 @@ export function MotionEditor({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [toggleTimelineCollapse]);
+
+  // Keyboard shortcut: Shift+A to open the Add Node dialog
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.shiftKey &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        event.key.toLowerCase() === 'a' &&
+        !(event.target instanceof HTMLInputElement) &&
+        !(event.target instanceof HTMLTextAreaElement)
+      ) {
+        event.preventDefault();
+        setAddNodeOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const togglePanel = (
     ref: typeof scenePanelRef,
@@ -211,7 +233,6 @@ export function MotionEditor({
   const activeScene = doc.scenes.find(
     (scene) => scene.id === doc.activeSceneId,
   );
-  const nodeTypes = listMotionNodeTypes();
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background">
@@ -302,50 +323,50 @@ export function MotionEditor({
             </DropdownMenu>
           </div>
 
-          {/* Command bar */}
-          <MotionCommandBar
-            onToggleScenePanel={() =>
-              togglePanel(scenePanelRef, setScenePanelCollapsed)
-            }
-            onToggleInspector={() =>
-              togglePanel(inspectorPanelRef, setInspectorCollapsed)
-            }
-            onToggleTimeline={toggleTimelineCollapse}
-            scenePanelCollapsed={scenePanelCollapsed}
-            inspectorCollapsed={inspectorCollapsed}
-            timelineCollapsed={timelineCollapsed}
-            onOpenMarketplace={() => setMarketplaceOpen(true)}
-            onOpenExport={() => setExportOpen(true)}
-            onCreateScene={() => createScene(false)}
-            onDuplicateScene={() => createScene(true)}
-            onSwitchScene={(sceneId) =>
-              motionStore.commit('Switch scene', [
-                { op: 'document.setActiveScene', sceneId },
-              ])
-            }
-            onDeleteScene={() => {
-              if (!activeScene || doc.scenes.length <= 1) return;
-              const confirmation = window.prompt(
-                `Delete "${activeScene.name}" (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`,
-              );
-              if (confirmation === activeScene.name)
-                motionStore.commit(
-                  'Delete scene',
-                  [{ op: 'scene.remove', sceneId: activeScene.id }],
-                  { approved: true },
+          {/* Command bar — centered, full-width between left and right sections */}
+          <div className="flex flex-1 min-w-0 items-center justify-center">
+            <MotionCommandBar
+              onToggleScenePanel={() =>
+                togglePanel(scenePanelRef, setScenePanelCollapsed)
+              }
+              onToggleInspector={() =>
+                togglePanel(inspectorPanelRef, setInspectorCollapsed)
+              }
+              onToggleTimeline={toggleTimelineCollapse}
+              scenePanelCollapsed={scenePanelCollapsed}
+              inspectorCollapsed={inspectorCollapsed}
+              timelineCollapsed={timelineCollapsed}
+              onOpenMarketplace={() => setMarketplaceOpen(true)}
+              onOpenExport={() => setExportOpen(true)}
+              onOpenModelBuilder={() => setModelBuilderOpen(true)}
+              onCreateScene={() => createScene(false)}
+              onDuplicateScene={() => createScene(true)}
+              onSwitchScene={(sceneId) =>
+                motionStore.commit('Switch scene', [
+                  { op: 'document.setActiveScene', sceneId },
+                ])
+              }
+              onDeleteScene={() => {
+                if (!activeScene || doc.scenes.length <= 1) return;
+                const confirmation = window.prompt(
+                  `Delete "${activeScene.name}" (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`,
                 );
-            }}
-            scenes={doc.scenes.map((s) => ({ id: s.id, name: s.name }))}
-            activeSceneId={doc.activeSceneId}
-            onAddNode={addNode}
-            onAddTrack={addTrack}
-            canUndo={canUndo}
-            canRedo={canRedo}
-            onSave={() => void motionProject.saveNow()}
-          />
-
-          {/* Center spacer */}
-          <div className="flex-1" />
+                if (confirmation === activeScene.name)
+                  motionStore.commit(
+                    'Delete scene',
+                    [{ op: 'scene.remove', sceneId: activeScene.id }],
+                    { approved: true },
+                  );
+              }}
+              scenes={doc.scenes.map((s) => ({ id: s.id, name: s.name }))}
+              activeSceneId={doc.activeSceneId}
+              onAddNode={addNode}
+              onAddTrack={addTrack}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              onSave={() => void motionProject.saveNow()}
+            />
+          </div>
 
           {/* Right: save, undo/redo, actions, panel toggles */}
           <div className="flex shrink-0 items-center gap-0.5">
@@ -423,54 +444,18 @@ export function MotionEditor({
               )}
             </Button>
 
-            {/* Add dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-6 gap-1 px-1.5 text-[11px]"
-                >
-                  <PlusIcon className="size-3" />
-                  Add
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={addTrack}>
-                  <PlusIcon className="size-3.5" />
-                  Animation track
-                </DropdownMenuItem>
-                {(
-                  [
-                    'scene',
-                    'camera',
-                    'geometry',
-                    'surface',
-                    'model',
-                    'lighting',
-                    'stage',
-                  ] as const
-                ).map((category) => {
-                  const categoryNodes = nodeTypes.filter(
-                    (node) => node.category === category,
-                  );
-                  if (!categoryNodes.length) return null;
-                  return categoryNodes.map((node) => (
-                    <DropdownMenuItem
-                      key={node.id}
-                      onSelect={() => addNode(node.id)}
-                    >
-                      {node.label}
-                    </DropdownMenuItem>
-                  ));
-                })}
-                <DropdownMenuItem onSelect={() => setMarketplaceOpen(true)}>
-                  <BoxesIcon className="size-3.5" />
-                  Browse asset library...
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Add node dialog trigger */}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-6 gap-1 px-1.5 text-[11px]"
+              title="Add node (Shift+A)"
+              onClick={() => setAddNodeOpen(true)}
+            >
+              <PlusIcon className="size-3" />
+              Add Node
+            </Button>
 
             {/* Export */}
             <Button
@@ -640,6 +625,15 @@ export function MotionEditor({
         />
       )}
 
+      {addNodeOpen && (
+        <MotionAddNodeDialog
+          projectId={doc.meta.id}
+          assets={doc.assets}
+          defaultParentId={selection?.kind === 'node' ? selection.nodeId : null}
+          onClose={() => setAddNodeOpen(false)}
+        />
+      )}
+
       {exportOpen && (
         <MotionExportDialog
           doc={doc}
@@ -647,6 +641,14 @@ export function MotionEditor({
           onClose={() => setExportOpen(false)}
         />
       )}
+
+      <ModelBuilderDialog
+        open={modelBuilderOpen}
+        onOpenChange={setModelBuilderOpen}
+        onSave={() => {
+          // Optional: save the created model to a new Motion project
+        }}
+      />
     </div>
   );
 }

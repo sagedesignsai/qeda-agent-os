@@ -4,10 +4,19 @@
  * Embedded, registry-driven property controls for Motion nodes. Controls edit
  * local drafts and report committed values so inspector edits map cleanly to
  * one Motion op instead of an op for every keystroke.
+ *
+ * The numeric, vector, asset, colour and segmented widgets come from
+ * `./controls`; this module only maps a hint's `control` to one of them and
+ * decides how the registry's hints group in the panel.
  */
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { AssetPicker } from '@/components/motion/inspector/controls/asset-picker';
+import { ColorField } from '@/components/motion/inspector/controls/color-field';
+import { ScrubNumberField } from '@/components/motion/inspector/controls/scrub-number';
+import { SegmentedSelect } from '@/components/motion/inspector/controls/segmented-select';
+import { VectorField } from '@/components/motion/inspector/controls/vector-field';
 import {
   Field,
   FieldGroup,
@@ -24,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import type { MotionPropertyHint } from '@/lib/motion/node-registry';
 import type { MotionAsset, MotionVector3 } from '@/lib/motion/types';
 
@@ -35,6 +45,7 @@ type MotionPropertyFieldsProps = {
   assets?: readonly MotionAsset[];
   idPrefix?: string;
   mixedProperties?: ReadonlySet<string>;
+  disabled?: boolean;
   onChange: (property: string, value: PropertyValue) => void;
 };
 
@@ -44,11 +55,9 @@ type MotionPropertyFieldProps = {
   hint: MotionPropertyHint;
   value: unknown;
   assets: readonly MotionAsset[];
+  disabled?: boolean;
   onChange: (value: PropertyValue) => void;
 };
-
-const ASSET_NONE = '__motion_no_asset__';
-const AXES = ['x', 'y', 'z'] as const;
 
 /**
  * Section order for the generated inspector. Hints declare a group, but the
@@ -60,6 +69,7 @@ const GROUP_ORDER = [
   'Dimensions',
   'Layout',
   'Typography',
+  'Transform',
   'Appearance',
   'Material',
   'Shading',
@@ -81,64 +91,35 @@ function clamp(value: number, min?: number, max?: number): number {
   return Math.min(max ?? Infinity, Math.max(min ?? -Infinity, value));
 }
 
-function toHexColor(value: string): string {
-  if (/^#[\da-f]{6}$/i.test(value)) return value;
-  if (/^#[\da-f]{3}$/i.test(value)) {
-    return `#${value[1]}${value[1]}${value[2]}${value[2]}${value[3]}${value[3]}`;
-  }
-  return '#ffffff';
-}
-
 function MotionNumberInput({
   id,
   label,
   hint,
   value,
+  disabled,
   onChange,
 }: {
   id: string;
   label: string;
   hint: MotionPropertyHint;
   value: number;
+  disabled?: boolean;
   onChange: (value: number) => void;
 }) {
-  const [draft, setDraft] = useState(String(value));
-
-  useEffect(() => setDraft(String(value)), [value]);
-
-  const commit = () => {
-    if (draft.trim() === '') {
-      setDraft(String(value));
-      return;
-    }
-    const parsed = Number(draft);
-    if (!Number.isFinite(parsed)) {
-      setDraft(String(value));
-      return;
-    }
-    const next = clamp(parsed, hint.min, hint.max);
-    setDraft(String(next));
-    if (next !== value) onChange(next);
-  };
-
   return (
     <Field className="gap-1">
       <FieldLabel htmlFor={id} className="text-[10px] text-muted-foreground">
         {label}
       </FieldLabel>
-      <Input
+      <ScrubNumberField
         id={id}
-        type="number"
+        label={label}
+        value={value}
         min={hint.min}
         max={hint.max}
-        step={hint.step ?? 'any'}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur();
-        }}
-        className="h-7 text-xs tabular-nums"
+        step={hint.step}
+        disabled={disabled}
+        onChange={onChange}
       />
     </Field>
   );
@@ -149,12 +130,14 @@ function MotionSliderInput({
   label,
   hint,
   value,
+  disabled,
   onChange,
 }: {
   id: string;
   label: string;
   hint: MotionPropertyHint;
   value: number;
+  disabled?: boolean;
   onChange: (value: number) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -182,6 +165,7 @@ function MotionSliderInput({
           min={min}
           max={max}
           step={step}
+          disabled={disabled}
           onValueChange={([next]) => {
             if (next !== undefined) setDraft(next);
           }}
@@ -201,6 +185,7 @@ function MotionSliderInput({
           max={hint.max}
           step={step}
           value={draft}
+          disabled={disabled}
           onChange={(event) => {
             const parsed = Number(event.target.value);
             if (Number.isFinite(parsed)) setDraft(clamp(parsed, hint.min, hint.max));
@@ -216,15 +201,19 @@ function MotionSliderInput({
   );
 }
 
-function MotionColorInput({
+function MotionTextInput({
   id,
   label,
   value,
+  disabled,
+  multiline,
   onChange,
 }: {
   id: string;
   label: string;
   value: string;
+  disabled?: boolean;
+  multiline?: boolean;
   onChange: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -232,10 +221,6 @@ function MotionColorInput({
   useEffect(() => setDraft(value), [value]);
 
   const commit = () => {
-    if (!draft.trim()) {
-      setDraft(value);
-      return;
-    }
     if (draft !== value) onChange(draft);
   };
 
@@ -244,19 +229,26 @@ function MotionColorInput({
       <FieldLabel htmlFor={id} className="text-[10px] text-muted-foreground">
         {label}
       </FieldLabel>
-      <div className="flex items-center gap-2">
-        <input
-          type="color"
-          aria-label={`${label} color picker`}
-          value={toHexColor(draft)}
+      {multiline ? (
+        <Textarea
+          id={id}
+          value={draft}
+          disabled={disabled}
+          rows={4}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
-          className="size-7 shrink-0 cursor-pointer rounded border border-input bg-transparent p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onKeyDown={(event) => {
+            // Enter inserts a newline; Cmd/Ctrl+Enter commits without leaving.
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) commit();
+          }}
+          className="min-h-16 resize-y font-mono text-[11px] leading-relaxed"
         />
+      ) : (
         <Input
           id={id}
           type="text"
           value={draft}
+          disabled={disabled}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
           onKeyDown={(event) => {
@@ -264,108 +256,7 @@ function MotionColorInput({
           }}
           className="h-7 text-xs"
         />
-      </div>
-    </Field>
-  );
-}
-
-function MotionTextInput({
-  id,
-  label,
-  value,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState(value);
-
-  useEffect(() => setDraft(value), [value]);
-
-  const commit = () => {
-    if (draft !== value) onChange(draft);
-  };
-
-  return (
-    <Field className="gap-1">
-      <FieldLabel htmlFor={id} className="text-[10px] text-muted-foreground">
-        {label}
-      </FieldLabel>
-      <Input
-        id={id}
-        type="text"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') event.currentTarget.blur();
-        }}
-        className="h-7 text-xs"
-      />
-    </Field>
-  );
-}
-
-export function MotionVector3Field({
-  id,
-  label,
-  value,
-  mixed = false,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  value: MotionVector3;
-  mixed?: boolean;
-  onChange: (value: MotionVector3) => void;
-}) {
-  const [draft, setDraft] = useState(value.map(String));
-
-  useEffect(() => setDraft(value.map(String)), [value[0], value[1], value[2]]);
-
-  const commit = (axisIndex: number) => {
-    const parsed = draft.map(Number);
-    if (!parsed.every(Number.isFinite)) {
-      setDraft(value.map(String));
-      return;
-    }
-    const next = parsed as MotionVector3;
-    setDraft(next.map(String));
-    if (next[axisIndex] !== value[axisIndex]) onChange(next);
-  };
-
-  return (
-    <Field className="gap-1">
-        <FieldLabel className="flex items-center gap-2 text-[10px] text-muted-foreground">
-          {label}
-          {mixed && <span className="font-normal">Mixed</span>}
-        </FieldLabel>
-      <div className="grid grid-cols-3 gap-1">
-        {AXES.map((axis, index) => (
-          <Input
-            key={axis}
-            id={`${id}-${axis}`}
-            aria-label={`${label} ${axis.toUpperCase()}`}
-            type="number"
-            step="any"
-            value={draft[index]}
-            onChange={(event) =>
-              setDraft((current) =>
-                current.map((item, itemIndex) =>
-                  itemIndex === index ? event.target.value : item,
-                ),
-              )
-            }
-            onBlur={() => commit(index)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') event.currentTarget.blur();
-            }}
-            className="h-7 min-w-0 px-1.5 text-center text-xs tabular-nums"
-          />
-        ))}
-      </div>
+      )}
     </Field>
   );
 }
@@ -376,16 +267,19 @@ function MotionPropertyField({
   hint,
   value,
   assets,
+  disabled,
   onChange,
 }: MotionPropertyFieldProps) {
-  if (hint.control === 'text') {
+  if (hint.control === 'text' || hint.control === 'textarea') {
     return (
       <MotionTextInput
-          id={id}
-          label={label}
-          value={String(value ?? '')}
-          onChange={(next) => onChange(next)}
-        />
+        id={id}
+        label={label}
+        value={String(value ?? '')}
+        disabled={disabled}
+        multiline={hint.control === 'textarea'}
+        onChange={(next) => onChange(next)}
+      />
     );
   }
 
@@ -405,6 +299,7 @@ function MotionPropertyField({
           label={label}
           hint={hint}
           value={numericValue}
+          disabled={disabled}
           onChange={change}
         />
       );
@@ -415,6 +310,7 @@ function MotionPropertyField({
         label={label}
         hint={hint}
         value={numericValue}
+        disabled={disabled}
         onChange={change}
       />
     );
@@ -422,10 +318,11 @@ function MotionPropertyField({
 
   if (hint.control === 'color') {
     return (
-      <MotionColorInput
+      <ColorField
         id={id}
         label={label}
         value={typeof value === 'string' ? value : '#ffffff'}
+        disabled={disabled}
         onChange={(next) => onChange(next)}
       />
     );
@@ -435,13 +332,20 @@ function MotionPropertyField({
     const vector =
       Array.isArray(value) && value.length === 3 && value.every(Number.isFinite)
         ? (value as MotionVector3)
-        : [0, 0, 0] as MotionVector3;
+        : ([0, 0, 0] as MotionVector3);
     return (
-      <MotionVector3Field
+      <VectorField
         id={id}
         label={label}
         value={vector}
-        onChange={(next) => onChange(next)}
+        disabled={disabled}
+        onChange={(next) =>
+          onChange([
+            next[0] ?? 0,
+            next[1] ?? 0,
+            next[2] ?? 0,
+          ] as MotionVector3)
+        }
       />
     );
   }
@@ -456,20 +360,43 @@ function MotionPropertyField({
           id={id}
           size="sm"
           checked={value === true}
+          disabled={disabled}
           onCheckedChange={(checked) => onChange(checked)}
         />
       </Field>
     );
   }
 
+  if (hint.control === 'segmented') {
+    return (
+      <SegmentedSelect
+        id={id}
+        label={label}
+        value={typeof value === 'string' ? value : ''}
+        options={hint.options ?? []}
+        disabled={disabled}
+        onChange={(next) => onChange(next)}
+      />
+    );
+  }
+
   if (hint.control === 'select') {
+    const options = hint.options ?? [];
+    const currentValue = typeof value === 'string' ? value : '';
+    // A stored enum that is no longer in `options` must still be visible; a bare
+    // placeholder would hide the document's real value from the user.
+    const hasUnlistedValue =
+      currentValue !== '' &&
+      !options.some((option) => option.value === currentValue);
+
     return (
       <Field className="gap-1">
         <FieldLabel htmlFor={id} className="text-[10px] text-muted-foreground">
           {label}
         </FieldLabel>
         <Select
-          value={typeof value === 'string' ? value : ''}
+          value={currentValue}
+          disabled={disabled}
           onValueChange={(next) => onChange(next)}
         >
           <SelectTrigger id={id} size="sm" className="h-7 w-full text-xs">
@@ -477,7 +404,12 @@ function MotionPropertyField({
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              {(hint.options ?? []).map((option) => (
+              {hasUnlistedValue && (
+                <SelectItem value={currentValue} disabled>
+                  Current value unavailable ({currentValue})
+                </SelectItem>
+              )}
+              {options.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -490,56 +422,17 @@ function MotionPropertyField({
   }
 
   if (hint.control === 'asset') {
-    const compatibleAssets = assets.filter(
-      (asset) => !hint.assetKind || asset.kind === hint.assetKind,
-    );
-    const currentValue = typeof value === 'string' ? value : ASSET_NONE;
-    const selectedAsset = compatibleAssets.find(
-      (asset) =>
-        asset.id === currentValue ||
-        asset.id === `builtin:${currentValue}`,
-    );
-    const selectValue = selectedAsset?.id ?? currentValue;
-
     return (
-      <Field className="gap-1">
-        <FieldLabel htmlFor={id} className="text-[10px] text-muted-foreground">
-          {label}
-        </FieldLabel>
-        <Select
-          value={selectValue}
-          disabled={compatibleAssets.length === 0}
-          onValueChange={(next) =>
-            onChange(next === ASSET_NONE ? undefined : next)
-          }
-        >
-          <SelectTrigger id={id} size="sm" className="h-7 w-full text-xs">
-            <SelectValue
-              placeholder={
-                compatibleAssets.length > 0
-                  ? `Choose ${label.toLowerCase()}`
-                  : 'No compatible assets'
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value={ASSET_NONE}>No asset</SelectItem>
-              {selectValue !== ASSET_NONE &&
-                !compatibleAssets.some((asset) => asset.id === selectValue) && (
-                  <SelectItem value={selectValue} disabled>
-                    Current asset unavailable
-                  </SelectItem>
-                )}
-              {compatibleAssets.map((asset) => (
-                <SelectItem key={asset.id} value={asset.id}>
-                  {asset.name}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </Field>
+      <AssetPicker
+        id={id}
+        label={label}
+        value={typeof value === 'string' ? value : undefined}
+        assets={assets}
+        kind={hint.assetKind}
+        optional={hint.optional}
+        disabled={disabled}
+        onChange={(next) => onChange(next)}
+      />
     );
   }
 
@@ -552,6 +445,7 @@ export function MotionPropertyFields({
   assets = [],
   idPrefix = 'motion-property',
   mixedProperties = new Set(),
+  disabled = false,
   onChange,
 }: MotionPropertyFieldsProps) {
   const groups = useMemo(() => {
@@ -586,6 +480,7 @@ export function MotionPropertyFields({
                   hint={hint}
                   value={values[property]}
                   assets={assets}
+                  disabled={disabled}
                   onChange={(next) => onChange(property, next)}
                 />
               </div>

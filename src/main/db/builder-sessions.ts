@@ -1,16 +1,15 @@
 /**
  * db/builder-sessions.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Persistence layer for the active Builder session.
+ * Persistence layer for Builder sessions: the active singleton row and the
+ * session history table.
  *
- * There is at most one active Builder session per app window, so we use a
- * singleton row with a fixed id ('active'). The row is upserted when a session
- * starts and deleted when it stops. On re-launch, reading this row tells the
- * handler which OpenCode session to attempt to reconnect to.
+ * The active row (`id = 'active'`) is kept for backward compatibility but is
+ * deprecated in favor of the history table. New sessions are archived to
+ * `builder_session_history` before the active row is replaced or deleted.
  *
  * The worktree path is stored so teardown can remove it correctly even after
- * an unexpected restart (best-effort: the worktree is in /tmp and will be
- * cleaned by the OS eventually, but we make a tidy attempt on next start).
+ * an unexpected restart.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -134,5 +133,166 @@ export function deleteActiveBuilderSession(): void {
     db.prepare(`DELETE FROM builder_sessions WHERE id = 'active'`).run();
   } catch {
     // Best-effort.
+  }
+}
+
+// ─── Session history ──────────────────────────────────────────────────────────
+
+export interface BuilderSessionHistoryRecord {
+  id: string;
+  opencode_session_id: string;
+  title: string;
+  repo_directory: string;
+  worktree_path: string | null;
+  workspace_name: string;
+  branch: string | null;
+  engine: 'local' | 'opencode' | 'opencode-sandbox';
+  status: 'active' | 'detached' | 'discarded' | 'orphaned';
+  created_at: number;
+  ended_at: number | null;
+}
+
+/** Return recent sessions ordered by created_at descending. */
+export function listBuilderSessionHistory(
+  limit = 50,
+): BuilderSessionHistoryRecord[] {
+  try {
+    const db = getDb();
+    return db
+      .prepare(
+        `SELECT id, opencode_session_id, title, repo_directory, worktree_path,
+                workspace_name, branch, engine, status, created_at, ended_at
+           FROM builder_session_history
+          ORDER BY created_at DESC
+          LIMIT ?`,
+      )
+      .all(limit) as BuilderSessionHistoryRecord[];
+  } catch {
+    return [];
+  }
+}
+
+/** Save (or replace) a session history row. */
+export function saveBuilderSessionToHistory(
+  record: BuilderSessionHistoryRecord,
+): void {
+  try {
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO builder_session_history
+         (id, opencode_session_id, title, repo_directory, worktree_path,
+          workspace_name, branch, engine, status, created_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         opencode_session_id = excluded.opencode_session_id,
+         title               = excluded.title,
+         repo_directory      = excluded.repo_directory,
+         worktree_path       = excluded.worktree_path,
+         workspace_name      = excluded.workspace_name,
+         branch              = excluded.branch,
+         engine              = excluded.engine,
+         status              = excluded.status,
+         created_at          = excluded.created_at,
+         ended_at            = excluded.ended_at`,
+    ).run(
+      record.id,
+      record.opencode_session_id,
+      record.title,
+      record.repo_directory,
+      record.worktree_path ?? null,
+      record.workspace_name,
+      record.branch ?? null,
+      record.engine,
+      record.status,
+      record.created_at,
+      record.ended_at ?? null,
+    );
+  } catch {
+    // Non-fatal: history is best-effort.
+  }
+}
+
+/** Delete a session history row by id. */
+export function deleteBuilderSessionHistory(id: string): boolean {
+  try {
+    const db = getDb();
+    const info = db
+      .prepare(`DELETE FROM builder_session_history WHERE id = ?`)
+      .run(id);
+    const changes = (info as { changes?: number }).changes ?? 0;
+    return changes > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Get a single session history row by id. */
+export function getBuilderSessionHistory(
+  id: string,
+): BuilderSessionHistoryRecord | null {
+  try {
+    const db = getDb();
+    const row = db
+      .prepare(
+        `SELECT id, opencode_session_id, title, repo_directory, worktree_path,
+                workspace_name, branch, engine, status, created_at, ended_at
+           FROM builder_session_history
+          WHERE id = ?
+          LIMIT 1`,
+      )
+      .get(id) as BuilderSessionHistoryRecord | undefined;
+    return row ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Copy the active singleton row to history with the given status, then delete
+ * the active row. Used before `stopActive` or `detachActive` so the session
+ * is not lost.
+ */
+export function archiveActiveSession(
+  status: 'detached' | 'discarded',
+): void {
+  try {
+    const db = getDb();
+    const active = db
+      .prepare(
+        `SELECT opencode_session_id, title, repo_directory, worktree_path,
+                workspace_name, branch, engine, created_at
+           FROM builder_sessions
+          WHERE id = 'active'
+          LIMIT 1`,
+      )
+      .get() as BuilderSessionRecord | undefined;
+    if (!active) return;
+
+    const historyId =
+      active.opencode_session_id.startsWith('local-')
+        ? active.opencode_session_id
+        : `hist-${Date.now().toString(36)}-${active.opencode_session_id.slice(0, 8)}`;
+
+    db.prepare(
+      `INSERT OR REPLACE INTO builder_session_history
+         (id, opencode_session_id, title, repo_directory, worktree_path,
+          workspace_name, branch, engine, status, created_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      historyId,
+      active.opencode_session_id,
+      active.title,
+      active.repo_directory,
+      active.worktree_path ?? null,
+      active.workspace_name,
+      active.branch ?? null,
+      active.engine,
+      status,
+      active.created_at,
+      null,
+    );
+    db.prepare(`DELETE FROM builder_sessions WHERE id = 'active'`).run();
+  } catch {
+    // Best-effort: the active row is still deleted by the caller.
   }
 }

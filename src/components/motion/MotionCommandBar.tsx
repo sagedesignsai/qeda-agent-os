@@ -49,6 +49,8 @@ interface MotionCommandBarProps {
   onOpenMarketplace: () => void;
   /** Open the export dialog */
   onOpenExport: () => void;
+  /** Open the model builder dialog */
+  onOpenModelBuilder: () => void;
 
   /** Create a new scene */
   onCreateScene: () => void;
@@ -87,6 +89,7 @@ export function MotionCommandBar({
   timelineCollapsed,
   onOpenMarketplace,
   onOpenExport,
+  onOpenModelBuilder,
   onCreateScene,
   onDuplicateScene,
   onSwitchScene,
@@ -108,7 +111,7 @@ export function MotionCommandBar({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex h-6 w-20 shrink-0 items-center gap-1 rounded border border-border/40 bg-input/30 px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-input/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="flex h-6 w-full max-w-md items-center justify-center gap-1 rounded border border-border/40 bg-input/30 px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-input/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-label="Search commands"
           title="Search commands"
         >
@@ -175,6 +178,14 @@ export function MotionCommandBar({
               >
                 Export...
               </CommandItem>
+              <CommandItem
+                onSelect={() => {
+                  onOpenModelBuilder();
+                  setOpen(false);
+                }}
+              >
+                Model Builder
+              </CommandItem>
             </CommandGroup>
 
             <CommandSeparator />
@@ -206,7 +217,8 @@ export function MotionCommandBar({
                       setOpen(false);
                     }}
                   >
-                    {scene.id === activeSceneId ? '\u2713 ' : ''}{scene.name}
+                    {scene.id === activeSceneId ? '\u2713 ' : ''}
+                    {scene.name}
                   </CommandItem>
                 ))}
               {scenes.length > 1 && (
@@ -233,25 +245,35 @@ export function MotionCommandBar({
               >
                 Animation track
               </CommandItem>
-              {(['scene', 'camera', 'geometry', 'surface', 'model', 'lighting', 'stage'] as const).map(
-                (category) => {
-                  const categoryNodes = nodeTypes.filter(
-                    (node) => node.category === category,
-                  );
-                  if (!categoryNodes.length) return null;
-                  return categoryNodes.map((node) => (
-                    <CommandItem
-                      key={node.id}
-                      onSelect={() => {
-                        onAddNode(node.id);
-                        setOpen(false);
-                      }}
-                    >
-                      {node.label}
-                    </CommandItem>
-                  ));
-                },
-              )}
+              {(
+                [
+                  'scene',
+                  'camera',
+                  'geometry',
+                  'product',
+                  'surface',
+                  'ui',
+                  'model',
+                  'lighting',
+                  'stage',
+                ] as const
+              ).map((category) => {
+                const categoryNodes = nodeTypes.filter(
+                  (node) => node.category === category,
+                );
+                if (!categoryNodes.length) return null;
+                return categoryNodes.map((node) => (
+                  <CommandItem
+                    key={node.id}
+                    onSelect={() => {
+                      onAddNode(node.id);
+                      setOpen(false);
+                    }}
+                  >
+                    {node.label}
+                  </CommandItem>
+                ));
+              })}
             </CommandGroup>
 
             <CommandSeparator />
