@@ -62,6 +62,7 @@ export type MotionOpParams = {
   'asset.add': MotionAsset;
   'asset.relink': { assetId: string; path: string; hash: string; byteSize: number; mimeType?: string };
   'asset.remove': { assetId: string };
+  'asset.update-metadata': { assetId: string; metadata: Record<string, unknown> };
   'scene.node.add': {
     nodeId: string;
     type: string;
@@ -362,21 +363,37 @@ function requireChannel(clip: MotionClip, channelId: string): MotionChannel {
 }
 
 function validateNodeAssetReference(doc: MotionDocument, node: MotionNode): void {
-  if (node.type !== 'screen.image') return;
-  const source = node.props.assetId ?? node.props.source;
-  if (typeof source !== 'string') {
-    throw new MotionOpError(`Screen node "${node.id}" references an unavailable image asset.`);
+  if (node.type === 'screen.image') {
+    const source = node.props.assetId ?? node.props.source;
+    if (typeof source !== 'string') {
+      throw new MotionOpError(`Screen node "${node.id}" references an unavailable image asset.`);
+    }
+
+    const isBuiltIn = source === 'starter-dashboard' || source === 'builtin:starter-dashboard';
+    const isAssetReference = doc.assets.some((asset) => asset.id === source);
+    const isTransientReference = /^(blob:|data:|https?:|file:|qeda-media:|\/)/i.test(source);
+    if (isTransientReference) {
+      throw new MotionOpError(`Screen node "${node.id}" must reference an asset id, not a URL or filesystem path.`);
+    }
+
+    if (!isBuiltIn && !isAssetReference) {
+      throw new MotionOpError(`Screen node "${node.id}" references an unavailable image asset.`);
+    }
   }
 
-  const isBuiltIn = source === 'starter-dashboard' || source === 'builtin:starter-dashboard';
-  const isAssetReference = doc.assets.some((asset) => asset.id === source);
-  const isTransientReference = /^(blob:|data:|https?:|file:|qeda-media:|\/)/i.test(source);
-  if (isTransientReference) {
-    throw new MotionOpError(`Screen node "${node.id}" must reference an asset id, not a URL or filesystem path.`);
-  }
+  if (node.type === 'model.gltf') {
+    const assetId = node.props.assetId;
+    if (typeof assetId !== 'string') {
+      throw new MotionOpError(`Model node "${node.id}" has no asset reference.`);
+    }
+    // Allow missing placeholders during node creation
+    if (node.props.missingAsset === true) return;
+    if (assetId.startsWith('missing:')) return;
 
-  if (!isBuiltIn && !isAssetReference) {
-    throw new MotionOpError(`Screen node "${node.id}" references an unavailable image asset.`);
+    const isAssetReference = doc.assets.some((asset) => asset.id === assetId);
+    if (!isAssetReference) {
+      throw new MotionOpError(`Model node "${node.id}" references an unavailable model asset.`);
+    }
   }
 }
 
@@ -473,7 +490,24 @@ registerMotionOp<'asset.add'>({
     if (doc.assets.some((candidate) => candidate.id === asset.id)) {
       throw new MotionOpError(`Asset "${asset.id}" already exists.`);
     }
-    return { ...doc, assets: [...doc.assets, asset] };
+    let next = { ...doc, assets: [...doc.assets, asset] };
+    // Auto-bind newly imported model assets to missing-asset model nodes
+    if (asset.kind === 'model') {
+      const missingNodes = next.scene.nodes.filter(
+        (node) => node.type === 'model.gltf' && node.props.missingAsset === true,
+      );
+      // Only auto-bind when exactly one missing-asset node exists (unambiguous)
+      if (missingNodes.length === 1) {
+        const target = missingNodes[0];
+        const updatedNodes = next.scene.nodes.map((node) =>
+          node.id === target.id
+            ? { ...node, props: { ...node.props, assetId: asset.id, missingAsset: false } }
+            : node,
+        );
+        next = withMotionSceneNodes(next, updatedNodes);
+      }
+    }
+    return next;
   },
 });
 
@@ -507,6 +541,26 @@ registerMotionOp<'asset.remove'>({
     const references = findAssetReferences(doc, assetId);
     if (references.length) throw new MotionOpError(`Asset "${assetId}" is still referenced by ${references.join(', ')}.`);
     return { ...doc, assets: doc.assets.filter((candidate) => candidate.id !== assetId) };
+  },
+});
+
+registerMotionOp<'asset.update-metadata'>({
+  id: 'asset.update-metadata',
+  summary: 'Update asset metadata (e.g. parsed glTF structure).',
+  risk: 'safe',
+  params: z.object({
+    assetId: z.string().min(1),
+    metadata: z.record(z.string(), z.unknown()),
+  }).strict(),
+  reduce: (doc, { assetId, metadata }) => {
+    const asset = doc.assets.find((candidate) => candidate.id === assetId);
+    if (!asset) throw new MotionOpError(`Asset "${assetId}" does not exist.`);
+    return {
+      ...doc,
+      assets: doc.assets.map((candidate) =>
+        candidate.id === assetId ? { ...candidate, metadata: { ...candidate.metadata, ...metadata } } : candidate,
+      ),
+    };
   },
 });
 
@@ -572,10 +626,15 @@ registerMotionOp<'scene.node.add'>({
     if (parent && allowedParents && !allowedParents.includes(parent.type)) {
       throw new MotionOpError(`Node type "${params.type}" cannot be parented to "${parent.type}".`);
     }
+    let mergedProps = { ...node.props, ...params.props };
+    // If assetId is set to a non-missing value, clear the missingAsset flag
+    if (mergedProps.assetId && typeof mergedProps.assetId === 'string' && !mergedProps.assetId.startsWith('missing:')) {
+      mergedProps = { ...mergedProps, missingAsset: false };
+    }
     const next = validateMotionNode({
       ...node,
       transform: { ...node.transform, ...params.transform },
-      props: { ...node.props, ...params.props },
+      props: mergedProps,
     });
     validateNodeAssetReference(doc, next);
     const nodes = [...doc.scene.nodes, next];
@@ -612,17 +671,26 @@ registerMotionOp<'scene.node.update'>({
     if (current.locked && (patch.transform !== undefined || patch.props !== undefined)) {
       throw new MotionOpError(`Node "${nodeId}" is locked.`);
     }
+    let mergedProps = { ...current.props, ...patch.props };
     const next = validateMotionNode({
       ...current,
       ...patch,
       transform: { ...current.transform, ...patch.transform },
-      props: { ...current.props, ...patch.props },
+      props: mergedProps,
     });
     validateNodeAssetReference(doc, next);
-    if (JSON.stringify(current) === JSON.stringify(next)) return doc;
+    // If assetId is set to a non-missing value, clear the missingAsset flag
+    // (after validation so the old missingAsset flag still protects the check)
+    let finalNext = next;
+    if (patch.props && patch.props.assetId && typeof patch.props.assetId === 'string') {
+      if (!patch.props.assetId.startsWith('missing:')) {
+        finalNext = { ...next, props: { ...next.props, missingAsset: false } };
+      }
+    }
+    if (JSON.stringify(current) === JSON.stringify(finalNext)) return doc;
     return withMotionSceneNodes(
       doc,
-      doc.scene.nodes.map((node) => (node.id === nodeId ? next : node)),
+      doc.scene.nodes.map((node) => (node.id === nodeId ? finalNext : node)),
     );
   },
 });

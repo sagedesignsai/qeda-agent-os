@@ -15,6 +15,7 @@ import {
   SparklesIcon,
 } from 'lucide-react';
 
+import { ModelPartsPanel } from '@/components/motion/inspector/ModelPartsPanel';
 import { MotionPropertyFields } from '@/components/motion/inspector/MotionPropertyFields';
 import { TransformControls } from '@/components/motion/inspector/controls/transform-controls';
 import { Badge } from '@/components/ui/badge';
@@ -591,6 +592,25 @@ export function MotionInspector() {
                         disabled={targetNode.locked}
                         onChange={updateNodeProperty}
                       />
+                    </div>
+                  )}
+                  {targetNode?.type === 'model.gltf' && (
+                    <div className="mt-4 border-t border-border/50 pt-3">
+                      {(() => {
+                        const assetId = targetNode.props.assetId as string;
+                        const asset = assetId
+                          ? doc.assets.find((a) => a.id === assetId)
+                          : undefined;
+                        const metadata = asset?.metadata as import('@/lib/motion/types').GltfAssetMetadata | undefined;
+                        return (
+                          <ModelPartsPanel
+                            node={targetNode}
+                            assets={doc.assets}
+                            metadata={metadata}
+                            onUpdateProperty={updateNodeProperty}
+                          />
+                        );
+                      })()}
                     </div>
                   )}
                 </>

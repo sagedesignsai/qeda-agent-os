@@ -675,6 +675,8 @@ export function MotionScenePanel() {
 }
 
 function missingAssetFor(node: MotionNode, missingIds: ReadonlySet<string>): boolean {
+  // Show warning if the node explicitly marks its asset as missing
+  if (node.props.missingAsset === true) return true;
   const assetId = typeof node.props.assetId === 'string' ? node.props.assetId : null;
   return Boolean(assetId && missingIds.has(assetId));
 }
@@ -843,10 +845,12 @@ function SceneNodeRow({
             />
           )}
           {missingAsset && (
-            <TriangleAlertIcon
-              className="size-3 shrink-0 text-destructive"
-              aria-label="Missing media asset"
-            />
+            <span title="Missing asset — bind a model in the Inspector">
+              <TriangleAlertIcon
+                className="size-3 shrink-0 text-amber-500"
+                aria-label="Missing asset — bind a model in the Inspector"
+              />
+            </span>
           )}
           <span className="ml-auto truncate text-[9px] text-muted-foreground">{node.type}</span>
         </button>

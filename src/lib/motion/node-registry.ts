@@ -172,6 +172,12 @@ export function hasAnimatableProperty(type: string, property: string): boolean {
   if (/^(position|rotation|scale)\.[xyz]$/.test(property)) {
     return nodeTypes.has(type);
   }
+  // Dynamic part override properties: partOverrides.*.visible, partOverrides.*.opacity,
+  // partOverrides.*.position.[xyz], partOverrides.*.rotation.[xyz], partOverrides.*.scale.[xyz]
+  if (type === 'model.gltf') {
+    const partPropPattern = /^partOverrides\.[^.]+\.(visible|opacity|position\.[xyz]|rotation\.[xyz]|scale\.[xyz])$/.test(property);
+    if (partPropPattern) return true;
+  }
   return Boolean(nodeTypes.get(type)?.animatableProperties[property]);
 }
 
@@ -193,6 +199,42 @@ export function applyNodeProperty(
     const vector = [...node.transform[root]] as [number, number, number];
     vector[index] = value;
     return { ...node, transform: { ...node.transform, [root]: vector } };
+  }
+
+  // Handle dynamic part override properties: partOverrides.partName.property
+  // Examples: partOverrides.Screen.opacity (3 parts), partOverrides.Screen.position.x (4 parts)
+  if (root === 'partOverrides') {
+    const parts = property.split('.');
+    if (parts.length >= 3) {
+      const partName = parts[1];
+      const subProp = parts.slice(2).join('.');
+      // Preserve existing partOverrides from the current node, not from defaults
+      const existingPartOverrides = (node.props.partOverrides as Record<string, Record<string, unknown>>) ?? {};
+      const existingPartData = existingPartOverrides[partName] ?? {};
+      if (subProp.includes('.')) {
+        // Nested property like position.x
+        const [subRoot, subAxis] = subProp.split('.');
+        const index = subAxis === 'x' ? 0 : subAxis === 'y' ? 1 : 2;
+        const vector = [...(existingPartData[subRoot] as [number, number, number]) ?? [0, 0, 0]] as [number, number, number];
+        vector[index] = value;
+        const newProps = {
+          ...node.props,
+          partOverrides: {
+            ...existingPartOverrides,
+            [partName]: { ...existingPartData, [subRoot]: vector },
+          },
+        };
+        return { ...node, props: newProps };
+      }
+      const newProps = {
+        ...node.props,
+        partOverrides: {
+          ...existingPartOverrides,
+          [partName]: { ...existingPartData, [subProp]: value },
+        },
+      };
+      return { ...node, props: newProps };
+    }
   }
 
   return validateMotionNode({ ...node, props: { ...node.props, [property]: value } });

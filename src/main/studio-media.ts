@@ -37,6 +37,7 @@ export function registerStudioMediaScheme(): void {
         secure: true,
         stream: true,
         corsEnabled: true,
+        supportFetchAPI: true,
       },
     },
   ]);
@@ -214,8 +215,12 @@ export async function serveMotionMediaRequest(
   > = getMotionAssetStore(),
 ): Promise<Response> {
   const url = new URL(request.url);
+  console.log('[studio-media] Motion media request:', request.url, 'method:', request.method);
   const staging = url.hostname === 'motion-staging';
-  if (!staging && url.hostname !== 'motion') return new Response(null, { status: 404 });
+  if (!staging && url.hostname !== 'motion') {
+    console.warn('[studio-media] Unknown hostname:', url.hostname);
+    return new Response(null, { status: 404 });
+  }
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
@@ -246,7 +251,10 @@ export async function serveMotionMediaRequest(
     // URL, so `scene.bin` and friends arrive as extra path segments.
     media = await assetStore.resolveAssetFile(segments[0], segments[1], segments.slice(2).join('/'));
   }
-  if (!media) return new Response(null, { status: 404 });
+  if (!media) {
+    console.warn('[studio-media] Asset not found, returning 404. segments:', segments);
+    return new Response(null, { status: 404 });
+  }
 
   try {
     const stat = await fs.stat(media.path);

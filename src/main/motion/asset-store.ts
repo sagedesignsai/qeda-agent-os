@@ -84,7 +84,7 @@ export class MotionAssetError extends Error {
 
 export class MotionAssetStore {
   constructor(
-    private readonly projects: Pick<MotionProjectStore, 'getProjectDirectory' | 'openProject'>,
+    private readonly projects: Pick<MotionProjectStore, 'getProjectDirectory' | 'openProject' | 'saveProject'>,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -366,6 +366,21 @@ export class MotionAssetStore {
       } catch (error) {
         const typed = error instanceof MotionAssetError ? error : new MotionAssetError(error instanceof Error ? error.message : String(error), 'MOTION_IMPORT_UNREADABLE');
         errors.push(importError(record?.sourceName ?? commit.importId, importCode(typed.code), typed.message));
+      }
+    }
+    // Persist the updated document so resolveAsset can find the new assets
+    // immediately, rather than waiting for the renderer's debounced auto-save.
+    if (assets.length > 0) {
+      const updatedDocument = {
+        ...opened.document,
+        revision: opened.document.revision + 1,
+        assets: [...opened.document.assets, ...assets],
+        meta: { ...opened.document.meta, updatedAt: this.now().toISOString() },
+      };
+      try {
+        await this.projects.saveProject(projectId, updatedDocument);
+      } catch {
+        // Save failure is non-fatal: the renderer will save on next auto-save.
       }
     }
     return { assets, errors };

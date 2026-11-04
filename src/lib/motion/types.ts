@@ -109,6 +109,54 @@ export type MotionAudioPlacement = {
   gain: number; muted: boolean; fadeIn: number; fadeOut: number;
 };
 
+// ── glTF model structure ─────────────────────────────────────────────────────
+
+/** Parsed parts and materials from a loaded glTF model, stored in asset.metadata. */
+export type GltfAssetMetadata = {
+  parts: GltfPart[];
+  materials: GltfMaterial[];
+};
+
+export type GltfPart = {
+  name: string;
+  type: 'mesh' | 'instancedMesh' | 'primitive';
+  materialName?: string;
+  geometryUuid?: string;
+};
+
+export type GltfMaterial = {
+  name: string;
+  type: string;
+};
+
+// ── Surface bindings ─────────────────────────────────────────────────────────
+
+/** Bind an image or video asset to a specific model part. */
+export type SurfaceBinding = {
+  assetId: string;
+  mode: 'replace' | 'decal';
+  fit?: 'contain' | 'cover' | 'stretch';
+  tint?: string;
+};
+
+/** Override material properties for a specific material name. */
+export type MaterialOverride = {
+  color?: string;
+  roughness?: number;
+  metalness?: number;
+  emissive?: string;
+  emissiveIntensity?: number;
+};
+
+/** Override per-part properties (visibility, opacity, transform). */
+export type PartOverride = {
+  visible?: boolean;
+  opacity?: number;
+  position?: MotionVector3;
+  rotation?: MotionVector3;
+  scale?: number | MotionVector3;
+};
+
 // ── Document ─────────────────────────────────────────────────────────────────
 
 export type MotionOutputSettings = {
