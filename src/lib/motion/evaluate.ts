@@ -8,6 +8,7 @@
 import { applyNodeProperty, MotionNodeError } from './node-registry';
 import { sampleSceneTimeline } from './sample';
 import { channelKey, type MotionNode, type MotionScene, type MotionTimeline } from './types';
+import { createRuntimeSnapshot, type MotionRuntimeContext, type MotionRuntimeSnapshot } from './runtime';
 
 export class MotionEvaluationError extends Error {
   constructor(message: string) {
@@ -65,4 +66,14 @@ export function evaluateMotionFrame(
   }
 
   return { time, sceneId: scene.id, nodes: scene.nodes.map((node) => nodes.get(node.id) ?? node) };
+}
+
+/** Evaluate a frame and expose it through the renderer-independent runtime boundary. */
+export function evaluateMotionRuntimeFrame(
+  scene: MotionEvaluationScene,
+  time: number,
+  context: MotionEvaluationContext & MotionRuntimeContext = {},
+): MotionRuntimeSnapshot {
+  const frame = evaluateMotionFrame(scene, time, context);
+  return createRuntimeSnapshot(scene, frame.time, frame.nodes, context);
 }
