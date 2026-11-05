@@ -8,6 +8,9 @@
  * invoke that starts it and reports through `music:scan-progress`, because a
  * 20-minute first index must not block the renderer's request — and because a
  * cancelled scan still needs to deliver a final event.
+ *
+ * A folder watcher keeps the index current between scans; a scan at startup and
+ * every 30 minutes reconciles anything the watcher missed.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -37,6 +40,7 @@ import {
   updateMusicPlaylist,
 } from '../../db/music-store.js';
 import { scanMusicFolder } from '../../music/scanner.js';
+import { createMusicWatcher } from '../../music/watcher.js';
 import type {
   AudioSceneConfig,
   MusicLibraryQuery,
@@ -46,6 +50,9 @@ import type {
 
 /** One controller per folder so cancelling one does not stop the others. */
 const activeScans = new Map<string, AbortController>();
+
+const STARTUP_RECONCILE_DELAY_MS = 5_000;
+const RECONCILE_INTERVAL_MS = 30 * 60 * 1000;
 
 function errorProgress(folderId: string, error: string): MusicScanProgress {
   return {
@@ -71,6 +78,12 @@ export function registerMusicHandlers({
     }
   };
 
+  const watcher = createMusicWatcher({
+    listFolders: listMusicFolders,
+    isScanning: (folderId) => activeScans.has(folderId),
+    onChange: () => send('music:changed'),
+  });
+
   async function scanFolders(folderIds: string[]): Promise<void> {
     for (const folderId of folderIds) {
       if (activeScans.has(folderId)) continue;
@@ -80,6 +93,7 @@ export function registerMusicHandlers({
         const result = await scanMusicFolder(folderId, {
           signal: controller.signal,
           onProgress: (progress) => send('music:scan-progress', progress),
+          onLibraryChange: () => send('music:changed'),
         });
         send('music:scan-progress', result);
         send('music:changed');
@@ -108,13 +122,21 @@ export function registerMusicHandlers({
     return { path: result.filePaths[0] };
   });
 
-  ipcMain.handle('music:folder-add', (_e, { path: folderPath }: { path: string }) =>
-    addMusicFolder(path.resolve(folderPath)),
+  ipcMain.handle(
+    'music:folder-add',
+    (_e, { path: folderPath }: { path: string }) => {
+      const folder = addMusicFolder(path.resolve(folderPath));
+      watcher.sync();
+      return folder;
+    },
   );
 
-  ipcMain.handle('music:folder-remove', (_e, { id }: { id: string }) => ({
-    ok: removeMusicFolder(id),
-  }));
+  ipcMain.handle('music:folder-remove', (_e, { id }: { id: string }) => {
+    activeScans.get(id)?.abort();
+    const ok = removeMusicFolder(id);
+    watcher.sync();
+    return { ok };
+  });
 
   ipcMain.handle('music:scan-start', (_e, req?: { folderId?: string }) => {
     const folders = listMusicFolders();
@@ -226,6 +248,23 @@ export function registerMusicHandlers({
     const ok = deleteMusicScene(id);
     send('music:changed');
     return { ok };
+  });
+
+  // The watcher is the fast path; this reconciliation is the safety net for
+  // events a platform dropped (sleep/wake, network shares, removable drives).
+  // It is an incremental scan, so on an unchanged library it is a stat per file.
+  const reconcile = () =>
+    void scanFolders(listMusicFolders().map((folder) => folder.id));
+  watcher.sync();
+  const startupTimer = setTimeout(reconcile, STARTUP_RECONCILE_DELAY_MS);
+  const reconcileTimer = setInterval(reconcile, RECONCILE_INTERVAL_MS);
+  startupTimer.unref();
+  reconcileTimer.unref();
+  mainWindow.on('closed', () => {
+    clearTimeout(startupTimer);
+    clearInterval(reconcileTimer);
+    watcher.close();
+    for (const controller of activeScans.values()) controller.abort();
   });
 
   ipcMain.handle('music:state-get', () => getMusicState());

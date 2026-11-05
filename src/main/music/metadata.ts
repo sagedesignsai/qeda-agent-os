@@ -15,6 +15,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { parseFile } from 'music-metadata';
 import type { ScannedTrack } from '../../lib/music/types.js';
+import { titleFromFilename } from './paths.js';
 
 /** Extensions Chromium can decode through `<audio>` in this build. */
 const AUDIO_EXTENSIONS = new Set([
@@ -37,43 +38,49 @@ export function isAudioFile(filePath: string): boolean {
   return AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
+/**
+ * Read one file's tags.
+ *
+ * Returns `null` only for a codec that is deliberately not indexed. A file that
+ * cannot be read **throws**: the scanner must be able to tell "this file is
+ * not music" from "this file is locked right now", because only the second
+ * says nothing about whether the file still exists.
+ *
+ * `known` carries the size and mtime the walk already collected, which saves a
+ * second `stat` per file on a first index.
+ */
 export async function readTrackMetadata(
   filePath: string,
+  known?: { size: number; mtime: number },
 ): Promise<ScannedTrack | null> {
-  try {
-    const stats = await fs.stat(filePath);
-    // Covers are not read here on purpose. `has_art` has no consumer yet, and
-    // decoding embedded art for every file is the dominant cost of a first
-    // index; `readArtwork()` extracts one lazily when a cover is requested.
-    const meta = await parseFile(filePath, {
-      duration: true,
-      skipCovers: true,
-    });
-    const codec = meta.format.codec ?? meta.format.container ?? null;
-    if (codec && UNPLAYABLE.test(codec)) return null;
+  const stats = known ? null : await fs.stat(filePath);
+  // Covers are not read here on purpose. `has_art` has no consumer yet, and
+  // decoding embedded art for every file is the dominant cost of a first
+  // index; `readArtwork()` extracts one lazily when a cover is requested.
+  const meta = await parseFile(filePath, {
+    duration: true,
+    skipCovers: true,
+  });
+  const codec = meta.format.codec ?? meta.format.container ?? null;
+  if (codec && UNPLAYABLE.test(codec)) return null;
 
-    const fallbackTitle = path.basename(filePath, path.extname(filePath));
-    return {
-      path: filePath,
-      title: meta.common.title?.trim() || fallbackTitle,
-      artist: meta.common.artist?.trim() || null,
-      album: meta.common.album?.trim() || null,
-      album_artist: meta.common.albumartist?.trim() || null,
-      genre: meta.common.genre?.[0]?.trim() || null,
-      year: meta.common.year ?? null,
-      track_no: meta.common.track?.no ?? null,
-      disc_no: meta.common.disk?.no ?? null,
-      duration_ms: Math.round((meta.format.duration ?? 0) * 1000),
-      bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate) : null,
-      codec,
-      size: stats.size,
-      mtime: Math.floor(stats.mtimeMs / 1000),
-      has_art: false,
-    };
-  } catch (error) {
-    console.warn('[music] metadata read failed', filePath, error);
-    return null;
-  }
+  return {
+    path: filePath,
+    title: meta.common.title?.trim() || titleFromFilename(filePath),
+    artist: meta.common.artist?.trim() || null,
+    album: meta.common.album?.trim() || null,
+    album_artist: meta.common.albumartist?.trim() || null,
+    genre: meta.common.genre?.[0]?.trim() || null,
+    year: meta.common.year ?? null,
+    track_no: meta.common.track?.no ?? null,
+    disc_no: meta.common.disk?.no ?? null,
+    duration_ms: Math.round((meta.format.duration ?? 0) * 1000),
+    bitrate: meta.format.bitrate ? Math.round(meta.format.bitrate) : null,
+    codec,
+    size: known?.size ?? stats!.size,
+    mtime: known?.mtime ?? Math.floor(stats!.mtimeMs / 1000),
+    has_art: false,
+  };
 }
 
 export interface Artwork {
