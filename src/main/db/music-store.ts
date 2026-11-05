@@ -89,15 +89,19 @@ export function removeMusicFolder(id: string): boolean {
   return true;
 }
 
-export function refreshFolderTrackCount(id: string): void {
+/**
+ * Recount a folder's live tracks. `stamp` also records `last_scan_at`; pass
+ * false for a partial pass (provisional rows, a cancelled scan, a watcher
+ * batch) so "indexed N minutes ago" only ever reflects a finished scan.
+ */
+export function refreshFolderTrackCount(id: string, stamp = true): void {
   const db = getDb();
   db.prepare(
     `UPDATE music_folders
         SET track_count = (
           SELECT COUNT(*) FROM music_tracks
            WHERE folder_id = ? AND missing_at IS NULL
-        ),
-            last_scan_at = unixepoch()
+        )${stamp ? ',\n            last_scan_at = unixepoch()' : ''}
       WHERE id = ?`,
   ).run(id, id);
 }
@@ -145,7 +149,8 @@ export function upsertScannedTrack(
               mtime = ?,
               last_seen_at = ?,
               missing_at = NULL,
-              has_art = ?
+              has_art = ?,
+              meta_pending = 0
         WHERE id = ?`,
     ).run(
       folderId,
@@ -222,6 +227,139 @@ export function upsertScannedTracks(
   });
   tx();
   return { added, updated };
+}
+
+// ─── Incremental indexing ────────────────────────────────────────────────────
+
+/** What the index already knows about a file, keyed by its walked path. */
+export interface KnownTrack {
+  id: string;
+  size: number;
+  mtime: number;
+  meta_pending: number;
+}
+
+/**
+ * Every row of a folder (missing ones included, so a returning file is
+ * recognised). Keyed by `path` rather than `path_key`: the walk produces the
+ * same path strings it stored last time, which spares a synchronous `realpath`
+ * per file just to decide that nothing changed.
+ */
+export function getFolderTrackStates(
+  folderId: string,
+): Map<string, KnownTrack> {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, path, size, mtime, meta_pending
+         FROM music_tracks WHERE folder_id = ?`,
+    )
+    .all(folderId) as (KnownTrack & { path: string })[];
+  return new Map(rows.map(({ path: rowPath, ...state }) => [rowPath, state]));
+}
+
+const ID_CHUNK = 500;
+
+/** Mark files as seen in this pass without rewriting their metadata. */
+export function touchTracks(ids: string[], scanStartedAt: number): void {
+  if (ids.length === 0) return;
+  const db = getDb();
+  const tx = db.transaction(() => {
+    for (let offset = 0; offset < ids.length; offset += ID_CHUNK) {
+      const chunk = ids.slice(offset, offset + ID_CHUNK);
+      db.prepare(
+        `UPDATE music_tracks
+            SET last_seen_at = ?, missing_at = NULL
+          WHERE id IN (${chunk.map(() => '?').join(',')})`,
+      ).run(scanStartedAt, ...chunk);
+    }
+  });
+  tx();
+}
+
+export interface ProvisionalTrack {
+  path: string;
+  title: string;
+  size: number;
+  mtime: number;
+}
+
+/**
+ * Insert files that have not been parsed yet, so they are playable and
+ * searchable by filename while tags are still being read. A file whose
+ * `path_key` is already indexed is only re-seen, never overwritten.
+ * Returns the paths that were genuinely new.
+ */
+export function insertProvisionalTracks(
+  folderId: string,
+  tracks: ProvisionalTrack[],
+  scanStartedAt: number,
+): string[] {
+  const db = getDb();
+  const inserted: string[] = [];
+  const find = db.prepare(`SELECT id FROM music_tracks WHERE path_key = ?`);
+  const reseen = db.prepare(
+    `UPDATE music_tracks
+        SET folder_id = ?, path = ?, last_seen_at = ?, missing_at = NULL
+      WHERE id = ?`,
+  );
+  const insert = db.prepare(
+    `INSERT INTO music_tracks
+       (id, folder_id, path, path_key, title, size, mtime, last_seen_at,
+        meta_pending)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+  );
+  const tx = db.transaction(() => {
+    for (const track of tracks) {
+      const key = pathKeyFor(track.path);
+      const existing = find.get(key) as { id: string } | undefined;
+      if (existing) {
+        reseen.run(folderId, track.path, scanStartedAt, existing.id);
+        continue;
+      }
+      insert.run(
+        randomUUID(),
+        folderId,
+        track.path,
+        key,
+        track.title,
+        track.size,
+        track.mtime,
+        scanStartedAt,
+      );
+      inserted.push(track.path);
+    }
+  });
+  tx();
+  return inserted;
+}
+
+/**
+ * Drop a provisional row whose file turned out to be unplayable. Rows that
+ * were fully indexed are left alone: they are soft-deleted by the missing pass
+ * instead, because a playlist may reference them.
+ */
+export function removePendingTrack(filePath: string): void {
+  getDb()
+    .prepare(`DELETE FROM music_tracks WHERE path_key = ? AND meta_pending = 1`)
+    .run(pathKeyFor(filePath));
+}
+
+/**
+ * Soft-delete a file, or everything under a directory, that a watcher saw
+ * disappear. Matches on `path` because the path no longer resolves.
+ */
+export function markPathMissing(folderId: string, targetPath: string): number {
+  const escaped = targetPath.replace(/[!%_]/g, (char) => `!${char}`);
+  const result = getDb()
+    .prepare(
+      `UPDATE music_tracks
+          SET missing_at = unixepoch()
+        WHERE folder_id = ?
+          AND missing_at IS NULL
+          AND (path = ? OR path LIKE ? ESCAPE '!')`,
+    )
+    .run(folderId, targetPath, `${escaped}${path.sep}%`);
+  return result.changes;
 }
 
 /**

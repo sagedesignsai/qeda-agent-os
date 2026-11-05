@@ -15,6 +15,11 @@ import path from 'node:path';
 
 const CASE_INSENSITIVE = process.platform === 'darwin' || process.platform === 'win32';
 
+/** The title a track shows before (or without) any tags: its file name. */
+export function titleFromFilename(filePath: string): string {
+  return path.basename(filePath, path.extname(filePath));
+}
+
 export function pathKeyFor(filePath: string): string {
   const resolved = path.resolve(filePath);
   let canonical = resolved;

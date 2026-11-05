@@ -1063,9 +1063,11 @@ CREATE TABLE IF NOT EXISTS music_tracks (
   added_at     INTEGER NOT NULL DEFAULT (unixepoch()),
   last_seen_at INTEGER NOT NULL DEFAULT (unixepoch()),
   missing_at   INTEGER,
-  has_art      INTEGER NOT NULL DEFAULT 0
+  has_art      INTEGER NOT NULL DEFAULT 0,
+  meta_pending INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_music_tracks_folder ON music_tracks(folder_id);
+CREATE INDEX IF NOT EXISTS idx_music_tracks_folder_seen ON music_tracks(folder_id, last_seen_at);
 CREATE INDEX IF NOT EXISTS idx_music_tracks_artist ON music_tracks(artist COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_music_tracks_album  ON music_tracks(album COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS idx_music_tracks_title  ON music_tracks(title COLLATE NOCASE);
@@ -1357,6 +1359,10 @@ export function applyMigrations(db: {
     addColumn('studio_takes', 'overlays_json', 'TEXT');
     addColumn('studio_takes', 'video_crop_json', 'TEXT');
     addColumn('studio_takes', 'probe_json', 'TEXT');
+
+    // 1 while a track is indexed from its filename alone and its tags have not
+    // been read yet. Existing rows default to 0: they were fully parsed.
+    addColumn('music_tracks', 'meta_pending', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('studio_takes', 'optimized_path', 'TEXT');
     addColumn('studio_takes', 'filmstrip_path', 'TEXT');
     addColumn('studio_takes', 'waveform_path', 'TEXT');

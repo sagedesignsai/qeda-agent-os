@@ -40,6 +40,8 @@ export interface MusicTrack {
   last_seen_at: number;
   missing_at: number | null;
   has_art: number;
+  /** 1 while the row is indexed from its filename and tags are still being read. */
+  meta_pending?: number;
 }
 
 /** Fields the scanner can discover; the store owns id/folder/timestamps. */
@@ -132,14 +134,28 @@ export interface MusicStateRecord {
 
 export type MusicScanPhase = 'scanning' | 'done' | 'cancelled' | 'error';
 
+/**
+ * `discovering` — walking the folder, `total` is the running file count.
+ * `indexing` — `total` is final; unchanged files are skipped, new ones appear
+ * in the library at once and their tags are filled in as they are read.
+ */
+export type MusicScanStage = 'discovering' | 'indexing';
+
 export interface MusicScanProgress {
   folderId: string;
   phase: MusicScanPhase;
+  stage?: MusicScanStage;
   scanned: number;
   total: number;
   added: number;
   updated: number;
   missing: number;
+  /** Files skipped because size and mtime matched the index. */
+  unchanged?: number;
+  /** Files whose tags could not be read; they stay indexed by filename. */
+  failed?: number;
+  /** Symlinks that were not followed. */
+  skippedLinks?: number;
   error?: string;
 }
 

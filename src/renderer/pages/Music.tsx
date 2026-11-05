@@ -197,6 +197,7 @@ export default function Music() {
 
   const playingId = player.current?.id ?? null;
   const scanning = scan?.phase === 'scanning';
+  const discovering = scanning && scan?.stage === 'discovering';
   const scanPercent =
     scan && scan.total > 0
       ? Math.round((scan.scanned / scan.total) * 100)
@@ -277,12 +278,28 @@ export default function Music() {
         {scan && (scanning || scan.phase !== 'done') && (
           <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
             <Progress
-              value={scanning ? scanPercent : 100}
-              className="h-1.5 flex-1"
+              value={scanning ? (discovering ? 0 : scanPercent) : 100}
+              className={`h-1.5 flex-1 ${discovering ? 'animate-pulse' : ''}`}
             />
-            <span className="shrink-0 text-[10px] text-muted-foreground">
+            <span
+              className="shrink-0 text-[10px] text-muted-foreground"
+              aria-live="polite"
+            >
               {scanning
-                ? `${scan.scanned}/${scan.total} · ${scan.added} new`
+                ? discovering
+                  ? `Finding files… ${scan.total.toLocaleString()}`
+                  : [
+                      `${scan.scanned.toLocaleString()}/${scan.total.toLocaleString()}`,
+                      `${scan.added.toLocaleString()} new`,
+                      scan.unchanged
+                        ? `${scan.unchanged.toLocaleString()} unchanged`
+                        : null,
+                      scan.failed
+                        ? `${scan.failed.toLocaleString()} unreadable`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
                 : scan.phase === 'cancelled'
                   ? 'Scan cancelled'
                   : scan.error ?? 'Scan finished'}

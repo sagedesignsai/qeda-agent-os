@@ -20,9 +20,13 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { useTestDatabase } from '../main/db/client';
 import { applyMigrations } from '../main/db/schema';
-import { addMusicFolder, queryMusicTracks } from '../main/db/music-store';
+import {
+  addMusicFolder,
+  markPathMissing,
+  queryMusicTracks,
+} from '../main/db/music-store';
 import { readTrackMetadata } from '../main/music/metadata';
-import { scanMusicFolder } from '../main/music/scanner';
+import { indexChangedFiles, scanMusicFolder } from '../main/music/scanner';
 import type { ScannedTrack } from '../lib/music/types';
 
 jest.mock('../main/music/metadata', () => ({
@@ -101,10 +105,152 @@ describe('music scanner', () => {
     const rescan = await scanMusicFolder(folder.id);
     const after = queryMusicTracks({ folderId: folder.id }).rows;
 
-    expect(rescan.updated).toBe(2);
+    expect(rescan.unchanged).toBe(2);
+    expect(rescan.updated).toBe(0);
     expect(after.map((track) => track.id).sort()).toEqual(
       before.map((track) => track.id).sort(),
     );
+  });
+
+  it('does not re-read tags for files whose size and mtime are unchanged', async () => {
+    await fs.writeFile(path.join(root, 'one.mp3'), 'x');
+    await fs.writeFile(path.join(root, 'two.mp3'), 'x');
+    const folder = addMusicFolder(root);
+    await scanMusicFolder(folder.id);
+    expect(mockedReadMetadata).toHaveBeenCalledTimes(2);
+
+    mockedReadMetadata.mockClear();
+    await scanMusicFolder(folder.id);
+
+    expect(mockedReadMetadata).not.toHaveBeenCalled();
+  });
+
+  it('re-reads only the file that changed', async () => {
+    await fs.writeFile(path.join(root, 'same.mp3'), 'x');
+    await fs.writeFile(path.join(root, 'edited.mp3'), 'x');
+    const folder = addMusicFolder(root);
+    await scanMusicFolder(folder.id);
+
+    mockedReadMetadata.mockClear();
+    await fs.writeFile(path.join(root, 'edited.mp3'), 'longer content');
+    const rescan = await scanMusicFolder(folder.id);
+
+    expect(mockedReadMetadata).toHaveBeenCalledTimes(1);
+    expect(mockedReadMetadata.mock.calls[0][0]).toContain('edited.mp3');
+    expect(rescan.updated).toBe(1);
+    expect(rescan.unchanged).toBe(1);
+  });
+
+  it('lists new files by filename before their tags have been read', async () => {
+    await fs.writeFile(path.join(root, 'Slow Song.mp3'), 'x');
+    const folder = addMusicFolder(root);
+
+    const visibleDuringParse: ReturnType<typeof queryMusicTracks>[] = [];
+    mockedReadMetadata.mockImplementation(async (filePath: string) => {
+      visibleDuringParse.push(queryMusicTracks({ folderId: folder.id }));
+      return metadataFor(filePath);
+    });
+    await scanMusicFolder(folder.id);
+
+    expect(visibleDuringParse).toHaveLength(1);
+    expect(visibleDuringParse[0].total).toBe(1);
+    expect(visibleDuringParse[0].rows[0].title).toBe('Slow Song');
+    expect(visibleDuringParse[0].rows[0].meta_pending).toBe(1);
+
+    const [final] = queryMusicTracks({ folderId: folder.id }).rows;
+    expect(final.artist).toBe('Test Artist');
+    expect(final.meta_pending).toBe(0);
+  });
+
+  it('keeps an unreadable file indexed instead of marking it missing', async () => {
+    await fs.writeFile(path.join(root, 'fine.mp3'), 'x');
+    await fs.writeFile(path.join(root, 'locked.mp3'), 'x');
+    const folder = addMusicFolder(root);
+    await scanMusicFolder(folder.id);
+
+    // Make the next read of `locked` fail, and change it so it is re-read.
+    await fs.writeFile(path.join(root, 'locked.mp3'), 'locked now');
+    mockedReadMetadata.mockImplementation(async (filePath: string) => {
+      if (filePath.endsWith('locked.mp3')) throw new Error('EBUSY');
+      return metadataFor(filePath);
+    });
+    const rescan = await scanMusicFolder(folder.id);
+
+    expect(rescan.phase).toBe('done');
+    expect(rescan.failed).toBe(1);
+    expect(rescan.missing).toBe(0);
+    const rows = queryMusicTracks({ folderId: folder.id }).rows;
+    expect(rows.map((track) => track.title).sort()).toEqual(['fine', 'locked']);
+  });
+
+  it('does not list a file whose codec is not playable', async () => {
+    await fs.writeFile(path.join(root, 'lossless.wav'), 'x');
+    await fs.writeFile(path.join(root, 'ok.wav'), 'x');
+    mockedReadMetadata.mockImplementation(async (filePath: string) =>
+      filePath.endsWith('lossless.wav') ? null : metadataFor(filePath),
+    );
+    const folder = addMusicFolder(root);
+
+    const result = await scanMusicFolder(folder.id);
+
+    expect(result.added).toBe(1);
+    expect(
+      queryMusicTracks({ folderId: folder.id }).rows.map((t) => t.title),
+    ).toEqual(['ok']);
+  });
+
+  it('keeps the tags it already read when a scan is cancelled mid-parse', async () => {
+    await fs.writeFile(path.join(root, 'a.mp3'), 'x');
+    await fs.writeFile(path.join(root, 'b.mp3'), 'x');
+    const folder = addMusicFolder(root);
+    const controller = new AbortController();
+    mockedReadMetadata.mockImplementation(async (filePath: string) => {
+      controller.abort();
+      return metadataFor(filePath);
+    });
+
+    const result = await scanMusicFolder(folder.id, {
+      signal: controller.signal,
+    });
+
+    expect(result.phase).toBe('cancelled');
+    const rows = queryMusicTracks({ folderId: folder.id }).rows;
+    expect(rows.some((track) => track.artist === 'Test Artist')).toBe(true);
+  });
+
+  it('indexChangedFiles adds a file without marking anything missing', async () => {
+    await fs.writeFile(path.join(root, 'old.mp3'), 'x');
+    const folder = addMusicFolder(root);
+    await scanMusicFolder(folder.id);
+
+    const added = path.join(root, 'new.mp3');
+    await fs.writeFile(added, 'x');
+    const stats = await fs.stat(added);
+    await indexChangedFiles(folder.id, [
+      { path: added, size: stats.size, mtime: Math.floor(stats.mtimeMs / 1000) },
+    ]);
+
+    const rows = queryMusicTracks({
+      folderId: folder.id,
+      includeMissing: true,
+    }).rows;
+    expect(rows.map((track) => track.title).sort()).toEqual(['new', 'old']);
+    expect(rows.every((track) => track.missing_at === null)).toBe(true);
+  });
+
+  it('markPathMissing soft-deletes a file and everything under a directory', async () => {
+    await fs.mkdir(path.join(root, 'album'));
+    await fs.writeFile(path.join(root, 'album', 'one.mp3'), 'x');
+    await fs.writeFile(path.join(root, 'album', 'two.mp3'), 'x');
+    await fs.writeFile(path.join(root, 'album_2.mp3'), 'x');
+    const folder = addMusicFolder(root);
+    await scanMusicFolder(folder.id);
+
+    const changed = markPathMissing(folder.id, path.join(root, 'album'));
+
+    expect(changed).toBe(2);
+    const live = queryMusicTracks({ folderId: folder.id }).rows;
+    expect(live.map((track) => track.title)).toEqual(['album_2']);
   });
 
   it('soft-deletes a vanished file instead of removing the row', async () => {

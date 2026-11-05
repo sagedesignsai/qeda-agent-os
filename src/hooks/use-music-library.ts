@@ -12,7 +12,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { useIpcEvent } from './use-ipc';
@@ -48,6 +48,8 @@ export function useMusicLibrary() {
   const [playlistTracks, setPlaylistTracks] = useState<MusicTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [scan, setScan] = useState<MusicScanProgress | null>(null);
+  const libraryRequest = useRef(0);
+  const libraryLoaded = useRef(false);
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<LibrarySort>('artist');
@@ -92,7 +94,10 @@ export function useMusicLibrary() {
   }, [folderId]);
 
   const loadLibrary = useCallback(async () => {
-    setLoading(true);
+    // The library is re-queried every second or so while a scan runs. Only the
+    // first load may show the skeleton; later ones update the list in place.
+    const requestId = ++libraryRequest.current;
+    if (!libraryLoaded.current) setLoading(true);
     try {
       const page = await window.electron.ipc.invoke<MusicTrackPage>(
         'music:library-query',
@@ -106,12 +111,15 @@ export function useMusicLibrary() {
           limit: 500,
         },
       );
+      // A slower, older response must not overwrite a newer one.
+      if (requestId !== libraryRequest.current) return;
+      libraryLoaded.current = true;
       setTracks(page.rows);
       setTotal(page.total);
     } catch {
       toast.error('Could not load the library');
     } finally {
-      setLoading(false);
+      if (requestId === libraryRequest.current) setLoading(false);
     }
   }, [query, folderId, artist, album, sort, ascending]);
 
