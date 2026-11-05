@@ -7,12 +7,19 @@
       "dependencies": {
         "@nut-tree-fork/nut-js": "^4.2.0",
         "better-sqlite3": "^13.0.3",
+        "music-tag-native": "^0.2.5",
         "node-pty": "^1.0.0",
         "sqlite-vec": "^0.1.9",
       },
     },
   },
   "packages": {
+    "@emnapi/core": ["@emnapi/core@1.11.3", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.3", "tslib": "^2.4.0" } }, "sha512-zLpS5asjEb7lq8jYLq37N6XKaE41DIexlY1rF/z4/tIl3wo13Sqm28fRyfIsKZD+NZ8mM5RoKkpW/rBcuoSZSg=="],
+
+    "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
+
+    "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-ELEBe8PsLvvJ6QMr0zLt8ffvOHW/dc1m3CEzNMg7aJUv3bMaoDtw2TXyDAwkYBuroxxuHEwhRTLJSe5sya547g=="],
+
     "@jimp/bmp": ["@jimp/bmp@0.22.12", "", { "dependencies": { "@jimp/utils": "^0.22.12", "bmp-js": "^0.1.0" }, "peerDependencies": { "@jimp/custom": ">=0.3.5" } }, "sha512-aeI64HD0npropd+AR76MCcvvRaa+Qck6loCOS03CkkxGHN5/r336qTM5HPUdHKMDOGzqknuVPA8+kK1t03z12g=="],
 
     "@jimp/core": ["@jimp/core@0.22.12", "", { "dependencies": { "@jimp/utils": "^0.22.12", "any-base": "^1.1.0", "buffer": "^5.2.0", "exif-parser": "^0.1.12", "file-type": "^16.5.4", "isomorphic-fetch": "^3.0.0", "pixelmatch": "^4.0.2", "tinycolor2": "^1.6.0" } }, "sha512-l0RR0dOPyzMKfjUW1uebzueFEDtCOj9fN6pyTYWWOM/VS4BciXQ1VVrJs8pO3kycGYZxncRKhCoygbNr8eEZQA=="],
@@ -75,6 +82,8 @@
 
     "@jimp/utils": ["@jimp/utils@0.22.12", "", { "dependencies": { "regenerator-runtime": "^0.13.3" } }, "sha512-yJ5cWUknGnilBq97ZXOyOS0HhsHOyAyjHwYfHxGbSyMTohgQI6sVyE8KPgDwH8HHW/nMKXk8TrSwAE71zt716Q=="],
 
+    "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.7", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || 2.0.0-beta.2 || 2.0.0-beta.3", "@emnapi/runtime": "^1.7.1 || 2.0.0-beta.2 || 2.0.0-beta.3" } }, "sha512-zJccwplOAbgfZju95IUHazLnx9RAPtPN2YGJXI6UbrgeaR9QfPjGrQL6ERkSAtnVCA4Q+83ApGyaX5zdpCaKkQ=="],
+
     "@nut-tree-fork/default-clipboard-provider": ["@nut-tree-fork/default-clipboard-provider@4.2.6", "", { "dependencies": { "clipboardy": "2.3.0" } }, "sha512-Hzqj57rheIMGtsS4zK4//kOhaX5FxMluOiz+4TVaHXx+idZS/bPhZwd8e6o1w1GT0PVJOUIP+4CdUe//k5VRig=="],
 
     "@nut-tree-fork/libnut": ["@nut-tree-fork/libnut@4.2.6", "", { "dependencies": { "@nut-tree-fork/libnut-darwin": "2.7.5", "@nut-tree-fork/libnut-linux": "2.7.5", "@nut-tree-fork/libnut-win32": "2.7.5" } }, "sha512-2FCiTBokMGrMl4eL/trEIO+mtpkXpdPHoVKdTBmW8UBIbhCbrCKmnXb2skWGfVs+U3q7o5EYDjVTNUYaUWbaxQ=="],
@@ -94,6 +103,8 @@
     "@nut-tree-fork/shared": ["@nut-tree-fork/shared@4.2.6", "", { "dependencies": { "jimp": "0.22.10", "node-abort-controller": "3.1.1" } }, "sha512-xZaa0YtJt/DDDq/i1vZkabjq8HOWzfhXieMai61cMbYD11J6VhAfhV23ZtQEM02WG7nc2LKjl4UwRnQCteikwA=="],
 
     "@tokenizer/token": ["@tokenizer/token@0.3.0", "", {}, "sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A=="],
+
+    "@tybys/wasm-util": ["@tybys/wasm-util@0.10.4", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A=="],
 
     "@types/node": ["@types/node@16.9.1", "", {}, "sha512-QpLcX9ZSsq3YYUUnD3nFDY8H7wctAhQj/TFKL8Ya8v5fMm3CFXxo8zStsLAl780ltoYoo1WvKUVGBQK+1ifr7g=="],
 
@@ -170,6 +181,34 @@
     "mime": ["mime@1.6.0", "", { "bin": { "mime": "cli.js" } }, "sha512-x0Vn8spI+wuJ1O6S7gnbaQg8Pxh4NNHb7KSINmEWKiPE4RKOplvijn+NkmYmmRgP68mc70j2EbeTFRsrswaQeg=="],
 
     "min-document": ["min-document@2.19.2", "", { "dependencies": { "dom-walk": "^0.1.0" } }, "sha512-8S5I8db/uZN8r9HSLFVWPdJCvYOejMcEC82VIzNUc6Zkklf/d1gg2psfE79/vyhWOj4+J8MtwmoOz3TmvaGu5A=="],
+
+    "music-tag-native": ["music-tag-native@0.2.5", "", { "optionalDependencies": { "music-tag-native-android-arm64": "0.2.5", "music-tag-native-darwin-arm64": "0.2.5", "music-tag-native-darwin-x64": "0.2.5", "music-tag-native-linux-arm-gnueabihf": "0.2.5", "music-tag-native-linux-arm-musleabihf": "0.2.5", "music-tag-native-linux-arm64-gnu": "0.2.5", "music-tag-native-linux-arm64-musl": "0.2.5", "music-tag-native-linux-x64-gnu": "0.2.5", "music-tag-native-linux-x64-musl": "0.2.5", "music-tag-native-wasm32-wasi": "0.2.5", "music-tag-native-win32-arm64-msvc": "0.2.5", "music-tag-native-win32-ia32-msvc": "0.2.5", "music-tag-native-win32-x64-msvc": "0.2.5" } }, "sha512-ZBvk99um2NbSFOb7TFbhIHtJligBtH857HS1QhCfo2SdwWgBUCtvR5Zx0P2oV+G5C38lZr/aPDKhq6VIvVBY3w=="],
+
+    "music-tag-native-android-arm64": ["music-tag-native-android-arm64@0.2.5", "", { "os": "android", "cpu": "arm64" }, "sha512-Xgqp4fBy83H5wvzqEIfsJff8bzgA1vBKd15ht7E8jMkoaW3d+8XYC9+NLUTU7pVcEU5O11YdZYkcsyVs9ExS2A=="],
+
+    "music-tag-native-darwin-arm64": ["music-tag-native-darwin-arm64@0.2.5", "", { "os": "darwin", "cpu": "arm64" }, "sha512-ZLsWWP2Jk1vpP6mGCDExZtSx0/dKsrlNlblaWVBnfOQ1eoSu12BI0LE60d6uL02pOzn/hUyTG1/FmpNl9Cn8tQ=="],
+
+    "music-tag-native-darwin-x64": ["music-tag-native-darwin-x64@0.2.5", "", { "os": "darwin", "cpu": "x64" }, "sha512-JSPUbRuZ1kLed+ncbXi4fZP+3hABq+7UFxccdaCzXkUaSsBrM/VKnxVeqp139ibxRBlftOHrEioO5pRXDmT1WA=="],
+
+    "music-tag-native-linux-arm-gnueabihf": ["music-tag-native-linux-arm-gnueabihf@0.2.5", "", { "os": "linux", "cpu": "arm" }, "sha512-Q4axi6daTF/xmOVk9QZ/d18biVf3qeF6yP05gLJCPdELtSwddhJNw6YqgbHL89Slq1Wa77WvVyZpUz3cFkww6g=="],
+
+    "music-tag-native-linux-arm-musleabihf": ["music-tag-native-linux-arm-musleabihf@0.2.5", "", { "os": "linux", "cpu": "arm" }, "sha512-Bl3nSkhWw6YIqWp9+bpNMpllBDe7WSUeCw0Q7p09D4Bd9StaTPSheJOYPktWHawCEQdm70Bc4AR/rE6FOyxmZA=="],
+
+    "music-tag-native-linux-arm64-gnu": ["music-tag-native-linux-arm64-gnu@0.2.5", "", { "os": "linux", "cpu": "arm64", "libc": "glibc" }, "sha512-vPhl6Hxe0xEdA6OLbAhs0Ukd2qAQQqtNDGJrh6djMB0d1lwL2E49hSE58InanYmvIy2gGg2+hWR4dWhfb3yKBw=="],
+
+    "music-tag-native-linux-arm64-musl": ["music-tag-native-linux-arm64-musl@0.2.5", "", { "os": "linux", "cpu": "arm64", "libc": "musl" }, "sha512-2C8kyUkb+O1EEdWWL899/eLHOCATrBoOuLX3NEAXyqvEwMtzcJJSLQz+g10SIQw4Eo0k4q2OQ9sjyGEp3gJShA=="],
+
+    "music-tag-native-linux-x64-gnu": ["music-tag-native-linux-x64-gnu@0.2.5", "", { "os": "linux", "cpu": "x64", "libc": "glibc" }, "sha512-j2YKrjn8JCOSSFx5KsYyKZ+/bnW6eCv9dBOUC1lpHm8nDtCNBT7zmAOapBCREQR1BZAJKfxo5ap1rU4RHVqRYw=="],
+
+    "music-tag-native-linux-x64-musl": ["music-tag-native-linux-x64-musl@0.2.5", "", { "os": "linux", "cpu": "x64", "libc": "musl" }, "sha512-0iwQtMY0fODV8e8zbdk48VNtBNNv4xTX7h4bAhyptCEX+u1vGk3qYXboEVc8dwGGsaQWJFcD+5JuFfi7utcMFg=="],
+
+    "music-tag-native-wasm32-wasi": ["music-tag-native-wasm32-wasi@0.2.5", "", { "dependencies": { "@napi-rs/wasm-runtime": "^1.1.5" }, "cpu": "none" }, "sha512-CeosbJTc09Q14PG3YMgoTwj7dckCPTKyOet2dWRIXNaUof9Wxgmdr8DnqMsgD46ih/dsU6F+xP7tujaxnRJ2GQ=="],
+
+    "music-tag-native-win32-arm64-msvc": ["music-tag-native-win32-arm64-msvc@0.2.5", "", { "os": "win32", "cpu": "arm64" }, "sha512-R53oysvkzJ/AGt7HK5G/qvyT9ICdkEs+eroHiw/dm9V6AaqqbtTYtd/wfKZx3TBpgWC6j5hmkIvsHerfwvuhdw=="],
+
+    "music-tag-native-win32-ia32-msvc": ["music-tag-native-win32-ia32-msvc@0.2.5", "", { "os": "win32", "cpu": "ia32" }, "sha512-FPNR/vgCrFo7B0qFLwOwHjXuc1x7hiCqLrAW+w2jb+XkvjtuXvmzOyiEtK0JwUUZX8BXz/XcDhjUMgpNd0mXlA=="],
+
+    "music-tag-native-win32-x64-msvc": ["music-tag-native-win32-x64-msvc@0.2.5", "", { "os": "win32", "cpu": "x64" }, "sha512-CsZUOQ0j0ObVWqR7NqxOqrCVmVXWAcKRPqjxDGUXZlmw6WUZ6KjnrDh0lAFTAU6/mUQRyvWRZ385lfWaitpvLQ=="],
 
     "nice-try": ["nice-try@1.0.5", "", {}, "sha512-1nh45deeb5olNY7eX82BkPO7SSxR5SSYJiPTrTdFUVYwAl8CKMA5N9PjTYkHiRjisVcxcQ1HXdLhx2qxxJzLNQ=="],
 
@@ -256,6 +295,8 @@
     "token-types": ["token-types@4.2.1", "", { "dependencies": { "@tokenizer/token": "^0.3.0", "ieee754": "^1.2.1" } }, "sha512-6udB24Q737UD/SDsKAHI9FCRP7Bqc9D/MQUV02ORQg5iskjtLJlZJNdN4kKtcdtwCeWIwIHDGaUsTsCCAa8sFQ=="],
 
     "tr46": ["tr46@0.0.3", "", {}, "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="],
+
+    "tslib": ["tslib@2.9.1", "", {}, "sha512-a4Ux9VKuIMHsOS7ENbEq6hK2ZGYIT27Rtl0E4eD9KqwxhKiQeMZE/9xb3IdYwWaSOyIBQLExhQgXDTYoiCxnWA=="],
 
     "utif2": ["utif2@4.1.0", "", { "dependencies": { "pako": "^1.0.11" } }, "sha512-+oknB9FHrJ7oW7A2WZYajOcv4FcDR4CfoGB0dPNfxbi4GO05RRnFmt5oa23+9w32EanrYcSJWspUiJkLMs+37w=="],
 

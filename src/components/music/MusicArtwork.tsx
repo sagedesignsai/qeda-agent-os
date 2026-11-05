@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Music2Icon } from 'lucide-react';
 import { hueForId } from '@/lib/music/format';
 import { musicArtUrl } from '@/lib/music/media';
@@ -23,7 +23,7 @@ export interface MusicArtworkProps {
   iconClassName?: string;
 }
 
-export function MusicArtwork({
+function MusicArtworkImpl({
   trackId,
   title,
   className,
@@ -70,3 +70,5 @@ export function MusicArtwork({
     />
   );
 }
+
+export const MusicArtwork = memo(MusicArtworkImpl);

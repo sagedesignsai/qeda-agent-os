@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect } from 'react';
+import { memo, useEffect } from 'react';
 import {
   ListMusicIcon,
   PlusIcon,
@@ -78,7 +78,7 @@ export interface MusicCopilotSheetProps {
   onInitialPromptHandled?: () => void;
 }
 
-export function MusicCopilotSheet({
+function MusicCopilotSheetImpl({
   open,
   onOpenChange,
   initialPrompt,
@@ -249,3 +249,5 @@ export function MusicCopilotSheet({
     </Sheet>
   );
 }
+
+export const MusicCopilotSheet = memo(MusicCopilotSheetImpl);

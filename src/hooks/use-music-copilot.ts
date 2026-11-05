@@ -7,6 +7,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useMemo } from 'react';
 import { useMusicStore } from '@/stores/music-store';
 import { useSoundscapeStore } from '@/stores/soundscape-store';
 import {
@@ -29,16 +30,21 @@ export function useMusicCopilot(): UseAgentChatReturn {
   const current = useMusicStore((s) => s.queue[s.index] ?? null);
   const sceneId = useSoundscapeStore((s) => s.sceneId);
 
-  return useAgentChat({
-    sessionId: 'music-copilot',
-    transport: MUSIC_COPILOT_TRANSPORT,
-    context: {
+  const context = useMemo(
+    () => ({
       playing,
       queueLength,
       currentTrackTitle: current?.title ?? null,
       currentTrackArtist: current?.artist ?? null,
       sceneId,
-    },
+    }),
+    [playing, queueLength, current?.title, current?.artist, sceneId],
+  );
+
+  return useAgentChat({
+    sessionId: 'music-copilot',
+    transport: MUSIC_COPILOT_TRANSPORT,
+    context,
     persist: false,
     hydrate: false,
   });

@@ -15,9 +15,10 @@
     "link-modules": "node -r ../../.erb/scripts/register.cjs ../../.erb/scripts/link-modules.ts"
   },
   "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.0",
     "better-sqlite3": "^13.0.3",
+    "music-tag-native": "^0.2.5",
     "node-pty": "^1.0.0",
-    "sqlite-vec": "^0.1.9",
-    "@nut-tree-fork/nut-js": "^4.2.0"
+    "sqlite-vec": "^0.1.9"
   }
 }

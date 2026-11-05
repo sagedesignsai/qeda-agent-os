@@ -11,10 +11,18 @@ import {
   ArrowDownIcon,
   ArrowUpIcon,
   ListXIcon,
+  MoreHorizontalIcon,
   PlayIcon,
   Trash2Icon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useMusicPlayer } from '@/hooks/use-music-player';
@@ -27,21 +35,14 @@ export interface QueuePanelProps {
 }
 
 export function QueuePanel({ className, onClose }: QueuePanelProps) {
-  const {
-    queue,
-    index,
-    playing,
-    playTracks,
-    removeAt,
-    move,
-    clearQueue,
-  } = useMusicPlayer();
+  const { queue, index, playing, playTracks, removeAt, move, clearQueue } =
+    useMusicPlayer();
 
   const total = queue.reduce((sum, track) => sum + track.duration_ms, 0);
   const upNext = queue.length - Math.max(0, index + 1);
 
   return (
-    <div className={cn('flex min-h-0 flex-col', className)}>
+    <div className={cn('flex min-h-0 min-w-0 flex-col', className)}>
       <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -65,14 +66,19 @@ export function QueuePanel({ className, onClose }: QueuePanelProps) {
             </Button>
           )}
           {onClose && (
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onClose}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={onClose}
+            >
               Close
             </Button>
           )}
         </div>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 min-w-0 flex-1">
         {queue.length === 0 ? (
           <p className="px-3 py-10 text-center text-xs text-muted-foreground">
             The queue is empty. Play an album or add tracks from the library.
@@ -85,7 +91,7 @@ export function QueuePanel({ className, onClose }: QueuePanelProps) {
                 <div
                   key={`${track.id}-${trackIndex}`}
                   className={cn(
-                    'group flex items-center gap-2 border-b border-border/30 px-3 py-2',
+                    'group flex min-w-0 items-center gap-2 border-b border-border/30 px-3 py-2',
                     isCurrent && 'bg-primary/5',
                   )}
                 >
@@ -127,37 +133,42 @@ export function QueuePanel({ className, onClose }: QueuePanelProps) {
                         )}
                       />
                     ) : (
-                      <>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-6 opacity-0 group-hover:opacity-100"
-                          onClick={() => move(trackIndex, trackIndex - 1)}
-                          disabled={trackIndex === 0}
-                          aria-label="Move up"
-                        >
-                          <ArrowUpIcon className="size-3" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-6 opacity-0 group-hover:opacity-100"
-                          onClick={() => move(trackIndex, trackIndex + 1)}
-                          disabled={trackIndex === queue.length - 1}
-                          aria-label="Move down"
-                        >
-                          <ArrowDownIcon className="size-3" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-6 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
-                          onClick={() => void removeAt(trackIndex)}
-                          aria-label="Remove from queue"
-                        >
-                          <Trash2Icon className="size-3" />
-                        </Button>
-                      </>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-7 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                            aria-label={`Actions for ${track.title}`}
+                          >
+                            <MoreHorizontalIcon className="size-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem
+                            onClick={() => move(trackIndex, trackIndex - 1)}
+                            disabled={trackIndex === 0}
+                          >
+                            <ArrowUpIcon className="mr-2 size-4" />
+                            Move up
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => move(trackIndex, trackIndex + 1)}
+                            disabled={trackIndex === queue.length - 1}
+                          >
+                            <ArrowDownIcon className="mr-2 size-4" />
+                            Move down
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => void removeAt(trackIndex)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2Icon className="mr-2 size-4" />
+                            Remove from queue
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     )}
                   </span>
                 </div>

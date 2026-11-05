@@ -9,6 +9,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { memo, useMemo, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ListEndIcon,
   ListPlusIcon,
@@ -62,7 +64,152 @@ function Equaliser() {
   );
 }
 
-export function TrackList({
+function TrackRowImpl({
+  track,
+  index,
+  isCurrent,
+  playing,
+  onPlay,
+  onEnqueue,
+  onAddToPlaylist,
+  onPreview,
+}: {
+  track: MusicTrack;
+  index: number;
+  isCurrent: boolean;
+  playing?: boolean;
+  onPlay: (track: MusicTrack, index: number) => void;
+  onEnqueue: (track: MusicTrack, mode: 'next' | 'end') => void;
+  onAddToPlaylist?: (track: MusicTrack) => void;
+  onPreview?: (track: MusicTrack) => void;
+}) {
+  const meta = useMemo(
+    () =>
+      [formatCodec(track.codec), formatBitrate(track.bitrate)]
+        .filter(Boolean)
+        .join(' · '),
+    [track.codec, track.bitrate],
+  );
+
+  // Inline handlers — track reference changes each render anyway, so
+  // useCallback would just add overhead without stabilizing memo().
+  const handlePlayClick = () => onPlay(track, index);
+  const handleEnqueueNext = () => onEnqueue(track, 'next');
+  const handleEnqueueEnd = () => onEnqueue(track, 'end');
+  const handleAddToPlaylist = () => onAddToPlaylist?.(track);
+  const handlePreview = () => onPreview?.(track);
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') onPlay(track, index);
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onDoubleClick={handlePlayClick}
+      onKeyDown={handleKeyDown}
+      className={cn(
+        'group flex items-center gap-3 border-b border-border/40 px-3 py-2 transition-colors',
+        'hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none',
+        isCurrent && 'bg-primary/5 hover:bg-primary/10',
+      )}
+    >
+      <span className="w-6 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">
+        {isCurrent && playing ? (
+          <Equaliser />
+        ) : (
+          String(index + 1).padStart(2, '0')
+        )}
+      </span>
+
+      <MusicArtwork
+        trackId={track.id}
+        title={track.title}
+        className={cn('size-10', isCurrent && 'ring-2 ring-primary/50')}
+      />
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p
+            className={cn(
+              'truncate text-sm font-medium',
+              isCurrent ? 'text-primary' : 'text-foreground',
+            )}
+          >
+            {track.title}
+          </p>
+          {track.missing_at && (
+            <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-destructive">
+              Missing
+            </span>
+          )}
+        </div>
+        <p className="truncate text-xs text-muted-foreground">
+          {track.artist ?? 'Unknown artist'}
+          {track.album ? ` — ${track.album}` : ''}
+        </p>
+      </div>
+
+      <span className="hidden shrink-0 text-[10px] text-muted-foreground/70 sm:block">
+        {meta}
+      </span>
+      <span className="w-12 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+        {formatDuration(track.duration_ms)}
+      </span>
+
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+        onClick={handlePlayClick}
+        aria-label={`Play ${track.title}`}
+      >
+        <PlayIcon className="size-3.5 fill-current" />
+      </Button>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 shrink-0 text-muted-foreground"
+            aria-label={`More actions for ${track.title}`}
+          >
+            <MoreHorizontalIcon className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={handleEnqueueNext}>
+            <ListPlusIcon className="mr-2 size-4" />
+            Play next
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleEnqueueEnd}>
+            <ListEndIcon className="mr-2 size-4" />
+            Add to queue
+          </DropdownMenuItem>
+          {onAddToPlaylist && (
+            <DropdownMenuItem onClick={handleAddToPlaylist}>
+              <PlusIcon className="mr-2 size-4" />
+              Add to playlist…
+            </DropdownMenuItem>
+          )}
+          {onPreview && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handlePreview}>
+                Preview file
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+const TrackRow = memo(TrackRowImpl);
+
+const TrackListImpl = function TrackList({
   tracks,
   loading,
   currentTrackId,
@@ -74,15 +221,30 @@ export function TrackList({
   onAddToPlaylist,
   onPreview,
 }: TrackListProps) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: tracks.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 56, // Row height: py-2 (16px) + 40px track height
+    overscan: 10, // Render 10 extra rows outside viewport for smoother scrolling
+  });
+
   if (loading) {
     return (
-      <div className="flex flex-col gap-2 p-3">
-        {Array.from({ length: 8 }).map((_, index) => (
-          <div key={index} className="flex items-center gap-3">
+      <div className="flex flex-col gap-1.5 px-3 py-2">
+        {Array.from({ length: 12 }).map((_, index) => (
+          <div
+            key={index}
+            className="flex items-center gap-3 rounded-lg border border-border/20 bg-muted/30 px-3 py-2"
+          >
             <Skeleton className="size-10 rounded-md" />
-            <div className="flex flex-1 flex-col gap-1.5">
-              <Skeleton className="h-3 w-1/3" />
-              <Skeleton className="h-2.5 w-1/5" />
+            <div className="flex flex-1 flex-col gap-1.5 min-w-0">
+              <Skeleton className="h-3 w-2/5" />
+              <Skeleton className="h-2.5 w-1/3" />
+            </div>
+            <div className="hidden sm:flex gap-2">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-3 w-12" />
             </div>
             <Skeleton className="h-3 w-10" />
           </div>
@@ -102,120 +264,50 @@ export function TrackList({
     );
   }
 
+  const virtualItems = virtualizer.getVirtualItems();
+  const totalSize = virtualizer.getTotalSize();
+
   return (
-    <div className="flex flex-col">
-      {tracks.map((track, index) => {
-        const isCurrent = track.id === currentTrackId;
-        const meta = [formatCodec(track.codec), formatBitrate(track.bitrate)]
-          .filter(Boolean)
-          .join(' · ');
-        return (
+    <div
+      ref={parentRef}
+      className="h-full overflow-y-auto"
+      style={{
+        contain: 'layout style paint',
+      }}
+    >
+      <div
+        style={{
+          height: totalSize,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualItems.map((virtualItem) => (
           <div
-            key={track.id}
-            role="button"
-            tabIndex={0}
-            onDoubleClick={() => onPlay(track, index)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') onPlay(track, index);
+            key={`${tracks[virtualItem.index].id}-${virtualItem.index}`}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${virtualItem.start}px)`,
             }}
-            className={cn(
-              'group flex items-center gap-3 border-b border-border/40 px-3 py-2 transition-colors',
-              'hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none',
-              isCurrent && 'bg-primary/5 hover:bg-primary/10',
-            )}
           >
-            <span className="w-6 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">
-              {isCurrent && playing ? (
-                <Equaliser />
-              ) : (
-                String(index + 1).padStart(2, '0')
-              )}
-            </span>
-
-            <MusicArtwork
-              trackId={track.id}
-              title={track.title}
-              className={cn('size-10', isCurrent && 'ring-2 ring-primary/50')}
+            <TrackRow
+              track={tracks[virtualItem.index]}
+              index={virtualItem.index}
+              isCurrent={tracks[virtualItem.index].id === currentTrackId}
+              playing={playing}
+              onPlay={onPlay}
+              onEnqueue={onEnqueue}
+              onAddToPlaylist={onAddToPlaylist}
+              onPreview={onPreview}
             />
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <p
-                  className={cn(
-                    'truncate text-sm font-medium',
-                    isCurrent ? 'text-primary' : 'text-foreground',
-                  )}
-                >
-                  {track.title}
-                </p>
-                {track.missing_at && (
-                  <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-destructive">
-                    Missing
-                  </span>
-                )}
-              </div>
-              <p className="truncate text-xs text-muted-foreground">
-                {track.artist ?? 'Unknown artist'}
-                {track.album ? ` — ${track.album}` : ''}
-              </p>
-            </div>
-
-            <span className="hidden shrink-0 text-[10px] text-muted-foreground/70 sm:block">
-              {meta}
-            </span>
-            <span className="w-12 shrink-0 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
-              {formatDuration(track.duration_ms)}
-            </span>
-
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-              onClick={() => onPlay(track, index)}
-              aria-label={`Play ${track.title}`}
-            >
-              <PlayIcon className="size-3.5 fill-current" />
-            </Button>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-7 shrink-0 text-muted-foreground"
-                  aria-label={`More actions for ${track.title}`}
-                >
-                  <MoreHorizontalIcon className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => onEnqueue(track, 'next')}>
-                  <ListPlusIcon className="mr-2 size-4" />
-                  Play next
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onEnqueue(track, 'end')}>
-                  <ListEndIcon className="mr-2 size-4" />
-                  Add to queue
-                </DropdownMenuItem>
-                {onAddToPlaylist && (
-                  <DropdownMenuItem onClick={() => onAddToPlaylist(track)}>
-                    <PlusIcon className="mr-2 size-4" />
-                    Add to playlist…
-                  </DropdownMenuItem>
-                )}
-                {onPreview && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => onPreview(track)}>
-                      Preview file
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
-        );
-      })}
+        ))}
+      </div>
     </div>
   );
 }
+
+export const TrackList = memo(TrackListImpl);

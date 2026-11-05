@@ -41,6 +41,11 @@ function createElement(): HTMLAudioElement | null {
   if (typeof document === 'undefined') return null;
   const element = document.createElement('audio');
   element.preload = 'auto';
+  // crossOrigin must be set before any src is assigned. The qeda-media://
+  // protocol handler advertises Access-Control-Allow-Origin: *, and
+  // createMediaElementSource requires a CORS-flagged request — without this
+  // Chromium makes a no-CORS request and the node outputs silence.
+  element.crossOrigin = 'anonymous';
   // Not appended: an unattached media element still plays.
   return element;
 }

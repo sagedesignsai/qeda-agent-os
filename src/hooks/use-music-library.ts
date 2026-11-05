@@ -184,6 +184,24 @@ export function useMusicLibrary() {
     if (playlistId) navigate('/music');
   }, [navigate, playlistId]);
 
+  /**
+   * Client-side filter applied instantly for search queries.
+   * While the server is fetching the full result, apply the search query to the
+   * current tracks in-memory. This gives instant visual feedback while typing.
+   * The server result (when it arrives) will be more accurate but the UX doesn't
+   * feel broken during the 150ms debounce wait.
+   */
+  const filteredTracksByQuery = useMemo(() => {
+    if (!query.trim() || !tracks.length) return tracks;
+    const q = query.trim().toLowerCase();
+    return tracks.filter(
+      (track) =>
+        track.title.toLowerCase().includes(q) ||
+        track.artist?.toLowerCase().includes(q) ||
+        track.album?.toLowerCase().includes(q),
+    );
+  }, [tracks, query]);
+
   const addFolder = useCallback(async () => {
     try {
       const picked = await window.electron.ipc.invoke<{ path: string | null }>(
@@ -294,26 +312,34 @@ export function useMusicLibrary() {
     [playlists, playlistId],
   );
 
-  const visibleTracks = playlistId ? playlistTracks : tracks;
+  /**
+   * Return either playlist tracks or the client-side filtered library results.
+   * This means instant visual feedback during search while waiting for server.
+   */
+  const visibleTracks = playlistId ? playlistTracks : filteredTracksByQuery;
 
-  const heading = activePlaylist
-    ? activePlaylist.name
-    : browse === 'artists'
-      ? 'Artists'
-      : browse === 'albums'
-        ? 'Albums'
-        : browse === 'playlists'
-          ? 'Playlists'
-          : folderId
-            ? (folders.find((row) => row.id === folderId)?.path
-                .split(/[\\/]/)
-                .filter(Boolean)
-                .pop() ?? 'Folder')
-            : artist
-              ? artist
-              : album
-                ? album
-                : 'All tracks';
+  const heading = useMemo(
+    () =>
+      activePlaylist
+        ? activePlaylist.name
+        : browse === 'artists'
+          ? 'Artists'
+          : browse === 'albums'
+            ? 'Albums'
+            : browse === 'playlists'
+              ? 'Playlists'
+              : folderId
+                ? (folders.find((row) => row.id === folderId)?.path
+                    .split(/[\\/]/)
+                    .filter(Boolean)
+                    .pop() ?? 'Folder')
+                : artist
+                  ? artist
+                  : album
+                    ? album
+                    : 'All tracks',
+    [activePlaylist, browse, folderId, folders, artist, album],
+  );
 
   const filteredArtists = useMemo(() => {
     const term = query.trim().toLowerCase();

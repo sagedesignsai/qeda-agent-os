@@ -32,12 +32,14 @@ import { MusicArtwork } from './MusicArtwork';
 export interface PlayerTransportProps {
   className?: string;
   compact?: boolean;
+  panel?: boolean;
   onOpenQueue?: () => void;
 }
 
 export function PlayerTransport({
   className,
   compact,
+  panel,
   onOpenQueue,
 }: PlayerTransportProps) {
   const {
@@ -62,7 +64,118 @@ export function PlayerTransport({
   const elapsed = Math.min(positionMs, durationMs || positionMs);
   const max = Math.max(1, durationMs);
   const VolumeIcon =
-    muted || volume === 0 ? VolumeXIcon : volume < 0.45 ? Volume1Icon : Volume2Icon;
+    muted || volume === 0
+      ? VolumeXIcon
+      : volume < 0.45
+        ? Volume1Icon
+        : Volume2Icon;
+
+  if (panel) {
+    return (
+      <div className={cn('flex min-w-0 flex-col gap-3', className)}>
+        <div className="flex min-w-0 items-center gap-3">
+          <MusicArtwork
+            trackId={current?.id}
+            title={current?.title}
+            className="size-16 rounded-lg shadow-sm"
+            iconClassName="size-6"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground">
+              {current?.title ?? 'Nothing playing'}
+            </p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {current
+                ? [current.artist, current.album].filter(Boolean).join(' — ')
+                : 'Choose a track to begin'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-1">
+          <Slider
+            value={[Math.round(elapsed)]}
+            onValueChange={([value]) => seek(value)}
+            max={max}
+            step={500}
+            disabled={!current}
+            aria-label="Seek"
+          />
+          <div className="flex justify-between font-mono text-[10px] tabular-nums text-muted-foreground">
+            <span>{formatDuration(elapsed)}</span>
+            <span>{formatDuration(durationMs)}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center gap-2">
+          <Button
+            size="icon"
+            variant="ghost"
+            className={cn('size-8 rounded-full', shuffle && 'text-primary')}
+            onClick={toggleShuffle}
+            aria-label="Toggle shuffle"
+            aria-pressed={shuffle}
+          >
+            <ShuffleIcon className="size-3.5" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 rounded-full"
+            onClick={() => void previous()}
+            disabled={!current}
+            aria-label="Previous track"
+          >
+            <SkipBackIcon className="size-3.5 fill-current" />
+          </Button>
+          <Button
+            size="icon"
+            className="size-10 rounded-full"
+            onClick={() => void toggle()}
+            disabled={!current}
+            aria-label={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? (
+              <PauseIcon className="size-4 fill-current" />
+            ) : (
+              <PlayIcon className="ml-0.5 size-4 fill-current" />
+            )}
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 rounded-full"
+            onClick={() => void next()}
+            disabled={!current}
+            aria-label="Next track"
+          >
+            <SkipForwardIcon className="size-3.5 fill-current" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className={cn(
+              'size-8 rounded-full',
+              repeat !== 'off' && 'text-primary',
+            )}
+            onClick={() =>
+              setRepeat(
+                repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off',
+              )
+            }
+            aria-label={`Repeat: ${repeat}`}
+            aria-pressed={repeat !== 'off'}
+          >
+            {repeat === 'one' ? (
+              <Repeat1Icon className="size-3.5" />
+            ) : (
+              <RepeatIcon className="size-3.5" />
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -79,7 +192,12 @@ export function PlayerTransport({
         iconClassName={compact ? 'size-4' : 'size-7'}
       />
 
-      <div className={cn('min-w-0 flex-1', compact ? 'flex flex-col gap-0.5' : 'flex flex-col gap-2')}>
+      <div
+        className={cn(
+          'min-w-0 flex-1',
+          compact ? 'flex flex-col gap-0.5' : 'flex flex-col gap-2',
+        )}
+      >
         <div className="min-w-0">
           <p
             className={cn(
@@ -146,9 +264,16 @@ export function PlayerTransport({
           aria-label={playing ? 'Pause' : 'Play'}
         >
           {playing ? (
-            <PauseIcon className={cn('fill-current', compact ? 'size-3.5' : 'size-4')} />
+            <PauseIcon
+              className={cn('fill-current', compact ? 'size-3.5' : 'size-4')}
+            />
           ) : (
-            <PlayIcon className={cn('ml-0.5 fill-current', compact ? 'size-3.5' : 'size-4')} />
+            <PlayIcon
+              className={cn(
+                'ml-0.5 fill-current',
+                compact ? 'size-3.5' : 'size-4',
+              )}
+            />
           )}
         </Button>
         <Button
@@ -165,8 +290,15 @@ export function PlayerTransport({
           <Button
             size="icon"
             variant="ghost"
-            className={cn('size-8 rounded-full', repeat !== 'off' && 'text-primary')}
-            onClick={() => setRepeat(repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off')}
+            className={cn(
+              'size-8 rounded-full',
+              repeat !== 'off' && 'text-primary',
+            )}
+            onClick={() =>
+              setRepeat(
+                repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off',
+              )
+            }
             aria-label={`Repeat: ${repeat}`}
           >
             {repeat === 'one' ? (

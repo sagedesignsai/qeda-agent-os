@@ -11,7 +11,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import Music from '../renderer/pages/Music';
 import { GlobalAudioDock } from '../components/music/GlobalAudioDock';
@@ -104,6 +104,10 @@ function mockBridge() {
         return [];
       case 'music:state-get':
         return null;
+      case 'music:scenes-list':
+        return [];
+      case 'tasks:list':
+        return [TASK];
       case 'music:tracks-by-ids':
         return [];
       default:
@@ -144,15 +148,58 @@ beforeEach(() => {
 });
 
 describe('music library UI', () => {
-  it('renders indexed tracks from the library query', async () => {
+  it('opens the listening home and keeps the library one action away', async () => {
     render(
       <MemoryRouter initialEntries={['/music']}>
         <Music />
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Xtal')).toBeInTheDocument();
-    expect(screen.getByText('Aphex Twin — Selected Ambient Works 85–92')).toBeInTheDocument();
+    expect(await screen.findByText('Make room to focus.')).toBeInTheDocument();
+    expect(useMusicStore.getState().queue).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /all tracks/i }));
+    expect(
+      await screen.findByRole('heading', { name: 'Music library' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'All tracks' }),
+    ).toBeInTheDocument();
+  });
+
+  it('starts a focus session only after choosing a task', async () => {
+    render(
+      <MemoryRouter initialEntries={['/music']}>
+        <Music />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /choose a task/i }),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: /write executive summary/i }),
+    );
+
+    expect(useFocusStore.getState().focusedTask?.id).toBe(TASK.id);
+    expect(useFocusStore.getState().timer.running).toBe(true);
+    expect(useMusicStore.getState().queue).toHaveLength(0);
+  });
+
+  it('opens the scene tab from the mobile audio shortcuts', async () => {
+    render(
+      <MemoryRouter initialEntries={['/music']}>
+        <Music />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Scenes$/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('tab', { name: 'Scenes' })).toHaveAttribute(
+      'data-state',
+      'active',
+    );
   });
 
   it('renders the queue with the current track', () => {

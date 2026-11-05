@@ -3,10 +3,10 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Scanner safety, with the metadata adapter mocked.
  *
- * `music-metadata` is an ESM package that decodes real files; the scanner's job
- * is the walk, the batching and — most importantly — deciding when a pass is
- * authoritative enough to mark files missing. These tests use a temp directory
- * and a fake adapter so they check that decision, not tag parsing.
+ * `music-tag-native` is a native module that decodes real files; the scanner's
+ * job is the walk, the batching and — most importantly — deciding when a pass
+ * is authoritative enough to mark files missing. These tests use a temp
+ * directory and a fake adapter so they check that decision, not tag parsing.
  *
  * The unreadable-folder case is a regression guard: swallowing a `readdir`
  * failure and treating the pass as complete soft-deleted an entire library the
