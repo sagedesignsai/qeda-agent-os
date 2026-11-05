@@ -5,332 +5,233 @@ sessionId: session-261105-142251-mmgn
 # Requirements
 
 ### Overview & Goals
-Extract SoundLab from Qeda into a new standalone Electron app (`soundlab-desktop/`) with full feature parity, including the AI copilot. The new app should be a self-contained brainwave entrainment DAW that can be developed, built, and distributed independently of Qeda.
+Build a **session-aware Music Player** feature inside Qeda that integrates with the Tasks/Productivity/ADHD system. The player allows users to browse and play local music files alongside ambient soundscapes, with playback tied to focus sessions via the existing Pomodoro timer. The goal is to eliminate context switching between a music app and the productivity app, and to create a consistent audio ritual that supports focus.
 
 ### Scope
 
-**In Scope:**
-- New `soundlab-desktop/` directory with its own `package.json`, `electron.vite.config.ts`, and build toolchain
-- All 36 SoundLab source files (~10,500 lines) moved as-is
-- All 8 test files (~1,880 lines) moved as-is
-- Standalone Electron main process (minimal bootstrap, no Qeda features)
-- Standalone renderer shell (minimal `App.tsx`, single route, no `AppLayout` or `AppSidebar`)
-- SQLite persistence with only SoundLab tables (no Qeda schema)
-- AI copilot with replicated shared infrastructure (provider registry, settings, fallback chain, PlanManager, plan tools)
-- Direct store calls in renderer (no Electron IPC needed for CRUD — the main process is co-located)
-- shadcn UI components copied from `src/components/ui/`
+**In Scope (Phase 1 — MVP):**
+- New top-level `/music` route with its own `AppSidebar` nav item
+- Local music library indexer (scans user-specified directories for audio files)
+- Music playback using `<audio>` element with queue management (play, pause, next, prev, shuffle, repeat)
+- Soundscape mixer: move 10 OGG files from `assets/focus-sound-stems/` to `src/renderer/focus-audio/` and wire them into `focus-audio.ts`
+- Dual-bus mixing: music channel + soundscape channel with independent volume and automatic ducking
+- Extend `FloatingFocusBar` with music controls (now-playing, play/pause, next/prev, soundscape toggle) during focus sessions
+- SQLite persistence for playlists, queue state, and library index
 
-**Out of Scope:**
-- Removing SoundLab from Qeda (that's a separate cleanup task)
-- Data migration from Qeda's `vellum.db` to the new app
-- Packaging and distribution (electron-builder config can be copied but not customized)
-- New features or UI changes
+**Out of Scope (Phase 2+):**
+- AI playlist curation from the library
+- Streaming service integrations (Spotify, Apple Music)
+- Audio-to-productivity correlation analytics
+- Album art display and metadata-rich library browser
 
 ### User Stories
-- As a developer, I want to clone `soundlab-desktop/` and run `bun install && bun start` to get a working DAW
-- As a user, I want to create, edit, and play SoundLab sessions with the AI copilot
-- As a user, I want the app to persist my sessions locally in SQLite
+- As a user, I want to add folders from my music library so the app can find and index my songs
+- As a user, I want to browse my library and play songs with a queue (next, prev, shuffle, repeat)
+- As a user, I want to layer ambient sounds (rain, stream, wind) over my music with independent volume control
+- As a user, I want music to start when I begin a focus session and pause at breaks
+- As a user, I want to see now-playing info and controls in the `FloatingFocusBar` during focus
+- As a user, I want to create and save playlists for different task types (deep work, admin, creative)
 
-### Key Deliverables
-1. A new `soundlab-desktop/` directory with a complete, buildable Electron app
-2. All SoundLab functionality preserved: audio engine, UI, persistence, AI copilot
-3. Tests passing in the new project
+### Functional Requirements
+
+**Library Management:**
+- User specifies one or more directories via a file dialog (IPC handler)
+- Main process scans directories for audio files (MP3, FLAC, Ogg, M4A, WAV)
+- Metadata (title, artist, album, duration) is read from file headers and stored in SQLite
+- Library is re-indexed on demand; changes are broadcast to renderer via `music:library-changed` event
+
+**Playback:**
+- `<audio>` element for music playback (handles formats, seek, progress natively)
+- Queue management: ordered list of tracks with current index, shuffle mode, repeat mode
+- Playback state (playing, paused, track progress) is exposed via `useMusicPlayer` hook
+- Progress updates at ~1Hz to avoid React re-render spam
+
+**Soundscape Mixing:**
+- 13 total soundscape stems (3 existing + 10 from `assets/focus-sound-stems/`)
+- Each stem loaded as `AudioBuffer` via `decodeAudioData()` and played as a looping `AudioBufferSourceNode`
+- Independent volume slider per soundscape layer
+- Automatic ducking: when music plays, soundscape volume drops by configurable amount; during breaks or no music, soundscape rises
+
+**Focus Integration:**
+- `FloatingFocusBar` extends to show now-playing info, play/pause, next/prev, and a soundscape toggle
+- When focus timer starts, music can auto-resume; when break starts, music pauses and soundscape may change
+- Focus session completion records which tracks were played (for future analytics)
+
+### Non-Functional Requirements
+- **Performance**: Library indexing should not block the main thread; use chunked scanning for large libraries
+- **Privacy**: All data stays local; no telemetry on listening habits
+- **Format support**: MP3, FLAC, Ogg Vorbis, M4A, WAV via the `<audio>` element
+- **Offline**: All playback works without network access
 
 # Technical Design
 
 ### Current Implementation
 
-SoundLab is embedded in Qeda with 6 coupling points:
-1. **`AppSidebar.tsx`** — nav item (`/soundlab`, `BrainCircuitIcon`)
-2. **`routes.tsx`** — route block with `:sessionId` param
-3. **`ipc/index.ts`** — two `register*Handlers()` calls
-4. **`ipc/channels.ts`** — ~30 lines of channel types + type re-exports
-5. **`db/schema.ts`** — two `CREATE TABLE` statements + migration entries
-6. **`db/client.ts`** — shared singleton `getDb()` with Qeda migrations
+**Existing focus audio system:**
+- `src/lib/focus-audio.ts` (352 lines): Web Audio mixer with three buses — noise (procedural), clip (OGG ambience), tone (binaural/isochronic) — feeding a compressor and master gain
+- `src/hooks/use-focus-audio.ts` (83 lines): React hook that manages `FocusAudioEngine` singleton, config state, and start/stop/toggle
+- `src/components/tasks/FocusAudioPanel.tsx` (187 lines): Soundscape controls (noise type, binaural toggle, volume sliders)
+- `src/components/focus/FloatingFocusBar.tsx` (243 lines): Floating bar during focus with timer, soundscape toggle, task completion
+- `src/renderer/focus-audio/`: 3 OGG clips (forest, rain, waves) + `SOURCES.md`
+- `assets/focus-sound-stems/`: 10 OGG files not wired into the app (drizzle, heavy_rain, roof_rain, stream, etc.)
 
-SoundLab depends on shared AI infrastructure:
-- **`ai/settings.ts`** (411 lines) — encrypted provider settings with Electron `safeStorage`
-- **`ai/provider.ts`** (336 lines) — model factory with AI Gateway and OpenAI-compatible adapters
-- **`ai/registry.ts`** (197 lines) — provider definitions (Groq, OpenRouter, Gemini, etc.)
-- **`ai/fallback.ts`** (384 lines) — cross-provider fallback chain
-- **`ai/plan-manager.ts`** (119 lines) — in-session plan state
-- **`lib/agent-plan.ts`** (42 lines) — plan types
-- **`tools/plan.ts`** (87 lines) — `createPlan`/`updatePlanItem` tools
-- **`db/client.ts`** (85 lines) — SQLite singleton with migrations
+**Existing focus timer:**
+- `src/hooks/use-focus-timer.ts` (206 lines): Pomodoro/flow timer, phase machine (idle → work → break), fires `onPhaseComplete`
+- `src/main/db/focus-sessions.ts` (196 lines): Persistence for completed focus phases
+- `src/main/db/schema.ts`: `focus_sessions` table with task_id linkage
+
+**Existing navigation:**
+- `src/renderer/routes.tsx`: Route tree with `AppLayout` shell
+- `src/components/AppSidebar.tsx`: Nav items for each feature
 
 ### Key Decisions
 
-1. **No IPC for CRUD**: The standalone app doesn't need Electron IPC for SoundLab CRUD because the main and renderer processes are co-located in a single-purpose app. The renderer hooks can call the store directly via a simplified bridge, or we keep IPC for architectural consistency. **Decision: Keep IPC** — it's the established pattern, and the copilot streaming already uses it. This avoids rewriting the hooks layer.
+1. **Separate music player module, not extension of `focus-audio.ts`**: The music player uses `<audio>` element (not Web Audio API) for playback, which is fundamentally different from the soundscape mixer. A new `src/lib/music-player/` module owns music playback, queue, and library state. The soundscape mixer remains in `focus-audio.ts`. A ducking callback bridges the two.
 
-2. **Simplified DB client**: The new app only needs two tables (`soundlab_sessions`, `soundlab_tracks`). No sqlite-vec, no FTS, no Qeda migrations. A minimal `db/client.ts` opens a `soundlab.db` file and applies only the SoundLab DDL.
+2. **`<audio>` element for music, Web Audio for soundscapes**: The `<audio>` element handles format decoding, seeking, and metadata natively. Web Audio API is used only for the soundscape channel (looping OGG stems with gain control). Ducking is achieved by adjusting the soundscape bus volume when music playback state changes.
 
-3. **Copied AI infrastructure**: The provider registry, settings, fallback chain, and PlanManager are copied as-is from Qeda. These are ~1,500 lines of well-isolated code that don't depend on Qeda features. The `AppSettings` type is simplified to only include AI-relevant fields (active provider, model, fallback, provider keys).
+3. **SQLite for library index and playlists**: New tables `music_library`, `music_playlists`, `music_playlist_tracks` store indexed tracks and user playlists. The library index is rebuilt on demand; the main process does the filesystem scanning via IPC.
 
-4. **Minimal renderer shell**: Instead of Qeda's `AppLayout` with sidebar, project scope, onboarding, etc., the new app gets a thin `App.tsx` with just `ThemeProvider`, `MemoryRouter`, and a single route to `SoundLab.tsx`.
+4. **Soundscape assets moved to renderer**: The 10 OGG files from `assets/focus-sound-stems/` are moved to `src/renderer/focus-audio/` and registered in `SOUNDSCAPE_CLIPS` in `focus-audio.ts`. This makes them available to Vite's asset handling and ensures they're bundled.
 
-5. **shadcn components**: Copy only the shadcn components actually used by SoundLab (determined by grep of imports in `src/components/soundlab/`). This keeps the new app small.
+5. **FloatingFocusBar extension**: The existing `FloatingFocusBar` gains a music section with now-playing info, play/pause, next/prev, and a soundscape volume slider. It receives both `UseFocusAudioReturn` and a new `UseMusicPlayerReturn` as props.
 
 ### Proposed Changes
 
-#### New Project Structure
+#### New Module Structure
 ```
-soundlab-desktop/
-├── package.json                  # new: name "soundlab-desktop", version 1.0.0
-├── release/app/package.json      # new: native deps (better-sqlite3 only)
-├── electron.vite.config.ts       # new: simplified from Qeda
-├── tsconfig.json                 # new: similar to Qeda
-├── jest.config.js                # new: similar to Qeda
-├── .env.example                  # new: AI provider keys
-├── src/
-│   ├── main/
-│   │   ├── main.ts               # new: minimal Electron bootstrap
-│   │   ├── preload.ts            # copy from Qeda
-│   │   ├── env.ts                # copy from Qeda
-│   │   ├── db/
-│   │   │   ├── client.ts         # new: minimal, soundlab.db only
-│   │   │   └── soundlab-store.ts # copy from Qeda
-│   │   ├── ipc/
-│   │   │   ├── index.ts          # new: only SoundLab handlers
-│   │   │   ├── channels.ts       # new: only SoundLab channels
-│   │   │   └── handlers/
-│   │   │       ├── soundlab.ts       # copy from Qeda
-│   │   │       └── soundlab-copilot.ts # copy from Qeda
-│   │   ├── ai/
-│   │   │   ├── soundlab-copilot-agent.ts # copy from Qeda
-│   │   │   ├── settings.ts         # copy, simplify AppSettings
-│   │   │   ├── provider.ts         # copy from Qeda
-│   │   │   ├── registry.ts         # copy from Qeda
-│   │   │   ├── fallback.ts         # copy from Qeda
-│   │   │   └── plan-manager.ts     # copy from Qeda
-│   │   └── tools/
-│   │       ├── soundlab-copilot.ts # copy from Qeda
-│   │       └── plan.ts             # copy from Qeda
-│   ├── renderer/
-│   │   ├── index.html            # copy from Qeda
-│   │   ├── entry.tsx             # new: minimal entry
-│   │   ├── App.tsx               # new: thin shell
-│   │   ├── routes.tsx            # new: single route
-│   │   └── pages/
-│   │       └── SoundLab.tsx      # copy from Qeda
-│   ├── components/
-│   │   ├── ui/                   # copy: only used shadcn components
-│   │   └── soundlab/             # copy: all 14 components
-│   ├── hooks/
-│   │   ├── use-soundlab.ts       # copy from Qeda
-│   │   ├── use-soundlab-store.ts # copy from Qeda
-│   │   └── use-soundlab-copilot.ts # copy from Qeda
-│   ├── lib/
-│   │   ├── soundlab-types.ts     # copy from Qeda
-│   │   ├── soundlab-engine.ts    # copy from Qeda
-│   │   ├── soundlab-effects.ts   # copy from Qeda
-│   │   ├── agent-plan.ts         # copy from Qeda
-│   │   ├── utils.ts              # copy: cn re-export
-│   │   └── soundlab/
-│   │       ├── soundlab-math.ts      # copy
-│   │       ├── soundlab-mixer.ts     # copy
-│   │       ├── soundlab-scheduler.ts # copy
-│   │       ├── soundlab-entrainment.ts # copy
-│   │       ├── soundlab-drums.ts     # copy
-│   │       └── soundlab-synth.ts     # copy
-│   └── __tests__/                # copy: all 8 test files
-└── bun.lock                      # generated
+src/
+├── lib/
+│   ├── music-player/
+│   │   ├── types.ts              # Track, Queue, Playlist, LibraryIndex types
+│   │   └── player.ts             # MusicPlayer class: <audio> wrapper, queue, shuffle, repeat
+│   └── focus-audio.ts            # MODIFIED: expanded SOUNDSCAPE_CLIPS, ducking support
+├── main/
+│   ├── db/
+│   │   ├── schema.ts             # MODIFIED: new music tables + migration entries
+│   │   └── music-store.ts        # NEW: SQLite CRUD for library, playlists
+│   └── ipc/
+│       ├── channels.ts           # MODIFIED: music channels added
+│       └── handlers/
+│           └── music.ts          # NEW: library scan, metadata read, playlist CRUD
+├── renderer/
+│   ├── focus-audio/              # MODIFIED: 10 new OGG files added
+│   └── pages/
+│       └── Music.tsx             # NEW: Music player page
+├── components/
+│   ├── music/
+│   │   ├── MusicLibrary.tsx      # Library browser with search, filter, folder view
+│   │   ├── MusicPlayerBar.tsx    # Now-playing bar with transport controls
+│   │   ├── MusicQueue.tsx        # Queue browser (current, next up, played)
+│   │   ├── MusicPlaylistPanel.tsx # Playlist management
+│   │   └── SoundscapeMixer.tsx   # Soundscape selector with volume per stem
+│   └── focus/
+│       └── FloatingFocusBar.tsx  # MODIFIED: adds music controls section
+├── hooks/
+│   ├── use-music-player.ts       # NEW: music playback state, queue, transport
+│   ├── use-music-library.ts      # NEW: library browsing, search, filter
+│   └── use-focus-audio.ts        # MODIFIED: adds ducking callback
+└── __tests__/
+    └── music-player.test.ts      # NEW: player, queue, library tests
 ```
 
 ### Architecture Diagram
 
 ```mermaid
 graph LR
-  A[main.ts] --> B[preload.ts]
-  A --> C[db/client.ts]
-  A --> D[ipc/index.ts]
-  C --> E[soundlab-store.ts]
-  D --> F[handlers/soundlab.ts]
-  D --> G[handlers/soundlab-copilot.ts]
-  F --> E
-  G --> H[ai/soundlab-copilot-agent.ts]
-  G --> E
-  H --> I[tools/soundlab-copilot.ts]
-  H --> J[ai/plan-manager.ts]
-  H --> K[ai/provider.ts]
-  I --> E
-  K --> L[ai/settings.ts]
-  K --> M[ai/registry.ts]
-  K --> N[ai/fallback.ts]
-  B --> O[renderer/App.tsx]
-  O --> P[SoundLab.tsx]
-  P --> Q[use-soundlab.ts]
-  P --> R[use-soundlab-copilot.ts]
-  Q --> S[use-soundlab-store.ts]
-  Q --> T[soundlab-engine.ts]
-  S --> D
-  R --> D
-  T --> U[soundlab-mixer.ts]
-  T --> V[soundlab-scheduler.ts]
-  T --> W[soundlab-entrainment.ts]
-  T --> X[soundlab-drums.ts]
-  T --> Y[soundlab-synth.ts]
-  T --> Z[soundlab-effects.ts]
+  A[Music.tsx page] --> B[useMusicPlayer]
+  A --> C[useMusicLibrary]
+  A --> D[useFocusAudio]
+  B --> E[music-player/player.ts]
+  C --> F[IPC: music:scan]
+  C --> G[IPC: music:search]
+  D --> H[focus-audio.ts]
+  E --> I[<audio> element]
+  H --> J[Web Audio: soundscape bus]
+  B --> K[ducking callback]
+  K --> D
+  L[FloatingFocusBar] --> B
+  L --> D
+  L --> M[useFocusTimer]
+  F --> N[music-store.ts]
+  N --> O[SQLite: music_library]
+  N --> P[SQLite: music_playlists]
+  Q[AppSidebar] -->|/music| A
 ```
 
-### Components Affected
+### Data Models / Contracts
 
-**New files only.** No existing Qeda files are modified. All SoundLab files are copied verbatim from Qeda, with import paths adjusted to the new structure.
+**IPC Channels (added to `channels.ts`):**
+- `music:scan`: req `{ paths: string[] }`, res `{ count: number }`
+- `music:search`: req `{ query: string; limit?: number }`, res `Array<Track>`
+- `music:get-by-id`: req `{ id: string }`, res `Track | null`
+- `music:create-playlist`: req `{ name: string }`, res `{ id: string }`
+- `music:add-to-playlist`: req `{ playlistId: string; trackIds: string[] }`, res `void`
+- `music:list-playlists`: req `void`, res `Array<Playlist>`
+- `music:delete-playlist`: req `{ id: string }`, res `void`
+- `music:library-changed`: broadcast event
 
-### Files to Copy (verbatim, with import path adjustments)
+**Domain Types:**
+- `Track`: id, path, title, artist?, album?, duration, fileSize, addedAt
+- `Playlist`: id, name, trackIds[], createdAt, updatedAt
+- `MusicQueue`: tracks[], currentIndex, shuffle, repeat ('none'|'one'|'all')
+- `MusicPlayerState`: queue, playing, progress, currentTime, duration, volume
 
-| Source in Qeda | Destination in soundlab-desktop |
+**Database Schema (added to `schema.ts`):**
+- `music_library` (id PK, path UNIQUE, title, artist, album, duration, file_size, added_at)
+- `music_playlists` (id PK, name, created_at, updated_at)
+- `music_playlist_tracks` (playlist_id FK, track_id FK, sort_order, PK: playlist_id+track_id)
+
+### Components
+
+**New Components:**
+
+| Component | Purpose |
 |---|---|
-| `src/lib/soundlab-types.ts` | `src/lib/soundlab-types.ts` |
-| `src/lib/soundlab-engine.ts` | `src/lib/soundlab-engine.ts` |
-| `src/lib/soundlab-effects.ts` | `src/lib/soundlab-effects.ts` |
-| `src/lib/soundlab/soundlab-*.ts` (6 files) | `src/lib/soundlab/` |
-| `src/lib/agent-plan.ts` | `src/lib/agent-plan.ts` |
-| `src/main/db/soundlab-store.ts` | `src/main/db/soundlab-store.ts` |
-| `src/main/ipc/handlers/soundlab.ts` | `src/main/ipc/handlers/soundlab.ts` |
-| `src/main/ipc/handlers/soundlab-copilot.ts` | `src/main/ipc/handlers/soundlab-copilot.ts` |
-| `src/main/ai/soundlab-copilot-agent.ts` | `src/main/ai/soundlab-copilot-agent.ts` |
-| `src/main/ai/settings.ts` | `src/main/ai/settings.ts` (simplified) |
-| `src/main/ai/provider.ts` | `src/main/ai/provider.ts` |
-| `src/main/ai/registry.ts` | `src/main/ai/registry.ts` |
-| `src/main/ai/fallback.ts` | `src/main/ai/fallback.ts` |
-| `src/main/ai/plan-manager.ts` | `src/main/ai/plan-manager.ts` |
-| `src/main/tools/soundlab-copilot.ts` | `src/main/tools/soundlab-copilot.ts` |
-| `src/main/tools/plan.ts` | `src/main/tools/plan.ts` |
-| `src/renderer/pages/SoundLab.tsx` | `src/renderer/pages/SoundLab.tsx` |
-| `src/components/soundlab/**` (14 files) | `src/components/soundlab/` |
-| `src/hooks/use-soundlab*.ts` (3 files) | `src/hooks/` |
-| `src/__tests__/soundlab*.test.*` (8 files) | `src/__tests__/` |
+| `Music.tsx` (page) | Main music page: library browser left, now-playing + queue right, soundscape mixer bottom |
+| `MusicLibrary` | Browse library by folder, search, filter by artist/album |
+| `MusicPlayerBar` | Now-playing info, transport controls (play/pause, next, prev, shuffle, repeat), volume |
+| `MusicQueue` | Current queue with drag-to-reorder, "next up" section, played history |
+| `MusicPlaylistPanel` | Create/edit/delete playlists, add/remove tracks |
+| `SoundscapeMixer` | Grid of 13 soundscape stems with toggle and volume per stem |
 
-### Files to Create (new)
+**Modified Components:**
 
-| File | Purpose |
+| Component | Change |
 |---|---|
-| `package.json` | Root manifest with deps, scripts, engines |
-| `release/app/package.json` | Native deps (better-sqlite3 only, no node-pty or sqlite-vec) |
-| `electron.vite.config.ts` | Build config, simplified from Qeda |
-| `tsconfig.json` | TypeScript config with `@` alias |
-| `jest.config.js` | Test config |
-| `src/main/main.ts` | Minimal Electron bootstrap |
-| `src/main/preload.ts` | IPC bridge (copy, remove Qeda channels) |
-| `src/main/env.ts` | Environment loading (copy) |
-| `src/main/db/client.ts` | Minimal SQLite client, `soundlab.db` |
-| `src/main/ipc/index.ts` | Only SoundLab handler registration |
-| `src/main/ipc/channels.ts` | Only SoundLab channel types |
-| `src/renderer/entry.tsx` | React entry point |
-| `src/renderer/App.tsx` | Thin shell: ThemeProvider + MemoryRouter |
-| `src/renderer/routes.tsx` | Single route to SoundLab |
-| `src/renderer/index.html` | HTML entry (copy, update title) |
-| `src/lib/utils.ts` | `cn` re-export |
-| `.env.example` | Provider key template |
+| `FloatingFocusBar.tsx` | Add music section: now-playing title, play/pause, next/prev, soundscape volume |
+| `FocusAudioPanel.tsx` | Expand to show all 13 soundscape stems with individual volume |
+| `AppSidebar.tsx` | Add `/music` nav item with `Music` icon |
+| `routes.tsx` | Add `{ path: 'music', element: <Music /> }` |
+| `focus-audio.ts` | Register 10 new OGG clips, add `onMusicPlayingChange` callback for ducking |
+| `use-focus-audio.ts` | Accept `onMusicPlayingChange` callback for ducking |
+| `index.css` | Add `@source '../components/music'` for Tailwind class purging |
 
 ### Risks
-- **shadcn component dependencies**: SoundLab components may use shadcn components that have their own dependencies (e.g., `@radix-ui/*`). Need to copy only the used components and their transitive deps.
-- **Import path adjustments**: All copied files need `@/` alias paths verified. The `electron.vite.config.ts` needs the same alias config.
-- **AI SDK ESM mocks**: Jest mocks for ESM-only packages (`ai`, `@ai-sdk/*`) need to be present in the new project's `jest.config.js`.
+- **Audio metadata reading**: Requires `music-metadata` package (pure JS) in the main process IPC handler
+- **Large library scanning**: Chunk scanning into 100-file batches with `setImmediate()` yields to avoid blocking
+- **`<audio>` element limitations**: No sample-level control for ducking music. **Mitigation**: Duck the *soundscape* bus volume (Web Audio), not the music volume
+- **OGG file bundling**: 10 new OGG files add ~4MB to bundle. Acceptable for a desktop app
+- **Focus timer coupling**: Music player works independently of focus. `FloatingFocusBar` is the only integration point
 
 # Testing
 
 ### Validation Approach
-Copy all 8 existing SoundLab test files and ensure they pass in the new project with adjusted import paths.
+Unit tests for the music player class (queue, shuffle, repeat logic), library scanning, and IPC handlers. Component smoke tests for rendering.
 
 ### Key Scenarios
-1. **Build succeeds**: `bun run build` produces `release/app/dist/main/main.js` and `release/app/dist/renderer/renderer.js`
-2. **Tests pass**: `bun test` runs all 8 SoundLab test files without errors
-3. **App starts**: `bun start` launches the Electron window with the SoundLab page
-4. **Audio engine**: `soundlab-engine.test.ts` verifies start/stop, BPM, track controls
-5. **Database CRUD**: `soundlab-db.test.ts` verifies session/track persistence
-6. **Client store**: `soundlab-store.test.ts` verifies undo/redo, mutations
-7. **UI rendering**: `soundlab-ui.test.tsx` verifies components render
-8. **Autosave**: `soundlab-autosave.test.tsx` verifies debounced save
-9. **Copilot**: `soundlab-copilot.test.ts` verifies tool execution
+1. **Build succeeds**: `bun run build` after all changes
+2. **Library scan**: IPC handler scans a directory and returns indexed tracks
+3. **Playback**: MusicPlayer class plays, pauses, seeks, and advances queue
+4. **Queue management**: Shuffle, repeat modes, next/prev work correctly
+5. **Soundscape mixing**: All 13 stems load and play; ducking works when music starts
+6. **UI rendering**: Music page, library browser, player bar, queue render correctly
+7. **Focus integration**: FloatingFocusBar shows music controls during focus
+8. **Playlist CRUD**: Create, add tracks, list, delete playlists via IPC
 
 ### Edge Cases
-- **No AI provider configured**: App should start and work without AI — copilot shows a configure message
-- **Empty database**: First launch shows the session library with templates
-- **Missing better-sqlite3**: App should fail gracefully with a clear error on `bun install`
-
-# Delivery Steps
-
-### ✓ Step 1: Scaffold project structure and build toolchain
-Create the new `soundlab-desktop/` directory with package.json, electron.vite.config.ts, tsconfig.json, jest.config.js, and .env.example. Wire up the minimal Electron bootstrap (main.ts, preload.ts, env.ts) and renderer entry (index.html, entry.tsx, App.tsx, routes.tsx). The app should launch but show a blank page.
-
-- Create `package.json` with SoundLab-relevant dependencies (ai-sdk, better-sqlite3, react, react-router, shadcn deps, lucide-react, next-themes, sonner, cn, class-variance-authority, zod)
-- Create `release/app/package.json` with only `better-sqlite3` as native dep (no node-pty, no sqlite-vec)
-- Create `electron.vite.config.ts` simplified from Qeda (main entry, preload, renderer root, `@` alias, external native deps)
-- Create `tsconfig.json` with paths matching Qeda (`@/*` → `src/*`)
-- Create `jest.config.js` with ESM mocks for ai-sdk packages
-- Create `src/main/main.ts` with minimal Electron bootstrap (single window, no tray, no deep links, no PTY, no studio media)
-- Create `src/main/preload.ts` with IPC bridge (expose only SoundLab channels)
-- Create `src/main/env.ts` to load `.env.local`
-- Create `src/renderer/index.html` with SoundLab title
-- Create `src/renderer/entry.tsx` with React 19 createRoot
-- Create `src/renderer/App.tsx` with ThemeProvider, TooltipProvider, MemoryRouter, Toaster
-- Create `src/renderer/routes.tsx` with single route to SoundLab page
-- Create `src/lib/utils.ts` with `cn` re-export
-
-### ✓ Step 2: Copy audio engine and domain types
-Copy all pure logic files: domain types, audio engine, and sub-modules. These have no dependencies on Qeda infrastructure.
-
-- Copy `src/lib/soundlab-types.ts` (1,121 lines)
-- Copy `src/lib/soundlab-engine.ts` (366 lines)
-- Copy `src/lib/soundlab-effects.ts` (207 lines)
-- Copy `src/lib/agent-plan.ts` (42 lines)
-- Copy all 6 sub-modules from `src/lib/soundlab/`:
-  - `soundlab-math.ts` (76 lines)
-  - `soundlab-mixer.ts` (251 lines)
-  - `soundlab-scheduler.ts` (369 lines)
-  - `soundlab-entrainment.ts` (201 lines)
-  - `soundlab-drums.ts` (162 lines)
-  - `soundlab-synth.ts` (57 lines)
-- Adjust all import paths to use `@/` alias correctly
-- Verify `bun run build` still succeeds
-
-### ✓ Step 3: Copy database layer and IPC handlers
-Create the minimal SQLite client and copy the SoundLab store and IPC handlers. The DB client only opens `soundlab.db` and applies the two SoundLab table DDL statements.
-
-- Create `src/main/db/client.ts` (minimal: opens `soundlab.db`, no sqlite-vec, no Qeda migrations)
-- Create DDL constants for `soundlab_sessions` and `soundlab_tracks` tables (from Qeda's `schema.ts`)
-- Copy `src/main/db/soundlab-store.ts` (264 lines)
-- Create `src/main/ipc/channels.ts` with only SoundLab channel types (CRUD + copilot streaming)
-- Create `src/main/ipc/index.ts` that registers only SoundLab handlers
-- Copy `src/main/ipc/handlers/soundlab.ts` (63 lines)
-- Copy `src/main/ipc/handlers/soundlab-copilot.ts` (160 lines)
-- Register handlers in `main.ts` via `registerIpcHandlers(mainWindow)`
-- Verify `bun run build` succeeds
-
-### ✓ Step 4: Copy AI copilot infrastructure
-Copy the shared AI infrastructure that the SoundLab copilot depends on. Simplify `AppSettings` to only include AI-relevant fields.
-
-- Copy `src/main/ai/registry.ts` (197 lines, verbatim)
-- Copy `src/main/ai/fallback.ts` (384 lines, verbatim)
-- Copy `src/main/ai/plan-manager.ts` (119 lines, verbatim)
-- Copy `src/main/ai/settings.ts` (411 lines) — simplify `AppSettings` to remove Qeda-specific fields (builderEngine, mcpServers, e2bSandbox*, onboardingCompleted, activeProject, etc.)
-- Copy `src/main/ai/provider.ts` (336 lines) — remove Qeda-specific imports
-- Copy `src/main/ai/soundlab-copilot-agent.ts` (218 lines)
-- Copy `src/main/tools/plan.ts` (87 lines)
-- Copy `src/main/tools/soundlab-copilot.ts` (654 lines)
-- Adjust all import paths
-- Verify `bun run build` succeeds
-
-### ✓ Step 5: Copy UI components, hooks, and page
-Copy all SoundLab UI components, hooks, and the main page. Also copy only the shadcn components actually used by SoundLab.
-
-- Copy `src/renderer/pages/SoundLab.tsx` (243 lines)
-- Copy all 14 components from `src/components/soundlab/` (~3,297 lines total)
-- Copy all 3 hooks from `src/hooks/use-soundlab*.ts` (~1,000 lines total)
-- Identify and copy only the shadcn components used by SoundLab (grep imports in soundlab components):
-  - Likely: `button`, `dialog`, `dropdown-menu`, `popover`, `scroll-area`, `sheet`, `slider`, `tabs`, `tooltip`, `sonner`, `select`, `switch`, `separator`, `badge`, `input`, `textarea`, `collapsible`
-  - Plus: `@radix-ui/*` deps and `lucide-react` icons
-- Adjust all import paths in copied files
-- Add `@source` directives in `index.css` for `../components`, `../hooks`, `../lib`
-- Verify `bun run build` succeeds
-
-### ✓ Step 6: Copy tests and verify
-Copy all 8 SoundLab test files and ensure they pass in the new project. Adjust mocks and import paths.
-
-- Copy all 8 test files from `src/__tests__/soundlab*.test.*` (~1,880 lines)
-- Adjust import paths in tests to match new structure
-- Ensure Jest mocks for ESM packages are configured (ai-sdk, nanoid, etc.)
-- Run `bun run build` then `bun test` — all tests should pass
-- Run `bun start` and verify the app launches with the SoundLab page
-- Verify basic functionality: create session, add track, play/stop, copilot toggle
+- **Empty library**: Music page shows "add folders" prompt
+- **Missing audio file**: Track is skipped; user is notified
+- **Unsupported format**: File is skipped during scan with a warning
+- **No focus session**: Music player works independently; FloatingFocusBar doesn't show music controls
+- **Large library (10,000+ files)**: Scanning completes without freezing the UI
