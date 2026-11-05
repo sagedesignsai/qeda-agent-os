@@ -20,7 +20,7 @@ export function getIntegrationDir(): string {
   if (!integrationDir) {
     integrationDir = path.join(
       os.tmpdir(),
-      `vellum-shell-integration-${process.pid}`,
+      `qeda-shell-integration-${process.pid}`,
     );
     fs.mkdirSync(integrationDir, { recursive: true });
   }
@@ -33,13 +33,13 @@ export function getIntegrationDir(): string {
  */
 export function getBashIntegrationPath(): string {
   const dir = getIntegrationDir();
-  const filePath = path.join(dir, 'vellum-bash.sh');
+  const filePath = path.join(dir, 'qeda-bash.sh');
 
-  const content = `# Vellum Terminal Bash Integration
-if [ -n "$VELLUM_SHELL_INTEGRATION" ]; then
+  const content = `# Qeda Terminal Bash Integration
+if [ -n "$QEDA_SHELL_INTEGRATION" ]; then
   return 0
 fi
-export VELLUM_SHELL_INTEGRATION=1
+export QEDA_SHELL_INTEGRATION=1
 
 # 1. Source user's standard bash configuration first
 if [ -f /etc/bash.bashrc ]; then
@@ -50,7 +50,7 @@ if [ -f ~/.bashrc ]; then
 fi
 
 # 2. OSC 133 Hook functions
-__vellum_prompt_command() {
+__qeda_prompt_command() {
   local exit_code="$?"
   # 133;D (Command finished with exit code)
   printf "\\033]133;D;%s\\007" "$exit_code"
@@ -65,9 +65,9 @@ PS0="\\[\\033]133;C\\007\\]"
 
 # Prepend our prompt command to existing PROMPT_COMMAND
 if [ -n "$PROMPT_COMMAND" ]; then
-  PROMPT_COMMAND="__vellum_prompt_command; $PROMPT_COMMAND"
+  PROMPT_COMMAND="__qeda_prompt_command; $PROMPT_COMMAND"
 else
-  PROMPT_COMMAND="__vellum_prompt_command"
+  PROMPT_COMMAND="__qeda_prompt_command"
 fi
 
 # 133;B (Command input start) after prompt string finishes
@@ -87,11 +87,11 @@ export function getZshIntegrationDir(): string {
   fs.mkdirSync(dir, { recursive: true });
   const zshrcPath = path.join(dir, '.zshrc');
 
-  const content = `# Vellum Terminal Zsh Integration
-if [[ -n "$VELLUM_SHELL_INTEGRATION" ]]; then
+  const content = `# Qeda Terminal Zsh Integration
+if [[ -n "$QEDA_SHELL_INTEGRATION" ]]; then
   return 0
 fi
-export VELLUM_SHELL_INTEGRATION=1
+export QEDA_SHELL_INTEGRATION=1
 
 # 1. Source user's standard .zshrc from HOME
 if [[ -f "$HOME/.zshrc" ]]; then
@@ -101,20 +101,20 @@ fi
 # 2. Add precmd and preexec hooks
 autoload -Uz add-zsh-hook 2>/dev/null
 
-__vellum_precmd() {
+__qeda_precmd() {
   local exit_code="$?"
   printf "\\033]133;D;%s\\007" "$exit_code"
   printf "\\033]7;file://%s%s\\007" "\${HOST:-localhost}" "$PWD"
   printf "\\033]133;A\\007"
 }
 
-__vellum_preexec() {
+__qeda_preexec() {
   printf "\\033]133;C\\007"
 }
 
 if which add-zsh-hook >/dev/null 2>&1; then
-  add-zsh-hook precmd __vellum_precmd
-  add-zsh-hook preexec __vellum_preexec
+  add-zsh-hook precmd __qeda_precmd
+  add-zsh-hook preexec __qeda_preexec
 fi
 
 PS1="\${PS1:-%n@%m:%~%# }%{$(printf '\\033]133;B\\007')%}"

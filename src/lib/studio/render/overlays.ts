@@ -9,7 +9,7 @@
  *
  * The media bytes are never read here: the renderer points `<img>`/`<video>` at
  * the `qeda-media://overlay/<id>` scheme, whose handler resolves the source
- * through the database (see `main/studio-media.ts`).
+ * through the database (see `main/media/studio.ts`).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 

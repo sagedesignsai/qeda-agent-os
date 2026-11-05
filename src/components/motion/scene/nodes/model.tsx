@@ -245,7 +245,7 @@ export function ModelRenderer({
 
     // Apply surface bindings in replace mode
     clone.traverse((child) => {
-      const mesh = child as Object3D & { isMesh?: boolean; name: string };
+      const mesh = child as Object3D & { isMesh?: boolean; name: string; material?: unknown };
       if (!mesh.isMesh) return;
       const binding = surfaceBindings[mesh.name];
       if (!binding || binding.mode !== 'replace') return;

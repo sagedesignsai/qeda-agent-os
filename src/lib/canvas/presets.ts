@@ -165,7 +165,7 @@ export const LINK_CARD: DocInput = {
           y: 566,
           w: 500,
           h: 28,
-          content: 'vellum.db · one SQLite file · zero drift',
+          content: 'qeda.db · one SQLite file · zero drift',
           fontSize: 18,
           fontWeight: 500,
           color: 'on-surface-muted',

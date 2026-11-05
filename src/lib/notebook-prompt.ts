@@ -37,7 +37,7 @@ export function buildNotebookPrompt({
 }: BuildNotebookPromptOptions): string {
   const scope = DEPTH_SCOPE[depth] ?? DEPTH_SCOPE.standard;
   return [
-    'Generate a complete Vellum notebook.',
+    'Generate a complete Qeda notebook.',
     '',
     `Topic: ${topic.trim()}`,
     audience?.trim() ? `Intended reader: ${audience.trim()}` : '',

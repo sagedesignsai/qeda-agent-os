@@ -1,7 +1,7 @@
 /**
  * lib/workflows.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Parameterized Workflows (Runbooks) for Vellum Terminal (Warp Pillar 4).
+ * Parameterized Workflows (Runbooks) for Qeda Terminal (Warp Pillar 4).
  *
  * Replaces memorized shell one-liners with parameterized, structured templates:
  *   e.g. `lsof -ti:{{port:3000}} | xargs kill -9`

@@ -11,6 +11,7 @@
  */
 
 import Tasks from '../renderer/pages/Tasks';
+import Music from '../renderer/pages/Music';
 import { TodayTimeline } from '../components/tasks/TodayTimeline';
 import { TaskStepsSheet } from '../components/tasks/TaskStepsSheet';
 import { BrainDumpDialog } from '../components/tasks/BrainDumpDialog';
@@ -21,19 +22,28 @@ import { CopilotPanel } from '../components/copilot/CopilotPanel';
 import { HeaderLevelChip } from '../components/gamification/HeaderLevelChip';
 import { ParticleCanvas } from '../components/gamification/ParticleCanvas';
 import { FloatingFocusBar } from '../components/focus/FloatingFocusBar';
+import { FocusRuntime } from '../components/focus/FocusRuntime';
 import { SingleTaskLens } from '../components/tasks/SingleTaskLens';
 import { MorningKickoffDialog } from '../components/tasks/MorningKickoffDialog';
 import { ActiveLaunchpad } from '../components/tasks/ActiveLaunchpad';
 import { TodayEmptyHero } from '../components/tasks/TodayEmptyHero';
+import { GlobalAudioDock } from '../components/music/GlobalAudioDock';
+import { PlayerTransport } from '../components/music/PlayerTransport';
+import { QueuePanel } from '../components/music/QueuePanel';
+import { ScenePicker } from '../components/music/ScenePicker';
+import { SoundscapeMixer } from '../components/music/SoundscapeMixer';
+import { TrackList } from '../components/music/TrackList';
 import { useCopilotChat } from '../hooks/use-copilot-chat';
-import { useFocusTimer } from '../hooks/use-focus-timer';
-import { useFocusAudio } from '../hooks/use-focus-audio';
+import { useFocusSession } from '../hooks/use-focus-session';
+import { useSoundscape } from '../hooks/use-soundscape';
+import { useMusicPlayer } from '../hooks/use-music-player';
 import { useGamification } from '../hooks/use-gamification';
 
 describe('focus system UI modules', () => {
   it('exports the page and task components', () => {
     for (const component of [
       Tasks,
+      Music,
       TodayTimeline,
       TaskStepsSheet,
       BrainDumpDialog,
@@ -44,18 +54,26 @@ describe('focus system UI modules', () => {
       HeaderLevelChip,
       ParticleCanvas,
       FloatingFocusBar,
+      FocusRuntime,
       SingleTaskLens,
       MorningKickoffDialog,
       ActiveLaunchpad,
       TodayEmptyHero,
+      GlobalAudioDock,
+      PlayerTransport,
+      QueuePanel,
+      ScenePicker,
+      SoundscapeMixer,
+      TrackList,
     ]) {
       expect(typeof component).toBe('function');
     }
   });
 
-  it('exports the focus hooks', () => {
-    expect(typeof useFocusTimer).toBe('function');
-    expect(typeof useFocusAudio).toBe('function');
+  it('exports the focus and audio hooks', () => {
+    expect(typeof useFocusSession).toBe('function');
+    expect(typeof useSoundscape).toBe('function');
+    expect(typeof useMusicPlayer).toBe('function');
     expect(typeof useCopilotChat).toBe('function');
     expect(typeof useGamification).toBe('function');
   });

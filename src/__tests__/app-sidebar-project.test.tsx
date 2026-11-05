@@ -17,13 +17,13 @@ const MOCK_PROJECTS: ProjectRollup[] = [
   {
     project: {
       id: 'proj-1',
-      name: 'Vellum Core',
+      name: 'Qeda Core',
       description: 'Main project',
       status: 'active',
       color: '#10b981',
       icon: 'kanban',
       deadline: null,
-      repo_path: '/path/to/vellum',
+      repo_path: '/path/to/qeda',
       notebook_id: null,
       sort_order: 0,
       created_at: 0,
@@ -174,7 +174,7 @@ describe('AppSidebar Active Project Indicator', () => {
     renderSidebar('/chat?project=proj-1');
 
     await waitFor(() => {
-      expect(screen.getByText('Vellum Core')).toBeInTheDocument();
+      expect(screen.getByText('Qeda Core')).toBeInTheDocument();
     });
     expect(screen.queryByText('All Projects')).not.toBeInTheDocument();
   });
@@ -215,7 +215,7 @@ describe('AppSidebar Active Project Indicator', () => {
 
     // Dropdown should show both projects
     await waitFor(() => {
-      expect(screen.getByText('Vellum Core')).toBeInTheDocument();
+      expect(screen.getByText('Qeda Core')).toBeInTheDocument();
     });
     expect(screen.getByText('Docugent Web')).toBeInTheDocument();
 

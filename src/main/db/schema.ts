@@ -10,7 +10,7 @@
  * embeddings    – document chunks + sqlite-vec float32 vectors for RAG (vec0)
  * chunks        – companion plain table storing chunk text & metadata
  *
- * Vellum knowledge platform:
+ * Qeda knowledge platform:
  * notebooks     – top-level knowledge containers
  * pages         – nested documents inside notebooks (parent_page = tree)
  * blocks        – typed block rows belonging to a page (block editor model)
@@ -600,7 +600,7 @@ CREATE INDEX IF NOT EXISTS idx_builder_history_created
 // ─── Data migrations (idempotent) ─────────────────────────────────────────────
 
 /**
- * Rename the workspace RAG pseudo-URI scheme after the Docugent → Vellum
+ * Rename the workspace RAG pseudo-URI scheme after the Docugent → Qeda
  * rebrand. `chunks.file_path` is persisted data (see tools/workspace-rag.ts),
  * so a code-only rename would orphan every previously indexed page: the
  * cleanup query deletes by exact path, and search filters by prefix, so stale
@@ -610,8 +610,19 @@ CREATE INDEX IF NOT EXISTS idx_builder_history_created
  */
 export const MIGRATE_RAG_URI_SCHEME = `
 UPDATE chunks
-   SET file_path = 'vellum-page://' || substr(file_path, length('docugent-page://') + 1)
+   SET file_path = 'qeda-page://' || substr(file_path, length('docugent-page://') + 1)
  WHERE file_path LIKE 'docugent-page://%';
+`;
+
+/**
+ * Rename the workspace RAG pseudo-URI scheme after the Vellum → Qeda rebrand.
+ * `chunks.file_path` is persisted data, so a code-only rename would orphan
+ * every previously indexed page. Safe to run on every launch.
+ */
+export const MIGRATE_RAG_URI_SCHEME_V2 = `
+UPDATE chunks
+   SET file_path = 'qeda-page://' || substr(file_path, length('vellum-page://') + 1)
+ WHERE file_path LIKE 'vellum-page://%';
 `;
 
 /**
@@ -686,6 +697,7 @@ UPDATE research_runs
  */
 export const DATA_MIGRATIONS: readonly string[] = [
   MIGRATE_RAG_URI_SCHEME,
+  MIGRATE_RAG_URI_SCHEME_V2,
   MIGRATE_INBOX_PROJECT,
   MIGRATE_ASSIGN_ORPHAN_TASKS,
   MIGRATE_PROJECT_SCOPE_KNOWLEDGE,
@@ -997,6 +1009,160 @@ CREATE TABLE IF NOT EXISTS sequence_step_runs (
 CREATE INDEX IF NOT EXISTS idx_sequence_step_runs_run ON sequence_step_runs(run_id);
 `;
 
+// ─── Music library ────────────────────────────────────────────────────────────
+
+/**
+ * music_folders – the user's watched roots.
+ *
+ * A folder is a scan source, not a container: removing it detaches its tracks
+ * (`folder_id` becomes NULL) instead of deleting a user's playlists. The path is
+ * stored so a rescan can be offered after a restart; `last_scan_at` is what the
+ * UI reads to say "indexed 4 minutes ago".
+ */
+export const CREATE_MUSIC_FOLDERS = `
+CREATE TABLE IF NOT EXISTS music_folders (
+  id           TEXT PRIMARY KEY,
+  path         TEXT NOT NULL UNIQUE,
+  added_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+  last_scan_at INTEGER,
+  track_count  INTEGER NOT NULL DEFAULT 0
+);
+`;
+
+/**
+ * music_tracks – one indexed file.
+ *
+ * `path_key` is the dedupe key: `realpath` on every platform, lower-cased on the
+ * case-insensitive filesystems (macOS/Windows) so the same file selected through
+ * two casings cannot become two rows.
+ *
+ * Tracks are NEVER deleted by a rescan. `last_seen_at` is bumped for every file
+ * found and `missing_at` is set for rows that disappeared. Deleting the row would
+ * cascade through `music_playlist_tracks` and silently empty the user's playlists;
+ * an explicit "remove missing" action is the only path that deletes.
+ */
+export const CREATE_MUSIC_TRACKS = `
+CREATE TABLE IF NOT EXISTS music_tracks (
+  id           TEXT PRIMARY KEY,
+  folder_id    TEXT REFERENCES music_folders(id) ON DELETE SET NULL,
+  path         TEXT NOT NULL,
+  path_key     TEXT NOT NULL UNIQUE,
+  title        TEXT NOT NULL,
+  artist       TEXT,
+  album        TEXT,
+  album_artist TEXT,
+  genre        TEXT,
+  year         INTEGER,
+  track_no     INTEGER,
+  disc_no      INTEGER,
+  duration_ms  INTEGER NOT NULL DEFAULT 0,
+  bitrate      INTEGER,
+  codec        TEXT,
+  size         INTEGER NOT NULL DEFAULT 0,
+  mtime        INTEGER NOT NULL DEFAULT 0,
+  added_at     INTEGER NOT NULL DEFAULT (unixepoch()),
+  last_seen_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  missing_at   INTEGER,
+  has_art      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_music_tracks_folder ON music_tracks(folder_id);
+CREATE INDEX IF NOT EXISTS idx_music_tracks_artist ON music_tracks(artist COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_music_tracks_album  ON music_tracks(album COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_music_tracks_title  ON music_tracks(title COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_music_tracks_missing ON music_tracks(missing_at);
+`;
+
+export const CREATE_MUSIC_PLAYLISTS = `
+CREATE TABLE IF NOT EXISTS music_playlists (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+`;
+
+/**
+ * music_playlist_tracks – membership plus order.
+ *
+ * The composite primary key deliberately forbids the same track twice in one
+ * playlist. A queue is a different thing (it lives in `music_state` as a JSON
+ * array), which is why this table is not reused for it.
+ */
+export const CREATE_MUSIC_PLAYLIST_TRACKS = `
+CREATE TABLE IF NOT EXISTS music_playlist_tracks (
+  playlist_id TEXT NOT NULL REFERENCES music_playlists(id) ON DELETE CASCADE,
+  track_id    TEXT NOT NULL REFERENCES music_tracks(id) ON DELETE CASCADE,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  added_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (playlist_id, track_id)
+);
+CREATE INDEX IF NOT EXISTS idx_music_playlist_tracks_order
+  ON music_playlist_tracks(playlist_id, sort_order);
+`;
+
+/**
+ * music_scenes – a saved mix (soundscape + optional music source + timer rules).
+ *
+ * Built-in scenes live in `lib/music/scenes.ts` as code so they cannot drift or
+ * be deleted by accident; this table only holds user-saved scenes.
+ */
+export const CREATE_MUSIC_SCENES = `
+CREATE TABLE IF NOT EXISTS music_scenes (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+`;
+
+/**
+ * music_state – the single resumable playback row.
+ *
+ * One row with a fixed id ('default') rather than history: resuming the last
+ * queue on launch is the whole point, and queue history is not needed for that.
+ */
+export const CREATE_MUSIC_STATE = `
+CREATE TABLE IF NOT EXISTS music_state (
+  id              TEXT PRIMARY KEY DEFAULT 'default',
+  queue_json      TEXT NOT NULL DEFAULT '[]',
+  current_track_id TEXT,
+  position_ms     INTEGER NOT NULL DEFAULT 0,
+  volume          REAL NOT NULL DEFAULT 0.8,
+  muted           INTEGER NOT NULL DEFAULT 0,
+  repeat_mode     TEXT NOT NULL DEFAULT 'off' CHECK(repeat_mode IN ('off','all','one')),
+  shuffle         INTEGER NOT NULL DEFAULT 0,
+  crossfade_sec   REAL NOT NULL DEFAULT 4,
+  duck_db         REAL NOT NULL DEFAULT -9,
+  scene_id        TEXT NOT NULL DEFAULT 'deep-work',
+  soundscape_json TEXT NOT NULL DEFAULT '{}',
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch())
+);
+`;
+
+/**
+ * focus_session_tracks – the music heard during a focus phase.
+ *
+ * One row per distinct track, in first-play order. The composite primary key
+ * makes a track that loops back into the queue during the same phase count
+ * once; this is for "what did I listen to while focusing", not a skip log.
+ *
+ * Created after both `focus_sessions` and `music_tracks` so the foreign keys
+ * resolve on a fresh database.
+ */
+export const CREATE_FOCUS_SESSION_TRACKS = `
+CREATE TABLE IF NOT EXISTS focus_session_tracks (
+  session_id TEXT NOT NULL REFERENCES focus_sessions(id) ON DELETE CASCADE,
+  track_id   TEXT NOT NULL REFERENCES music_tracks(id) ON DELETE CASCADE,
+  position   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (session_id, track_id)
+);
+CREATE INDEX IF NOT EXISTS idx_focus_session_tracks_track
+  ON focus_session_tracks(track_id);
+`;
+
 /** DDL applied in order; every statement must be idempotent. */
 export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SESSIONS,
@@ -1027,6 +1193,13 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_STUDIO_TAKES,
   CREATE_SOUNDLAB_SESSIONS,
   CREATE_SOUNDLAB_TRACKS,
+  CREATE_MUSIC_FOLDERS,
+  CREATE_MUSIC_TRACKS,
+  CREATE_MUSIC_PLAYLISTS,
+  CREATE_MUSIC_PLAYLIST_TRACKS,
+  CREATE_MUSIC_SCENES,
+  CREATE_MUSIC_STATE,
+  CREATE_FOCUS_SESSION_TRACKS,
   CREATE_BUILDER_SESSIONS,
   CREATE_BUILDER_SESSION_HISTORY,
   CREATE_CONTACTS,

@@ -1,7 +1,7 @@
 /**
  * tools/web.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Web research tool definitions for the Vellum agent.
+ * Web research tool definitions for the Qeda agent.
  *
  *   webSearch – discover sources through whichever search backend the user has
  *               configured (Tavily / Exa / Serper / Firecrawl)
@@ -113,7 +113,7 @@ export const fetchUrlTool = tool({
       const response = await fetch(parsed, {
         headers: {
           // Some sites 404 plain fetches without a UA.
-          'User-Agent': 'Mozilla/5.0 (compatible; VellumResearchBot/1.0)',
+          'User-Agent': 'Mozilla/5.0 (compatible; QedaResearchBot/1.0)',
           Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5',
         },
         redirect: 'follow',

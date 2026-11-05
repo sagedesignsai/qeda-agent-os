@@ -62,7 +62,7 @@ import {
   FileTextIcon,
   NotebookIcon,
   VideoIcon,
-  BrainCircuitIcon,
+  AudioLinesIcon,
   WandSparklesIcon,
   SendIcon,
   BoxIcon,
@@ -105,7 +105,7 @@ const NAV_ITEMS = [
   // Motion renders staged 3D hero shots; Showcase Studio captures real footage.
   // Adjacent in the rail, but separate tools with separate engines.
   { to: '/motion', label: 'Motion', icon: BoxIcon },
-  { to: '/soundlab', label: 'SoundLab', icon: BrainCircuitIcon },
+  { to: '/music', label: 'Music', icon: AudioLinesIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
   { to: '/builder', label: 'Builder', icon: WandSparklesIcon },
   { to: '/chat', label: 'Chat & Research', icon: MessageSquareIcon },

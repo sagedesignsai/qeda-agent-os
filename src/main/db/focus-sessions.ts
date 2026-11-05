@@ -32,6 +32,13 @@ export interface FocusSession {
   created_at: number;
 }
 
+/** One distinct track heard during a focus session, in first-play order. */
+export interface FocusSessionTrack {
+  session_id: string;
+  track_id: string;
+  position: number;
+}
+
 export interface FocusStats {
   /** Completed work phases that started today. */
   todayWorkSessions: number;
@@ -82,6 +89,20 @@ export function listFocusSessions(opts?: {
   return getDb()
     .prepare(`SELECT * FROM focus_sessions ${clause} ORDER BY started_at DESC`)
     .all(...values) as FocusSession[];
+}
+
+/** Tracks recorded for a session, in first-play order. */
+export function listFocusSessionTracks(
+  sessionId: string,
+): FocusSessionTrack[] {
+  return getDb()
+    .prepare(
+      `SELECT session_id, track_id, position
+         FROM focus_session_tracks
+        WHERE session_id = ?
+        ORDER BY position`,
+    )
+    .all(sessionId) as FocusSessionTrack[];
 }
 
 /**
@@ -167,18 +188,25 @@ export function createFocusSession(opts: {
   completed?: boolean;
   started_at?: number;
   ended_at?: number | null;
+  /** Distinct ids of tracks heard during the phase, in first-play order. */
+  track_ids?: readonly string[];
 }): FocusSession {
   const id = nanoid();
   const now = Math.floor(Date.now() / 1000);
   const startedAt = opts.started_at ?? now;
+  const trackIds = [...new Set(opts.track_ids ?? [])].filter(
+    (trackId) => trackId.length > 0,
+  );
+  const db = getDb();
 
-  getDb()
-    .prepare(
+  // The session and its listening history are one fact; a failure while
+  // linking tracks must not leave a half-recorded session behind.
+  const write = db.transaction(() => {
+    db.prepare(
       `INSERT INTO focus_sessions
          (id, task_id, kind, planned_sec, actual_sec, completed, started_at, ended_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
+    ).run(
       id,
       opts.task_id ?? null,
       opts.kind ?? 'work',
@@ -189,7 +217,18 @@ export function createFocusSession(opts: {
       opts.ended_at ?? now,
     );
 
-  return getDb()
+    // Selecting from the library skips ids that no longer exist instead of
+    // failing the whole session on a foreign-key violation. Tracks are soft
+    // deleted by rescans, so this only guards against stale queued ids.
+    const link = db.prepare(
+      `INSERT OR IGNORE INTO focus_session_tracks (session_id, track_id, position)
+       SELECT ?, id, ? FROM music_tracks WHERE id = ?`,
+    );
+    trackIds.forEach((trackId, position) => link.run(id, position, trackId));
+  });
+  write();
+
+  return db
     .prepare(`SELECT * FROM focus_sessions WHERE id = ?`)
     .get(id) as FocusSession;
 }

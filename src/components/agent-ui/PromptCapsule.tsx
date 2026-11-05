@@ -8,7 +8,7 @@
  * WHY THIS IS SHARED
  * ──────────────────
  * Lifted verbatim out of `components/chat/MessageList.tsx`, which was the only
- * thing that used it. Chat and the Tasks/Studio/SoundLab copilots all render
+ * thing that used it. Chat and the Tasks/Studio copilots all render
  * turns through MessageList, but the Builder composes its own feed from the
  * OpenCode event stream and had grown a second, different prompt treatment
  * (a right-aligned primary-tinted bubble with a "YOU" label). Two prompt

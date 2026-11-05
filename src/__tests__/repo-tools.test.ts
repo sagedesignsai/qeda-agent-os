@@ -69,7 +69,7 @@ beforeEach(() => {
   useTestDatabase(db);
 
   repo = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-repo-')),
+    fs.mkdtempSync(path.join(os.tmpdir(), 'qeda-repo-')),
   );
   git(['init', '-b', 'main']);
   write('README.md', '# Fixture\n\nalpha beta gamma\n');
@@ -137,7 +137,7 @@ describe('gitStatus', () => {
 
   it('errors when the configured path is not a git repository', async () => {
     const plain = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-plain-')),
+      fs.mkdtempSync(path.join(os.tmpdir(), 'qeda-plain-')),
     );
     try {
       const p = makeProject('Plain', plain);
@@ -276,7 +276,7 @@ describe('grepSearch', () => {
 
   it('refuses to follow a symlink out of the project tree', async () => {
     const outside = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-outside-')),
+      fs.mkdtempSync(path.join(os.tmpdir(), 'qeda-outside-')),
     );
     try {
       fs.writeFileSync(

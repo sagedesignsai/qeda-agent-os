@@ -97,13 +97,13 @@ Element.prototype.matches = function matches(this: Element, selector: string) {
 
 const PROJECT = {
   id: 'proj-1',
-  name: 'Vellum Core',
+  name: 'Qeda Core',
   description: '',
   status: 'active' as const,
   color: 'blue',
   icon: 'folder',
   deadline: null,
-  repo_path: '/repo/vellum',
+  repo_path: '/repo/qeda',
   notebook_id: null,
   sort_order: 1,
   created_at: 1,
@@ -166,12 +166,12 @@ describe('useBuilderSession.chooseWorkspace', () => {
 
   it('passes a path through as the picker default and binds the picked folder', async () => {
     const invoke = installIpc({
-      'dialog:open-directory': '/repo/vellum',
+      'dialog:open-directory': '/repo/qeda',
       'builder:session-create': {
-        session: { id: 'ses_1', title: 'Builder · vellum', createdAt: 1 },
+        session: { id: 'ses_1', title: 'Builder · qeda', createdAt: 1 },
         workspace: {
-          directory: '/repo/vellum',
-          name: 'vellum',
+          directory: '/repo/qeda',
+          name: 'qeda',
           branch: 'main',
           dirty: false,
           changedFileCount: 0,
@@ -181,17 +181,17 @@ describe('useBuilderSession.chooseWorkspace', () => {
 
     const { result } = renderHook(() => useRealBuilderSession());
     await act(async () => {
-      await result.current.chooseWorkspace('/repo/vellum');
+      await result.current.chooseWorkspace('/repo/qeda');
     });
 
     expect(invoke).toHaveBeenCalledWith('dialog:open-directory', {
       title: 'Choose a project folder',
-      defaultPath: '/repo/vellum',
+      defaultPath: '/repo/qeda',
     });
     // The suggestion is only a default: the directory actually bound is the one
     // the picker returned.
     expect(invoke).toHaveBeenCalledWith('builder:session-create', {
-      directory: '/repo/vellum',
+      directory: '/repo/qeda',
       runInSandbox: undefined,
       remoteUrl: undefined,
     });
@@ -220,7 +220,7 @@ describe('useBuilderSession.chooseWorkspace', () => {
     const { result } = renderHook(() => useRealBuilderSession());
     let bound: unknown;
     await act(async () => {
-      bound = await result.current.chooseWorkspace('/repo/vellum');
+      bound = await result.current.chooseWorkspace('/repo/qeda');
     });
 
     expect(bound).toBeNull();
@@ -293,7 +293,7 @@ describe('Builder project scope', () => {
     renderBuilder();
 
     // The chip and the breadcrumb both carry the name.
-    expect((await screen.findAllByText('Vellum Core')).length).toBeGreaterThan(
+    expect((await screen.findAllByText('Qeda Core')).length).toBeGreaterThan(
       0,
     );
 
@@ -304,10 +304,10 @@ describe('Builder project scope', () => {
       { key: 'Enter' },
     );
     fireEvent.click(
-      await screen.findByRole('menuitem', { name: /^Vellum Core/ }),
+      await screen.findByRole('menuitem', { name: /^Qeda Core/ }),
     );
     expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
-      '/repo/vellum',
+      '/repo/qeda',
       expect.objectContaining({ runInSandbox: false }),
     );
   });
@@ -315,10 +315,10 @@ describe('Builder project scope', () => {
   it('starts the project repo and sends the welcome draft in one action', async () => {
     installIpc();
     sessionApi.chooseWorkspace.mockResolvedValue({
-      session: { id: 'ses_1', title: 'Builder · vellum', createdAt: 1 },
+      session: { id: 'ses_1', title: 'Builder · qeda', createdAt: 1 },
       workspace: {
-        directory: '/repo/vellum',
-        name: 'vellum',
+        directory: '/repo/qeda',
+        name: 'qeda',
         branch: 'main',
         dirty: false,
         changedFileCount: 0,
@@ -333,7 +333,7 @@ describe('Builder project scope', () => {
         }),
     );
     renderBuilder();
-    await screen.findAllByText('Vellum Core');
+    await screen.findAllByText('Qeda Core');
 
     const textbox = screen.getByRole('textbox');
     fireEvent.change(textbox, {
@@ -347,7 +347,7 @@ describe('Builder project scope', () => {
 
     await waitFor(() =>
       expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
-        '/repo/vellum',
+        '/repo/qeda',
         expect.objectContaining({ runInSandbox: false }),
       ),
     );
@@ -368,7 +368,7 @@ describe('Builder project scope', () => {
     installIpc();
     sessionApi.chooseWorkspace.mockResolvedValue(null);
     renderBuilder();
-    await screen.findAllByText('Vellum Core');
+    await screen.findAllByText('Qeda Core');
 
     const textbox = screen.getByRole('textbox');
     fireEvent.change(textbox, {
@@ -382,7 +382,7 @@ describe('Builder project scope', () => {
 
     await waitFor(() =>
       expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
-        '/repo/vellum',
+        '/repo/qeda',
         expect.objectContaining({ runInSandbox: false }),
       ),
     );
@@ -413,19 +413,19 @@ describe('Builder project scope', () => {
     installIpc();
     sessionApi.session = {
       id: 'ses_1',
-      title: 'Builder · vellum',
+      title: 'Builder · qeda',
       createdAt: 1,
     };
     sessionApi.workspace = {
-      directory: '/repo/vellum',
-      name: 'vellum',
+      directory: '/repo/qeda',
+      name: 'qeda',
       branch: 'main',
       dirty: false,
       changedFileCount: 0,
       worktreePath: '/tmp/qeda-builder-ses_1',
     };
     renderBuilder();
-    await screen.findAllByText('Vellum Core');
+    await screen.findAllByText('Qeda Core');
 
     fireEvent.click(screen.getByRole('button', { name: /Switch folder/ }));
     expect(
@@ -436,7 +436,7 @@ describe('Builder project scope', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch workspace' }));
     await waitFor(() =>
       expect(sessionApi.chooseWorkspace).toHaveBeenCalledWith(
-        '/repo/vellum',
+        '/repo/qeda',
         expect.objectContaining({ runInSandbox: false }),
       ),
     );
@@ -446,19 +446,19 @@ describe('Builder project scope', () => {
     installIpc();
     sessionApi.session = {
       id: 'ses_1',
-      title: 'Builder · vellum',
+      title: 'Builder · qeda',
       createdAt: 1,
     };
     sessionApi.workspace = {
-      directory: '/repo/vellum',
-      name: 'vellum',
+      directory: '/repo/qeda',
+      name: 'qeda',
       branch: 'main',
       dirty: false,
       changedFileCount: 0,
       worktreePath: '/tmp/qeda-builder-ses_1',
     };
     renderBuilder();
-    await screen.findAllByText('Vellum Core');
+    await screen.findAllByText('Qeda Core');
 
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
     await waitFor(() =>
@@ -471,19 +471,19 @@ describe('Builder project scope', () => {
     installIpc();
     sessionApi.session = {
       id: 'ses_1',
-      title: 'Builder · vellum',
+      title: 'Builder · qeda',
       createdAt: 1,
     };
     sessionApi.workspace = {
-      directory: '/repo/vellum',
-      name: 'vellum',
+      directory: '/repo/qeda',
+      name: 'qeda',
       branch: 'main',
       dirty: false,
       changedFileCount: 0,
       worktreePath: '/tmp/qeda-builder-ses_1',
     };
     renderBuilder();
-    await screen.findAllByText('Vellum Core');
+    await screen.findAllByText('Qeda Core');
 
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(
@@ -501,7 +501,7 @@ describe('Builder project scope', () => {
     installIpc();
     renderBuilder('/builder');
 
-    expect(screen.queryByText('Vellum Core')).not.toBeInTheDocument();
+    expect(screen.queryByText('Qeda Core')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Clear project filter')).not.toBeInTheDocument();
 
     // Drain the scope hook's async load so it cannot leak an act() warning.

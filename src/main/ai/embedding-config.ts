@@ -108,7 +108,7 @@ export class EmbeddingWidthError extends Error {
     const fit = EMBEDDING_CONFIGS.find(
       (c) => c.dim === args.tableDim && c.requestDim,
     );
-    const reindex = `set EMBEDDING_DIM=${args.actual} and re-index (delete vellum.db, then re-run the index tools)`;
+    const reindex = `set EMBEDDING_DIM=${args.actual} and re-index (delete qeda.db, then re-run the index tools)`;
     super(
       `Embedding width mismatch: ${args.provider}/${args.model} produced ` +
         `${args.actual}-dimension vectors, but the local index is ` +

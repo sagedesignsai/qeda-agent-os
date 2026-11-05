@@ -10,6 +10,7 @@
  */
 
 import { app } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { applyMigrations, CREATE_EMBEDDINGS } from './schema.js';
@@ -39,9 +40,47 @@ let _db: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (_db) return _db;
 
-  const dbPath = path.join(app.getPath('userData'), 'vellum.db');
+  const userData = app.getPath('userData');
+  const oldDbPath = path.join(userData, 'vellum.db');
+  const newDbPath = path.join(userData, 'qeda.db');
 
-  _db = new Database(dbPath);
+  // One-time migration: copy vellum.db → qeda.db on first launch after rename.
+  if (!fs.existsSync(newDbPath) && fs.existsSync(oldDbPath)) {
+    try {
+      fs.copyFileSync(oldDbPath, newDbPath);
+      // Copy associated WAL and SHM files if they exist
+      if (fs.existsSync(oldDbPath + '-wal')) {
+        fs.copyFileSync(oldDbPath + '-wal', newDbPath + '-wal');
+      }
+      if (fs.existsSync(oldDbPath + '-shm')) {
+        fs.copyFileSync(oldDbPath + '-shm', newDbPath + '-shm');
+      }
+      // Remove the old file so we don't copy again on next launch
+      try { fs.unlinkSync(oldDbPath); } catch { /* ignore */ }
+      try { fs.unlinkSync(oldDbPath + '-wal'); } catch { /* ignore */ }
+      try { fs.unlinkSync(oldDbPath + '-shm'); } catch { /* ignore */ }
+    } catch (err) {
+      console.warn('[db] Failed to migrate vellum.db → qeda.db, falling back to old file:', err);
+      // Fall back to the old file so the app still works
+      const dbPath = oldDbPath;
+      _db = new Database(dbPath);
+      _db.pragma('journal_mode = WAL');
+      _db.pragma('foreign_keys = ON');
+      applyMigrations(_db);
+      try {
+        const { getLoadablePath } = require('sqlite-vec') as {
+          getLoadablePath: () => string;
+        };
+        _db.loadExtension(getLoadablePath());
+        _db.exec(CREATE_EMBEDDINGS(EMBEDDING_DIM));
+      } catch {
+        console.warn('[db] sqlite-vec extension not available – RAG features disabled.');
+      }
+      return _db;
+    }
+  }
+
+  _db = new Database(newDbPath);
 
   // WAL mode for better concurrent read performance.
   _db.pragma('journal_mode = WAL');

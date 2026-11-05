@@ -1,8 +1,8 @@
-Implementation Plan — Vellum Agent Suite
+Implementation Plan — Qeda Agent Suite
 
 Problem Statement
 
-Transform Vellum from an AI chat/workspace app into a personal productivity and creator suite. The first
+Transform Qeda from an AI chat/workspace app into a personal productivity and creator suite. The first
 major new module is an agentic terminal — not a simple shell emulator, but a goal-driven terminal where you
 describe what you want and the agent runs the necessary commands, shows its work in structured blocks, and
 reports back. Additional modules (ADHD focus system, social media posting, content generation) follow as

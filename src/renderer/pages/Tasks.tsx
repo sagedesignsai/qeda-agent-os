@@ -98,15 +98,10 @@ import { FocusAudioPanel } from '@/components/tasks/FocusAudioPanel';
 import { ScheduleBlockDialog } from '@/components/tasks/ScheduleBlockDialog';
 import { TaskStepsSheet } from '@/components/tasks/TaskStepsSheet';
 import { TodayTimeline } from '@/components/tasks/TodayTimeline';
-import {
-  useFocusAudio,
-  type UseFocusAudioReturn,
-} from '@/hooks/use-focus-audio';
-import {
-  useFocusTimer,
-  type PhaseCompleteInfo,
-  type UseFocusTimerReturn,
-} from '@/hooks/use-focus-timer';
+import { useFocusSession } from '@/hooks/use-focus-session';
+import { useSoundscape } from '@/hooks/use-soundscape';
+import { useIpcEvent } from '@/hooks/use-ipc';
+import { DURATION_PRESETS } from '@/lib/focus/presets';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useTaskDrag } from '@/hooks/use-task-drag';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
@@ -116,14 +111,13 @@ import {
   ParticleCanvas,
   triggerParticleBurst,
 } from '@/components/gamification/ParticleCanvas';
-import { FloatingFocusBar } from '@/components/focus/FloatingFocusBar';
 import { SingleTaskLens } from '@/components/tasks/SingleTaskLens';
 import { ActiveLaunchpad } from '@/components/tasks/ActiveLaunchpad';
 import {
   getNextBestMove,
   type TaskRecommendation,
 } from '@/lib/task-recommendations';
-import { XP_REWARDS, xpForTaskPriority } from '@/lib/gamification';
+import { xpForTaskPriority } from '@/lib/gamification';
 import type { FocusStats, StepProgress, Task } from '@/main/ipc/channels';
 
 // ─── Types & helpers ──────────────────────────────────────────────────────────
@@ -154,11 +148,6 @@ const STATUS_META: Record<
 };
 
 const COLUMNS: Status[] = ['backlog', 'active', 'done'];
-
-const DURATION_PRESETS = [
-  { label: '25 / 5', work: 25, break: 5 },
-  { label: '50 / 10', work: 50, break: 10 },
-] as const;
 
 /**
  * The prompt the Document Drafter opens on, for a given task.
@@ -426,8 +415,6 @@ function TaskCard({
 
 interface FocusModeProps {
   task: Task;
-  audio: UseFocusAudioReturn;
-  timer: UseFocusTimerReturn;
   presetIndex: number;
   onPresetChange: (index: number) => void;
   onMinimize: () => void;
@@ -439,8 +426,6 @@ interface FocusModeProps {
 
 function FocusMode({
   task,
-  audio,
-  timer,
   presetIndex,
   onPresetChange,
   onMinimize,
@@ -450,7 +435,10 @@ function FocusMode({
 }: FocusModeProps) {
   const navigate = useNavigate();
   const [showAudio, setShowAudio] = useState(false);
-  const { state, progress, pause, reset, skip } = timer;
+  const focus = useFocusSession();
+  const soundscape = useSoundscape();
+  const state = focus.timer;
+  const { progress, pause, reset, skip } = focus;
 
   const mins = Math.floor(state.secondsLeft / 60)
     .toString()
@@ -462,14 +450,9 @@ function FocusMode({
   const ringColor = state.phase === 'break' ? '#34d399' : '#f59e0b';
 
   const handleStart = useCallback(() => {
-    if (
-      !audio.playing &&
-      (audio.config.noise || audio.config.toneMode !== 'off')
-    ) {
-      void audio.start();
-    }
-    timer.start();
-  }, [audio, timer]);
+    if (!soundscape.started) void soundscape.start();
+    focus.start();
+  }, [soundscape, focus]);
 
   const handToAgent = async () => {
     try {
@@ -622,11 +605,11 @@ function FocusMode({
             variant="outline"
             className={cn(
               'size-10 rounded-full border-zinc-700',
-              (audio.playing || showAudio) && 'border-sky-700 text-sky-400',
+              (soundscape.playing || showAudio) &&
+                'border-primary/60 text-primary',
             )}
             onClick={() => {
               setShowAudio((v) => !v);
-              if (audio.playing) audio.stop();
             }}
             aria-label="Soundscape"
           >
@@ -652,7 +635,7 @@ function FocusMode({
               exit={{ opacity: 0, height: 0 }}
               className="w-full overflow-hidden"
             >
-              <FocusAudioPanel audio={audio} />
+              <FocusAudioPanel />
             </motion.div>
           )}
         </AnimatePresence>
@@ -885,13 +868,7 @@ export default function Tasks() {
   >(null);
   /** Bumped whenever task data may have changed, to refresh the Today view. */
   const [dataVersion, setDataVersion] = useState(0);
-  const [focusedTask, setFocusedTask] = useState<Task | null>(null);
-  const [focusDisplayMode, setFocusDisplayMode] = useState<
-    'modal' | 'floating' | 'closed'
-  >('closed');
   const [singleLens, setSingleLens] = useState(false);
-  const [presetIndex, setPresetIndex] = useState(0);
-  const preset = DURATION_PRESETS[presetIndex];
 
   const handleSendCopilotPrompt = useCallback((prompt: string) => {
     setCopilotInitialPrompt(prompt);
@@ -914,17 +891,19 @@ export default function Tasks() {
   const [drafterTask, setDrafterTask] = useState<Task | null>(null);
 
   const gamification = useGamification();
-  const audio = useFocusAudio();
+  const focus = useFocusSession();
 
   const recommendation = useMemo(
     () => getNextBestMove({ tasks, stepProgress, shuffleIndex }),
     [tasks, stepProgress, shuffleIndex],
   );
 
-  const startFocus = useCallback((task: Task) => {
-    setFocusedTask(task);
-    setFocusDisplayMode('modal');
-  }, []);
+  const startFocus = useCallback(
+    (task: Task) => {
+      focus.startFocus(task);
+    },
+    [focus.startFocus],
+  );
 
   const load = useCallback(async () => {
     try {
@@ -976,6 +955,10 @@ export default function Tasks() {
     setDataVersion((v) => v + 1);
   }, [load, loadSteps, loadStats]);
 
+  // The global focus runtime marks pomodoros done and can complete a task from
+  // any route; this keeps the local board in step with those writes.
+  useIpcEvent('tasks:changed', refreshAll, [refreshAll]);
+
   const mutations = useTaskMutations({
     onCreated: (task) => setTasks((prev) => [task, ...prev]),
     onUpdated: (id, patch) =>
@@ -1019,104 +1002,9 @@ export default function Tasks() {
     }
   };
 
-  const handlePhaseComplete = useCallback(
-    async (info: PhaseCompleteInfo & { taskId: string }) => {
-      try {
-        await window.electron.ipc.invoke('focus:session-create', {
-          task_id: info.taskId,
-          kind: info.phase,
-          planned_sec: info.plannedSec,
-          actual_sec: info.actualSec,
-          completed: info.completed,
-        });
-      } catch {
-        /* session recording is best-effort */
-      }
+  // Focus phase completion, XP, notifications and the power blocker all live in
+  // `FocusRuntime` now: they must keep running when this page unmounts.
 
-      if (info.phase === 'work' && info.completed) {
-        const mins = Math.max(1, Math.round(info.actualSec / 60));
-        const xp =
-          mins * XP_REWARDS.FOCUS_MINUTE + XP_REWARDS.POMODORO_COMPLETE;
-        void gamification.awardXp(xp, 'pomodoro_complete', info.taskId);
-        triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
-
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === info.taskId
-              ? { ...t, pomodoro_count: t.pomodoro_count + 1 }
-              : t,
-          ),
-        );
-        try {
-          await window.electron.ipc.invoke('tasks:increment-pomodoro', {
-            id: info.taskId,
-          });
-        } catch {
-          /* best-effort */
-        }
-      }
-
-      void loadStats();
-    },
-    [loadStats, gamification],
-  );
-
-  const handleTimerPhase = useCallback(
-    (info: PhaseCompleteInfo) => {
-      if (focusedTask) {
-        handlePhaseComplete({ ...info, taskId: focusedTask.id });
-      }
-      if (info.phase === 'work' && info.completed) {
-        toast.success('Pomodoro complete! Take a break.');
-        void window.electron.ipc.invoke('notifications:notify', {
-          title: 'Pomodoro Complete! 🍅',
-          body: 'Great focus session. Take a 5-minute restorative break.',
-        });
-      } else if (info.phase === 'break' && info.completed) {
-        toast.info('Break finished! Ready to resume flow.');
-        void window.electron.ipc.invoke('notifications:notify', {
-          title: 'Break Finished! ⚡',
-          body: 'Your break is done. Jump back into flow state.',
-        });
-      }
-    },
-    [focusedTask, handlePhaseComplete],
-  );
-
-  const focusTimer = useFocusTimer({
-    taskId: focusedTask?.id ?? null,
-    workMins: preset.work,
-    breakMins: preset.break,
-    onPhaseComplete: handleTimerPhase,
-  });
-
-  // Native power integration: hold a power-save blocker while a session runs
-  // so OS throttling can't stall the countdown, and pause cleanly when the OS
-  // suspends — intervals don't fire asleep, so the phase would otherwise
-  // silently resume mid-countdown on wake. The unmount cleanup releases the
-  // blocker; the toggle effect must not, because cleanup of the *previous*
-  // running state runs after the new effect has enabled it.
-  useEffect(() => {
-    void window.electron.ipc.invoke('focus:set-power-blocker', {
-      enabled: focusTimer.state.running,
-    });
-  }, [focusTimer.state.running]);
-  useEffect(
-    () => () => {
-      void window.electron.ipc.invoke('focus:set-power-blocker', {
-        enabled: false,
-      });
-    },
-    [],
-  );
-  useEffect(() => {
-    const { pause } = focusTimer;
-    const cleanup = window.electron.ipc.on('power:suspended', () => pause());
-    return cleanup;
-  }, [focusTimer]);
-
-  // Declared after `focusTimer` because completing the focused task has to pause
-  // it. Ordering, not a ref, is what breaks the cycle here.
   const handleMove = useCallback(
     async (id: string, to: Status) => {
       const target = tasks.find((t) => t.id === id);
@@ -1132,11 +1020,7 @@ export default function Tasks() {
         triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
         // Completing the task you are focused on must end the session, or the
         // timer keeps running against a finished task.
-        if (focusedTask?.id === id) {
-          focusTimer.pause();
-          setFocusDisplayMode('closed');
-          setFocusedTask(null);
-        }
+        if (focus.focusedTask?.id === id) focus.clearFocus();
       }
       setTasks((prev) =>
         prev.map((t) => (t.id === id ? { ...t, status: to } : t)),
@@ -1148,7 +1032,7 @@ export default function Tasks() {
         void load();
       }
     },
-    [tasks, focusedTask, focusTimer, gamification, load],
+    [tasks, focus.focusedTask, focus.clearFocus, gamification, load],
   );
 
   const handleStartFlow = useCallback(
@@ -1265,10 +1149,10 @@ export default function Tasks() {
   const handleDocumentCreated = useCallback(
     (documentId: string) => {
       setDrafterTask(null);
-      if (focusDisplayMode !== 'closed') setFocusDisplayMode('floating');
+      if (focus.displayMode !== 'closed') focus.setDisplayMode('floating');
       navigate(`/documents/${documentId}`);
     },
-    [focusDisplayMode, navigate, setFocusDisplayMode],
+    [focus.displayMode, focus.setDisplayMode, navigate],
   );
 
   return (
@@ -1508,72 +1392,22 @@ export default function Tasks() {
 
       {/* Focus mode overlay */}
       <AnimatePresence>
-        {focusDisplayMode === 'modal' && focusedTask && (
+        {focus.displayMode === 'modal' && focus.focusedTask && (
           <FocusMode
-            task={focusedTask}
-            audio={audio}
-            timer={focusTimer}
-            presetIndex={presetIndex}
-            onPresetChange={setPresetIndex}
-            onMinimize={() => setFocusDisplayMode('floating')}
-            onClose={() => {
-              setFocusDisplayMode('closed');
-              setFocusedTask(null);
-              focusTimer.pause();
-            }}
+            task={focus.focusedTask}
+            presetIndex={focus.presetIndex}
+            onPresetChange={focus.setPresetIndex}
+            onMinimize={() => focus.setDisplayMode('floating')}
+            onClose={focus.clearFocus}
             onComplete={handleComplete}
-            onDraftDocument={() => focusedTask && openDrafter(focusedTask)}
+            onDraftDocument={() =>
+              focus.focusedTask && openDrafter(focus.focusedTask)
+            }
           />
         )}
       </AnimatePresence>
 
-      {/* Ambient Floating Focus Bar & Mini-Player */}
-      <AnimatePresence>
-        {focusDisplayMode === 'floating' && focusedTask && (
-          <FloatingFocusBar
-            task={focusedTask}
-            timerState={focusTimer.state}
-            progress={focusTimer.progress}
-            audio={audio}
-            onStart={() => {
-              if (
-                !audio.playing &&
-                (audio.config.noise || audio.config.toneMode !== 'off')
-              ) {
-                void audio.start();
-              }
-              focusTimer.start();
-            }}
-            onPause={focusTimer.pause}
-            onSkip={focusTimer.skip}
-            onExpand={() => setFocusDisplayMode('modal')}
-            onClose={() => {
-              setFocusDisplayMode('closed');
-              setFocusedTask(null);
-              focusTimer.pause();
-            }}
-            onCompleteTask={handleComplete}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Soundscape keeps playing outside focus mode — give it an off switch. */}
-      <AnimatePresence>
-        {audio.playing && (!focusedTask || focusDisplayMode === 'closed') && (
-          <motion.button
-            type="button"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            onClick={() => audio.stop()}
-            className="fixed right-4 bottom-4 z-40 flex items-center gap-2 rounded-full border border-border/60 bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-lg transition-colors hover:text-foreground"
-          >
-            <WavesIcon className="size-3.5 text-sky-500" />
-            Soundscape playing
-            <span className="text-muted-foreground/60">· stop</span>
-          </motion.button>
-        )}
-      </AnimatePresence>
+      {/* The floating bar and the audio dock are app-wide (`FocusRuntime`). */}
 
       <ParticleCanvas />
     </div>

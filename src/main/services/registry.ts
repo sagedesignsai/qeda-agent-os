@@ -1,7 +1,7 @@
 /**
  * services/registry.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Registry of the external *services* Vellum can use beyond chat models:
+ * Registry of the external *services* Qeda can use beyond chat models:
  * search, scraping, documentation lookup, images and speech.
  *
  * Deliberately dependency-free (like ai/registry.ts) so settings, IPC and the

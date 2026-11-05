@@ -71,8 +71,6 @@ import { registerComputerUseHandlers } from './handlers/computer-use';
 import { registerStudioCopilotHandlers } from './handlers/studio-copilot';
 import { registerDocumentDrafterHandlers } from './handlers/document-drafter';
 import { registerSerperHandlers } from './handlers/serper';
-import { registerSoundlabHandlers } from './handlers/soundlab';
-import { registerSoundlabCopilotHandlers } from './handlers/soundlab-copilot';
 import { registerBuilderHandlers } from './handlers/builder';
 import { registerOpencodeSetupHandlers } from './handlers/opencode-setup';
 import { registerCorrespondenceHandlers } from './handlers/correspondence';
@@ -81,6 +79,8 @@ import { registerMotionProjectsHandlers } from './handlers/motion-projects';
 import { registerMotionExportHandlers } from './handlers/motion-export';
 import { registerMotionCopilotHandlers } from './handlers/motion-copilot';
 import { registerModelBuilderHandlers } from './handlers/model-builder';
+import { registerMusicHandlers } from './handlers/music';
+import { registerMusicCopilotHandlers } from './handlers/music-copilot';
 
 /**
  * Register every request/response handler.
@@ -108,8 +108,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerStudioCopilotHandlers({ mainWindow });
   registerDocumentDrafterHandlers({ mainWindow });
   registerSerperHandlers({ mainWindow });
-  registerSoundlabHandlers({ mainWindow });
-  registerSoundlabCopilotHandlers({ mainWindow });
   registerBuilderHandlers({ mainWindow });
   registerOpencodeSetupHandlers();
   registerCorrespondenceHandlers({ mainWindow });
@@ -118,4 +116,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMotionExportHandlers({ mainWindow });
   registerMotionCopilotHandlers({ mainWindow });
   registerModelBuilderHandlers({ mainWindow });
+  registerMusicHandlers({ mainWindow });
+  registerMusicCopilotHandlers({ mainWindow });
 }

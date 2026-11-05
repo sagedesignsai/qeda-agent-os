@@ -4,7 +4,7 @@
  * Deep-link resolution — the pure part of the OS integration. Route mapping
  * must be strict: these URLs arrive from outside the app (browser, jump list,
  * other notes), so anything not matching the known route table is rejected
- * rather than fed to the router. The vellum-page:// branch runs against the
+ * rather than fed to the router. The qeda-page:// branch runs against the
  * real workspace store on the standard in-memory database recipe.
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -62,7 +62,7 @@ describe('resolveDeepLinkPath', () => {
     expect(resolveDeepLinkPath('qeda://chat/../../etc')).toBe('/chat/etc');
   });
 
-  it('resolves vellum-page:// to the page route via the workspace store', () => {
+  it('resolves qeda-page:// to the page route via the workspace store', () => {
     db.prepare(
       `INSERT INTO notebooks (id, title) VALUES ('nb-1', 'Notebook')`,
     ).run();
@@ -70,12 +70,12 @@ describe('resolveDeepLinkPath', () => {
       `INSERT INTO pages (id, notebook_id, title) VALUES ('page-1', 'nb-1', 'Page')`,
     ).run();
 
-    expect(resolveDeepLinkPath('vellum-page://page-1')).toBe(
+    expect(resolveDeepLinkPath('qeda-page://page-1')).toBe(
       '/workspace/nb-1/page-1',
     );
   });
 
-  it('rejects a vellum-page:// URI whose page no longer exists', () => {
-    expect(resolveDeepLinkPath('vellum-page://missing')).toBeNull();
+  it('rejects a qeda-page:// URI whose page no longer exists', () => {
+    expect(resolveDeepLinkPath('qeda-page://missing')).toBeNull();
   });
 });

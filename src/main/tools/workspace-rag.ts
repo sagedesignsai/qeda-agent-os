@@ -19,7 +19,7 @@ import { getPage, loadPageMarkdown, type Page } from '../db/workspace.js';
 
 /** Stable pseudo-path so page chunks can be cleaned up by path prefix. */
 export function pageIndexPath(pageId: string): string {
-  return `vellum-page://${pageId}`;
+  return `qeda-page://${pageId}`;
 }
 
 /** Remove all RAG chunks previously indexed for a page. */
@@ -130,7 +130,7 @@ export async function searchWorkspaceRag(query: string, topK = 5) {
         'SELECT file_path FROM chunks WHERE id = ?',
       )
       .get(r.chunk_id);
-    return row?.file_path.startsWith('vellum-page://') ?? false;
+    return row?.file_path.startsWith('qeda-page://') ?? false;
   });
 
   const limited = filtered.slice(0, topK);
@@ -151,7 +151,7 @@ export async function searchWorkspaceRag(query: string, topK = 5) {
   return limited.map((r) => {
     const chunk = chunkMap.get(r.chunk_id);
     return {
-      pageId: chunk?.file_path.replace(/^vellum-page:\/\//, '') ?? '',
+      pageId: chunk?.file_path.replace(/^qeda-page:\/\//, '') ?? '',
       content: chunk?.content ?? '',
       score: Math.round((1 - r.distance) * 1000) / 1000,
     };

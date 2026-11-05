@@ -146,7 +146,7 @@ export function GenerateNotebookDialog({
             Generate a notebook
           </DialogTitle>
           <DialogDescription>
-            Vellum researches your topic, then builds a notebook with an
+            Qeda researches your topic, then builds a notebook with an
             overview page and one nested page per section — with sources cited.
           </DialogDescription>
         </DialogHeader>

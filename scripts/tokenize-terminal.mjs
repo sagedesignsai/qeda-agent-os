@@ -159,7 +159,7 @@ const c = {
 
 console.log(
   c.bold(
-    `\n  Vellum token codemod  ${c.dim(APPLY ? '· WRITE' : '· dry run')}${WITH_STATUS ? ' · +status' : ''}\n`,
+    `\n  Qeda token codemod  ${c.dim(APPLY ? '· WRITE' : '· dry run')}${WITH_STATUS ? ' · +status' : ''}\n`,
   ),
 );
 for (const { rel, edits } of perFile) {

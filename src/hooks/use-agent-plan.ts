@@ -92,7 +92,6 @@ export type PlanEventChannel =
   | 'copilot:plan-event'
   | 'document-drafter:plan-event'
   | 'studio-copilot:plan-event'
-  | 'soundlab-copilot:plan-event'
   | 'correspondence-copilot:plan-event'
   | 'terminal:plan-event'
   | 'motion-copilot:plan-event'

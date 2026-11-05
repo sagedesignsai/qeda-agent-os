@@ -519,9 +519,6 @@ export function deleteProject(id: string): boolean {
     db.prepare(
       `UPDATE studio_takes SET project_id = ? WHERE project_id = ?`,
     ).run(INBOX_PROJECT_ID, id);
-    db.prepare(
-      `UPDATE soundlab_sessions SET project_id = ? WHERE project_id = ?`,
-    ).run(INBOX_PROJECT_ID, id);
     db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
   });
   tx();

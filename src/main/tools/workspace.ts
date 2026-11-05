@@ -1,7 +1,7 @@
 /**
  * tools/workspace.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Agent tools over the knowledge workspace. These are what make Vellum a
+ * Agent tools over the knowledge workspace. These are what make Qeda a
  * documentation agent rather than a generic chat agent: the model can look up
  * pages, read them, create new ones and file research reports — all through
  * the same savePageBlocks choke point the editor uses, so FTS, backlinks,

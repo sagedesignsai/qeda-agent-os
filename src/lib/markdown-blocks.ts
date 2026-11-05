@@ -2,7 +2,7 @@
  * lib/markdown-blocks.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Pure, dependency-free codec between a markdown document and a list of typed
- * blocks — the data model behind Vellum's block editor.
+ * blocks — the data model behind Qeda's block editor.
  *
  * Design rules:
  *   • Deterministic: the same document always parses to the same blocks, and

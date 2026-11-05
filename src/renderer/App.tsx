@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { MemoryRouter as Router, useNavigate, useRoutes } from 'react-router';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { AppLoadingOverlay } from '@/components/AppLoadingOverlay';
+import { AppLoadingContext } from '@/hooks/use-app-loading';
 import { routes } from './routes';
 
 function AppRoutes() {
@@ -27,15 +29,22 @@ function NavigationBridge() {
 }
 
 export default function App() {
+  const [loading, setLoading] = useState(true);
+
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <TooltipProvider>
-        <Router>
-          <NavigationBridge />
-          <AppRoutes />
-        </Router>
-        <Toaster position="bottom-right" />
+        <AppLoadingContext.Provider value={{ loading, setLoading }}>
+          <Router>
+            <NavigationBridge />
+            <AppRoutes />
+          </Router>
+          <Toaster position="bottom-right" />
+          <AppLoadingOverlay loading={loading} />
+        </AppLoadingContext.Provider>
       </TooltipProvider>
     </ThemeProvider>
   );
 }
+
+export { useAppLoading } from '@/hooks/use-app-loading';

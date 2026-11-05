@@ -11,7 +11,7 @@
  * whole document store.
  *
  * The provider-fallback loop below is structurally identical to the one in
- * `studio-copilot.ts` and `soundlab-copilot.ts`. That duplication is deliberate:
+ * `studio-copilot.ts`. That duplication is deliberate:
  * it is the whole reason the IPC layer was split per-concern, and each copy is
  * short enough that extracting it would cost more indirection than it saves.
  * The critical invariant is `emitted` — once any output chunk has reached the

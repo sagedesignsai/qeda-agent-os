@@ -1,7 +1,7 @@
 /**
  * ai/agent.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * The Vellum ToolLoopAgent definition.
+ * The Qeda ToolLoopAgent definition.
  *
  * Two system prompt modes:
  *   • default   – desktop agent capabilities (filesystem, shell, …)

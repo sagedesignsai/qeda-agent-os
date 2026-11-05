@@ -44,7 +44,7 @@ Size: 170575 bytes
 
 --- Content ---
 ... 4 more lines
-*Based on in-depth research into Warp’s architecture and terminal feature set, here is a comprehensive breakdown of what makes Warp compelling, where our current implementation falls short, and a concrete roadmap to turn Vellum Terminal into a truly modern terminal.
+*Based on in-depth research into Warp’s architecture and terminal feature set, here is a comprehensive breakdown of what makes Warp compelling, where our current implementation falls short, and a concrete roadmap to turn Qeda Terminal into a truly modern terminal.
 1. What Makes Warp Truly Different: The 6 Pillars
 Warp didn't just wrap xterm in electron — it dismantled the 50-year-old terminal model where the terminal is an amorphous 80x24 grid of characters and rebuilt it as an IDE-grade workspace:
 Traditional Terminal (VT100 / xterm)
@@ -67,7 +67,7 @@ Warp Model
 │ │ On branch main...                                  │ │
 │ └────────────────────────────────────────────────────┘ │
 │                                                        │
-│ [~/projects/vellum] git:(main)                         │  ← Rich Prompt
+│ [~/projects/qeda] git:(main)                         │  ← Rich Prompt
 │ > git checkout -b feature/                             │  ← Full text editor (multiline, cursor,
 │   └── Auto-suggest / completions dropdown (Tab/Ctrl+R) │     vim mode, syntax highlight, ghost text)
 └────────────────────────────────────────────────────────┘
@@ -106,7 +106,7 @@ Pillar 6: Tabs, Panes & Session Restoration
 - Split panes (horizontal / vertical).
 - Tabs with custom titles and cwd memory.
 - Session restoration: if the app quits or restarts, your terminal blocks, history, and scrollback are preserved.
-2. Gap Analysis: Where Vellum Terminal Is Today vs. Warp
+2. Gap Analysis: Where Qeda Terminal Is Today vs. Warp
 Feature
 Modes
 User direct commands
@@ -120,7 +120,7 @@ Parameterized Workflows
 Inline AI on Failure
 Tabs & Panes
 Interactive Shell in Blocks
-3. Concrete Feature Roadmap for Vellum Terminal
+3. Concrete Feature Roadmap for Qeda Terminal
 To bridge the gap between our current prototype and a Warp-inspired terminal, here is the structured evolution plan:
 Phase 1: High-Impact Block Upgrades (Immediate UI/UX Wins)
 1. Direct Shell Execution in Block Stream:
@@ -134,7 +134,7 @@ Phase 1: High-Impact Block Upgrades (Immediate UI/UX Wins)
 3. AI Error Fixer ("Fix Command"):
 - When exit_code !== 0, display a prominent "Fix with AI" button next to the error badge. Clicking it calls the model to diagnose the failure and auto-fill a proposed fix command ready to run.
 Phase 2: Workflows & Runbooks (Parameterized Commands)
-1. Vellum Workflows (.vellum/workflows or SQLite store):
+1. Qeda Workflows (.qeda/workflows or SQLite store):
 - Store reusable multi-step or single-step parameterized commands:
 name: "Kill Port"
 command: "lsof -ti:{{port}} | xargs kill -9"

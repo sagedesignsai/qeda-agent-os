@@ -275,7 +275,7 @@ function PartRow({
               label="Rotation (°)"
               value={
                 override?.rotation
-                  ? override.rotation.map((r) => (r * 180) / Math.PI)
+                  ? override.rotation.map((r) => (r * 180) / Math.PI) as [number, number, number]
                   : [0, 0, 0]
               }
               onChange={(v) => {

@@ -17,10 +17,7 @@ import { loadEnvironment } from './env';
 import { getDb, closeDb } from './db/client.js';
 import { registerIpcHandlers } from './ipc/index.js';
 import { registerPtyHandlers } from './pty/manager.js';
-import {
-  registerStudioMediaHandler,
-  registerStudioMediaScheme,
-} from './studio-media.js';
+import { registerMediaHandler } from './media/index.js';
 import MenuBuilder, { attachContentContextMenu } from './menu';
 import { resolveHtmlPath } from './util';
 import startAutoUpdates from './updates';
@@ -38,19 +35,21 @@ import {
   resolveDeepLinkPath,
   shutdownOsIntegration,
 } from './os-integration';
+import { createSplashWindow, closeSplashWindow } from './splash';
 
 let mainWindow: BrowserWindow | null = null;
 /** A deep link that arrived before the window existed; flushed after first paint. */
 let pendingDeepLink: string | null = null;
 
 loadEnvironment();
-registerStudioMediaScheme();
+// `./media/index.js` declares the qeda-media scheme privileges at import time,
+// which must happen before app.ready.
 
 // Identity must be applied before any Notification is created: on Windows the
 // AppUserModelID decides whether toasts are attributed to Qeda or fail.
 applyAppIdentity();
 
-// A second process would share vellum.db with the running one — better-sqlite3
+// A second process would share qeda.db with the running one — better-sqlite3
 // is not built for that. Hand over to the existing instance instead.
 const handleDeepLinkUrl = (url: string): void => {
   const target = resolveDeepLinkPath(url);
@@ -79,7 +78,7 @@ if (!acquireSingleInstanceLock(handleDeepLinkUrl)) {
 // Headless CI containers and servers have no usable GPU, and Chromium aborts
 // the whole app ("GPU process isn't usable. Goodbye.") when it tries to start
 // one. Acceleration must be disabled before the app becomes ready.
-if (process.env.CI === 'true' || process.env.VELLUM_DISABLE_HW_ACCEL === '1') {
+if (process.env.CI === 'true' || process.env.QEDA_DISABLE_HW_ACCEL === '1') {
   app.disableHardwareAcceleration();
 }
 
@@ -148,6 +147,8 @@ const createWindow = async () => {
     if (!mainWindow) {
       throw new Error('"mainWindow" is not defined');
     }
+    // Close the splash screen before showing the main window
+    closeSplashWindow();
     if (process.env.START_MINIMIZED) {
       mainWindow.minimize();
     } else {
@@ -236,12 +237,15 @@ function onActivate() {
 app
   .whenReady()
   .then(async () => {
+    // Show splash screen immediately — before DB init and window creation
+    createSplashWindow();
+
     try {
       getDb();
     } catch (e) {
       log.error('Failed to initialize database', e);
     }
-    registerStudioMediaHandler();
+    registerMediaHandler();
     await createWindow();
 
     // OS presence: tray icon, global quick capture, suspend events, badge,

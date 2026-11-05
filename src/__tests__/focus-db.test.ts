@@ -28,6 +28,7 @@ import {
 } from '../main/db/task-blocks';
 import {
   createFocusSession,
+  listFocusSessionTracks,
   listFocusSessions,
   getFocusStats,
 } from '../main/db/focus-sessions';
@@ -191,5 +192,34 @@ describe('focus system data layer', () => {
     createFocusSession({ kind: 'work', completed: true, started_at: 5000 });
 
     expect(listFocusSessions({ from: 2000, to: 6000 })).toHaveLength(1);
+  });
+
+  /** Minimal library row: listening history links to real `music_tracks` ids. */
+  function addMusicTrack(id: string): void {
+    db.prepare(
+      `INSERT INTO music_tracks (id, path, path_key, title)
+       VALUES (?, ?, ?, ?)`,
+    ).run(id, `/music/${id}.mp3`, `/music/${id}.mp3`, id);
+  }
+
+  it('records distinct tracks heard during a work phase, in play order', () => {
+    addMusicTrack('xtal');
+    addMusicTrack('rhubarb');
+
+    const session = createFocusSession({
+      kind: 'work',
+      completed: true,
+      track_ids: ['xtal', 'rhubarb', 'xtal', 'deleted-track'],
+    });
+
+    expect(listFocusSessionTracks(session.id)).toEqual([
+      { session_id: session.id, track_id: 'xtal', position: 0 },
+      { session_id: session.id, track_id: 'rhubarb', position: 1 },
+    ]);
+  });
+
+  it('records an empty history when no tracks were supplied', () => {
+    const session = createFocusSession({ kind: 'break' });
+    expect(listFocusSessionTracks(session.id)).toEqual([]);
   });
 });

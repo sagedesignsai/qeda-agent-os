@@ -41,7 +41,7 @@ inspectable.
 
 In modern productivity and software development, the hardest challenge is rarely starting — it is seeing work through to the finish line. Qeda is engineered around that single promise: taking human intention and carrying it through plans, approvals, and execution until the job is done.
 
-The visual mark pairs a bold circular "Q" with an energetic lightning finish, symbolizing the transition from intention to accomplished outcome. *(Note: During early pre-release development, the project was code-named Vellum; the on-disk SQLite store remains `vellum.db` for seamless data continuity).*
+The visual mark pairs a bold circular "Q" with an energetic lightning finish, symbolizing the transition from intention to accomplished outcome.
 
 Built with electron-vite, React 19, TypeScript, and Tailwind CSS, layering a high-performance, privileged local agent runtime directly into the OS shell.
 
@@ -199,7 +199,7 @@ unrelated configuration such as custom providers or embedding settings.
 
 ### Storage & RAG
 
-One SQLite database in `userData` (`vellum.db`) holds `sessions`, `messages`,
+One SQLite database in `userData` (`qeda.db`) holds `sessions`, `messages`,
 and the RAG tables (`chunks` + a `sqlite-vec` `embeddings` virtual table).
 `indexFile` chunks and embeds a document; `searchDocs` runs a KNN query over the
 vectors.

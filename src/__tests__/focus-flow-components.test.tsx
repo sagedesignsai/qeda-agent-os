@@ -6,12 +6,18 @@
  */
 
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/react';
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react';
 import { SingleTaskLens } from '../components/tasks/SingleTaskLens';
 import { FloatingFocusBar } from '../components/focus/FloatingFocusBar';
+import { useFocusStore } from '../stores/focus-store';
 import type { Task } from '../main/ipc/channels';
-import type { FocusTimerState } from '../hooks/use-focus-timer';
-import type { UseFocusAudioReturn } from '../hooks/use-focus-audio';
+import type { FocusTimerState } from '../lib/focus/timer';
 
 const MOCK_TASKS: Task[] = [
   {
@@ -50,26 +56,6 @@ const MOCK_TIMER_STATE: FocusTimerState = {
   running: true,
   completed: 1,
   phaseTotal: 1500,
-};
-
-const MOCK_AUDIO: UseFocusAudioReturn = {
-  config: {
-    noise: 'brown',
-    noiseVolume: 0.5,
-    toneMode: 'binaural',
-    carrierHz: 200,
-    beatHz: 10,
-    toneVolume: 0.3,
-    clip: null,
-    clipVolume: 0.3,
-    pulseDepth: 0.8,
-    masterVolume: 0.75,
-  },
-  playing: false,
-  start: jest.fn().mockResolvedValue(undefined),
-  stop: jest.fn(),
-  toggle: jest.fn().mockResolvedValue(undefined),
-  setConfig: jest.fn(),
 };
 
 describe('SingleTaskLens', () => {
@@ -139,47 +125,64 @@ describe('SingleTaskLens', () => {
 });
 
 describe('FloatingFocusBar', () => {
-  it('renders active countdown, title, and 1-click completion button', () => {
-    const onStart = jest.fn();
-    const onPause = jest.fn();
-    const onSkip = jest.fn();
-    const onExpand = jest.fn();
-    const onClose = jest.fn();
-    const onCompleteTask = jest.fn();
+  beforeEach(() => {
+    Object.defineProperty(window, 'electron', {
+      writable: true,
+      value: {
+        ipc: {
+          invoke: jest.fn(() => Promise.resolve(undefined)),
+          on: () => () => {},
+        },
+      },
+    });
+    // The bar reads the app-wide store rather than props; seed a session and
+    // then pin the countdown so the assertion is deterministic. Store writes
+    // outside `act` make React warn about updates it did not schedule.
+    act(() => {
+      useFocusStore.getState().clearFocus();
+      useFocusStore.getState().startFocus(MOCK_TASKS[0]);
+      useFocusStore.setState({ timer: MOCK_TIMER_STATE });
+    });
+  });
 
-    render(
-      <FloatingFocusBar
-        task={MOCK_TASKS[0]}
-        timerState={MOCK_TIMER_STATE}
-        progress={0.2}
-        audio={MOCK_AUDIO}
-        onStart={onStart}
-        onPause={onPause}
-        onSkip={onSkip}
-        onExpand={onExpand}
-        onClose={onClose}
-        onCompleteTask={onCompleteTask}
-      />,
-    );
+  afterEach(() => {
+    act(() => {
+      useFocusStore.getState().clearFocus();
+    });
+  });
+
+  it('renders active countdown, title, and 1-click completion button', () => {
+    const onExpand = jest.fn();
+
+    render(<FloatingFocusBar onExpand={onExpand} />);
 
     expect(screen.getByText('24:55')).toBeInTheDocument();
     expect(screen.getByText('Write executive summary')).toBeInTheDocument();
     expect(screen.getByText('Complete')).toBeInTheDocument();
     expect(screen.getByText('+100 XP')).toBeInTheDocument();
 
-    const completeBtn = screen.getByText('Complete');
-    fireEvent.click(completeBtn);
-    expect(onCompleteTask).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'task-1' }),
-      expect.anything(),
-    );
-
     const pauseBtn = screen.getByTitle('Pause timer');
     fireEvent.click(pauseBtn);
-    expect(onPause).toHaveBeenCalled();
+    expect(useFocusStore.getState().timer.running).toBe(false);
 
     const expandBtn = screen.getByTitle('Maximize focus mode');
     fireEvent.click(expandBtn);
     expect(onExpand).toHaveBeenCalled();
+  });
+
+  it('marks the task done through IPC and clears the session', async () => {
+    render(<FloatingFocusBar onExpand={jest.fn()} />);
+
+    fireEvent.click(screen.getByText('Complete'));
+
+    await waitFor(() =>
+      expect(window.electron.ipc.invoke).toHaveBeenCalledWith(
+        'tasks:update',
+        expect.objectContaining({ id: 'task-1', status: 'done' }),
+      ),
+    );
+    await waitFor(() =>
+      expect(useFocusStore.getState().focusedTask).toBeNull(),
+    );
   });
 });

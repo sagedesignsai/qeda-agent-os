@@ -97,9 +97,11 @@ export function registerTasksHandlers({
     return result;
   });
 
-  ipcMain.handle('tasks:increment-pomodoro', (_e, { id }: { id: string }) =>
-    incrementPomodoro(id),
-  );
+  ipcMain.handle('tasks:increment-pomodoro', (_e, { id }: { id: string }) => {
+    const task = incrementPomodoro(id);
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
+    return task;
+  });
 
   ipcMain.handle('tasks:prioritize', async () => {
     const { getSettings } = await import('../../ai/settings.js');
@@ -198,8 +200,13 @@ export function registerTasksHandlers({
 
   ipcMain.handle(
     'focus:session-create',
-    (_e, req: Parameters<typeof createFocusSession>[0]) =>
-      createFocusSession(req),
+    (_e, req: Parameters<typeof createFocusSession>[0]) => {
+      const session = createFocusSession(req);
+      // The stats strip and the task's pomodoro badge both live in the renderer;
+      // one broadcast refreshes every mount instead of each page polling.
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
+      return session;
+    },
   );
 
   ipcMain.handle(

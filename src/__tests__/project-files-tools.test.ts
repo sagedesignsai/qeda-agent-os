@@ -57,7 +57,7 @@ beforeEach(() => {
   // it every containment comparison in the tool would be against a different
   // string than the one it computed.
   root = fs.realpathSync(
-    fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-matter-')),
+    fs.mkdtempSync(path.join(os.tmpdir(), 'qeda-matter-')),
   );
 
   write('engagement.md', '# Engagement letter\n\nDated 3 March.\n');
@@ -205,7 +205,7 @@ describe('listProjectFiles', () => {
 
   it('does not list a symlinked folder that escapes the project', async () => {
     const outside = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-outside-')),
+      fs.mkdtempSync(path.join(os.tmpdir(), 'qeda-outside-')),
     );
     try {
       fs.writeFileSync(path.join(outside, 'loot.md'), '# leaked\n');
@@ -275,7 +275,7 @@ describe('readProjectFile', () => {
 
   it('refuses a ../ escape', async () => {
     const outside = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-outside-')),
+      fs.mkdtempSync(path.join(os.tmpdir(), 'qeda-outside-')),
     );
     try {
       fs.writeFileSync(path.join(outside, 'secret.md'), '# secret\n');
@@ -301,7 +301,7 @@ describe('readProjectFile', () => {
 
   it('refuses to follow a symlink out of the project folder', async () => {
     const outside = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'vellum-outside-')),
+      fs.mkdtempSync(path.join(os.tmpdir(), 'qeda-outside-')),
     );
     try {
       fs.writeFileSync(path.join(outside, 'secret.md'), '# secret\n');

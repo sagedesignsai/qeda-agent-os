@@ -260,7 +260,7 @@ export function EmbeddingsView() {
             <code className="font-mono">EMBEDDING_DIM</code> (default{' '}
             <code className="font-mono">1536</code>) the first time the database
             is opened. Changing the dimension later requires deleting{' '}
-            <code className="font-mono">vellum.db</code> and re-indexing your
+            <code className="font-mono">qeda.db</code> and re-indexing your
             documents, so it is not editable here. A mismatched width is
             reported as a configuration error rather than failing at query time.
           </p>

@@ -30,12 +30,13 @@ import Correspondence from './pages/Correspondence';
 import Projects from './pages/Projects';
 import Documents from './pages/Documents';
 import Studio from './pages/Studio';
-import SoundLab from './pages/SoundLab';
+import Music from './pages/Music';
 import Motion from './pages/Motion';
 import MotionBrowser from './pages/MotionBrowser';
 import Workspace from './pages/Workspace';
 import Builder from './pages/Builder';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
+import { useAppLoading } from '@/hooks/use-app-loading';
 import type { Project } from '@/main/ipc/channels';
 
 export const routes: RouteObject[] = [
@@ -104,10 +105,10 @@ export const routes: RouteObject[] = [
       },
 
       {
-        path: 'soundlab',
+        path: 'music',
         children: [
-          { index: true, element: <SoundLab /> },
-          { path: ':sessionId', element: <SoundLab /> },
+          { index: true, element: <Music /> },
+          { path: ':playlistId', element: <Music /> },
         ],
       },
 
@@ -144,10 +145,11 @@ export const routes: RouteObject[] = [
 /**
  * Conditional homepage: /chat when there is an active project, /projects when
  * there are projects but no active one, and /onboarding when the workspace is
- * empty.
+ * empty. Signals the app loading overlay to fade out once IPC calls resolve.
  */
 function ProjectsHome() {
   const navigate = useNavigate();
+  const { setLoading } = useAppLoading();
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +163,9 @@ function ProjectsHome() {
               activeProjectId?: string;
             }>('settings:get')
           ).activeProjectId ?? '';
+
+        // Signal that initial data loading is complete — overlay will fade out
+        if (!cancelled) setLoading(false);
 
         const anyRealProject = projects.some((p) => p.id !== 'inbox');
 
@@ -180,13 +185,15 @@ function ProjectsHome() {
 
         if (!cancelled) navigate('/projects', { replace: true });
       } catch {
+        // On error, still hide the overlay and fall back to projects
+        if (!cancelled) setLoading(false);
         if (!cancelled) navigate('/projects', { replace: true });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [navigate]);
+  }, [navigate, setLoading]);
 
   return null;
 }

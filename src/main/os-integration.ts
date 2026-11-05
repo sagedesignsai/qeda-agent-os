@@ -6,10 +6,10 @@
  *
  *   - Identity: AppUserModelID (Windows notifications are broken without it)
  *     and the About panel.
- *   - Single instance: two processes sharing vellum.db is a data hazard, so a
+ *   - Single instance: two processes sharing qeda.db is a data hazard, so a
  *     second launch hands over to the running one (focusing it, and routing
  *     any deep link in its argv).
- *   - Deep links: `qeda://<route>` and the stored `vellum-page://<pageId>`
+ *   - Deep links: `qeda://<route>` and the stored `qeda-page://<pageId>`
  *     URIs resolve to renderer paths.
  *   - Badge: the dock badge shows unfinished tasks due today.
  *   - Recent projects: macOS dock menu / Windows jump list quick access.
@@ -78,7 +78,7 @@ export function acquireSingleInstanceLock(
     const url = argv.find(
       (arg) =>
         arg.startsWith(`${DEEP_LINK_SCHEME}://`) ||
-        arg.startsWith('vellum-page://'),
+        arg.startsWith('qeda-page://'),
     );
     if (url) onDeepLinkUrl(url);
   });
@@ -125,8 +125,8 @@ export function resolveDeepLinkPath(rawUrl: string): string | null {
   const safeSegment = (value: string | null) =>
     value && /^[a-z0-9-]+$/i.test(value) ? value : null;
 
-  // `vellum-page://<pageId>` — the URIs persisted by the workspace RAG indexer.
-  if (url.protocol === 'vellum-page:') {
+  // `qeda-page://<pageId>` — the URIs persisted by the workspace RAG indexer.
+  if (url.protocol === 'qeda-page:') {
     const pageId = safeSegment(url.host || url.pathname.replace(/^\/+/, ''));
     if (!pageId) return null;
     const page = getPage(pageId);

@@ -213,13 +213,6 @@ export type {
 } from '../../lib/studio-types.js';
 export { DEFAULT_STUDIO_STYLING };
 
-import type {
-  SoundLabSession,
-  SoundLabSessionWithTracks,
-  SoundLabTrack,
-} from '../../lib/soundlab-types.js';
-export type { SoundLabSession, SoundLabSessionWithTracks, SoundLabTrack };
-
 import type { SerperImage, ImageFormatFilter } from '../services/serper.js';
 import type { DownloadResourceResult } from '../services/downloader.js';
 export type { SerperImage, ImageFormatFilter, DownloadResourceResult };
@@ -275,6 +268,35 @@ import type {
   AgentPlanEvent,
 } from '../../lib/agent-plan.js';
 export type { AgentPlan, PlanItem, PlanItemStatus, AgentPlanEvent };
+
+import type {
+  AudioSceneConfig,
+  MusicCopilotCommand,
+  MusicCopilotContext,
+  MusicFacets,
+  MusicFolder,
+  MusicLibraryQuery,
+  MusicPlaylist,
+  MusicScene,
+  MusicScanProgress,
+  MusicStateRecord,
+  MusicTrack,
+  MusicTrackPage,
+} from '../../lib/music/types.js';
+export type {
+  AudioSceneConfig,
+  MusicCopilotCommand,
+  MusicCopilotContext,
+  MusicFacets,
+  MusicFolder,
+  MusicLibraryQuery,
+  MusicPlaylist,
+  MusicScene,
+  MusicScanProgress,
+  MusicStateRecord,
+  MusicTrack,
+  MusicTrackPage,
+};
 
 /** A tool as advertised to the renderer by `tools:list`. */
 export interface ToolInfo {
@@ -1135,6 +1157,8 @@ export interface IpcChannels {
       completed?: boolean;
       started_at?: number;
       ended_at?: number | null;
+      /** Distinct track ids heard during the phase, in first-play order. */
+      track_ids?: string[];
     };
     res: FocusSession;
   };
@@ -1539,28 +1563,6 @@ export interface IpcChannels {
   'computer-use:wait': { req: { ms: number }; res: { ok: boolean } };
   /** Broadcast when computer-use state/settings change. */
   'computer-use:changed': void;
-  /** List saved sessions, optionally scoped by project. */
-  'soundlab:list': {
-    req: { projectId?: string | null } | void;
-    res: SoundLabSession[];
-  };
-  /** Fetch a full session including all tracks. */
-  'soundlab:get': {
-    req: { id: string };
-    res: SoundLabSessionWithTracks | null;
-  };
-  /** Upsert a session and all its tracks atomically. */
-  'soundlab:save': {
-    req: SoundLabSessionWithTracks;
-    res: { id: string };
-  };
-  /** Hard-delete a session (tracks cascade). */
-  'soundlab:delete': {
-    req: { id: string };
-    res: { ok: boolean };
-  };
-  /** Broadcast when any session changes (created, updated, deleted). */
-  'soundlab:changed': void;
 
   // ── Studio Copilot (Autonomous Video Director Agent) ─────────────────────
   /** Run one studio copilot turn. Streams back over `studio-copilot:stream-*`. */
@@ -1687,32 +1689,6 @@ export interface IpcChannels {
   // drafter broadcasts the existing 'documents:changed' invalidation event,
   // which `use-documents.ts` already listens to — a second event would mean two
   // subscription sites and one of them would eventually be forgotten.
-
-  // ── SoundLab Copilot (Autonomous Neuro-Acoustic Producer Agent) ──────────
-  /** Run one SoundLab copilot turn. Streams back over `soundlab-copilot:stream-*`. */
-  'soundlab-copilot:chat': {
-    req: {
-      messages: UIMessage[];
-      context: {
-        sessionId: string;
-        projectId?: string;
-        currentBeat?: number;
-      };
-    };
-    res: void;
-  };
-  'soundlab-copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
-  'soundlab-copilot:stream-done': { runId: string };
-  'soundlab-copilot:stream-error': { error: string };
-  'soundlab-copilot:stream-fallback': {
-    fromProvider: string;
-    fromModel: string;
-    toProvider: string;
-    toModel: string;
-    reason: string;
-  };
-  /** Pushed when the soundlab copilot creates or updates its plan. */
-  'soundlab-copilot:plan-event': { data: AgentPlanEvent };
 
   // ── Correspondence ─────────────────────────────────────────────────────────
   //
@@ -1955,6 +1931,85 @@ export interface IpcChannels {
   };
   /** Pushed when the correspondence copilot creates or updates its plan. */
   'correspondence-copilot:plan-event': { data: AgentPlanEvent };
+
+  // ── Music ───────────────────────────────────────────────────────────────────
+  /** Watched library roots. */
+  'music:folders-list': { req: void; res: MusicFolder[] };
+  /** Native folder picker; returns null when the user cancels. */
+  'music:folder-pick': { req: void; res: { path: string | null } };
+  'music:folder-add': { req: { path: string }; res: MusicFolder };
+  /** Detaches the folder's tracks (`folder_id` → NULL); never deletes files. */
+  'music:folder-remove': { req: { id: string }; res: { ok: boolean } };
+  /** Start an index pass. Progress arrives on `music:scan-progress`. */
+  'music:scan-start': {
+    req: { folderId?: string } | void;
+    res: { started: boolean };
+  };
+  'music:scan-cancel': {
+    req: { folderId?: string } | void;
+    res: { ok: boolean };
+  };
+  /** Pushed while a scan runs; `phase: 'done'` is the last event. */
+  'music:scan-progress': MusicScanProgress;
+  'music:library-query': { req: MusicLibraryQuery; res: MusicTrackPage };
+  'music:track-get': { req: { id: string }; res: MusicTrack | null };
+  /** Queue hydration owns the order, so ids come back in the requested order. */
+  'music:tracks-by-ids': { req: { ids: string[] }; res: MusicTrack[] };
+  'music:facets': {
+    req: { folderId?: string | null } | void;
+    res: MusicFacets;
+  };
+  'music:playlists-list': { req: void; res: MusicPlaylist[] };
+  'music:playlist-create': { req: { name: string }; res: MusicPlaylist };
+  'music:playlist-update': {
+    req: { id: string; name?: string; description?: string };
+    res: MusicPlaylist | null;
+  };
+  'music:playlist-delete': { req: { id: string }; res: { ok: boolean } };
+  'music:playlist-tracks': { req: { id: string }; res: MusicTrack[] };
+  'music:playlist-add-tracks': {
+    req: { id: string; trackIds: string[] };
+    res: { added: number };
+  };
+  'music:playlist-remove-track': {
+    req: { id: string; trackId: string };
+    res: { ok: boolean };
+  };
+  'music:playlist-reorder': {
+    req: { id: string; trackIds: string[] };
+    res: void;
+  };
+  'music:scenes-list': { req: void; res: MusicScene[] };
+  /** Omit `id` to create; the returned scene always carries one. */
+  'music:scene-save': {
+    req: { id?: string; name: string; config: AudioSceneConfig };
+    res: MusicScene;
+  };
+  'music:scene-delete': { req: { id: string }; res: { ok: boolean } };
+  /** Resumable playback row; null on a fresh library. */
+  'music:state-get': { req: void; res: MusicStateRecord | null };
+  'music:state-save': { req: MusicStateRecord; res: { ok: boolean } };
+  /** Library, playlist or scene changed — re-fetch. */
+  'music:changed': void;
+
+  // ── Music Copilot (DJ agent) ──────────────────────────────────────────────
+  /** One agent turn; text and tool calls stream on `music-copilot:stream-*`. */
+  'music-copilot:chat': {
+    req: { messages: UIMessage[]; context?: MusicCopilotContext };
+    res: void;
+  };
+  'music-copilot:stream-chunk': { data: string };
+  'music-copilot:stream-done': { runId: string };
+  'music-copilot:stream-error': { error: string };
+  'music-copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  /** Playback/ambience commands emitted by the copilot's tools. */
+  'music:copilot-command': MusicCopilotCommand;
 
   // ── Native shell integration ────────────────────────────────────────────────
   /** Navigate the app router to a path. Sent by tray, menu, notifications, deep links. */

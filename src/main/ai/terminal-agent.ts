@@ -1,7 +1,7 @@
 /**
  * ai/terminal-agent.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * The Vellum TerminalAgent — a goal-driven shell agent that breaks a user
+ * The Qeda TerminalAgent — a goal-driven shell agent that breaks a user
  * goal into shell commands, proposes each one for approval, executes approved
  * commands, streams output back as structured TerminalBlock events, and
  * synthesizes a final summary.

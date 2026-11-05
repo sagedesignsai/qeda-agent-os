@@ -1,16 +1,16 @@
 /**
  * components/focus/FloatingFocusBar.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Ambient floating focus bar & mini-player for sustained flow state.
+ * The app-wide mini focus bar.
  *
- * Sits anchored at the bottom-center of the screen during an active focus
- * session so the user can navigate between Board, Today, Chat, Terminal, or
- * external apps without losing their countdown, soundscape, or task anchor.
- *
- * Provides 1-click task completion with instant dopamine celebration.
+ * Rendered by `FocusRuntime`, not by the Tasks page, so it survives navigation.
+ * It reads the global stores directly; the only thing it cannot do alone is
+ * expand the full focus modal, which is why `onExpand` is a prop (the runtime
+ * can navigate to /tasks first).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useState } from 'react';
 import { motion } from 'motion/react';
 import {
   CheckIcon,
@@ -21,45 +21,38 @@ import {
   WavesIcon,
   XIcon,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { XP_REWARDS } from '@/lib/gamification';
-import type { Task } from '@/main/ipc/channels';
-import type { FocusTimerState } from '@/hooks/use-focus-timer';
-import type { UseFocusAudioReturn } from '@/hooks/use-focus-audio';
+import { useFocusSession } from '@/hooks/use-focus-session';
+import { useSoundscape } from '@/hooks/use-soundscape';
+import { completeTask } from '@/lib/focus/task-actions';
 
 export interface FloatingFocusBarProps {
-  task: Task;
-  timerState: FocusTimerState;
-  progress: number;
-  audio: UseFocusAudioReturn;
-  onStart: () => void;
-  onPause: () => void;
-  onSkip: () => void;
   onExpand: () => void;
-  onClose: () => void;
-  onCompleteTask: (task: Task, event: React.MouseEvent) => void;
+  /** Render in normal flow (inside the global dock) instead of fixed-centre. */
+  inline?: boolean;
 }
 
 export function FloatingFocusBar({
-  task,
-  timerState,
-  progress,
-  audio,
-  onStart,
-  onPause,
-  onSkip,
   onExpand,
-  onClose,
-  onCompleteTask,
+  inline,
 }: FloatingFocusBarProps) {
-  const mins = Math.floor(timerState.secondsLeft / 60)
+  const focus = useFocusSession();
+  const soundscape = useSoundscape();
+  const [completing, setCompleting] = useState(false);
+  const { focusedTask: task, timer, progress } = focus;
+
+  if (!task) return null;
+
+  const mins = Math.floor(timer.secondsLeft / 60)
     .toString()
     .padStart(2, '0');
-  const secs = (timerState.secondsLeft % 60).toString().padStart(2, '0');
+  const secs = (timer.secondsLeft % 60).toString().padStart(2, '0');
 
-  const isBreak = timerState.phase === 'break';
+  const isBreak = timer.phase === 'break';
   const phaseColor = isBreak ? 'text-emerald-400' : 'text-amber-400';
   const strokeColor = isBreak ? '#34d399' : '#f59e0b';
 
@@ -70,10 +63,29 @@ export function FloatingFocusBar({
         ? XP_REWARDS.TASK_MED
         : XP_REWARDS.TASK_LOW;
 
-  // Circular progress SVG calculations
   const radius = 16;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - progress * circumference;
+
+  const start = () => {
+    if (!soundscape.started) void soundscape.start();
+    focus.start();
+  };
+
+  const complete = async () => {
+    setCompleting(true);
+    try {
+      await completeTask(task);
+      toast.success('Task complete', {
+        description: `+${xpReward} XP · ${task.title}`,
+      });
+      focus.clearFocus();
+    } catch {
+      toast.error('Could not complete the task');
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   return (
     <motion.div
@@ -81,9 +93,13 @@ export function FloatingFocusBar({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 24, scale: 0.95 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border/70 bg-card/95 px-4 py-2 shadow-2xl backdrop-blur-xl"
+      className={cn(
+        'flex items-center gap-3 rounded-full border border-border/70 bg-card/95 px-4 py-2 shadow-2xl backdrop-blur-xl',
+        inline
+          ? 'relative w-full justify-between'
+          : 'fixed bottom-6 left-1/2 z-50 -translate-x-1/2',
+      )}
     >
-      {/* Timer with circular SVG ring */}
       <div className="relative flex size-10 shrink-0 items-center justify-center">
         <svg className="size-10 -rotate-90">
           <circle
@@ -117,25 +133,24 @@ export function FloatingFocusBar({
         </span>
       </div>
 
-      {/* Task info & phase */}
       <div className="flex max-w-[200px] flex-col sm:max-w-[260px]">
         <div className="flex items-center gap-1.5">
           <span
             className={cn(
               'size-1.5 rounded-full',
-              timerState.running
+              timer.running
                 ? isBreak
-                  ? 'bg-emerald-400 animate-pulse'
-                  : 'bg-amber-400 animate-pulse'
-                : 'bg-zinc-500',
+                  ? 'animate-pulse bg-emerald-400'
+                  : 'animate-pulse bg-amber-400'
+                : 'bg-muted-foreground',
             )}
           />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {timerState.phase === 'idle'
+          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+            {timer.phase === 'idle'
               ? 'Ready'
               : isBreak
-                ? 'Break Time'
-                : 'Deep Focus'}
+                ? 'Break time'
+                : 'Deep focus'}
           </span>
         </div>
         <p className="truncate text-xs font-medium text-card-foreground">
@@ -145,14 +160,13 @@ export function FloatingFocusBar({
 
       <div className="h-6 w-px bg-border/60" />
 
-      {/* Transport Controls */}
       <div className="flex items-center gap-1">
-        {timerState.running ? (
+        {timer.running ? (
           <Button
             size="icon"
             variant="ghost"
             className="size-7 rounded-full text-foreground hover:bg-muted"
-            onClick={onPause}
+            onClick={focus.pause}
             title="Pause timer"
           >
             <PauseIcon className="size-3.5" />
@@ -162,7 +176,7 @@ export function FloatingFocusBar({
             size="icon"
             variant="ghost"
             className="size-7 rounded-full text-foreground hover:bg-muted"
-            onClick={onStart}
+            onClick={start}
             title="Start timer"
           >
             <PlayIcon className="size-3.5 fill-current" />
@@ -173,38 +187,37 @@ export function FloatingFocusBar({
           size="icon"
           variant="ghost"
           className="size-7 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={onSkip}
+          onClick={() => focus.skip()}
           title="Skip phase"
         >
           <SkipForwardIcon className="size-3.5" />
         </Button>
 
-        {/* Soundscape toggle */}
         <Button
           size="icon"
           variant="ghost"
           className={cn(
             'size-7 rounded-full transition-colors',
-            audio.playing
-              ? 'bg-sky-500/10 text-sky-400 hover:bg-sky-500/20'
+            soundscape.playing
+              ? 'bg-primary/10 text-primary hover:bg-primary/20'
               : 'text-muted-foreground hover:bg-muted hover:text-foreground',
           )}
-          onClick={() => void audio.toggle()}
-          title={audio.playing ? 'Mute soundscape' : 'Enable soundscape'}
+          onClick={() => void soundscape.toggle()}
+          title={soundscape.playing ? 'Mute soundscape' : 'Enable soundscape'}
         >
           <WavesIcon
-            className={cn('size-3.5', audio.playing && 'animate-pulse')}
+            className={cn('size-3.5', soundscape.playing && 'animate-pulse')}
           />
         </Button>
       </div>
 
       <div className="h-6 w-px bg-border/60" />
 
-      {/* 1-Click Complete with Dopamine XP incentive */}
       <Button
         size="sm"
+        disabled={completing}
         className="h-7 gap-1.5 rounded-full bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 active:scale-95"
-        onClick={(e) => onCompleteTask(task, e)}
+        onClick={() => void complete()}
       >
         <CheckIcon className="size-3.5 stroke-[2.5]" />
         <span>Complete</span>
@@ -216,7 +229,6 @@ export function FloatingFocusBar({
         </Badge>
       </Button>
 
-      {/* Expand & Close */}
       <div className="flex items-center gap-0.5">
         <Button
           size="icon"
@@ -231,7 +243,7 @@ export function FloatingFocusBar({
           size="icon"
           variant="ghost"
           className="size-6 rounded-full text-muted-foreground hover:bg-muted hover:text-destructive"
-          onClick={onClose}
+          onClick={focus.clearFocus}
           title="End session"
         >
           <XIcon className="size-3" />

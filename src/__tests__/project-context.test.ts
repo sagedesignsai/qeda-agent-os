@@ -36,9 +36,9 @@ describe('renderProjectContext', () => {
 
   it('renders the project block with outcome, repo, deadline, and progress', () => {
     const project = createProject({
-      name: 'Vellum launch',
+      name: 'Qeda launch',
       description: 'Ship the 1.0 to real users.',
-      repo_path: '/data/projects/vellum',
+      repo_path: '/data/projects/qeda',
       deadline: new Date(2026, 11, 1).getTime() / 1000,
     });
     createTask({ title: 'Onboarding', project_id: project.id, status: 'done' });
@@ -54,10 +54,10 @@ describe('renderProjectContext', () => {
     const block = renderProjectContext({ projectId: project.id });
 
     expect(block).toContain('## Active project');
-    expect(block).toContain(`**Vellum launch**`);
+    expect(block).toContain(`**Qeda launch**`);
     expect(block).toContain(`(id: ${project.id})`);
     expect(block).toContain('Outcome: Ship the 1.0 to real users.');
-    expect(block).toContain('Repo: /data/projects/vellum');
+    expect(block).toContain('Repo: /data/projects/qeda');
     expect(block).toContain('Deadline:');
     expect(block).toContain('Tasks: 2 total, 1 done, 1 active, 1 overdue');
   });

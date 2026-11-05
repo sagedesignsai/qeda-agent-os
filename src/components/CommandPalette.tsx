@@ -35,7 +35,18 @@ import {
   CheckSquareIcon,
   VideoIcon,
   TerminalIcon,
+  Music2Icon,
+  PlayIcon,
+  PauseIcon,
+  SkipBackIcon,
+  SkipForwardIcon,
+  SparklesIcon,
+  TimerIcon,
 } from 'lucide-react';
+import { useMusicStore } from '@/stores/music-store';
+import { useFocusStore } from '@/stores/focus-store';
+import { useSoundscapeStore } from '@/stores/soundscape-store';
+import { BUILTIN_SCENES } from '@/lib/music/scenes';
 interface SessionLite {
   id: string;
   title: string;
@@ -59,6 +70,13 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
+  // Select only what the labels need; the store updates position on every
+  // `timeupdate`, and a palette that re-renders four times a second is waste.
+  const hasTrack = useMusicStore((s) => s.currentTrack() !== null);
+  const playing = useMusicStore((s) => s.playing);
+  const focusRunning = useFocusStore((s) => s.timer.running);
+  const hasFocusTask = useFocusStore((s) => s.focusedTask !== null);
+  const sceneId = useSoundscapeStore((s) => s.sceneId);
   const [query, setQuery] = useState('');
   const [sessions, setSessions] = useState<SessionLite[]>([]);
   const [docs, setDocs] = useState<DocLite[]>([]);
@@ -148,6 +166,11 @@ export function CommandPalette({
               <span>Chat &amp; Research</span>
               <CommandShortcut>⌘6</CommandShortcut>
             </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/music'))}>
+              <Music2Icon />
+              <span>Music</span>
+              <CommandShortcut>⌘7</CommandShortcut>
+            </CommandItem>
           </CommandGroup>
 
           <CommandSeparator />
@@ -180,6 +203,91 @@ export function CommandPalette({
               <span>Open settings</span>
               <CommandShortcut>⌘,</CommandShortcut>
             </CommandItem>
+          </CommandGroup>
+
+          <CommandSeparator />
+
+          <CommandGroup heading="Audio">
+            <CommandItem
+              onSelect={() =>
+                run(() => {
+                  const store = useMusicStore.getState();
+                  if (!store.currentTrack()) {
+                    navigate('/music');
+                    return;
+                  }
+                  void store.toggle();
+                })
+              }
+            >
+              {playing ? <PauseIcon /> : <PlayIcon />}
+              <span>
+                {playing ? 'Pause playback' : hasTrack ? 'Resume playback' : 'Open music'}
+              </span>
+            </CommandItem>
+            <CommandItem
+              onSelect={() => run(() => void useMusicStore.getState().next())}
+            >
+              <SkipForwardIcon />
+              <span>Next track</span>
+            </CommandItem>
+            <CommandItem
+              onSelect={() => run(() => void useMusicStore.getState().previous())}
+            >
+              <SkipBackIcon />
+              <span>Previous track</span>
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                run(() => {
+                  const store = useSoundscapeStore.getState();
+                  const index = BUILTIN_SCENES.findIndex(
+                    (scene) => scene.id === store.sceneId,
+                  );
+                  const next =
+                    BUILTIN_SCENES[(index + 1) % BUILTIN_SCENES.length];
+                  store.setScene(next.id, next.config.soundscape);
+                  if (!store.started) {
+                    void store.start(next.config.soundscape);
+                  }
+                })
+              }
+            >
+              <SparklesIcon />
+              <span className="capitalize">Next scene · {sceneId.replace(/-/g, ' ')}</span>
+            </CommandItem>
+            <CommandItem
+              onSelect={() => run(() => navigate('/music?copilot=1'))}
+            >
+              <SparklesIcon />
+              <span>Ask Music Copilot</span>
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                run(() => {
+                  const store = useFocusStore.getState();
+                  if (store.focusedTask) store.start();
+                  else navigate('/tasks');
+                })
+              }
+            >
+              <TimerIcon />
+              <span>
+                {focusRunning
+                  ? 'Pause focus timer'
+                  : hasFocusTask
+                    ? 'Start focus timer'
+                    : 'Start focus…'}
+              </span>
+            </CommandItem>
+            {focusRunning && (
+              <CommandItem
+                onSelect={() => run(() => useFocusStore.getState().pause())}
+              >
+                <PauseIcon />
+                <span>Pause focus timer</span>
+              </CommandItem>
+            )}
           </CommandGroup>
 
           {sessions.length > 0 && (

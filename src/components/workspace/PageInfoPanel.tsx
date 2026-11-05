@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Right-hand panel of the Workspace page: outline, tags, backlinks, outgoing
  * links, related pages, version history (with restore) and the page's research
- * run history. This is Vellum's transparency surface — where research lineage
+ * run history. This is Qeda's transparency surface — where research lineage
  * and document history become visible.
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -202,7 +202,7 @@ export function PageInfoPanel({
             {runLoading && <LoaderIcon className="h-3 w-3 animate-spin" />}
             {!runLoading && runs.length === 0 && (
               <p className="text-muted-foreground">
-                No research runs yet. Ask Vellum to research this page's topic
+                No research runs yet. Ask Qeda to research this page's topic
                 in Chat.
               </p>
             )}

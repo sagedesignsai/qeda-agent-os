@@ -62,7 +62,7 @@ plainly before any code is proposed.
 | Turn shape | **stateless** — renderer sends the full `UIMessage[]` every turn | **stateful** — server owns history; you `prompt` a session |
 | Streaming | main pushes JSON `fullStream` chunks over IPC | `GET /event` SSE bus (`{ type, properties }`) |
 | Approval | `tool-approval-request` chunk → renderer rewrites the part → **the whole turn re-runs** | server holds a *pending permission*; you `POST /session/:id/permissions/:permissionID` to unblock it |
-| History store | `vellum.db` (`sessions`, messages as `UIMessage`) | server-side session/message/part store |
+| History store | `qeda.db` (`sessions`, messages as `UIMessage`) | server-side session/message/part store |
 | Tool registry | `src/main/tools/` (`allTools`, `chatApprovalPolicy`) | server-side tools + LSP/MCP |
 | Model selection | `resolveModelChain()` + cross-provider fallback | `session.prompt` `model: { providerID, modelID }` |
 
@@ -218,7 +218,7 @@ Qeda is the source of truth for the **UI**; OpenCode is the source of truth for
 its own **run state**. Keeping both means a user can switch engines mid-project
 without losing visible history.
 
-- **Mapping.** `vellum.db` needs a durable Qeda-session → opencode-session link.
+- **Mapping.** `qeda.db` needs a durable Qeda-session → opencode-session link.
   Per `AGENTS.md`, adding a column is **two edits**: add it to the `CREATE TABLE`
   in `src/main/db/schema.ts` *and* add an `ALTER TABLE … ADD COLUMN` guard in
   `applyMigrations()`. A nullable `opencode_session_id TEXT` on `sessions` is the
@@ -231,7 +231,7 @@ without losing visible history.
   inverse of the local engine and must be handled in `opencode/engine.ts`, not
   in the shared handler.
 - **Hydration.** `use-agent-chat.ts` already hydrates from `sessions:messages`
-  (i.e. from `vellum.db`). Leave that alone — do **not** fetch
+  (i.e. from `qeda.db`). Leave that alone — do **not** fetch
   `session.messages` from opencode for the UI. Persist the translated turn back
   through the existing `sessions:save-messages` path so the conversation list,
   rail, and restart behaviour are identical across engines.

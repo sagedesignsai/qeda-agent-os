@@ -6,8 +6,8 @@
  * The timeline UI is a **reusable kit**, not a Motion feature. It knows about
  * rows, items and keys — never about Motion documents, tracks, clips or
  * keyframe easing. Any feature that needs a scrubbable, zoomable, editable time
- * canvas (Showcase Studio's edit lane, SoundLab's arrangement, a future
- * automation editor) supplies an adapter that projects its own document into
+ * canvas (Showcase Studio's edit lane, a future automation editor) supplies an
+ * adapter that projects its own document into
  * this model and handles the edit intents the kit emits.
  *
  * Two consequences worth keeping:

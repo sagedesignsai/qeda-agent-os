@@ -66,7 +66,7 @@ describe('projects data layer', () => {
   });
 
   it('creates, lists, updates, and filters projects', () => {
-    const a = createProject({ name: 'Vellum launch' });
+    const a = createProject({ name: 'Qeda launch' });
     const b = createProject({ name: 'Taxes', status: 'paused' });
 
     // Newest projects sort after the Inbox (-1).
@@ -80,8 +80,8 @@ describe('projects data layer', () => {
     const paused = listProjects({ status: 'paused' });
     expect(paused.map((p) => p.id)).toEqual([b.id]);
 
-    updateProject(a.id, { status: 'archived', name: 'Vellum 1.0' });
-    expect(getProject(a.id)?.name).toBe('Vellum 1.0');
+    updateProject(a.id, { status: 'archived', name: 'Qeda 1.0' });
+    expect(getProject(a.id)?.name).toBe('Qeda 1.0');
     // Archived projects are hidden unless explicitly included.
     expect(listProjects().map((p) => p.id)).toEqual([INBOX_PROJECT_ID, b.id]);
     expect(listProjects({ includeArchived: true })).toHaveLength(3);
@@ -305,9 +305,6 @@ describe('projects data layer', () => {
     db.prepare(
       `INSERT INTO studio_takes (id, project_id, title, video_path) VALUES ('take-survivor', ?, 'Take', '/tmp/take.mp4')`,
     ).run(project.id);
-    db.prepare(
-      `INSERT INTO soundlab_sessions (id, project_id) VALUES ('sound-survivor', ?)`,
-    ).run(project.id);
 
     expect(deleteProject(project.id)).toBe(true);
     expect(getProject(project.id)).toBeNull();
@@ -325,7 +322,6 @@ describe('projects data layer', () => {
     const inboxProjects = [
       ['documents', 'doc-survivor'],
       ['studio_takes', 'take-survivor'],
-      ['soundlab_sessions', 'sound-survivor'],
     ];
     for (const [table, id] of inboxProjects) {
       expect(

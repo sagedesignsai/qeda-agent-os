@@ -3,7 +3,6 @@
   "description": "Qeda — A local agent OS: describe the goal, approve the work",
   "keywords": [
     "qeda",
-    "vellum",
     "agent",
     "ai",
     "electron",
@@ -124,6 +123,7 @@
     "media-chrome": "^4.19.2",
     "mediabunny": "1.64.0",
     "motion": "^13.4.3",
+    "music-metadata": "^12.3.4",
     "nanoid": "^6.0.1",
     "next-themes": "^0.4.6",
     "progress": "^2.0.3",

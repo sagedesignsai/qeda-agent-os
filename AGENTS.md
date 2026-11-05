@@ -124,7 +124,7 @@ Rules that bite:
 
 ## Database
 
-One SQLite file, `vellum.db`, in `userData`. Schema lives in `src/main/db/schema.ts`
+One SQLite file, `qeda.db`, in `userData`. Schema lives in `src/main/db/schema.ts`
 as **data, not as a boot-time side effect** — this is deliberate so tests can apply it
 to an in-memory database without booting Electron.
 
@@ -232,11 +232,10 @@ Three names coexist, and which one is "correct" depends on the layer:
 - **Qeda** — what the app actually ships as. `package.json` `name`,
   `productName`, `appId` (`com.qeda.desktop`), `release/app/package.json`, and the
   user-facing branding rendered by `src/components/QedaLogo.tsx`.
-- **Vellum** — the older name, still live in `README.md` prose, the on-disk DB name
-  `vellum.db`, and assorted comments.
+- **Vellum** — the previous name, now fully renamed to Qeda.
 - **Docugent** — the name before that. Still present in *persisted data*:
   `MIGRATE_RAG_URI_SCHEME` rewrites stored `docugent-page://` rows to
-  `vellum-page://` on every launch.
+  `qeda-page://` on every launch.
 
 Match the surrounding file's convention. Don't rename identifiers across layers
 without asking: persisted rows, data migrations, and the packaged `appId` are all

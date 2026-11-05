@@ -8,6 +8,7 @@ import { GenerateNotebookProvider } from '@/components/GenerateNotebookDialog';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
 import { useProjects } from '@/hooks/use-projects';
 import { useAppStore } from '@/stores/app-store';
+import { FocusRuntime } from '@/components/focus/FocusRuntime';
 
 /** The Inbox is seeded for every install, so it does not count as a project. */
 const INBOX_PROJECT_ID = 'inbox';
@@ -133,6 +134,8 @@ export function AppLayout() {
           onOpenChange={setPaletteOpen}
           onOpenSettings={() => setSettingsOpen(true)}
         />
+
+        <FocusRuntime />
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 
