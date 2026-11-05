@@ -39,6 +39,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SettingsStoreProvider } from './settings-store';
+import { AppearanceProvider } from '@/hooks/use-appearance';
 import { ModelsView } from './views/ModelsView';
 import { BuilderMcpView } from './views/BuilderMcpView';
 import { EmbeddingsView } from './views/EmbeddingsView';
@@ -75,6 +76,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </DialogDescription>
 
         <SettingsStoreProvider active={open}>
+          <AppearanceProvider>
           <div className="flex min-h-0 flex-1">
             {/* Section rail */}
             <nav
@@ -147,6 +149,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
             </div>
           </div>
+          </AppearanceProvider>
         </SettingsStoreProvider>
       </DialogContent>
     </Dialog>

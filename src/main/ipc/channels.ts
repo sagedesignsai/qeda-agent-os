@@ -2021,9 +2021,10 @@ export interface IpcChannels {
     req: { enabled: boolean };
     res: { active: boolean };
   };
+  // Appearance: native chrome tracking (renderer persists tokens in localStorage)
+  'theme:get': { req: void; res: { mode: 'light' | 'dark' | 'system'; background: string } | null };
+  'theme:save': { req: { mode: 'light' | 'dark' | 'system'; background: string }; res: void };
 }
-
-export type ChannelName = keyof IpcChannels;
 // OpenCode setup types (renderer-facing). Re-exported so the renderer never
 // reaches into the main-process modules directly.
 export type { OpenCodeDetection } from '../../main/opencode/detection';

@@ -70,98 +70,29 @@ function MusicFilterBarImpl({
   onDeletePlaylist,
 }: MusicFilterBarProps) {
   return (
-    <>
-      <div className="flex flex-col gap-2 border-b border-border/60 px-4 py-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <h2 className="truncate text-sm font-semibold text-foreground">
-              {heading}
-            </h2>
-          </div>
-          <span className="text-[10px] text-muted-foreground">
+    <div className="border-b border-border/60 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <h2 className="truncate text-sm font-semibold text-foreground">
+            {heading}
+          </h2>
+          <span className="shrink-0 text-[10px] text-muted-foreground">
             {trackCount} track{trackCount === 1 ? '' : 's'}
           </span>
           {query && (
-            <span className="rounded-full bg-primary/15 px-2.5 py-1 text-[10px] font-medium text-primary">
+            <span className="hidden max-w-48 truncate rounded-full bg-primary/15 px-2.5 py-1 text-[10px] font-medium text-primary sm:inline">
               Search: {query}
             </span>
           )}
         </div>
 
-        {(artist || album || folderId || query) && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {folderId && (
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 pl-2.5 pr-1.5 py-1">
-                <span className="text-[10px] font-medium text-muted-foreground">
-                  📁{' '}
-                  {folders
-                    .find((f) => f.id === folderId)
-                    ?.path.split(/[\\/]/)
-                    .filter(Boolean)
-                    .pop()}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-4 rounded-full text-muted-foreground/70 hover:text-foreground"
-                  onClick={() => onSetFolderId(null)}
-                  aria-label="Remove folder filter"
-                >
-                  <XIcon className="size-2.5" />
-                </Button>
-              </div>
-            )}
-            {artist && (
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 pl-2.5 pr-1.5 py-1">
-                <span className="truncate text-[10px] font-medium text-muted-foreground">
-                  👤 {artist}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-4 rounded-full text-muted-foreground/70 hover:text-foreground shrink-0"
-                  onClick={() => onSetArtist(null)}
-                  aria-label="Remove artist filter"
-                >
-                  <XIcon className="size-2.5" />
-                </Button>
-              </div>
-            )}
-            {album && (
-              <div className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 pl-2.5 pr-1.5 py-1">
-                <span className="truncate text-[10px] font-medium text-muted-foreground">
-                  💿 {album}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-4 rounded-full text-muted-foreground/70 hover:text-foreground shrink-0"
-                  onClick={() => onSetAlbum(null)}
-                  aria-label="Remove album filter"
-                >
-                  <XIcon className="size-2.5" />
-                </Button>
-              </div>
-            )}
-            {(artist || album || folderId || query) && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 gap-1 px-2 text-[10px]"
-                onClick={onResetFilters}
-              >
-                <XIcon className="size-3" /> Clear all
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2">
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           {browse === 'tracks' && !playlistId && (
             <>
-              <Select value={sort} onValueChange={(value) => onSortChange(value as LibrarySort)}>
+              <Select
+                value={sort}
+                onValueChange={(value) => onSortChange(value as LibrarySort)}
+              >
                 <SelectTrigger size="sm" className="h-7 w-[7.5rem] text-[11px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -212,7 +143,75 @@ function MusicFilterBarImpl({
           )}
         </div>
       </div>
-    </>
+
+      {(artist || album || folderId || query) && (
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {folderId && (
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 pl-2.5 pr-1.5 py-1">
+              <span className="text-[10px] font-medium text-muted-foreground">
+                📁{' '}
+                {folders
+                  .find((f) => f.id === folderId)
+                  ?.path.split(/[\\/]/)
+                  .filter(Boolean)
+                  .pop()}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-4 rounded-full text-muted-foreground/70 hover:text-foreground"
+                onClick={() => onSetFolderId(null)}
+                aria-label="Remove folder filter"
+              >
+                <XIcon className="size-2.5" />
+              </Button>
+            </div>
+          )}
+          {artist && (
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 pl-2.5 pr-1.5 py-1">
+              <span className="truncate text-[10px] font-medium text-muted-foreground">
+                👤 {artist}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-4 rounded-full text-muted-foreground/70 hover:text-foreground shrink-0"
+                onClick={() => onSetArtist(null)}
+                aria-label="Remove artist filter"
+              >
+                <XIcon className="size-2.5" />
+              </Button>
+            </div>
+          )}
+          {album && (
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 pl-2.5 pr-1.5 py-1">
+              <span className="truncate text-[10px] font-medium text-muted-foreground">
+                💿 {album}
+              </span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-4 rounded-full text-muted-foreground/70 hover:text-foreground shrink-0"
+                onClick={() => onSetAlbum(null)}
+                aria-label="Remove album filter"
+              >
+                <XIcon className="size-2.5" />
+              </Button>
+            </div>
+          )}
+          {(artist || album || folderId || query) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1 px-2 text-[10px]"
+              onClick={onResetFilters}
+            >
+              <XIcon className="size-3" /> Clear all
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

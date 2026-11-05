@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { MemoryRouter as Router, useNavigate, useRoutes } from 'react-router';
 import { ThemeProvider } from 'next-themes';
+import { AppearanceProvider } from '@/hooks/use-appearance';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AppLoadingOverlay } from '@/components/AppLoadingOverlay';
@@ -33,6 +34,7 @@ export default function App() {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+      <AppearanceProvider>
       <TooltipProvider>
         <AppLoadingContext.Provider value={{ loading, setLoading }}>
           <Router>
@@ -43,6 +45,7 @@ export default function App() {
           <AppLoadingOverlay loading={loading} />
         </AppLoadingContext.Provider>
       </TooltipProvider>
+      </AppearanceProvider>
     </ThemeProvider>
   );
 }

@@ -14,6 +14,7 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { BrowserWindow, nativeTheme } from 'electron';
+import { readPersistedTheme } from './ipc/handlers/theme.js';
 
 let splashWindow: BrowserWindow | null = null;
 let splashTimeout: NodeJS.Timeout | null = null;
@@ -37,8 +38,11 @@ const BOLT_PATH =
  * dependencies — everything is inlined for instant cold-start rendering.
  */
 function buildSplashHtml(): string {
-  const isDark = nativeTheme.shouldUseDarkColors;
-  const bgColor = isDark ? '#0e0f14' : '#f4f4f5';
+  const persisted = readPersistedTheme();
+  const isDark = persisted
+    ? persisted.mode !== 'light'
+    : nativeTheme.shouldUseDarkColors;
+  const bgColor = persisted?.background || (isDark ? '#0e0f14' : '#f4f4f5');
   const logoColor = isDark ? '#e4e4e7' : '#18181b';
 
   return `<!DOCTYPE html>

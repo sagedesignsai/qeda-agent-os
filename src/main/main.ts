@@ -16,6 +16,7 @@ import log from 'electron-log';
 import { loadEnvironment } from './env';
 import { getDb, closeDb } from './db/client.js';
 import { registerIpcHandlers } from './ipc/index.js';
+import { readPersistedTheme } from './ipc/handlers/theme.js';
 import { registerPtyHandlers } from './pty/manager.js';
 import { registerMediaHandler } from './media/index.js';
 import MenuBuilder, { attachContentContextMenu } from './menu';
@@ -116,9 +117,11 @@ const createWindow = async () => {
     await installExtensions();
   }
 
+  const persistedTheme = readPersistedTheme();
+  const isDark = persistedTheme
+    ? persistedTheme.mode !== 'light'
+    : nativeTheme.shouldUseDarkColors;
   const state = loadWindowState();
-  // Match the theme the renderer will start in (next-themes follows the OS)
-  // so the first paint never flashes the wrong color.
   mainWindow = new BrowserWindow({
     show: false,
     title: 'Qeda',
@@ -128,7 +131,7 @@ const createWindow = async () => {
     y: state.y,
     minWidth: 900,
     minHeight: 600,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0e0f14' : '#f4f4f5',
+    backgroundColor: persistedTheme?.background || (isDark ? '#0e0f14' : '#f4f4f5'),
     icon: getAssetPath('icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),

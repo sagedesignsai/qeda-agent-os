@@ -49,7 +49,7 @@ export function AppLoadingOverlay({ loading }: AppLoadingOverlayProps) {
       className={`
         fixed inset-0 z-[9999] flex items-center justify-center
         transition-opacity duration-500 ease-in-out
-        ${isDark ? 'bg-[#0e0f14]' : 'bg-zinc-50'}
+        ${isDark ? 'bg-background' : 'bg-background'}
         ${fading ? 'opacity-0 pointer-events-none' : 'opacity-100'}
       `}
     >
@@ -57,7 +57,7 @@ export function AppLoadingOverlay({ loading }: AppLoadingOverlayProps) {
         size={120}
         drawLoop
         drawDurationMs={2400}
-        className={isDark ? 'text-zinc-200' : 'text-zinc-900'}
+        className={isDark ? 'text-foreground' : 'text-foreground'}
       />
     </div>
   );

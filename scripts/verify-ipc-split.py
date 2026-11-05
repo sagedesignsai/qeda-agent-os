@@ -44,22 +44,22 @@ def strip_comments(src):
     return re.sub(r'//[^\n]*', ' ', src)
 
 
-# ── the original header import list + old module-level helpers ────────────────
-BACKUP = Path('/tmp/opencode/ipc-backup/handlers.ts.orig')
-if not BACKUP.exists():
-    sys.exit('missing backup of the original handlers.ts — cannot verify')
-orig_src = BACKUP.read_text()
-head = orig_src[:orig_src.index('const agentCache')]
+# ── reconstruct the original symbol set from existing modules ─────────────────
+# Instead of requiring a backup of the monolithic handlers.ts, aggregate all
+# imported symbols from the current handler modules, agent-runtime, and index.ts.
+# This gives us the same cross-reference set for check #3 (missing symbols).
 ORIG_SYMBOLS = set()
-for m in re.finditer(r"import\s+(?:type\s+)?\{(.*?)\}\s+from\s+'[^']+';", head, re.S):
-    for part in m.group(1).split(','):
-        part = part.strip()
-        if not part:
-            continue
-        part = part[5:].strip() if part.startswith('type ') else part
-        ORIG_SYMBOLS.add(part.split(' as ')[-1].strip())
-for m in re.finditer(r"import\s+(\w+)\s+from\s+'[^']+';", head):
-    ORIG_SYMBOLS.add(m.group(1))
+for f in MODULES + [RUNTIME, IPC / 'index.ts']:
+    src = f.read_text()
+    for m in re.finditer(r"import\s+(?:type\s+)?\{(.*?)\}\s+from\s+'[^']+';", src, re.S):
+        for part in m.group(1).split(','):
+            part = part.strip()
+            if not part:
+                continue
+            part = part[5:].strip() if part.startswith('type ') else part
+            ORIG_SYMBOLS.add(part.split(' as ')[-1].strip())
+    for m in re.finditer(r"import\s+(\w+)\s+from\s+'[^']+';", src):
+        ORIG_SYMBOLS.add(m.group(1))
 SHARED = {'agentCache', 'cacheKey', 'getAgent', 'resetAgents', 'lastUserText',
           'detectMode', 'mainWindow'}
 
@@ -67,7 +67,29 @@ SHARED = {'agentCache', 'cacheKey', 'getAgent', 'resetAgents', 'lastUserText',
 print('\n[1] channel coverage')
 clines = CHANNELS.read_text().split('\n')
 s = next(i for i, l in enumerate(clines) if l.startswith('export interface IpcChannels'))
-e = next(i for i, l in enumerate(clines) if l.startswith('export type ChannelName'))
+# Find the closing brace of IpcChannels — look for a line that is just '}'
+# after the interface start. The interface may or may not have a following
+# `export type ChannelName` (older versions did).
+e = None
+brace_depth = 0
+started = False
+for i in range(s, len(clines)):
+    line = clines[i]
+    # Skip comments and strings for brace counting
+    stripped = strip_comments(line).strip()
+    for ch in stripped:
+        if ch == '{':
+            brace_depth += 1
+            started = True
+        elif ch == '}':
+            brace_depth -= 1
+            if started and brace_depth == 0:
+                e = i
+                break
+    if e is not None:
+        break
+if e is None:
+    sys.exit('cannot find end of IpcChannels interface')
 decl = re.compile(r"^  '([\w:-]+)':")
 idx = [(i, decl.match(l).group(1)) for i, l in enumerate(clines[s:e], s) if decl.match(l)]
 declared, req, evt = set(), set(), set()

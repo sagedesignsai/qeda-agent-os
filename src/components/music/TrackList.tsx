@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { memo, useMemo, useRef } from 'react';
+import { memo, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ListEndIcon,
@@ -68,7 +68,7 @@ function TrackRowImpl({
   track,
   index,
   isCurrent,
-  playing,
+  isPlaying,
   onPlay,
   onEnqueue,
   onAddToPlaylist,
@@ -76,8 +76,8 @@ function TrackRowImpl({
 }: {
   track: MusicTrack;
   index: number;
-  isCurrent: boolean;
-  playing?: boolean;
+   isCurrent: boolean;
+  isPlaying?: boolean;
   onPlay: (track: MusicTrack, index: number) => void;
   onEnqueue: (track: MusicTrack, mode: 'next' | 'end') => void;
   onAddToPlaylist?: (track: MusicTrack) => void;
@@ -90,6 +90,8 @@ function TrackRowImpl({
         .join(' · '),
     [track.codec, track.bitrate],
   );
+
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Inline handlers — track reference changes each render anyway, so
   // useCallback would just add overhead without stabilizing memo().
@@ -115,7 +117,7 @@ function TrackRowImpl({
       )}
     >
       <span className="w-6 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">
-        {isCurrent && playing ? (
+        {isCurrent && isPlaying ? (
           <Equaliser />
         ) : (
           String(index + 1).padStart(2, '0')
@@ -167,42 +169,54 @@ function TrackRowImpl({
         <PlayIcon className="size-3.5 fill-current" />
       </Button>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-7 shrink-0 text-muted-foreground"
-            aria-label={`More actions for ${track.title}`}
-          >
-            <MoreHorizontalIcon className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem onClick={handleEnqueueNext}>
-            <ListPlusIcon className="mr-2 size-4" />
-            Play next
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleEnqueueEnd}>
-            <ListEndIcon className="mr-2 size-4" />
-            Add to queue
-          </DropdownMenuItem>
-          {onAddToPlaylist && (
-            <DropdownMenuItem onClick={handleAddToPlaylist}>
-              <PlusIcon className="mr-2 size-4" />
-              Add to playlist…
+      {menuOpen ? (
+        <DropdownMenu open onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 shrink-0 text-muted-foreground"
+              aria-label={`More actions for ${track.title}`}
+            >
+              <MoreHorizontalIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={handleEnqueueNext}>
+              <ListPlusIcon className="mr-2 size-4" />
+              Play next
             </DropdownMenuItem>
-          )}
-          {onPreview && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handlePreview}>
-                Preview file
+            <DropdownMenuItem onClick={handleEnqueueEnd}>
+              <ListEndIcon className="mr-2 size-4" />
+              Add to queue
+            </DropdownMenuItem>
+            {onAddToPlaylist && (
+              <DropdownMenuItem onClick={handleAddToPlaylist}>
+                <PlusIcon className="mr-2 size-4" />
+                Add to playlist…
               </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            )}
+            {onPreview && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handlePreview}>
+                  Preview file
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7 shrink-0 text-muted-foreground"
+          aria-label={`More actions for ${track.title}`}
+          onClick={() => setMenuOpen(true)}
+        >
+          <MoreHorizontalIcon className="size-4" />
+        </Button>
+      )}
     </div>
   );
 }
@@ -226,7 +240,7 @@ const TrackListImpl = function TrackList({
     count: tracks.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 56, // Row height: py-2 (16px) + 40px track height
-    overscan: 10, // Render 10 extra rows outside viewport for smoother scrolling
+    overscan: 5, // Render 5 extra rows outside viewport for smoother scrolling
   });
 
   if (loading) {
@@ -296,9 +310,9 @@ const TrackListImpl = function TrackList({
             <TrackRow
               track={tracks[virtualItem.index]}
               index={virtualItem.index}
-              isCurrent={tracks[virtualItem.index].id === currentTrackId}
-              playing={playing}
-              onPlay={onPlay}
+               isCurrent={tracks[virtualItem.index].id === currentTrackId}
+               isPlaying={tracks[virtualItem.index].id === currentTrackId && playing}
+               onPlay={onPlay}
               onEnqueue={onEnqueue}
               onAddToPlaylist={onAddToPlaylist}
               onPreview={onPreview}
