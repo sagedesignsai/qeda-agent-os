@@ -9,15 +9,18 @@
 import { cameraPerspective } from './camera';
 import type { MotionNodeTypeDefinition } from './definition';
 import { deviceNodes } from './geometry';
-import { lightAmbient, lightDirectional, lightPoint } from './lighting';
+import { dataNodes } from './data';
+import { graphicNodes } from './graphics';
+import { lightAmbient, lightDirectional, lightPoint, lightSpot } from './lighting';
 import { modelGltf } from './model';
+import { proceduralNodes } from './procedural';
 import { geometryPrimitives } from './primitives';
 import { productNodes } from './product';
 import { sceneGroup } from './scene';
 import { shapeEllipse, shapeRect } from './shapes';
-import { stageBackdrop, stageGround, stagePedestal } from './stage';
+import { stageBackdrop, stageGrid, stageGround, stageParticles, stagePedestal } from './stage';
 import { screenImage, screenVideo } from './surfaces';
-import { textBody, textTitle } from './text';
+import { textBody, textCaption, textQuote, textTitle } from './text';
 import { uiNodes } from './ui';
 
 export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
@@ -26,20 +29,28 @@ export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
   ...deviceNodes,
   ...geometryPrimitives,
   ...productNodes,
+  ...graphicNodes,
+  ...dataNodes,
   ...uiNodes,
   screenImage,
   screenVideo,
   textTitle,
   textBody,
+  textCaption,
+  textQuote,
   shapeRect,
   shapeEllipse,
   stageGround,
   stagePedestal,
   stageBackdrop,
+  stageGrid,
+  stageParticles,
   modelGltf,
+  ...proceduralNodes,
   lightAmbient,
   lightDirectional,
   lightPoint,
+  lightSpot,
 ];
 
 export type { MotionNodeTypeDefinition } from './definition';

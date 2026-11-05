@@ -92,3 +92,63 @@ export const textBody: MotionNodeTypeDefinition = {
   defaultName: 'Body text',
   propertyHints: textHints,
 };
+
+export const textCaption: MotionNodeTypeDefinition = {
+  id: 'text.caption',
+  label: 'Caption',
+  category: 'surface',
+  description: 'A subtitle bar with an optional background plate.',
+  propsSchema: z.object({ text: z.string(), ...typographyShape, background: z.string().min(1).optional(), paddingX: z.number().nonnegative(), paddingY: z.number().nonnegative(), cornerRadius: z.number().nonnegative() }),
+  defaultProps: {
+    text: 'Caption text',
+    color: '#ffffff',
+    fontSize: 0.14,
+    opacity: 1,
+    letterSpacing: 0,
+    lineHeight: 1,
+    maxWidth: 8,
+    align: 'center',
+    background: '#0e131c',
+    paddingX: 0.18,
+    paddingY: 0.08,
+    cornerRadius: 0.06,
+  },
+  animatableProperties,
+  defaultName: 'Caption',
+  propertyHints: {
+    ...textHints,
+    background: { label: 'Background', control: 'color', group: 'Appearance', optional: true },
+    paddingX: { label: 'Horizontal padding', control: 'number', min: 0, step: 0.01, group: 'Dimensions' },
+    paddingY: { label: 'Vertical padding', control: 'number', min: 0, step: 0.01, group: 'Dimensions' },
+    cornerRadius: { label: 'Corner radius', control: 'number', min: 0, step: 0.01, group: 'Dimensions' },
+  },
+};
+
+export const textQuote: MotionNodeTypeDefinition = {
+  id: 'text.quote',
+  label: 'Quote',
+  category: 'surface',
+  description: 'A pull quote with attribution.',
+  propsSchema: z.object({ text: z.string(), attribution: z.string().optional(), ...typographyShape, quoteColor: z.string().min(1), attributionColor: z.string().min(1) }),
+  defaultProps: {
+    text: '“Design is how it works.”',
+    attribution: '— Steve Jobs',
+    color: '#ffffff',
+    quoteColor: '#ffffff',
+    attributionColor: '#9fb0c9',
+    fontSize: 0.22,
+    opacity: 1,
+    letterSpacing: 0,
+    lineHeight: 1.2,
+    maxWidth: 10,
+    align: 'center',
+  },
+  animatableProperties,
+  defaultName: 'Quote',
+  propertyHints: {
+    ...textHints,
+    attribution: { label: 'Attribution', control: 'text', group: 'Content', optional: true },
+    quoteColor: { label: 'Quote color', control: 'color', group: 'Appearance' },
+    attributionColor: { label: 'Attribution color', control: 'color', group: 'Appearance' },
+  },
+};

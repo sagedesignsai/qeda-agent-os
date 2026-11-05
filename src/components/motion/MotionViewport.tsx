@@ -46,7 +46,9 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
+import { buildMotionSceneCreation } from '@/lib/motion/scene-create';
 import type { MotionNode } from '@/lib/motion/types';
+import { cn } from '@/lib/utils';
 
 type StageTone = 'graphite' | 'slate' | 'paper';
 
@@ -213,6 +215,69 @@ export function MotionViewport() {
           </div>
         </div>
       </div>
+
+      {/* Scene tabs — the always-visible switcher for multi-scene documents.
+          Hidden for single-scene documents, where switching has no meaning. */}
+      {doc.scenes.length > 1 && (
+        <div
+          role="tablist"
+          aria-label="Scenes"
+          className="flex h-8 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/60 bg-card/30 px-1.5"
+        >
+          <span className="mr-0.5 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
+            Scenes
+          </span>
+          {doc.scenes.map((scene, index) => {
+            const active = scene.id === doc.activeSceneId;
+            return (
+              <button
+                key={scene.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                title={`${scene.name} · ${scene.timeline.duration.toFixed(1)}s`}
+                onClick={() => {
+                  if (active) return;
+                  motionStore.commit('Switch scene', [
+                    { op: 'document.setActiveScene', sceneId: scene.id },
+                  ]);
+                }}
+                className={cn(
+                  'flex h-6 shrink-0 items-center gap-1.5 rounded px-2 text-[11px] outline-none transition-colors hover:bg-accent/40 focus-visible:ring-1 focus-visible:ring-ring',
+                  active ? 'bg-accent text-foreground' : 'text-muted-foreground',
+                )}
+              >
+                <span
+                  className={cn(
+                    'size-1.5 shrink-0 rounded-full',
+                    active ? 'bg-primary' : 'bg-muted-foreground/40',
+                  )}
+                />
+                <span className="max-w-28 truncate font-medium">
+                  {scene.name}
+                </span>
+                <span className="text-[9px] tabular-nums text-muted-foreground/80">
+                  {index + 1} · {scene.timeline.duration.toFixed(1)}s
+                </span>
+              </button>
+            );
+          })}
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-6 shrink-0"
+            aria-label="Add scene"
+            title="Add scene"
+            onClick={() => {
+              const creation = buildMotionSceneCreation(doc, false);
+              motionStore.commit(creation.label, [creation.op]);
+            }}
+          >
+            <PlusIcon className="size-3.5" />
+          </Button>
+        </div>
+      )}
 
       <ContextMenu>
         <ContextMenuTrigger asChild>

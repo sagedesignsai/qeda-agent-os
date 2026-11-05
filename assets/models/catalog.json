@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generatedAt": "2026-11-04T13:13:47.674Z",
+  "generatedAt": "2026-11-04T23:17:04.174Z",
   "count": 31,
   "models": [
     {
@@ -28,7 +28,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 6,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1.6259904150387365,
+        -0.0008064662422668789,
+        -1.8949548028489591
+      ],
+      "boundsMax": [
+        0.9714544569528145,
+        7.208050669390502,
+        1.4996351489039619
+      ]
     },
     {
       "id": "local:khronos/Avocado",
@@ -53,7 +63,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 3,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.021280910819768906,
+        -0.000047738551074871793,
+        -0.013809001073241234
+      ],
+      "boundsMax": [
+        0.021280910819768906,
+        0.0628480613231659,
+        0.01380900014191866
+      ]
     },
     {
       "id": "local:khronos/BarramundiFish",
@@ -78,7 +98,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 3,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.06906196475028992,
+        -0.000878453254699707,
+        -0.3253729045391083
+      ],
+      "boundsMax": [
+        0.0738416239619255,
+        0.2866283059120178,
+        0.3177383244037628
+      ]
     },
     {
       "id": "local:khronos/BoomBox",
@@ -103,7 +133,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 4,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.009921154007315636,
+        -0.00977163016796112,
+        -0.010076245293021202
+      ],
+      "boundsMax": [
+        0.009921154007315636,
+        0.00977163016796112,
+        0.010076245293021202
+      ]
     },
     {
       "id": "local:khronos/BrainStem",
@@ -184,7 +224,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 0,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1.2521400451660156,
+        -0.0005402960232458744,
+        -0.3413881063461301
+      ],
+      "boundsMax": [
+        1.1625219583511353,
+        1.8343570232391357,
+        0.25572049617767356
+      ]
     },
     {
       "id": "local:khronos/CarConcept",
@@ -285,7 +335,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 14,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1.2714082958559834,
+        -0.00024107342268636645,
+        -1.940231204032898
+      ],
+      "boundsMax": [
+        1.2709126970853442,
+        1.1486550569534302,
+        2.4171547889709473
+      ]
     },
     {
       "id": "local:khronos/CesiumMan",
@@ -331,7 +391,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 1,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.569137103929068,
+        -3.678302206682341e-17,
+        -0.13100001762026484
+      ],
+      "boundsMax": [
+        0.5691369100670562,
+        1.5065499544143677,
+        0.18095401829482605
+      ]
     },
     {
       "id": "local:khronos/CesiumMilkTruck",
@@ -366,7 +436,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 1,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1.3959999444484694,
+        0.0014518341839775961,
+        -2.4309100625061864
+      ],
+      "boundsMax": [
+        1.3959999444484694,
+        2.5843698066461185,
+        2.437999853355886
+      ]
     },
     {
       "id": "local:khronos/ChairDamaskPurplegold",
@@ -404,7 +484,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 9,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.4150709807872772,
+        -0.0004073712625540793,
+        -0.27725332975387573
+      ],
+      "boundsMax": [
+        0.4135432839393616,
+        0.6869472861289978,
+        0.2945762306419305
+      ]
     },
     {
       "id": "local:khronos/ChronographWatch",
@@ -472,7 +562,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 8,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -2.1385717391967773,
+        -2.952116012573242,
+        -5.032817363739014
+      ],
+      "boundsMax": [
+        2.235898017883301,
+        2.8639800548553467,
+        1.14897882938385
+      ]
     },
     {
       "id": "local:threejs/coffeeMug",
@@ -497,7 +597,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 1,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -5,
+        -1,
+        -5
+      ],
+      "boundsMax": [
+        5,
+        2.1680400371551514,
+        5
+      ]
     },
     {
       "id": "local:khronos/CommercialRefrigerator",
@@ -532,7 +642,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 10,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.46007776260375977,
+        -5.960464468687165e-8,
+        -0.4603222906589503
+      ],
+      "boundsMax": [
+        0.3943006992340088,
+        2.1840403079986572,
+        0.48386359959840797
+      ]
     },
     {
       "id": "local:threejs/facecap",
@@ -540,20 +660,47 @@
       "source": "threejs",
       "relativePath": "threejs/facecap.glb",
       "byteSize": 332808,
-      "hasAnimations": false,
-      "animationCount": 0,
-      "animationNames": [],
+      "hasAnimations": true,
+      "animationCount": 4,
+      "animationNames": [
+        "Key|Take 001|BaseLayer",
+        "grp_eyeLeft|Take 001|BaseLayer",
+        "grp_eyeRight|Take 001|BaseLayer",
+        "grp_transform|Take 001|BaseLayer"
+      ],
       "hasSkin": false,
       "skinCount": 0,
       "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "nodeCount": 13,
+      "nodeNames": [
+        "eyeLeft",
+        "grp_eyeLeft",
+        "eyeRight",
+        "grp_eyeRight",
+        "head",
+        "teeth",
+        "grp_transform",
+        "grp_scale",
+        "Empty"
+      ],
+      "meshCount": 4,
+      "materialCount": 1,
+      "materialNames": [
+        "lambert5"
+      ],
       "cameraCount": 0,
-      "textureCount": 0,
-      "error": "[EXT_meshopt_compression] Please install extension dependency, \"meshopt.decoder\"."
+      "textureCount": 1,
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.9507956036258187,
+        -0.9430718919438543,
+        -1.5220845051986247
+      ],
+      "boundsMax": [
+        0.9519375006868711,
+        1.3699022873335984,
+        0.8430901084806333
+      ]
     },
     {
       "id": "local:threejs/ferrari",
@@ -567,14 +714,93 @@
       "hasSkin": false,
       "skinCount": 0,
       "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "nodeCount": 58,
+      "nodeNames": [
+        "RootNode",
+        "main",
+        "trim",
+        "lights_red",
+        "plastic_gray",
+        "metal",
+        "lights",
+        "leds",
+        "leather",
+        "interior_light",
+        "grills",
+        "glass",
+        "chrome",
+        "carpet",
+        "carbon_fibre_trim",
+        "carbon fibre",
+        "brakes",
+        "interior_dark",
+        "body",
+        "blue",
+        "wipers",
+        "yellow_trim",
+        "wheel_rr",
+        "wheel",
+        "tire",
+        "rim_rr",
+        "centre",
+        "brake",
+        "nuts",
+        "wheel_rl",
+        "tire",
+        "brake",
+        "centre",
+        "wheel",
+        "rim_rl",
+        "nuts",
+        "wheel_fl",
+        "rim_fl",
+        "brake",
+        "centre",
+        "nuts",
+        "wheel",
+        "tire",
+        "wheel_fr",
+        "brake",
+        "centre",
+        "wheel",
+        "rim_fr",
+        "tire",
+        "nuts"
+      ],
+      "meshCount": 51,
+      "materialCount": 17,
+      "materialNames": [
+        "Leather_red",
+        "Taillight_Glass",
+        "plastic_gray",
+        "metal_gray",
+        "Projector_Glass",
+        "Turn_Signal_LED",
+        "Leather",
+        "Interior_dark",
+        "Tires",
+        "Glass_Gray",
+        "metal_chrome",
+        "Carpet",
+        "Carbon_Fiber",
+        "Interior_light",
+        "Body_Color",
+        "_0098_DodgerBlue",
+        "Ferrari_Yellow"
+      ],
       "cameraCount": 0,
       "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1.128544749617631,
+        -4.6458305780205933e-7,
+        -2.2667927446775593
+      ],
+      "boundsMax": [
+        1.128579912781661,
+        1.2358918450772767,
+        2.2667982831596873
+      ]
     },
     {
       "id": "local:threejs/Flamingo",
@@ -597,7 +823,17 @@
       "materialNames": [],
       "cameraCount": 0,
       "textureCount": 0,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -25.5,
+        -78.4000015258789,
+        -76.19999694824219
+      ],
+      "boundsMax": [
+        26.700000762939453,
+        10.699999809265137,
+        100.4000015258789
+      ]
     },
     {
       "id": "local:threejs/gears",
@@ -611,14 +847,28 @@
       "hasSkin": false,
       "skinCount": 0,
       "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
+      "nodeCount": 3,
+      "nodeNames": [
+        "outerHull",
+        "axle",
+        "gears"
+      ],
+      "meshCount": 3,
       "materialCount": 0,
       "materialNames": [],
       "cameraCount": 0,
       "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -2.8981496160304374,
+        -2.881312177329548,
+        -2.7659432888031006
+      ],
+      "boundsMax": [
+        2.8981496160304374,
+        2.8813759404110186,
+        2.7659432888031006
+      ]
     },
     {
       "id": "local:threejs/Horse",
@@ -641,7 +891,17 @@
       "materialNames": [],
       "cameraCount": 0,
       "textureCount": 0,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -28.5,
+        0.800000011920929,
+        -187.39999389648438
+      ],
+      "boundsMax": [
+        32.599998474121094,
+        183.10000610351562,
+        134.89999389648438
+      ]
     },
     {
       "id": "local:threejs/kira",
@@ -652,17 +912,107 @@
       "hasAnimations": false,
       "animationCount": 0,
       "animationNames": [],
-      "hasSkin": false,
-      "skinCount": 0,
-      "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "hasSkin": true,
+      "skinCount": 1,
+      "boneCount": 23,
+      "nodeCount": 56,
+      "nodeNames": [
+        "Kira_Feet",
+        "head",
+        "neck_01",
+        "index_03_l",
+        "index_02_l",
+        "index_01_l",
+        "thumb_03_l",
+        "thumb_02_l",
+        "thumb_01_l",
+        "middle_03_l",
+        "middle_02_l",
+        "middle_01_l",
+        "ring_03_l",
+        "ring_02_l",
+        "ring_01_l",
+        "pinky_03_l",
+        "pinky_02_l",
+        "pinky_01_l",
+        "hand_l",
+        "lowerarm_l",
+        "Upperarm_l",
+        "target_hand_l",
+        "Clavicle_l",
+        "spine_03",
+        "Kira_Hair_A",
+        "Kira_Head_B",
+        "Kira_Pants_B",
+        "Kira_Shirt_left",
+        "Kira_Shirt_right",
+        "Kira",
+        "boule",
+        "rideaux_d",
+        "rideaux_g",
+        "tringle",
+        "rideaux_d.001",
+        "rideaux_g.001",
+        "tringle.001",
+        "armchair",
+        "commode",
+        "fauteuil vert.001",
+        "Lamp commode",
+        "lampe plafond",
+        "lit",
+        "murs",
+        "oreiller",
+        "petit fauteuil bas",
+        "plafond",
+        "Radiator",
+        "sol",
+        "Table"
+      ],
+      "meshCount": 32,
+      "materialCount": 28,
+      "materialNames": [
+        "Mat_Kira.002",
+        "bleu rideaux",
+        "Material.010",
+        "Material.002",
+        "Drop_Front",
+        "Drop_Front_1",
+        "Drop_Front_2",
+        "F44336",
+        "795548.001",
+        "Mat.002",
+        "Material.004",
+        "795548",
+        "DD9944",
+        "455A64",
+        "FFEB3B",
+        "lit raye bleu",
+        "murs",
+        "White",
+        "Wing_Chair",
+        "Wing_Chair_1",
+        "Material.009",
+        "Mat.001",
+        "Material.008",
+        "mat20",
+        "Material.003",
+        "795548.002",
+        "039BE5",
+        "mat18"
+      ],
       "cameraCount": 0,
-      "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "textureCount": 2,
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1.2762978544924408,
+        -1.0022999230747995,
+        -5.586768075823784
+      ],
+      "boundsMax": [
+        3.0856102161434413,
+        3.255261540412903,
+        2.0057138497894
+      ]
     },
     {
       "id": "local:threejs/LittlestTokyo",
@@ -670,20 +1020,99 @@
       "source": "threejs",
       "relativePath": "threejs/LittlestTokyo.glb",
       "byteSize": 4133072,
-      "hasAnimations": false,
-      "animationCount": 0,
-      "animationNames": [],
-      "hasSkin": false,
-      "skinCount": 0,
-      "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "hasAnimations": true,
+      "animationCount": 1,
+      "animationNames": [
+        "Take 001"
+      ],
+      "hasSkin": true,
+      "skinCount": 1,
+      "boneCount": 32,
+      "nodeCount": 214,
+      "nodeNames": [
+        "RootNode (gltf orientation matrix)",
+        "RootNode (model correction matrix)",
+        "4cd116fc63ca40809810ca0842dc78ed.fbx",
+        "RootNode",
+        "_rootJoint",
+        "tail1_00",
+        "tail2_01",
+        "tail3_02",
+        "fake_03",
+        "fake2_04",
+        "ear_05",
+        "ear2_06",
+        "btail1_07",
+        "btail2_08",
+        "bbody_09",
+        "bhead_010",
+        "bbody2_011",
+        "bhead2_012",
+        "btail12_013",
+        "btail22_014",
+        "bbody003_015",
+        "bhead003_016",
+        "btail023_017",
+        "btail024_018",
+        "bbody004_019",
+        "bhead004_020",
+        "btail025_021",
+        "btail026_022",
+        "bbody005_023",
+        "bhead005_024",
+        "btail027_025",
+        "btail028_026",
+        "bbody006_027",
+        "bhead006_028",
+        "btail029_029",
+        "btail030_030",
+        "Object078",
+        "Object078_Plastic_Soft_0",
+        "body",
+        "body_normal_0",
+        "leaf",
+        "leaf_normal_0",
+        "hand2",
+        "hand2_normal_0",
+        "hand1",
+        "hand1_normal_0",
+        "foot2",
+        "foot2_normal_0",
+        "foot1",
+        "foot1_normal_0"
+      ],
+      "meshCount": 71,
+      "materialCount": 15,
+      "materialNames": [
+        "normal",
+        "metalmat",
+        "Plastic_Soft",
+        "paintmat",
+        "alpha_glass",
+        "glassmat",
+        "Material_5511",
+        "Material_5512",
+        "glass_transp",
+        "interiors",
+        "alpha",
+        "outline",
+        "Material_5516",
+        "alpha_0",
+        "Material_5518"
+      ],
       "cameraCount": 0,
-      "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "textureCount": 4,
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -359.11363220214844,
+        -211.50205557463983,
+        -301.6028173131398
+      ],
+      "boundsMax": [
+        185.95338439941406,
+        222.80897991417024,
+        250.43969676100443
+      ]
     },
     {
       "id": "local:khronos/MaterialsVariantsShoe",
@@ -712,7 +1141,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 5,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.1473290023,
+        -0.0006479932916700765,
+        -0.053048001191468776
+      ],
+      "boundsMax": [
+        0.1505499954549708,
+        0.1524530132916701,
+        0.06274999819146877
+      ]
     },
     {
       "id": "local:threejs/Michelle",
@@ -789,7 +1228,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 4,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.007279106811901026,
+        -0.002064781709925407,
+        -0.00002786155066162165
+      ],
+      "boundsMax": [
+        0.007279106811901026,
+        0.0018057577469984079,
+        0.01661631862723302
+      ]
     },
     {
       "id": "local:threejs/Parrot",
@@ -812,7 +1261,17 @@
       "materialNames": [],
       "cameraCount": 0,
       "textureCount": 0,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -39,
+        -13.899999618530273,
+        -76.0999984741211
+      ],
+      "boundsMax": [
+        40.5,
+        19.799999237060547,
+        24.399999618530273
+      ]
     },
     {
       "id": "local:threejs/pool",
@@ -826,14 +1285,30 @@
       "hasSkin": false,
       "skinCount": 0,
       "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "nodeCount": 2,
+      "nodeNames": [
+        "Object_3",
+        "Object_4"
+      ],
+      "meshCount": 2,
+      "materialCount": 2,
+      "materialNames": [
+        "Clutter",
+        "SPWallsFloorStairs"
+      ],
       "cameraCount": 0,
-      "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "textureCount": 8,
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -168.96616661551525,
+        -70.38119930067754,
+        -263.13991507882315
+      ],
+      "boundsMax": [
+        168.96073660594993,
+        60.164328853783296,
+        263.13988178301497
+      ]
     },
     {
       "id": "local:threejs/rolex",
@@ -847,14 +1322,63 @@
       "hasSkin": false,
       "skinCount": 0,
       "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "nodeCount": 29,
+      "nodeNames": [
+        "grad",
+        "text",
+        "housing",
+        "black_txt",
+        "bg",
+        "Cylinder01",
+        "mini_01",
+        "Cylinder02",
+        "mini_03",
+        "Cylinder03",
+        "mini_02",
+        "cercle",
+        "logo",
+        "fluo",
+        "second",
+        "minute",
+        "hour",
+        "Cylinder004",
+        "text002",
+        "glass",
+        "base",
+        "strap",
+        "logo_close001",
+        "wheel_01",
+        "wheel_02",
+        "wheel_03",
+        "pin",
+        "Dummy001",
+        "floor"
+      ],
+      "meshCount": 24,
+      "materialCount": 8,
+      "materialNames": [
+        "White",
+        "Silver",
+        "Gold",
+        "Black",
+        "Fluo",
+        "Glass",
+        "Socle",
+        "floor"
+      ],
       "cameraCount": 0,
-      "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "textureCount": 4,
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1.5109341962782656,
+        -1.9231280475096661,
+        -1.0193905186876941
+      ],
+      "boundsMax": [
+        1.489066596009626,
+        0.19819251640842783,
+        1.1019301165064865
+      ]
     },
     {
       "id": "local:threejs/SheenChair",
@@ -887,7 +1411,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 7,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.41402238607406616,
+        -0.00006977785233175382,
+        -0.2767251133918762
+      ],
+      "boundsMax": [
+        0.41253557801246643,
+        0.6861773133277893,
+        0.293540358543396
+      ]
     },
     {
       "id": "local:threejs/Soldier",
@@ -967,7 +1501,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 2,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.9238802894082596,
+        -0.00037002328855265825,
+        -0.21904410017603484
+      ],
+      "boundsMax": [
+        0.9240654548093943,
+        1.831832781118089,
+        0.2248187032042794
+      ]
     },
     {
       "id": "local:threejs/steampunk_camera",
@@ -996,7 +1540,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 9,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -1,
+        -0.8712530136108398,
+        -0.8326579928398132
+      ],
+      "boundsMax": [
+        1.0000189542770386,
+        0.8712530136108398,
+        0.8326922655105591
+      ]
     },
     {
       "id": "local:threejs/Stork",
@@ -1019,7 +1573,17 @@
       "materialNames": [],
       "cameraCount": 0,
       "textureCount": 0,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -98.4000015258789,
+        -6,
+        -82.30000305175781
+      ],
+      "boundsMax": [
+        98.4000015258789,
+        23.899999618530273,
+        92
+      ]
     },
     {
       "id": "local:threejs/tennyson-bust",
@@ -1033,14 +1597,28 @@
       "hasSkin": false,
       "skinCount": 0,
       "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "nodeCount": 1,
+      "nodeNames": [
+        "Tennyson_Bust_PTennyson decimated"
+      ],
+      "meshCount": 1,
+      "materialCount": 1,
+      "materialNames": [
+        "Material_0"
+      ],
       "cameraCount": 0,
       "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -9.217503009809207,
+        0.04467481651992067,
+        -7.167089417767556
+      ],
+      "boundsMax": [
+        9.245535724896627,
+        28.954163337617047,
+        5.280418991211718
+      ]
     },
     {
       "id": "local:threejs/venice_mask",
@@ -1054,14 +1632,36 @@
       "hasSkin": false,
       "skinCount": 0,
       "boneCount": 0,
-      "nodeCount": 0,
-      "nodeNames": [],
-      "meshCount": 0,
-      "materialCount": 0,
-      "materialNames": [],
+      "nodeCount": 5,
+      "nodeNames": [
+        "yumao3_low_lambert4_0",
+        "yumao3_low_lambert3_0",
+        "yumao3_low_lambert2_0",
+        "yumao3_low_lambert1_0",
+        "zhu_low_lambert5_0"
+      ],
+      "meshCount": 5,
+      "materialCount": 5,
+      "materialNames": [
+        "lambert4",
+        "lambert3",
+        "lambert2",
+        "lambert1",
+        "lambert5"
+      ],
       "cameraCount": 0,
-      "textureCount": 0,
-      "error": "undefined is not an object (evaluating 'decoderModule.DT_FLOAT32')"
+      "textureCount": 15,
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.02066768838462929,
+        0.000296913378754704,
+        -0.006010900005454567
+      ],
+      "boundsMax": [
+        0.012232765878004592,
+        0.06512532088625456,
+        0.011844943497070437
+      ]
     },
     {
       "id": "local:threejs/Xbot",
@@ -1144,7 +1744,17 @@
       ],
       "cameraCount": 0,
       "textureCount": 0,
-      "generator": "glTF-Transform v4.5.1"
+      "generator": "glTF-Transform v4.5.1",
+      "boundsMin": [
+        -0.009025659359418015,
+        -0.00003231170049358082,
+        -0.0014373925006972432
+      ],
+      "boundsMax": [
+        0.009025660551510883,
+        0.018060490681369057,
+        0.0017695815465692821
+      ]
     }
   ]
 }

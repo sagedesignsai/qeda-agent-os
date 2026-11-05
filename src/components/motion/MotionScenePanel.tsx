@@ -55,6 +55,7 @@ import { useMotionSceneSearch } from '@/hooks/use-motion-scene-search';
 import { MotionScenePanelHeader } from './MotionScenePanelHeader';
 import { createMotionId } from '@/lib/motion/ids';
 import { getMotionNodeType } from '@/lib/motion/node-registry';
+import { buildMotionSceneCreation } from '@/lib/motion/scene-create';
 import {
   buildMotionHierarchy,
   checkMotionReparent,
@@ -90,6 +91,7 @@ export function MotionScenePanel() {
 
   // Expand/collapse state
   const [sceneExpanded, setSceneExpanded] = useState(true);
+  const [scenesListExpanded, setScenesListExpanded] = useState(true);
   const [tracksExpanded, setTracksExpanded] = useState(false);
   const [assetsExpanded, setAssetsExpanded] = useState(false);
   const [clipsExpanded, setClipsExpanded] = useState(false);
@@ -340,8 +342,146 @@ export function MotionScenePanel() {
       {/* Main content area — scrollable tree */}
       <ScrollArea className="flex-1 min-h-0">
         <div className="min-h-0 flex flex-col">
-          {/* Scene Objects — main section (like project folder in VS Code) */}
+          {/* Scenes — list every scene in the document. The active one is
+              highlighted; clicking a row switches (resyncs doc.scene/timeline
+              via the ops path). Hidden only when the collapse menu hides it. */}
           <div>
+            <div className="flex items-center">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-1 px-2 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring hover:bg-accent/30"
+                onClick={() => setScenesListExpanded((v) => !v)}
+              >
+                {scenesListExpanded ? (
+                  <ChevronDownIcon className="size-3.5 shrink-0 text-foreground/70" />
+                ) : (
+                  <ChevronRightIcon className="size-3.5 shrink-0 text-foreground/70" />
+                )}
+                <ClapperboardIcon className="size-3.5 shrink-0 text-foreground/70" />
+                <span className="text-[11px] font-semibold text-foreground">Scenes</span>
+                <span className="rounded px-1 text-[9px] tabular-nums text-muted-foreground">
+                  {doc.scenes.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="mr-1 flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground/70 outline-none hover:bg-accent/40 hover:text-foreground"
+                title="Add scene"
+                aria-label="Add scene"
+                onClick={() => {
+                  const creation = buildMotionSceneCreation(doc, false);
+                  motionStore.commit(creation.label, [creation.op]);
+                }}
+              >
+                <PlusIcon className="size-3.5" />
+              </button>
+            </div>
+
+            {scenesListExpanded && (
+              <div className="pb-1">
+                {doc.scenes.map((scene, index) => {
+                  const active = scene.id === doc.activeSceneId;
+                  return (
+                    <ContextMenu key={scene.id}>
+                      <ContextMenuTrigger asChild>
+                        <button
+                          type="button"
+                          aria-current={active ? 'true' : undefined}
+                          onClick={() => {
+                            if (active) return;
+                            motionStore.commit('Switch scene', [
+                              { op: 'document.setActiveScene', sceneId: scene.id },
+                            ]);
+                          }}
+                          className={cn(
+                            'flex w-full items-center gap-1.5 px-3 py-0.5 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
+                            active
+                              ? 'bg-accent/50 text-foreground'
+                              : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground',
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'size-1.5 shrink-0 rounded-full',
+                              active ? 'bg-primary' : 'bg-muted-foreground/40',
+                            )}
+                          />
+                          <ClapperboardIcon
+                            className={cn(
+                              'size-3 shrink-0',
+                              active ? 'text-foreground/80' : 'text-muted-foreground/60',
+                            )}
+                          />
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            {scene.name}
+                          </span>
+                          <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground/80">
+                            {index + 1} · {scene.timeline.duration.toFixed(1)}s
+                          </span>
+                        </button>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent className="w-48">
+                        <ContextMenuItem
+                          disabled={active}
+                          onSelect={() =>
+                            motionStore.commit('Switch scene', [
+                              { op: 'document.setActiveScene', sceneId: scene.id },
+                            ])
+                          }
+                        >
+                          {active ? 'Active scene' : 'Switch to scene'}
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onSelect={() => {
+                            const creation = buildMotionSceneCreation(doc, true);
+                            motionStore.commit(creation.label, [creation.op]);
+                          }}
+                        >
+                          Duplicate
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onSelect={() => {
+                            const next = window.prompt(
+                              'Rename scene',
+                              scene.name,
+                            );
+                            const name = next?.trim();
+                            if (!name || name === scene.name) return;
+                            motionStore.commit('Rename scene', [
+                              { op: 'scene.rename', sceneId: scene.id, name },
+                            ]);
+                          }}
+                        >
+                          Rename
+                        </ContextMenuItem>
+                        {doc.scenes.length > 1 && (
+                          <ContextMenuItem
+                            variant="destructive"
+                            onSelect={() => {
+                              const confirmation = window.prompt(
+                                `Delete "${scene.name}" (${scene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`,
+                              );
+                              if (confirmation !== scene.name) return;
+                              motionStore.commit(
+                                'Delete scene',
+                                [{ op: 'scene.remove', sceneId: scene.id }],
+                                { approved: true },
+                              );
+                            }}
+                          >
+                            Delete
+                          </ContextMenuItem>
+                        )}
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Scene Objects — main section (like project folder in VS Code) */}
+          <div className="border-t border-border/40">
             <button
               type="button"
               className="flex w-full items-center gap-1 px-2 py-1 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"

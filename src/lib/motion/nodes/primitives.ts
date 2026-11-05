@@ -395,6 +395,120 @@ export const geometryCapsule: MotionNodeTypeDefinition = {
   },
 };
 
+export const geometryIcosahedron: MotionNodeTypeDefinition = {
+  id: 'geometry.icosahedron',
+  label: 'Icosahedron',
+  category: 'geometry',
+  description: 'An icosahedral primitive.',
+  propsSchema: z.object({
+    radius: z.number().positive(),
+    detail: z.number().int().min(0).max(5),
+    color: z.string().min(1),
+    roughness: z.number().min(0).max(1),
+    metalness: z.number().min(0).max(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { radius: 0.6, detail: 0, color: '#5885f7', roughness: 0.5, metalness: 0, opacity: 1 },
+  animatableProperties: { opacity: { description: 'Opacity.' } },
+  defaultName: 'Icosahedron',
+  propertyHints: {
+    radius: { label: 'Radius', control: 'number', min: 0.1, step: 0.05, group: 'Dimensions' },
+    detail: { label: 'Detail', control: 'number', min: 0, max: 5, step: 1, group: 'Dimensions' },
+    color: { label: 'Color', control: 'color', group: 'Appearance' },
+    roughness: { label: 'Roughness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    metalness: { label: 'Metalness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const geometryTorusKnot: MotionNodeTypeDefinition = {
+  id: 'geometry.torus-knot',
+  label: 'Torus knot',
+  category: 'geometry',
+  description: 'A torus knot primitive.',
+  propsSchema: z.object({
+    radius: z.number().positive(),
+    tube: z.number().positive(),
+    p: z.number().int().positive(),
+    q: z.number().int().positive(),
+    tubularSegments: z.number().int().min(3).max(256),
+    radialSegments: z.number().int().min(3).max(64),
+    color: z.string().min(1),
+    roughness: z.number().min(0).max(1),
+    metalness: z.number().min(0).max(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { radius: 0.5, tube: 0.18, p: 2, q: 3, tubularSegments: 64, radialSegments: 8, color: '#a88cf7', roughness: 0.4, metalness: 0.1, opacity: 1 },
+  animatableProperties: { opacity: { description: 'Opacity.' } },
+  defaultName: 'Torus knot',
+  propertyHints: {
+    radius: { label: 'Radius', control: 'number', min: 0.1, step: 0.05, group: 'Dimensions' },
+    tube: { label: 'Tube', control: 'number', min: 0.02, step: 0.01, group: 'Dimensions' },
+    p: { label: 'P', control: 'number', min: 1, step: 1, group: 'Dimensions' },
+    q: { label: 'Q', control: 'number', min: 1, step: 1, group: 'Dimensions' },
+    tubularSegments: { label: 'Tubular segments', control: 'number', min: 3, max: 256, step: 1, group: 'Quality' },
+    radialSegments: { label: 'Radial segments', control: 'number', min: 3, max: 64, step: 1, group: 'Quality' },
+    color: { label: 'Color', control: 'color', group: 'Appearance' },
+    roughness: { label: 'Roughness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    metalness: { label: 'Metalness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const geometryRing: MotionNodeTypeDefinition = {
+  id: 'geometry.ring',
+  label: 'Ring',
+  category: 'geometry',
+  description: 'A flat ring.',
+  propsSchema: z.object({
+    innerRadius: z.number().nonnegative(),
+    outerRadius: z.number().positive(),
+    thetaSegments: z.number().int().min(3).max(128),
+    color: z.string().min(1),
+    roughness: z.number().min(0).max(1),
+    metalness: z.number().min(0).max(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { innerRadius: 0.6, outerRadius: 1, thetaSegments: 48, color: '#5885f7', roughness: 0.5, metalness: 0, opacity: 1 },
+  animatableProperties: { opacity: { description: 'Opacity.' } },
+  defaultName: 'Ring',
+  propertyHints: {
+    innerRadius: { label: 'Inner radius', control: 'number', min: 0, step: 0.05, group: 'Dimensions' },
+    outerRadius: { label: 'Outer radius', control: 'number', min: 0.1, step: 0.05, group: 'Dimensions' },
+    thetaSegments: { label: 'Segments', control: 'number', min: 3, max: 128, step: 1, group: 'Quality' },
+    color: { label: 'Color', control: 'color', group: 'Appearance' },
+    roughness: { label: 'Roughness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    metalness: { label: 'Metalness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const geometryPlane: MotionNodeTypeDefinition = {
+  id: 'geometry.plane',
+  label: 'Plane',
+  category: 'geometry',
+  description: 'A flat plane.',
+  propsSchema: z.object({
+    width: z.number().positive(),
+    height: z.number().positive(),
+    color: z.string().min(1),
+    roughness: z.number().min(0).max(1),
+    metalness: z.number().min(0).max(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { width: 2, height: 2, color: '#5885f7', roughness: 0.5, metalness: 0, opacity: 1 },
+  animatableProperties: { opacity: { description: 'Opacity.' } },
+  defaultName: 'Plane',
+  propertyHints: {
+    width: { label: 'Width', control: 'number', min: 0.1, step: 0.1, group: 'Dimensions' },
+    height: { label: 'Height', control: 'number', min: 0.1, step: 0.1, group: 'Dimensions' },
+    color: { label: 'Color', control: 'color', group: 'Appearance' },
+    roughness: { label: 'Roughness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    metalness: { label: 'Metalness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Material' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
 // ── Collection ───────────────────────────────────────────────────────────────
 
 export const geometryPrimitives: readonly MotionNodeTypeDefinition[] = [
@@ -404,4 +518,8 @@ export const geometryPrimitives: readonly MotionNodeTypeDefinition[] = [
   geometryTorus,
   geometryCone,
   geometryCapsule,
+  geometryIcosahedron,
+  geometryTorusKnot,
+  geometryRing,
+  geometryPlane,
 ];

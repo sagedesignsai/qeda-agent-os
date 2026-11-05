@@ -106,3 +106,68 @@ export function CapsuleRenderer({ node }: { node: MotionNode }) {
     </mesh>
   );
 }
+
+export function IcosahedronRenderer({ node }: { node: MotionNode }) {
+  const radius = numberProp(node, 'radius', 0.6);
+  const detail = numberProp(node, 'detail', 0);
+  const color = stringProp(node, 'color', '#5885f7');
+  const roughness = numberProp(node, 'roughness', 0.5);
+  const metalness = numberProp(node, 'metalness', 0);
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <mesh castShadow receiveShadow>
+      <icosahedronGeometry args={[radius, detail]} />
+      <meshStandardMaterial color={color} roughness={roughness} metalness={metalness} transparent={opacity < 1} opacity={opacity} />
+    </mesh>
+  );
+}
+
+export function TorusKnotRenderer({ node }: { node: MotionNode }) {
+  const radius = numberProp(node, 'radius', 0.5);
+  const tube = numberProp(node, 'tube', 0.18);
+  const p = numberProp(node, 'p', 2);
+  const q = numberProp(node, 'q', 3);
+  const tubularSegments = numberProp(node, 'tubularSegments', 64);
+  const radialSegments = numberProp(node, 'radialSegments', 8);
+  const color = stringProp(node, 'color', '#a88cf7');
+  const roughness = numberProp(node, 'roughness', 0.4);
+  const metalness = numberProp(node, 'metalness', 0.1);
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <mesh castShadow receiveShadow>
+      <torusKnotGeometry args={[radius, tube, tubularSegments, radialSegments, p, q]} />
+      <meshStandardMaterial color={color} roughness={roughness} metalness={metalness} transparent={opacity < 1} opacity={opacity} />
+    </mesh>
+  );
+}
+
+export function RingRenderer({ node }: { node: MotionNode }) {
+  const innerRadius = numberProp(node, 'innerRadius', 0.6);
+  const outerRadius = numberProp(node, 'outerRadius', 1);
+  const thetaSegments = numberProp(node, 'thetaSegments', 48);
+  const color = stringProp(node, 'color', '#5885f7');
+  const roughness = numberProp(node, 'roughness', 0.5);
+  const metalness = numberProp(node, 'metalness', 0);
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <mesh castShadow receiveShadow>
+      <ringGeometry args={[innerRadius, outerRadius, thetaSegments]} />
+      <meshStandardMaterial color={color} roughness={roughness} metalness={metalness} transparent={opacity < 1} opacity={opacity} side={2} />
+    </mesh>
+  );
+}
+
+export function PlaneRenderer({ node }: { node: MotionNode }) {
+  const width = numberProp(node, 'width', 2);
+  const height = numberProp(node, 'height', 2);
+  const color = stringProp(node, 'color', '#5885f7');
+  const roughness = numberProp(node, 'roughness', 0.5);
+  const metalness = numberProp(node, 'metalness', 0);
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <mesh castShadow receiveShadow>
+      <planeGeometry args={[width, height]} />
+      <meshStandardMaterial color={color} roughness={roughness} metalness={metalness} transparent={opacity < 1} opacity={opacity} side={2} />
+    </mesh>
+  );
+}

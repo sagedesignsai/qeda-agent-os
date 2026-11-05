@@ -28,6 +28,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
+import { MOTION_NODE_CATEGORIES } from '@/lib/motion/nodes/definition';
 
 /* ── Props ─────────────────────────────────────────────────────────────── */
 
@@ -246,17 +247,7 @@ export function MotionCommandBar({
                 Animation track
               </CommandItem>
               {(
-                [
-                  'scene',
-                  'camera',
-                  'geometry',
-                  'product',
-                  'surface',
-                  'ui',
-                  'model',
-                  'lighting',
-                  'stage',
-                ] as const
+                [...MOTION_NODE_CATEGORIES] as const
               ).map((category) => {
                 const categoryNodes = nodeTypes.filter(
                   (node) => node.category === category,

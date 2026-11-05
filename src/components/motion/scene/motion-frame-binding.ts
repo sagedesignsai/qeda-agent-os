@@ -11,6 +11,7 @@ import type { Group, Material, Object3D } from 'three';
 
 import { evaluateMotionFrame } from '@/lib/motion/evaluate';
 import type { MotionDocument, MotionNode } from '@/lib/motion/types';
+import { getMotionAnimatedPropApplier } from './animated-props';
 
 export type MotionCameraView = 'perspective' | 'front';
 
@@ -126,6 +127,8 @@ export function applyMotionFrame({
     opacityById.set(node.id, motionNumberProp(node, 'opacity', 1));
     applyFontSize(group, node);
     applyLightIntensity(group, node);
+    const applier = getMotionAnimatedPropApplier(node.type);
+    if (applier) applier(group, node);
   }
 
   applyOpacity(scene, 1, opacityById);

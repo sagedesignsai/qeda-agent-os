@@ -18,6 +18,9 @@ import { join, basename, relative } from 'node:path';
 
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { getBounds } from '@gltf-transform/functions';
+import { MeshoptDecoder } from 'meshoptimizer';
+import draco3d from 'draco3d';
 
 // Always run from the project root: `bun run scripts/build-model-catalog.ts`
 const MODELS_DIR = join(process.cwd(), 'assets', 'models');
@@ -43,10 +46,17 @@ type ModelEntry = {
   cameraCount: number;
   textureCount: number;
   generator?: string;
+  /** Scene-graph AABB in model space, so template staging can bake fit-scale. */
+  boundsMin?: [number, number, number];
+  boundsMax?: [number, number, number];
 };
 
 async function extractMetadata(path: string): Promise<Omit<ModelEntry, 'id' | 'name' | 'source' | 'relativePath' | 'byteSize'> & { error?: string }> {
-  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+  await MeshoptDecoder.ready;
+  const dracoDecoder = await draco3d.createDecoderModule();
+  const io = new NodeIO()
+    .registerExtensions(ALL_EXTENSIONS)
+    .registerDependencies({ 'meshopt.decoder': MeshoptDecoder, 'draco3d.decoder': dracoDecoder });
   await io.init();
 
   try {
@@ -95,6 +105,24 @@ async function extractMetadata(path: string): Promise<Omit<ModelEntry, 'id' | 'n
       if (name) animationNames.push(name);
     }
 
+    // Scene AABB — getBounds walks vertex min/max across all primitives.
+    // Finite check: meshes without POSITION data yield ±Infinity, which is
+    // useless for fit-scaling, so those scenes ship without bounds.
+    let boundsMin: [number, number, number] | undefined;
+    let boundsMax: [number, number, number] | undefined;
+    if (defaultScene) {
+      try {
+        const { min, max } = getBounds(defaultScene);
+        const finite = [min, max].every((v) => v.every((n) => Number.isFinite(n)));
+        if (finite) {
+          boundsMin = [min[0], min[1], min[2]];
+          boundsMax = [max[0], max[1], max[2]];
+        }
+      } catch {
+        // Degenerate scene graph (no primitives) — leave bounds unset.
+      }
+    }
+
     return {
       hasAnimations: animations.length > 0,
       animationCount: animations.length,
@@ -110,6 +138,7 @@ async function extractMetadata(path: string): Promise<Omit<ModelEntry, 'id' | 'n
       cameraCount: cameras.length,
       textureCount: textures.length,
       generator: asset.generator || undefined,
+      ...(boundsMin && boundsMax ? { boundsMin, boundsMax } : {}),
     };
   } catch (error: any) {
     return {

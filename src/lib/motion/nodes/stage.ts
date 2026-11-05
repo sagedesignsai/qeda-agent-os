@@ -101,3 +101,54 @@ export const stageGround: MotionNodeTypeDefinition = {
   defaultTransform: { position: [0, -1.5, 0] },
   propertyHints: hints,
 };
+
+export const stageGrid: MotionNodeTypeDefinition = {
+  id: 'stage.grid',
+  label: 'Grid',
+  category: 'stage',
+  description: 'A neon grid floor.',
+  propsSchema: z.object({
+    size: z.number().positive(),
+    divisions: z.number().int().min(2).max(200),
+    color: z.string().min(1),
+    accentColor: z.string().min(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { size: 20, divisions: 20, color: '#1b2230', accentColor: '#5885f7', opacity: 0.6 },
+  animatableProperties: { opacity: { description: 'Grid opacity.' } },
+  defaultName: 'Grid',
+  defaultTransform: { position: [0, -1.5, 0] },
+  propertyHints: {
+    size: { label: 'Size', control: 'number', min: 1, step: 1, group: 'Surface' },
+    divisions: { label: 'Divisions', control: 'number', min: 2, max: 200, step: 1, group: 'Surface' },
+    color: { label: 'Color', control: 'color', group: 'Surface' },
+    accentColor: { label: 'Accent', control: 'color', group: 'Surface' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const stageParticles: MotionNodeTypeDefinition = {
+  id: 'stage.particles',
+  label: 'Particles',
+  category: 'stage',
+  description: 'A seeded particle field.',
+  propsSchema: z.object({
+    count: z.number().int().min(1).max(2000),
+    radius: z.number().positive(),
+    size: z.number().positive(),
+    color: z.string().min(1),
+    seed: z.number().int().min(0),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { count: 400, radius: 4, size: 0.02, color: '#ffffff', seed: 1, opacity: 0.8 },
+  animatableProperties: { opacity: { description: 'Particles opacity.' } },
+  defaultName: 'Particles',
+  propertyHints: {
+    count: { label: 'Count', control: 'number', min: 1, max: 2000, step: 1, group: 'Field' },
+    radius: { label: 'Radius', control: 'number', min: 0.5, step: 0.5, group: 'Field' },
+    size: { label: 'Size', control: 'number', min: 0.005, step: 0.005, group: 'Field' },
+    color: { label: 'Color', control: 'color', group: 'Appearance' },
+    seed: { label: 'Seed', control: 'number', min: 0, step: 1, group: 'Field' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};

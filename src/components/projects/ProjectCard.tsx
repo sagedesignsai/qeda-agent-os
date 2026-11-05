@@ -179,7 +179,7 @@ export function ProjectCard({
         }
       }}
       className={cn(
-        'group relative flex w-full cursor-pointer flex-col gap-3 rounded-xl border bg-card/40 p-4 text-left transition-colors',
+        'group relative flex h-full w-full cursor-pointer flex-col gap-3 rounded-xl border bg-card/40 p-4 text-left transition-colors',
         'hover:border-primary/40 hover:bg-card/70',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
         className,

@@ -41,3 +41,24 @@ export function PointLightRenderer({ node }: { node: MotionNode }) {
     />
   );
 }
+
+export function SpotLightRenderer({ node }: { node: MotionNode }) {
+  const intensity = numberProp(node, 'intensity', 3);
+  const color = stringProp(node, 'color', '#ffffff');
+  const distance = numberProp(node, 'distance', 0);
+  const angle = numberProp(node, 'angle', 0.4);
+  const penumbra = numberProp(node, 'penumbra', 0.3);
+  const decay = numberProp(node, 'decay', 2);
+  const castShadow = boolProp(node, 'castShadow', true);
+  return (
+    <spotLight
+      intensity={intensity}
+      color={color}
+      distance={distance}
+      angle={angle}
+      penumbra={penumbra}
+      decay={decay}
+      castShadow={castShadow}
+    />
+  );
+}

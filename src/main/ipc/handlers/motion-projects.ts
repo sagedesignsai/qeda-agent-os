@@ -9,9 +9,10 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron';
 
 import { getMotionAssetStore, getMotionProjectStore } from '../../motion/service.js';
 import { listLocalModels, resolveLocalModelPath } from '../../motion/local-models.js';
+import { stageTemplateModels } from '../../motion/template-assets.js';
 import { MotionRemoteAssetClient } from '../../motion/remote-assets.js';
 import { createBlankMotionDocument } from '../../../lib/motion/defaults.js';
-import { createMotionTemplate } from '../../../lib/motion/templates.js';
+import { createMotionTemplate } from '../../../lib/motion/templates/index.js';
 
 export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
   const store = getMotionProjectStore();
@@ -40,7 +41,27 @@ export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: Bro
       duration: req.duration,
     }) : undefined;
     const project = await store.createProject({ name: req?.name, ...(document ? { document } : {}) });
-    changed();
+    // Templates may reference bundled catalog models (`local:…`); staging them
+    // needs the project bundle to exist, so it happens after creation and is
+    // saved as the very next revision. `expectedRevision` is the revision
+    // createProject just wrote; commitAssets already persisted its own append
+    // (bumping the revision), so the check inside saveProject is skipped by
+    // passing only what matters here — the enriched snapshot.
+    if (req?.templateId) {
+      try {
+        const result = await stageTemplateModels(project.id, document!, assets);
+        if (result.report.staged.length) {
+          await store.saveProject(
+            project.id,
+            { ...result.document, meta: { ...result.document.meta, id: project.id, name: project.name } },
+          );
+          changed();
+        }
+      } catch {
+        // Staging failure must not fail project creation: the bundle already
+        // holds the placeholder document.
+      }
+    }
     return { projectId: project.id, path: project.path };
   });
 

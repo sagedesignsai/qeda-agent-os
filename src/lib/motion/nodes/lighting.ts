@@ -77,3 +77,32 @@ export const lightPoint: MotionNodeTypeDefinition = {
     decay: { label: 'Falloff', control: 'slider', min: 0, max: 4, step: 0.1, group: 'Attenuation' },
   },
 };
+
+export const lightSpot: MotionNodeTypeDefinition = {
+  id: 'light.spot',
+  label: 'Spot light',
+  category: 'lighting',
+  description: 'A spotlight with cone angle and penumbra.',
+  propsSchema: z.object({
+    intensity: z.number().min(0),
+    color: z.string().min(1),
+    distance: z.number().nonnegative().default(0),
+    angle: z.number().min(0).max(Math.PI / 2),
+    penumbra: z.number().min(0).max(1),
+    decay: z.number().min(0).max(4).default(2),
+    castShadow: z.boolean(),
+  }),
+  defaultProps: { intensity: 3, color: '#ffffff', distance: 0, angle: 0.4, penumbra: 0.3, decay: 2, castShadow: true },
+  defaultTransform: { position: [3, 5, 3] },
+  animatableProperties: { intensity: { description: 'Light intensity.' } },
+  defaultName: 'Spot light',
+  propertyHints: {
+    intensity: { label: 'Intensity', control: 'slider', min: 0, max: 10, step: 0.1, group: 'Light' },
+    color: { label: 'Color', control: 'color', group: 'Light' },
+    distance: { label: 'Range', control: 'number', min: 0, step: 0.5, group: 'Attenuation' },
+    angle: { label: 'Angle', control: 'slider', min: 0.01, max: 1.5, step: 0.01, group: 'Cone' },
+    penumbra: { label: 'Penumbra', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Cone' },
+    decay: { label: 'Falloff', control: 'slider', min: 0, max: 4, step: 0.1, group: 'Attenuation' },
+    castShadow: { label: 'Cast shadows', control: 'toggle', group: 'Shadow' },
+  },
+};

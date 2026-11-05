@@ -90,3 +90,64 @@ export function GroundRenderer({ node }: { node: MotionNode }) {
     </mesh>
   );
 }
+
+import { Points, BufferGeometry, Float32BufferAttribute, PointsMaterial } from 'three';
+
+export function GridRenderer({ node }: { node: MotionNode }) {
+  const size = numberProp(node, 'size', 20);
+  const divisions = numberProp(node, 'divisions', 20);
+  const color = stringProp(node, 'color', '#1b2230');
+  const accent = stringProp(node, 'accentColor', '#5885f7');
+  const opacity = numberProp(node, 'opacity', 0.6);
+  const step = size / divisions;
+  const half = size / 2;
+  const positions: number[] = [];
+  for (let i = 0; i <= divisions; i++) {
+    const v = -half + i * step;
+    positions.push(-half, 0, v, half, 0, v);
+    positions.push(v, 0, -half, v, 0, half);
+  }
+  const geo = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    return g;
+  }, [positions.join(',')]);
+  return (
+    <lineSegments geometry={geo}>
+      <lineBasicMaterial color={color} transparent opacity={opacity} />
+    </lineSegments>
+  );
+}
+
+export function ParticlesRenderer({ node }: { node: MotionNode }) {
+  const count = Math.min(2000, numberProp(node, 'count', 400));
+  const radius = numberProp(node, 'radius', 4);
+  const size = numberProp(node, 'size', 0.02);
+  const color = stringProp(node, 'color', '#ffffff');
+  const seed = numberProp(node, 'seed', 1);
+  const opacity = numberProp(node, 'opacity', 0.8);
+  const positions = useMemo(() => {
+    let s = seed >>> 0;
+    const rng = () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = radius * Math.cbrt(rng());
+      const theta = rng() * Math.PI * 2;
+      const phi = Math.acos(2 * rng() - 1);
+      arr[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      arr[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      arr[i * 3 + 2] = r * Math.cos(phi);
+    }
+    return arr;
+  }, [count, radius, seed]);
+  const geo = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    return g;
+  }, [positions]);
+  return (
+    <points geometry={geo}>
+      <pointsMaterial size={size} color={color} transparent opacity={opacity} sizeAttenuation />
+    </points>
+  );
+}

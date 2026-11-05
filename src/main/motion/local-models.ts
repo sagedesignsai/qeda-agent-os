@@ -33,6 +33,9 @@ export type MotionLocalModelEntry = {
   cameraCount: number;
   textureCount: number;
   generator?: string;
+  /** Scene AABB in model space (catalog builder), for fit-baking at staging. */
+  boundsMin?: [number, number, number];
+  boundsMax?: [number, number, number];
 };
 
 let _catalog: MotionLocalModelEntry[] | null = null;

@@ -168,4 +168,118 @@ export const uiAnnotation: MotionNodeTypeDefinition = {
   },
 };
 
-export const uiNodes: readonly MotionNodeTypeDefinition[] = [uiBrowser, uiCode, uiAnnotation];
+export const uiTerminal: MotionNodeTypeDefinition = {
+  id: 'ui.terminal',
+  label: 'Terminal',
+  category: 'ui',
+  description: 'A terminal window with prompt lines.',
+  propsSchema: z.object({
+    width: z.number().positive(),
+    height: z.number().positive(),
+    title: z.string(),
+    lines: z.array(z.string()).max(40),
+    prompt: z.string(),
+    fontSize: z.number().positive(),
+    background: z.string().min(1),
+    color: z.string().min(1),
+    accentColor: z.string().min(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { width: 3.6, height: 2.2, title: 'terminal', lines: ['$ bun run build', '✓ built in 3m 25s', '$'], prompt: '$', fontSize: 0.085, background: '#0b1017', color: '#c9d4e3', accentColor: '#59c7a6', opacity: 1 },
+  animatableProperties: { opacity: { description: 'Terminal opacity.' } },
+  defaultName: 'Terminal',
+  propertyHints: {
+    width: { label: 'Width', control: 'number', min: 0.5, step: 0.1, group: 'Dimensions' },
+    height: { label: 'Height', control: 'number', min: 0.5, step: 0.1, group: 'Dimensions' },
+    title: { label: 'Title', control: 'text', group: 'Content' },
+    lines: { label: 'Lines', control: 'textarea', group: 'Content' },
+    prompt: { label: 'Prompt', control: 'text', group: 'Content' },
+    fontSize: { label: 'Font size', control: 'number', min: 0.03, step: 0.005, group: 'Typography' },
+    background: { label: 'Background', control: 'color', group: 'Appearance' },
+    color: { label: 'Text color', control: 'color', group: 'Appearance' },
+    accentColor: { label: 'Accent', control: 'color', group: 'Appearance' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const uiChat: MotionNodeTypeDefinition = {
+  id: 'ui.chat',
+  label: 'Chat',
+  category: 'ui',
+  description: 'A chat conversation mockup.',
+  propsSchema: z.object({
+    width: z.number().positive(),
+    messages: z.array(z.object({ role: z.enum(['user', 'assistant']), text: z.string() })).min(1).max(8),
+    fontSize: z.number().positive(),
+    userColor: z.string().min(1),
+    assistantColor: z.string().min(1),
+    background: z.string().min(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { width: 3.2, messages: [{ role: 'user', text: 'How do I export?' }, { role: 'assistant', text: 'Pick a preset, then Export.' }], fontSize: 0.1, userColor: '#5885f7', assistantColor: '#1b2230', background: '#0e131c', opacity: 1 },
+  animatableProperties: { opacity: { description: 'Chat opacity.' } },
+  defaultName: 'Chat',
+  propertyHints: {
+    width: { label: 'Width', control: 'number', min: 1, step: 0.1, group: 'Dimensions' },
+    messages: { label: 'Messages', control: 'textarea', group: 'Content' },
+    fontSize: { label: 'Font size', control: 'number', min: 0.05, step: 0.01, group: 'Typography' },
+    userColor: { label: 'User bubble', control: 'color', group: 'Appearance' },
+    assistantColor: { label: 'Assistant bubble', control: 'color', group: 'Appearance' },
+    background: { label: 'Background', control: 'color', group: 'Appearance' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const uiCursor: MotionNodeTypeDefinition = {
+  id: 'ui.cursor',
+  label: 'Cursor',
+  category: 'ui',
+  description: 'An animated pointer for app demos.',
+  propsSchema: z.object({
+    size: z.number().positive(),
+    color: z.string().min(1),
+    label: z.string().optional(),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { size: 0.35, color: '#ffffff', label: 'Click', opacity: 1 },
+  animatableProperties: { opacity: { description: 'Cursor opacity.' } },
+  defaultName: 'Cursor',
+  propertyHints: {
+    size: { label: 'Size', control: 'number', min: 0.1, step: 0.05, group: 'Dimensions' },
+    color: { label: 'Color', control: 'color', group: 'Appearance' },
+    label: { label: 'Label', control: 'text', group: 'Content', optional: true },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const uiNotification: MotionNodeTypeDefinition = {
+  id: 'ui.notification',
+  label: 'Notification',
+  category: 'ui',
+  description: 'A toast notification card.',
+  propsSchema: z.object({
+    title: z.string(),
+    body: z.string(),
+    width: z.number().positive(),
+    height: z.number().positive(),
+    accentColor: z.string().min(1),
+    background: z.string().min(1),
+    color: z.string().min(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: { title: 'Saved', body: 'Your changes are live.', width: 2.6, height: 0.7, accentColor: '#59c7a6', background: '#101722', color: '#e8eef8', opacity: 1 },
+  animatableProperties: { opacity: { description: 'Notification opacity.' } },
+  defaultName: 'Notification',
+  propertyHints: {
+    title: { label: 'Title', control: 'text', group: 'Content' },
+    body: { label: 'Body', control: 'text', group: 'Content' },
+    width: { label: 'Width', control: 'number', min: 1, step: 0.1, group: 'Dimensions' },
+    height: { label: 'Height', control: 'number', min: 0.3, step: 0.05, group: 'Dimensions' },
+    accentColor: { label: 'Accent', control: 'color', group: 'Appearance' },
+    background: { label: 'Background', control: 'color', group: 'Appearance' },
+    color: { label: 'Text color', control: 'color', group: 'Appearance' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const uiNodes: readonly MotionNodeTypeDefinition[] = [uiBrowser, uiCode, uiAnnotation, uiTerminal, uiChat, uiCursor, uiNotification];

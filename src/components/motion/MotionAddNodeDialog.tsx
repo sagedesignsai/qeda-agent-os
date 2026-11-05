@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppWindowIcon,
+  BarChart3Icon,
   BoxIcon,
   CameraIcon,
   CircleDotIcon,
@@ -30,6 +31,7 @@ import {
   PackageIcon,
   PillIcon,
   SearchIcon,
+  SparklesIcon,
   SmartphoneIcon,
   TabletIcon,
   TriangleIcon,
@@ -65,33 +67,15 @@ import {
   type MotionNodeTypeDescription,
   type MotionPropertyHint,
 } from '@/lib/motion/node-registry';
+import { MOTION_NODE_CATEGORIES, MOTION_CATEGORY_LABELS } from '@/lib/motion/nodes/definition';
 import type { MotionAsset } from '@/lib/motion/types';
+import type { MotionLocalModelEntry, MotionStagedAsset } from '@/main/ipc/channels';
 
 // ── Category metadata ─────────────────────────────────────────────────────────
 
-const CATEGORY_ORDER: MotionNodeCategory[] = [
-  'geometry',
-  'product',
-  'surface',
-  'ui',
-  'model',
-  'lighting',
-  'camera',
-  'scene',
-  'stage',
-];
+const CATEGORY_ORDER: MotionNodeCategory[] = [...MOTION_NODE_CATEGORIES];
 
-const CATEGORY_LABELS: Record<MotionNodeCategory, string> = {
-  geometry: 'Geometry',
-  product: 'Merch',
-  surface: 'Surfaces & Text',
-  ui: 'Software UI',
-  model: '3D Models',
-  lighting: 'Lighting',
-  camera: 'Camera',
-  scene: 'Containers',
-  stage: 'Stage',
-};
+const CATEGORY_LABELS: Record<MotionNodeCategory, string> = { ...MOTION_CATEGORY_LABELS };
 
 // ── Node-type icon map ────────────────────────────────────────────────────────
 
@@ -116,6 +100,9 @@ function nodeTypeIcon(nodeId: string) {
   if (nodeId.startsWith('camera.')) return CameraIcon;
   if (nodeId.startsWith('scene.')) return FolderIcon;
   if (nodeId.startsWith('shape.')) return AppWindowIcon;
+  if (nodeId.startsWith('graphic.')) return AppWindowIcon;
+  if (nodeId.startsWith('data.')) return BarChart3Icon;
+  if (nodeId.startsWith('procedural.')) return SparklesIcon;
   return BoxIcon;
 }
 
@@ -183,6 +170,9 @@ export function MotionAddNodeDialog({
   );
   const [props, setProps] = useState<Record<string, unknown>>({});
   const [isImporting, setIsImporting] = useState(false);
+  const [localModels, setLocalModels] = useState<MotionLocalModelEntry[]>([]);
+  const [selectedLocalModel, setSelectedLocalModel] = useState('');
+  const [isImportingLocal, setIsImportingLocal] = useState(false);
 
   // Reset config when the type changes
   useEffect(() => {
@@ -190,6 +180,19 @@ export function MotionAddNodeDialog({
     setNodeName(selectedType.label);
     setProps({ ...selectedType.defaultProps });
   }, [selectedType]);
+
+  // Load the bundled local model library when adding a 3D model node.
+  useEffect(() => {
+    if (selectedType?.id !== 'model.gltf') {
+      setLocalModels([]);
+      setSelectedLocalModel('');
+      return;
+    }
+    void window.electron.ipc
+      .invoke<MotionLocalModelEntry[]>('motion:list-local-models')
+      .then((result) => setLocalModels(result ?? []))
+      .catch(() => setLocalModels([]));
+  }, [selectedType?.id]);
 
   // ── Filtered list ─────────────────────────────────────────────────────────
 
@@ -269,6 +272,49 @@ export function MotionAddNodeDialog({
       setIsImporting(false);
     }
   }, [projectId]);
+
+  const handleImportLocalModel = useCallback(async () => {
+    if (!selectedLocalModel) return;
+    setIsImportingLocal(true);
+    try {
+      const staged = await window.electron.ipc.invoke<{
+        items: MotionStagedAsset[];
+        errors: Array<{ name: string; code: string; message: string }>;
+      }>('motion:import-local-model', { projectId, modelId: selectedLocalModel });
+      if (staged.errors.length) {
+        // reuse importErrors? dialog has no local importErrors state; surface via console
+        return;
+      }
+      if (!staged.items.length) return;
+      const commits = staged.items.flatMap((item) =>
+        item.kind === 'unknown' ? [] : [{ importId: item.importId, kind: item.kind }],
+      );
+      if (!commits.length) return;
+      const committed = await window.electron.ipc.invoke<{
+        assets: MotionAsset[];
+        errors: Array<{ name: string; code: string; message: string }>;
+      }>('motion:commit-assets', { projectId, items: commits });
+      const ops = committed.assets.map((asset) => ({ op: 'asset.add' as const, ...asset }));
+      if (ops.length) {
+        const name = localModels.find((m) => m.id === selectedLocalModel)?.name ?? 'model';
+        const result = motionStore.commit(`Import ${name} from local library`, ops);
+        if (result.status === 'rejected' || result.status === 'pending') {
+          throw result.error ?? new Error('The model could not be added to the document.');
+        }
+        setProps((p) => ({ ...p, assetId: committed.assets[0].id }));
+      }
+      await window.electron.ipc
+        .invoke<void>('motion:cancel-import', {
+          projectId,
+          importIds: staged.items.map((item) => item.importId),
+        })
+        .catch(() => undefined);
+    } catch {
+      // ignore; user can retry
+    } finally {
+      setIsImportingLocal(false);
+    }
+  }, [projectId, selectedLocalModel, localModels]);
 
   const handleAdd = useCallback(() => {
     if (!selectedType) return;
@@ -500,11 +546,43 @@ export function MotionAddNodeDialog({
                           size="sm"
                           className="mb-2 h-7 gap-1.5 text-xs"
                           onClick={handleImportAsset}
-                          disabled={isImporting}
+                          disabled={isImporting || isImportingLocal}
                         >
                           <UploadIcon className="size-3" />
                           {isImporting ? 'Importing…' : 'Import file…'}
                         </Button>
+                      )}
+
+                      {/* Bundled local model picker for 3D model nodes */}
+                      {selectedType?.id === 'model.gltf' && localModels.length > 0 && (
+                        <div className="mb-2 flex items-center gap-2">
+                          <Select
+                            value={selectedLocalModel}
+                            onValueChange={setSelectedLocalModel}
+                          >
+                            <SelectTrigger className="h-7 flex-1 text-xs">
+                              <SelectValue placeholder="Bundled model…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {localModels.map((m) => (
+                                <SelectItem key={m.id} value={m.id} className="text-xs">
+                                  {m.name} ({m.source})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 shrink-0 gap-1.5 text-xs"
+                            onClick={() => void handleImportLocalModel()}
+                            disabled={!selectedLocalModel || isImportingLocal || isImporting}
+                          >
+                            <FolderIcon className="size-3" />
+                            {isImportingLocal ? 'Importing…' : 'Use'}
+                          </Button>
+                        </div>
                       )}
 
                       <MotionPropertyFields

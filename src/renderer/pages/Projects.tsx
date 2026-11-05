@@ -494,7 +494,7 @@ export default function Projects() {
                 </Table>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {active.map((rollup, index) => (
                   // Plain div owns the native drag handlers — Framer Motion's
                   // `onDragStart` means something else, so the animation lives
@@ -504,13 +504,14 @@ export default function Projects() {
                     {...drag.getItemProps(rollup.project.id)}
                     {...drag.getDropProps(rollup.project.id)}
                     className={cn(
-                      'rounded-xl',
+                      'h-full rounded-xl',
                       drag.isDragging(rollup.project.id) && 'opacity-40',
                       drag.isOver(rollup.project.id) &&
                         'ring-2 ring-primary/40 ring-offset-2',
                     )}
                   >
                     <motion.div
+                      className="h-full"
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: Math.min(index * 0.03, 0.3) }}
@@ -539,11 +540,12 @@ export default function Projects() {
                 <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Archived
                 </h2>
-                <div className="grid grid-cols-1 gap-3 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid auto-rows-fr grid-cols-1 gap-3 opacity-70 sm:grid-cols-2 xl:grid-cols-3">
                   {archived.map((rollup) => (
                     <ProjectCard
                       key={rollup.project.id}
                       rollup={rollup}
+                      className="h-full"
                       onOpen={(id) => navigate(`/projects/${id}`)}
                       onEdit={openEdit}
                       onArchive={(id, a) => void handleArchive(id, a)}

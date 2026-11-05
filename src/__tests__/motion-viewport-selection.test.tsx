@@ -10,6 +10,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MotionViewport } from '@/components/motion/MotionViewport';
 import { motionStore } from '@/hooks/use-motion-store';
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
+import { buildMotionSceneCreation } from '@/lib/motion/scene-create';
 
 jest.mock('@/components/motion/scene/MotionSceneCanvas', () => ({
   MotionSceneCanvas: (props: {
@@ -61,5 +62,32 @@ describe('Motion viewport selection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear viewport selection' }));
     expect(motionStore.getSnapshot().selection).toBeNull();
+  });
+});
+
+describe('Motion viewport scene tabs', () => {
+  it('renders a tab per scene and switches the active scene on click', () => {
+    const doc = motionStore.getDocument();
+    const creation = buildMotionSceneCreation(doc, false);
+    motionStore.commit(creation.label, [creation.op]);
+    const firstSceneId = motionStore.getDocument().scenes[0].id;
+    const addedSceneId = motionStore.getDocument().activeSceneId;
+    expect(addedSceneId).not.toBe(firstSceneId);
+
+    render(<MotionViewport />);
+
+    const tablist = screen.getByRole('tablist', { name: 'Scenes' });
+    expect(tablist).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole('tab', { name: /Scene 1/ }));
+
+    const switched = motionStore.getDocument();
+    expect(switched.activeSceneId).toBe(firstSceneId);
+    expect(screen.getByRole('tab', { name: /Scene 1/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(creation.op).toMatchObject({ op: 'scene.add' });
   });
 });

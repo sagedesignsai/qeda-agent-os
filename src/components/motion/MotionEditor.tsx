@@ -52,6 +52,7 @@ import { useMotionCopilot } from '@/hooks/use-motion-copilot';
 import { useIpcEvent } from '@/hooks/use-ipc';
 import { createMotionId } from '@/lib/motion/ids';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
+import { buildMotionSceneCreation } from '@/lib/motion/scene-create';
 
 type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'failed';
 
@@ -190,44 +191,8 @@ export function MotionEditor({
   };
 
   const createScene = (duplicate: boolean) => {
-    const sceneId = createMotionId('scene');
-    const sceneName = duplicate
-      ? `${doc.scenes.find((scene) => scene.id === doc.activeSceneId)?.name ?? 'Scene'} copy`
-      : `Scene ${doc.scenes.length + 1}`;
-    const ids = duplicate
-      ? [
-          ...doc.scene.nodes.map((node) => node.id),
-          ...doc.timeline.tracks.map((track) => track.id),
-          ...doc.timeline.tracks.flatMap((track) =>
-            track.placements.map((placement) => placement.id),
-          ),
-          ...doc.timeline.clips.map((clip) => clip.id),
-          ...doc.timeline.clips.flatMap((clip) =>
-            clip.channels.map((channel) => channel.id),
-          ),
-          ...doc.timeline.clips.flatMap((clip) =>
-            clip.channels.flatMap((channel) =>
-              channel.keyframes.map((key) => key.id),
-            ),
-          ),
-          ...(doc.timeline.audio ?? []).map((audio) => audio.id),
-        ]
-      : doc.scene.nodes
-          .filter(
-            (node) =>
-              node.type.startsWith('camera.') ||
-              node.type.startsWith('light.') ||
-              node.type === 'stage.ground',
-          )
-          .map((node) => node.id);
-    const idMap = Object.fromEntries(
-      ids.map((id) => [id, createMotionId('scene')]),
-    );
-    motionStore.commit(duplicate ? 'Duplicate scene' : 'Add scene', [
-      duplicate
-        ? { op: 'scene.duplicate', sceneId, name: sceneName, idMap }
-        : { op: 'scene.add', sceneId, name: sceneName, rigIdMap: idMap },
-    ]);
+    const { label, op } = buildMotionSceneCreation(doc, duplicate);
+    motionStore.commit(label, [op]);
   };
 
   const activeScene = doc.scenes.find(

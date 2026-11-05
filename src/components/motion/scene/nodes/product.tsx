@@ -269,3 +269,93 @@ export function PackagingBoxRenderer({
     </group>
   );
 }
+
+export function CanRenderer({ node, document }: { node: MotionNode; document: MotionDocument }) {
+  const height = numberProp(node, 'height', 1.1);
+  const radius = numberProp(node, 'radius', 0.3);
+  const bodyColor = stringProp(node, 'bodyColor', '#c9d4e3');
+  const accent = stringProp(node, 'accentColor', '#e33a2c');
+  const metalness = numberProp(node, 'metalness', 0.9);
+  const roughness = numberProp(node, 'roughness', 0.25);
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <group>
+      <mesh castShadow receiveShadow>
+        <cylinderGeometry args={[radius, radius, height, 48]} />
+        <meshStandardMaterial color={bodyColor} metalness={metalness} roughness={roughness} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      <mesh position={[0, 0, 0]}>
+        <cylinderGeometry args={[radius + 0.001, radius + 0.001, height * 0.28, 48]} />
+        <meshStandardMaterial color={accent} metalness={0.6} roughness={0.3} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      <mesh position={[0, height / 2, 0]}>
+        <cylinderGeometry args={[radius, radius * 0.98, 0.04, 48]} />
+        <meshStandardMaterial color="#bfc7d4" metalness={0.9} roughness={0.2} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+    </group>
+  );
+}
+
+export function JarRenderer({ node, document }: { node: MotionNode; document: MotionDocument }) {
+  const height = numberProp(node, 'height', 0.7);
+  const radius = numberProp(node, 'radius', 0.5);
+  const lidHeight = numberProp(node, 'lidHeight', 0.12);
+  const bodyColor = stringProp(node, 'bodyColor', '#f2efe9');
+  const lidColor = stringProp(node, 'lidColor', '#c9bfae');
+  const roughness = numberProp(node, 'roughness', 0.35);
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <group>
+      <mesh castShadow receiveShadow>
+        <cylinderGeometry args={[radius, radius * 0.92, height - lidHeight, 48]} />
+        <meshStandardMaterial color={bodyColor} roughness={roughness} metalness={0} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      <mesh position={[0, (height - lidHeight) / 2 + lidHeight / 2, 0]} castShadow>
+        <cylinderGeometry args={[radius * 1.02, radius * 1.02, lidHeight, 48]} />
+        <meshStandardMaterial color={lidColor} roughness={0.5} metalness={0.1} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+    </group>
+  );
+}
+
+export function TubeRenderer({ node, document }: { node: MotionNode; document: MotionDocument }) {
+  const height = numberProp(node, 'height', 1.0);
+  const radius = numberProp(node, 'radius', 0.22);
+  const capColor = stringProp(node, 'capColor', '#1b2230');
+  const bodyColor = stringProp(node, 'bodyColor', '#e8eef8');
+  const roughness = numberProp(node, 'roughness', 0.4);
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <group>
+      <mesh castShadow receiveShadow>
+        <cylinderGeometry args={[radius, radius * 0.95, height * 0.85, 32]} />
+        <meshStandardMaterial color={bodyColor} roughness={roughness} metalness={0} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      <mesh position={[0, height * 0.45, 0]} castShadow>
+        <cylinderGeometry args={[radius * 0.85, radius * 0.85, height * 0.1, 32]} />
+        <meshStandardMaterial color={capColor} roughness={0.5} metalness={0.1} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+    </group>
+  );
+}
+
+export function PouchRenderer({ node, document }: { node: MotionNode; document: MotionDocument }) {
+  const width = numberProp(node, 'width', 0.9);
+  const height = numberProp(node, 'height', 1.3);
+  const depth = numberProp(node, 'depth', 0.08);
+  const bodyColor = stringProp(node, 'bodyColor', '#2a3344');
+  const accent = stringProp(node, 'accentColor', '#5885f7');
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <group>
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[width, height, depth]} />
+        <meshStandardMaterial color={bodyColor} roughness={0.7} metalness={0} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      <mesh position={[0, height * 0.15, depth / 2 + 0.002]}>
+        <planeGeometry args={[width * 0.7, height * 0.3]} />
+        <meshStandardMaterial color={accent} roughness={0.5} metalness={0.05} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+    </group>
+  );
+}

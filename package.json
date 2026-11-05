@@ -37,7 +37,7 @@
   "scripts": {
     "build": "NODE_OPTIONS='--max-old-space-size=8192' electron-vite build",
     "build:light": "VITE_BUILD_SOURCEMAP=false NODE_OPTIONS='--max-old-space-size=8192' electron-vite build",
-    "prebuild": "NODE_OPTIONS='--max-old-space-size=4096' bun run build:opencode-plugin",
+    "prebuild": "NODE_OPTIONS='--max-old-space-size=4096' bun run build:opencode-plugin && bun run models:catalog",
     "build:opencode-plugin": "tsc -p plugins/qeda-builder/tsconfig.json",
     "prestart": "bun run build:opencode-plugin",
     "postinstall": "cd .erb/tooling && bun install && cd ../.. && install-electron && electron-builder install-app-deps",
@@ -53,6 +53,7 @@
     "test:export": "electron scripts/export-smoke.cjs",
     "test:smoke": "node .erb/scripts/smoke-test.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "models:catalog": "bun run scripts/build-model-catalog.ts",
     "preview": "electron-vite preview"
   },
   "browserslist": [

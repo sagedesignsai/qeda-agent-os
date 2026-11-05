@@ -2,7 +2,7 @@
  * hooks/use-soundlab.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Page-level orchestrator hook for SoundLab. Wires SoundLabStore, SoundLabEngine,
- * IPC persistence, and 1-second debounced autosave together into one clean
+ * IPC persistence, and dirty-only 1-second debounced autosave together into one clean
  * surface consumed by SoundLabPage.
  *
  * Lives at the page level (not inside sub-components) so the AudioContext
@@ -54,6 +54,7 @@ export function useSoundLab(
   const [sessions, setSessions] = useState<SoundLabSession[]>([]);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistedSnapshotRef = useRef<string | null>(null);
   const state = useSoundLabState();
 
   // ── Load session list ─────────────────────────────────────────────────────
@@ -83,7 +84,10 @@ export function useSoundLab(
           'soundlab:get',
           { id: sessionId },
         );
-      if (data) soundLabStore.syncSession(data);
+      if (data) {
+        persistedSnapshotRef.current = JSON.stringify(data);
+        soundLabStore.syncSession(data);
+      }
     } catch {
       // ignore
     }
@@ -104,7 +108,10 @@ export function useSoundLab(
             'soundlab:get',
             { id: sessionId },
           );
-        if (data) soundLabStore.loadSession(data);
+        if (data) {
+          persistedSnapshotRef.current = JSON.stringify(data);
+          soundLabStore.loadSession(data);
+        }
       } finally {
         setLoading(false);
       }
@@ -118,18 +125,24 @@ export function useSoundLab(
     return off;
   }, [loadList]);
 
-  // ── Autosave on store changes (1s debounce) ───────────────────────────────
+  // ── Autosave changed content only (1s debounce) ────────────────────────────
 
   useEffect(() => {
     if (!state.session) return;
+
+    const snapshot = JSON.stringify(soundLabStore.getSessionWithTracks());
+    if (snapshot === persistedSnapshotRef.current) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       const data = soundLabStore.getSessionWithTracks();
       if (!data) return;
+      const currentSnapshot = JSON.stringify(data);
+      if (currentSnapshot === persistedSnapshotRef.current) return;
       setSaveStatus('saving');
       try {
         await window.electron.ipc.invoke('soundlab:save', data);
+        persistedSnapshotRef.current = currentSnapshot;
         setSaveStatus('saved');
         setTimeout(() => setSaveStatus('idle'), 2000);
       } catch {
@@ -286,9 +299,14 @@ export function useSoundLab(
   const saveNow = useCallback(async () => {
     const data = soundLabStore.getSessionWithTracks();
     if (!data) return;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
     setSaveStatus('saving');
     try {
       await window.electron.ipc.invoke('soundlab:save', data);
+      persistedSnapshotRef.current = JSON.stringify(data);
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch {

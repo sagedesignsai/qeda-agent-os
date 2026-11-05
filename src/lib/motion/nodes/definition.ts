@@ -15,16 +15,37 @@ import type { MotionAssetKind, MotionNodeTransform } from '../types';
 
 export const motionVector3Schema = z.tuple([z.number(), z.number(), z.number()]);
 
-export type MotionNodeCategory =
-  | 'scene'
-  | 'camera'
-  | 'geometry'
-  | 'product'
-  | 'surface'
-  | 'ui'
-  | 'lighting'
-  | 'model'
-  | 'stage';
+export const MOTION_NODE_CATEGORIES = [
+  'geometry',
+  'product',
+  'graphics',
+  'data',
+  'surface',
+  'ui',
+  'model',
+  'procedural',
+  'lighting',
+  'camera',
+  'scene',
+  'stage',
+] as const;
+
+export type MotionNodeCategory = (typeof MOTION_NODE_CATEGORIES)[number];
+
+export const MOTION_CATEGORY_LABELS: Record<MotionNodeCategory, string> = {
+  geometry: 'Geometry',
+  product: 'Merch',
+  graphics: 'Graphics',
+  data: 'Data',
+  surface: 'Surfaces & Text',
+  ui: 'Software UI',
+  model: '3D Models',
+  procedural: 'Procedural',
+  lighting: 'Lighting',
+  camera: 'Camera',
+  scene: 'Containers',
+  stage: 'Stage',
+};
 
 /**
  * Declarative inspector metadata. The inspector renders `propertyHints` in

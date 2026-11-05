@@ -277,3 +277,132 @@ export function AnnotationRenderer({ node }: { node: MotionNode }) {
     </group>
   );
 }
+
+const TERMINAL_GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 {}[]()<>=+-*/%.,:;!?'\"`|&$_@#~^/\\";
+
+export function TerminalRenderer({ node }: { node: MotionNode }) {
+  const width = numberProp(node, 'width', 3.6);
+  const height = numberProp(node, 'height', 2.2);
+  const title = stringProp(node, 'title', 'terminal');
+  const lines = (node.props.lines as string[]) ?? [];
+  const fontSize = numberProp(node, 'fontSize', 0.085);
+  const bg = stringProp(node, 'background', '#0b1017');
+  const color = stringProp(node, 'color', '#c9d4e3');
+  const accent = stringProp(node, 'accentColor', '#59c7a6');
+  const opacity = numberProp(node, 'opacity', 1);
+  const padX = width * 0.04;
+  const titleH = Math.max(fontSize * 2.4, 0.18);
+  const step = fontSize * 1.35;
+  const contentTop = height / 2 - titleH - step * 0.5;
+  const maxLines = Math.max(1, Math.floor((contentTop + height / 2) / step));
+  const visible = lines.slice(0, maxLines);
+  return (
+    <group>
+      <mesh position={[0, 0, -0.02]} castShadow receiveShadow>
+        <boxGeometry args={[width, height, 0.06]} />
+        <meshStandardMaterial color={bg} roughness={0.6} metalness={0.1} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      <mesh position={[0, height / 2 - titleH / 2, 0.031]}>
+        <planeGeometry args={[width, titleH]} />
+        <meshBasicMaterial color="#111823" transparent opacity={opacity} toneMapped={false} />
+      </mesh>
+      <Text position={[-width / 2 + padX, height / 2 - titleH / 2, 0.033]} fontSize={fontSize * 0.9} color="#9aa7ba" anchorX="left" anchorY="middle" characters={TERMINAL_GLYPHS}>{title}</Text>
+      {visible.map((line, i) => (
+        <Text key={i} position={[-width / 2 + padX, contentTop - i * step, 0.033]} fontSize={fontSize} color={color} anchorX="left" anchorY="middle" characters={TERMINAL_GLYPHS}>{line || ' '}</Text>
+      ))}
+      <mesh position={[-width / 2 + padX + visible.length * 0 + 0, contentTop - visible.length * step, 0.033]}>
+        <planeGeometry args={[fontSize * 0.6, fontSize * 1.1]} />
+        <meshBasicMaterial color={accent} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+export function ChatRenderer({ node }: { node: MotionNode }) {
+  const width = numberProp(node, 'width', 3.2);
+  const messages = (node.props.messages as Array<{ role: string; text: string }>) ?? [];
+  const fontSize = numberProp(node, 'fontSize', 0.1);
+  const userColor = stringProp(node, 'userColor', '#5885f7');
+  const assistantColor = stringProp(node, 'assistantColor', '#1b2230');
+  const bg = stringProp(node, 'background', '#0e131c');
+  const opacity = numberProp(node, 'opacity', 1);
+  const pad = 0.12;
+  const bubbleH = fontSize * 2.6;
+  const gap = 0.12;
+  let y = 0;
+  const items = messages.map((m, i) => {
+    const isUser = m.role === 'user';
+    const w = Math.min(width - pad * 2, Math.max(0.6, m.text.length * fontSize * 0.55 + pad));
+    const x = isUser ? width / 2 - w / 2 - pad : -width / 2 + w / 2 + pad;
+    const item = { m, isUser, w, x, y: 0 };
+    y -= bubbleH + gap;
+    return item;
+  });
+  // top-align
+  const totalH = items.length * (bubbleH + gap);
+  items.forEach((it, i) => { it.y = totalH / 2 - i * (bubbleH + gap) - bubbleH / 2; });
+  return (
+    <group>
+      <mesh position={[0, 0, -0.02]}>
+        <boxGeometry args={[width, Math.max(1, totalH + pad * 2), 0.06]} />
+        <meshStandardMaterial color={bg} roughness={0.6} metalness={0.1} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      {items.map((it, i) => (
+        <group key={i} position={[it.x, it.y, 0.031]}>
+          <mesh>
+            <planeGeometry args={[it.w, bubbleH]} />
+            <meshBasicMaterial color={it.isUser ? userColor : assistantColor} transparent opacity={opacity} toneMapped={false} />
+          </mesh>
+          <Text fontSize={fontSize} color="#ffffff" anchorX="center" anchorY="middle" characters="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!? '()-:&%·—/">
+            {it.m.text}
+          </Text>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+export function CursorRenderer({ node }: { node: MotionNode }) {
+  const size = numberProp(node, 'size', 0.35);
+  const color = stringProp(node, 'color', '#ffffff');
+  const label = stringProp(node, 'label', '');
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <group>
+      <mesh position={[0, 0, 0]}>
+        <coneGeometry args={[size * 0.25, size, 3]} />
+        <meshBasicMaterial color={color} transparent opacity={opacity} toneMapped={false} />
+      </mesh>
+      {label && (
+        <Text position={[size * 0.6, -size * 0.4, 0]} fontSize={size * 0.4} color={color} anchorX="left" anchorY="middle" characters="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!? '()-:&%·—/">
+          {label}
+        </Text>
+      )}
+    </group>
+  );
+}
+
+export function NotificationRenderer({ node }: { node: MotionNode }) {
+  const title = stringProp(node, 'title', 'Saved');
+  const body = stringProp(node, 'body', 'Your changes are live.');
+  const width = numberProp(node, 'width', 2.6);
+  const height = numberProp(node, 'height', 0.7);
+  const accent = stringProp(node, 'accentColor', '#59c7a6');
+  const bg = stringProp(node, 'background', '#101722');
+  const color = stringProp(node, 'color', '#e8eef8');
+  const opacity = numberProp(node, 'opacity', 1);
+  return (
+    <group>
+      <mesh>
+        <planeGeometry args={[width, height]} />
+        <meshStandardMaterial color={bg} roughness={0.5} metalness={0.08} transparent={opacity < 1} opacity={opacity} />
+      </mesh>
+      <mesh position={[-width / 2 + 0.06, 0, 0.002]}>
+        <planeGeometry args={[0.04, height * 0.7]} />
+        <meshBasicMaterial color={accent} toneMapped={false} />
+      </mesh>
+      <Text position={[-width / 2 + 0.16, height * 0.15, 0.003]} fontSize={height * 0.22} color={color} anchorX="left" anchorY="middle" characters="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!? '()-:&%·—/">{title}</Text>
+      <Text position={[-width / 2 + 0.16, -height * 0.15, 0.003]} fontSize={height * 0.18} color="#9aa7bd" anchorX="left" anchorY="middle" characters="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!? '()-:&%·—/">{body}</Text>
+    </group>
+  );
+}

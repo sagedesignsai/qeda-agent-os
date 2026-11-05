@@ -11,6 +11,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MotionScenePanel } from '@/components/motion/MotionScenePanel';
 import { motionStore } from '@/hooks/use-motion-store';
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
+import { buildMotionSceneCreation } from '@/lib/motion/scene-create';
 
 beforeAll(() => {
   class ResizeObserverMock {
@@ -131,5 +132,53 @@ describe('MotionScenePanel hierarchy', () => {
     render(<MotionScenePanel />);
     const row = screen.getByRole('button', { name: 'Select scene object Product' });
     expect(row.querySelector('[aria-label="Animated"]')).not.toBeNull();
+  });
+});
+
+describe('MotionScenePanel scenes list', () => {
+  const seedSecondScene = () => {
+    const doc = motionStore.getDocument();
+    const creation = buildMotionSceneCreation(doc, false);
+    motionStore.commit(creation.label, [creation.op]);
+    const scenes = motionStore.getDocument().scenes;
+    return scenes[scenes.length - 1];
+  };
+
+  it('lists every scene and highlights the active one', () => {
+    seedSecondScene();
+    // `scene.add` focuses the newly created scene.
+    const activeName = motionStore.getDocument().scenes.find(
+      (scene) => scene.id === motionStore.getDocument().activeSceneId,
+    )?.name;
+
+    render(<MotionScenePanel />);
+
+    const activeRow = screen
+      .getAllByRole('button')
+      .find((button) => button.getAttribute('aria-current') === 'true');
+    expect(activeRow).toHaveTextContent(activeName ?? '');
+    // Accessible name concatenates the visible spans: "Scene 11 · 6.0s".
+    expect(screen.getByRole('button', { name: /Scene 1/ })).toBeInTheDocument();
+  });
+
+  it('switches the active scene when a scene row is clicked', () => {
+    const added = seedSecondScene();
+
+    render(<MotionScenePanel />);
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(added.name) }));
+
+    const doc = motionStore.getDocument();
+    expect(doc.activeSceneId).toBe(added.id);
+    // The legacy scene/timeline aliases must follow the switch so the viewport
+    // and timeline render the newly selected scene, not the old one.
+    expect(doc.scene.nodes).toEqual(added.nodes);
+    expect(doc.timeline.duration).toBe(added.timeline.duration);
+  });
+
+  it('adds a scene from the scenes list header', () => {
+    render(<MotionScenePanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add scene' }));
+
+    expect(motionStore.getDocument().scenes).toHaveLength(2);
   });
 });
