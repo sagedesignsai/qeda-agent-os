@@ -932,7 +932,6 @@ export default function Tasks() {
     Record<string, StepProgress>
   >({});
   const [stats, setStats] = useState<FocusStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'today' | 'board'>('today');
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
@@ -1063,8 +1062,6 @@ export default function Tasks() {
       setStats(s);
     } catch {
       /* stats are best-effort */
-    } finally {
-      setStatsLoading(false);
     }
   }, []);
 
@@ -1444,7 +1441,6 @@ export default function Tasks() {
           <TodayTimeline
             tasks={tasks}
             stats={stats}
-            statsLoading={statsLoading}
             stepProgress={stepProgress}
             refreshSignal={dataVersion}
             projectId={projectId}

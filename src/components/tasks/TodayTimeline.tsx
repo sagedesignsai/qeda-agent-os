@@ -41,7 +41,6 @@ import { useGamification } from '@/hooks/use-gamification';
 import { triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
 import { XP_REWARDS } from '@/lib/gamification';
 import { localDayKey } from '@/lib/focus/daily-key';
-import { FocusStatsStrip } from './FocusStatsStrip';
 import { ScheduleBlockDialog } from './ScheduleBlockDialog';
 import { MorningKickoffDialog } from './MorningKickoffDialog';
 import { TodayEmptyHero } from './TodayEmptyHero';
@@ -97,7 +96,6 @@ function startOfToday(): number {
 export interface TodayTimelineProps {
   tasks: Task[];
   stats: FocusStats | null;
-  statsLoading?: boolean;
   stepProgress?: Record<string, StepProgress>;
   /** Bump to force a reload of blocks (e.g. after a task changes). */
   refreshSignal?: number;
@@ -112,7 +110,6 @@ export interface TodayTimelineProps {
 export function TodayTimeline({
   tasks,
   stats,
-  statsLoading,
   stepProgress,
   refreshSignal = 0,
   projectId,
@@ -255,8 +252,6 @@ export function TodayTimeline({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
-      <FocusStatsStrip stats={stats} loading={statsLoading} />
-
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div>
