@@ -432,11 +432,12 @@ CREATE TABLE IF NOT EXISTS gamification_state (
 
 export const CREATE_XP_LEDGER = `
 CREATE TABLE IF NOT EXISTS xp_ledger (
-  id          TEXT PRIMARY KEY,
-  amount      INTEGER NOT NULL,
-  source      TEXT NOT NULL,
-  entity_id   TEXT,
-  created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+  id              TEXT PRIMARY KEY,
+  amount          INTEGER NOT NULL,
+  source          TEXT NOT NULL,
+  entity_id       TEXT,
+  idempotency_key TEXT,
+  created_at      INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_xp_ledger_created ON xp_ledger(created_at);
 `;
@@ -1390,6 +1391,13 @@ export function applyMigrations(db: {
     addColumn('builder_sessions', 'messages_json', 'TEXT');
     addColumn('builder_sessions', 'events_json', 'TEXT');
 
+    // One-shot awards (task/step completion, daily bonuses) carry a key so a
+    // retried IPC call, a reopened task, or a second renderer mount cannot
+    // farm XP. Declared in CREATE_XP_LEDGER for new databases; added here for
+    // databases created before the column existed. The unique index is created
+    // below, after the column, for the reason documented at the index block.
+    addColumn('xp_ledger', 'idempotency_key', 'TEXT');
+
     // Knowledge-side project scope. Added after notebooks/pages/research_runs
     // first shipped, so existing databases get the columns here and the
     // MIGRATE_PROJECT_SCOPE_KNOWLEDGE backfill below fills them in.
@@ -1436,6 +1444,11 @@ export function applyMigrations(db: {
     execOptional(
       'idx_research_runs_project',
       'CREATE INDEX IF NOT EXISTS idx_research_runs_project ON research_runs(project_id)',
+    );
+    // Partial so the repeatable awards (pomodoro minutes) can have NULL keys.
+    execOptional(
+      'idx_xp_ledger_idempotency',
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_xp_ledger_idempotency ON xp_ledger(idempotency_key) WHERE idempotency_key IS NOT NULL',
     );
   }
 

@@ -873,6 +873,11 @@ export interface IpcChannels {
   'agent:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
   'agent:stream-done': { sessionId: string };
   'agent:stream-error': { error: string };
+  /**
+   * The user stopped the turn. Separate from `agent:stream-error` so the UI can
+   * return to a ready composer instead of showing a red failure card.
+   */
+  'agent:stream-cancelled': { sessionId: string };
   /** The active provider could not serve the turn; another one took over. */
   'agent:stream-fallback': {
     fromProvider: string;
@@ -881,8 +886,8 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
-  /** Abort the in-flight chat turn (the kill switch). */
-  'agent:abort': { req: void; res: void };
+  /** Abort the in-flight chat turn (the kill switch), scoped to one session. */
+  'agent:abort': { req: { sessionId?: string } | void; res: void };
   /** Pushed when the agent creates or updates its plan. */
   'agent:plan-event': { data: AgentPlanEvent };
 
@@ -1180,8 +1185,14 @@ export interface IpcChannels {
   // ── Gamification & Dopamine System ──────────────────────────────────────────
   'gamification:get-state': { req: void; res: GamificationState };
   'gamification:award-xp': {
-    req: { amount: number; source: string; entityId?: string };
-    res: { state: GamificationState; leveledUp: boolean };
+    req: {
+      amount: number;
+      source: string;
+      entityId?: string;
+      /** One-shot award key; repeating it is a no-op. Omit for repeatable XP. */
+      idempotencyKey?: string;
+    };
+    res: { state: GamificationState; leveledUp: boolean; awarded: boolean };
   };
   'gamification:use-shield': { req: void; res: GamificationState };
   'gamification:updated': { state: GamificationState; leveledUp: boolean };

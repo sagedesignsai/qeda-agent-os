@@ -17,7 +17,12 @@ import type { GamificationState } from '@/main/ipc/channels';
 export interface UseGamificationReturn {
   state: GamificationState | null;
   loading: boolean;
-  awardXp: (amount: number, source: string, entityId?: string) => Promise<void>;
+  awardXp: (
+    amount: number,
+    source: string,
+    entityId?: string,
+    idempotencyKey?: string,
+  ) => Promise<void>;
   useShield: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -60,15 +65,29 @@ export function useGamification(): UseGamificationReturn {
   });
 
   const awardXp = useCallback(
-    async (amount: number, source: string, entityId?: string) => {
+    async (
+      amount: number,
+      source: string,
+      entityId?: string,
+      idempotencyKey?: string,
+    ) => {
       if (amount <= 0) return;
       try {
         const result = await window.electron.ipc.invoke<{
           state: GamificationState;
           leveledUp: boolean;
-        }>('gamification:award-xp', { amount, source, entityId });
+          awarded: boolean;
+        }>('gamification:award-xp', {
+          amount,
+          source,
+          entityId,
+          idempotencyKey,
+        });
 
         setState(result.state);
+        // A repeat of a one-shot award is not a fresh win: no chime, no
+        // confetti, and no second level-up toast.
+        if (!result.awarded) return;
         celebrationAudio.playCompletionChime();
 
         if (result.leveledUp) {

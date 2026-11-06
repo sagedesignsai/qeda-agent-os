@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils';
 import { useGamification } from '@/hooks/use-gamification';
 import { triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
 import { XP_REWARDS } from '@/lib/gamification';
+import { localDayKey } from '@/lib/focus/daily-key';
 import { FocusStatsStrip } from './FocusStatsStrip';
 import { ScheduleBlockDialog } from './ScheduleBlockDialog';
 import { MorningKickoffDialog } from './MorningKickoffDialog';
@@ -190,7 +191,12 @@ export function TodayTimeline({
           description: result.note?.slice(0, 140),
         });
       } else {
-        void gamification.awardXp(XP_REWARDS.DAY_PLAN, 'ai_day_plan');
+        void gamification.awardXp(
+          XP_REWARDS.DAY_PLAN,
+          'ai_day_plan',
+          undefined,
+          `ai_day_plan:${localDayKey()}`,
+        );
         triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
         toast.success(
           `Planned ${result.blocks.length} block${result.blocks.length > 1 ? 's' : ''} (+40 XP)`,

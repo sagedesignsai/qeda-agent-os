@@ -35,7 +35,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'motion/react';
 import { formatDistanceToNow } from 'date-fns';
@@ -442,6 +442,52 @@ function FocusMode({
   const soundscape = useSoundscape();
   const state = focus.timer;
   const { progress, pause, reset, skip } = focus;
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // The overlay is modal in behaviour, not only in z-index: move focus into it,
+  // keep Tab inside, and let Escape park the session in the sidebar. A sheet
+  // opened on top (the document drafter) owns Escape while it is open.
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (
+        document.querySelector(
+          '[data-slot="sheet-content"][data-state="open"]',
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      onMinimize();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onMinimize]);
+
+  const trapTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+    const root = dialogRef.current;
+    if (!root) return;
+    const focusable = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => el.offsetParent !== null);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   const mins = Math.floor(state.secondsLeft / 60)
     .toString()
@@ -467,7 +513,7 @@ function FocusMode({
           project_id: task.project_id ?? null,
         },
       );
-      // Park in floating (timer keeps running / stays ready) instead of
+      // Park in sidebar (timer keeps running / stays ready) instead of
       // clearing focus — navigating away must not kill the pomodoro.
       onMinimize();
       const projectQuery = task.project_id
@@ -492,11 +538,17 @@ function FocusMode({
       onClick={(e) => e.target === e.currentTarget && onMinimize()}
     >
       <motion.div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Focus mode: ${task.title}`}
+        tabIndex={-1}
+        onKeyDown={trapTab}
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="my-8 flex w-full max-w-md flex-col items-center gap-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-8"
+        className="my-8 flex w-full max-w-md flex-col items-center gap-6 rounded-2xl border border-zinc-800 bg-zinc-950 p-8 focus:outline-none"
       >
         {/* Header bar with minimize & close */}
         <div className="flex w-full items-center justify-between pb-1 border-b border-zinc-900">
@@ -512,7 +564,8 @@ function FocusMode({
               variant="ghost"
               className="size-7 rounded-full text-zinc-400 hover:text-white"
               onClick={onMinimize}
-              title="Minimize to floating bar"
+              title="Minimize to the sidebar"
+              aria-label="Minimize focus mode to the sidebar"
             >
               <Minimize2Icon className="size-3.5" />
             </Button>
@@ -522,6 +575,7 @@ function FocusMode({
               className="size-7 rounded-full text-zinc-400 hover:text-rose-400"
               onClick={onClose}
               title="Exit focus mode"
+              aria-label="End focus session"
             >
               <XIcon className="size-3.5" />
             </Button>
@@ -583,6 +637,7 @@ function FocusMode({
               size="icon"
               className="size-10 rounded-full bg-amber-600 hover:bg-amber-500"
               onClick={pause}
+              aria-label="Pause timer"
             >
               <PauseIcon className="size-5" />
             </Button>
@@ -591,6 +646,7 @@ function FocusMode({
               size="icon"
               className="size-10 rounded-full bg-emerald-600 hover:bg-emerald-500"
               onClick={handleStart}
+              aria-label="Start timer"
             >
               <PlayIcon className="size-5" />
             </Button>
@@ -609,6 +665,7 @@ function FocusMode({
             variant="outline"
             className="size-10 rounded-full border-zinc-700"
             onClick={reset}
+            aria-label="Reset timer"
           >
             <RefreshCwIcon className="size-4" />
           </Button>
@@ -1053,6 +1110,9 @@ export default function Tasks() {
             xpForTaskPriority(target.priority),
             `task_p${target.priority}`,
             id,
+            // One-shot: reopening and completing the same task again must not
+            // pay out twice.
+            `task_done:${id}`,
           );
           triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
           // Completing the task you are focused on must end the session, or the
@@ -1090,11 +1150,11 @@ export default function Tasks() {
               ),
             ),
           onFocusTask: (t) => {
-            // Park in floating (ready) without opening the modal or
+            // Park in sidebar (ready) without opening the modal or
             // auto-starting the timer. "Just Focus" is the only modal path.
             focus.setFocusedTask(t);
             if (focus.displayMode === 'closed') {
-              focus.setDisplayMode('floating');
+              focus.setDisplayMode('sidebar');
             }
           },
         });
@@ -1229,12 +1289,12 @@ export default function Tasks() {
    * Focus mode is minimized rather than closed on the way out: the sheet is a
    * full-height slide-over, and leaving a pomodoro ticking silently behind it
    * would lose the session when the user finally navigates away. Minimizing
-   * parks it in the floating bar, so coming back is one click.
+   * parks it in the sidebar player, so coming back is one click.
    */
   const handleDocumentCreated = useCallback(
     (documentId: string) => {
       setDrafterTask(null);
-      if (focus.displayMode !== 'closed') focus.setDisplayMode('floating');
+      if (focus.displayMode !== 'closed') focus.setDisplayMode('sidebar');
       navigate(`/documents/${documentId}`);
     },
     [focus.displayMode, focus.setDisplayMode, navigate],
@@ -1499,7 +1559,7 @@ export default function Tasks() {
             task={focus.focusedTask}
             presetIndex={focus.presetIndex}
             onPresetChange={focus.setPresetIndex}
-            onMinimize={() => focus.setDisplayMode('floating')}
+            onMinimize={() => focus.setDisplayMode('sidebar')}
             onClose={focus.clearFocus}
             onComplete={handleComplete}
             onDraftDocument={() =>
@@ -1509,7 +1569,7 @@ export default function Tasks() {
         )}
       </AnimatePresence>
 
-      {/* The floating bar and the audio dock are app-wide (`FocusRuntime`). */}
+      {/* The sidebar focus player is app-wide (`AppSidebar`). */}
 
       <ParticleCanvas />
     </div>

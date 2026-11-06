@@ -61,6 +61,17 @@ export function registerAgentChatHandlers({
         });
       };
 
+      /**
+       * A user abort is a decision, not a failure. It is reported on its own
+       * channel so the renderer can return to a ready composer rather than
+       * painting the turn as an error.
+       */
+      const cancelled = () => {
+        activeStreamControllers.delete(sessionId);
+        if (mainWindow.isDestroyed()) return;
+        mainWindow.webContents.send('agent:stream-cancelled', { sessionId });
+      };
+
       try {
         // Convert UIMessages to model messages once and reuse them for every
         // attempt – sanitizing reasoning parts so providers like Groq do not reject them.
@@ -81,12 +92,7 @@ export function registerAgentChatHandlers({
         for (let attempt = 0; attempt < chain.length; attempt += 1) {
           // Check if stream was aborted
           if (abortController.signal.aborted) {
-            activeStreamControllers.delete(sessionId);
-            if (!mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('agent:stream-error', {
-                error: 'Stream cancelled by user',
-              });
-            }
+            cancelled();
             return;
           }
 
@@ -118,12 +124,7 @@ export function registerAgentChatHandlers({
             for await (const chunk of result.fullStream) {
               if (mainWindow.isDestroyed()) return;
               if (abortController.signal.aborted) {
-                activeStreamControllers.delete(sessionId);
-                if (!mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send('agent:stream-error', {
-                    error: 'Stream cancelled by user',
-                  });
-                }
+                cancelled();
                 return;
               }
               if (chunk?.type === 'error') {
@@ -146,6 +147,12 @@ export function registerAgentChatHandlers({
             mainWindow.webContents.send('agent:stream-done', { sessionId });
             return;
           } catch (err) {
+            // Aborting rejects the in-flight stream; never treat that as a
+            // provider failure and never retry it on another model.
+            if (abortController.signal.aborted) {
+              cancelled();
+              return;
+            }
             lastError = err;
 
             const isLast = attempt === chain.length - 1;
@@ -174,14 +181,27 @@ export function registerAgentChatHandlers({
     },
   );
 
-  // Handle abort requests
-  ipcMain.handle('agent:abort', async () => {
-    // Note: The sessionId is not passed, so we abort the most recent stream.
-    // In a multi-window scenario this would need refinement, but for a single
-    // window this is sufficient. A better approach would be to pass sessionId.
-    for (const controller of activeStreamControllers.values()) {
-      controller.abort();
-    }
-    activeStreamControllers.clear();
-  });
+  // Handle abort requests. Scoped to one session when the renderer names it, so
+  // stopping one conversation cannot kill a turn running in another surface.
+  ipcMain.handle(
+    'agent:abort',
+    async (_e, req?: { sessionId?: string } | void) => {
+      const sessionId = req?.sessionId;
+      if (sessionId) {
+        const controller = activeStreamControllers.get(sessionId);
+        if (!controller) return;
+        controller.abort();
+        activeStreamControllers.delete(sessionId);
+        if (!mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('agent:stream-cancelled', { sessionId });
+        }
+        return;
+      }
+
+      for (const controller of activeStreamControllers.values()) {
+        controller.abort();
+      }
+      activeStreamControllers.clear();
+    },
+  );
 }

@@ -7,7 +7,7 @@
  * choice, and either navigates (Chat/Terminal) or returns a signal for the
  * caller to open a local surface (`documents` drafter sheet, `focus` modal).
  * It deliberately does NOT auto-start the pomodoro: starting a workspace is
- * an orientation step, pressing play in FocusMode/FloatingBar is the
+ * an orientation step, pressing play in FocusMode / the sidebar player is the
  * commitment. Timer/focus sync is owned by focus-store (mirrored to
  * app-store); this helper only ensures the task row is active and the
  * workspace session exists before navigation.

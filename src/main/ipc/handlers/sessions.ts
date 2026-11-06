@@ -11,6 +11,7 @@
 import { type UIMessage } from 'ai';
 import { ipcMain, type BrowserWindow } from 'electron';
 import {
+  clearMessages,
   createSession,
   deleteSession,
   listSessions,
@@ -99,6 +100,13 @@ export function registerSessionsHandlers({
       { sessionId, messages }: { sessionId: string; messages: UIMessage[] },
     ) => {
       if (!sessionId || !Array.isArray(messages)) return;
+      // An empty list is the renderer's explicit "conversation cleared":
+      // upserts cannot express a deletion, so history would otherwise come
+      // back on the next hydration.
+      if (messages.length === 0) {
+        clearMessages(sessionId);
+        return;
+      }
       for (const message of messages) {
         if (message?.id && Array.isArray(message.parts)) {
           upsertMessage(sessionId, message);

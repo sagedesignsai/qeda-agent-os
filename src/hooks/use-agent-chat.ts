@@ -364,6 +364,20 @@ export function useAgentChat({
     [],
   );
 
+  // A user abort is not a failure: return to a ready composer instead of
+  // setting `error`, which would render a red card for a deliberate stop.
+  useIpcEvent(
+    'agent:stream-cancelled',
+    (payload: unknown) => {
+      const forSession = (payload as { sessionId?: string })?.sessionId;
+      if (forSession && forSession !== sessionIdRef.current) return;
+      streamingRef.current = false;
+      setError(undefined);
+      setStatus('ready');
+    },
+    [],
+  );
+
   // The main process retried the turn on another provider. No output had been
   // rendered yet, so the turn simply continues – we only explain the swap.
   useIpcEvent(
@@ -450,15 +464,31 @@ export function useAgentChat({
     commitMessages(() => []);
     setStatus('ready');
     setError(undefined);
-  }, [commitMessages]);
+
+    // Persist the deletion. `sessions:save-messages` upserts, so an empty list
+    // is the explicit "nothing remains" signal — without it the cleared
+    // conversation reappeared on the next hydration.
+    const activeSession = sessionIdRef.current;
+    if (!persist || !activeSession) return;
+    window.electron.ipc
+      .invoke('sessions:save-messages', {
+        sessionId: activeSession,
+        messages: [],
+      })
+      .catch(() => {
+        // Persistence is best-effort – never block the UI on it.
+      });
+  }, [commitMessages, persist]);
 
   // ── Abort the in-flight stream ────────────────────────────────────────────
 
   const abortStream = useCallback(() => {
     if (!streamingRef.current) return;
-    window.electron.ipc.invoke('agent:abort').catch(() => {
-      // Ignore errors from abort – the stream may have already completed.
-    });
+    window.electron.ipc
+      .invoke('agent:abort', { sessionId: sessionIdRef.current })
+      .catch(() => {
+        // Ignore errors from abort – the stream may have already completed.
+      });
   }, []);
 
   // ── Hydrate from the database when the session changes ────────────────────

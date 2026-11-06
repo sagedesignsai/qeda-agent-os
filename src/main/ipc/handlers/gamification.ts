@@ -27,9 +27,15 @@ export function registerGamificationHandlers({
         amount,
         source,
         entityId,
-      }: { amount: number; source: string; entityId?: string },
+        idempotencyKey,
+      }: {
+        amount: number;
+        source: string;
+        entityId?: string;
+        idempotencyKey?: string;
+      },
     ) => {
-      const result = awardXp(amount, source, entityId);
+      const result = awardXp(amount, source, entityId, idempotencyKey);
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('gamification:updated', result);
       }

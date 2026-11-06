@@ -7,13 +7,14 @@
  * ───────────────
  * Focus used to be page-local: `Tasks.tsx` owned the interval, and navigating
  * away silently killed the pomodoro. This component owns the interval, records
- * finished phases, awards XP, notifies the OS, holds the power blocker, and
- * renders the floating bar and audio dock. The stores stay pure; everything
- * with a side effect lives here.
+ * finished phases, awards XP, notifies the OS and holds the power blocker.
+ * The session's UI lives in the sidebar (`SidebarFocusPlayer`); this only keeps
+ * an open overlay from staying in a hidden `modal` state after navigation.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useCallback, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router';
 import { toast } from 'sonner';
 import { useFocusStore } from '@/stores/focus-store';
 import { useMusicStore } from '@/stores/music-store';
@@ -25,13 +26,23 @@ import { fetchSceneTracks } from '@/lib/music/scene-tracks';
 import { BUILTIN_SCENES, findScene } from '@/lib/music/scenes';
 import type { MusicScene } from '@/lib/music/types';
 import type { PhaseCompleteInfo } from '@/lib/focus/timer';
-import { GlobalAudioDock } from '../music/GlobalAudioDock';
+
 
 export function FocusRuntime() {
   // Hydration is app-wide: the first mount of this component loads the queue,
   // volume and scene from SQLite regardless of which route is visible.
   useMusicPlayer();
   useMusicCopilotCommands();
+
+  // The session's resting home is the sidebar player; the full-screen overlay
+  // belongs to /tasks. Leaving the page parks an open overlay in the rail so a
+  // hidden 'modal' state cannot reopen the overlay on the next visit.
+  const location = useLocation();
+  useEffect(() => {
+    if (location.pathname.startsWith('/tasks')) return;
+    const { displayMode, setDisplayMode } = useFocusStore.getState();
+    if (displayMode === 'modal') setDisplayMode('sidebar');
+  }, [location.pathname]);
 
   const running = useFocusStore((s) => s.timer.running);
   const phase = useFocusStore((s) => s.timer.phase);
@@ -192,5 +203,5 @@ export function FocusRuntime() {
     })();
   }, [running, phase, sceneId, sceneStarted]);
 
-  return <GlobalAudioDock />;
+  return null;
 }

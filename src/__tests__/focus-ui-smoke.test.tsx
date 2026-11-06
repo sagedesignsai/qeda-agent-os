@@ -21,13 +21,12 @@ import { FocusStatsStrip } from '../components/tasks/FocusStatsStrip';
 import { CopilotPanel } from '../components/copilot/CopilotPanel';
 import { HeaderLevelChip } from '../components/gamification/HeaderLevelChip';
 import { ParticleCanvas } from '../components/gamification/ParticleCanvas';
-import { FloatingFocusBar } from '../components/focus/FloatingFocusBar';
+import { SidebarFocusPlayer } from '../components/focus/SidebarFocusPlayer';
 import { FocusRuntime } from '../components/focus/FocusRuntime';
 import { SingleTaskLens } from '../components/tasks/SingleTaskLens';
 import { MorningKickoffDialog } from '../components/tasks/MorningKickoffDialog';
 import { ActiveLaunchpad } from '../components/tasks/ActiveLaunchpad';
 import { TodayEmptyHero } from '../components/tasks/TodayEmptyHero';
-import { GlobalAudioDock } from '../components/music/GlobalAudioDock';
 import { SidebarMusicPlayer } from '../components/music/SidebarMusicPlayer';
 import { PlayerTransport } from '../components/music/PlayerTransport';
 import { QueuePanel } from '../components/music/QueuePanel';
@@ -54,13 +53,12 @@ describe('focus system UI modules', () => {
       CopilotPanel,
       HeaderLevelChip,
       ParticleCanvas,
-      FloatingFocusBar,
+      SidebarFocusPlayer,
       FocusRuntime,
       SingleTaskLens,
       MorningKickoffDialog,
       ActiveLaunchpad,
       TodayEmptyHero,
-      GlobalAudioDock,
       SidebarMusicPlayer,
       PlayerTransport,
       QueuePanel,

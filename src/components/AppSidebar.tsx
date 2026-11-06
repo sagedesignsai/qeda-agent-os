@@ -76,6 +76,7 @@ import { projectIcon } from '@/components/projects/ProjectCard';
 import type { Project } from '@/main/ipc/channels';
 import { TerminalMenu } from '@/components/sidebar/TerminalMenu';
 import { SidebarMusicPlayer } from '@/components/music/SidebarMusicPlayer';
+import { SidebarFocusPlayer } from '@/components/focus/SidebarFocusPlayer';
 
 const STATUS_DOT: Record<string, string> = {
   active: 'bg-emerald-500',
@@ -407,6 +408,7 @@ export function AppSidebar({
       )}
 
       <SidebarFooter>
+        <SidebarFocusPlayer />
         <SidebarMusicPlayer />
 
         <SidebarMenu>

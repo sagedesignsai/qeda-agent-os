@@ -14,7 +14,6 @@ import '@testing-library/jest-dom';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import Music from '../renderer/pages/Music';
-import { GlobalAudioDock } from '../components/music/GlobalAudioDock';
 import { SidebarMusicPlayer } from '../components/music/SidebarMusicPlayer';
 import { QueuePanel } from '../components/music/QueuePanel';
 import { SidebarProvider } from '../components/ui/sidebar';
@@ -230,37 +229,6 @@ describe('music library UI', () => {
 
     expect(screen.getByText('Xtal')).toBeInTheDocument();
     expect(screen.getByText(/1 track/)).toBeInTheDocument();
-  });
-
-  it('keeps the floating dock to the focus session only', async () => {
-    useMusicStore.setState({
-      queue: [TRACK],
-      index: 0,
-      durationMs: TRACK.duration_ms,
-    });
-    useFocusStore.setState({
-      focusedTask: TASK,
-      displayMode: 'floating',
-      timer: {
-        phase: 'work',
-        secondsLeft: 1495,
-        running: true,
-        completed: 0,
-        phaseTotal: 1500,
-      },
-    });
-
-    render(
-      <MemoryRouter initialEntries={['/projects']}>
-        <GlobalAudioDock />
-      </MemoryRouter>,
-    );
-
-    expect(
-      await screen.findByText('Write executive summary'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('24:55')).toBeInTheDocument();
-    expect(screen.queryByText('Xtal')).not.toBeInTheDocument();
   });
 
   it('hosts now-playing in the sidebar rail', async () => {

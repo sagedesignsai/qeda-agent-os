@@ -67,19 +67,41 @@ export function getGamificationState(): GamificationState {
   return rowToState(row);
 }
 
-/** Award XP to the user, log to the ledger, and update level. */
+/**
+ * Award XP to the user, log to the ledger, and update level.
+ *
+ * `idempotencyKey` marks an award that may only ever land once (completing a
+ * task, ticking a step, a daily bonus). Re-awarding the same key is a no-op and
+ * returns `awarded: false`, which lets a retry, a reopened task, or a second
+ * mounted hook stay correct without the caller having to track state.
+ * Awards without a key (per-minute pomodoro XP) stay repeatable.
+ */
 export function awardXp(
   amount: number,
   source: string,
   entityId?: string,
-): { state: GamificationState; leveledUp: boolean } {
+  idempotencyKey?: string,
+): { state: GamificationState; leveledUp: boolean; awarded: boolean } {
   if (amount <= 0) {
-    return { state: getGamificationState(), leveledUp: false };
+    return { state: getGamificationState(), leveledUp: false, awarded: false };
   }
 
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
   const today = dayKey(now);
+
+  if (idempotencyKey) {
+    const seen = db
+      .prepare('SELECT 1 FROM xp_ledger WHERE idempotency_key = ?')
+      .get(idempotencyKey);
+    if (seen) {
+      return {
+        state: getGamificationState(),
+        leveledUp: false,
+        awarded: false,
+      };
+    }
+  }
 
   const prev = getGamificationState();
   const newXp = prev.currentXp + amount;
@@ -103,9 +125,16 @@ export function awardXp(
   const tx = db.transaction(() => {
     // 1. Insert XP ledger entry
     db.prepare(
-      `INSERT INTO xp_ledger (id, amount, source, entity_id, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(nanoid(), amount, source, entityId ?? null, now);
+      `INSERT INTO xp_ledger (id, amount, source, entity_id, idempotency_key, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      nanoid(),
+      amount,
+      source,
+      entityId ?? null,
+      idempotencyKey ?? null,
+      now,
+    );
 
     // 2. Update gamification state
     db.prepare(
@@ -121,7 +150,7 @@ export function awardXp(
 
   tx();
 
-  return { state: getGamificationState(), leveledUp };
+  return { state: getGamificationState(), leveledUp, awarded: true };
 }
 
 /** Consume a streak shield to preserve the streak. */

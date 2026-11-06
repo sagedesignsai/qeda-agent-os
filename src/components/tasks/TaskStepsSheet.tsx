@@ -99,13 +99,6 @@ export function TaskStepsSheet({
 
   const toggleStep = async (step: TaskStep) => {
     const next = step.done ? 0 : 1;
-    if (!step.done) {
-      void gamification.awardXp(
-        XP_REWARDS.STEP_COMPLETE,
-        'step_complete',
-        step.id,
-      );
-    }
     setSteps((prev) =>
       prev.map((s) => (s.id === step.id ? { ...s, done: next } : s)),
     );
@@ -114,6 +107,16 @@ export function TaskStepsSheet({
         id: step.id,
         done: !step.done,
       });
+      // Award only after the write lands, and only once per step: toggling a
+      // step off and on again is the same completion.
+      if (!step.done) {
+        void gamification.awardXp(
+          XP_REWARDS.STEP_COMPLETE,
+          'step_complete',
+          step.id,
+          `step_done:${step.id}`,
+        );
+      }
       onChanged?.();
     } catch {
       setSteps((prev) =>

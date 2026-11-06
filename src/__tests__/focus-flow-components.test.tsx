@@ -1,7 +1,7 @@
 /**
  * __tests__/focus-flow-components.test.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Unit tests for SingleTaskLens and FloatingFocusBar components.
+ * Unit tests for SingleTaskLens and the sidebar focus player.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -13,11 +13,31 @@ import {
   fireEvent,
   waitFor,
 } from '@testing-library/react';
+import { MemoryRouter, useLocation } from 'react-router';
 import { SingleTaskLens } from '../components/tasks/SingleTaskLens';
-import { FloatingFocusBar } from '../components/focus/FloatingFocusBar';
+import { SidebarFocusPlayer } from '../components/focus/SidebarFocusPlayer';
+import { SidebarProvider } from '../components/ui/sidebar';
 import { useFocusStore } from '../stores/focus-store';
 import type { Task } from '../main/ipc/channels';
 import type { FocusTimerState } from '../lib/focus/timer';
+
+// `SidebarProvider` reads `use-mobile`, which calls matchMedia. jsdom does not
+// implement it, so every sidebar-hosted component needs the shim.
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }),
+  });
+});
 
 const MOCK_TASKS: Task[] = [
   {
@@ -124,18 +144,53 @@ describe('SingleTaskLens', () => {
   });
 });
 
-describe('FloatingFocusBar', () => {
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location">{`${location.pathname}${location.search}`}</div>
+  );
+}
+
+describe('SidebarFocusPlayer', () => {
   beforeEach(() => {
     Object.defineProperty(window, 'electron', {
       writable: true,
       value: {
         ipc: {
-          invoke: jest.fn(() => Promise.resolve(undefined)),
+          invoke: jest.fn((channel: string) => {
+            if (channel === 'projects:get') {
+              return Promise.resolve({ id: 'p1', name: 'Project One' });
+            }
+            if (channel === 'settings:get') {
+              return Promise.resolve({ activeProjectId: '' });
+            }
+            if (channel === 'tasks:steps-list') {
+              return Promise.resolve([
+                {
+                  id: 'step-1',
+                  task_id: 'task-1',
+                  title: 'Outline sections',
+                  done: 0,
+                  position: 0,
+                  created_at: 1,
+                },
+                {
+                  id: 'step-2',
+                  task_id: 'task-1',
+                  title: 'Draft the summary',
+                  done: 1,
+                  position: 1,
+                  created_at: 2,
+                },
+              ]);
+            }
+            return Promise.resolve(undefined);
+          }),
           on: () => () => {},
         },
       },
     });
-    // The bar reads the app-wide store rather than props; seed a session and
+    // The player reads the app-wide store rather than props; seed a session and
     // then pin the countdown so the assertion is deterministic. Store writes
     // outside `act` make React warn about updates it did not schedule.
     act(() => {
@@ -151,27 +206,55 @@ describe('FloatingFocusBar', () => {
     });
   });
 
-  it('renders active countdown, title, and 1-click completion button', () => {
-    const onExpand = jest.fn();
+  const renderPlayer = (entry = '/chat?project=p1') =>
+    render(
+      <MemoryRouter initialEntries={[entry]}>
+        <SidebarProvider>
+          <SidebarFocusPlayer />
+          <LocationProbe />
+        </SidebarProvider>
+      </MemoryRouter>,
+    );
 
-    render(<FloatingFocusBar onExpand={onExpand} />);
+  it('renders active countdown, title, and 1-click completion in the rail', () => {
+    renderPlayer();
 
     expect(screen.getByText('24:55')).toBeInTheDocument();
     expect(screen.getByText('Write executive summary')).toBeInTheDocument();
     expect(screen.getByText('Complete')).toBeInTheDocument();
-    expect(screen.getByText('+100 XP')).toBeInTheDocument();
+    expect(screen.getByText('+100')).toBeInTheDocument();
 
-    const pauseBtn = screen.getByTitle('Pause timer');
-    fireEvent.click(pauseBtn);
+    fireEvent.click(screen.getByLabelText('Pause timer'));
     expect(useFocusStore.getState().timer.running).toBe(false);
+  });
 
-    const expandBtn = screen.getByTitle('Maximize focus mode');
-    fireEvent.click(expandBtn);
-    expect(onExpand).toHaveBeenCalled();
+  it('maximizes into the current project scope', () => {
+    renderPlayer();
+
+    fireEvent.click(screen.getByLabelText('Maximize focus mode'));
+
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/tasks?project=p1',
+    );
+    expect(useFocusStore.getState().displayMode).toBe('modal');
+  });
+
+  it('surfaces the next step and completes it from the rail', async () => {
+    renderPlayer();
+
+    expect(await screen.findByText(/1\/2 steps/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByText('Outline sections'));
+
+    await waitFor(() =>
+      expect(window.electron.ipc.invoke).toHaveBeenCalledWith(
+        'tasks:step-toggle',
+        { id: 'step-1', done: true },
+      ),
+    );
   });
 
   it('marks the task done through IPC and clears the session', async () => {
-    render(<FloatingFocusBar onExpand={jest.fn()} />);
+    renderPlayer();
 
     fireEvent.click(screen.getByText('Complete'));
 

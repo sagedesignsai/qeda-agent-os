@@ -5,9 +5,9 @@
  *
  * The Tasks page used to own this because the bar was only rendered there. Now
  * the bar is app-wide, so the IPC calls that mark a task done and award XP need
- * to be callable from outside the page. Both writes are idempotent enough for a
- * double click: the second `tasks:update` is a no-op patch, and XP is awarded
- * per click — which is why the bar disables while the call is in flight.
+ * to be callable from outside the page. Both writes are idempotent for a double
+ * click: the second `tasks:update` is a no-op patch, and the XP award carries a
+ * per-task key so main refuses to pay for the same completion twice.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -23,5 +23,6 @@ export async function completeTask(task: Task): Promise<void> {
     amount: xpForTaskPriority(task.priority),
     source: `task_p${task.priority}`,
     entityId: task.id,
+    idempotencyKey: `task_done:${task.id}`,
   });
 }

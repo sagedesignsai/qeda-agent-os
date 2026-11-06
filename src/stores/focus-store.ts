@@ -28,7 +28,12 @@ import {
   type PhaseCompleteInfo,
 } from '@/lib/focus/timer';
 
-export type FocusDisplayMode = 'modal' | 'floating' | 'closed';
+/**
+ * `sidebar` is the resting state: the session lives in the rail player and the
+ * full-screen overlay is closed. `modal` is the expanded overlay, which only
+ * the Tasks page renders. `closed` means no session at all.
+ */
+export type FocusDisplayMode = 'modal' | 'sidebar' | 'closed';
 
 interface FocusStoreState {
   focusedTask: Task | null;

@@ -37,6 +37,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useGamification } from '@/hooks/use-gamification';
 import { triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
 import { XP_REWARDS } from '@/lib/gamification';
+import { localDayKey } from '@/lib/focus/daily-key';
 import type { Task } from '@/main/ipc/channels';
 
 export interface MorningKickoffDialogProps {
@@ -124,6 +125,9 @@ export function MorningKickoffDialog({
         XP_REWARDS.DAY_PLAN,
         'morning_kickoff',
         highlightId,
+        // Once per day, not once per highlight task: a second kickoff the same
+        // day is a re-plan, not a second reward.
+        `morning_kickoff:${localDayKey()}`,
       );
       triggerParticleBurst(e.clientX, e.clientY);
 
