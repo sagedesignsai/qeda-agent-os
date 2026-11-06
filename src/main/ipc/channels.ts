@@ -11,6 +11,12 @@ import type { UIMessage } from 'ai';
 import type { Session } from '../db/sessions.js';
 import type { AppSettings } from '../ai/settings.js';
 import type { MotionDocument } from '../../lib/motion/types';
+import type { TraceProject } from '../../lib/trace/types';
+import type {
+  TraceOpenResult,
+  TraceProjectSummary,
+} from '../trace/trace-project-store.js';
+export type { TraceOpenResult, TraceProjectSummary };
 import type { MotionAsset } from '../../lib/motion/types';
 import type { MotionAssetCommit, MotionImportError, MotionStagedAsset } from '../motion/asset-store.js';
 import type { MotionBackupSummary, MotionOpenResult, MotionProjectSummary } from '../motion/project-store.js';
@@ -424,6 +430,19 @@ export interface IpcChannels {
   'motion:list-local-models': { req: void; res: MotionLocalModelEntry[] };
   'motion:import-local-model': { req: { projectId: string; modelId: string }; res: { items: MotionStagedAsset[]; errors: MotionImportError[] } };
   'motion:changed': void;
+
+  // ── Nova Trace (2D vector motion) ──────────────────────────────────────────
+  'trace:list-projects': { req: { includeMissing?: boolean } | void; res: { projects: TraceProjectSummary[] } };
+  'trace:create-project': {
+    req: { name: string; templateId?: string; width?: number; height?: number };
+    res: { projectId: string; path: string };
+  };
+  'trace:open-project': { req: { projectId: string }; res: TraceOpenResult };
+  'trace:save-project': { req: { projectId: string; project: TraceProject; expectedRevision: number }; res: { revision: number; savedAt: string } };
+  'trace:rename-project': { req: { projectId: string; name: string }; res: { name: string } };
+  'trace:delete-project': { req: { projectId: string }; res: { deleted: boolean } };
+  'trace:reveal-project': { req: { projectId: string }; res: void };
+  'trace:changed': void;
   // Export: the editor starts/cancels; the hidden render window reports chunks.
   'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
   'motion:pick-export-path': { req: { projectName: string; presetId: string }; res: { path: string } | null };

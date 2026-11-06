@@ -939,6 +939,31 @@ CREATE INDEX IF NOT EXISTS idx_motion_projects_updated ON motion_projects(update
 `;
 
 /**
+ * Nova Trace project catalog. Separate from `motion_projects`: the 2D vector
+ * system and the 3D scene editor share no documents.
+ */
+export const CREATE_TRACE_PROJECTS = `
+CREATE TABLE IF NOT EXISTS trace_projects (
+  id             TEXT PRIMARY KEY,
+  name           TEXT NOT NULL,
+  path           TEXT NOT NULL,
+  width          INTEGER NOT NULL DEFAULT 1920,
+  height         INTEGER NOT NULL DEFAULT 1080,
+  duration_ms    REAL NOT NULL DEFAULT 0,
+  fps            INTEGER NOT NULL DEFAULT 60,
+  element_count  INTEGER NOT NULL DEFAULT 0,
+  scene_count    INTEGER NOT NULL DEFAULT 1,
+  revision       INTEGER NOT NULL DEFAULT 0,
+  thumbnail_svg  TEXT,
+  last_opened_at TEXT,
+  updated_at     TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  missing        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_trace_projects_updated ON trace_projects(updated_at DESC);
+`;
+
+/**
  * sequence_steps – the plan, in order.
  *
  * `config_json` holds per-kind settings (a wait's days, an escalate's priority) so
@@ -1216,6 +1241,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SEQUENCE_RUNS,
   CREATE_SEQUENCE_STEP_RUNS,
   CREATE_MOTION_PROJECTS,
+  CREATE_TRACE_PROJECTS,
 ];
 
 /** Bookkeeping table for future schema versions. */

@@ -67,6 +67,7 @@ import {
   WandSparklesIcon,
   SendIcon,
   BoxIcon,
+  PenToolIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjects } from '@/hooks/use-projects';
@@ -108,6 +109,9 @@ const NAV_ITEMS = [
   // Motion renders staged 3D hero shots; Showcase Studio captures real footage.
   // Adjacent in the rail, but separate tools with separate engines.
   { to: '/motion', label: 'Motion', icon: BoxIcon },
+  // Nova Trace is Motion's 2D sibling: SVG elements and keyframe tracks. Same
+  // rail, completely separate document, store and renderer.
+  { to: '/trace', label: 'Trace', icon: PenToolIcon },
   { to: '/music', label: 'Music', icon: AudioLinesIcon },
   { to: '/terminal', label: 'Terminal', icon: TerminalIcon },
   { to: '/builder', label: 'Builder', icon: WandSparklesIcon },

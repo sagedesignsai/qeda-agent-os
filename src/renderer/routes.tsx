@@ -33,6 +33,8 @@ import Studio from './pages/Studio';
 import Music from './pages/Music';
 import Motion from './pages/Motion';
 import MotionBrowser from './pages/MotionBrowser';
+import Trace from './pages/Trace';
+import TraceBrowser from './pages/TraceBrowser';
 import Workspace from './pages/Workspace';
 import Builder from './pages/Builder';
 import OfflineAI from './pages/OfflineAI';
@@ -84,6 +86,16 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <MotionBrowser /> },
           { path: ':projectId', element: <Motion /> },
+        ],
+      },
+
+      // Nova Trace is the 2D vector motion workspace: SVG elements and keyframe
+      // tracks. It shares no document, store or renderer with 3D Motion.
+      {
+        path: 'trace',
+        children: [
+          { index: true, element: <TraceBrowser /> },
+          { path: ':projectId', element: <Trace /> },
         ],
       },
 
