@@ -312,23 +312,133 @@ export function TodayTimeline({
           <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : blocks.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <TodayEmptyHero
-            recommendation={recommendation}
-            openTasksCount={openTasks.length}
-            streakDays={stats?.streakDays ?? gamification.state?.streakDays ?? 0}
-            onStartFlow={(task, e) => {
-              triggerParticleBurst(e.clientX, e.clientY);
-              onFocusTask(task);
-            }}
-            onOpenSteps={onOpenSteps}
-            onShuffle={() => setShuffleIndex((prev) => prev + 1)}
-            onOpenKickoff={() => setKickoffOpen(true)}
-            onAutoPlan={() => void planMyDay()}
-            onSendPrompt={onSendPrompt}
-            onOpenBrainDump={onOpenBrainDump}
-            planning={planning}
-          />
+        <div className="flex min-h-0 flex-col gap-3 lg:flex-1 lg:flex-row">
+          {/* Left: kickoff hero */}
+          <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
+            <header className="px-1 pb-2">
+              <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                Start your day
+              </h3>
+            </header>
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+              <TodayEmptyHero
+                recommendation={recommendation}
+                openTasksCount={openTasks.length}
+                streakDays={stats?.streakDays ?? gamification.state?.streakDays ?? 0}
+                onStartFlow={(task, e) => {
+                  triggerParticleBurst(e.clientX, e.clientY);
+                  onFocusTask(task);
+                }}
+                onOpenSteps={onOpenSteps}
+                onShuffle={() => setShuffleIndex((prev) => prev + 1)}
+                onOpenKickoff={() => setKickoffOpen(true)}
+                onAutoPlan={() => void planMyDay()}
+                onSendPrompt={onSendPrompt}
+                onOpenBrainDump={onOpenBrainDump}
+                planning={planning}
+              />
+            </div>
+          </section>
+
+          {/* Right: Up next (same queue as the scheduled dashboard, minus
+              Copilot/Launchpad which the hero already owns). Keeps the empty
+              day a 2-col fixed dashboard instead of a scrolling card. */}
+          <aside className="flex w-full shrink-0 flex-col gap-3 pr-1 lg:min-h-0 lg:w-[340px] lg:overflow-y-auto">
+            <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/60 bg-card/40">
+              <header className="flex shrink-0 items-center justify-between px-3 pt-2.5 pb-1.5">
+                <h3 className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                  <ListTodoIcon className="size-3.5" />
+                  Up next
+                </h3>
+                <span className="text-[11px] tabular-nums text-muted-foreground">
+                  {queue.length} open
+                </span>
+              </header>
+              {queue.length === 0 ? (
+                <p className="px-3 pb-3 text-xs text-muted-foreground">
+                  Nothing open. Brain-dump a thought or create a task to get
+                  going.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-1 px-2 pb-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                  {queue.slice(0, 8).map((task) => {
+                    const prog =
+                      stepProgress?.[task.id] ??
+                      ({ total: 0, done: 0 } as const);
+                    return (
+                      <li
+                        key={task.id}
+                        className="flex items-center gap-2 rounded-md border border-border/40 bg-card px-2.5 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium">
+                            {task.title}
+                          </p>
+                          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                            <span
+                              className={cn(
+                                'font-medium',
+                                task.priority === 1
+                                  ? 'text-rose-400'
+                                  : task.priority === 2
+                                    ? 'text-amber-400'
+                                    : 'text-muted-foreground',
+                              )}
+                            >
+                              P{task.priority}
+                            </span>
+                            {task.estimate_mins ? (
+                              <span className="flex items-center gap-0.5 tabular-nums">
+                                <ClockIcon className="size-2.5" />
+                                {task.estimate_mins}m
+                              </span>
+                            ) : null}
+                            {prog.total > 0 ? (
+                              <span className="flex items-center gap-0.5 tabular-nums">
+                                <CheckIcon className="size-2.5" />
+                                {prog.done}/{prog.total}
+                              </span>
+                            ) : null}
+                            {task.status === 'active' ? (
+                              <span className="text-emerald-500">· Active</span>
+                            ) : null}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 shrink-0 gap-1 text-[11px] text-muted-foreground"
+                          onClick={() => onFocusTask(task)}
+                        >
+                          <ZapIcon className="size-3" />
+                          Start…
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+
+            <section className="shrink-0 rounded-lg border border-dashed border-border/60 bg-card/30 px-3 py-3">
+              <p className="text-xs font-medium">No blocks yet</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Schedule time for what matters most. Blocks turn open tasks
+                into a real plan.
+              </p>
+              <Button
+                size="sm"
+                className="mt-2 h-7 gap-1.5 text-xs"
+                onClick={() => {
+                  setPresetTaskId(null);
+                  setScheduleOpen(true);
+                }}
+              >
+                <CalendarPlusIcon className="size-3" />
+                Block time
+              </Button>
+            </section>
+          </aside>
         </div>
       ) : (
         <div className="flex min-h-0 flex-col gap-3 lg:flex-1 lg:flex-row">
