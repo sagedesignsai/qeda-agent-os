@@ -875,6 +875,8 @@ export interface IpcChannels {
     toModel: string;
     reason: string;
   };
+  /** Abort the in-flight chat turn (the kill switch). */
+  'agent:abort': { req: void; res: void };
   /** Pushed when the agent creates or updates its plan. */
   'agent:plan-event': { data: AgentPlanEvent };
 

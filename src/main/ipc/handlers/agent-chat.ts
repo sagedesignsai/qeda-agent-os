@@ -17,8 +17,15 @@ import {
 } from '../../ai/fallback';
 import { prepareModelMessages } from '../../ai/messages';
 import { resolveModelChain } from '../../ai/provider';
-import { type AgentIntent, type ChatContext, type AgentPlanEvent } from '../channels';
+import {
+  type AgentIntent,
+  type ChatContext,
+  type AgentPlanEvent,
+} from '../channels';
 import { getAgent, detectMode } from '../agent-runtime';
+
+/** Track active stream AbortControllers per session to support cancellation. */
+const activeStreamControllers = new Map<string, AbortController>();
 
 export function registerAgentChatHandlers({
   mainWindow,
@@ -41,7 +48,13 @@ export function registerAgentChatHandlers({
         intent?: AgentIntent;
       },
     ) => {
+      // Clean up any previous controller for this session
+      activeStreamControllers.delete(sessionId);
+      const abortController = new AbortController();
+      activeStreamControllers.set(sessionId, abortController);
+
       const fail = (err: unknown) => {
+        activeStreamControllers.delete(sessionId);
         if (mainWindow.isDestroyed()) return;
         mainWindow.webContents.send('agent:stream-error', {
           error: err instanceof Error ? err.message : String(err),
@@ -66,6 +79,17 @@ export function registerAgentChatHandlers({
         let lastError: unknown;
 
         for (let attempt = 0; attempt < chain.length; attempt += 1) {
+          // Check if stream was aborted
+          if (abortController.signal.aborted) {
+            activeStreamControllers.delete(sessionId);
+            if (!mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('agent:stream-error', {
+                error: 'Stream cancelled by user',
+              });
+            }
+            return;
+          }
+
           const target = chain[attempt];
           // Once a content-bearing chunk has reached the renderer this attempt
           // is committed: retrying elsewhere would duplicate or contradict
@@ -93,6 +117,15 @@ export function registerAgentChatHandlers({
             let streamError: unknown;
             for await (const chunk of result.fullStream) {
               if (mainWindow.isDestroyed()) return;
+              if (abortController.signal.aborted) {
+                activeStreamControllers.delete(sessionId);
+                if (!mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('agent:stream-error', {
+                    error: 'Stream cancelled by user',
+                  });
+                }
+                return;
+              }
               if (chunk?.type === 'error') {
                 streamError = chunk.error;
                 break;
@@ -109,6 +142,7 @@ export function registerAgentChatHandlers({
             // Persistence is handled by the renderer via
             // `sessions:save-messages` once it has folded the stream into
             // UIMessages – the raw model messages are not in UIMessage shape.
+            activeStreamControllers.delete(sessionId);
             mainWindow.webContents.send('agent:stream-done', { sessionId });
             return;
           } catch (err) {
@@ -139,4 +173,15 @@ export function registerAgentChatHandlers({
       }
     },
   );
+
+  // Handle abort requests
+  ipcMain.handle('agent:abort', async () => {
+    // Note: The sessionId is not passed, so we abort the most recent stream.
+    // In a multi-window scenario this would need refinement, but for a single
+    // window this is sufficient. A better approach would be to pass sessionId.
+    for (const controller of activeStreamControllers.values()) {
+      controller.abort();
+    }
+    activeStreamControllers.clear();
+  });
 }

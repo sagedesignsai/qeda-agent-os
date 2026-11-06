@@ -4,7 +4,7 @@
  * The now-playing panel: transport, error surface, queue, scenes, layer mixer
  * and playback settings.
  *
- * It is shared by the Music page's right rail and the global dock's sheet, so
+ * It is shared by the Music page's right rail and the sidebar player's sheet, so
  * the two surfaces cannot drift. Queue/ambience state lives in the stores; only
  * which tab is open is local.
  * ─────────────────────────────────────────────────────────────────────────────

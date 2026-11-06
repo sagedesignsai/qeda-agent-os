@@ -11,7 +11,8 @@
  *   Level 2 — Section submenu, auto-selected from the route:
  *             /chat*      → conversation list  (ChatMenu)
  *             /workspace* → notebook/page tree (WorkspaceMenu)
- *   Footer (always visible): model, theme, settings.
+ *   Footer (always visible): now-playing when audible (collapsed ring /
+ *             expanded mini player), project, model, theme, settings.
  *
  * Each submenu has a "Main menu" row that returns to Level 1 for the current
  * location. While the rail is collapsed to icons it always shows Level 1 (the
@@ -74,6 +75,7 @@ import { useIpcEvent } from '@/hooks/use-ipc';
 import { projectIcon } from '@/components/projects/ProjectCard';
 import type { Project } from '@/main/ipc/channels';
 import { TerminalMenu } from '@/components/sidebar/TerminalMenu';
+import { SidebarMusicPlayer } from '@/components/music/SidebarMusicPlayer';
 
 const STATUS_DOT: Record<string, string> = {
   active: 'bg-emerald-500',
@@ -99,7 +101,7 @@ const NAV_ITEMS = [
   // the relationship to what is already overdue is discoverable rather than
   // something the user has to remember exists.
   { to: '/correspondence', label: 'Correspondence', icon: SendIcon },
-  { to: '/workspace', label: 'Knowledge', icon: NotebookIcon },
+  { to: '/workspace', label: 'Notebooks', icon: NotebookIcon },
   { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },
   // Motion renders staged 3D hero shots; Showcase Studio captures real footage.
@@ -405,6 +407,8 @@ export function AppSidebar({
       )}
 
       <SidebarFooter>
+        <SidebarMusicPlayer />
+
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu modal={false}>

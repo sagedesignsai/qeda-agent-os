@@ -13,7 +13,6 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState } from 'react';
 import { ChatInput } from './ChatInput';
 import { cn } from '@/lib/utils';
 import {
@@ -22,17 +21,20 @@ import {
   ClipboardIcon,
   SparklesIcon,
   NotebookPenIcon,
-  ChevronDownIcon,
   type LucideIcon,
 } from 'lucide-react';
 import { useGenerateNotebook } from '@/components/GenerateNotebookDialog';
 import { QedaLogomark } from '@/components/QedaLogo';
-import { useIpcEvent } from '@/hooks/use-ipc';
 
 interface ChatWelcomeProps {
   onSend: (text: string) => void;
+  onStop?: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
+  /** Context selector component to render in footer */
+  contextControls?: React.ReactNode;
+  /** Web assets selector component to render in footer */
+  assetControls?: React.ReactNode;
 }
 
 interface Suggestion {
@@ -66,75 +68,23 @@ const SUGGESTIONS: Suggestion[] = [
     prompt:
       'How can I add custom tools to this desktop agent? Give me a concise example.',
   },
+  {
+    label: 'Deep research',
+    icon: SparklesIcon,
+    prompt:
+      'Conduct a deep research investigation on a topic of your choice, gathering sources and evidence with citations.',
+  },
 ];
-
-/** Static model readout for the composer footer. */
-function ModelIndicator() {
-  const [label, setLabel] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const s = await window.electron.ipc.invoke<{
-          activeProvider?: string;
-          activeModel?: string;
-        }>('settings:get');
-        if (cancelled) return;
-        setLabel(
-          [s?.activeProvider, s?.activeModel].filter(Boolean).join(' · '),
-        );
-      } catch {
-        if (!cancelled) setLabel('');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // This indicator mounts once per chat surface, long before the Settings
-  // dialog exists, so the one-shot fetch above went stale after a model
-  // change. Re-read on the same broadcast the sidebar footer listens to.
-  useIpcEvent(
-    'settings:changed',
-    () => {
-      void (async () => {
-        try {
-          const s = await window.electron.ipc.invoke<{
-            activeProvider?: string;
-            activeModel?: string;
-          }>('settings:get');
-          setLabel(
-            [s?.activeProvider, s?.activeModel].filter(Boolean).join(' · '),
-          );
-        } catch {
-          setLabel('');
-        }
-      })();
-    },
-    [],
-  );
-
-  if (!label) return null;
-
-  return (
-    <span className="flex min-w-0 items-center gap-1.5 px-1 text-xs text-muted-foreground">
-      <SparklesIcon className="size-3.5 shrink-0 text-primary/70" />
-      <span className="truncate">{label}</span>
-      <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
-    </span>
-  );
-}
 
 export function ChatWelcome({
   onSend,
+  onStop,
   disabled,
   isStreaming,
+  contextControls,
+  assetControls,
 }: ChatWelcomeProps) {
   const { open: openGenerateNotebook } = useGenerateNotebook();
-
-  const footerLeft = <ModelIndicator />;
 
   return (
     <div className="flex min-h-full w-full flex-col items-center justify-center px-4 pb-20">
@@ -154,10 +104,12 @@ export function ChatWelcome({
       <div className="mt-6 w-full max-w-2xl">
         <ChatInput
           onSend={onSend}
+          onStop={onStop}
           disabled={disabled}
           isStreaming={isStreaming}
           tall
-          footerLeft={footerLeft}
+          contextControls={contextControls}
+          assetControls={assetControls}
           placeholder="Research a topic, summarize your notes, or ask Qeda anything…"
         />
       </div>

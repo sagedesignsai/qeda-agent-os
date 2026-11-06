@@ -28,6 +28,7 @@ import { MorningKickoffDialog } from '../components/tasks/MorningKickoffDialog';
 import { ActiveLaunchpad } from '../components/tasks/ActiveLaunchpad';
 import { TodayEmptyHero } from '../components/tasks/TodayEmptyHero';
 import { GlobalAudioDock } from '../components/music/GlobalAudioDock';
+import { SidebarMusicPlayer } from '../components/music/SidebarMusicPlayer';
 import { PlayerTransport } from '../components/music/PlayerTransport';
 import { QueuePanel } from '../components/music/QueuePanel';
 import { ScenePicker } from '../components/music/ScenePicker';
@@ -60,13 +61,18 @@ describe('focus system UI modules', () => {
       ActiveLaunchpad,
       TodayEmptyHero,
       GlobalAudioDock,
+      SidebarMusicPlayer,
       PlayerTransport,
       QueuePanel,
       ScenePicker,
       SoundscapeMixer,
       TrackList,
     ]) {
-      expect(typeof component).toBe('function');
+      // `memo()` returns an object with $$typeof; plain components are functions.
+      expect(
+        typeof component === 'function' ||
+          (typeof component === 'object' && component !== null),
+      ).toBe(true);
     }
   });
 

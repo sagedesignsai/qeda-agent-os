@@ -11,7 +11,7 @@
  *     │                               session is created lazily by the first
  *     │                               message, not by landing here)
  *     │     └── /chat/:sessionId    – a specific conversation
- *     ├── /workspace                – Knowledge index (no page selected)
+ *     ├── /workspace                – Notebooks index (no page selected)
  *     │     ├── /workspace/:notebookId
  *     │     └── /workspace/:notebookId/:pageId
  *     └── *                         – redirects to /projects

@@ -8,7 +8,12 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
+import {
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from 'react-router';
 import { useAgentChat } from '@/hooks/use-agent-chat';
 import { MessageList } from '@/components/chat/MessageList';
 import { PlanPanel } from '@/components/plan/PlanPanel';
@@ -21,7 +26,13 @@ import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Trash2Icon, AlertCircleIcon, XIcon, GlobeIcon, CheckSquareIcon } from 'lucide-react';
+import {
+  Trash2Icon,
+  AlertCircleIcon,
+  XIcon,
+  GlobeIcon,
+  CheckSquareIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
@@ -183,6 +194,7 @@ export default function Chat() {
     dismissFallbackNotice,
     sendMessage,
     respondToApproval,
+    abortStream,
     clearMessages: rawClearMessages,
   } = useAgentChat({
     sessionId: sessionId ?? '',
@@ -191,13 +203,16 @@ export default function Chat() {
     intent,
   });
 
-  const { plan, clearPlan } = useIpcPlan('agent:plan-event', messages);
+  const { plan, clearPlan } = useIpcPlan(
+    'agent:plan-event',
+    messages,
+    sessionId,
+  );
 
   const clearMessages = () => {
     clearPlan();
     rawClearMessages();
   };
-
 
   // Auto-scroll to bottom on new messages.
   useEffect(() => {
@@ -294,7 +309,9 @@ export default function Chat() {
               >
                 <CheckSquareIcon className="size-2.5" />
                 <span className="max-w-[120px] truncate">
-                  {focusedTask?.title ? `Task: ${focusedTask.title}` : 'Task context'}
+                  {focusedTask?.title
+                    ? `Task: ${focusedTask.title}`
+                    : 'Task context'}
                 </span>
               </Badge>
             )}
@@ -360,8 +377,33 @@ export default function Chat() {
         {messages.length === 0 ? (
           <ChatWelcome
             onSend={handleSend}
+            onStop={abortStream}
             disabled={creating}
             isStreaming={status === 'streaming'}
+            contextControls={
+              <ChatContextPicker
+                value={chatContext}
+                onChange={(ctx) =>
+                  setChatContext((prev) => {
+                    const merged = { projectId: prev?.projectId, ...ctx };
+                    return Object.values(merged).some(Boolean)
+                      ? (merged as ChatContext)
+                      : undefined;
+                  })
+                }
+              />
+            }
+            assetControls={
+              <button
+                type="button"
+                onClick={() => setIsAssetModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 hover:text-foreground"
+                title="Download web assets"
+              >
+                <GlobeIcon className="size-3.5 shrink-0 text-primary/70" />
+                <span>Web assets</span>
+              </button>
+            }
           />
         ) : (
           <div className="mx-auto max-w-4xl space-y-3 p-4">
@@ -379,6 +421,7 @@ export default function Chat() {
               status={status}
               error={error}
               onApproval={respondToApproval}
+              onRetry={handleSend}
             />
           </div>
         )}
@@ -418,8 +461,33 @@ export default function Chat() {
           <div className="mx-auto max-w-4xl">
             <ChatInput
               onSend={handleSend}
+              onStop={abortStream}
               disabled={creating || status === 'streaming'}
               isStreaming={status === 'streaming'}
+              contextControls={
+                <ChatContextPicker
+                  value={chatContext}
+                  onChange={(ctx) =>
+                    setChatContext((prev) => {
+                      const merged = { projectId: prev?.projectId, ...ctx };
+                      return Object.values(merged).some(Boolean)
+                        ? (merged as ChatContext)
+                        : undefined;
+                    })
+                  }
+                />
+              }
+              assetControls={
+                <button
+                  type="button"
+                  onClick={() => setIsAssetModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 hover:text-foreground"
+                  title="Download web assets"
+                >
+                  <GlobeIcon className="size-3.5 shrink-0 text-primary/70" />
+                  <span>Web assets</span>
+                </button>
+              }
               placeholder="Ask a follow up question… (Enter to send, Shift+Enter for newline)"
             />
           </div>

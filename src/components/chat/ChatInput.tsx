@@ -26,6 +26,10 @@ interface ChatInputProps {
   placeholder?: string;
   /** Rendered at the start of the footer row — e.g. a model indicator. */
   footerLeft?: ReactNode;
+  /** Context selector to render in footer (chat page) */
+  contextControls?: ReactNode;
+  /** Web assets button to render in footer (chat page) */
+  assetControls?: ReactNode;
   /** Taller textarea, for the empty-state hero composer. */
   tall?: boolean;
   className?: string;
@@ -62,6 +66,8 @@ export function ChatInput({
   isStreaming = false,
   placeholder = 'Ask me anything… (Enter to send, Shift+Enter for newline)',
   footerLeft,
+  contextControls,
+  assetControls,
   tall = false,
   className,
   value,
@@ -86,36 +92,59 @@ export function ChatInput({
   };
 
   return (
-    <PromptInput onSubmit={handleSubmit} className={className}>
-      <PromptInputBody>
-        <PromptInputTextarea
-          placeholder={placeholder}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          disabled={disabled && !isStreaming}
-          className={cn('resize-none', tall ? 'min-h-28' : 'min-h-[56px]')}
-        />
-      </PromptInputBody>
-      {/* With a footer-left slot the row splits (indicator | right cluster);
-          without one it collapses to a right-aligned cluster. The right cluster
-          keeps `beforeSubmit` and the submit button adjacent, because a control
-          that qualifies the submit action should read as part of it. */}
-      <PromptInputFooter
-        className={cn(
-          'gap-1.5',
-          footerLeft ? 'justify-between' : 'justify-end',
-        )}
-      >
-        {footerLeft ? <PromptInputTools>{footerLeft}</PromptInputTools> : null}
-        <div className="flex shrink-0 items-center gap-1.5">
-          {beforeSubmit}
-          <PromptInputSubmit
-            status={isStreaming ? 'streaming' : undefined}
-            onStop={onStop}
-            disabled={!text.trim() && !isStreaming}
+    <div
+      data-streaming={isStreaming ? 'true' : undefined}
+      className={cn(
+        'rounded-lg border transition-all duration-300',
+        isStreaming
+          ? 'border-primary/40 shadow-lg shadow-primary/20'
+          : 'border-border',
+      )}
+      style={
+        isStreaming
+          ? { animation: 'border-shimmer 3s ease-in-out infinite' }
+          : undefined
+      }
+    >
+      <PromptInput onSubmit={handleSubmit} className={className}>
+        <PromptInputBody>
+          <PromptInputTextarea
+            placeholder={placeholder}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={disabled && !isStreaming}
+            className={cn('resize-none', tall ? 'min-h-28' : 'min-h-[56px]')}
           />
-        </div>
-      </PromptInputFooter>
-    </PromptInput>
+        </PromptInputBody>
+        {/* With a footer-left slot the row splits (indicator | right cluster);
+            without one it collapses to a right-aligned cluster. The right cluster
+            keeps `beforeSubmit` and the submit button adjacent, because a control
+            that qualifies the submit action should read as part of it. */}
+        <PromptInputFooter
+          className={cn(
+            'gap-1.5',
+            footerLeft || contextControls || assetControls
+              ? 'justify-between'
+              : 'justify-end',
+          )}
+        >
+          {(footerLeft || contextControls || assetControls) && (
+            <PromptInputTools className="flex gap-2">
+              {footerLeft}
+              {contextControls}
+              {assetControls}
+            </PromptInputTools>
+          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {beforeSubmit}
+            <PromptInputSubmit
+              status={isStreaming ? 'streaming' : undefined}
+              onStop={onStop}
+              disabled={!text.trim() && !isStreaming}
+            />
+          </div>
+        </PromptInputFooter>
+      </PromptInput>
+    </div>
   );
 }

@@ -161,6 +161,39 @@ function getFriendlyToolSummary(
     case 'searchDocs':
       title = 'Search workspace documents';
       break;
+    case 'startResearchRun':
+      title = 'Starting research investigation';
+      break;
+    case 'recordSource': {
+      const q = typeof input.text === 'string' ? input.text : '';
+      title = q
+        ? `Recording quote: "${q.length > 40 ? q.slice(0, 37) + '…' : q}"`
+        : 'Recording source quote';
+      break;
+    }
+    case 'recordEvidence': {
+      const q = typeof input.text === 'string' ? input.text : '';
+      title = q
+        ? `Recording evidence: "${q.length > 40 ? q.slice(0, 37) + '…' : q}"`
+        : 'Recording evidence';
+      break;
+    }
+    case 'completeResearchRun':
+      title = 'Finalizing research run';
+      break;
+    case 'advancedSearch': {
+      const q = typeof input.query === 'string' ? input.query : '';
+      title = q
+        ? `Searching for "${q.length > 32 ? q.slice(0, 30) + '…' : q}"`
+        : 'Searching web';
+      break;
+    }
+    case 'scrapePage': {
+      const url = typeof input.url === 'string' ? input.url : '';
+      const domain = url ? new URL(url).hostname : '';
+      title = domain ? `Scraping ${domain}` : 'Scraping webpage';
+      break;
+    }
     default:
       title = toolName;
   }
@@ -184,7 +217,6 @@ export function ToolCard({
   const navigate = useNavigate();
 
   const isRunning = state === 'input-streaming' || state === 'input-available';
-  const isDenied = state === 'output-denied';
   const isDone = state === 'output-available';
   const isError =
     state === 'output-error' ||

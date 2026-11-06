@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
+import { useIpcEvent } from '@/hooks/use-ipc';
 
 interface Session {
   id: string;
@@ -88,6 +89,15 @@ export function ChatMenu({ onBack }: { onBack: () => void }) {
       cancelled = true;
     };
   }, [activeId, projectId]);
+
+  // Listen for realtime session changes (rename, create, delete)
+  useIpcEvent(
+    'sessions:changed',
+    () => {
+      reload();
+    },
+    [],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

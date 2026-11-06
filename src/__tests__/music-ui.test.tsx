@@ -5,8 +5,8 @@
  *
  * These tests deliberately stop at "the right data reaches the right controls".
  * Audio is the engine's job and is covered by the pure queue/crossfade tests;
- * what breaks here is a missing channel, a stale selector, or a dock that
- * disappears while a session is running.
+ * what breaks here is a missing channel, a stale selector, or a rail player /
+ * focus dock that disappears while a session is running.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -15,7 +15,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import Music from '../renderer/pages/Music';
 import { GlobalAudioDock } from '../components/music/GlobalAudioDock';
+import { SidebarMusicPlayer } from '../components/music/SidebarMusicPlayer';
 import { QueuePanel } from '../components/music/QueuePanel';
+import { SidebarProvider } from '../components/ui/sidebar';
+import { TooltipProvider } from '../components/ui/tooltip';
 import { useMusicStore } from '../stores/music-store';
 import { useFocusStore } from '../stores/focus-store';
 import type { MusicTrack } from '../lib/music/types';
@@ -32,6 +35,20 @@ class ResizeObserverStub {
 beforeAll(() => {
   globalThis.ResizeObserver =
     ResizeObserverStub as unknown as typeof ResizeObserver;
+  // jsdom has no matchMedia; SidebarProvider's useIsMobile needs one.
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
 });
 
 const TRACK: MusicTrack = {
@@ -215,7 +232,7 @@ describe('music library UI', () => {
     expect(screen.getByText(/1 track/)).toBeInTheDocument();
   });
 
-  it('keeps the focus session and transport in one dock', async () => {
+  it('keeps the floating dock to the focus session only', async () => {
     useMusicStore.setState({
       queue: [TRACK],
       index: 0,
@@ -239,8 +256,33 @@ describe('music library UI', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Xtal')).toBeInTheDocument();
-    expect(screen.getByText('Write executive summary')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Write executive summary'),
+    ).toBeInTheDocument();
     expect(screen.getByText('24:55')).toBeInTheDocument();
+    expect(screen.queryByText('Xtal')).not.toBeInTheDocument();
+  });
+
+  it('hosts now-playing in the sidebar rail', async () => {
+    useMusicStore.setState({
+      queue: [TRACK],
+      index: 0,
+      durationMs: TRACK.duration_ms,
+      playing: true,
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/projects']}>
+        <TooltipProvider>
+          <SidebarProvider defaultOpen>
+            <SidebarMusicPlayer />
+          </SidebarProvider>
+        </TooltipProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Xtal')).toBeInTheDocument();
+    expect(screen.getByLabelText('Pause')).toBeInTheDocument();
+    expect(screen.getByLabelText('Open audio panel')).toBeInTheDocument();
   });
 });

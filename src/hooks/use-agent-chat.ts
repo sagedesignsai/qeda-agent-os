@@ -125,6 +125,8 @@ export interface UseAgentChatReturn {
   dismissFallbackNotice: () => void;
   sendMessage: (text: string) => void;
   respondToApproval: (args: RespondToApprovalArgs) => void;
+  /** Abort the in-flight stream (no-op if not streaming). */
+  abortStream: () => void;
   clearMessages: () => void;
 }
 
@@ -450,6 +452,15 @@ export function useAgentChat({
     setError(undefined);
   }, [commitMessages]);
 
+  // ── Abort the in-flight stream ────────────────────────────────────────────
+
+  const abortStream = useCallback(() => {
+    if (!streamingRef.current) return;
+    window.electron.ipc.invoke('agent:abort').catch(() => {
+      // Ignore errors from abort – the stream may have already completed.
+    });
+  }, []);
+
   // ── Hydrate from the database when the session changes ────────────────────
 
   const hydrationTokenRef = useRef(0);
@@ -494,6 +505,7 @@ export function useAgentChat({
     dismissFallbackNotice,
     sendMessage,
     respondToApproval,
+    abortStream,
     clearMessages,
   };
 }

@@ -29,6 +29,7 @@ import {
   usePageSearch,
   useRecentPages,
 } from '@/hooks/use-workspace';
+import { useProjectScope } from '@/hooks/use-project-scope';
 import { BlockEditor } from '@/components/workspace/BlockEditor';
 import { PageInfoPanel } from '@/components/workspace/PageInfoPanel';
 import {
@@ -37,7 +38,6 @@ import {
   PanelRightIcon,
   PlusIcon,
   ArrowUpRightIcon,
-  Clock3Icon,
   FlaskConicalIcon,
   FolderKanbanIcon,
   SearchIcon,
@@ -72,7 +72,15 @@ export default function Workspace() {
   const { notebooks, reload: reloadNotebooks } = useNotebooks();
   const { projects: projectRollups } = useProjects();
   const { detail, reload: reloadDetail } = usePageDetail(pageId ?? null);
+  const { projectId } = useProjectScope();
   const [infoOpen, setInfoOpen] = useState(true);
+  const [query, setQuery] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+
+  // Filter notebooks to active project if one is scoped, otherwise show all
+  const filteredNotebooks = projectId
+    ? notebooks.filter((n) => n.project_id === projectId)
+    : notebooks;
 
   // Prefer the loaded page's own notebook (a cross-notebook link may have
   // navigated with a stale :notebookId).
@@ -81,7 +89,7 @@ export default function Workspace() {
     notebooks.find((n) => n.id === contextNotebookId) ?? null;
 
   const crumbs: PageCrumb[] = [
-    { label: 'Knowledge', to: '/workspace' },
+    { label: 'Notebooks', to: '/workspace' },
     ...(activeNotebook
       ? [{ label: activeNotebook.title, to: `/workspace/${activeNotebook.id}` }]
       : []),
@@ -161,6 +169,27 @@ export default function Workspace() {
               crumbs={crumbs}
               actions={
                 <>
+                  {!detail && (
+                    <>
+                      <div className="relative h-9 w-64">
+                        <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          placeholder="Search pages…"
+                          className="h-9 pl-9 text-sm"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => setCreateOpen(true)}
+                        className="h-7 gap-1.5 text-xs shrink-0"
+                      >
+                        <PlusIcon className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">New notebook</span>
+                      </Button>
+                    </>
+                  )}
                   {detail && (
                     <Button
                       variant="ghost"
@@ -220,10 +249,14 @@ export default function Workspace() {
                   onSaved={pageId ? () => void reloadDetail(pageId) : undefined}
                 />
               ) : (
-                <KnowledgeHome
-                  notebooks={notebooks}
+                <NotebooksHome
+                  notebooks={filteredNotebooks}
                   projects={projectRollups.filter((p) => p.id !== 'inbox')}
                   selectedNotebookId={notebookId ?? null}
+                  query={query}
+                  setQuery={setQuery}
+                  createOpen={createOpen}
+                  setCreateOpen={setCreateOpen}
                   onCreateNotebook={handleCreateNotebook}
                   onCreatePage={handleCreatePage}
                   onOpenPage={(id, nbId) =>
@@ -274,10 +307,14 @@ export default function Workspace() {
   );
 }
 
-function KnowledgeHome({
+function NotebooksHome({
   notebooks,
   projects,
   selectedNotebookId,
+  query,
+  setQuery,
+  createOpen,
+  setCreateOpen,
   onCreateNotebook,
   onCreatePage,
   onOpenPage,
@@ -289,6 +326,10 @@ function KnowledgeHome({
   notebooks: Notebook[];
   projects: { id: string; name: string }[];
   selectedNotebookId: string | null;
+  query: string;
+  setQuery: (q: string) => void;
+  createOpen: boolean;
+  setCreateOpen: (open: boolean) => void;
   onCreateNotebook: (title: string, projectId?: string | null) => Promise<void>;
   onCreatePage: (notebookId: string) => Promise<void>;
   onOpenPage: (id: string, notebookId: string) => void;
@@ -297,11 +338,8 @@ function KnowledgeHome({
   onResearchNotebook: (notebookId: string) => void;
   onNotebookUpdated: () => void;
 }) {
-  const [query, setQuery] = useState('');
-  const [createOpen, setCreateOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [projectId, setProjectId] = useState('none');
-  const { pages: recent, loading } = useRecentPages();
   const { hits, searching, search } = usePageSearch();
   const activeNotebook = notebooks.find((n) => n.id === selectedNotebookId);
   const { pages: activePages } = usePages(selectedNotebookId);
@@ -344,10 +382,10 @@ function KnowledgeHome({
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Knowledge
+              Notebooks
             </p>
             <h1 className="text-2xl font-semibold tracking-tight">
-              {activeNotebook?.title ?? 'Your knowledge, connected'}
+              {activeNotebook?.title ?? 'Your notebooks, organized'}
             </h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
               Keep notes, Chat research, and project context together. Continue
@@ -381,21 +419,6 @@ function KnowledgeHome({
             </Button>
           </div>
         </header>
-
-        <div className="relative max-w-2xl">
-          <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search your pages and research…"
-            className="h-11 pl-9"
-          />
-          {searching && (
-            <span className="absolute right-3 top-3 text-xs text-muted-foreground">
-              Searching…
-            </span>
-          )}
-        </div>
 
         {query.trim() ? (
           <section className="space-y-3">
@@ -527,54 +550,6 @@ function KnowledgeHome({
                 )}
               </section>
             )}
-
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <Clock3Icon className="size-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">Recently updated</h2>
-              </div>
-              {loading ? (
-                <p className="text-sm text-muted-foreground">
-                  Loading recent pages…
-                </p>
-              ) : recent.length ? (
-                <div className="divide-y rounded-lg border bg-card">
-                  {recent.map((page) => (
-                    <div key={page.id} className="flex items-center gap-3 p-3">
-                      <button
-                        className="min-w-0 flex-1 text-left"
-                        onClick={() => onOpenPage(page.id, page.notebook_id)}
-                      >
-                        <span className="block truncate text-sm font-medium">
-                          {page.title || 'Untitled'}
-                        </span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {page.notebook_title} · Updated{' '}
-                          {new Date(
-                            page.updated_at * 1000,
-                          ).toLocaleDateString()}
-                        </span>
-                      </button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          onChat(page.id, page.notebook_id, page.project_id)
-                        }
-                      >
-                        <FlaskConicalIcon className="mr-1.5 size-3.5" />
-                        Ask Chat
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Your latest notes and Chat-generated research will show up
-                  here.
-                </p>
-              )}
-            </section>
           </>
         )}
       </div>

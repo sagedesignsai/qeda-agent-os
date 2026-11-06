@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UIMessage } from 'ai';
 import type { AgentPlan, AgentPlanEvent } from '@/lib/agent-plan';
 import type { BuilderSessionEvent } from '@/lib/builder-session';
@@ -100,15 +100,22 @@ export type PlanEventChannel =
 /**
  * Live subscription to any *:plan-event channel.
  * Seamlessly integrates live IPC events with historical message extraction.
+ * Keyed by sessionId to prevent cross-session plan leakage.
  */
 export function useIpcPlan(
   channel: PlanEventChannel,
   messages?: UIMessage[],
+  sessionId?: string,
 ): {
   plan: AgentPlan | null;
   clearPlan: () => void;
 } {
   const [livePlan, setLivePlan] = useState<AgentPlan | null>(null);
+
+  // Clear plan when sessionId changes to prevent cross-session leakage
+  useEffect(() => {
+    setLivePlan(null);
+  }, [sessionId]);
 
   useIpcEvent(channel, (event: unknown) => {
     const planEvent = event as AgentPlanEvent;

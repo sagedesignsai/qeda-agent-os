@@ -334,3 +334,53 @@
   }
 }
 
+/* Sidebar now-playing EQ — short bars that bob while audio is audible. */
+@keyframes music-eq-bar {
+  0%,
+  100% {
+    height: 22%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+
+.music-eq-bar {
+  height: 35%;
+}
+
+.music-eq-bar-active {
+  animation: music-eq-bar 0.85s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .music-eq-bar-active {
+    animation: none;
+    height: 55%;
+  }
+}
+
+/* Animated gradient shimmer for prompt input borders during streaming */
+@keyframes border-shimmer {
+  0% {
+    border-color: hsl(258, 100%, 60%);
+    box-shadow: 0 0 20px hsl(258, 100%, 60%, 0.1), inset 0 0 20px hsl(258, 100%, 60%, 0.05);
+  }
+  50% {
+    border-color: hsl(258, 100%, 70%);
+    box-shadow: 0 0 30px hsl(258, 100%, 70%, 0.3), inset 0 0 30px hsl(258, 100%, 70%, 0.15);
+  }
+  100% {
+    border-color: hsl(258, 100%, 60%);
+    box-shadow: 0 0 20px hsl(258, 100%, 60%, 0.1), inset 0 0 20px hsl(258, 100%, 60%, 0.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-streaming='true'] {
+    animation: none !important;
+  }
+}
+
+
+

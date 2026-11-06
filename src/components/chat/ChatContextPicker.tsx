@@ -23,6 +23,7 @@ import {
   ChevronDownIcon,
   CheckSquareIcon,
   ListTodoIcon,
+  CheckIcon,
 } from 'lucide-react';
 
 interface ChatContextPickerProps {
@@ -143,7 +144,9 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
                     />
                     <span className="flex-1 truncate">{task.title}</span>
                     {value?.taskId === task.id && (
-                      <span className="text-xs font-semibold text-primary">✓</span>
+                      <span className="text-xs font-semibold text-primary">
+                        ✓
+                      </span>
                     )}
                   </button>
                 ))}
@@ -156,7 +159,7 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
           {/* Notebooks & Pages Section */}
           <div>
             <div className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <LibraryIcon className="h-3 w-3" /> Knowledge & Pages
+              <LibraryIcon className="h-3 w-3" /> Notebooks & Pages
             </div>
             {notebooks.length === 0 ? (
               <p className="px-1 py-1 text-[11px] text-muted-foreground">
@@ -174,7 +177,7 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
                       <BookOpenIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="flex-1 truncate">{notebook.title}</span>
                       {value?.notebookId === notebook.id && (
-                        <XIcon className="h-3 w-3 rotate-45 text-primary" />
+                        <CheckIcon className="h-3 w-3 text-primary" />
                       )}
                     </button>
                     {value?.notebookId === notebook.id && (
@@ -187,9 +190,11 @@ export function ChatContextPicker({ value, onChange }: ChatContextPickerProps) {
                             onClick={() => onChange({ pageId: page.id })}
                           >
                             <FileTextIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                            <span className="flex-1 truncate">{page.title}</span>
+                            <span className="flex-1 truncate">
+                              {page.title}
+                            </span>
                             {value?.pageId === page.id && (
-                              <span className="text-primary">•</span>
+                              <CheckIcon className="h-3 w-3 text-primary" />
                             )}
                           </button>
                         ))}
