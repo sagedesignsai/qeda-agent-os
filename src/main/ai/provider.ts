@@ -279,16 +279,20 @@ export async function listProviderModels(
   }
 
   // Offline provider: no /models endpoint — return downloaded language models
+  // that have chat templates (required by @browser-ai/transformers-js).
   if (providerId === 'offline') {
     const settings = getSettings();
     const allDownloaded = settings.downloadedOfflineModels ?? [];
-    // Filter to language models only (chat, not embeddings/vision/transcription)
+    // Filter to language models with chat templates only
     const { OFFLINE_MODELS } = require('../../lib/offline-ai/models');
-    const languageIds = OFFLINE_MODELS
-      .filter((m: { category: string }) => m.category === 'language')
+    const chatModelIds = OFFLINE_MODELS
+      .filter(
+        (m: { category: string; hasChatTemplate?: boolean }) =>
+          m.category === 'language' && m.hasChatTemplate === true,
+      )
       .map((m: { id: string }) => m.id);
     const downloaded = allDownloaded.filter((id: string) =>
-      languageIds.includes(id),
+      chatModelIds.includes(id),
     );
     if (downloaded.length === 0) {
       return {

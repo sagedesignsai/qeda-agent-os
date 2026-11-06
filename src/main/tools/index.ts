@@ -27,6 +27,7 @@ export { resourceTools } from './resources.js';
 export { taskTools } from './tasks.js';
 export { computerUseTools } from './computer-use.js';
 export { browserUseTools } from './browser-use.js';
+export { workspaceResourceTools } from './workspace-resources.js';
 
 export {
   createApprovalPolicy,
@@ -59,6 +60,7 @@ import { taskTools } from './tasks.js';
 import { documentDrafterTools } from './documents-drafter.js';
 import { computerUseTools } from './computer-use.js';
 import { browserUseTools } from './browser-use.js';
+import { workspaceResourceTools } from './workspace-resources.js';
 import { createStudioTools } from './studio.js';
 import { createPlanTools } from './plan.js';
 import { PlanManager } from '../ai/plan-manager.js';
@@ -94,6 +96,7 @@ export const allTools = {
   ...computerUseTools,
   ...browserUseTools,
   ...studioTools,
+  ...workspaceResourceTools,
   ...createPlanTools(new PlanManager()),
   indexPage: indexPageTool,
 };

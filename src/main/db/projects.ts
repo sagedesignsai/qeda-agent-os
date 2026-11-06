@@ -95,6 +95,86 @@ export interface ProjectLinkedCounts {
   contacts: number;
   /** Sent, still owed a reply — the number the correspondence system exists for. */
   awaitingReplies: number;
+  /** Completed or running research investigations. */
+  researchRuns: number;
+  /** SoundLab music sessions. */
+  soundLabSessions: number;
+  /** Linked code repositories. */
+  codeProjects: number;
+  /** Knowledge-base pages scoped to this project. */
+  knowledgePages: number;
+}
+
+// ─── Resource summary types ───────────────────────────────────────────────────
+
+/** Compact studio take summary for context rendering. */
+export interface StudioTakeSummary {
+  id: string;
+  title: string;
+  durationMs: number;
+  sourceType: string;
+}
+
+/** Compact document summary for context rendering. */
+export interface DocumentSummary {
+  id: string;
+  title: string;
+  templateId: string;
+}
+
+/** Compact research run summary for context rendering. */
+export interface ResearchRunSummary {
+  id: string;
+  question: string;
+  status: string;
+}
+
+/** Compact terminal session summary for context rendering. */
+export interface TerminalSessionSummary {
+  id: string;
+  title: string;
+  goal: string;
+  status: string;
+}
+
+/** Compact SoundLab session summary for context rendering. */
+export interface SoundLabSessionSummary {
+  id: string;
+  title: string;
+  bpm: number;
+  keySignature: string;
+}
+
+/** Compact knowledge page summary for context rendering. */
+export interface KnowledgePageSummary {
+  id: string;
+  title: string;
+}
+
+/** Compact code project summary for context rendering. */
+export interface CodeProjectSummary {
+  id: string;
+  name: string;
+  directory: string;
+  indexStatus: string;
+}
+
+/** Compact chat session summary for context rendering. */
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+}
+
+/** All workspace resources belonging to a project, capped for context rendering. */
+export interface ProjectResources {
+  studioTakes: StudioTakeSummary[];
+  documents: DocumentSummary[];
+  researchRuns: ResearchRunSummary[];
+  terminalSessions: TerminalSessionSummary[];
+  soundLabSessions: SoundLabSessionSummary[];
+  knowledgePages: KnowledgePageSummary[];
+  codeProjects: CodeProjectSummary[];
+  chatSessions: ChatSessionSummary[];
 }
 
 /** Everything the project detail page needs, in one read. */
@@ -319,6 +399,18 @@ export function projectOverview(
             AND r.dispatch_state = 'sent'
             AND r.reply_state = 'awaiting'`,
       ),
+      researchRuns: count(
+        `SELECT COUNT(*) AS n FROM research_runs WHERE project_id = ?`,
+      ),
+      soundLabSessions: count(
+        `SELECT COUNT(*) AS n FROM soundlab_sessions WHERE project_id = ?`,
+      ),
+      codeProjects: count(
+        `SELECT COUNT(*) AS n FROM code_projects WHERE project_id = ?`,
+      ),
+      knowledgePages: count(
+        `SELECT COUNT(*) AS n FROM pages WHERE project_id = ?`,
+      ),
     },
   };
 }
@@ -532,4 +624,184 @@ export function countProjectTasks(id: string): number {
       .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE project_id = ?`)
       .get(id) as { n: number }
   ).n;
+}
+
+/**
+ * Fetch all workspace resources scoped to a project, capped at 5 items per
+ * category. Used by the context renderer to surface cross-workspace awareness
+ * to agents — so a copilot can say "I see 3 studio takes for this project"
+ * rather than flying blind.
+ *
+ * Best-effort: returns an empty object on any query failure rather than
+ * throwing, so a broken table never breaks a turn.
+ */
+export function projectResources(id: string): ProjectResources {
+  const db = getDb();
+  const limit = 5;
+
+  try {
+    const studioTakes = db
+      .prepare(
+        `SELECT id, title, duration_ms, source_type
+           FROM studio_takes
+          WHERE project_id = ?
+       ORDER BY created_at DESC
+          LIMIT ?`,
+      )
+      .all(id, limit) as Array<{
+        id: string;
+        title: string;
+        duration_ms: number;
+        source_type: string;
+      }>;
+
+    const documents = db
+      .prepare(
+        `SELECT id, title, template_id
+           FROM documents
+          WHERE project_id = ?
+       ORDER BY updated_at DESC
+          LIMIT ?`,
+      )
+      .all(id, limit) as Array<{
+        id: string;
+        title: string;
+        template_id: string;
+      }>;
+
+    const researchRuns = db
+      .prepare(
+        `SELECT id, question, status
+           FROM research_runs
+          WHERE project_id = ?
+       ORDER BY created_at DESC
+          LIMIT ?`,
+      )
+      .all(id, limit) as Array<{
+        id: string;
+        question: string;
+        status: string;
+      }>;
+
+    const terminalSessions = db
+      .prepare(
+        `SELECT id, title, goal, status
+           FROM terminal_sessions
+          WHERE project_id = ?
+       ORDER BY updated_at DESC
+          LIMIT ?`,
+      )
+      .all(id, limit) as Array<{
+        id: string;
+        title: string;
+        goal: string;
+        status: string;
+      }>;
+
+    const soundLabSessions = db
+      .prepare(
+        `SELECT id, title, bpm, key_signature
+           FROM soundlab_sessions
+          WHERE project_id = ?
+       ORDER BY updated_at DESC
+          LIMIT ?`,
+      )
+      .all(id, limit) as Array<{
+        id: string;
+        title: string;
+        bpm: number;
+        key_signature: string;
+      }>;
+
+    const knowledgePages = db
+      .prepare(
+        `SELECT id, title
+           FROM pages
+          WHERE project_id = ?
+       ORDER BY updated_at DESC
+          LIMIT ?`,
+      )
+      .all(id, limit) as Array<{ id: string; title: string }>;
+
+    const codeProjects = db
+      .prepare(
+        `SELECT id, name, directory, index_status
+           FROM code_projects
+          WHERE project_id = ?
+       ORDER BY updated_at DESC`,
+      )
+      .all(id) as Array<{
+        id: string;
+        name: string;
+        directory: string;
+        index_status: string;
+      }>;
+
+    const chatSessions = db
+      .prepare(
+        `SELECT id, title
+           FROM sessions
+          WHERE project_id = ?
+       ORDER BY updated_at DESC
+          LIMIT ?`,
+      )
+      .all(id, limit) as Array<{ id: string; title: string }>;
+
+    return {
+      studioTakes: studioTakes.map((r) => ({
+        id: r.id,
+        title: r.title,
+        durationMs: r.duration_ms,
+        sourceType: r.source_type,
+      })),
+      documents: documents.map((r) => ({
+        id: r.id,
+        title: r.title,
+        templateId: r.template_id,
+      })),
+      researchRuns: researchRuns.map((r) => ({
+        id: r.id,
+        question: r.question,
+        status: r.status,
+      })),
+      terminalSessions: terminalSessions.map((r) => ({
+        id: r.id,
+        title: r.title,
+        goal: r.goal,
+        status: r.status,
+      })),
+      soundLabSessions: soundLabSessions.map((r) => ({
+        id: r.id,
+        title: r.title,
+        bpm: r.bpm,
+        keySignature: r.key_signature,
+      })),
+      knowledgePages: knowledgePages.map((r) => ({
+        id: r.id,
+        title: r.title,
+      })),
+      codeProjects: codeProjects.map((r) => ({
+        id: r.id,
+        name: r.name,
+        directory: r.directory,
+        indexStatus: r.index_status,
+      })),
+      chatSessions: chatSessions.map((r) => ({
+        id: r.id,
+        title: r.title,
+      })),
+    };
+  } catch {
+    // Best-effort: a broken table must not break a turn.
+    return {
+      studioTakes: [],
+      documents: [],
+      researchRuns: [],
+      terminalSessions: [],
+      soundLabSessions: [],
+      knowledgePages: [],
+      codeProjects: [],
+      chatSessions: [],
+    };
+  }
 }

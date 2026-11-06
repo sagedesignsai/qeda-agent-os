@@ -138,3 +138,11 @@ When an offline model is selected, the copilot chat uses the renderer's use-offl
 - Update `use-copilot-chat.ts` to read the active provider from settings. When `activeProvider === 'offline'`, use `use-offline-ai` with the saved `offlineModel` ID instead of `useAgentChat`.
 - Ensure `use-offline-ai.ts` reads the model ID from settings (`offlineModel`) and initializes the model on first use.
 - Verify TypeScript compilation passes with `bunx tsc --noEmit`.
+
+### ✓ Step 4: Fix chat template error for offline models
+`@browser-ai/transformers-js` always calls `apply_chat_template()` on the tokenizer, which fails for base models without chat templates.
+- Replace base models (DistilGPT-2, GPT-2, TinyLlama base) in `src/lib/offline-ai/models.ts` with instruction-tuned chat variants (SmolLM2-360M-Instruct, TinyLlama-1.1B-Chat-v1.0, SmolLM2-1.7B-Instruct).
+- Add `hasChatTemplate` field to `OfflineModelInfo` interface to mark chat-compatible models.
+- Update default model in `use-offline-ai.ts` to `HuggingFaceTB/SmolLM2-360M-Instruct`.
+- Filter offline provider in `src/main/ai/provider.ts` and IPC handler in `src/main/ipc/handlers/settings.ts` to only return models with `hasChatTemplate: true`.
+- Verify TypeScript compilation passes with `bunx tsc --noEmit`.

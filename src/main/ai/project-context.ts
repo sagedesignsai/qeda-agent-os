@@ -25,9 +25,14 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { getProject, projectRollup } from '../db/projects';
+import {
+  getProject,
+  projectRollup,
+  projectResources,
+} from '../db/projects.js';
 import { getRawSettings } from './settings';
-import { getRecentProjectMemories } from '../tools/rag';
+import { getRecentProjectMemories } from '../tools/rag.js';
+import type { ProjectResources } from '../db/projects.js';
 
 export interface ProjectAgentContext {
   projectId?: string;
@@ -90,6 +95,107 @@ function projectExistsOrKeep(id: string | null): string | null {
 }
 
 /**
+ * Format a duration in milliseconds to a human-readable string.
+ */
+function formatDuration(ms: number): string {
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const remain = secs % 60;
+  return remain > 0 ? `${mins}m ${remain}s` : `${mins}m`;
+}
+
+/**
+ * Render a compact "Project resources" subsection listing all workspace
+ * resources belonging to the active project. Only categories with at least
+ * one item are shown. Each category lists up to 5 items with title and one
+ * metadata field (duration for takes, template for documents, etc.).
+ *
+ * Returns '' when no resources are found.
+ */
+export function renderProjectResources(resources: ProjectResources): string {
+  const lines: string[] = [];
+
+  if (resources.studioTakes.length > 0) {
+    const items = resources.studioTakes
+      .slice(0, 5)
+      .map(
+        (t) =>
+          `"${t.title}" (${formatDuration(t.durationMs)})`,
+      );
+    lines.push(
+      `**Studio takes (${resources.studioTakes.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (resources.documents.length > 0) {
+    const items = resources.documents
+      .slice(0, 5)
+      .map((d) => `"${d.title}" (${d.templateId})`);
+    lines.push(
+      `**Documents (${resources.documents.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (resources.researchRuns.length > 0) {
+    const items = resources.researchRuns
+      .slice(0, 5)
+      .map((r) => `"${r.question}" (${r.status})`);
+    lines.push(
+      `**Research runs (${resources.researchRuns.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (resources.terminalSessions.length > 0) {
+    const items = resources.terminalSessions
+      .slice(0, 5)
+      .map((t) => `"${t.title}" (${t.status})`);
+    lines.push(
+      `**Terminal sessions (${resources.terminalSessions.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (resources.soundLabSessions.length > 0) {
+    const items = resources.soundLabSessions
+      .slice(0, 5)
+      .map((s) => `"${s.title}" (${s.bpm} BPM, ${s.keySignature})`);
+    lines.push(
+      `**SoundLab sessions (${resources.soundLabSessions.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (resources.knowledgePages.length > 0) {
+    const items = resources.knowledgePages
+      .slice(0, 5)
+      .map((p) => `"${p.title}"`);
+    lines.push(
+      `**Knowledge pages (${resources.knowledgePages.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (resources.codeProjects.length > 0) {
+    const items = resources.codeProjects
+      .map((c) => `"${c.name}" (${c.indexStatus})`);
+    lines.push(
+      `**Code projects (${resources.codeProjects.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (resources.chatSessions.length > 0) {
+    const items = resources.chatSessions
+      .slice(0, 5)
+      .map((s) => `"${s.title}"`);
+    lines.push(
+      `**Chat sessions (${resources.chatSessions.length})**: ${items.join(', ')}`,
+    );
+  }
+
+  if (lines.length === 0) return '';
+
+  return `\n### Project resources\n${lines.join('\n')}`;
+}
+
+/**
  * Render the active-project block for a system prompt.
  *
  * Returns '' when no project is scoped, unknown, or the read fails — context
@@ -146,6 +252,13 @@ export function renderProjectContext(
       lines.push(
         'Use searchProjectMemory or storeProjectMemory tools to search or persist facts, decisions, and instructions.',
       );
+    }
+
+    // Append project resources — cross-workspace awareness for agents
+    const resources = projectResources(projectId);
+    const resourceBlock = renderProjectResources(resources);
+    if (resourceBlock) {
+      lines.push(resourceBlock);
     }
 
     lines.push(

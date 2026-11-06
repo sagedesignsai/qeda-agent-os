@@ -15,7 +15,7 @@
 export type ModelCategory = 'language' | 'embedding' | 'vision' | 'transcription';
 
 export interface OfflineModelInfo {
-  /** Hugging Face model ID, e.g. "Xenova/distilgpt2" */
+  /** Hugging Face model ID, e.g. "HuggingFaceTB/SmolLM2-360M-Instruct" */
   id: string;
   /** Human-readable display name */
   name: string;
@@ -31,42 +31,50 @@ export interface OfflineModelInfo {
   minRam?: string;
   /** Whether WebGPU is recommended (vs optional) */
   webgpuRecommended?: boolean;
+  /** Whether the model has a chat template (required for @browser-ai/transformers-js chat) */
+  hasChatTemplate?: boolean;
   /** Tags for search filtering */
   tags?: string[];
 }
 
 export const OFFLINE_MODELS: OfflineModelInfo[] = [
-  // ── Language models ───────────────────────────────────────────────
+  // ── Language models (chat-tuned, with chat templates) ─────────────
+  // Only instruction-tuned models work with @browser-ai/transformers-js
+  // because it always calls apply_chat_template() on the tokenizer.
   {
-    id: 'Xenova/distilgpt2',
-    name: 'DistilGPT-2',
-    description: 'Fast, compact GPT-2 variant. Good for simple text generation, summarization, and Q&A.',
-    size: '~260 MB',
-    sizeBytes: 260_000_000,
+    id: 'HuggingFaceTB/SmolLM2-360M-Instruct',
+    name: 'SmolLM2 360M Instruct',
+    description: 'Small instruction-tuned model. Fast, good for chat, Q&A, and simple reasoning.',
+    size: '~720 MB',
+    sizeBytes: 720_000_000,
     category: 'language',
     minRam: '2 GB',
-    tags: ['text-generation', 'gpt', 'fast', 'small'],
+    hasChatTemplate: true,
+    tags: ['text-generation', 'chat', 'instruct', 'small', 'fast'],
   },
   {
-    id: 'Xenova/tinyllama-1.1b',
-    name: 'TinyLlama-1.1B',
-    description: 'Better quality than GPT-2. Trained on 3T tokens, handles reasoning and code better.',
+    id: 'Xenova/TinyLlama-1.1B-Chat-v1.0',
+    name: 'TinyLlama-1.1B Chat',
+    description: 'Chat-tuned TinyLlama. Better quality than SmolLM2, handles reasoning and code.',
     size: '~630 MB',
     sizeBytes: 630_000_000,
     category: 'language',
     minRam: '4 GB',
     webgpuRecommended: true,
-    tags: ['text-generation', 'llama', 'reasoning', 'code'],
+    hasChatTemplate: true,
+    tags: ['text-generation', 'llama', 'chat', 'reasoning', 'code'],
   },
   {
-    id: 'onnx-community/gpt2-ONNX',
-    name: 'GPT-2',
-    description: 'Classic GPT-2 model. Balanced quality and speed for general text generation.',
-    size: '~500 MB',
-    sizeBytes: 500_000_000,
+    id: 'HuggingFaceTB/SmolLM2-1.7B-Instruct',
+    name: 'SmolLM2 1.7B Instruct',
+    description: 'Larger SmolLM2 variant with better reasoning and instruction following.',
+    size: '~3.4 GB',
+    sizeBytes: 3_400_000_000,
     category: 'language',
-    minRam: '3 GB',
-    tags: ['text-generation', 'gpt', 'classic'],
+    minRam: '6 GB',
+    webgpuRecommended: true,
+    hasChatTemplate: true,
+    tags: ['text-generation', 'chat', 'instruct', 'reasoning'],
   },
   {
     id: 'Xenova/phind-codellama-34b',
@@ -77,6 +85,7 @@ export const OFFLINE_MODELS: OfflineModelInfo[] = [
     category: 'language',
     minRam: '8 GB',
     webgpuRecommended: true,
+    hasChatTemplate: true,
     tags: ['text-generation', 'code', 'quantized', 'large'],
   },
   {
@@ -88,6 +97,7 @@ export const OFFLINE_MODELS: OfflineModelInfo[] = [
     category: 'language',
     minRam: '32 GB',
     webgpuRecommended: true,
+    hasChatTemplate: true,
     tags: ['text-generation', 'code', 'quantized', 'large', 'qwen'],
   },
 

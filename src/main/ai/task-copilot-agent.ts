@@ -38,6 +38,7 @@ import { createApprovalPolicy } from '../tools/capability.js';
 import { copilotToolPolicies } from '../tools/policies/copilot.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
+import { workspaceResourceTools } from '../tools/workspace-resources.js';
 import type { ModelTarget } from './fallback.js';
 
 // ─── Context tools (read-only, least privilege) ───────────────────────────────
@@ -77,6 +78,16 @@ const contextTools = {
   gitLog: repoTools.gitLog,
   gitDiffStat: repoTools.gitDiffStat,
   grepSearch: repoTools.grepSearch,
+  // ── Cross-workspace resource discovery (read-only) ─────────────────────
+  // Lets the copilot see what assets exist before creating tasks.
+  listStudioTakes: workspaceResourceTools.listStudioTakes,
+  listDocuments: workspaceResourceTools.listDocuments,
+  listResearchRuns: workspaceResourceTools.listResearchRuns,
+  listTerminalSessions: workspaceResourceTools.listTerminalSessions,
+  listSoundLabSessions: workspaceResourceTools.listSoundLabSessions,
+  listKnowledgePages: workspaceResourceTools.listKnowledgePages,
+  listCodeProjects: workspaceResourceTools.listCodeProjects,
+  listChatSessions: workspaceResourceTools.listChatSessions,
 };
 
 export const copilotTools = {

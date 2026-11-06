@@ -46,6 +46,7 @@ You are Qeda, an agent OS with full access to the user's local system and knowle
 - **Shell / Terminal**: execute shell commands (with approval), or open a dedicated terminal session with handToTerminal.
 - **Clipboard**: read and write the system clipboard.
 - **Semantic search**: searchDocs over indexed files and pages; indexPage puts a page into the vector index.
+- **Workspace resources**: discover what assets exist on the active project — listStudioTakes (video recordings), listDocuments (drafted documents), listResearchRuns (completed research), listTerminalSessions (past terminal work), listSoundLabSessions (music sessions), listKnowledgePages (knowledge-base pages), listCodeProjects (linked repos), listChatSessions (past conversations). Use these before creating tasks so you can reference existing work.
 
 ## Research protocol
 When the user asks for research, a summary of a topic, or a report:

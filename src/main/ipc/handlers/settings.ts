@@ -275,14 +275,16 @@ export function registerSettingsHandlers({
 
   ipcMain.handle('offline-models:list', (): string[] => {
     const settings = getSettings();
-    // Only return language models (the offline provider is for chat, not embeddings)
+    // Only return language models with chat templates — @browser-ai/transformers-js
+    // always calls apply_chat_template(), so base models without a chat template
+    // will fail at runtime.
     const allDownloaded = settings.downloadedOfflineModels ?? [];
-    // Filter to only language models from the offline catalog
     const { OFFLINE_MODELS } = require('../../../lib/offline-ai/models');
-    const languageModels = OFFLINE_MODELS.filter(
-      (m: { category: string }) => m.category === 'language',
+    const chatModels = OFFLINE_MODELS.filter(
+      (m: { category: string; hasChatTemplate?: boolean }) =>
+        m.category === 'language' && m.hasChatTemplate === true,
     ).map((m: { id: string }) => m.id);
-    return allDownloaded.filter((id: string) => languageModels.includes(id));
+    return allDownloaded.filter((id: string) => chatModels.includes(id));
   });
 
   // ── MCP server management ─────────────────────────────────────────────────

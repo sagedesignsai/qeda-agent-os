@@ -27,9 +27,9 @@ import {
 } from '@browser-ai/transformers-js';
 import { setupHfToken } from '@/lib/offline-ai/setup-hf-token';
 
-// The default tiny model — small enough for quick download, capable enough
-// for simple tasks like summarization, Q&A, and code comments.
-const DEFAULT_MODEL = 'Xenova/distilgpt2';
+// The default tiny model — instruction-tuned so it has a chat template
+// (required by @browser-ai/transformers-js which always calls apply_chat_template).
+const DEFAULT_MODEL = 'HuggingFaceTB/SmolLM2-360M-Instruct';
 
 export type OfflineAIStatus =
   | 'idle'
