@@ -234,16 +234,17 @@ function TaskCard({
   onDraftDocument,
   isDragging = false,
   dragProps,
-}: TaskCardProps) {
+  nowSec,
+}: TaskCardProps & { nowSec?: number }) {
   const pm = PRIORITY_META[task.priority as Priority];
   const sm = STATUS_META[task.status];
-  // Render-time clock read: the label is only as fresh as the last re-render.
-  // Acceptable for a board that re-renders on any task mutation, but it does
-  // mean a card left open across midnight can show a stale "overdue".
+  // Freshness comes from `nowSec` (60s ticker in Tasks) so an idle card
+  // left open across midnight flips to "overdue" without a mutation.
+  const now = nowSec ?? Math.floor(Date.now() / 1000);
   const isOverdue =
     task.due_at !== null &&
     task.due_at !== undefined &&
-    task.due_at < Math.floor(Date.now() / 1000) &&
+    task.due_at < now &&
     task.status !== 'done';
 
   return (
@@ -279,7 +280,7 @@ function TaskCard({
               variant="ghost"
               size="icon"
               aria-label={`Task actions for ${task.title}`}
-              className="size-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              className="size-5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 max-sm:opacity-100"
             >
               <ChevronDownIcon className="size-3" />
             </Button>
@@ -303,7 +304,7 @@ function TaskCard({
             )}
             <DropdownMenuItem onClick={() => onFocus(task)}>
               <FocusIcon className="mr-2 size-3" />
-              Focus mode
+              Start in workspace…
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => onOpenSteps(task)}>
               <SparklesIcon className="mr-2 size-3 text-amber-500" />
@@ -384,6 +385,7 @@ function TaskCard({
 
         {task.due_at && (
           <span
+            title={new Date(task.due_at * 1000).toLocaleString()}
             className={cn(
               'flex items-center gap-0.5 text-[10px]',
               isOverdue ? 'text-rose-400' : 'text-muted-foreground',
@@ -397,17 +399,17 @@ function TaskCard({
         )}
       </div>
 
-      {/* Focus button. Hover-revealed, but `focus-visible` keeps it reachable
-          by keyboard — a hover-only control is invisible to tab navigation. */}
+      {/* Start button. Hover-revealed on desktop, always visible on touch
+          (`max-sm`) — a hover-only control is undiscoverable without a pointer. */}
       {task.status !== 'done' && (
         <Button
           size="sm"
           variant="ghost"
-          className="mt-1.5 h-5 w-full gap-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          className="mt-1.5 h-5 w-full gap-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 max-sm:opacity-100"
           onClick={() => onFocus(task)}
         >
           <FocusIcon className="size-3" />
-          Focus
+          Start…
         </Button>
       )}
     </motion.div>
@@ -612,11 +614,29 @@ function FocusMode({
           </div>
         </div>
 
-        {/* Duration preset */}
+        {/* Duration preset. Changing it resets the timer, so mid-session
+            changes confirm — a silent wipe would discard elapsed time. */}
         <ToggleGroup
           type="single"
           value={String(presetIndex)}
-          onValueChange={(v) => v !== '' && onPresetChange(Number(v))}
+          onValueChange={(v) => {
+            if (v === '') return;
+            const next = Number(v);
+            if (next === presetIndex) return;
+            const inProgress =
+              state.running ||
+              state.secondsLeft < state.phaseTotal ||
+              state.completed > 0;
+            if (
+              inProgress &&
+              !window.confirm(
+                'Changing the duration resets the timer. Continue?',
+              )
+            ) {
+              return;
+            }
+            onPresetChange(next);
+          }}
           size="sm"
         >
           {DURATION_PRESETS.map((p, i) => (
@@ -678,9 +698,14 @@ function FocusMode({
                 'border-primary/60 text-primary',
             )}
             onClick={() => {
+              // First open also starts audio — previously the button only
+              // revealed the mixer, leaving the user with no scene playing.
+              if (!showAudio && !soundscape.started) void soundscape.start();
               setShowAudio((v) => !v);
             }}
-            aria-label="Soundscape"
+            aria-label={
+              showAudio ? 'Hide soundscape mixer' : 'Show soundscape mixer'
+            }
           >
             <WavesIcon className="size-4" />
           </Button>
@@ -792,6 +817,7 @@ interface ColumnProps {
     onDragLeave: (e: React.DragEvent) => void;
     onDrop: (e: React.DragEvent) => void;
   };
+  nowSec?: number;
 }
 
 function Column({
@@ -812,6 +838,7 @@ function Column({
   getCardProps,
   isDragging,
   dropProps,
+  nowSec,
 }: ColumnProps) {
   const meta = STATUS_META[status];
   const StatusIcon = meta.icon;
@@ -858,6 +885,7 @@ function Column({
                 onDraftDocument={onDraftDocument}
                 isDragging={isDragging(task.id)}
                 dragProps={getCardProps(task.id)}
+                nowSec={nowSec}
               />
             ))}
             {tasks.length === 0 &&
@@ -964,6 +992,18 @@ export default function Tasks() {
 
   const gamification = useGamification();
   const focus = useFocusSession();
+
+  // Coarse clock for overdue/due labels: ticks once a minute so an idle
+  // board flips to "overdue" across midnight without a mutation. The 1s
+  // focus timer already re-renders while running; this covers idle.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = window.setInterval(
+      () => setNowSec(Math.floor(Date.now() / 1000)),
+      60_000,
+    );
+    return () => window.clearInterval(id);
+  }, []);
 
   const recommendation = useMemo(
     () => getNextBestMove({ tasks, stepProgress, shuffleIndex }),
@@ -1344,6 +1384,7 @@ export default function Tasks() {
                 <Button
                   size="sm"
                   variant={singleLens ? 'default' : 'outline'}
+                  title={singleLens ? 'Show all columns' : 'Single-task lens'}
                   className={cn(
                     'h-7 gap-1.5 text-xs',
                     singleLens &&
@@ -1352,7 +1393,9 @@ export default function Tasks() {
                   onClick={() => setSingleLens(!singleLens)}
                 >
                   <BrainIcon className="size-3.5" />
-                  {singleLens ? 'Show All Columns' : 'Single-Task Lens'}
+                  <span className="hidden sm:inline">
+                    {singleLens ? 'Show All Columns' : 'Single-Task Lens'}
+                  </span>
                 </Button>
               )}
 
@@ -1391,7 +1434,7 @@ export default function Tasks() {
                 onClick={openCreate}
               >
                 <PlusIcon className="size-3" />
-                New task
+                <span className="hidden sm:inline">New task</span>
               </Button>
             </>
           }
@@ -1451,6 +1494,7 @@ export default function Tasks() {
                   getCardProps={drag.getCardProps}
                   isDragging={drag.isDragging}
                   dropProps={drag.getColumnProps(status)}
+                  nowSec={nowSec}
                 />
               ))}
             </div>

@@ -214,8 +214,20 @@ export function TodayTimeline({
     }
   };
 
-  const openTasks = tasks.filter((t) => t.status !== 'done');
-  const nowSec = Math.floor(Date.now() / 1000);
+  const openTasks = useMemo(
+    () => tasks.filter((t) => t.status !== 'done'),
+    [tasks],
+  );
+  // Coarse ticker so the "now" highlight + header date stay fresh while idle.
+  const [nowSec, setNowSec] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = window.setInterval(
+      () => setNowSec(Math.floor(Date.now() / 1000)),
+      60_000,
+    );
+    return () => window.clearInterval(id);
+  }, []);
+  const today = useMemo(() => new Date(nowSec * 1000), [nowSec]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
@@ -224,11 +236,9 @@ export function TodayTimeline({
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold">
-            {format(new Date(), 'EEEE')}
-          </h2>
+          <h2 className="text-sm font-semibold">{format(today, 'EEEE')}</h2>
           <p className="text-xs text-muted-foreground">
-            {format(new Date(), 'MMMM d')} · {blocks.length} block
+            {format(today, 'MMMM d')} · {blocks.length} block
             {blocks.length === 1 ? '' : 's'}
           </p>
         </div>
@@ -373,7 +383,7 @@ export function TodayTimeline({
                         onClick={() => onFocusTask(task)}
                       >
                         <FocusIcon className="size-3" />
-                        Focus
+                        Start…
                       </Button>
                     )}
                     <DropdownMenu>
@@ -382,7 +392,7 @@ export function TodayTimeline({
                           size="icon"
                           variant="ghost"
                           aria-label="Block actions"
-                          className="size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                          className="size-7 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 max-sm:opacity-100"
                         >
                           <MoreHorizontalIcon className="size-3.5" />
                         </Button>

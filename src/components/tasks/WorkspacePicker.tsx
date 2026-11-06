@@ -143,6 +143,24 @@ export function WorkspacePicker({
           role="listbox"
           aria-label="Choose a workspace"
           className="flex flex-col gap-1.5"
+          onKeyDown={(e) => {
+            if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+            e.preventDefault();
+            const buttons = Array.from(
+              e.currentTarget.querySelectorAll<HTMLButtonElement>(
+                'button:not([disabled])',
+              ),
+            );
+            const idx = buttons.indexOf(
+              document.activeElement as HTMLButtonElement,
+            );
+            if (idx === -1) return;
+            const next =
+              e.key === 'ArrowDown'
+                ? buttons[(idx + 1) % buttons.length]
+                : buttons[(idx - 1 + buttons.length) % buttons.length];
+            next?.focus();
+          }}
         >
           {OPTIONS.map((opt) => {
             const Icon = opt.icon;

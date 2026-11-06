@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeftIcon,
@@ -45,14 +45,20 @@ export function SingleTaskLens({
   onComplete,
   onExit,
 }: SingleTaskLensProps) {
-  // Sort tasks by status (active first) and priority (1 > 2 > 3)
-  const openTasks = tasks
-    .filter((t) => t.status !== 'done')
-    .sort((a, b) => {
-      if (a.status === 'active' && b.status !== 'active') return -1;
-      if (b.status === 'active' && a.status !== 'active') return 1;
-      return a.priority - b.priority;
-    });
+  // Sort tasks by status (active first) and priority (1 > 2 > 3). Copied
+  // before sorting so the parent's array is never mutated, and memoised so
+  // the timer tick does not re-sort on every second.
+  const openTasks = useMemo(
+    () =>
+      [...tasks]
+        .filter((t) => t.status !== 'done')
+        .sort((a, b) => {
+          if (a.status === 'active' && b.status !== 'active') return -1;
+          if (b.status === 'active' && a.status !== 'active') return 1;
+          return a.priority - b.priority;
+        }),
+    [tasks],
+  );
 
   const [currentIndex, setCurrentIndex] = useState(0);
 
