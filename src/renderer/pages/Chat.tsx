@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
-import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
+
 import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
 import { useAppStore } from '@/stores/app-store';
 import type {
@@ -361,7 +361,6 @@ export default function Chat() {
         ]}
         meta={
           <>
-            <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             {chatContext?.taskId && (
               <Badge
                 variant="outline"

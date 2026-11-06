@@ -107,7 +107,7 @@ import { useIpcEvent } from '@/hooks/use-ipc';
 import { DURATION_PRESETS } from '@/lib/focus/presets';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useTaskDrag } from '@/hooks/use-task-drag';
-import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
+
 import { useGamification } from '@/hooks/use-gamification';
 import { HeaderLevelChip } from '@/components/gamification/HeaderLevelChip';
 import {
@@ -1366,10 +1366,6 @@ export default function Tasks() {
               <HeaderLevelChip
                 state={gamification.state}
                 loading={gamification.loading}
-              />
-              <ProjectScopeChip
-                name={projectName}
-                onClear={clearProjectScope}
               />
             </>
           }

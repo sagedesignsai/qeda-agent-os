@@ -185,6 +185,25 @@ export function registerSettingsHandlers({
     } else {
       merged.e2bSandboxTemplate = current.e2bSandboxTemplate;
     }
+    // Downloaded offline models: merge — append new ids, remove cleared ones.
+    // When the renderer sends a list, union it with the existing list so
+    // saving other settings does not erase the downloaded model ids.
+    if (Object.prototype.hasOwnProperty.call(incoming, 'downloadedOfflineModels')) {
+      const incomingModels = incoming.downloadedOfflineModels ?? [];
+      const existing = current.downloadedOfflineModels ?? [];
+      if (incomingModels.length === 0) {
+        // Explicitly clearing — keep existing unless the incoming also
+        // has the field set to an empty array (which means clear all).
+        merged.downloadedOfflineModels = incomingModels;
+      } else {
+        // Union: add new ids, keep existing ones
+        merged.downloadedOfflineModels = [
+          ...new Set([...existing, ...incomingModels]),
+        ];
+      }
+    } else {
+      merged.downloadedOfflineModels = current.downloadedOfflineModels;
+    }
     saveSettings(merged);
     resetAgents();
 
@@ -248,6 +267,22 @@ export function registerSettingsHandlers({
 
   ipcMain.handle('settings:get-hf-token', () => {
     return process.env.HF_TOKEN ?? process.env.HF_ACCESS_TOKEN ?? null;
+  });
+
+  // ── Offline models ──────────────────────────────────────────────────────
+  // Return the list of downloaded offline model ids so the renderer can
+  // populate the offline provider's model dropdown.
+
+  ipcMain.handle('offline-models:list', (): string[] => {
+    const settings = getSettings();
+    // Only return language models (the offline provider is for chat, not embeddings)
+    const allDownloaded = settings.downloadedOfflineModels ?? [];
+    // Filter to only language models from the offline catalog
+    const { OFFLINE_MODELS } = require('../../../lib/offline-ai/models');
+    const languageModels = OFFLINE_MODELS.filter(
+      (m: { category: string }) => m.category === 'language',
+    ).map((m: { id: string }) => m.id);
+    return allDownloaded.filter((id: string) => languageModels.includes(id));
   });
 
   // ── MCP server management ─────────────────────────────────────────────────

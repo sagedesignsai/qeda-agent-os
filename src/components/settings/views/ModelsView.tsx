@@ -120,6 +120,19 @@ export function ModelsView() {
     setLoadingModels(true);
     setModelsError(undefined);
     try {
+      // Offline provider uses a dedicated IPC channel since it has no /models endpoint
+      if (providerId === 'offline') {
+        const modelIds = await window.electron.ipc.invoke<string[]>(
+          'offline-models:list',
+        );
+        setModels(modelIds ?? []);
+        if (modelIds.length === 0) {
+          setModelsError(
+            'No offline models downloaded. Download models in Settings → Offline Models first.',
+          );
+        }
+        return;
+      }
       const result = await window.electron.ipc.invoke<{
         models: string[];
         error?: string;
@@ -185,6 +198,11 @@ export function ModelsView() {
         activeModel: activeModel.trim(),
         fallbackEnabled,
         providers: providerSettings,
+        // When the offline provider is selected, also persist the model id
+        // so the renderer-side chat hook knows which Transformers.js model to use.
+        ...(activeProvider === 'offline'
+          ? { offlineModel: activeModel.trim() }
+          : {}),
         ...(Object.keys(serviceKeyPayload).length
           ? { serviceKeys: serviceKeyPayload }
           : {}),
@@ -269,32 +287,50 @@ export function ModelsView() {
           </Button>
         </div>
 
-        <Select value={activeModel} onValueChange={setActiveModel}>
-          <SelectTrigger id="model-select">
-            <SelectValue placeholder="Choose a model…" />
-          </SelectTrigger>
-          <SelectContent>
-            {models.map((model) => (
-              <SelectItem key={model} value={model}>
-                <span className="flex items-center gap-2">
-                  {model}
-                  {(model.endsWith(':free') ||
-                    current?.freeModels.includes(model)) && (
-                    <GiftIcon className="size-3 text-green-500" />
-                  )}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {activeProvider === 'offline' && models.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-4 text-center">
+            <p className="text-sm text-muted-foreground">
+              No offline models downloaded yet.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Go to Settings → Offline Models to download a model first.
+            </p>
+          </div>
+        ) : (
+          <>
+            <Select value={activeModel} onValueChange={setActiveModel}>
+              <SelectTrigger id="model-select">
+                <SelectValue placeholder="Choose a model…" />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((model) => (
+                  <SelectItem key={model} value={model}>
+                    <span className="flex items-center gap-2">
+                      {model}
+                      {activeProvider === 'offline' && (
+                        <Badge variant="secondary" className="text-xs">
+                          Offline
+                        </Badge>
+                      )}
+                      {(model.endsWith(':free') ||
+                        current?.freeModels.includes(model)) && (
+                        <GiftIcon className="size-3 text-green-500" />
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-        <Input
-          id="model-input"
-          value={activeModel}
-          onChange={(e) => setActiveModel(e.target.value)}
-          placeholder="Or type a custom model ID…"
-          className="text-sm"
-        />
+            <Input
+              id="model-input"
+              value={activeModel}
+              onChange={(e) => setActiveModel(e.target.value)}
+              placeholder="Or type a custom model ID…"
+              className="text-sm"
+            />
+          </>
+        )}
 
         {modelsError && (
           <p className="text-xs text-muted-foreground">

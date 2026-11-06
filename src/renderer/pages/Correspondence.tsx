@@ -27,7 +27,7 @@ import { useSearchParams } from 'react-router';
 import { SendIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader, type PageCrumb } from '@/components/PageHeader';
-import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
+
 import { AttentionBoard } from '@/components/correspondence/AttentionBoard';
 import { ContactList } from '@/components/correspondence/ContactList';
 import { CorrespondenceEmpty } from '@/components/correspondence/CorrespondenceEmpty';
@@ -118,12 +118,6 @@ export default function Correspondence() {
               />
             </div>
           )
-        }
-        meta={
-          <ProjectScopeChip
-            name={activeProjectName}
-            onClear={clearProjectScope}
-          />
         }
         actions={
           isFirstRun ? undefined : (

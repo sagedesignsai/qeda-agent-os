@@ -252,54 +252,7 @@ export function TodayTimeline({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold">{format(today, 'EEEE')}</h2>
-          <p className="text-xs text-muted-foreground">
-            {format(today, 'MMMM d')} · {blocks.length} block
-            {blocks.length === 1 ? '' : 's'}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 border-amber-500/30 text-xs text-amber-500 hover:bg-amber-500/10 hover:text-amber-400"
-            onClick={() => setKickoffOpen(true)}
-            disabled={openTasks.length === 0}
-          >
-            <SunIcon className="size-3.5 fill-amber-500/20" />
-            Morning Kickoff
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs"
-            onClick={() => void planMyDay()}
-            disabled={planning || openTasks.length === 0}
-          >
-            {planning ? (
-              <Loader2Icon className="size-3 animate-spin" />
-            ) : (
-              <SparklesIcon className="size-3 text-amber-500" />
-            )}
-            Auto-plan
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 gap-1.5 text-xs"
-            onClick={() => {
-              setPresetTaskId(null);
-              setScheduleOpen(true);
-            }}
-          >
-            <CalendarPlusIcon className="size-3" />
-            Block time
-          </Button>
-        </div>
-      </div>
-
+     
       {/* Timeline — 2-col dashboard on desktop (fixed header, columns scroll
           internally so the page itself never scrolls), stacked scroll on small. */}
       {loading ? (
@@ -310,11 +263,6 @@ export function TodayTimeline({
         <div className="flex min-h-0 flex-col gap-3 lg:flex-1 lg:flex-row">
           {/* Left: kickoff hero */}
           <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
-            <header className="px-1 pb-2">
-              <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-                Start your day
-              </h3>
-            </header>
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
               <TodayEmptyHero
                 recommendation={recommendation}

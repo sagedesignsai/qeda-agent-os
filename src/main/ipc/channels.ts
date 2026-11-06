@@ -729,6 +729,11 @@ export interface IpcChannels {
    * never gets the Authorization header. This channel bridges the gap.
    */
   'settings:get-hf-token': { req: void; res: string | null };
+  /**
+   * Return the list of downloaded offline model ids (Transformers.js).
+   * Used by the offline provider to populate the model dropdown in Settings.
+   */
+  'offline-models:list': { req: void; res: string[] };
 
   // ── MCP server management ─────────────────────────────────────────────────
   /**

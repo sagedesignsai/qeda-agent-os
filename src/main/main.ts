@@ -83,6 +83,11 @@ if (process.env.CI === 'true' || process.env.QEDA_DISABLE_HW_ACCEL === '1') {
   app.disableHardwareAcceleration();
 }
 
+// Enable WebGPU for Transformers.js offline model inference.
+// Electron disables WebGPU by default for security; this flag allows
+// the renderer process to access the GPU adapter for model acceleration.
+app.commandLine.appendSwitch('enable-unsafe-webgpu');
+
 if (process.env.NODE_ENV === 'production') {
   process.setSourceMapsEnabled(true);
 }

@@ -35,7 +35,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { TerminalPanel } from '@/components/terminal/TerminalPanel';
 import { useTerminalLayout } from '@/hooks/use-terminal-layout';
 import { useProjectScope } from '@/hooks/use-project-scope';
-import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
+
 import { useIpcEvent } from '@/hooks/use-ipc';
 import type { TerminalMode } from '@/components/terminal/TerminalTab';
 
@@ -148,9 +148,6 @@ export default function Terminal() {
           { label: 'Terminal' },
           ...(projectName ? [{ label: projectName }] : []),
         ]}
-        meta={
-          <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
-        }
       />
 
       {/* ── Panel area ─────────────────────────────────────────────────────── */}

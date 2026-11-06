@@ -278,6 +278,28 @@ export async function listProviderModels(
     return { models: suggestions, error: `Unknown provider: ${providerId}` };
   }
 
+  // Offline provider: no /models endpoint — return downloaded language models
+  if (providerId === 'offline') {
+    const settings = getSettings();
+    const allDownloaded = settings.downloadedOfflineModels ?? [];
+    // Filter to language models only (chat, not embeddings/vision/transcription)
+    const { OFFLINE_MODELS } = require('../../lib/offline-ai/models');
+    const languageIds = OFFLINE_MODELS
+      .filter((m: { category: string }) => m.category === 'language')
+      .map((m: { id: string }) => m.id);
+    const downloaded = allDownloaded.filter((id: string) =>
+      languageIds.includes(id),
+    );
+    if (downloaded.length === 0) {
+      return {
+        models: [],
+        error:
+          'No offline models downloaded. Download models in Settings → Offline Models first.',
+      };
+    }
+    return { models: downloaded };
+  }
+
   const baseURL = resolveBaseURL(providerId, getSettings());
   if (!baseURL) {
     return { models: suggestions, error: 'Provider has no base URL.' };

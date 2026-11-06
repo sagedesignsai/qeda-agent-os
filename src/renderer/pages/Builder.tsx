@@ -43,7 +43,7 @@ import { BuilderCanvas } from '@/components/builder/BuilderCanvas';
 import { BuilderChatPanel } from '@/components/builder/BuilderChatPanel';
 import { BuilderSessionSwitcher } from '@/components/builder/BuilderSessionSwitcher';
 import { BuilderWelcome } from '@/components/builder/BuilderWelcome';
-import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
+
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useBuilderPreview } from '@/hooks/use-builder-preview';
 import {
@@ -499,7 +499,6 @@ export default function Builder() {
         ]}
         meta={
           <div className="flex items-center gap-2">
-            <ProjectScopeChip name={projectName} onClear={clearProjectScope} />
             <BuilderSessionSwitcher />
           </div>
         }

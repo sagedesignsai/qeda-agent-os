@@ -100,7 +100,7 @@ export function OfflineModelsView() {
     setupHfToken();
   }, []);
 
-  // Load the default offline model from settings
+  // Load the default offline model and downloaded model list from settings
   useEffect(() => {
     if (seeded.current) return;
     seeded.current = true;
@@ -112,6 +112,19 @@ export function OfflineModelsView() {
         if (cancelled) return;
         const model = (settings?.offlineModel as string) ?? '';
         if (model) setDefaultModel(model);
+        // Pre-mark models that were previously downloaded
+        const downloaded = (settings?.downloadedOfflineModels as string[]) ?? [];
+        if (downloaded.length > 0) {
+          setDownloads((prev) => {
+            const updated = { ...prev };
+            for (const id of downloaded) {
+              if (updated[id]?.status !== 'ready') {
+                updated[id] = { status: 'ready', progress: 100, error: null };
+              }
+            }
+            return updated;
+          });
+        }
       })
       .catch(console.error);
 
@@ -193,6 +206,15 @@ export function OfflineModelsView() {
 
       if (!controller.signal.aborted) {
         updateDownload(model.id, { status: 'ready', progress: 100, error: null });
+        // Persist the downloaded model id in settings so the main process
+        // knows it is available for the offline provider model list.
+        window.electron.ipc
+          .invoke('settings:save', {
+            downloadedOfflineModels: [
+              model.id,
+            ],
+          })
+          .catch(() => {});
         toast.success(`${model.name} downloaded and ready for offline use.`);
       }
     } catch (err: any) {
@@ -227,13 +249,24 @@ export function OfflineModelsView() {
   const handleClearCache = useCallback(async (modelId: string) => {
     const model = OFFLINE_MODELS.find((m) => m.id === modelId);
     try {
-      // Clear the model from Transformers.js cache by removing it from state
-      // The actual cache files are managed by Transformers.js internally
       updateDownload(modelId, { status: 'idle', progress: 0, error: null });
       if (defaultModel === modelId) {
         setDefaultModel('');
         await window.electron.ipc.invoke('settings:save', { offlineModel: '' });
       }
+      // Remove the model id from the downloaded list in settings
+      window.electron.ipc
+        .invoke<Record<string, unknown>>('settings:get')
+        .then((settings) => {
+          const downloaded = (settings?.downloadedOfflineModels as string[]) ?? [];
+          const filtered = downloaded.filter((id) => id !== modelId);
+          if (filtered.length !== downloaded.length) {
+            return window.electron.ipc.invoke('settings:save', {
+              downloadedOfflineModels: filtered,
+            });
+          }
+        })
+        .catch(() => {});
       toast.success(`${model?.name ?? modelId} cache cleared.`);
     } catch (err) {
       toast.error(`Failed to clear cache: ${err instanceof Error ? err.message : String(err)}`);

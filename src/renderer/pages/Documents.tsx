@@ -18,7 +18,7 @@ import { useNavigate, useParams } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { PlusIcon } from 'lucide-react';
 import { PageHeader, type PageCrumb } from '@/components/PageHeader';
-import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
+
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useDocuments, useDocumentEditor } from '@/hooks/use-documents';
 import { WordProcessor } from '@/components/documents/word-processor';

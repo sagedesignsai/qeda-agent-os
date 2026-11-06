@@ -121,6 +121,16 @@ export interface AppSettings {
   };
   /** True when the user explicitly chose global/no-default project context. */
   activeProjectExplicitlyCleared?: boolean;
+  /**
+   * Selected offline (Transformers.js) model id, e.g. "Xenova/distilgpt2".
+   * Used when activeProvider is "offline".
+   */
+  offlineModel?: string;
+  /**
+   * Model ids that have been downloaded and cached by Transformers.js.
+   * Populated by the renderer when a download completes.
+   */
+  downloadedOfflineModels?: string[];
   providers: ProvidersMap;
   customProviders?: CustomProviderSettings[];
 }

@@ -135,6 +135,13 @@ export const PROVIDERS: ProviderConfig[] = [
     freeModels: [],
     note: 'Fully local and free — needs an Ollama server running.',
   },
+  {
+    id: 'offline',
+    name: 'Offline (Transformers.js)',
+    freeModels: [],
+    note:
+      'Runs locally in the browser via WebGPU. Download models in Settings → Offline Models first.',
+  },
 ];
 
 /** Look up a registry entry by id. */
