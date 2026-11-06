@@ -15,7 +15,7 @@ import {
   serializePathData,
   serializePointsString,
 } from '@/lib/trace/path/model';
-import { createBlankTraceProject } from '@/lib/trace/defaults';
+import { createBlankTraceDocument, stageOrNull } from '@/lib/trace/document';
 import { useTraceStore } from '@/stores/trace-store';
 
 describe('path parse / serialize', () => {
@@ -197,7 +197,7 @@ describe('path edit activation in the store', () => {
     useTraceStore.getState().closeProject();
     useTraceStore
       .getState()
-      .loadProject(createBlankTraceProject('Path Test'));
+      .loadProject(createBlankTraceDocument('Path Test'));
   });
 
   function addPath(): string {
@@ -244,11 +244,11 @@ describe('path edit activation in the store', () => {
       .updateAttributes(id, { d: 'M 0 0 L 50 0 L 50 50' });
     expect(useTraceStore.getState().past.length).toBe(pastBefore + 1);
     expect(
-      useTraceStore.getState().project?.elements[id].attributes.d,
+      stageOrNull(useTraceStore.getState().project)?.elements[id].attributes.d,
     ).toBe('M 0 0 L 50 0 L 50 50');
     useTraceStore.getState().undo();
     expect(
-      useTraceStore.getState().project?.elements[id].attributes.d,
+      stageOrNull(useTraceStore.getState().project)?.elements[id].attributes.d,
     ).toBe('M 0 0 L 100 0 L 100 100');
   });
 });

@@ -16,8 +16,14 @@
 
 import { mapEasingToGsap } from '../runtime/gsap-compiler';
 import { staticSvgMarkup } from '../serialize/svg-markup';
-import { migrateTraceProject } from '../migrate';
-import type { PropertyTrack, TraceElement, TraceProject } from '../types';
+import { migrateTraceDocument } from '../migrate';
+import { stageOf } from '../document';
+import type {
+  PropertyTrack,
+  TraceElement,
+  TraceDocument,
+  TraceStage,
+} from '../types';
 
 export interface GsapCodeOptions {
   format: 'react' | 'vanilla';
@@ -132,7 +138,7 @@ function trackTweenLines(
   return lines;
 }
 
-function timelineLines(project: TraceProject, indent: string): string[] {
+function timelineLines(project: TraceStage, indent: string): string[] {
   const lines: string[] = [];
   for (const element of Object.values(project.elements)) {
     if (!element.visible) continue;
@@ -155,13 +161,14 @@ function timelineLines(project: TraceProject, indent: string): string[] {
 }
 
 export function generateGsapCode(
-  inputProject: TraceProject,
+  inputProject: TraceDocument,
   options: GsapCodeOptions,
 ): string {
-  const project = migrateTraceProject(inputProject);
+  const document = migrateTraceDocument(inputProject).project;
+  const project = stageOf(document);
   const { format, loop = true, componentName, includeMarkup = true } = options;
   const name = toPascalCase(componentName || project.name || 'TraceScene');
-  const markup = staticSvgMarkup(project, project.durationMs * 0.7, {
+  const markup = staticSvgMarkup(document, project.durationMs * 0.7, {
     size: true,
   });
   const needsTextPlugin = Object.values(project.elements).some((element) =>

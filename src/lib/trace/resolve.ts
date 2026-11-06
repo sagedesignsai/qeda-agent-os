@@ -9,7 +9,7 @@
  * element has no `baseX/baseY` (shapes authored by ops), `x/y` *is* the position.
  */
 
-import { getValueAtTime } from './animation/interpolator';
+import { overlayAttributeLayers } from './runtime/frame';
 import { resolveElementAtTime } from './runtime/resolve-element';
 import type { TraceElement } from './types';
 
@@ -30,14 +30,9 @@ export function resolveElementAttributes(
   element: TraceElement,
   timeMs: number,
 ): ResolvedAttributes {
-  const resolved: ResolvedAttributes = { ...(element.attributes ?? {}) };
-
-  for (const track of element.tracks ?? []) {
-    const value = getValueAtTime(track, timeMs);
-    if (value !== null && value !== undefined) resolved[track.property] = value;
-  }
-
-  return resolved;
+  return overlayAttributeLayers(element, [
+    { timeMs, weight: 1, tracks: element.tracks ?? [] },
+  ]) as ResolvedAttributes;
 }
 
 function numberOr(value: unknown, fallback: number): number {
@@ -113,37 +108,38 @@ export function transformPatch(
     scaleX: desired.scaleX,
     scaleY: desired.scaleY,
   };
-}
-
+}/**
+ * @deprecated Use `sampleFrame` or `resolveElementAtTime`; kept for callers
+ * that still want the CSS-shaped view of one element.
+ */
 export function resolveTransform(
   element: TraceElement,
   timeMs: number,
 ): ResolvedTransform {
-  const attributes = resolveElementAttributes(element, timeMs);
-
-  const hasBasePosition =
-    typeof attributes.baseX === 'number' ||
-    typeof attributes.baseY === 'number';
-
-  const x = hasBasePosition
-    ? numberOr(attributes.baseX, 0) + numberOr(attributes.x, 0)
-    : numberOr(attributes.x, 0);
-  const y = hasBasePosition
-    ? numberOr(attributes.baseY, 0) + numberOr(attributes.y, 0)
-    : numberOr(attributes.y, 0);
-
-  const scaleX = numberOr(attributes.scaleX, 1);
-  const scaleY = numberOr(attributes.scaleY, 1);
-  const rotation = numberOr(attributes.rotation, 0);
+  const { attributes, transform: resolved } = resolveElementAtTime(
+    element,
+    timeMs,
+  );
   const opacity = numberOr(attributes.opacity, 1);
 
   const transform = [
-    `translate(${x} ${y})`,
-    rotation ? `rotate(${rotation})` : '',
-    scaleX !== 1 || scaleY !== 1 ? `scale(${scaleX} ${scaleY})` : '',
+    `translate(${resolved.x} ${resolved.y})`,
+    resolved.rotation ? `rotate(${resolved.rotation})` : '',
+    resolved.scaleX !== 1 || resolved.scaleY !== 1
+      ? `scale(${resolved.scaleX} ${resolved.scaleY})`
+      : '',
   ]
     .filter(Boolean)
     .join(' ');
 
-  return { attributes, x, y, scaleX, scaleY, rotation, opacity, transform };
+  return {
+    attributes,
+    x: resolved.x,
+    y: resolved.y,
+    scaleX: resolved.scaleX,
+    scaleY: resolved.scaleY,
+    rotation: resolved.rotation,
+    opacity,
+    transform,
+  };
 }

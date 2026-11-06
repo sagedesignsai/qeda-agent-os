@@ -6,19 +6,22 @@
  * preset the user did not ask for.
  */
 
-import type { TraceProject } from './types';
+import { TRACE_DEFAULT_ANIMATION_ID, TRACE_DEFAULT_ARTBOARD_ID } from './schema';
+import type { TraceStage } from './types';
 
 export const TRACE_DEFAULT_WIDTH = 1920;
 export const TRACE_DEFAULT_HEIGHT = 1080;
 export const TRACE_DEFAULT_DURATION_MS = 6000;
 export const TRACE_DEFAULT_FPS = 60;
 
-export function createBlankTraceProject(
+/** A blank editing stage: one empty artboard, one empty animation. */
+export function createBlankTraceStage(
   name = 'Untitled Trace',
-  overrides: Partial<TraceProject> = {},
-): TraceProject {
+  overrides: Partial<TraceStage> = {},
+): TraceStage {
   return {
-    id: '',
+    artboardId: TRACE_DEFAULT_ARTBOARD_ID,
+    animationId: TRACE_DEFAULT_ANIMATION_ID,
     name,
     width: TRACE_DEFAULT_WIDTH,
     height: TRACE_DEFAULT_HEIGHT,

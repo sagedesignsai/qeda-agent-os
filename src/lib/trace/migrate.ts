@@ -5,11 +5,26 @@
  */
 
 import type {
+  TraceAnimation,
+  TraceArtboard,
+  TraceDocument,
   TraceElement,
-  TraceProject,
+  TraceStage,
+  TraceStageInput,
   TraceElementType,
   PropertyTrack,
 } from './types';
+import { TRACE_DEFAULT_DURATION_MS, TRACE_DEFAULT_FPS } from './defaults';
+import {
+  isTraceDocument,
+  readTraceSchemaVersion,
+  TRACE_DEFAULT_ANIMATION_ID,
+  TRACE_DEFAULT_ARTBOARD_ID,
+  TRACE_SCHEMA_VERSION,
+  TraceSchemaInvalidError,
+  TraceSchemaNewerError,
+} from './schema';
+import { ensureStoryboard } from './storyboard';
 import { expandRecipe } from './recipes';
 
 const LEGACY_TYPES = new Set([
@@ -537,11 +552,20 @@ function migrateSplineTracer(element: LegacyElement): TraceElement {
  * Expand legacy macro elements while keeping their ids and parent/root slots.
  * A second invocation returns the same object without allocating.
  */
-export function migrateTraceProject(project: TraceProject): TraceProject {
-  const legacyElements = Object.values(project.elements)
+export function migrateTraceStage(input: TraceStageInput): TraceStage {
+  const legacyElements = Object.values(input.elements ?? {})
     .filter(isLegacy)
     .map((element) => element as LegacyElement);
-  if (legacyElements.length === 0) return project;
+
+  // Nothing to expand: return the same object so callers can treat migration
+  // as a no-op and a second pass as idempotent.
+  if (legacyElements.length === 0) return input as TraceStage;
+
+  const project: TraceStage = {
+    artboardId: TRACE_DEFAULT_ARTBOARD_ID,
+    animationId: TRACE_DEFAULT_ANIMATION_ID,
+    ...input,
+  };
 
   const elements: Record<string, TraceElement> = { ...project.elements };
   const occupiedIds = new Set(Object.keys(project.elements));
@@ -557,4 +581,289 @@ export function migrateTraceProject(project: TraceProject): TraceProject {
   }
 
   return { ...project, elements };
+}
+
+/* ── Document v2 ─────────────────────────────────────────────────────────────
+ *
+ * v2 nests element graphs inside artboards and keyframes inside named
+ * animations. Migration is a read normalization: it never mutates its input,
+ * only copies the branches it changes, and it returns the same reference on a
+ * second call so callers can cheaply check "did this change?".
+ *
+ * Order matters: legacy compound elements expand first, because expansion
+ * creates tracks that then need an `animationId` like every other track.
+ */
+
+export { TRACE_DEFAULT_ANIMATION_ID, TRACE_DEFAULT_ARTBOARD_ID } from './schema';
+const MOTION_TRACK_SUFFIX = '__motion';
+
+export type TraceMigration = {
+  project: TraceDocument;
+  changed: boolean;
+  from: 1 | 2;
+};
+
+function hasMotionPath(attributes: Record<string, unknown>): boolean {
+  return (
+    typeof attributes.motionPathData === 'string' &&
+    attributes.motionPathData.length > 0
+  );
+}
+
+function hasTextPathTarget(attributes: Record<string, unknown>): boolean {
+  return typeof attributes.textPathTargetId === 'string';
+}
+
+/**
+ * Stamp every track with the animation that owns it, and split the overloaded
+ * `pathProgress` property:
+ *
+ * - no motion path          → stays `pathProgress` (text-on-path offset)
+ * - motion path only        → renamed to `motionPathProgress`, id kept
+ * - motion path + text path → `pathProgress` kept, plus a `__motion` duplicate
+ *
+ * Idempotent because an element that already owns a `motionPathProgress` track
+ * is left alone.
+ */
+function retagElementTracks(
+  element: TraceElement,
+  animationId: string,
+): TraceElement {
+  const tracks = element.tracks ?? [];
+  if (tracks.length === 0) return element;
+
+  const attributes = (element.attributes ?? {}) as Record<string, unknown>;
+  const followsPath = hasMotionPath(attributes);
+  const hasTextOffset = hasTextPathTarget(attributes);
+  const alreadySplit = tracks.some(
+    (track) => track.property === 'motionPathProgress',
+  );
+
+  let changed = false;
+  const nextTracks: PropertyTrack[] = [];
+
+  for (const track of tracks) {
+    let next: PropertyTrack = track;
+
+    if (!track.animationId) {
+      next = { ...next, animationId };
+      changed = true;
+    }
+
+    if (next.property === 'pathProgress' && followsPath && !alreadySplit) {
+      if (hasTextOffset) {
+        nextTracks.push(next);
+        nextTracks.push({
+          ...next,
+          id: `${next.id}${MOTION_TRACK_SUFFIX}`,
+          property: 'motionPathProgress',
+        });
+        changed = true;
+        continue;
+      }
+      next = { ...next, property: 'motionPathProgress' };
+      changed = true;
+    }
+
+    nextTracks.push(next);
+  }
+
+  return changed ? { ...element, tracks: nextTracks } : element;
+}
+
+function normalizeArtboard(artboard: TraceArtboard): TraceArtboard {
+  let changed = false;
+
+  let animations: TraceAnimation[] = Array.isArray(artboard.animations)
+    ? artboard.animations
+    : [];
+  if (animations.length === 0) {
+    animations = [
+      {
+        id: TRACE_DEFAULT_ANIMATION_ID,
+        name: 'Animation 1',
+        durationMs: TRACE_DEFAULT_DURATION_MS,
+        loop: 'loop',
+      },
+    ];
+    changed = true;
+  }
+
+  const animationIds = new Set(animations.map((animation) => animation.id));
+  let defaultAnimationId = artboard.defaultAnimationId;
+  if (!animationIds.has(defaultAnimationId)) {
+    defaultAnimationId = animations[0].id;
+    changed = true;
+  }
+
+  const animationOrder = Array.isArray(artboard.animationOrder)
+    ? artboard.animationOrder.filter((id) => animationIds.has(id))
+    : [];
+  for (const animation of animations) {
+    if (!animationOrder.includes(animation.id)) animationOrder.push(animation.id);
+  }
+  const previousOrder = artboard.animationOrder ?? [];
+  if (
+    animationOrder.length !== previousOrder.length ||
+    animationOrder.some((id, index) => id !== previousOrder[index])
+  ) {
+    changed = true;
+  }
+
+  const elements: Record<string, TraceElement> = {};
+  for (const [id, element] of Object.entries(artboard.elements ?? {})) {
+    const next = retagElementTracks(element, defaultAnimationId);
+    if (next !== element) changed = true;
+    elements[id] = next;
+  }
+
+  if (!changed) return artboard;
+
+  return {
+    ...artboard,
+    elements,
+    animations,
+    animationOrder,
+    defaultAnimationId,
+  };
+}
+
+function normalizeV2Document(document: TraceDocument): TraceMigration {
+  const artboards: Record<string, TraceArtboard> = {};
+  let changed = false;
+
+  for (const [id, artboard] of Object.entries(document.artboards)) {
+    const next = normalizeArtboard(artboard);
+    if (next !== artboard) changed = true;
+    artboards[id] = next;
+  }
+
+  const known = new Set(Object.keys(artboards));
+  const order = (document.artboardOrder ?? []).filter((id) => known.has(id));
+  for (const id of known) {
+    if (!order.includes(id)) order.push(id);
+  }
+  if (order.length === 0) {
+    throw new TraceSchemaInvalidError(
+      'A Nova Trace document needs at least one artboard.',
+    );
+  }
+
+  const previousOrder = document.artboardOrder ?? [];
+  if (
+    order.length !== previousOrder.length ||
+    order.some((id, index) => id !== previousOrder[index])
+  ) {
+    changed = true;
+  }
+
+  const activeArtboardId = known.has(document.activeArtboardId)
+    ? document.activeArtboardId
+    : order[0];
+  if (activeArtboardId !== document.activeArtboardId) changed = true;
+
+  if (!changed) return { project: document, changed: false, from: 2 };
+
+  return {
+    project: { ...document, artboards, artboardOrder: order, activeArtboardId },
+    changed: true,
+    from: 2,
+  };
+}
+
+function migrateV1(input: TraceStage): TraceMigration {
+  const expanded = migrateTraceStage(input);
+  const storyboard = ensureStoryboard(expanded);
+  const activeScene =
+    storyboard.scenes.find((scene) => scene.id === storyboard.activeSceneId) ??
+    storyboard.scenes[0];
+
+  const width = Math.max(1, Math.round(Number(expanded.width) || 1280));
+  const height = Math.max(1, Math.round(Number(expanded.height) || 720));
+  const fps = Math.max(1, Math.round(Number(expanded.fps) || TRACE_DEFAULT_FPS));
+  const durationMs = Math.max(
+    1,
+    Math.round(Number(expanded.durationMs) || TRACE_DEFAULT_DURATION_MS),
+  );
+
+  const animation: TraceAnimation = {
+    id: TRACE_DEFAULT_ANIMATION_ID,
+    name: 'Animation 1',
+    durationMs,
+    loop: 'loop',
+  };
+
+  const elements: Record<string, TraceElement> = {};
+  for (const [id, element] of Object.entries(expanded.elements ?? {})) {
+    elements[id] = retagElementTracks(element, animation.id);
+  }
+
+  const artboard: TraceArtboard = {
+    id: TRACE_DEFAULT_ARTBOARD_ID,
+    name: 'Artboard 1',
+    width,
+    height,
+    ...(activeScene?.background ? { background: activeScene.background } : {}),
+    elements,
+    rootElementIds: [...(expanded.rootElementIds ?? [])],
+    ...(expanded.defs ? { defs: expanded.defs } : {}),
+    ...(expanded.gradients ? { gradients: expanded.gradients } : {}),
+    animations: [animation],
+    animationOrder: [animation.id],
+    defaultAnimationId: animation.id,
+  };
+
+  // Copy the root so unknown fields written by a newer minor version survive.
+  const rest: Record<string, unknown> = {
+    ...(expanded as unknown as Record<string, unknown>),
+  };
+  delete rest.elements;
+  delete rest.rootElementIds;
+  delete rest.defs;
+  delete rest.gradients;
+  delete rest.schemaVersion;
+
+  const project = {
+    ...rest,
+    id: expanded.id,
+    schemaVersion: 2,
+    name: expanded.name,
+    width,
+    height,
+    durationMs,
+    fps,
+    storyboard,
+    artboards: { [artboard.id]: artboard },
+    artboardOrder: [artboard.id],
+    activeArtboardId: artboard.id,
+  } as unknown as TraceDocument;
+
+  return { project, changed: true, from: 1 };
+}
+
+/**
+ * Convert any Trace document — v1, v2, or already normalized — into v2.
+ *
+ * - missing `schemaVersion` → v1, migrated
+ * - `schemaVersion: 2` → repaired if needed, otherwise returned by reference
+ * - `schemaVersion > 2` → `TraceSchemaNewerError`, never partially migrated
+ */
+export function migrateTraceDocument(input: unknown): TraceMigration {
+  const version = readTraceSchemaVersion(input);
+  if (version > TRACE_SCHEMA_VERSION) throw new TraceSchemaNewerError(version);
+
+  if (!input || typeof input !== 'object') {
+    throw new TraceSchemaInvalidError('A Nova Trace document must be an object.');
+  }
+
+  if (version >= TRACE_SCHEMA_VERSION) {
+    if (!isTraceDocument(input)) {
+      throw new TraceSchemaInvalidError(
+        'This Nova Trace document claims schema 2 but has no artboards.',
+      );
+    }
+    return normalizeV2Document(input);
+  }
+
+  return migrateV1(input as TraceStage);
 }

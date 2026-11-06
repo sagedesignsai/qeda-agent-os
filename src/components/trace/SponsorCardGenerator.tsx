@@ -12,13 +12,14 @@
 
 'use client';
 
+import { stageOf } from '@/lib/trace/document';
 import { useState, useRef } from 'react';
 import { useSponsorCard } from '@/hooks/use-sponsor-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type { SponsorCardFeature } from '@/lib/trace/templates/sponsor-card';
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument } from '@/lib/trace/types';
 
 interface Feature {
   title: string;
@@ -31,7 +32,7 @@ export function SponsorCardGenerator() {
     { title: 'One-shot Planning', subtitle: 'Goal → steps → approval → run' },
     { title: 'Real Completion', subtitle: 'Track every command & result' },
   ]);
-  const [project, setProject] = useState<TraceProject | null>(null);
+  const [project, setProject] = useState<TraceDocument | null>(null);
   const [exportCode, setExportCode] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<'react' | 'vanilla'>('react');
   const [exportSvg, setExportSvg] = useState<string | null>(null);
@@ -182,7 +183,7 @@ export function SponsorCardGenerator() {
             <p>Dimensions: {project.width}×{project.height}px</p>
             <p>Duration: {project.durationMs}ms ({(project.durationMs / 1000).toFixed(1)}s)</p>
             <p>FPS: {project.fps}</p>
-            <p>Elements: {Object.keys(project.elements).length}</p>
+            <p>Elements: {Object.keys(stageOf(project).elements).length}</p>
           </div>
         </div>
       )}

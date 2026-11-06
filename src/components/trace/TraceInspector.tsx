@@ -12,6 +12,7 @@
  * and shadcn primitives (Select, Collapsible) for consistent theming and UX.
  */
 
+import { stageOf, stageOrNull } from '@/lib/trace/document';
 import { useState } from 'react';
 import {
   ChevronDownIcon,
@@ -526,13 +527,13 @@ function CanvasInspector() {
           <div className="flex justify-between">
             <dt className="text-slate-500">Layers</dt>
             <dd className="font-mono text-slate-300">
-              {Object.keys(project.elements).length}
+              {Object.keys(stageOf(project).elements).length}
             </dd>
           </div>
           <div className="flex justify-between">
             <dt className="text-slate-500">Tracks</dt>
             <dd className="font-mono text-slate-300">
-              {Object.values(project.elements).reduce(
+              {Object.values(stageOf(project).elements).reduce(
                 (sum, element) => sum + element.tracks.length,
                 0,
               )}
@@ -547,7 +548,7 @@ function CanvasInspector() {
           <div className="flex justify-between">
             <dt className="text-slate-500">Gradients</dt>
             <dd className="font-mono text-slate-300">
-              {Object.keys(project.gradients ?? {}).length}
+              {Object.keys(stageOf(project).gradients ?? {}).length}
             </dd>
           </div>
         </dl>
@@ -587,7 +588,7 @@ export function TraceInspector() {
     (state) => state.selection.selectedElementId,
   );
   const element = selectedElementId
-    ? (project?.elements[selectedElementId] ?? null)
+    ? (stageOrNull(project)?.elements[selectedElementId] ?? null)
     : null;
 
   const groups = element

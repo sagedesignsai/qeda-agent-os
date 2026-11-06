@@ -5,9 +5,11 @@
  * data authored against the same op contract the editor writes.
  */
 
-import { createBlankTraceProject } from '../defaults';
+import { createBlankTraceStage } from '../defaults';
 import { createScene } from '../storyboard';
-import type { TraceElement, TraceProject } from '../types';
+import { TRACE_DEFAULT_ANIMATION_ID, TRACE_DEFAULT_ARTBOARD_ID } from '../schema';
+import { documentFromStage, stageOf } from '../document';
+import type { TraceDocument, TraceElement, TraceStage } from '../types';
 import { createNovaTraceMarkProject } from './default-project';
 import { expandRecipe } from '../recipes';
 import { instantiateSponsorCardTemplate } from './sponsor-card';
@@ -23,7 +25,7 @@ export interface CompositionTemplateMeta {
   durationMs: number;
   fps: number;
   previewColor: string;
-  create: (options: TemplateOptions) => TraceProject;
+  create: (options: TemplateOptions) => TraceStage;
 }
 
 export interface TemplateOptions {
@@ -34,8 +36,13 @@ export interface TemplateOptions {
   fps?: number;
 }
 
-function base(project: TraceProject, options: TemplateOptions): TraceProject {
+function base(
+  project: Omit<TraceStage, 'artboardId' | 'animationId'>,
+  options: TemplateOptions,
+): TraceStage {
   return {
+    artboardId: TRACE_DEFAULT_ARTBOARD_ID,
+    animationId: TRACE_DEFAULT_ANIMATION_ID,
     ...project,
     name: options.name || project.name,
     durationMs: options.durationMs ?? project.durationMs,
@@ -59,9 +66,9 @@ function element(
   };
 }
 
-function createBlank(options: TemplateOptions): TraceProject {
+function createBlank(options: TemplateOptions): TraceStage {
   return base(
-    createBlankTraceProject(options.name || 'Untitled Trace', {
+    createBlankTraceStage(options.name || 'Untitled Trace', {
       width: options.width ?? 1920,
       height: options.height ?? 1080,
       durationMs: options.durationMs ?? 6000,
@@ -80,7 +87,7 @@ function createBlank(options: TemplateOptions): TraceProject {
   );
 }
 
-function createKineticType(options: TemplateOptions): TraceProject {
+function createKineticType(options: TemplateOptions): TraceStage {
   const scene = createScene({
     id: 'kinetic-scene',
     name: 'Headline',
@@ -217,7 +224,7 @@ function createKineticType(options: TemplateOptions): TraceProject {
   );
 }
 
-function createMetrics(options: TemplateOptions): TraceProject {
+function createMetrics(options: TemplateOptions): TraceStage {
   const scene = createScene({
     id: 'metrics-scene',
     name: 'Metrics',
@@ -324,7 +331,7 @@ function createMetrics(options: TemplateOptions): TraceProject {
   );
 }
 
-function createLowerThird(options: TemplateOptions): TraceProject {
+function createLowerThird(options: TemplateOptions): TraceStage {
   const scene = createScene({
     id: 'lower-third-scene',
     name: 'Speaker',
@@ -448,7 +455,7 @@ export const COMPOSITION_TEMPLATES: CompositionTemplateMeta[] = [
         { title: 'Feature Two', subtitle: 'Description' },
         { title: 'Feature Three', subtitle: 'Description' },
       ]);
-      return base(project, options);
+      return base(stageOf(project), options);
     },
   },
   {
@@ -470,7 +477,7 @@ export const COMPOSITION_TEMPLATES: CompositionTemplateMeta[] = [
         enterDurationMs: 400,
         exitDurationMs: 300,
       });
-      return base(project, options);
+      return base(stageOf(project), options);
     },
   },
 ];
@@ -487,12 +494,14 @@ export function getCompositionTemplate(
 export function instantiateCompositionTemplate(
   templateId?: string,
   options: TemplateOptions = {},
-): TraceProject {
+): TraceDocument {
   const template = getCompositionTemplate(templateId);
-  const project = template.create(options);
+  const stage = template.create(options);
   const width = options.width ?? template.width;
   const height = options.height ?? template.height;
   // Blank templates honour arbitrary dimensions. Authored templates keep their
   // own artboard so their keyframes stay on-canvas.
-  return template.id === 'blank' ? { ...project, width, height } : project;
+  return documentFromStage(
+    template.id === 'blank' ? { ...stage, width, height } : stage,
+  );
 }

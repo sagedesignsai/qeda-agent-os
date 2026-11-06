@@ -1,3 +1,4 @@
+import { stageOf } from '@/lib/trace/document';
 import {
   COMPOSITION_TEMPLATES,
   getCompositionTemplate,
@@ -41,7 +42,7 @@ describe('Trace Templates Catalog', () => {
     expect(project.width).toBe(1920);
     expect(project.height).toBe(1080);
     expect(project.durationMs).toBe(3500);
-    expect(Object.keys(project.elements).length).toBeGreaterThan(0);
+    expect(Object.keys(stageOf(project).elements).length).toBeGreaterThan(0);
   });
 
   it('instantiates lower-third-overlay from catalog', () => {
@@ -51,13 +52,13 @@ describe('Trace Templates Catalog', () => {
     });
     expect(project.name).toBe('Status Overlay');
     expect(project.durationMs).toBe(5000); // Respects override
-    expect(Object.keys(project.elements).length).toBeGreaterThan(0);
+    expect(Object.keys(stageOf(project).elements).length).toBeGreaterThan(0);
   });
 
   it('maintains backward compatibility with existing templates', () => {
     const blank = instantiateCompositionTemplate('blank');
     expect(blank.name).toBe('Untitled Trace');
-    expect(Object.keys(blank.elements).length).toBe(0);
+    expect(Object.keys(stageOf(blank).elements).length).toBe(0);
 
     const mark = instantiateCompositionTemplate('nova-mark');
     expect(mark.name).toBe('NovaTrace Mark');

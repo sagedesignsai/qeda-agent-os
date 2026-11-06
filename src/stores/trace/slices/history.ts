@@ -6,7 +6,7 @@
  * drift from the op contract.
  */
 
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument } from '@/lib/trace/types';
 
 export const TRACE_HISTORY_LIMIT = 50;
 
@@ -20,22 +20,22 @@ export function setHistoryOpActive(active: boolean): void {
   internalHistoryOp = active;
 }
 
-export function cloneProject(project: TraceProject): TraceProject {
+export function cloneProject(project: TraceDocument): TraceDocument {
   if (!project) return project;
   if (typeof structuredClone === 'function') {
     try {
       return structuredClone(project);
     } catch {
-      return JSON.parse(JSON.stringify(project)) as TraceProject;
+      return JSON.parse(JSON.stringify(project)) as TraceDocument;
     }
   }
-  return JSON.parse(JSON.stringify(project)) as TraceProject;
+  return JSON.parse(JSON.stringify(project)) as TraceDocument;
 }
 
 export function pushHistory(
-  past: TraceProject[],
-  project: TraceProject,
-): TraceProject[] {
+  past: TraceDocument[],
+  project: TraceDocument,
+): TraceDocument[] {
   const next = [...past, cloneProject(project)];
   return next.length > TRACE_HISTORY_LIMIT
     ? next.slice(next.length - TRACE_HISTORY_LIMIT)

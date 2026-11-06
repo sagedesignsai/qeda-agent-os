@@ -11,7 +11,7 @@ import type { UIMessage } from 'ai';
 import type { Session } from '../db/sessions.js';
 import type { AppSettings } from '../ai/settings.js';
 import type { MotionDocument } from '../../lib/motion/types';
-import type { TraceProject } from '../../lib/trace/types';
+import type { TraceDocument } from '../../lib/trace/types';
 import type {
   TraceOpenResult,
   TraceProjectSummary,
@@ -438,7 +438,7 @@ export interface IpcChannels {
     res: { projectId: string; path: string };
   };
   'trace:open-project': { req: { projectId: string }; res: TraceOpenResult };
-  'trace:save-project': { req: { projectId: string; project: TraceProject; expectedRevision: number }; res: { revision: number; savedAt: string } };
+  'trace:save-project': { req: { projectId: string; project: TraceDocument; expectedRevision: number }; res: { revision: number; savedAt: string } };
   'trace:rename-project': { req: { projectId: string; name: string }; res: { name: string } };
   'trace:delete-project': { req: { projectId: string }; res: { deleted: boolean } };
   'trace:reveal-project': { req: { projectId: string }; res: void };

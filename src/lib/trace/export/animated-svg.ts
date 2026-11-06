@@ -11,9 +11,9 @@
  * Adapted from sagedesigns-os lib/motion/export/svg-animation-compiler.ts.
  */
 
-import { getValueAtTime } from '../animation/interpolator';
-import { migrateTraceProject } from '../migrate';
-import { resolveElementAtTime } from '../runtime/resolve-element';
+import { migrateTraceDocument } from '../migrate';
+import { stageOf } from '../document';
+import { sampleFrame, type TraceFrame } from '../runtime/frame';
 import {
   elementBodyMarkup,
   escapeXml,
@@ -21,10 +21,13 @@ import {
 } from '../serialize/svg-markup';
 import type {
   EasingType,
+  TraceStage,
   PropertyTrack,
   TraceElement,
-  TraceProject,
+  TraceDocument,
 } from '../types';
+
+type SampleAt = (timeMs: number) => TraceFrame;
 
 export interface AnimatedSvgOptions {
   loop?: boolean;
@@ -172,6 +175,7 @@ function pathTrimAnimations(
   element: TraceElement,
   durationMs: number,
   loop: boolean,
+  sampleAt: SampleAt,
 ): string {
   const startTrack = trackFor(element, 'trimStart');
   const endTrack = trackFor(element, 'trimEnd');
@@ -183,9 +187,9 @@ function pathTrimAnimations(
     durationMs,
     (at) =>
       Number(
-        startTrack
-          ? (getValueAtTime(startTrack, at) ?? 0)
-          : (element.attributes.trimStart ?? 0),
+        sampleAt(at).elements[element.id]?.attributes.trimStart ??
+          element.attributes.trimStart ??
+          0,
       ),
   );
   const endSamples = buildSamples(
@@ -193,9 +197,9 @@ function pathTrimAnimations(
     durationMs,
     (at) =>
       Number(
-        endTrack
-          ? (getValueAtTime(endTrack, at) ?? 100)
-          : (element.attributes.trimEnd ?? 100),
+        sampleAt(at).elements[element.id]?.attributes.trimEnd ??
+          element.attributes.trimEnd ??
+          100,
       ),
   );
 
@@ -217,13 +221,24 @@ function pathTrimAnimations(
 }
 
 function animatedElementMarkup(
-  project: TraceProject,
+  project: TraceStage,
   element: TraceElement,
   timeMs: number,
-  options: { loop: boolean },
+  options: { loop: boolean; sampleAt: SampleAt },
 ): { markup: string; clip: string } {
   const durationMs = project.durationMs;
-  const { attributes, transform } = resolveElementAtTime(element, timeMs);
+  const { sampleAt } = options;
+  const sampled = sampleAt(timeMs).elements[element.id];
+  const attributes = (sampled?.attributes ?? {}) as Record<string, any>;
+  const transform = sampled?.transform ?? {
+    x: 0,
+    y: 0,
+    rotation: 0,
+    scaleX: 1,
+    scaleY: 1,
+    originX: 0,
+    originY: 0,
+  };
   const tracks = element.tracks ?? [];
 
   const xTracks = tracks.filter((track) => track.property === 'x');
@@ -240,8 +255,8 @@ function animatedElementMarkup(
       ? animateTransform(
           'translate',
           buildSamples([...xTracks, ...yTracks], durationMs, (at) => {
-            const resolved = resolveElementAtTime(element, at).transform;
-            return `${resolved.x} ${resolved.y}`;
+            const resolved = sampleAt(at).elements[element.id]?.transform;
+            return `${resolved?.x ?? 0} ${resolved?.y ?? 0}`;
           }),
           durationMs,
           options.loop,
@@ -253,7 +268,7 @@ function animatedElementMarkup(
         buildSamples(
           rotationTracks,
           durationMs,
-          (at) => resolveElementAtTime(element, at).transform.rotation,
+          (at) => sampleAt(at).elements[element.id]?.transform.rotation ?? 0,
         ),
         durationMs,
         options.loop,
@@ -263,8 +278,8 @@ function animatedElementMarkup(
     ? animateTransform(
         'scale',
         buildSamples(scaleTracks, durationMs, (at) => {
-          const resolved = resolveElementAtTime(element, at).transform;
-          return `${resolved.scaleX} ${resolved.scaleY}`;
+          const resolved = sampleAt(at).elements[element.id]?.transform;
+          return `${resolved?.scaleX ?? 1} ${resolved?.scaleY ?? 1}`;
         }),
         durationMs,
         options.loop,
@@ -291,11 +306,10 @@ function animatedElementMarkup(
             : property === 'letterSpacing'
               ? 'letter-spacing'
               : property,
-        buildSamples(
-          [track],
-          durationMs,
-          (at) =>
-            getValueAtTime(track, at) ?? element.attributes[property] ?? 0,
+        buildSamples([track], durationMs, (at) =>
+          sampleAt(at).elements[element.id]?.attributes[property] ??
+          element.attributes[property] ??
+          0,
         ),
         durationMs,
         { loop: options.loop },
@@ -312,7 +326,9 @@ function animatedElementMarkup(
         property === 'width' && element.type === 'circle' ? 'r' : property,
         buildSamples([track], durationMs, (at) => {
           const value = Number(
-            getValueAtTime(track, at) ?? element.attributes[property] ?? 0,
+            sampleAt(at).elements[element.id]?.attributes[property] ??
+              element.attributes[property] ??
+              0,
           );
           return property === 'width' && element.type === 'circle'
             ? value / 2
@@ -328,7 +344,7 @@ function animatedElementMarkup(
   const geometryXml = geometry.join('');
   const trimXml =
     element.type === 'path'
-      ? pathTrimAnimations(element, durationMs, options.loop)
+      ? pathTrimAnimations(element, durationMs, options.loop, sampleAt)
       : '';
 
   let body = elementBodyMarkup(element, attributes);
@@ -364,10 +380,20 @@ ${inheritedXml ? `<g>${inheritedXml}` : ''}${body}${inheritedXml ? '</g>' : ''}$
 }
 
 export function compileProjectToAnimatedSvg(
-  inputProject: TraceProject,
+  inputProject: TraceDocument,
   options: AnimatedSvgOptions = {},
 ): string {
-  const project = migrateTraceProject(inputProject);
+  const document = migrateTraceDocument(inputProject).project;
+  const project = stageOf(document);
+  const frames = new Map<number, TraceFrame>();
+  const sampleAt: SampleAt = (timeMs) => {
+    const key = Math.round(timeMs);
+    const cached = frames.get(key);
+    if (cached) return cached;
+    const frame = sampleFrame(document, { timeMs: key });
+    frames.set(key, frame);
+    return frame;
+  };
   const loop = options.loop !== false;
   // Poster time: the last frame is the most representative settled state.
   const timeMs = Math.min(
@@ -380,7 +406,10 @@ export function compileProjectToAnimatedSvg(
     .map((elementId) => {
       const element = project.elements[elementId];
       if (!element || !element.visible) return '';
-      const result = animatedElementMarkup(project, element, timeMs, { loop });
+      const result = animatedElementMarkup(project, element, timeMs, {
+        loop,
+        sampleAt,
+      });
       if (result.clip) clips.push(result.clip);
       return result.markup;
     })
@@ -406,7 +435,7 @@ ${roots}
 
 /** Triggers a browser download of the standalone animated SVG. */
 export function downloadAnimatedSvg(
-  project: TraceProject,
+  project: TraceDocument,
   options?: AnimatedSvgOptions,
 ): void {
   const svg = compileProjectToAnimatedSvg(project, options);

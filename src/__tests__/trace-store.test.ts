@@ -1,9 +1,9 @@
 import { TRACE_HISTORY_LIMIT, useTraceStore } from '@/stores/trace-store';
-import { createBlankTraceProject } from '@/lib/trace/defaults';
-import type { TraceProject } from '@/lib/trace/types';
+import { createBlankTraceDocument, stageOrNull } from '@/lib/trace/document';
+import type { TraceDocument } from '@/lib/trace/types';
 
-function loadBlank(): TraceProject {
-  const project = createBlankTraceProject('Store Test');
+function loadBlank(): TraceDocument {
+  const project = createBlankTraceDocument('Store Test');
   useTraceStore
     .getState()
     .loadProject(project, { path: '/tmp/trace', revision: 3 });
@@ -41,7 +41,7 @@ describe('Trace store', () => {
     const state = useTraceStore.getState();
     expect(state.dirty).toBe(true);
     expect(state.canUndo).toBe(true);
-    expect(Object.keys(state.project?.elements ?? {})).toHaveLength(1);
+    expect(Object.keys(stageOrNull(state.project)?.elements ?? {})).toHaveLength(1);
   });
 
   it('undoes and redoes a batch', () => {
@@ -54,13 +54,13 @@ describe('Trace store', () => {
 
     useTraceStore.getState().undo();
     expect(
-      Object.keys(useTraceStore.getState().project?.elements ?? {}),
+      Object.keys(stageOrNull(useTraceStore.getState().project)?.elements ?? {}),
     ).toHaveLength(0);
     expect(useTraceStore.getState().canRedo).toBe(true);
 
     useTraceStore.getState().redo();
     expect(
-      Object.keys(useTraceStore.getState().project?.elements ?? {}),
+      Object.keys(stageOrNull(useTraceStore.getState().project)?.elements ?? {}),
     ).toHaveLength(1);
   });
 
@@ -115,7 +115,7 @@ describe('Trace store', () => {
     useTraceStore.getState().setPlayhead(1000);
     useTraceStore.getState().addKeyframe(elementId, 'opacity', 1000, 0);
 
-    const element = useTraceStore.getState().project?.elements[elementId];
+    const element = stageOrNull(useTraceStore.getState().project)?.elements[elementId];
     const track = element?.tracks.find((entry) => entry.property === 'opacity');
     expect(track?.keyframes).toHaveLength(2);
     expect(track?.keyframes.some((keyframe) => keyframe.timeMs === 1000)).toBe(
@@ -139,9 +139,7 @@ describe('Trace store', () => {
     useTraceStore.getState().setPlayhead(1500);
     useTraceStore.getState().updateAttributes(elementId, { x: 420 });
 
-    const track = useTraceStore
-      .getState()
-      .project?.elements[elementId].tracks.find(
+    const track = stageOrNull(useTraceStore.getState().project)?.elements[elementId].tracks.find(
         (entry) => entry.property === 'x',
       );
     expect(track?.keyframes.some((keyframe) => keyframe.timeMs === 1500)).toBe(

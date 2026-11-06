@@ -14,9 +14,11 @@ import type {
   AnimatableProperty,
   AudioTrack,
   EasingType,
+  TraceDocument,
   TraceElement,
-  TraceProject,
+  TraceGradient,
   TraceScene,
+  TraceStage,
   TraceStoryboard,
   Point,
   PropertyTrack,
@@ -45,7 +47,7 @@ export interface TraceProjectSnapshot {
   rootElementIds: string[];
   storyboard?: TraceStoryboard;
   defs?: string;
-  gradients?: TraceProject['gradients'];
+  gradients?: Record<string, TraceGradient>;
   audioTracks?: AudioTrack[];
 }
 
@@ -188,7 +190,7 @@ export interface TraceApplyOpsOptions {
 export interface TraceApplyOpsResult {
   /** False when an op failed or the resulting project has lint errors. */
   ok: boolean;
-  project: TraceProject;
+  project: TraceDocument;
   /** Number of ops that ran. A failed batch runs zero. */
   applied: number;
   diff: TraceOpDiff;

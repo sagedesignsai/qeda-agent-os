@@ -17,7 +17,7 @@
 
 import { gsap } from 'gsap';
 
-import type { TraceProject } from '../types';
+import type { TraceDocument } from '../types';
 import { getTraceRuntimeBridge, requireTraceRuntimeBridge } from './bridge';
 import { syncTraceDomAtTime } from './dom-renderer';
 import { compileProjectToGsap } from './gsap-compiler';
@@ -36,7 +36,7 @@ export function getPlaybackTimeMs(): number {
   return currentPlaybackTimeMs;
 }
 
-function activeProject(): TraceProject | null {
+function activeProject(): TraceDocument | null {
   return getTraceRuntimeBridge()?.getProject() ?? null;
 }
 
@@ -240,7 +240,7 @@ export function setTracePlaybackLoop(loop: boolean): void {
  * timeline is already compiled for another length.
  */
 export function ensureTraceTimelineMatchesProject(
-  project: TraceProject | null,
+  project: TraceDocument | null,
 ): void {
   if (!project) return;
   if (activeTimeline && compiledForDuration !== project.durationMs)

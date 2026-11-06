@@ -4,7 +4,7 @@
  * Storyboard helpers for Nova Trace.
  *
  * A storyboard is an ordered list of contiguous scenes inside a single
- * `TraceProject`. Scenes never introduce a second element graph: they are a
+ * `TraceStage`. Scenes never introduce a second element graph: they are a
  * timeline/planning layer over the existing elements and property tracks.
  *
  * All functions here are pure. Store actions in
@@ -15,7 +15,7 @@
 
 import type {
   TraceElement,
-  TraceProject,
+  TraceStage,
   TraceScene,
   TraceSourceRef,
   TraceStoryboard,
@@ -119,10 +119,13 @@ export function getStoryboardDuration(storyboard: TraceStoryboard): number {
 }
 
 /** Ensure a storyboard exists and is internally consistent. */
-export function ensureStoryboard(project: TraceProject): TraceStoryboard {
-  const durationMs = roundMs(project.durationMs, DEFAULT_SCENE_DURATION_MS);
+export function ensureStoryboard(input: {
+  durationMs: number;
+  storyboard?: TraceStoryboard;
+}): TraceStoryboard {
+  const durationMs = roundMs(input.durationMs, DEFAULT_SCENE_DURATION_MS);
 
-  if (!project.storyboard || project.storyboard.scenes.length === 0) {
+  if (!input.storyboard || input.storyboard.scenes.length === 0) {
     const scene = createScene({
       id: 'scene-1',
       name: 'Scene 1',
@@ -136,7 +139,7 @@ export function ensureStoryboard(project: TraceProject): TraceStoryboard {
     };
   }
 
-  return project.storyboard;
+  return input.storyboard;
 }
 export function addScene(
   storyboard: TraceStoryboard,
@@ -266,7 +269,7 @@ export function removeSourceRef(
   };
 }
 export function duplicateSceneElements(
-  project: TraceProject,
+  project: TraceStage,
   sourceSceneId: string,
   targetScene: TraceScene,
   timeOffsetMs: number,
@@ -329,7 +332,7 @@ export function duplicateSceneElements(
   return { elements, rootElementIds };
 }
 
-function getSceneElementIds(project: TraceProject, sceneId: string): string[] {
+function getSceneElementIds(project: TraceStage, sceneId: string): string[] {
   return Object.values(project.elements)
     .filter((el) => el.sceneId === sceneId)
     .map((el) => el.id);
@@ -353,7 +356,7 @@ function cloneTracks(
 
 /** Remove a scene's elements (including descendants) and prune them from any surviving parent's `childrenIds` and from the project roots. */
 export function removeElementsForScene(
-  project: TraceProject,
+  project: TraceStage,
   sceneId: string,
 ): { elements: Record<string, TraceElement>; rootElementIds: string[] } {
   const direct = getSceneElementIds(project, sceneId);

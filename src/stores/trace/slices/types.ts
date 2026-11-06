@@ -13,7 +13,7 @@ import type {
   AnimatableProperty,
   EasingType,
   SceneTransition,
-  TraceProject,
+  TraceDocument,
 } from '@/lib/trace/types';
 
 export type TraceSaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -42,7 +42,7 @@ export type TraceSelection = {
 };
 
 export type TraceDocumentState = {
-  project: TraceProject | null;
+  project: TraceDocument | null;
   projectPath: string | null;
   revision: number;
   dirty: boolean;
@@ -54,15 +54,15 @@ export type TracePlaybackState = { playback: TracePlayback };
 export type TraceSelectionState = { selection: TraceSelection };
 
 export type TraceHistoryState = {
-  past: TraceProject[];
-  future: TraceProject[];
+  past: TraceDocument[];
+  future: TraceDocument[];
   canUndo: boolean;
   canRedo: boolean;
 };
 
 export type TraceDocumentActions = {
   loadProject: (
-    project: TraceProject,
+    project: TraceDocument,
     options?: { path?: string | null; revision?: number },
   ) => void;
   closeProject: () => void;

@@ -1,3 +1,4 @@
+import { stageOf, stageOrNull } from '@/lib/trace/document';
 /**
  * stores/trace/slices/tracks-slice.ts
  * ─────────────────────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ export const createTracksSlice: TraceSliceCreator<TraceTrackActions> = (
 ) => ({
   addPropertyTrack: (elementId, property: AnimatableProperty) => {
     const state = get();
-    const element = state.project?.elements[elementId];
+    const element = stageOrNull(state.project)?.elements[elementId];
     if (!element) return null;
     if (element.tracks.some((track) => track.property === property))
       return null;
@@ -90,7 +91,7 @@ export const createTracksSlice: TraceSliceCreator<TraceTrackActions> = (
   },
 
   togglePropertyTrack: (elementId, property) => {
-    const element = get().project?.elements[elementId];
+    const element = stageOrNull(get().project)?.elements[elementId];
     if (!element) return;
     if (element.tracks.some((track) => track.property === property)) {
       get().removePropertyTrack(elementId, property);
@@ -101,7 +102,7 @@ export const createTracksSlice: TraceSliceCreator<TraceTrackActions> = (
 
   addKeyframe: (elementId, property, timeMs, value, easing = 'power2.out') => {
     const state = get();
-    const element = state.project?.elements[elementId];
+    const element = stageOrNull(state.project)?.elements[elementId];
     if (!element) return null;
 
     const at = timeMs ?? state.playback.currentTimeMs;
@@ -136,7 +137,7 @@ export const createTracksSlice: TraceSliceCreator<TraceTrackActions> = (
   },
 
   updateKeyframe: (elementId, property, keyframeToUpdate, updates) => {
-    const element = get().project?.elements[elementId];
+    const element = stageOrNull(get().project)?.elements[elementId];
     const track = element?.tracks.find((entry) => entry.property === property);
     if (!track) return;
 
@@ -170,7 +171,7 @@ export const createTracksSlice: TraceSliceCreator<TraceTrackActions> = (
   },
 
   deleteKeyframe: (elementId, property, keyframeToDelete) => {
-    const element = get().project?.elements[elementId];
+    const element = stageOrNull(get().project)?.elements[elementId];
     const track = element?.tracks.find((entry) => entry.property === property);
     if (!track) return;
 

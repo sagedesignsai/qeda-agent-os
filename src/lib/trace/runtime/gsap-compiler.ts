@@ -15,7 +15,7 @@
 import { gsap } from 'gsap';
 
 import { evaluateEasing } from '../animation/easing';
-import type { AnimatableProperty, EasingType, TraceProject } from '../types';
+import type { AnimatableProperty, EasingType, TraceDocument } from '../types';
 
 export interface GsapCompileOptions {
   onUpdate?: (progress: number, timeMs: number) => void;
@@ -129,7 +129,7 @@ export const ATTRIBUTE_PROPERTIES: ReadonlySet<string> = new Set([
  * Property playback itself is executed by `dom-renderer.ts`.
  */
 export function compileProjectToGsap(
-  project: TraceProject,
+  project: TraceDocument,
   options: GsapCompileOptions,
 ): CompiledTraceTimeline {
   const {

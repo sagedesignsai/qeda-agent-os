@@ -8,7 +8,7 @@
 import { BrowserWindow, ipcMain, shell } from 'electron';
 
 import { instantiateCompositionTemplate } from '../../../lib/trace/templates';
-import type { TraceProject } from '../../../lib/trace/types';
+import type { TraceDocument } from '../../../lib/trace/types';
 import { getTraceProjectStore } from '../../trace/service.js';
 
 export function registerTraceHandlers({
@@ -63,7 +63,7 @@ export function registerTraceHandlers({
       _event,
       req: {
         projectId: string;
-        project: TraceProject;
+        project: TraceDocument;
         expectedRevision: number;
       },
     ) =>

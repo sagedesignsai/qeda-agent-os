@@ -2,7 +2,7 @@
  * lib/trace/ops/index.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * The Nova Trace ops engine: `applyOps` applies a batch of semantic operations
- * atomically to a TraceProject.
+ * atomically to a TraceStage.
  *
  * Ops are the single mutation contract shared by the in-app copilot, the
  * export/publish pipeline and any future IPC surface. They are pure data: no
@@ -11,8 +11,9 @@
  * Adapted from sagedesigns-os lib/motion/ops/index.ts.
  */
 
-import type { Keyframe, TraceElement, TraceProject } from '../types';
-import { lintTraceProject } from '../lint';
+import type { Keyframe, TraceDocument, TraceElement, TraceStage } from '../types';
+import { stageOf, withStage } from '../document';
+import { lintTraceStage } from '../lint';
 import type { Diagnostic, LintOptions } from '../lint/types';
 import {
   ensureStoryboard,
@@ -62,11 +63,11 @@ function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function cloneProject(project: TraceProject): TraceProject {
+function cloneProject(project: TraceStage): TraceStage {
   return deepClone(project);
 }
 
-function snapshotOf(project: TraceProject): TraceProjectSnapshot {
+function snapshotOf(project: TraceStage): TraceProjectSnapshot {
   const clone = cloneProject(project);
   return {
     width: clone.width,
@@ -82,11 +83,11 @@ function snapshotOf(project: TraceProject): TraceProjectSnapshot {
   };
 }
 
-function findElement(project: TraceProject, id: string): TraceElement | null {
+function findElement(project: TraceStage, id: string): TraceElement | null {
   return project.elements[id] ?? null;
 }
 
-function mustElement(project: TraceProject, id: string): TraceElement {
+function mustElement(project: TraceStage, id: string): TraceElement {
   const element = findElement(project, id);
   if (!element) {
     throw new TraceOpError(
@@ -98,7 +99,7 @@ function mustElement(project: TraceProject, id: string): TraceElement {
 }
 
 /** Depth-first ids of `rootId` and everything below it. */
-function collectSubtree(project: TraceProject, rootId: string): string[] {
+function collectSubtree(project: TraceStage, rootId: string): string[] {
   const collected: string[] = [];
   const stack = [rootId];
   while (stack.length > 0) {
@@ -112,7 +113,7 @@ function collectSubtree(project: TraceProject, rootId: string): string[] {
   return collected;
 }
 
-function detachIds(project: TraceProject, ids: string[]): void {
+function detachIds(project: TraceStage, ids: string[]): void {
   const removing = new Set(ids);
   project.rootElementIds = (project.rootElementIds ?? []).filter(
     (id) => !removing.has(id),
@@ -124,7 +125,7 @@ function detachIds(project: TraceProject, ids: string[]): void {
   }
 }
 
-function activeSceneId(project: TraceProject): string | null {
+function activeSceneId(project: TraceStage): string | null {
   const storyboard = ensureStoryboard(project);
   project.storyboard = storyboard;
   return storyboard.activeSceneId ?? storyboard.scenes[0]?.id ?? null;
@@ -151,7 +152,7 @@ function normalizeKeyframes(
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 function opSetCanvas(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'setCanvas' }>,
 ): void {
   if (op.width !== undefined) project.width = Math.max(1, Math.round(op.width));
@@ -163,7 +164,7 @@ function opSetCanvas(
 }
 
 function opAddElement(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'addElement' }>,
 ): void {
   const spec = op.element;
@@ -189,7 +190,7 @@ function opAddElement(
 }
 
 function opApplyRecipe(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'applyRecipe' }>,
 ): string {
   const sceneId =
@@ -230,7 +231,7 @@ function opApplyRecipe(
 }
 
 function opUpdateElement(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'updateElement' }>,
 ): void {
   const element = mustElement(project, op.id);
@@ -251,7 +252,7 @@ function opUpdateElement(
 }
 
 function opDeleteElement(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'deleteElement' }>,
 ): void {
   const ids = collectSubtree(project, op.id);
@@ -266,7 +267,7 @@ function opDeleteElement(
 }
 
 function opDuplicateElement(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'duplicateElement' }>,
 ): void {
   const source = mustElement(project, op.id);
@@ -319,7 +320,7 @@ function opDuplicateElement(
 }
 
 function opReorderElement(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'reorderElement' }>,
 ): void {
   const element = mustElement(project, op.id);
@@ -350,7 +351,7 @@ function opReorderElement(
 }
 
 function opGroupElements(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'groupElements' }>,
 ): void {
   const ids = op.elementIds.filter((id) => Boolean(project.elements[id]));
@@ -412,7 +413,7 @@ function opGroupElements(
 }
 
 function opUngroupElement(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'ungroupElement' }>,
 ): void {
   const group = mustElement(project, op.id);
@@ -445,7 +446,7 @@ function opUngroupElement(
 }
 
 function opSetElementScene(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'setElementScene' }>,
 ): void {
   const element = mustElement(project, op.id);
@@ -453,7 +454,7 @@ function opSetElementScene(
 }
 
 function opSetTrack(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'setTrack' }>,
 ): void {
   const element = mustElement(project, op.elementId);
@@ -481,7 +482,7 @@ function opSetTrack(
 }
 
 function opDeleteTrack(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'deleteTrack' }>,
 ): void {
   const element = mustElement(project, op.elementId);
@@ -491,7 +492,7 @@ function opDeleteTrack(
 }
 
 function opAddScene(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'addScene' }>,
 ): void {
   const storyboard = ensureStoryboard(project);
@@ -538,7 +539,7 @@ function opAddScene(
 }
 
 function opUpdateScene(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'updateScene' }>,
 ): void {
   const storyboard = ensureStoryboard(project);
@@ -573,7 +574,7 @@ function opUpdateScene(
 }
 
 function opRemoveScene(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'removeScene' }>,
 ): void {
   const storyboard = ensureStoryboard(project);
@@ -605,7 +606,7 @@ function opRemoveScene(
 }
 
 function opReorderScene(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'reorderScene' }>,
 ): void {
   const storyboard = ensureStoryboard(project);
@@ -632,7 +633,7 @@ function opReorderScene(
 }
 
 function opSetActiveScene(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'setActiveScene' }>,
 ): void {
   const storyboard = ensureStoryboard(project);
@@ -646,7 +647,7 @@ function opSetActiveScene(
 }
 
 function opInsertFragment(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'insertFragment' }>,
 ): void {
   const { fragment } = op;
@@ -698,21 +699,21 @@ function opInsertFragment(
 }
 
 function opSetDefs(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'setDefs' }>,
 ): void {
   project.defs = op.defs;
 }
 
 function opSetAudio(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'setAudio' }>,
 ): void {
   project.audioTracks = deepClone(op.tracks);
 }
 
 function opRestore(
-  project: TraceProject,
+  project: TraceStage,
   op: Extract<TraceOp, { type: 'restore' }>,
 ): void {
   const snapshot = op.snapshot;
@@ -729,7 +730,7 @@ function opRestore(
 }
 
 function applyOne(
-  project: TraceProject,
+  project: TraceStage,
   op: TraceOp,
   onDiagnostic: (diagnostic: Diagnostic) => void,
 ): string | undefined {
@@ -817,7 +818,7 @@ function applyOne(
   }
 }
 
-function diffProjects(before: TraceProject, after: TraceProject): TraceOpDiff {
+function diffProjects(before: TraceStage, after: TraceStage): TraceOpDiff {
   const diff = emptyDiff();
 
   const beforeIds = new Set(Object.keys(before.elements ?? {}));
@@ -862,10 +863,13 @@ function diffProjects(before: TraceProject, after: TraceProject): TraceOpDiff {
  * original project is returned untouched with `applied: 0`.
  */
 export function applyOps(
-  project: TraceProject,
+  input: TraceDocument,
   ops: TraceOp[],
   options: TraceApplyOpsOptions = {},
 ): TraceApplyOpsResult {
+  // Ops edit one artboard. `stageOf` is the projection; `withStage` writes it
+  // back, so the whole batch stays a pure document -> document transformation.
+  const project = stageOf(input);
   const diagnostics: Diagnostic[] = [];
   const original = cloneProject(project);
   const draft = cloneProject(project);
@@ -892,7 +896,7 @@ export function applyOps(
     });
     return {
       ok: false,
-      project: original,
+      project: input,
       applied: 0,
       diff: emptyDiff(),
       recipeRootIds: [],
@@ -902,7 +906,7 @@ export function applyOps(
   }
 
   const lintOptions: LintOptions | undefined = options.lintOptions;
-  diagnostics.push(...lintTraceProject(draft, lintOptions).diagnostics);
+  diagnostics.push(...lintTraceStage(draft, lintOptions).diagnostics);
 
   const inverse: TraceOp[] = options.includeInverse
     ? [{ type: 'restore', snapshot: snapshotOf(original) }]
@@ -910,7 +914,7 @@ export function applyOps(
 
   return {
     ok: !diagnostics.some((diagnostic) => diagnostic.severity === 'error'),
-    project: draft,
+    project: withStage(input, draft),
     applied: ops.length,
     diff: diffProjects(original, draft),
     recipeRootIds,

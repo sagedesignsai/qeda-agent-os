@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Reusable asset fragments for Nova Trace.
  *
- * A fragment is a normalized, self-contained slice of a TraceProject: elements,
+ * A fragment is a normalized, self-contained slice of a TraceDocument: elements,
  * roots, defs and gradients with no database or renderer attached. Inserting a
  * fragment never needs a DOM parser, so it stays testable in Jest.
  *
@@ -11,7 +11,9 @@
  * pose payloads are deliberately omitted — Trace v1 has no character system.
  */
 
-import type { TraceElement, TraceGradient, TraceProject } from '../types';
+import { documentFromStage } from '../document';
+import { createBlankTraceStage } from '../defaults';
+import type { TraceElement, TraceGradient, TraceDocument } from '../types';
 
 export type TraceAssetKind = 'vector' | 'scene' | 'character' | 'part' | 'pose';
 
@@ -40,21 +42,21 @@ export interface TraceAssetMetadata {
 export const TRACE_ASSET_SCHEMA_VERSION = 1;
 
 /** Wrap a fragment in a throwaway project so it can be previewed or linted. */
-export function toTraceProject(
+export function toTraceDocument(
   fragment: TraceAssetFragment,
   name = 'Asset Preview',
   durationMs = 1000,
-): TraceProject {
-  return {
-    id: `asset-preview-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    name,
-    width: fragment.width,
-    height: fragment.height,
-    durationMs,
-    fps: 60,
-    elements: fragment.elements,
-    rootElementIds: fragment.rootElementIds,
-    defs: fragment.defs,
-    gradients: fragment.gradients,
-  };
+): TraceDocument {
+  return documentFromStage(
+    createBlankTraceStage(name, {
+      id: `asset-preview-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      width: fragment.width,
+      height: fragment.height,
+      durationMs,
+      elements: fragment.elements,
+      rootElementIds: fragment.rootElementIds,
+      defs: fragment.defs,
+      gradients: fragment.gradients,
+    }),
+  );
 }

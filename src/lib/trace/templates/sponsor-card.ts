@@ -13,8 +13,8 @@
  */
 
 import type { TraceOp, TraceElementSpec } from '../ops/types';
-import type { TraceProject } from '../types';
-import { createBlankTraceProject } from '../defaults';
+import type { TraceDocument } from '../types';
+import { createBlankTraceDocument } from '../document';
 import { applyOps } from '../ops';
 
 export interface SponsorCardFeature {
@@ -35,12 +35,12 @@ const QEDA_LOGO_PATH = `
  * Instantiate a sponsor card composition with a feature list.
  *
  * @param features Array of { title, subtitle? } for the two-column list
- * @returns Complete TraceProject ready for export or publishing
+ * @returns Complete TraceStage ready for export or publishing
  */
 export function instantiateSponsorCardTemplate(
   features: SponsorCardFeature[] = [],
-): TraceProject {
-  const blank = createBlankTraceProject('Qeda Sponsor Card', {
+): TraceDocument {
+  const blank = createBlankTraceDocument('Qeda Sponsor Card', {
     width: 1920,
     height: 1080,
     durationMs: 3500, // 3.5s total
@@ -288,3 +288,4 @@ export function instantiateSponsorCardTemplate(
  * const project = instantiateSponsorCardTemplate(features);
  * // → Ready to export as GSAP code or animated SVG
  */
+

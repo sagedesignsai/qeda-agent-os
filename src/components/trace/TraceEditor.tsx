@@ -13,6 +13,7 @@
  * instead of prop plumbing.
  */
 
+import { stageOf, stageOrNull } from '@/lib/trace/document';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
@@ -123,7 +124,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
     (deltaX: number, deltaY: number) => {
       const elementId = useTraceStore.getState().selection.selectedElementId;
       const state = useTraceStore.getState();
-      const element = elementId ? state.project?.elements[elementId] : null;
+      const element = elementId ? stageOrNull(state.project)?.elements[elementId] : null;
       if (!element) return;
       const position = getElementPosition(
         element,
@@ -195,7 +196,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           event.preventDefault();
           for (const key of selectedKeyframes) {
             const [elementId, , keyframeId] = key.split(':');
-            const element = state.project?.elements[elementId];
+            const element = stageOrNull(state.project)?.elements[elementId];
             const track = element?.tracks.find((entry) =>
               entry.keyframes.some((keyframe) => keyframe.id === keyframeId),
             );
@@ -388,7 +389,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
             variant="outline"
             className="ml-1 hidden border-border text-[9px] text-muted-foreground md:inline-flex"
           >
-            {Object.keys(project.elements).length} layers
+            {Object.keys(stageOf(project).elements).length} layers
           </Badge>
         </div>
       </header>
@@ -411,7 +412,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           onSelectElement={selectElement}
           onMoveElement={(elementId, position) => {
             const state = useTraceStore.getState();
-            const element = state.project?.elements[elementId];
+            const element = stageOrNull(state.project)?.elements[elementId];
             if (!element) return;
             updateAttributes(
               elementId,
@@ -428,7 +429,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           onExitPathEdit={() => endPathEdit()}
           onCommitPath={(elementId, model) => {
             const state = useTraceStore.getState();
-            const element = state.project?.elements[elementId];
+            const element = stageOrNull(state.project)?.elements[elementId];
             if (!element) return;
             if (
               element.type === 'polyline' ||

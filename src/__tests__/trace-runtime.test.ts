@@ -10,16 +10,20 @@ import { resolveElementAtTime } from '@/lib/trace/runtime/resolve-element';
 import { getElementTransformAtTime } from '@/lib/trace/runtime/transform-resolver';
 import { mapEasingToGsap } from '@/lib/trace/runtime/gsap-compiler';
 import { staticSvgMarkup } from '@/lib/trace/serialize/svg-markup';
-import { createBlankTraceProject } from '@/lib/trace/defaults';
+import {
+  createBlankTraceDocument,
+  documentFromStage,
+  stageOf,
+} from '@/lib/trace/document';
 import {
   COMPOSITION_TEMPLATES,
   instantiateCompositionTemplate,
 } from '@/lib/trace/templates';
 import { getValueAtTime } from '@/lib/trace/animation/interpolator';
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument, TraceStageInput } from '@/lib/trace/types';
 
-function animatedProject(): { project: TraceProject; elementId: string } {
-  const added = applyOps(createBlankTraceProject('Runtime'), [
+function animatedProject(): { project: TraceDocument; elementId: string } {
+  const added = applyOps(createBlankTraceDocument('Runtime'), [
     {
       type: 'addElement',
       element: {
@@ -62,7 +66,7 @@ function animatedProject(): { project: TraceProject; elementId: string } {
 describe('Trace runtime evaluation', () => {
   it('resolves track values at an arbitrary time', () => {
     const { project, elementId } = animatedProject();
-    const element = project.elements[elementId];
+    const element = stageOf(project).elements[elementId];
 
     expect(getElementTransformAtTime(element, 0).x).toBeCloseTo(100);
     const mid = getElementTransformAtTime(element, 500);
@@ -78,7 +82,7 @@ describe('Trace runtime evaluation', () => {
   it('keeps the document immutable while evaluating', () => {
     const { project, elementId } = animatedProject();
     const snapshot = JSON.stringify(project);
-    resolveElementAtTime(project.elements[elementId], 500);
+    resolveElementAtTime(stageOf(project).elements[elementId], 500);
     expect(JSON.stringify(project)).toBe(snapshot);
   });
 
@@ -103,20 +107,20 @@ describe('Trace templates', () => {
     });
 
     expect(project.name).toBe('Mark');
-    expect(project.rootElementIds.length).toBeGreaterThan(3);
+    expect(stageOf(project).rootElementIds.length).toBeGreaterThan(3);
     expect(
-      Object.values(project.elements).some(
+      Object.values(stageOf(project).elements).some(
         (element) => element.tracks.length > 0,
       ),
     ).toBe(true);
     expect(project.storyboard?.scenes.length).toBeGreaterThan(1);
-    expect(project.gradients?.['nova-glow']).toBeDefined();
+    expect(stageOf(project).gradients?.['nova-glow']).toBeDefined();
   });
 
   it('keeps template ids stable so documents remain reproducible', () => {
     const project = instantiateCompositionTemplate('lower-third');
-    expect(project.elements['lower-third-card']).toBeDefined();
-    expect(project.rootElementIds).toEqual(['lower-third-card']);
+    expect(stageOf(project).elements['lower-third-card']).toBeDefined();
+    expect(stageOf(project).rootElementIds).toEqual(['lower-third-card']);
   });
 });
 
@@ -164,7 +168,7 @@ describe('Trace element registry', () => {
   });
 
   it('supports SVG primitive element specs and compiles star to polygon points', () => {
-    const blank = createBlankTraceProject('Primitives');
+    const blank = createBlankTraceDocument('Primitives');
     const result = applyOps(blank, [
       {
         type: 'addElement',
@@ -221,7 +225,7 @@ describe('Trace element registry', () => {
     expect(result.diagnostics).toHaveLength(0);
     expect(result.diff.added).toHaveLength(6);
 
-    const starElem = Object.values(result.project.elements).find(
+    const starElem = Object.values(stageOf(result.project).elements).find(
       (e) => e.name === 'StarPoly',
     );
     expect(starElem).toBeDefined();
@@ -280,7 +284,7 @@ describe('Trace exports', () => {
 describe('Trace interpolation still matches the original contract', () => {
   it('returns the last keyframe value past the end of a track', () => {
     const { project, elementId } = animatedProject();
-    const track = project.elements[elementId].tracks.find(
+    const track = stageOf(project).elements[elementId].tracks.find(
       (entry) => entry.property === 'x',
     );
     expect(getValueAtTime(track as never, 99_999)).toBe(500);
@@ -289,7 +293,7 @@ describe('Trace interpolation still matches the original contract', () => {
 
 describe('Trace recipe compiler and applyRecipe op', () => {
   it('expands lower-third into group of standard primitives with animations', () => {
-    const blank = createBlankTraceProject('RecipeTest');
+    const blank = createBlankTraceDocument('RecipeTest');
     const result = applyOps(blank, [
       {
         type: 'applyRecipe',
@@ -301,11 +305,11 @@ describe('Trace recipe compiler and applyRecipe op', () => {
     expect(result.diagnostics).toHaveLength(0);
     const rootId = result.recipeRootIds[0];
     expect(result.diff.added[0]).toBe(rootId);
-    const root = result.project.elements[rootId];
+    const root = stageOf(result.project).elements[rootId];
     expect(root.type).toBe('group');
     expect(root.childrenIds?.length).toBe(4);
 
-    const children = root.childrenIds!.map((id) => result.project.elements[id]);
+    const children = root.childrenIds!.map((id) => stageOf(result.project).elements[id]);
     const types = children.map((c) => c.type);
     expect(types).toEqual(['rect', 'rect', 'text', 'text']);
 
@@ -320,7 +324,7 @@ describe('Trace recipe compiler and applyRecipe op', () => {
   });
 
   it('expands progress-ring, bar-chart, kinetic-text, and counter into purely primitive subtrees', () => {
-    const blank = createBlankTraceProject('AllRecipes');
+    const blank = createBlankTraceDocument('AllRecipes');
     const result = applyOps(blank, [
       { type: 'applyRecipe', recipeId: 'progress-ring', options: { progress: 80 } },
       { type: 'applyRecipe', recipeId: 'bar-chart' },
@@ -346,13 +350,13 @@ describe('Trace recipe compiler and applyRecipe op', () => {
       'use',
     ]);
 
-    for (const elem of Object.values(result.project.elements)) {
+    for (const elem of Object.values(stageOf(result.project).elements)) {
       expect(validPrimitives.has(elem.type)).toBe(true);
     }
   });
 });
 
-import { migrateTraceProject } from '@/lib/trace/migrate';
+import { migrateTraceDocument, migrateTraceStage } from '@/lib/trace/migrate';
 
 describe('Trace migration (Stage 4)', () => {
   const PRIMITIVES = new Set([
@@ -360,7 +364,7 @@ describe('Trace migration (Stage 4)', () => {
     'polygon', 'path', 'text', 'image', 'use',
   ]);
 
-  function legacyProject(type: string, attrs: Record<string, unknown> = {}): TraceProject {
+  function legacyProject(type: string, attrs: Record<string, unknown> = {}): TraceStageInput {
     return {
       id: 'test',
       name: 'Test',
@@ -391,7 +395,7 @@ describe('Trace migration (Stage 4)', () => {
 
   test('is a no-op on a fully-primitive project', () => {
     const project = legacyProject('rect', { x: 0, y: 0, width: 100, height: 100 });
-    expect(migrateTraceProject(project)).toBe(project); // same reference
+    expect(migrateTraceStage(project)).toBe(project); // same reference
   });
 
   test.each([
@@ -402,7 +406,7 @@ describe('Trace migration (Stage 4)', () => {
     ['lower-third', { title: 'Ada Lovelace' }],
   ])('expands %s into only primitive elements', (type, attrs) => {
     const legacy = legacyProject(type, attrs);
-    const migrated = migrateTraceProject(legacy);
+    const migrated = migrateTraceStage(legacy);
 
     // id preserved on the root group
     expect(migrated.elements['el-1']).toBeDefined();
@@ -417,13 +421,13 @@ describe('Trace migration (Stage 4)', () => {
 
   test('migration is idempotent', () => {
     const legacy = legacyProject('counter', { endVal: 100 });
-    const once = migrateTraceProject(legacy);
-    const twice = migrateTraceProject(once);
+    const once = migrateTraceStage(legacy);
+    const twice = migrateTraceStage(once);
     expect(twice).toBe(once); // same reference on second call
   });
 
   test('preserves opacity/x/y tracks on the group root', () => {
-    const project: TraceProject = {
+    const project: TraceStageInput = {
       ...legacyProject('lower-third', { title: 'Test' }),
       elements: {
         'el-1': {
@@ -443,7 +447,7 @@ describe('Trace migration (Stage 4)', () => {
         },
       },
     };
-    const migrated = migrateTraceProject(project);
+    const migrated = migrateTraceStage(project);
     const root = migrated.elements['el-1'];
     expect(root.tracks.some((t) => t.property === 'opacity')).toBe(true);
   });
@@ -468,13 +472,13 @@ describe('Trace migration (Stage 4)', () => {
       parentId: 'parent',
       origin: { x: 12, y: 14 },
     };
-    const project: TraceProject = {
+    const project: TraceStageInput = {
       ...legacy,
       elements: { parent, 'el-1': nestedElement },
       rootElementIds: ['parent'],
     };
 
-    const migrated = migrateTraceProject(project);
+    const migrated = migrateTraceStage(project);
     const root = migrated.elements['el-1'];
     expect(root).toMatchObject({
       type: 'group',
@@ -506,7 +510,7 @@ describe('Trace migration (Stage 4)', () => {
         ],
       },
     ];
-    const migratedCounter = migrateTraceProject(counter);
+    const migratedCounter = migrateTraceStage(counter);
     const value = migratedCounter.elements['el-1-value'];
     expect(value.type).toBe('text');
     expect(value.tracks[0].property).toBe('text');
@@ -523,13 +527,13 @@ describe('Trace migration (Stage 4)', () => {
         ],
       },
     ];
-    const migratedRing = migrateTraceProject(ring);
+    const migratedRing = migrateTraceStage(ring);
     const indicator = migratedRing.elements['el-1-indicator'];
     expect(indicator.tracks[0].property).toBe('strokeDashoffset');
     expect(indicator.tracks[0].keyframes[0].value).toBeCloseTo(Math.PI * 10);
 
     const lowerThird = legacyProject('lower-third', { progress: 50 });
-    const migratedLowerThird = migrateTraceProject(lowerThird);
+    const migratedLowerThird = migrateTraceStage(lowerThird);
     const accent = migratedLowerThird.elements['el-1-accent'];
     expect(accent.attributes.width).toBe(2);
   });
@@ -540,7 +544,7 @@ describe('Trace migration (Stage 4)', () => {
       width: 100,
       height: 80,
     });
-    const migratedShape = migrateTraceProject(shapes).elements['el-1'];
+    const migratedShape = migrateTraceStage(shapes).elements['el-1'];
     expect(migratedShape.type).toBe('polygon');
     expect(migratedShape.attributes.points).toContain('50,');
 
@@ -555,7 +559,7 @@ describe('Trace migration (Stage 4)', () => {
         ],
       },
     ];
-    const migratedTracer = migrateTraceProject(tracer).elements['el-1'];
+    const migratedTracer = migrateTraceStage(tracer).elements['el-1'];
     expect(migratedTracer.type).toBe('circle');
     expect(migratedTracer.attributes.radius).toBe(8);
     expect(migratedTracer.tracks[0].property).toBe('pathProgress');
@@ -567,7 +571,7 @@ describe('Trace migration (Stage 4)', () => {
       endVal: 100,
       prefix: '$',
     });
-    const svg = staticSvgMarkup(project, 0);
+    const svg = staticSvgMarkup(migrateTraceDocument(project).project, 0);
     expect(svg).toContain('$100');
     expect(svg).not.toContain('data-role');
     expect(svg).not.toContain('counter-value');

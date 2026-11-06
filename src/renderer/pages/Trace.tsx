@@ -12,11 +12,11 @@ import { useNavigate, useParams } from 'react-router';
 
 import { Button } from '@/components/ui/button';
 import { TraceEditor } from '@/components/trace/TraceEditor';
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument } from '@/lib/trace/types';
 import { useTraceStore } from '@/stores/trace-store';
 
 type OpenResult = {
-  project: TraceProject;
+  project: TraceDocument;
   path: string;
   revision: number;
 };

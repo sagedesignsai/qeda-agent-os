@@ -20,7 +20,8 @@ import {
   compileProjectToAnimatedSvg,
   type AnimatedSvgOptions,
 } from '@/lib/trace/export/animated-svg';
-import type { TraceProject } from '@/lib/trace/types';
+import { stageOf } from '@/lib/trace/document';
+import type { TraceDocument } from '@/lib/trace/types';
 
 export function registerLowerThirdHandlers() {
   /**
@@ -43,14 +44,14 @@ export function registerLowerThirdHandlers() {
       _event: IpcMainInvokeEvent,
       config: LowerThirdConfig,
     ): Promise<{
-      project: TraceProject;
+      project: TraceDocument;
       elementCount: number;
       durationMs: number;
     }> => {
       const project = instantiateLowerThirdTemplate(config);
       return {
         project,
-        elementCount: Object.keys(project.elements).length,
+        elementCount: Object.keys(stageOf(project).elements).length,
         durationMs: project.durationMs,
       };
     },
@@ -79,7 +80,7 @@ export function registerLowerThirdHandlers() {
         componentName = 'LowerThirdOverlay',
         loop = false,
       }: {
-        project: TraceProject;
+        project: TraceDocument;
         format?: 'react' | 'vanilla';
         componentName?: string;
         loop?: boolean;
@@ -125,7 +126,7 @@ export function registerLowerThirdHandlers() {
         loop = false,
         includeDimensions = true,
       }: {
-        project: TraceProject;
+        project: TraceDocument;
         loop?: boolean;
         includeDimensions?: boolean;
       },

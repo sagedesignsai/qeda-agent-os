@@ -20,7 +20,8 @@ import {
   compileProjectToAnimatedSvg,
   type AnimatedSvgOptions,
 } from '@/lib/trace/export/animated-svg';
-import type { TraceProject } from '@/lib/trace/types';
+import { stageOf } from '@/lib/trace/document';
+import type { TraceDocument } from '@/lib/trace/types';
 
 export function registerSponsorCardHandlers() {
   /**
@@ -47,14 +48,14 @@ export function registerSponsorCardHandlers() {
         features?: SponsorCardFeature[];
       },
     ): Promise<{
-      project: TraceProject;
+      project: TraceDocument;
       elementCount: number;
       durationMs: number;
     }> => {
       const project = instantiateSponsorCardTemplate(features);
       return {
         project,
-        elementCount: Object.keys(project.elements).length,
+        elementCount: Object.keys(stageOf(project).elements).length,
         durationMs: project.durationMs,
       };
     },
@@ -83,7 +84,7 @@ export function registerSponsorCardHandlers() {
         componentName = 'SponsorCard',
         loop = true,
       }: {
-        project: TraceProject;
+        project: TraceDocument;
         format?: 'react' | 'vanilla';
         componentName?: string;
         loop?: boolean;
@@ -129,7 +130,7 @@ export function registerSponsorCardHandlers() {
         loop = true,
         includeDimensions = true,
       }: {
-        project: TraceProject;
+        project: TraceDocument;
         loop?: boolean;
         includeDimensions?: boolean;
       },

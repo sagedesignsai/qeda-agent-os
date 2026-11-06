@@ -309,6 +309,23 @@ const POLY_PROPS: PropertyDescriptor[] = [
   },
 ];
 
+/**
+ * Position along `motionPathData`, split from `pathProgress` (text-on-path
+ * offset) in document v2. Only meaningful on elements that can follow a path.
+ */
+const MOTION_PATH: PropertyDescriptor[] = [
+  {
+    property: 'motionPathProgress',
+    label: 'Motion path',
+    group: 'geometry',
+    kind: 'progress',
+    step: 1,
+    min: 0,
+    max: 100,
+    attribute: 'motionPathProgress',
+  },
+];
+
 
 export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
   {
@@ -317,7 +334,7 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       label: 'Text',
       defaultWidth: 320,
       defaultHeight: 80,
-      properties: [...TRANSFORM, ...TEXT_PROPS, ...PAINT, {
+      properties: [...TRANSFORM, ...TEXT_PROPS, ...PAINT, ...MOTION_PATH, {
         property: 'boxShadow',
         label: 'Drop shadow',
         group: 'appearance',
@@ -338,7 +355,7 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       label: 'Rectangle',
       defaultWidth: 240,
       defaultHeight: 160,
-      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT, {
+      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT, ...MOTION_PATH, {
         property: 'boxShadow',
         label: 'Drop shadow',
         group: 'appearance',
@@ -371,7 +388,7 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       label: 'Circle',
       defaultWidth: 160,
       defaultHeight: 160,
-      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT],
+      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT, ...MOTION_PATH],
     },
     ellipse: {
       type: 'ellipse',
@@ -406,14 +423,14 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       label: 'Vector path',
       defaultWidth: 240,
       defaultHeight: 120,
-      properties: [...TRANSFORM, ...TRIM, ...PAINT],
+      properties: [...TRANSFORM, ...TRIM, ...PAINT, ...MOTION_PATH],
     },
     image: {
       type: 'image',
       label: 'Image',
       defaultWidth: 200,
       defaultHeight: 200,
-      properties: [...TRANSFORM, ...GEOMETRY],
+      properties: [...TRANSFORM, ...GEOMETRY, ...MOTION_PATH],
     },
     use: {
       type: 'use',
@@ -427,7 +444,7 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       label: 'Group',
       defaultWidth: 300,
       defaultHeight: 200,
-      properties: [...TRANSFORM],
+      properties: [...TRANSFORM, ...MOTION_PATH],
     },
   };
 

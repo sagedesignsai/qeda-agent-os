@@ -15,8 +15,8 @@
  */
 
 import type { TraceOp, TraceElementSpec } from '../ops/types';
-import type { TraceProject } from '../types';
-import { createBlankTraceProject } from '../defaults';
+import type { TraceDocument } from '../types';
+import { createBlankTraceDocument } from '../document';
 import { applyOps } from '../ops';
 
 export interface LowerThirdConfig {
@@ -32,9 +32,11 @@ export interface LowerThirdConfig {
  * Instantiate a lower third overlay composition.
  *
  * @param config Configuration for title, subtitle, metric, and timing
- * @returns Complete TraceProject ready for export
+ * @returns Complete TraceStage ready for export
  */
-export function instantiateLowerThirdTemplate(config: LowerThirdConfig): TraceProject {
+export function instantiateLowerThirdTemplate(
+  config: LowerThirdConfig,
+): TraceDocument {
   const {
     title,
     subtitle = '',
@@ -44,7 +46,7 @@ export function instantiateLowerThirdTemplate(config: LowerThirdConfig): TracePr
     exitDurationMs = 300,
   } = config;
 
-  const blank = createBlankTraceProject('Lower Third Overlay', {
+  const blank = createBlankTraceDocument('Lower Third Overlay', {
     width: 1920,
     height: 1080,
     durationMs,
@@ -336,3 +338,4 @@ export function instantiateLowerThirdTemplate(config: LowerThirdConfig): TracePr
  *
  * // Export as GSAP or SVG
  */
+

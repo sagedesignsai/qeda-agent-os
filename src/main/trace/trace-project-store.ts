@@ -18,9 +18,9 @@ import path from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic'
 
-import { createBlankTraceProject } from '../../lib/trace/defaults'
-import { migrateTraceProject } from '../../lib/trace/migrate'
-import type { TraceProject } from '../../lib/trace/types'
+import { createBlankTraceDocument, stageOf } from '../../lib/trace/document'
+import { migrateTraceDocument } from '../../lib/trace/migrate'
+import type { TraceDocument } from '../../lib/trace/types'
 import type { TraceProjectIndex, TraceProjectIndexRow } from './trace-project-index.js'
 
 const PROJECT_FILENAME = 'project.json'
@@ -44,7 +44,7 @@ export type TraceProjectSummary = {
 }
 
 export type TraceOpenResult = {
-  project: TraceProject
+  project: TraceDocument
   path: string
   revision: number
 }
@@ -63,7 +63,7 @@ type ProjectFile = {
   format: 1
   revision: number
   savedAt: string
-  project: TraceProject
+  project: TraceDocument
 }
 
 type IndexPort = Pick<
@@ -107,7 +107,7 @@ export class TraceProjectStore {
   }
 
   async createProject(
-    options: { name?: string; project?: TraceProject } = {},
+    options: { name?: string; project?: TraceDocument } = {},
   ): Promise<TraceProjectSummary> {
     await this.initialize()
 
@@ -116,8 +116,8 @@ export class TraceProjectStore {
     await fs.mkdir(directory, { recursive: true })
 
     const now = this.now().toISOString()
-    const base = options.project ?? createBlankTraceProject()
-    const project: TraceProject = {
+    const base = options.project ?? createBlankTraceDocument()
+    const project: TraceDocument = {
       ...base,
       id,
       name: options.name?.trim() || base.name || 'Untitled Trace',
@@ -139,12 +139,12 @@ export class TraceProjectStore {
 
     this.index.touch(id, this.now().toISOString())
 
-    return { project: migrateTraceProject(file.project), path: directory, revision: file.revision }
+    return { project: migrateTraceDocument(file.project).project, path: directory, revision: file.revision }
   }
 
   async saveProject(
     id: string,
-    project: TraceProject,
+    project: TraceDocument,
     options: { expectedRevision?: number } = {},
   ): Promise<{ revision: number; savedAt: string }> {
     const row = this.index.get(id)
@@ -258,7 +258,7 @@ function toRow(
     height: project.height,
     duration_ms: project.durationMs,
     fps: project.fps,
-    element_count: Object.keys(project.elements ?? {}).length,
+    element_count: Object.keys(stageOf(project).elements ?? {}).length,
     scene_count: project.storyboard?.scenes.length ?? 1,
     revision: file.revision,
     thumbnail_svg: null,

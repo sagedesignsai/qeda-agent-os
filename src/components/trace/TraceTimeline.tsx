@@ -9,6 +9,7 @@
  * playing never re-renders the React tree at frame rate.
  */
 
+import { stageOf } from '@/lib/trace/document';
 import { useMemo, useRef, useState } from 'react';
 import {
   ChevronDownIcon,
@@ -35,7 +36,7 @@ import type {
   Keyframe,
   PropertyTrack,
   TraceElement,
-  TraceProject,
+  TraceSource,
 } from '@/lib/trace/types';
 import { useTraceStore } from '@/stores/trace-store';
 
@@ -50,19 +51,19 @@ type OrderedElement = {
 };
 
 function orderedElements(
-  project: TraceProject,
+  project: TraceSource,
   collapsed: string[],
 ): OrderedElement[] {
   const ordered: OrderedElement[] = [];
   const visit = (elementId: string, depth: number) => {
-    const element = project.elements[elementId];
+    const element = stageOf(project).elements[elementId];
     if (!element) return;
     const children = element.childrenIds ?? [];
     ordered.push({ element, depth, hasChildren: children.length > 0 });
     if (collapsed.includes(elementId)) return;
     children.forEach((childId) => visit(childId, depth + 1));
   };
-  project.rootElementIds.forEach((elementId) => visit(elementId, 0));
+  stageOf(project).rootElementIds.forEach((elementId) => visit(elementId, 0));
   return ordered;
 }
 

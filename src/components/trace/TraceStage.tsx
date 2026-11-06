@@ -14,6 +14,7 @@
  * and commits a single updateTransform on pointer-up.
  */
 
+import { stageOf } from '@/lib/trace/document';
 import {
   useCallback,
   useEffect,
@@ -46,10 +47,10 @@ import {
   measureElementBBox,
   syncTraceDomAtTime,
 } from '@/lib/trace/runtime/dom-renderer';
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument } from '@/lib/trace/types';
 
 export type TraceStageProps = {
-  project: TraceProject;
+  project: TraceDocument;
   timeMs: number;
   selectedElementId: string | null;
   onSelectElement: (elementId: string | null) => void;
@@ -105,7 +106,7 @@ export function TraceStage(props: TraceStageProps) {
   } | null>(null);
 
   const selectedElement = selectedElementId
-    ? (project.elements[selectedElementId] ?? null)
+    ? (stageOf(project).elements[selectedElementId] ?? null)
     : null;
 
   const selectedTransform: GizmoTransform | null = useMemo(() => {
@@ -334,7 +335,7 @@ export function TraceStage(props: TraceStageProps) {
             selectedElementId={selectedElementId}
             onSelectElement={onSelectElement}
             onDoubleClickElement={(elementId) => {
-              const target = project.elements[elementId];
+              const target = stageOf(project).elements[elementId];
               if (!target || target.locked || isPlaying) return;
               if (!isPathEditableType(target.type)) return;
               if (editingPathElementId === elementId) {

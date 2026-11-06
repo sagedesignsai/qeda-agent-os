@@ -10,10 +10,10 @@
 
 import { useState, useCallback } from 'react';
 import type { SponsorCardFeature } from '@/lib/trace/templates/sponsor-card';
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument } from '@/lib/trace/types';
 
 interface GenerateResult {
-  project: TraceProject;
+  project: TraceDocument;
   elementCount: number;
   durationMs: number;
 }
@@ -56,7 +56,7 @@ export function useSponsorCard() {
 
   const exportGsap = useCallback(
     async (
-      project: TraceProject,
+      project: TraceDocument,
       format: 'react' | 'vanilla' = 'react',
       componentName = 'SponsorCard',
     ): Promise<ExportGsapResult | null> => {
@@ -80,7 +80,7 @@ export function useSponsorCard() {
   );
 
   const exportSvg = useCallback(
-    async (project: TraceProject): Promise<ExportSvgResult | null> => {
+    async (project: TraceDocument): Promise<ExportSvgResult | null> => {
       setLoading(true);
       setError(null);
       try {

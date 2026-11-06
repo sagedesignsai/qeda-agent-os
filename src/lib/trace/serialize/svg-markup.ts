@@ -11,8 +11,14 @@
  */
 
 import { resolveElementAtTime } from '../runtime/resolve-element';
-import { migrateTraceProject } from '../migrate';
-import type { TraceElement, TraceGradient, TraceProject } from '../types';
+import { migrateTraceDocument } from '../migrate';
+import { sampleFrame, type FrameElement, type TraceFrame } from '../runtime/frame';
+import type {
+  TraceDocument,
+  TraceElement,
+  TraceGradient,
+  TraceStage,
+} from '../types';
 
 export function escapeXml(value: string): string {
   return value
@@ -140,7 +146,7 @@ function trimAttrs(attributes: Record<string, any>): string {
 }
 
 export function elementBodyMarkup(
-  element: TraceElement,
+  element: Pick<TraceElement, 'type'>,
   attributes: Record<string, any>,
 ): string {
   const width = num(attributes.width, 100);
@@ -235,6 +241,42 @@ export function elementBodyMarkup(
   }
 }
 
+/**
+ * Serialise one sampled element. The frame is the only input: no tracks, no
+ * document lookups, so stage and export cannot disagree.
+ */
+export function frameElementMarkup(frameElement: FrameElement): string {
+  const { attributes, transform } = frameElement;
+  const opacity =
+    attributes.opacity !== undefined
+      ? ` opacity="${num(attributes.opacity, 1)}"`
+      : '';
+  return `<g id="trace-elem-${escapeXml(
+    frameElement.id,
+  )}" data-trace-id="${escapeXml(
+    frameElement.id,
+  )}" transform="translate(${transform.x} ${transform.y}) rotate(${
+    transform.rotation
+  }) scale(${transform.scaleX} ${transform.scaleY})"${opacity}>${elementBodyMarkup(
+    frameElement,
+    attributes as Record<string, any>,
+  )}</g>`;
+}
+
+/** Render a sampled subtree, skipping invisible elements with their children. */
+export function frameElementTreeMarkup(
+  frame: TraceFrame,
+  elementId: string,
+): string {
+  const element = frame.elements[elementId];
+  if (!element || !element.visible) return '';
+  const children = element.childrenIds
+    .map((childId) => frameElementTreeMarkup(frame, childId))
+    .join('');
+  return frameElementMarkup(element).replace('</g>', `${children}</g>`);
+}
+
+/** @deprecated Use `frameElementMarkup`; kept for callers mid-migration. */
 export function elementMarkup(
   element: TraceElement,
   timeMs: number,
@@ -256,7 +298,7 @@ export function elementMarkup(
 
 /** Render an element subtree (recursively) at `timeMs`. */
 export function elementTreeMarkup(
-  project: TraceProject,
+  project: TraceStage,
   elementId: string,
   timeMs: number,
 ): string {
@@ -268,21 +310,41 @@ export function elementTreeMarkup(
   return elementMarkup(element, timeMs).replace('</g>', `${children}</g>`);
 }
 
+export function staticSvgMarkupFromFrame(
+  frame: TraceFrame,
+  options: { background?: string; size?: boolean } = {},
+): string {
+  const defs = `${gradientsToDefs(frame.gradients)}${frame.defs ?? ''}`;
+  const roots = frame.rootElementIds
+    .map((elementId) => frameElementTreeMarkup(frame, elementId))
+    .join('\n');
+  const background = options.background
+    ? `<rect width="${frame.width}" height="${frame.height}" fill="${escapeXml(options.background)}" />`
+    : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${frame.width} ${frame.height}"${
+    options.size ? ` width="${frame.width}" height="${frame.height}"` : ''
+  }>${defs ? `<defs>${defs}</defs>` : ''}${background}${roots}</svg>`;
+}
+
+/**
+ * v1 projects are still what callers hold. Migrate per call rather than
+ * caching by object identity: the editor mutates documents in place, so a
+ * cache would happily export the frame before the user's last edit.
+ */
+function documentFor(project: TraceDocument): TraceDocument {
+  return migrateTraceDocument(project).project;
+}
+
+/** Sample a project at `timeMs` and serialise that frame. */
 export function staticSvgMarkup(
-  inputProject: TraceProject,
+  inputProject: TraceDocument,
   timeMs: number,
   options: { background?: string; size?: boolean } = {},
 ): string {
-  const project = migrateTraceProject(inputProject);
-  const defs = `${gradientsToDefs(project.gradients)}${project.defs ?? ''}`;
-  const roots = project.rootElementIds
-    .map((elementId) => elementTreeMarkup(project, elementId, timeMs))
-    .join('\n');
-  const background = options.background
-    ? `<rect width="${project.width}" height="${project.height}" fill="${escapeXml(options.background)}" />`
-    : '';
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${project.width} ${project.height}"${
-    options.size ? ` width="${project.width}" height="${project.height}"` : ''
-  }>${defs ? `<defs>${defs}</defs>` : ''}${background}${roots}</svg>`;
+  const document = documentFor(inputProject);
+  return staticSvgMarkupFromFrame(
+    sampleFrame(document, { timeMs }),
+    options,
+  );
 }

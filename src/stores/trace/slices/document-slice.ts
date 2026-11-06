@@ -6,10 +6,11 @@
  */
 
 import { applyOps } from '@/lib/trace/ops';
-import { migrateTraceProject } from '@/lib/trace/migrate';
+import { migrateTraceDocument } from '@/lib/trace/migrate';
+import { stageOf } from '@/lib/trace/document';
 import { transformPatch } from '@/lib/trace/resolve';
 import type { TraceApplyOpsResult, TraceOp } from '@/lib/trace/ops/types';
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument } from '@/lib/trace/types';
 
 import { setHistoryOpActive } from './history';
 import type {
@@ -18,13 +19,13 @@ import type {
   TraceSliceCreator,
 } from './types';
 
-function clampTime(project: TraceProject | null, timeMs: number): number {
+function clampTime(project: TraceDocument | null, timeMs: number): number {
   const duration = project?.durationMs ?? 0;
   if (!Number.isFinite(timeMs)) return 0;
   return Math.min(Math.max(0, Math.round(timeMs)), Math.max(0, duration));
 }
 
-function activeSceneOf(project: TraceProject | null): string | null {
+function activeSceneOf(project: TraceDocument | null): string | null {
   if (!project?.storyboard) return null;
   return (
     project.storyboard.activeSceneId ?? project.storyboard.scenes[0]?.id ?? null
@@ -58,7 +59,7 @@ export const createDocumentSlice: TraceSliceCreator<
   ...initialState,
 
   loadProject: (project, options = {}) => {
-    const normalizedProject = migrateTraceProject(project);
+    const normalizedProject = migrateTraceDocument(project).project;
     setHistoryOpActive(true);
     set({
       project: normalizedProject,
@@ -119,7 +120,7 @@ export const createDocumentSlice: TraceSliceCreator<
     const selection = state.selection;
     const selectionExists =
       !selection.selectedElementId ||
-      Boolean(result.project.elements[selection.selectedElementId]);
+      Boolean(stageOf(result.project).elements[selection.selectedElementId]);
 
     set({
       project: result.project,
@@ -143,7 +144,9 @@ export const createDocumentSlice: TraceSliceCreator<
 
   updateAttributes: (elementId, patch) => {
     const state = get();
-    const element = state.project?.elements[elementId];
+    const element = state.project
+      ? stageOf(state.project).elements[elementId]
+      : undefined;
     if (!element) return;
 
     const ops: TraceOp[] = [
@@ -191,7 +194,9 @@ export const createDocumentSlice: TraceSliceCreator<
 
   updateTransform: (elementId, transform, origin) => {
     const state = get();
-    const element = state.project?.elements[elementId];
+    const element = state.project
+      ? stageOf(state.project).elements[elementId]
+      : undefined;
     if (!element) return;
 
     const timeMs = state.playback.currentTimeMs;

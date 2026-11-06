@@ -1,3 +1,4 @@
+import { stageOf } from '@/lib/trace/document';
 /**
  * stores/trace/slices/storyboard-slice.ts
  * ─────────────────────────────────────────────────────────────────────────────
@@ -44,7 +45,7 @@ export const createStoryboardSlice: TraceSliceCreator<
     );
     if (!scene) return;
 
-    const firstElement = Object.values(project.elements).find(
+    const firstElement = Object.values(stageOf(project).elements).find(
       (element) => element.sceneId === sceneId,
     );
     if (firstElement) get().selectElement(firstElement.id);

@@ -1,3 +1,4 @@
+import { stageOf } from '@/lib/trace/document';
 import { instantiateLowerThirdTemplate } from '@/lib/trace/templates/lower-third';
 import { generateGsapCode } from '@/lib/trace/export/gsap-code';
 import { compileProjectToAnimatedSvg } from '@/lib/trace/export/animated-svg';
@@ -17,7 +18,7 @@ describe('Lower Third Overlay Template', () => {
     const project = instantiateLowerThirdTemplate({
       title: 'Title',
     });
-    const bgCard = project.elements['bg-card'];
+    const bgCard = stageOf(project).elements['bg-card'];
 
     expect(bgCard).toBeDefined();
     expect(bgCard.type).toBe('rect');
@@ -35,7 +36,7 @@ describe('Lower Third Overlay Template', () => {
       title: 'Title',
       enterDurationMs: 400,
     });
-    const bgCard = project.elements['bg-card'];
+    const bgCard = stageOf(project).elements['bg-card'];
     const xTrack = bgCard.tracks.find((t) => t.property === 'x');
 
     expect(xTrack).toBeDefined();
@@ -52,7 +53,7 @@ describe('Lower Third Overlay Template', () => {
       enterDurationMs: 400,
       exitDurationMs: 300,
     });
-    const bgCard = project.elements['bg-card'];
+    const bgCard = stageOf(project).elements['bg-card'];
     const opacityTrack = bgCard.tracks.find((t) => t.property === 'opacity');
 
     expect(opacityTrack).toBeDefined();
@@ -66,7 +67,7 @@ describe('Lower Third Overlay Template', () => {
     const project = instantiateLowerThirdTemplate({
       title: 'Status Update',
     });
-    const titleText = project.elements['title-text'];
+    const titleText = stageOf(project).elements['title-text'];
 
     expect(titleText).toBeDefined();
     expect(titleText.type).toBe('text');
@@ -81,7 +82,7 @@ describe('Lower Third Overlay Template', () => {
       title: 'Title',
       subtitle: 'Step description here',
     });
-    const subtitleText = project.elements['subtitle-text'];
+    const subtitleText = stageOf(project).elements['subtitle-text'];
 
     expect(subtitleText).toBeDefined();
     expect(subtitleText.type).toBe('text');
@@ -96,10 +97,10 @@ describe('Lower Third Overlay Template', () => {
       metric: '5/10',
     });
 
-    expect(project.elements['metric-badge-bg']).toBeDefined();
-    expect(project.elements['metric-text']).toBeDefined();
+    expect(stageOf(project).elements['metric-badge-bg']).toBeDefined();
+    expect(stageOf(project).elements['metric-text']).toBeDefined();
 
-    const metricText = project.elements['metric-text'];
+    const metricText = stageOf(project).elements['metric-text'];
     expect(metricText.attributes.text).toBe('5/10');
     expect(metricText.attributes.fontSize).toBe(24);
     expect(metricText.attributes.fill).toBe('#3b82f6');
@@ -111,7 +112,7 @@ describe('Lower Third Overlay Template', () => {
       metric: '3/12',
       enterDurationMs: 400,
     });
-    const badgeBg = project.elements['metric-badge-bg'];
+    const badgeBg = stageOf(project).elements['metric-badge-bg'];
     const xTrack = badgeBg.tracks.find((t) => t.property === 'x');
 
     expect(xTrack).toBeDefined();
@@ -128,7 +129,7 @@ describe('Lower Third Overlay Template', () => {
     });
 
     expect(project.durationMs).toBe(6000);
-    const bgCard = project.elements['bg-card'];
+    const bgCard = stageOf(project).elements['bg-card'];
     const xTrack = bgCard.tracks.find((t) => t.property === 'x');
     expect(xTrack?.keyframes[1].timeMs).toBe(600);
   });
@@ -169,8 +170,8 @@ describe('Lower Third Overlay Template', () => {
       title: 'Title Only',
     });
 
-    expect(project.elements['subtitle-text']).toBeUndefined();
-    expect(project.elements['metric-badge-bg']).toBeUndefined();
-    expect(project.elements['metric-text']).toBeUndefined();
+    expect(stageOf(project).elements['subtitle-text']).toBeUndefined();
+    expect(stageOf(project).elements['metric-badge-bg']).toBeUndefined();
+    expect(stageOf(project).elements['metric-text']).toBeUndefined();
   });
 });

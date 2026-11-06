@@ -7,6 +7,7 @@
  * ordering, duplication, grouping and the add menu all compile to semantic ops.
  */
 
+import { stageOf } from '@/lib/trace/document';
 import { createElement, useMemo, useState } from 'react';
 import {
   ActivityIcon,
@@ -49,7 +50,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type {
   TraceElement,
   TraceElementType,
-  TraceProject,
+  TraceSource,
 } from '@/lib/trace/types';
 import { ADDABLE_ELEMENT_TYPES } from '@/lib/trace/elements/registry';
 import { ELEMENT_RECIPES } from '@/lib/trace/ops/elements';
@@ -125,7 +126,7 @@ function iconFor(element: TraceElement) {
   }
 }
 
-function specFor(type: TraceElementType, project: TraceProject) {
+function specFor(type: TraceElementType, project: TraceSource) {
   const x = Math.round(project.width / 2 - 120);
   const y = Math.round(project.height / 2 - 60);
   const centerX = Math.round(project.width / 2);
@@ -265,7 +266,7 @@ function Row({
 }: {
   element: TraceElement;
   depth: number;
-  project: TraceProject;
+  project: TraceSource;
   selectedElementId: string | null;
   collapsedElementIds: string[];
   onSelect: (elementId: string) => void;
@@ -276,7 +277,7 @@ function Row({
   const [name, setName] = useState(element.name);
 
   const children = (element.childrenIds ?? [])
-    .map((childId) => project.elements[childId])
+    .map((childId) => stageOf(project).elements[childId])
     .filter((child): child is TraceElement => Boolean(child));
   const collapsed = collapsedElementIds.includes(element.id);
   const selected = selectedElementId === element.id;
@@ -496,12 +497,12 @@ export function TraceElementsTree() {
 
   const roots = useMemo(() => {
     if (!project) return [];
-    const all = project.rootElementIds
-      .map((elementId) => project.elements[elementId])
+    const all = stageOf(project).rootElementIds
+      .map((elementId) => stageOf(project).elements[elementId])
       .filter((element): element is TraceElement => Boolean(element));
     const needle = query.trim().toLowerCase();
     if (!needle) return all;
-    return Object.values(project.elements).filter((element) =>
+    return Object.values(stageOf(project).elements).filter((element) =>
       element.name.toLowerCase().includes(needle),
     );
   }, [project, query]);
@@ -617,7 +618,7 @@ export function TraceElementsTree() {
 
       {/* Footer */}
       <div className="flex items-center justify-between border-t border-border/50 px-3 py-1.5 text-[9px] text-muted-foreground/40">
-        <span>{Object.keys(project.elements).length} layer{Object.keys(project.elements).length !== 1 ? 's' : ''}</span>
+        <span>{Object.keys(stageOf(project).elements).length} layer{Object.keys(stageOf(project).elements).length !== 1 ? 's' : ''}</span>
         <span className="font-mono">
           {project.width}×{project.height}
         </span>

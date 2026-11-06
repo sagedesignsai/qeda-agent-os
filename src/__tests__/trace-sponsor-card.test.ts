@@ -1,3 +1,4 @@
+import { stageOf } from '@/lib/trace/document';
 import { instantiateSponsorCardTemplate } from '@/lib/trace/templates/sponsor-card';
 import { generateGsapCode } from '@/lib/trace/export/gsap-code';
 import { compileProjectToAnimatedSvg } from '@/lib/trace/export/animated-svg';
@@ -14,16 +15,16 @@ describe('Sponsor Card Template', () => {
 
   it('creates background and glow elements', () => {
     const project = instantiateSponsorCardTemplate();
-    expect(project.elements['bg-base']).toBeDefined();
-    expect(project.elements['glow-left']).toBeDefined();
-    expect(project.elements['glow-right']).toBeDefined();
-    expect(project.elements['bg-base'].type).toBe('rect');
-    expect(project.elements['bg-base'].attributes.fill).toBe('#0f172a');
+    expect(stageOf(project).elements['bg-base']).toBeDefined();
+    expect(stageOf(project).elements['glow-left']).toBeDefined();
+    expect(stageOf(project).elements['glow-right']).toBeDefined();
+    expect(stageOf(project).elements['bg-base'].type).toBe('rect');
+    expect(stageOf(project).elements['bg-base'].attributes.fill).toBe('#0f172a');
   });
 
   it('centers the Qeda logo with scale animation', () => {
     const project = instantiateSponsorCardTemplate();
-    const logo = project.elements['logo-mark'];
+    const logo = stageOf(project).elements['logo-mark'];
 
     expect(logo).toBeDefined();
     expect(logo.type).toBe('path');
@@ -39,7 +40,7 @@ describe('Sponsor Card Template', () => {
 
   it('animates logo opacity fade-in', () => {
     const project = instantiateSponsorCardTemplate();
-    const logo = project.elements['logo-mark'];
+    const logo = stageOf(project).elements['logo-mark'];
     const opacityTrack = logo.tracks.find((t) => t.property === 'opacity');
 
     expect(opacityTrack).toBeDefined();
@@ -57,19 +58,19 @@ describe('Sponsor Card Template', () => {
     const project = instantiateSponsorCardTemplate(features);
 
     // Check bullets
-    expect(project.elements['bullet-0']).toBeDefined();
-    expect(project.elements['bullet-1']).toBeDefined();
-    expect(project.elements['bullet-2']).toBeDefined();
+    expect(stageOf(project).elements['bullet-0']).toBeDefined();
+    expect(stageOf(project).elements['bullet-1']).toBeDefined();
+    expect(stageOf(project).elements['bullet-2']).toBeDefined();
 
     // Check titles
-    expect(project.elements['title-0']).toBeDefined();
-    const title0 = project.elements['title-0'];
+    expect(stageOf(project).elements['title-0']).toBeDefined();
+    const title0 = stageOf(project).elements['title-0'];
     expect(title0.type).toBe('text');
     expect(title0.attributes.text).toBe('Feature One');
 
     // Check subtitles
-    expect(project.elements['subtitle-0']).toBeDefined();
-    const subtitle0 = project.elements['subtitle-0'];
+    expect(stageOf(project).elements['subtitle-0']).toBeDefined();
+    const subtitle0 = stageOf(project).elements['subtitle-0'];
     expect(subtitle0.type).toBe('text');
     expect(subtitle0.attributes.text).toBe('Subtitle text');
   });
@@ -83,9 +84,9 @@ describe('Sponsor Card Template', () => {
 
     const project = instantiateSponsorCardTemplate(features);
 
-    const bullet0 = project.elements['bullet-0'];
-    const bullet1 = project.elements['bullet-1'];
-    const bullet2 = project.elements['bullet-2'];
+    const bullet0 = stageOf(project).elements['bullet-0'];
+    const bullet1 = stageOf(project).elements['bullet-1'];
+    const bullet2 = stageOf(project).elements['bullet-2'];
 
     const opacity0 = bullet0.tracks.find((t) => t.property === 'opacity');
     const opacity1 = bullet1.tracks.find((t) => t.property === 'opacity');
@@ -134,8 +135,8 @@ describe('Sponsor Card Template', () => {
     const project = instantiateSponsorCardTemplate(manyFeatures);
 
     // Should only create 6 features max
-    expect(project.elements['bullet-0']).toBeDefined();
-    expect(project.elements['bullet-5']).toBeDefined();
-    expect(project.elements['bullet-6']).toBeUndefined();
+    expect(stageOf(project).elements['bullet-0']).toBeDefined();
+    expect(stageOf(project).elements['bullet-5']).toBeDefined();
+    expect(stageOf(project).elements['bullet-6']).toBeUndefined();
   });
 });

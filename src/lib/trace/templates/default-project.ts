@@ -9,7 +9,8 @@
  */
 
 import { createScene } from '../storyboard';
-import type { TraceElement, TraceProject, TraceGradient } from '../types';
+import { TRACE_DEFAULT_ANIMATION_ID, TRACE_DEFAULT_ARTBOARD_ID } from '../schema';
+import type { TraceElement, TraceStage, TraceGradient } from '../types';
 
 const WIDTH = 700;
 const HEIGHT = 700;
@@ -62,7 +63,7 @@ const STROKE_GRADIENT: TraceGradient = {
 
 export function createNovaTraceMarkProject(
   name = 'NovaTrace Mark',
-): TraceProject {
+): TraceStage {
   const scenes = [
     createScene({
       id: 'scene-signal',
@@ -491,6 +492,8 @@ export function createNovaTraceMarkProject(
 
   return {
     id: 'nova-mark',
+    artboardId: TRACE_DEFAULT_ARTBOARD_ID,
+    animationId: TRACE_DEFAULT_ANIMATION_ID,
     name,
     width: WIDTH,
     height: HEIGHT,

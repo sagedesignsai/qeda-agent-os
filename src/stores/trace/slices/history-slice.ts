@@ -1,3 +1,4 @@
+import { stageOf } from '@/lib/trace/document';
 /**
  * stores/trace/slices/history-slice.ts
  * ─────────────────────────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ export const createHistorySlice: TraceSliceCreator<
     );
     const selectionExists =
       !selection.selectedElementId ||
-      Boolean(previous.elements[selection.selectedElementId]);
+      Boolean(stageOf(previous).elements[selection.selectedElementId]);
 
     setHistoryOpActive(true);
     set({
@@ -51,7 +52,7 @@ export const createHistorySlice: TraceSliceCreator<
         ? { ...selection, selectedKeyframeIds: [] }
         : {
             ...selection,
-            selectedElementId: previous.rootElementIds[0] ?? null,
+            selectedElementId: stageOf(previous).rootElementIds[0] ?? null,
             selectedKeyframeIds: [],
           },
       playback: {
@@ -75,7 +76,7 @@ export const createHistorySlice: TraceSliceCreator<
     const nextPast = pushHistory(past, project);
     const selectionExists =
       !selection.selectedElementId ||
-      Boolean(next.elements[selection.selectedElementId]);
+      Boolean(stageOf(next).elements[selection.selectedElementId]);
 
     setHistoryOpActive(true);
     set({
@@ -90,7 +91,7 @@ export const createHistorySlice: TraceSliceCreator<
         ? { ...selection, selectedKeyframeIds: [] }
         : {
             ...selection,
-            selectedElementId: next.rootElementIds[0] ?? null,
+            selectedElementId: stageOf(next).rootElementIds[0] ?? null,
             selectedKeyframeIds: [],
           },
       playback: {

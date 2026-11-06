@@ -1,3 +1,4 @@
+import { stageOf, stageOrNull } from '@/lib/trace/document';
 /**
  * stores/trace/slices/selection-slice.ts
  * ─────────────────────────────────────────────────────────────────────────────
@@ -40,8 +41,8 @@ export const createSelectionSlice: TraceSliceCreator<
   },
 
   selectElement: (elementId) => {
-    const project = get().project;
-    if (!elementId || !project?.elements[elementId]) {
+    const stage = stageOrNull(get().project);
+    if (!elementId || !stage?.elements[elementId]) {
       set((state) => ({
         selection: {
           ...state.selection,
@@ -53,7 +54,7 @@ export const createSelectionSlice: TraceSliceCreator<
       return;
     }
 
-    const ancestors = ancestorsOf(project.elements, elementId);
+    const ancestors = ancestorsOf(stage.elements, elementId);
     set((state) => {
       const expanded = new Set(state.selection.expandedElementIds);
       expanded.add(elementId);
@@ -130,7 +131,7 @@ export const createSelectionSlice: TraceSliceCreator<
     set((state) => ({
       selection: {
         ...state.selection,
-        collapsedElementIds: Object.values(project.elements).map(
+        collapsedElementIds: Object.values(stageOf(project).elements).map(
           (element) => element.id,
         ),
         expandedElementIds: [],
@@ -154,7 +155,7 @@ export const createSelectionSlice: TraceSliceCreator<
 
   startPathEdit: (elementId) => {
     const project = get().project;
-    if (!project?.elements[elementId]) return;
+    if (!stageOrNull(project)?.elements[elementId]) return;
     set((state) => ({
       selection: {
         ...state.selection,

@@ -12,7 +12,7 @@ import {
   type GizmoTransform,
 } from '@/lib/trace/gizmo/geometry';
 import { transformPatch } from '@/lib/trace/resolve';
-import { createBlankTraceProject } from '@/lib/trace/defaults';
+import { createBlankTraceDocument, stageOrNull } from '@/lib/trace/document';
 import { useTraceStore } from '@/stores/trace-store';
 import type { TraceElement } from '@/lib/trace/types';
 
@@ -297,7 +297,7 @@ describe('transformPatch', () => {
 describe('store updateTransform', () => {
   beforeEach(() => {
     useTraceStore.getState().closeProject();
-    useTraceStore.getState().loadProject(createBlankTraceProject('Gizmo'));
+    useTraceStore.getState().loadProject(createBlankTraceDocument('Gizmo'));
   });
 
   function addRect(): string {
@@ -328,14 +328,14 @@ describe('store updateTransform', () => {
     expect(state.past.length).toBe(pastBefore + 1);
     expect(state.dirty).toBe(true);
     const attrs =
-      state.project?.elements[elementId].attributes ?? {};
+      stageOrNull(state.project)?.elements[elementId].attributes ?? {};
     expect(attrs.rotation).toBe(45);
     expect(attrs.scaleX).toBe(1.5);
     expect(attrs.x).toBe(120);
 
     useTraceStore.getState().undo();
     const undone =
-      useTraceStore.getState().project?.elements[elementId].attributes ?? {};
+      stageOrNull(useTraceStore.getState().project)?.elements[elementId].attributes ?? {};
     expect(undone.rotation).toBeUndefined();
     expect(undone.scaleX).toBeUndefined();
   });
@@ -353,9 +353,7 @@ describe('store updateTransform', () => {
       scaleY: 1,
     });
 
-    const track = useTraceStore
-      .getState()
-      .project?.elements[elementId].tracks.find(
+    const track = stageOrNull(useTraceStore.getState().project)?.elements[elementId].tracks.find(
         (entry) => entry.property === 'rotation',
       );
     expect(
@@ -375,7 +373,7 @@ describe('store updateTransform', () => {
         { x: 50, y: 25 },
       );
     expect(
-      useTraceStore.getState().project?.elements[elementId].origin,
+      stageOrNull(useTraceStore.getState().project)?.elements[elementId].origin,
     ).toEqual({ x: 50, y: 25 });
   });
 });

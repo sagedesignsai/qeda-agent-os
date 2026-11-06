@@ -1,3 +1,4 @@
+import { stageOf } from '@/lib/trace/document';
 /**
  * stores/trace/slices/history-middleware.ts
  * ─────────────────────────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ const COALESCE_MS = 400;
 
 function keyframeCount(project: TraceStoreState['project']): number {
   if (!project) return 0;
-  return Object.values(project.elements).reduce(
+  return Object.values(stageOf(project).elements).reduce(
     (total, element) =>
       total +
       (element.tracks ?? []).reduce(
@@ -65,10 +66,10 @@ export function traceHistoryMiddleware(
 
       const now = Date.now();
       const discrete =
-        Object.keys(before.project.elements).length !==
-          Object.keys(after.project.elements).length ||
-        (before.project.rootElementIds ?? []).length !==
-          (after.project.rootElementIds ?? []).length ||
+        Object.keys(stageOf(before.project).elements).length !==
+          Object.keys(stageOf(after.project).elements).length ||
+        (stageOf(before.project).rootElementIds ?? []).length !==
+          (stageOf(after.project).rootElementIds ?? []).length ||
         (before.project.storyboard?.scenes.length ?? 0) !==
           (after.project.storyboard?.scenes.length ?? 0) ||
         keyframeCount(before.project) !== keyframeCount(after.project) ||

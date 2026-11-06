@@ -9,6 +9,7 @@
  * the animated SVG and the generated GSAP code can never drift apart.
  */
 
+import { stageOf } from '@/lib/trace/document';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
 import {
@@ -17,12 +18,12 @@ import {
 } from '@/lib/trace/serialize/svg-markup';
 import { elementDomId } from '@/lib/trace/runtime/dom-renderer';
 import { resolveElementAtTime } from '@/lib/trace/runtime/resolve-element';
-import type { TraceElement, TraceProject } from '@/lib/trace/types';
+import type { TraceElement, TraceSource } from '@/lib/trace/types';
 
 export const TRACE_STAGE_SVG_ID = 'trace-main-svg';
 
 export type TraceRendererProps = {
-  project: TraceProject;
+  project: TraceSource;
   timeMs: number;
   selectedElementId?: string | null;
   onSelectElement?: (elementId: string | null) => void;
@@ -37,7 +38,7 @@ export type TraceRendererProps = {
 };
 
 type ElementNodeProps = Omit<TraceRendererProps, 'project'> & {
-  project: TraceProject;
+  project: TraceSource;
   element: TraceElement;
 };
 
@@ -66,7 +67,7 @@ function ElementNode({
   const resolved = resolveElementAtTime(element, timeMs);
   const body = elementBodyMarkup(element, resolved.attributes);
   const children = (element.childrenIds ?? [])
-    .map((childId) => project.elements[childId])
+    .map((childId) => stageOf(project).elements[childId])
     .filter((child): child is TraceElement => Boolean(child));
 
   const handlePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
@@ -127,9 +128,9 @@ export function TraceRenderer({
   interactive = true,
   background,
 }: TraceRendererProps) {
-  const defs = `${gradientsToDefs(project.gradients)}${project.defs ?? ''}`;
-  const roots = project.rootElementIds
-    .map((elementId) => project.elements[elementId])
+  const defs = `${gradientsToDefs(stageOf(project).gradients)}${stageOf(project).defs ?? ''}`;
+  const roots = stageOf(project).rootElementIds
+    .map((elementId) => stageOf(project).elements[elementId])
     .filter((element): element is TraceElement => Boolean(element));
 
   return (

@@ -1,5 +1,6 @@
+import { createBlankTraceDocument, stageOf } from '@/lib/trace/document';
 import { applyOps } from '@/lib/trace/ops'
-import { lintTraceProject } from '@/lib/trace/lint'
+import { lintTraceDocument } from '@/lib/trace/lint'
 import { evaluateEasing } from '@/lib/trace/animation/easing'
 import { getValueAtTime } from '@/lib/trace/animation/interpolator'
 import {
@@ -8,20 +9,17 @@ import {
   getStoryboardDuration,
   layoutScenes,
 } from '@/lib/trace/storyboard'
-import type { PropertyTrack, TraceProject } from '@/lib/trace/types'
+import type { PropertyTrack, TraceDocument, TraceStage } from '@/lib/trace/types'
 
-function emptyProject(overrides: Partial<TraceProject> = {}): TraceProject {
-  return {
+function emptyProject(overrides: Partial<TraceStage> = {}): TraceDocument {
+  return createBlankTraceDocument('Test Composition', {
     id: 'project-1',
-    name: 'Test Composition',
     width: 1280,
     height: 720,
     durationMs: 2000,
     fps: 60,
-    elements: {},
-    rootElementIds: [],
     ...overrides,
-  }
+  })
 }
 
 describe('Trace animation', () => {
@@ -85,10 +83,10 @@ describe('Trace ops', () => {
     expect(result.diff.added).toHaveLength(1)
 
     const [elementId] = result.diff.added
-    const element = result.project.elements[elementId]
+    const element = stageOf(result.project).elements[elementId]
     expect(element.name).toBe('Headline')
     expect(element.attributes.text).toBe('Hello Trace')
-    expect(result.project.rootElementIds).toContain(elementId)
+    expect(stageOf(result.project).rootElementIds).toContain(elementId)
     expect(element.sceneId).toBe(result.project.storyboard?.activeSceneId)
   })
 
@@ -113,7 +111,7 @@ describe('Trace ops', () => {
     expect(tracked.ok).toBe(true)
     expect(tracked.diff.updated).toContain(elementId)
 
-    const track = tracked.project.elements[elementId].tracks[0]
+    const track = stageOf(tracked.project).elements[elementId].tracks[0]
     expect(track.keyframes).toHaveLength(2)
     expect(getValueAtTime(track, 500)).toBeCloseTo(0.5)
   })
@@ -128,7 +126,7 @@ describe('Trace ops', () => {
     expect(result.ok).toBe(false)
     expect(result.applied).toBe(0)
     expect(result.diff.added).toHaveLength(0)
-    expect(Object.keys(result.project.elements)).toHaveLength(0)
+    expect(Object.keys(stageOf(result.project).elements)).toHaveLength(0)
     expect(result.diagnostics.some((entry) => entry.code === 'OP_EXECUTION_ERROR')).toBe(true)
   })
 
@@ -144,7 +142,7 @@ describe('Trace ops', () => {
     expect(inverse.type).toBe('restore')
 
     const reverted = applyOps(result.project, result.inverse)
-    expect(Object.keys(reverted.project.elements)).toHaveLength(0)
+    expect(Object.keys(stageOf(reverted.project).elements)).toHaveLength(0)
   })
 
   it('groups and ungroups elements without losing children', () => {
@@ -159,15 +157,15 @@ describe('Trace ops', () => {
     ])
 
     expect(grouped.ok).toBe(true)
-    expect(grouped.project.elements['group-1'].childrenIds).toEqual(ids)
-    expect(grouped.project.rootElementIds).toEqual(['group-1'])
-    expect(grouped.project.elements[ids[0]].parentId).toBe('group-1')
+    expect(stageOf(grouped.project).elements['group-1'].childrenIds).toEqual(ids)
+    expect(stageOf(grouped.project).rootElementIds).toEqual(['group-1'])
+    expect(stageOf(grouped.project).elements[ids[0]].parentId).toBe('group-1')
 
     const ungrouped = applyOps(grouped.project, [{ type: 'ungroupElement', id: 'group-1' }])
 
-    expect(ungrouped.project.elements['group-1']).toBeUndefined()
-    expect(ungrouped.project.rootElementIds).toEqual(ids)
-    expect(ungrouped.project.elements[ids[0]].parentId).toBeNull()
+    expect(stageOf(ungrouped.project).elements['group-1']).toBeUndefined()
+    expect(stageOf(ungrouped.project).rootElementIds).toEqual(ids)
+    expect(stageOf(ungrouped.project).elements[ids[0]].parentId).toBeNull()
   })
 })
 
@@ -190,7 +188,7 @@ describe('Trace lint', () => {
       rootElementIds: [],
     })
 
-    const result = lintTraceProject(project)
+    const result = lintTraceDocument(project)
 
     expect(result.ok).toBe(false)
     expect(result.diagnostics.some((entry) => entry.code === 'ORPHAN_ELEMENT')).toBe(true)
@@ -201,6 +199,6 @@ describe('Trace lint', () => {
       { type: 'addElement', element: { type: 'text', text: 'Clean', x: 640, y: 360 } },
     ])
 
-    expect(lintTraceProject(added.project).errorCount).toBe(0)
+    expect(lintTraceDocument(added.project).errorCount).toBe(0)
   })
 })

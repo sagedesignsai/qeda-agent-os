@@ -8,7 +8,7 @@
  * Adapted from sagedesigns-os lib/motion/runtime/store-ref.ts for Nova Trace.
  */
 
-import type { TraceProject } from '../types';
+import type { TraceDocument } from '../types';
 
 export type TracePlaybackSnapshot = {
   currentTimeMs: number;
@@ -21,7 +21,7 @@ export type TracePlaybackSnapshot = {
 };
 
 export interface TraceRuntimeBridge {
-  getProject: () => TraceProject | null;
+  getProject: () => TraceDocument | null;
   getPlayback: () => TracePlaybackSnapshot;
   /** Commit the authoritative playhead after a pause, stop or scrub. */
   commitTime: (timeMs: number) => void;

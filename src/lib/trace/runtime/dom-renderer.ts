@@ -13,8 +13,10 @@
  * Adapted from sagedesigns-os lib/motion/runtime/dom-renderer.ts.
  */
 
-import type { TraceElement, TraceProject } from '../types';
+import { migrateTraceDocument } from '../migrate';
+import type { TraceDocument, TraceElement } from '../types';
 import { getTraceRuntimeBridge } from './bridge';
+import { sampleFrame, type FrameElement } from './frame';
 import {
   formatTraceTimecode,
   resolveElementAtTime,
@@ -86,7 +88,6 @@ function applyTrim(
 /** Write a single animated value to the property's correct DOM slot. */
 function applyTrackValue(
   node: SVGElement,
-  element: TraceElement,
   property: string,
   value: string | number,
   attributes: Record<string, any>,
@@ -166,6 +167,9 @@ function applyTrackValue(
       target.textContent = String(value);
       return;
     }
+    case 'motionPathProgress':
+      // Position along a motion path is applied through the transform.
+      return;
     case 'pathProgress': {
       const textPath = node.querySelector('textPath');
       if (textPath) textPath.setAttribute('startOffset', `${Number(value)}%`);
@@ -203,7 +207,42 @@ function applyTrackValue(
   }
 }
 
-/** Evaluate one element at `timeMs` and mutate its mounted DOM node. */
+/**
+ * Apply one sampled frame element to its mounted DOM node.
+ *
+ * This is the only writer: attribute values come from the frame, never from
+ * tracks, so the stage cannot disagree with the sampler.
+ */
+export function applyFrameElementToDom(
+  node: SVGElement,
+  frameElement: FrameElement,
+  timeMs?: number,
+  domOverride?: SVGElement | null,
+): void {
+  const attributes = frameElement.attributes as Record<string, any>;
+
+  for (const [property, value] of Object.entries(attributes)) {
+    if (typeof value !== 'number' && typeof value !== 'string') continue;
+    applyTrackValue(node, property, value, attributes);
+  }
+
+  node.style.opacity = String(frameElement.opacity);
+  node.setAttribute('opacity', String(frameElement.opacity));
+
+  const transform = frameElement.transform;
+  node.style.transformOrigin = `${transform.originX}px ${transform.originY}px`;
+  node.style.transformBox = 'view-box';
+  node.style.transform = `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`;
+
+  if (domOverride) {
+    domOverride.setAttribute(
+      'data-trace-time',
+      String(Math.round(timeMs ?? 0)),
+    );
+  }
+}
+
+/** @deprecated Evaluate one element through the compatibility wrapper. */
 export function applyElementAnimationAtTime(
   node: SVGElement,
   element: TraceElement,
@@ -211,60 +250,34 @@ export function applyElementAnimationAtTime(
   domOverride?: SVGElement | null,
 ): void {
   const { attributes, transform } = resolveElementAtTime(element, timeMs);
+  const opacity = Number(attributes.opacity ?? 1);
 
-  // Track-driven attributes first.
-  for (const track of element.tracks ?? []) {
-    const resolved = attributes[track.property];
-    if (resolved === undefined) continue;
-    applyTrackValue(node, element, track.property, resolved, attributes);
-  }
-
-  // Base attributes apply where no track animates them.
-  const animated = new Set(
-    (element.tracks ?? []).map((track) => track.property),
+  applyFrameElementToDom(
+    node,
+    {
+      id: element.id,
+      artboardId: '',
+      type: element.type,
+      name: element.name,
+      parentId: element.parentId ?? null,
+      childrenIds: [...(element.childrenIds ?? [])],
+      visible: element.visible !== false,
+      opacity: Number.isFinite(opacity)
+        ? Math.max(0, Math.min(1, opacity))
+        : 1,
+      transform: {
+        ...transform,
+        originX: Number(element.origin?.x ?? 0),
+        originY: Number(element.origin?.y ?? 0),
+      },
+      attributes,
+    },
+    timeMs,
+    domOverride,
   );
-  if (!animated.has('opacity') && attributes.opacity !== undefined) {
-    node.style.opacity = String(attributes.opacity);
-  }
-  if (!animated.has('fill') && attributes.fill !== undefined) {
-    node.setAttribute('fill', String(attributes.fill));
-  }
-  if (!animated.has('stroke') && attributes.stroke !== undefined) {
-    node.setAttribute('stroke', String(attributes.stroke));
-  }
-  if (!animated.has('strokeWidth') && attributes.strokeWidth !== undefined) {
-    node.setAttribute('stroke-width', String(attributes.strokeWidth));
-  }
-  if (!animated.has('fillOpacity') && attributes.fillOpacity !== undefined) {
-    node.setAttribute('fill-opacity', String(attributes.fillOpacity));
-  }
-
-  // Static trim settings (no trim track) still need dash geometry.
-  if (
-    !animated.has('trimStart') &&
-    !animated.has('trimEnd') &&
-    !animated.has('trimOffset') &&
-    (attributes.trimStart !== undefined || attributes.trimEnd !== undefined)
-  ) {
-    applyTrim(
-      node,
-      String(attributes.d ?? ''),
-      Number(attributes.trimStart ?? 0),
-      Number(attributes.trimEnd ?? 100),
-      Number(attributes.trimOffset ?? 0),
-    );
-  }
-
-  const origin = element.origin ?? { x: 0, y: 0 };
-  node.style.transformOrigin = `${origin.x}px ${origin.y}px`;
-  node.style.transformBox = 'view-box';
-  node.style.transform = `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`;
-
-  if (domOverride)
-    domOverride.setAttribute('data-trace-time', String(Math.round(timeMs)));
 }
 
-function updateTransportUi(timeMs: number, project: TraceProject): void {
+function updateTransportUi(timeMs: number, project: TraceDocument): void {
   if (typeof document === 'undefined') return;
 
   const needle = document.getElementById('trace-playhead-needle');
@@ -289,25 +302,40 @@ function updateTransportUi(timeMs: number, project: TraceProject): void {
 }
 
 /**
- * Evaluate every element at `timeMs` and mutate the SVG DOM.
+ * v1 projects are still what the store holds during the migration window, so
+ * convert once per document object instead of once per frame. Documents are
+ * immutable in the store, which makes object identity a valid cache key.
+ */
+/**
+ * Migrate per tick instead of caching by object identity. Documents are
+ * mutated in place while editing, and a stale migrated copy would freeze the
+ * stage at whatever frame first touched it.
+ */
+function documentFor(project: TraceDocument): TraceDocument {
+  return migrateTraceDocument(project).project;
+}
+
+/**
+ * Sample `timeMs` once and mutate every mounted element from that frame.
  * Runs at display refresh rate during playback and on every scrub tick.
  */
 export function syncTraceDomAtTime(
   timeMs: number,
-  project?: TraceProject | null,
+  project?: TraceDocument | null,
 ): void {
   if (typeof document === 'undefined') return;
 
-  const doc = project ?? getTraceRuntimeBridge()?.getProject() ?? null;
-  if (!doc) return;
+  const source = project ?? getTraceRuntimeBridge()?.getProject() ?? null;
+  if (!source) return;
 
-  for (const element of Object.values(doc.elements)) {
-    const node = findElementDom(element.id);
+  const frame = sampleFrame(documentFor(source), { timeMs });
+  for (const frameElement of Object.values(frame.elements)) {
+    const node = findElementDom(frameElement.id);
     if (!node) continue;
-    applyElementAnimationAtTime(node, element, timeMs);
+    applyFrameElementToDom(node, frameElement, timeMs);
   }
 
-  updateTransportUi(timeMs, doc);
+  updateTransportUi(timeMs, source);
 }
 
 export interface TransformPreview {

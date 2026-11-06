@@ -14,10 +14,12 @@
 
 import type {
   AnimatableProperty,
+  TraceDocument,
   TraceElement,
-  TraceProject,
+  TraceStage,
   PropertyTrack,
 } from './types';
+import { stageOf } from './document';
 import type {
   Diagnostic,
   DiagnosticCode,
@@ -122,7 +124,7 @@ function trackLabel(track: PropertyTrack): string {
   return track.label || track.property;
 }
 
-function hasParentCycle(project: TraceProject, elementId: string): boolean {
+function hasParentCycle(project: TraceStage, elementId: string): boolean {
   const visiting = new Set<string>();
   let cursor: string | null | undefined = project.elements[elementId]?.parentId;
   while (cursor) {
@@ -133,8 +135,8 @@ function hasParentCycle(project: TraceProject, elementId: string): boolean {
   return false;
 }
 
-export function lintTraceProject(
-  project: TraceProject,
+export function lintTraceStage(
+  project: TraceStage,
   options: LintOptions = {},
 ): LintResult {
   const diagnostics: Diagnostic[] = [];
@@ -454,4 +456,12 @@ export function lintTraceProject(
     errorCount,
     warningCount,
   };
+}
+
+/** Lint the active artboard of a document. */
+export function lintTraceDocument(
+  document: TraceDocument,
+  options: LintOptions = {},
+): LintResult {
+  return lintTraceStage(stageOf(document), options);
 }

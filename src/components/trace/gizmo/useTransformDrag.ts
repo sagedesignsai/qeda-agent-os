@@ -11,6 +11,7 @@
  * (scale); Alt = scale from centre.
  */
 
+import { stageOf } from '@/lib/trace/document';
 import { useCallback, useRef, useState } from 'react';
 
 import {
@@ -31,7 +32,7 @@ import {
   findElementDom,
   syncTraceDomAtTime,
 } from '@/lib/trace/runtime/dom-renderer';
-import type { TraceProject } from '@/lib/trace/types';
+import type { TraceDocument } from '@/lib/trace/types';
 
 export interface TransformDragPreview {
   transform: GizmoTransform;
@@ -55,7 +56,7 @@ export interface UseTransformDragOptions {
   transform: GizmoTransform;
   origin: GizmoPoint;
   timeMs: number;
-  project: TraceProject | null;
+  project: TraceDocument | null;
   disabled: boolean;
   getArtboardPoint: (clientX: number, clientY: number) => GizmoPoint;
   onCommit: (

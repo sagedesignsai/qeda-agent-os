@@ -7,6 +7,7 @@
  * interactive experiences, where the host controls the timeline.
  */
 
+import { stageOf } from '@/lib/trace/document';
 import { useMemo, useState } from 'react';
 import { CheckIcon, CopyIcon, DownloadIcon } from 'lucide-react';
 import { toast } from 'sonner';
