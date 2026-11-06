@@ -13,14 +13,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import {
   CalendarPlusIcon,
+  CheckIcon,
   CircleIcon,
   ClockIcon,
   FocusIcon,
   Loader2Icon,
+  ListTodoIcon,
   MoreHorizontalIcon,
   SparklesIcon,
   SunIcon,
   Trash2Icon,
+  ZapIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -42,6 +45,7 @@ import { FocusStatsStrip } from './FocusStatsStrip';
 import { ScheduleBlockDialog } from './ScheduleBlockDialog';
 import { MorningKickoffDialog } from './MorningKickoffDialog';
 import { TodayEmptyHero } from './TodayEmptyHero';
+import { ActiveLaunchpad } from './ActiveLaunchpad';
 import { getNextBestMove } from '@/lib/task-recommendations';
 import type {
   FocusStats,
@@ -229,8 +233,28 @@ export function TodayTimeline({
   }, []);
   const today = useMemo(() => new Date(nowSec * 1000), [nowSec]);
 
+  // Right-column "Up next" queue: open tasks sorted by status, priority,
+  // then due date — the same activation-first order the lens uses.
+  const queue = useMemo(
+    () =>
+      [...openTasks].sort((a, b) => {
+        if (a.status === 'active' && b.status !== 'active') return -1;
+        if (b.status === 'active' && a.status !== 'active') return 1;
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        const ad = a.due_at ?? Number.MAX_SAFE_INTEGER;
+        const bd = b.due_at ?? Number.MAX_SAFE_INTEGER;
+        return ad - bd;
+      }),
+    [openTasks],
+  );
+  const scheduledTaskIds = useMemo(
+    () => new Set(blocks.map((b) => b.task_id).filter(Boolean) as string[]),
+    [blocks],
+  );
+  const doneCount = blocks.filter((b) => b.status === 'done').length;
+
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
       <FocusStatsStrip stats={stats} loading={statsLoading} />
 
       {/* Toolbar */}
@@ -281,50 +305,45 @@ export function TodayTimeline({
         </div>
       </div>
 
-      {/* Timeline */}
+      {/* Timeline — 2-col dashboard on desktop (fixed header, columns scroll
+          internally so the page itself never scrolls), stacked scroll on small. */}
       {loading ? (
         <div className="flex flex-1 items-center justify-center py-16">
           <Loader2Icon className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : blocks.length === 0 ? (
-        <TodayEmptyHero
-          recommendation={recommendation}
-          openTasksCount={openTasks.length}
-          streakDays={stats?.streakDays ?? gamification.state?.streakDays ?? 0}
-          onStartFlow={(task, e) => {
-            triggerParticleBurst(e.clientX, e.clientY);
-            onFocusTask(task);
-          }}
-          onOpenSteps={onOpenSteps}
-          onShuffle={() => setShuffleIndex((prev) => prev + 1)}
-          onOpenKickoff={() => setKickoffOpen(true)}
-          onAutoPlan={() => void planMyDay()}
-          onSendPrompt={onSendPrompt}
-          onOpenBrainDump={onOpenBrainDump}
-          planning={planning}
-        />
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <TodayEmptyHero
+            recommendation={recommendation}
+            openTasksCount={openTasks.length}
+            streakDays={stats?.streakDays ?? gamification.state?.streakDays ?? 0}
+            onStartFlow={(task, e) => {
+              triggerParticleBurst(e.clientX, e.clientY);
+              onFocusTask(task);
+            }}
+            onOpenSteps={onOpenSteps}
+            onShuffle={() => setShuffleIndex((prev) => prev + 1)}
+            onOpenKickoff={() => setKickoffOpen(true)}
+            onAutoPlan={() => void planMyDay()}
+            onSendPrompt={onSendPrompt}
+            onOpenBrainDump={onOpenBrainDump}
+            planning={planning}
+          />
+        </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {/* Quick Copilot prompt strip when timeline is active */}
-          <button
-            type="button"
-            onClick={() =>
-              onSendPrompt?.(
-                'Review my current schedule for today, suggest optimizations, or help adjust my plan.',
-              )
-            }
-            className="group flex w-full items-center gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3.5 py-2 text-xs text-muted-foreground transition-all hover:border-amber-500/40 hover:bg-card hover:text-foreground"
-          >
-            <SparklesIcon className="size-3.5 text-amber-500 transition-transform group-hover:scale-110" />
-            <span className="flex-1 text-left">
-              Ask Copilot to re-balance, add tasks, or adjust today's schedule…
-            </span>
-            <span className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-              Ask Copilot
-            </span>
-          </button>
-
-          <ol className="flex flex-col gap-2">
+        <div className="flex min-h-0 flex-col gap-3 lg:flex-1 lg:flex-row">
+          {/* Left: schedule */}
+          <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
+            <header className="flex items-center justify-between px-1 pb-2">
+              <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                Schedule
+              </h3>
+              <span className="text-[11px] tabular-nums text-muted-foreground">
+                {doneCount}/{blocks.length} done
+                {doneCount === blocks.length ? ' · all clear' : ''}
+              </span>
+            </header>
+            <ol className="flex flex-col gap-2 pr-1 pb-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             {blocks.map((block) => {
               const meta = BLOCK_STATUS[block.status];
               const task = tasks.find((t) => t.id === block.task_id) ?? null;
@@ -427,7 +446,120 @@ export function TodayTimeline({
                 </li>
               );
             })}
-          </ol>
+            </ol>
+          </section>
+
+          {/* Right: focus queue — next move + open tasks that are not
+              already on the schedule. Scrolls internally; the page does not. */}
+          <aside className="flex w-full shrink-0 flex-col gap-3 pr-1 lg:min-h-0 lg:w-[340px] lg:overflow-y-auto">
+            <button
+              type="button"
+              onClick={() =>
+                onSendPrompt?.(
+                  'Review my current schedule for today, suggest optimizations, or help adjust my plan.',
+                )
+              }
+              className="group flex w-full shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3.5 py-2 text-left text-xs text-muted-foreground transition-all hover:border-amber-500/40 hover:bg-card hover:text-foreground"
+            >
+              <SparklesIcon className="size-3.5 shrink-0 text-amber-500 transition-transform group-hover:scale-110" />
+              <span className="min-w-0 flex-1 truncate">
+                Ask Copilot to re-balance today…
+              </span>
+              <span className="shrink-0 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                Copilot
+              </span>
+            </button>
+
+            <ActiveLaunchpad
+              recommendation={recommendation}
+              onStartFlow={(task, e) => {
+                triggerParticleBurst(e.clientX, e.clientY);
+                onFocusTask(task);
+              }}
+              onOpenSteps={onOpenSteps ?? (() => undefined)}
+              onShuffle={() => setShuffleIndex((prev) => prev + 1)}
+            />
+
+            <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/60 bg-card/40">
+              <header className="flex shrink-0 items-center justify-between px-3 pt-2.5 pb-1.5">
+                <h3 className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                  <ListTodoIcon className="size-3.5" />
+                  Up next
+                </h3>
+                <span className="text-[11px] tabular-nums text-muted-foreground">
+                  {queue.length} open
+                </span>
+              </header>
+              {queue.length === 0 ? (
+                <p className="px-3 pb-3 text-xs text-muted-foreground">
+                  Nothing open. Brain-dump a thought or create a task to get
+                  going.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-1 px-2 pb-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+                  {queue.slice(0, 8).map((task) => {
+                    const prog =
+                      stepProgress?.[task.id] ??
+                      ({ total: 0, done: 0 } as const);
+                    const scheduled = scheduledTaskIds.has(task.id);
+                    return (
+                      <li
+                        key={task.id}
+                        className="flex items-center gap-2 rounded-md border border-border/40 bg-card px-2.5 py-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium">
+                            {task.title}
+                          </p>
+                          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                            <span
+                              className={cn(
+                                'font-medium',
+                                task.priority === 1
+                                  ? 'text-rose-400'
+                                  : task.priority === 2
+                                    ? 'text-amber-400'
+                                    : 'text-muted-foreground',
+                              )}
+                            >
+                              P{task.priority}
+                            </span>
+                            {task.estimate_mins ? (
+                              <span className="flex items-center gap-0.5 tabular-nums">
+                                <ClockIcon className="size-2.5" />
+                                {task.estimate_mins}m
+                              </span>
+                            ) : null}
+                            {prog.total > 0 ? (
+                              <span className="flex items-center gap-0.5 tabular-nums">
+                                <CheckIcon className="size-2.5" />
+                                {prog.done}/{prog.total}
+                              </span>
+                            ) : null}
+                            {scheduled ? (
+                              <span className="text-sky-500">· Scheduled</span>
+                            ) : null}
+                            {task.status === 'active' ? (
+                              <span className="text-emerald-500">· Active</span>
+                            ) : null}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 shrink-0 gap-1 text-[11px] text-muted-foreground"
+                          onClick={() => onFocusTask(task)}
+                        >
+                          <ZapIcon className="size-3" />
+                          Start…
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          </aside>
         </div>
       )}
 
