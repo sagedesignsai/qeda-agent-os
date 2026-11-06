@@ -310,6 +310,58 @@ export function syncTraceDomAtTime(
   updateTransportUi(timeMs, doc);
 }
 
+export interface TransformPreview {
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+}
+
+/**
+ * Mutate a mounted node to a preview transform during a gizmo drag.
+ * No React, no store write — the caller commits once on pointer-up.
+ * `origin` overrides the element's anchor for origin-marker drags.
+ */
+export function applyTransformPreview(
+  node: SVGElement,
+  transform: TransformPreview,
+  origin?: { x: number; y: number },
+): void {
+  const anchor = origin ?? { x: 0, y: 0 };
+  node.style.transformOrigin = `${anchor.x}px ${anchor.y}px`;
+  node.style.transformBox = 'view-box';
+  node.style.transform = `translate(${transform.x}px, ${transform.y}px) rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`;
+}
+
+/**
+ * Measure an element's local bounding box with its own CSS transform
+ * neutralised, so the result is in element-local space regardless of
+ * browser getBBox() transform semantics. Restores synchronously.
+ */
+export function measureElementBBox(
+  node: SVGGraphicsElement,
+): { x: number; y: number; width: number; height: number } | null {
+  if (!node || typeof node.getBBox !== 'function') return null;
+  const previousTransform = node.style.transform;
+  const previousOrigin = node.style.transformOrigin;
+  try {
+    node.style.transform = 'none';
+    const box = node.getBBox();
+    return {
+      x: box.x,
+      y: box.y,
+      width: Math.max(0, box.width),
+      height: Math.max(0, box.height),
+    };
+  } catch {
+    return null;
+  } finally {
+    node.style.transform = previousTransform;
+    node.style.transformOrigin = previousOrigin;
+  }
+}
+
 /** Drop cached geometry after a document change (d paths can change). */
 export function invalidateTraceDomCaches(): void {
   pathLengthCache.clear();

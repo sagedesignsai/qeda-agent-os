@@ -37,6 +37,8 @@ export type TraceSelection = {
   expandedElementIds: string[];
   collapsedElementIds: string[];
   activeSceneId: string | null;
+  /** Element whose path anchors are being edited (double-click path). */
+  editingPathElementId: string | null;
 };
 
 export type TraceDocumentState = {
@@ -66,6 +68,17 @@ export type TraceDocumentActions = {
   closeProject: () => void;
   dispatch: (ops: TraceOp[]) => TraceApplyOpsResult | null;
   updateAttributes: (elementId: string, patch: Record<string, unknown>) => void;
+  updateTransform: (
+    elementId: string,
+    transform: {
+      x: number;
+      y: number;
+      rotation: number;
+      scaleX: number;
+      scaleY: number;
+    },
+    origin?: { x: number; y: number },
+  ) => void;
   setCanvas: (patch: {
     width?: number;
     height?: number;
@@ -98,6 +111,8 @@ export type TraceSelectionActions = {
   collapseAllElements: () => void;
   expandAllElements: () => void;
   setActiveScene: (sceneId: string) => void;
+  startPathEdit: (elementId: string) => void;
+  endPathEdit: () => void;
 };
 
 export type TraceTrackActions = {

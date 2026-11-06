@@ -42,6 +42,10 @@ import {
   stopTracePlayback,
 } from '@/lib/trace/runtime/playback-driver';
 import { getElementPosition, positionPatch } from '@/lib/trace/resolve';
+import {
+  serializePathData,
+  serializePointsString,
+} from '@/lib/trace/path/model';
 import { useTraceStore } from '@/stores/trace-store';
 
 export type TraceEditorProps = {
@@ -82,6 +86,8 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
     (state) => state.setTimelineCollapsed,
   );
   const setPlayhead = useTraceStore((state) => state.setPlayhead);
+  const startPathEdit = useTraceStore((state) => state.startPathEdit);
+  const endPathEdit = useTraceStore((state) => state.endPathEdit);
 
   const [exportOpen, setExportOpen] = useState(false);
 
@@ -168,6 +174,15 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
         }
         return;
       }
+      // While a path is being edited, the path editor owns Delete/arrow
+      // keys (anchor delete/nudge); only Escape/Enter exit here.
+      if (useTraceStore.getState().selection.editingPathElementId) {
+        if (event.key === 'Escape' || event.key === 'Enter') {
+          event.preventDefault();
+          endPathEdit();
+        }
+        return;
+      }
       if (event.code === 'Space') {
         event.preventDefault();
         togglePlay();
@@ -224,11 +239,20 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dispatch, nudge, onSave, redo, setPlayhead, togglePlay, undo]);
+  }, [
+    dispatch,
+    endPathEdit,
+    nudge,
+    onSave,
+    redo,
+    setPlayhead,
+    togglePlay,
+    undo,
+  ]);
 
   if (!project) {
     return (
-      <div className="flex h-full items-center justify-center bg-[#070b14] text-sm text-slate-500">
+      <div className="flex h-full items-center justify-center bg-card/35 text-sm text-muted-foreground">
         No Trace project is open.
       </div>
     );
@@ -244,13 +268,13 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           : 'Saved';
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#070b14] text-slate-200">
-      <header className="flex items-center gap-2 border-b border-white/10 bg-[#080e1a] px-2 py-1.5">
+    <div className="flex h-full min-h-0 flex-col bg-card/35 text-foreground">
+      <header className="flex items-center gap-2 border-b border-border bg-card/50 px-2 py-1.5">
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          className="size-7 text-slate-400 hover:bg-white/10 hover:text-white"
+          className="size-7 text-muted-foreground hover:bg-accent/30 hover:text-foreground"
           onClick={() => navigate('/trace')}
           aria-label="Back to Trace projects"
         >
@@ -258,10 +282,10 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
         </Button>
 
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-slate-100">
+          <p className="truncate text-[13px] font-medium text-foreground">
             {project.name}
           </p>
-          <p className="font-mono text-[9px] text-slate-500">
+          <p className="font-mono text-[9px] text-muted-foreground">
             {project.width}×{project.height} ·{' '}
             {(project.durationMs / 1000).toFixed(1)}s · {project.fps}fps
           </p>
@@ -290,7 +314,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
             type="button"
             size="icon"
             variant="ghost"
-            className="size-7 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30"
+            className="size-7 text-muted-foreground hover:bg-accent/30 hover:text-foreground disabled:opacity-30"
             onClick={undo}
             disabled={!canUndo}
             aria-label="Undo"
@@ -301,7 +325,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
             type="button"
             size="icon"
             variant="ghost"
-            className="size-7 text-slate-400 hover:bg-white/10 hover:text-white disabled:opacity-30"
+            className="size-7 text-muted-foreground hover:bg-accent/30 hover:text-foreground disabled:opacity-30"
             onClick={redo}
             disabled={!canRedo}
             aria-label="Redo"
@@ -319,7 +343,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
               'h-7 px-2 text-[10px] ' +
               (playback.autoKeyframe
                 ? 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:text-amber-200'
-                : 'text-slate-400 hover:bg-white/10 hover:text-white')
+                : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground')
             }
             onClick={() => setAutoKeyframe(!playback.autoKeyframe)}
             title="Automatically add keyframes to animated properties"
@@ -333,8 +357,8 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
             className={
               'h-7 px-2 text-[10px] ' +
               (playback.isLooping
-                ? 'text-sky-300 hover:bg-white/10'
-                : 'text-slate-400 hover:bg-white/10')
+                ? 'text-sky-300 hover:bg-accent/30'
+                : 'text-muted-foreground hover:bg-accent/30')
             }
             onClick={() => setLooping(!playback.isLooping)}
           >
@@ -344,7 +368,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
             type="button"
             size="sm"
             variant="outline"
-            className="h-7 border-white/10 bg-white/5 text-[10px] text-slate-200 hover:bg-white/10"
+            className="h-7 border-border bg-accent/30 text-[10px] text-foreground hover:bg-accent/50"
             onClick={() => setExportOpen(true)}
           >
             <DownloadIcon className="size-3.5" />
@@ -362,7 +386,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           </Button>
           <Badge
             variant="outline"
-            className="ml-1 hidden border-white/10 text-[9px] text-slate-500 md:inline-flex"
+            className="ml-1 hidden border-border text-[9px] text-muted-foreground md:inline-flex"
           >
             {Object.keys(project.elements).length} layers
           </Badge>
@@ -394,21 +418,46 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
               positionPatch(element, position, state.playback.currentTimeMs),
             );
           }}
+          onTransformElement={(elementId, transform, origin) => {
+            useTraceStore
+              .getState()
+              .updateTransform(elementId, transform, origin);
+          }}
+          editingPathElementId={selection.editingPathElementId}
+          onEnterPathEdit={(elementId) => startPathEdit(elementId)}
+          onExitPathEdit={() => endPathEdit()}
+          onCommitPath={(elementId, model) => {
+            const state = useTraceStore.getState();
+            const element = state.project?.elements[elementId];
+            if (!element) return;
+            if (
+              element.type === 'polyline' ||
+              element.type === 'polygon'
+            ) {
+              updateAttributes(elementId, {
+                points: serializePointsString(model),
+              });
+            } else {
+              updateAttributes(elementId, {
+                d: serializePathData(model),
+              });
+            }
+          }}
           isPlaying={playback.isPlaying}
         />
         <TraceInspector />
       </div>
 
       {playback.isTimelineCollapsed ? (
-        <div className="flex items-center justify-between border-t border-white/10 bg-[#080e1a] px-3 py-1">
-          <span className="font-mono text-[10px] text-slate-500">
+        <div className="flex items-center justify-between border-t border-border bg-card/50 px-3 py-1">
+          <span className="font-mono text-[10px] text-muted-foreground">
             Timeline collapsed · {Math.round(playback.currentTimeMs)}ms
           </span>
           <Button
             type="button"
             size="sm"
             variant="ghost"
-            className="h-6 gap-1 px-2 text-[10px] text-slate-300 hover:bg-white/10"
+            className="h-6 gap-1 px-2 text-[10px] text-foreground hover:bg-accent/30"
             onClick={() => setTimelineCollapsed(false)}
           >
             <ChevronUpIcon className="size-3" />

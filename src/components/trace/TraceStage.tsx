@@ -7,6 +7,11 @@
  * During playback the stage is not re-rendered — the runtime engine mutates the
  * mounted SVG. This component only renders on document or committed-playhead
  * changes, and renders the selection overlay from measured geometry.
+ *
+ * Transform editing is delegated to TraceTransformGizmo + useTransformDrag:
+ * translate (body), rotate (stem handle) and scale (8 handles) plus the
+ * anchor/origin marker. The gizmo previews on the mounted node directly
+ * and commits a single updateTransform on pointer-up.
  */
 
 import {
@@ -21,11 +26,24 @@ import { CrosshairIcon, MaximizeIcon, MinusIcon, PlusIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { TraceRenderer } from '@/components/trace/renderer/TraceRenderer';
+import { TraceTransformGizmo } from '@/components/trace/gizmo/TraceTransformGizmo';
+import { useTransformDrag } from '@/components/trace/gizmo/useTransformDrag';
+import { TracePathEditor } from '@/components/trace/path/TracePathEditor';
+import {
+  isPathEditableType,
+  type PathModel,
+} from '@/lib/trace/path/model';
 import { traceStageTheme } from '@/components/trace/theme';
+import {
+  getHandlePositions,
+  type GizmoBBox,
+  type GizmoPoint,
+  type GizmoTransform,
+} from '@/lib/trace/gizmo/geometry';
 import { resolveElementAtTime } from '@/lib/trace/runtime/resolve-element';
-import { getElementPosition } from '@/lib/trace/resolve';
 import {
   findElementDom,
+  measureElementBBox,
   syncTraceDomAtTime,
 } from '@/lib/trace/runtime/dom-renderer';
 import type { TraceProject } from '@/lib/trace/types';
@@ -39,23 +57,37 @@ export type TraceStageProps = {
     elementId: string,
     position: { x: number; y: number },
   ) => void;
+  onTransformElement?: (
+    elementId: string,
+    transform: GizmoTransform,
+    origin?: GizmoPoint,
+  ) => void;
+  editingPathElementId?: string | null;
+  onEnterPathEdit?: (elementId: string) => void;
+  onExitPathEdit?: () => void;
+  onCommitPath?: (elementId: string, model: PathModel) => void;
   isPlaying: boolean;
 };
 
-type Rect = { x: number; y: number; width: number; height: number };
 type Viewport = { zoom: number; panX: number; panY: number };
 
 const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 4;
 
-export function TraceStage({
-  project,
-  timeMs,
-  selectedElementId,
-  onSelectElement,
-  onMoveElement,
-  isPlaying,
-}: TraceStageProps) {
+export function TraceStage(props: TraceStageProps) {
+  const {
+    project,
+    timeMs,
+    selectedElementId,
+    onSelectElement,
+    onMoveElement,
+    onTransformElement,
+    editingPathElementId = null,
+    onEnterPathEdit,
+    onExitPathEdit,
+    onCommitPath,
+    isPlaying,
+  } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<Viewport>({
@@ -63,19 +95,7 @@ export function TraceStage({
     panX: 0,
     panY: 0,
   });
-  const [selectionRect, setSelectionRect] = useState<Rect | null>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    originX: number;
-    originY: number;
-    dx: number;
-    dy: number;
-    elementId: string;
-  } | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const [selectionBBox, setSelectionBBox] = useState<GizmoBBox | null>(null);
   const [pan, setPan] = useState<{
     pointerId: number;
     startX: number;
@@ -87,6 +107,23 @@ export function TraceStage({
   const selectedElement = selectedElementId
     ? (project.elements[selectedElementId] ?? null)
     : null;
+
+  const selectedTransform: GizmoTransform | null = useMemo(() => {
+    if (!selectedElement) return null;
+    const { transform } = resolveElementAtTime(selectedElement, timeMs);
+    return {
+      x: transform.x,
+      y: transform.y,
+      rotation: transform.rotation,
+      scaleX: transform.scaleX,
+      scaleY: transform.scaleY,
+    };
+  }, [selectedElement, timeMs]);
+
+  const selectedOrigin: GizmoPoint = selectedElement?.origin ?? {
+    x: 0,
+    y: 0,
+  };
 
   const fitToView = useCallback(() => {
     const container = containerRef.current;
@@ -112,32 +149,78 @@ export function TraceStage({
     syncTraceDomAtTime(timeMs, project);
   }, [project, timeMs]);
 
-  // Measure the selection in artboard units. Runs on selection/document changes
-  // only — never per frame.
+  // Measure the selection in element-local space (own transform
+  // neutralised, so the gizmo can compose the OBB itself). Runs on
+  // selection/document changes only — never per frame.
   useLayoutEffect(() => {
     if (!selectedElement) {
-      setSelectionRect(null);
+      setSelectionBBox(null);
       return;
     }
-    const node = findElementDom(
+    const fallback = findElementDom(
       selectedElement.id,
     ) as SVGGraphicsElement | null;
-    if (!node || typeof node.getBBox !== 'function') {
-      setSelectionRect(null);
+    if (!fallback) {
+      setSelectionBBox(null);
       return;
     }
-    try {
-      const box = node.getBBox();
-      setSelectionRect({
-        x: box.x,
-        y: box.y,
-        width: Math.max(2, box.width),
-        height: Math.max(2, box.height),
-      });
-    } catch {
-      setSelectionRect(null);
+    const box = measureElementBBox(fallback);
+    if (!box) {
+      setSelectionBBox(null);
+      return;
     }
+    setSelectionBBox({
+      x: box.x,
+      y: box.y,
+      width: Math.max(1, box.width),
+      height: Math.max(1, box.height),
+    });
   }, [selectedElement, project, timeMs]);
+
+  const getArtboardPoint = useCallback(
+    (clientX: number, clientY: number): GizmoPoint => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return { x: 0, y: 0 };
+      return {
+        x: ((clientX - rect.left) / rect.width) * project.width,
+        y: ((clientY - rect.top) / rect.height) * project.height,
+      };
+    },
+    [project.width, project.height],
+  );
+
+  const gizmoDisabled =
+    isPlaying || !selectedElement || selectedElement.locked;
+
+  const transformDrag = useTransformDrag({
+    elementId: selectedElement?.id ?? null,
+    bbox: selectionBBox,
+    transform: selectedTransform ?? {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      scaleX: 1,
+      scaleY: 1,
+    },
+    origin: selectedOrigin,
+    timeMs,
+    project,
+    disabled: gizmoDisabled,
+    getArtboardPoint,
+    onCommit: (transform, origin) => {
+      if (!selectedElement) return;
+      if (onTransformElement) {
+        onTransformElement(selectedElement.id, transform, origin);
+      } else {
+        onMoveElement(selectedElement.id, {
+          x: transform.x,
+          y: transform.y,
+        });
+      }
+    },
+  });
 
   const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     if (
@@ -170,62 +253,6 @@ export function TraceStage({
         panY: cursorY - (cursorY - current.panY) * ratio,
       };
     });
-  };
-
-  const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!selectedElement || isPlaying || selectedElement.locked) return;
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const position = getElementPosition(selectedElement, timeMs);
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: position.x,
-      originY: position.y,
-      dx: 0,
-      dy: 0,
-      elementId: selectedElement.id,
-    };
-    setDragging(true);
-  };
-
-  const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    const dx = (event.clientX - drag.startX) / viewport.zoom;
-    const dy = (event.clientY - drag.startY) / viewport.zoom;
-    drag.dx = dx;
-    drag.dy = dy;
-
-    // Live preview mutates the DOM directly: no React state, so the stage is
-    // not re-rendered (and cannot snap back) while the pointer is down.
-    const node = findElementDom(drag.elementId);
-    const element = project.elements[drag.elementId];
-    if (!node || !element) return;
-    const resolved = resolveElementAtTime(element, timeMs).transform;
-    node.style.transform = `translate(${resolved.x + dx}px, ${resolved.y + dy}px) rotate(${
-      resolved.rotation
-    }deg) scale(${resolved.scaleX}, ${resolved.scaleY})`;
-
-    if (overlayRef.current) {
-      overlayRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
-    }
-  };
-
-  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    if (drag.dx !== 0 || drag.dy !== 0) {
-      onMoveElement(drag.elementId, {
-        x: Math.round(drag.originX + drag.dx),
-        y: Math.round(drag.originY + drag.dy),
-      });
-    }
-    dragRef.current = null;
-    setDragging(false);
-    if (overlayRef.current) overlayRef.current.style.transform = '';
-    syncTraceDomAtTime(timeMs, project);
   };
 
   const startPan = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -268,6 +295,16 @@ export function TraceStage({
     [project.width, project.height, viewport],
   );
 
+  const labelPosition =
+    selectedElement && selectionBBox && selectedTransform
+      ? getHandlePositions(
+          selectionBBox,
+          transformDrag.preview?.transform ?? selectedTransform,
+          transformDrag.preview?.origin ?? selectedOrigin,
+          viewport.zoom,
+        ).topCenter
+      : null;
+
   return (
     <div
       className="relative flex min-h-0 min-w-0 flex-1 flex-col"
@@ -296,49 +333,74 @@ export function TraceStage({
             timeMs={timeMs}
             selectedElementId={selectedElementId}
             onSelectElement={onSelectElement}
+            onDoubleClickElement={(elementId) => {
+              const target = project.elements[elementId];
+              if (!target || target.locked || isPlaying) return;
+              if (!isPathEditableType(target.type)) return;
+              if (editingPathElementId === elementId) {
+                onExitPathEdit?.();
+              } else {
+                onEnterPathEdit?.(elementId);
+              }
+            }}
           />
 
-          {selectedElement && selectionRect ? (
-            <div
-              ref={overlayRef}
+          {editingPathElementId &&
+          selectedElement &&
+          selectedElement.id === editingPathElementId &&
+          selectedTransform &&
+          isPathEditableType(selectedElement.type) ? (
+            <TracePathEditor
+              element={selectedElement}
+              transform={selectedTransform}
+              origin={selectedOrigin}
+              zoom={viewport.zoom}
+              disabled={isPlaying || selectedElement.locked}
+              getArtboardPoint={getArtboardPoint}
+              onCommit={(model) =>
+                onCommitPath?.(selectedElement.id, model)
+              }
+            />
+          ) : selectedElement && selectedTransform ? (
+            <TraceTransformGizmo
+              element={selectedElement}
+              bbox={selectionBBox}
+              transform={selectedTransform}
+              origin={selectedOrigin}
+              zoom={viewport.zoom}
+              disabled={gizmoDisabled}
+              previewTransform={transformDrag.preview?.transform ?? null}
+              previewOrigin={transformDrag.preview?.origin ?? null}
+              readout={transformDrag.preview?.readout ?? null}
+              onHandlePointerDown={transformDrag.handlePointerDown}
+              onHandlePointerMove={transformDrag.handlePointerMove}
+              onHandlePointerUp={transformDrag.handlePointerUp}
+              onHandlePointerCancel={transformDrag.handlePointerCancel}
+            />
+          ) : null}
+
+          {selectedElement && labelPosition ? (
+            <span
               data-stage-overlay
-              className="pointer-events-none absolute border border-sky-400/90"
+              className="pointer-events-none absolute whitespace-nowrap rounded bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-950"
               style={{
-                left: selectionRect.x,
-                top: selectionRect.y,
-                width: selectionRect.width,
-                height: selectionRect.height,
+                left: labelPosition.x,
+                top: labelPosition.y,
+                transform: 'translate(-50%, -160%)',
               }}
             >
-              <div
-                data-stage-overlay
-                className="pointer-events-auto absolute -left-px -top-px h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-sm bg-sky-400"
-                onPointerDown={startDrag}
-                onPointerMove={moveDrag}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-                style={{
-                  cursor: isPlaying
-                    ? 'default'
-                    : dragging
-                      ? 'grabbing'
-                      : 'move',
-                }}
-              />
-              <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-950">
-                {selectedElement.name}
-              </span>
-            </div>
+              {selectedElement.name}
+            </span>
           ) : null}
         </div>
 
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/10 bg-slate-950/85 px-2 py-1 text-slate-200 backdrop-blur">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-card/85 px-2 py-1 text-foreground backdrop-blur">
             <Button
               type="button"
               size="icon"
               variant="ghost"
-              className="size-7 text-slate-300 hover:bg-white/10 hover:text-white"
+              className="size-7 text-muted-foreground hover:bg-accent/30 hover:text-foreground"
               onClick={() =>
                 setViewport((current) => ({
                   ...current,
@@ -356,7 +418,7 @@ export function TraceStage({
               type="button"
               size="icon"
               variant="ghost"
-              className="size-7 text-slate-300 hover:bg-white/10 hover:text-white"
+              className="size-7 text-muted-foreground hover:bg-accent/30 hover:text-foreground"
               onClick={() =>
                 setViewport((current) => ({
                   ...current,
@@ -371,7 +433,7 @@ export function TraceStage({
               type="button"
               size="icon"
               variant="ghost"
-              className="size-7 text-slate-300 hover:bg-white/10 hover:text-white"
+              className="size-7 text-muted-foreground hover:bg-accent/30 hover:text-foreground"
               onClick={fitToView}
               aria-label="Fit artboard"
             >
@@ -381,7 +443,7 @@ export function TraceStage({
               type="button"
               size="icon"
               variant="ghost"
-              className="size-7 text-slate-300 hover:bg-white/10 hover:text-white"
+              className="size-7 text-muted-foreground hover:bg-accent/30 hover:text-foreground"
               onClick={() => setViewport({ zoom: 1, panX: 0, panY: 0 })}
               aria-label="Reset view"
             >

@@ -79,6 +79,42 @@ export function positionPatch(
   };
 }
 
+export interface DesiredTransform {
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+}
+
+/**
+ * Build the attribute patch that places an element at a desired resolved
+ * transform (artboard x/y plus rotation/scale) at `timeMs`.
+ *
+ * Generalises `positionPatch`: elements with `baseX/baseY` keep animated
+ * `x/y` as offsets (only the base moves), everything else writes `x/y`
+ * directly. `rotation`/`scaleX`/`scaleY` have no base variant and are
+ * written directly, so `updateAttributes` auto-keyframes them when a
+ * track exists — the same path the inspector uses.
+ */
+export function transformPatch(
+  element: TraceElement,
+  desired: DesiredTransform,
+  timeMs: number,
+): Record<string, number> {
+  const position = positionPatch(
+    element,
+    { x: desired.x, y: desired.y },
+    timeMs,
+  );
+  return {
+    ...position,
+    rotation: desired.rotation,
+    scaleX: desired.scaleX,
+    scaleY: desired.scaleY,
+  };
+}
+
 export function resolveTransform(
   element: TraceElement,
   timeMs: number,

@@ -172,14 +172,14 @@ export function TraceTimeline() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col border-t border-white/10 bg-[#070c16] text-slate-200">
+    <div className="flex h-full min-h-0 flex-col border-t border-border bg-card/35 text-foreground">
       {/* ── Transport ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-1.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          className="size-8 text-slate-200 hover:bg-white/10 hover:text-white"
+          className="size-8 text-foreground hover:bg-accent/30 hover:text-foreground"
           onClick={() => {
             setPlayhead(0);
             seekTracePlayback(0, { commit: true });
@@ -192,7 +192,7 @@ export function TraceTimeline() {
           type="button"
           size="icon"
           variant="ghost"
-          className="size-8 text-slate-100 hover:bg-white/10 hover:text-white"
+          className="size-8 text-foreground hover:bg-accent/30 hover:text-foreground"
           onClick={togglePlay}
           aria-label={playback.isPlaying ? 'Pause' : 'Play'}
         >
@@ -206,7 +206,7 @@ export function TraceTimeline() {
           type="button"
           size="icon"
           variant="ghost"
-          className="size-8 text-slate-300 hover:bg-white/10 hover:text-white"
+          className="size-8 text-muted-foreground hover:bg-accent/30 hover:text-foreground"
           onClick={() => {
             setPlayhead(durationMs);
             seekTracePlayback(durationMs, { commit: true });
@@ -245,10 +245,10 @@ export function TraceTimeline() {
           aria-label="Playback speed"
           value={String(playback.playbackSpeed)}
           onChange={(event) => setPlaybackSpeed(Number(event.target.value))}
-          className="h-7 rounded-md border border-white/10 bg-white/5 px-1.5 text-[11px] text-slate-200 outline-none"
+          className="h-7 rounded-md border border-border bg-accent/30 px-1.5 text-[11px] text-foreground outline-none"
         >
           {[0.25, 0.5, 1, 1.5, 2].map((speed) => (
-            <option key={speed} value={speed} className="bg-slate-900">
+            <option key={speed} value={speed}>
               {speed}×
             </option>
           ))}
@@ -268,16 +268,16 @@ export function TraceTimeline() {
 
         <span
           data-trace-timecode
-          className="rounded bg-white/5 px-2 py-1 font-mono text-[11px] tabular-nums text-slate-200"
+          className="rounded bg-accent/30 px-2 py-1 font-mono text-[11px] tabular-nums text-foreground"
         >
           {formatTraceTimecode(playback.currentTimeMs)}
         </span>
-        <span className="font-mono text-[10px] text-slate-500">
+        <span className="font-mono text-[10px] text-muted-foreground">
           / {formatTraceTimecode(durationMs)}
         </span>
 
         <div className="ml-auto flex items-center gap-2">
-          <ZoomInIcon className="size-3.5 text-slate-500" />
+          <ZoomInIcon className="size-3.5 text-muted-foreground" />
           <Slider
             aria-label="Timeline zoom"
             value={[playback.zoomRatio]}
@@ -287,12 +287,12 @@ export function TraceTimeline() {
             onValueChange={([value]) => setZoomRatio(value)}
             className="w-28"
           />
-          <Separator orientation="vertical" className="mx-1 h-5 bg-white/10" />
+          <Separator orientation="vertical" className="mx-1 h-5 bg-border" />
           <Button
             type="button"
             size="sm"
             variant="ghost"
-            className="h-7 gap-1 px-2 text-[11px] text-slate-300 hover:bg-white/10 hover:text-white"
+            className="h-7 gap-1 px-2 text-[11px] text-foreground hover:bg-accent/30 hover:text-foreground"
             onClick={() => setTimelineCollapsed(true)}
           >
             <ChevronDownIcon className="size-3.5" />
@@ -301,7 +301,7 @@ export function TraceTimeline() {
         </div>
       </div>
 
-      <div className="h-0.5 w-full bg-white/5">
+      <div className="h-0.5 w-full bg-accent/30">
         <div
           id="trace-mini-progress"
           className="h-full bg-sky-400/80"
@@ -316,9 +316,9 @@ export function TraceTimeline() {
           style={{ width: LABEL_WIDTH + laneWidth }}
         >
           {/* Ruler */}
-          <div className="sticky top-0 z-30 flex border-b border-white/10 bg-[#070c16]/95 backdrop-blur">
+          <div className="sticky top-0 z-30 flex border-b border-border bg-card/95 backdrop-blur">
             <div
-              className="sticky left-0 z-40 flex shrink-0 items-end border-r border-white/10 bg-[#070c16]/95 px-2 pb-1 text-[9px] font-medium uppercase tracking-[0.18em] text-slate-500"
+              className="sticky left-0 z-40 flex shrink-0 items-end border-r border-border bg-card/95 px-2 pb-1 text-[9px] font-medium uppercase tracking-[0.18em] text-muted-foreground"
               style={{ width: LABEL_WIDTH }}
             >
               Layers
@@ -335,7 +335,7 @@ export function TraceTimeline() {
               {ticks.map((second) => (
                 <div
                   key={second}
-                  className="absolute top-0 h-full border-l border-white/10 pl-1 font-mono text-[9px] text-slate-500"
+                  className="absolute top-0 h-full border-l border-border pl-1 font-mono text-[9px] text-muted-foreground"
                   style={{ left: second * playback.zoomRatio }}
                 >
                   {second}s
@@ -346,9 +346,9 @@ export function TraceTimeline() {
 
           {/* Scenes */}
           {project.storyboard?.scenes?.length ? (
-            <div className="flex border-b border-white/5">
+            <div className="flex border-b border-border/50">
               <div
-                className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-white/10 bg-[#070c16] px-2 text-[9px] uppercase tracking-[0.16em] text-slate-500"
+                className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-border bg-card px-2 text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
                 style={{ width: LABEL_WIDTH, height: ROW_HEIGHT }}
               >
                 Scenes
@@ -370,7 +370,7 @@ export function TraceTimeline() {
                         'absolute top-1 h-5 overflow-hidden rounded border px-1.5 text-left text-[9px] font-medium ' +
                         (active
                           ? 'border-sky-400/70 bg-sky-500/15 text-sky-200'
-                          : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20 hover:text-slate-200')
+                          : 'border-border bg-accent/30 text-muted-foreground hover:border-border/50 hover:text-foreground')
                       }
                       style={{
                         left: scene.startMs * pxPerMs,
@@ -388,7 +388,7 @@ export function TraceTimeline() {
 
           {/* Rows */}
           {rows.length === 0 ? (
-            <div className="flex items-center gap-2 px-4 py-6 text-xs text-slate-500">
+            <div className="flex items-center gap-2 px-4 py-6 text-xs text-muted-foreground">
               No layers yet. Add text or a shape from the toolbar, or start from
               a template.
             </div>
@@ -399,12 +399,12 @@ export function TraceTimeline() {
               );
               const selected = selection.selectedElementId === element.id;
               return (
-                <div key={element.id} className="border-b border-white/[0.04]">
+                <div key={element.id} className="border-b border-border/50">
                   <div className="flex">
                     <div
                       className={
-                        'sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-white/10 px-1 ' +
-                        (selected ? 'bg-sky-500/10' : 'bg-[#070c16]')
+                        'sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-border px-1 ' +
+                        (selected ? 'bg-sky-500/10' : 'bg-card/35')
                       }
                       style={{
                         width: LABEL_WIDTH,
@@ -414,7 +414,7 @@ export function TraceTimeline() {
                     >
                       <button
                         type="button"
-                        className="flex size-4 shrink-0 items-center justify-center text-slate-500 disabled:opacity-0"
+                        className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/50 disabled:opacity-0"
                         onClick={() => toggleExpandElement(element.id)}
                         disabled={!hasChildren && element.tracks.length === 0}
                         aria-label={
@@ -433,15 +433,15 @@ export function TraceTimeline() {
                         className={
                           'min-w-0 flex-1 truncate text-left text-[11px] ' +
                           (selected
-                            ? 'text-slate-100'
-                            : 'text-slate-400 hover:text-slate-200')
+                            ? 'text-foreground'
+                            : 'text-muted-foreground hover:text-foreground')
                         }
                         title={`${element.name} · ${element.type}`}
                       >
                         {element.name}
                       </button>
                       {element.tracks.length > 0 ? (
-                        <span className="rounded bg-white/5 px-1 font-mono text-[9px] text-slate-500">
+                        <span className="rounded bg-accent/30 px-1 font-mono text-[9px] text-muted-foreground">
                           {element.tracks.length}
                         </span>
                       ) : null}
@@ -491,7 +491,7 @@ export function TraceTimeline() {
                     ? element.tracks.map((track) => (
                         <div key={track.id} className="flex">
                           <div
-                            className="sticky left-0 z-20 flex shrink-0 items-center justify-between gap-1 border-r border-white/10 bg-[#070c16] pr-1 text-[10px] text-slate-500"
+                            className="sticky left-0 z-20 flex shrink-0 items-center justify-between gap-1 border-r border-border bg-card pr-1 text-[10px] text-muted-foreground"
                             style={{
                               width: LABEL_WIDTH,
                               height: TRACK_ROW_HEIGHT,
@@ -504,7 +504,7 @@ export function TraceTimeline() {
                             <div className="flex items-center gap-0.5">
                               <button
                                 type="button"
-                                className="rounded p-0.5 text-slate-600 hover:bg-white/10 hover:text-slate-200"
+                                className="rounded p-0.5 text-muted-foreground/30 hover:bg-accent/30 hover:text-foreground"
                                 onClick={() =>
                                   addKeyframe(element.id, track.property)
                                 }
@@ -515,7 +515,7 @@ export function TraceTimeline() {
                               </button>
                               <button
                                 type="button"
-                                className="rounded p-0.5 text-slate-600 hover:bg-rose-500/20 hover:text-rose-300"
+                                className="rounded p-0.5 text-muted-foreground/30 hover:bg-rose-500/20 hover:text-rose-300"
                                 onClick={() =>
                                   removePropertyTrack(
                                     element.id,
@@ -530,7 +530,7 @@ export function TraceTimeline() {
                             </div>
                           </div>
                           <div
-                            className="relative border-l border-dashed border-white/5"
+                            className="relative border-l border-dashed border-border/50"
                             style={{
                               width: laneWidth,
                               height: TRACK_ROW_HEIGHT,
@@ -543,7 +543,7 @@ export function TraceTimeline() {
                               )
                             }
                           >
-                            <div className="absolute top-1/2 h-px w-full bg-white/40" />
+                            <div className="absolute top-1/2 h-px w-full bg-muted-foreground/20" />
                             {track.keyframes.map((keyframe) => {
                               const key = keyframeKey(
                                 element.id,

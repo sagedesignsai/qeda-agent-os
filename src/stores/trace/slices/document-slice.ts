@@ -7,6 +7,7 @@
 
 import { applyOps } from '@/lib/trace/ops';
 import { migrateTraceProject } from '@/lib/trace/migrate';
+import { transformPatch } from '@/lib/trace/resolve';
 import type { TraceApplyOpsResult, TraceOp } from '@/lib/trace/ops/types';
 import type { TraceProject } from '@/lib/trace/types';
 
@@ -77,6 +78,7 @@ export const createDocumentSlice: TraceSliceCreator<
         expandedElementIds: [],
         collapsedElementIds: [],
         activeSceneId: activeSceneOf(normalizedProject),
+        editingPathElementId: null,
       },
       past: [],
       future: [],
@@ -97,6 +99,7 @@ export const createDocumentSlice: TraceSliceCreator<
         expandedElementIds: [],
         collapsedElementIds: [],
         activeSceneId: null,
+        editingPathElementId: null,
       },
       past: [],
       future: [],
@@ -151,6 +154,62 @@ export const createDocumentSlice: TraceSliceCreator<
     // the playhead, matching the behaviour of a professional motion editor.
     if (state.playback.autoKeyframe) {
       const timeMs = state.playback.currentTimeMs;
+      for (const [property, value] of Object.entries(patch)) {
+        if (value === null || value === undefined) continue;
+        const track = element.tracks.find(
+          (entry) => entry.property === property,
+        );
+        if (!track) continue;
+
+        const nextKeyframes = track.keyframes
+          .filter((keyframe) => Math.abs(keyframe.timeMs - timeMs) > 10)
+          .concat({
+            id: keyframeId(),
+            timeMs,
+            value: value as number | string,
+            easing: 'power2.out',
+          })
+          .sort((a, b) => a.timeMs - b.timeMs);
+
+        ops.push({
+          type: 'setTrack',
+          elementId,
+          property: track.property,
+          trackId: track.id,
+          keyframes: nextKeyframes.map((keyframe) => ({
+            id: keyframe.id,
+            timeMs: keyframe.timeMs,
+            value: keyframe.value,
+            easing: keyframe.easing,
+          })),
+        });
+      }
+    }
+
+    get().dispatch(ops);
+  },
+
+  updateTransform: (elementId, transform, origin) => {
+    const state = get();
+    const element = state.project?.elements[elementId];
+    if (!element) return;
+
+    const timeMs = state.playback.currentTimeMs;
+    const patch = transformPatch(element, transform, timeMs);
+
+    const ops: TraceOp[] = [
+      {
+        type: 'updateElement',
+        id: elementId,
+        attributes: patch,
+        ...(origin ? { origin: { ...origin } } : {}),
+      },
+    ];
+
+    // Same auto-keyframe rule as updateAttributes: tracked properties gain
+    // a keyframe at the playhead. baseX/baseY never match a track, so a
+    // base move stays a base move across the whole timeline.
+    if (state.playback.autoKeyframe) {
       for (const [property, value] of Object.entries(patch)) {
         if (value === null || value === undefined) continue;
         const track = element.tracks.find(

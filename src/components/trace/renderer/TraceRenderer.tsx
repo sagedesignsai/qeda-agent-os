@@ -26,6 +26,7 @@ export type TraceRendererProps = {
   timeMs: number;
   selectedElementId?: string | null;
   onSelectElement?: (elementId: string | null) => void;
+  onDoubleClickElement?: (elementId: string) => void;
   /** Extra attributes for the root SVG (export/poster use the serializers instead). */
   className?: string;
   style?: CSSProperties;
@@ -57,6 +58,7 @@ function ElementNode({
   timeMs,
   selectedElementId,
   onSelectElement,
+  onDoubleClickElement,
   interactive = true,
 }: ElementNodeProps) {
   if (!element.visible) return null;
@@ -73,6 +75,12 @@ function ElementNode({
     onSelectElement?.(element.id);
   };
 
+  const handleDoubleClick = (event: React.MouseEvent<SVGGElement>) => {
+    if (!interactive || element.locked) return;
+    event.stopPropagation();
+    onDoubleClickElement?.(element.id);
+  };
+
   return (
     <g
       id={elementDomId(element.id)}
@@ -81,6 +89,7 @@ function ElementNode({
       style={transformStyle(element, timeMs)}
       opacity={resolved.attributes.opacity ?? 1}
       onPointerDown={handlePointerDown}
+      onDoubleClick={handleDoubleClick}
       className={
         element.locked
           ? 'cursor-default'
@@ -99,6 +108,7 @@ function ElementNode({
           timeMs={timeMs}
           selectedElementId={selectedElementId}
           onSelectElement={onSelectElement}
+          onDoubleClickElement={onDoubleClickElement}
           interactive={interactive}
         />
       ))}
@@ -111,6 +121,7 @@ export function TraceRenderer({
   timeMs,
   selectedElementId,
   onSelectElement,
+  onDoubleClickElement,
   className,
   style,
   interactive = true,
@@ -155,6 +166,7 @@ export function TraceRenderer({
           timeMs={timeMs}
           selectedElementId={selectedElementId}
           onSelectElement={onSelectElement}
+          onDoubleClickElement={onDoubleClickElement}
           interactive={interactive}
         />
       ))}

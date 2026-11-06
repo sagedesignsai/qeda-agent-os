@@ -72,12 +72,12 @@ export function NewCompositionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl border-white/10 bg-[#0a1120] text-slate-200 sm:max-w-2xl">
+      <DialogContent className="max-w-2xl border-border bg-card text-foreground sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-slate-100">
+          <DialogTitle className="text-foreground">
             New Trace composition
           </DialogTitle>
-          <DialogDescription className="text-slate-500">
+          <DialogDescription className="text-muted-foreground">
             Start from a template or a blank artboard. Everything stays editable
             and local.
           </DialogDescription>
@@ -85,7 +85,7 @@ export function NewCompositionDialog({
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="trace-name" className="text-[11px] text-slate-400">
+            <Label htmlFor="trace-name" className="text-[11px] text-muted-foreground">
               Composition name
             </Label>
             <Input
@@ -99,12 +99,12 @@ export function NewCompositionDialog({
               onKeyDown={(event) => {
                 if (event.key === 'Enter') void submit();
               }}
-              className="h-8 border-white/10 bg-white/[0.04] text-slate-100 placeholder:text-slate-600"
+              className="h-8 border-border bg-accent/30 text-foreground placeholder:text-muted-foreground/50"
             />
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-[11px] text-slate-400">Template</p>
+            <p className="text-[11px] text-muted-foreground">Template</p>
             <div className="grid max-h-64 grid-cols-2 gap-2 overflow-auto pr-1 sm:grid-cols-3">
               {COMPOSITION_TEMPLATES.map((entry) => {
                 const active = entry.id === templateId;
@@ -117,13 +117,13 @@ export function NewCompositionDialog({
                       'flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors ' +
                       (active
                         ? 'border-sky-400/70 bg-sky-500/10'
-                        : 'border-white/10 bg-white/[0.02] hover:border-white/25')
+                        : 'border-border bg-accent/15 hover:border-border/50')
                     }
                   >
                     <div
-                      className="flex h-16 items-center justify-center rounded-md border border-white/10"
+                      className="flex h-16 items-center justify-center rounded-md border border-border"
                       style={{
-                        background: `radial-gradient(circle at 50% 40%, ${entry.previewColor}33, #070b14 72%)`,
+                        background: `radial-gradient(circle at 50% 40%, ${entry.previewColor}33, hsl(var(--card)) 72%)`,
                       }}
                     >
                       <span
@@ -132,13 +132,13 @@ export function NewCompositionDialog({
                       />
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate text-[11px] font-medium text-slate-200">
+                      <p className="truncate text-[11px] font-medium text-foreground">
                         {entry.title}
                       </p>
-                      <p className="mt-0.5 line-clamp-2 text-[9px] leading-snug text-slate-500">
+                      <p className="mt-0.5 line-clamp-2 text-[9px] leading-snug text-muted-foreground">
                         {entry.description}
                       </p>
-                      <p className="mt-1 font-mono text-[9px] text-slate-600">
+                      <p className="mt-1 font-mono text-[9px] text-muted-foreground/50">
                         {entry.width}×{entry.height} ·{' '}
                         {(entry.durationMs / 1000).toFixed(1)}s
                       </p>
@@ -151,7 +151,7 @@ export function NewCompositionDialog({
 
           {isBlank ? (
             <div className="space-y-1.5">
-              <p className="text-[11px] text-slate-400">Artboard size</p>
+              <p className="text-[11px] text-muted-foreground">Artboard size</p>
               <div className="flex flex-wrap gap-1">
                 {SIZE_PRESETS.map((preset) => (
                   <button
@@ -162,7 +162,7 @@ export function NewCompositionDialog({
                       'rounded border px-2 py-1 font-mono text-[10px] ' +
                       (preset.label === size.label
                         ? 'border-sky-400/70 bg-sky-500/10 text-sky-200'
-                        : 'border-white/10 bg-white/[0.02] text-slate-400 hover:border-white/25')
+                        : 'border-border bg-accent/15 text-muted-foreground hover:border-border/50')
                     }
                   >
                     {preset.label}
@@ -177,7 +177,7 @@ export function NewCompositionDialog({
           <Button
             type="button"
             variant="outline"
-            className="border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+            className="border-border bg-accent/30 text-foreground hover:bg-accent/50"
             onClick={() => onOpenChange(false)}
           >
             Cancel

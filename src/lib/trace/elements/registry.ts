@@ -19,7 +19,7 @@ export type PropertyGroup =
   'transform' | 'appearance' | 'geometry' | 'text' | 'content';
 
 export type PropertyKind =
-  'number' | 'percent' | 'color' | 'text' | 'boolean' | 'select';
+  'number' | 'percent' | 'color' | 'text' | 'boolean' | 'select' | 'borderRadius' | 'strokeDash' | 'boxShadow' | 'progress';
 
 export interface PropertyDescriptor {
   property: AnimatableProperty;
@@ -130,6 +130,21 @@ const PAINT: PropertyDescriptor[] = [
     min: 0,
     attribute: 'strokeWidth',
   },
+  {
+    property: 'strokeDasharray',
+    label: 'Stroke dash',
+    group: 'appearance',
+    kind: 'strokeDash',
+    attribute: 'strokeDasharray',
+  },
+  {
+    property: 'strokeDashoffset',
+    label: 'Stroke dash offset',
+    group: 'appearance',
+    kind: 'number',
+    step: 1,
+    attribute: 'strokeDashoffset',
+  },
 ];
 
 const GEOMETRY: PropertyDescriptor[] = [
@@ -155,7 +170,7 @@ const GEOMETRY: PropertyDescriptor[] = [
     property: 'rx',
     label: 'Corner radius',
     group: 'geometry',
-    kind: 'number',
+    kind: 'borderRadius',
     step: 1,
     min: 0,
     attribute: 'rx',
@@ -193,6 +208,26 @@ const TRIM: PropertyDescriptor[] = [
     max: 100,
     attribute: 'trimOffset',
   },
+  {
+    property: 'pathProgress',
+    label: 'Path progress',
+    group: 'geometry',
+    kind: 'progress',
+    step: 1,
+    min: 0,
+    max: 100,
+    attribute: 'pathProgress',
+  },
+  {
+    property: 'morphProgress',
+    label: 'Morph progress',
+    group: 'geometry',
+    kind: 'progress',
+    step: 1,
+    min: 0,
+    max: 100,
+    attribute: 'morphProgress',
+  },
 ];
 
 const TEXT_PROPS: PropertyDescriptor[] = [
@@ -219,6 +254,13 @@ const TEXT_PROPS: PropertyDescriptor[] = [
     kind: 'number',
     step: 0.5,
     attribute: 'letterSpacing',
+  },
+  {
+    property: 'color',
+    label: 'Text color',
+    group: 'text',
+    kind: 'color',
+    attribute: 'color',
   },
 ];
 
@@ -275,14 +317,54 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       label: 'Text',
       defaultWidth: 320,
       defaultHeight: 80,
-      properties: [...TRANSFORM, ...TEXT_PROPS, ...PAINT],
+      properties: [...TRANSFORM, ...TEXT_PROPS, ...PAINT, {
+        property: 'boxShadow',
+        label: 'Drop shadow',
+        group: 'appearance',
+        kind: 'boxShadow',
+        attribute: 'boxShadow',
+      }, {
+        property: 'borderRadius',
+        label: 'Border radius',
+        group: 'geometry',
+        kind: 'borderRadius',
+        step: 1,
+        min: 0,
+        attribute: 'borderRadius',
+      }],
     },
     rect: {
       type: 'rect',
       label: 'Rectangle',
       defaultWidth: 240,
       defaultHeight: 160,
-      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT],
+      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT, {
+        property: 'boxShadow',
+        label: 'Drop shadow',
+        group: 'appearance',
+        kind: 'boxShadow',
+        attribute: 'boxShadow',
+      }, {
+        property: 'borderRadius',
+        label: 'Border radius',
+        group: 'geometry',
+        kind: 'borderRadius',
+        step: 1,
+        min: 0,
+        attribute: 'borderRadius',
+      }, {
+        property: 'backgroundColor',
+        label: 'Background',
+        group: 'appearance',
+        kind: 'color',
+        attribute: 'backgroundColor',
+      }, {
+        property: 'borderColor',
+        label: 'Border color',
+        group: 'appearance',
+        kind: 'color',
+        attribute: 'borderColor',
+      }],
     },
     circle: {
       type: 'circle',

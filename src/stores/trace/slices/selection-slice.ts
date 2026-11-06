@@ -36,6 +36,7 @@ export const createSelectionSlice: TraceSliceCreator<
     expandedElementIds: [],
     collapsedElementIds: [],
     activeSceneId: null,
+    editingPathElementId: null,
   },
 
   selectElement: (elementId) => {
@@ -46,6 +47,7 @@ export const createSelectionSlice: TraceSliceCreator<
           ...state.selection,
           selectedElementId: null,
           selectedKeyframeIds: [],
+          editingPathElementId: null,
         },
       }));
       return;
@@ -62,6 +64,10 @@ export const createSelectionSlice: TraceSliceCreator<
           ...state.selection,
           selectedElementId: elementId,
           selectedKeyframeIds: [],
+          editingPathElementId:
+            state.selection.editingPathElementId === elementId
+              ? state.selection.editingPathElementId
+              : null,
           expandedElementIds: [...expanded],
           collapsedElementIds: state.selection.collapsedElementIds.filter(
             (id) => !ancestors.includes(id),
@@ -144,5 +150,23 @@ export const createSelectionSlice: TraceSliceCreator<
   setActiveScene: (sceneId) =>
     set((state) => ({
       selection: { ...state.selection, activeSceneId: sceneId },
+    })),
+
+  startPathEdit: (elementId) => {
+    const project = get().project;
+    if (!project?.elements[elementId]) return;
+    set((state) => ({
+      selection: {
+        ...state.selection,
+        selectedElementId: elementId,
+        selectedKeyframeIds: [],
+        editingPathElementId: elementId,
+      },
+    }));
+  },
+
+  endPathEdit: () =>
+    set((state) => ({
+      selection: { ...state.selection, editingPathElementId: null },
     })),
 });

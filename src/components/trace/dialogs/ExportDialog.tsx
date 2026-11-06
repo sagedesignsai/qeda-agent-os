@@ -93,12 +93,12 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl border-white/10 bg-[#0a1120] text-slate-200 sm:max-w-3xl">
+      <DialogContent className="max-w-3xl border-border bg-card text-foreground sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-slate-100">
+          <DialogTitle className="text-foreground">
             Export composition
           </DialogTitle>
-          <DialogDescription className="text-slate-500">
+          <DialogDescription className="text-muted-foreground">
             The animated SVG is self-contained. GSAP code mounts the same
             artwork and exposes the timeline for interactive control.
           </DialogDescription>
@@ -109,7 +109,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
             value={format}
             onValueChange={(value) => setFormat(value as Format)}
           >
-            <TabsList className="h-7 bg-white/5">
+            <TabsList className="h-7 bg-accent/30">
               <TabsTrigger value="svg" className="h-5 px-2 text-[10px]">
                 Animated SVG
               </TabsTrigger>
@@ -122,7 +122,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
             </TabsList>
           </Tabs>
 
-          <label className="flex items-center gap-1.5 text-[10px] text-slate-400">
+          <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <input
               type="checkbox"
               checked={loop}
@@ -137,7 +137,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
               type="button"
               size="sm"
               variant="outline"
-              className="h-7 border-white/10 bg-white/5 text-[10px] text-slate-200 hover:bg-white/10"
+              className="h-7 border-border bg-accent/30 text-[10px] text-foreground hover:bg-accent/50"
               onClick={() => void copy()}
               disabled={!code}
             >
@@ -161,13 +161,13 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           </div>
         </div>
 
-        <ScrollArea className="h-72 rounded-md border border-white/10 bg-[#05080f]">
-          <pre className="whitespace-pre-wrap break-all p-3 font-mono text-[10px] leading-relaxed text-slate-400">
+        <ScrollArea className="h-72 rounded-md border border-border bg-accent/15">
+          <pre className="whitespace-pre-wrap break-all p-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
             {code}
           </pre>
         </ScrollArea>
 
-        <p className="text-[10px] leading-relaxed text-slate-600">
+        <p className="text-[10px] leading-relaxed text-muted-foreground/50">
           Animated SVG approximates typewriter reveals with a clip animation and
           does not animate parametric internals (counters, gauges). Use the GSAP
           export when you need frame-exact text or runtime control.

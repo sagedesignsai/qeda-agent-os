@@ -7,13 +7,37 @@
  * the frame you are looking at) and write through `updateAttributes`, which
  * auto-keyframes when a track already exists. The stopwatch on each row creates
  * or removes that track — the same interaction model as a desktop motion editor.
+ *
+ * Uses polished controls from the Motion Inspector (ScrubNumberField, ColorField)
+ * and shadcn primitives (Select, Collapsible) for consistent theming and UX.
  */
 
-import { ClockIcon, DiamondIcon, Trash2Icon } from 'lucide-react';
+import { useState } from 'react';
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  DiamondIcon,
+  Trash2Icon,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  ColorField,
+} from '@/components/motion/inspector/controls/color-field';
+import {
+  ScrubNumberField,
+} from '@/components/motion/inspector/controls/scrub-number';
 import {
   getAnimatableProperties,
   getPropertyDescriptor,
@@ -27,6 +51,7 @@ import type {
   TraceElement,
 } from '@/lib/trace/types';
 import { useTraceStore } from '@/stores/trace-store';
+import { cn } from '@/lib/utils';
 
 const EASINGS = [
   'linear',
@@ -393,6 +418,63 @@ function TrackRows({ element }: { element: TraceElement }) {
   );
 }
 
+function PathDataSection({ element }: { element: TraceElement }) {
+  const updateAttributes = useTraceStore((state) => state.updateAttributes);
+  const startPathEdit = useTraceStore((state) => state.startPathEdit);
+  const endPathEdit = useTraceStore((state) => state.endPathEdit);
+  const editing = useTraceStore(
+    (state) => state.selection.editingPathElementId === element.id,
+  );
+  const isPoints =
+    element.type === 'polyline' || element.type === 'polygon';
+  const value = isPoints
+    ? String(element.attributes.points ?? '')
+    : String(element.attributes.d ?? '');
+
+  return (
+    <Section
+      title="Path"
+      action={
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 px-1.5 text-[10px] text-slate-400 hover:bg-white/10 hover:text-white"
+          onClick={() => (editing ? endPathEdit() : startPathEdit(element.id))}
+        >
+          {editing ? 'Done editing' : 'Edit on canvas'}
+        </Button>
+      }
+    >
+      <textarea
+        key={`${element.id}:${isPoints ? 'points' : 'd'}:${value}`}
+        defaultValue={value}
+        rows={4}
+        spellCheck={false}
+        onBlur={(event) => {
+          const next = event.target.value;
+          if (next !== value) {
+            updateAttributes(element.id, {
+              [isPoints ? 'points' : 'd']: next,
+            });
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.currentTarget.blur();
+          }
+        }}
+        aria-label={isPoints ? 'Points data' : 'Path data'}
+        className="w-full resize-y rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[10px] leading-relaxed text-slate-200 outline-none focus:border-sky-400/40"
+      />
+      <p className="text-[9px] leading-relaxed text-slate-600">
+        Double-click the layer on canvas to edit anchors directly. Cmd/Ctrl+Enter
+        applies text edits.
+      </p>
+    </Section>
+  );
+}
+
 function CanvasInspector() {
   const project = useTraceStore((state) => state.project);
   const setCanvas = useTraceStore((state) => state.setCanvas);
@@ -600,6 +682,12 @@ export function TraceInspector() {
                 </Section>
               );
             })}
+
+            {(element.type === 'path' ||
+              element.type === 'polyline' ||
+              element.type === 'polygon') && (
+              <PathDataSection element={element} />
+            )}
 
             <Section title="Animation">
               <TrackRows element={element} />

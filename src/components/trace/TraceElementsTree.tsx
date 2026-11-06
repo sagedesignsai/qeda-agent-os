@@ -280,6 +280,7 @@ function Row({
     .filter((child): child is TraceElement => Boolean(child));
   const collapsed = collapsedElementIds.includes(element.id);
   const selected = selectedElementId === element.id;
+  const hasChildren = children.length > 0;
 
   const commitName = () => {
     const next = name.trim();
@@ -295,79 +296,85 @@ function Row({
     <>
       <div
         className={
-          'group flex items-center gap-1 rounded-sm px-1 py-0.5 text-[11px] ' +
+          'group flex items-center rounded px-1 py-0.5 text-[11px] cursor-pointer ' +
           (selected
-            ? 'bg-sky-500/15 text-slate-100'
-            : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-200')
+            ? 'bg-sky-500/15 text-foreground'
+            : 'text-muted-foreground hover:bg-accent/20 hover:text-foreground')
         }
-        style={{ paddingLeft: 2 + depth * 10 }}
+        style={{ paddingLeft: 2 + depth * 12 }}
+        onClick={() => onSelect(element.id)}
+        onDoubleClick={() => {
+          setName(element.name);
+          setRenaming(true);
+        }}
       >
+        {/* Collapse/Expand */}
         <button
           type="button"
-          className="flex size-4 shrink-0 items-center justify-center text-slate-500 disabled:opacity-0"
-          disabled={children.length === 0}
-          onClick={() => onToggleCollapse(element.id)}
+          className="flex size-4 shrink-0 items-center justify-center rounded hover:bg-accent/30 text-muted-foreground/40 hover:text-muted-foreground disabled:opacity-0"
+          disabled={!hasChildren}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse(element.id);
+          }}
           aria-label={collapsed ? 'Expand' : 'Collapse'}
         >
-          {collapsed ? (
-            <ChevronRightIcon className="size-3" />
-          ) : (
-            <ChevronDownIcon className="size-3" />
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onSelect(element.id)}
-          onDoubleClick={() => {
-            setName(element.name);
-            setRenaming(true);
-          }}
-          className="min-w-0 flex-1 truncate text-left"
-        >
-          <span className="flex items-center gap-1">
-            {createElement(iconFor(element), {
-              className: 'size-3 shrink-0 text-slate-600',
-            })}
-            {renaming ? (
-              <Input
-                ref={(node) => {
-                  if (node && document.activeElement !== node) node.focus();
-                }}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                onBlur={commitName}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') commitName();
-                  if (event.key === 'Escape') {
-                    setName(element.name);
-                    setRenaming(false);
-                  }
-                }}
-                className="h-5 flex-1 border-white/10 bg-black/30 px-1 text-[11px] text-slate-100"
-              />
+          {hasChildren ? (
+            collapsed ? (
+              <ChevronRightIcon className="size-2.5" />
             ) : (
-              <span className="truncate">{element.name}</span>
-            )}
-          </span>
+              <ChevronDownIcon className="size-2.5" />
+            )
+          ) : null}
         </button>
 
+        {/* Icon + Name */}
+        <span className="flex flex-1 items-center gap-1.5 min-w-0">
+          {createElement(iconFor(element), {
+            className: 'size-3 shrink-0 text-muted-foreground/50',
+          })}
+          {renaming ? (
+            <Input
+              ref={(node) => {
+                if (node && document.activeElement !== node) node.focus();
+              }}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              onBlur={commitName}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitName();
+                if (event.key === 'Escape') {
+                  setName(element.name);
+                  setRenaming(false);
+                }
+                event.stopPropagation();
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-5 flex-1 border-border/50 bg-accent/20 px-1.5 text-[11px] text-foreground rounded"
+            />
+          ) : (
+            <span className="truncate">{element.name}</span>
+          )}
+        </span>
+
+        {/* Visibility Toggle */}
         <button
           type="button"
-          onClick={() =>
+          onClick={(e) => {
+            e.stopPropagation();
             dispatch([
               {
                 type: 'updateElement',
                 id: element.id,
                 visible: !element.visible,
               },
-            ])
-          }
+            ]);
+          }}
           className={
-            'shrink-0 rounded p-0.5 hover:bg-white/10 ' +
+            'shrink-0 rounded p-0.5 hover:bg-accent/30 transition-opacity ' +
             (element.visible
-              ? 'text-slate-500 opacity-0 group-hover:opacity-100'
-              : 'text-amber-300')
+              ? 'text-muted-foreground/40 opacity-0 group-hover:opacity-100'
+              : 'text-muted-foreground/60 opacity-60 group-hover:opacity-100')
           }
           aria-label={element.visible ? 'Hide layer' : 'Show layer'}
         >
@@ -377,37 +384,38 @@ function Row({
             <EyeOffIcon className="size-3" />
           )}
         </button>
+
+        {/* Lock Toggle */}
         <button
           type="button"
-          onClick={() =>
+          onClick={(e) => {
+            e.stopPropagation();
             dispatch([
               {
                 type: 'updateElement',
                 id: element.id,
                 locked: !element.locked,
               },
-            ])
-          }
+            ]);
+          }}
           className={
-            'shrink-0 rounded p-0.5 hover:bg-white/10 ' +
+            'shrink-0 rounded p-0.5 hover:bg-accent/30 transition-opacity ' +
             (element.locked
-              ? 'text-amber-300'
-              : 'text-slate-500 opacity-0 group-hover:opacity-100')
+              ? 'text-muted-foreground/60 opacity-60 group-hover:opacity-100'
+              : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100')
           }
           aria-label={element.locked ? 'Unlock layer' : 'Lock layer'}
         >
-          {element.locked ? (
-            <LockIcon className="size-3" />
-          ) : (
-            <UnlockIcon className="size-3" />
-          )}
+          <LockIcon className="size-3" />
         </button>
 
+        {/* Actions Menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="shrink-0 rounded p-0.5 text-slate-600 opacity-0 hover:bg-white/10 hover:text-slate-200 group-hover:opacity-100"
+              className="shrink-0 rounded p-0.5 text-muted-foreground/40 opacity-0 hover:bg-accent/30 hover:text-foreground group-hover:opacity-100 transition-opacity"
+              onClick={(e) => e.stopPropagation()}
               aria-label="Layer actions"
             >
               <GroupIcon className="size-3" />
@@ -425,7 +433,7 @@ function Row({
                 ])
               }
             >
-              <CopyIcon /> Duplicate
+              <CopyIcon className="size-3" /> Duplicate
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() =>
@@ -434,7 +442,7 @@ function Row({
                 ])
               }
             >
-              <MoveUpIcon /> Bring forward
+              <MoveUpIcon className="size-3" /> Bring forward
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() =>
@@ -443,7 +451,7 @@ function Row({
                 ])
               }
             >
-              <MoveDownIcon /> Send backward
+              <MoveDownIcon className="size-3" /> Send backward
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -452,7 +460,7 @@ function Row({
                 dispatch([{ type: 'deleteElement', id: element.id }])
               }
             >
-              <Trash2Icon /> Delete layer
+              <Trash2Icon className="size-3" /> Delete layer
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -522,10 +530,11 @@ export function TraceElementsTree() {
   };
 
   return (
-    <aside className="flex w-[252px] shrink-0 flex-col border-r border-white/10 bg-[#080e1a] text-slate-200">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-          Layers
+    <aside className="flex w-[240px] shrink-0 flex-col border-r border-border/50 bg-card/30">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+        <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+          Scene
         </p>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -533,57 +542,61 @@ export function TraceElementsTree() {
               type="button"
               size="sm"
               variant="ghost"
-              className="h-6 gap-1 px-1.5 text-[10px] text-slate-300 hover:bg-white/10 hover:text-white"
+              className="h-5 gap-0.5 px-1.5 text-[10px] text-muted-foreground hover:bg-accent/20 hover:text-foreground"
             >
-              <PlusIcon className="size-3" />
+              <PlusIcon className="size-2.5" />
               Add
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-52">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-slate-400">
+            <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
               Primitives
             </DropdownMenuLabel>
             {PRIMITIVE_OPTIONS.map((option) => (
               <DropdownMenuItem
                 key={option.type}
                 onSelect={() => addElement(option.type)}
+                className="text-[11px]"
               >
-                <option.icon /> {option.label}
+                <option.icon className="size-3 text-muted-foreground/60" /> {option.label}
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-purple-400">
-              Prefab Recipes
+            <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-[0.12em] text-violet-400/80">
+              Recipes
             </DropdownMenuLabel>
             {RECIPE_OPTIONS.map((recipe) => (
               <DropdownMenuItem
                 key={recipe.id}
                 onSelect={() => applyPrefabRecipe(recipe.id)}
+                className="text-[11px]"
               >
-                <recipe.icon className="text-purple-400" /> {recipe.label}
+                <recipe.icon className="size-3 text-violet-400/80" /> {recipe.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
+      {/* Search */}
       <div className="px-2 py-1.5">
         <div className="relative">
-          <SearchIcon className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-slate-600" />
+          <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/40" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filter layers"
-            className="h-6 border-white/10 bg-white/[0.03] pl-6 text-[10px] text-slate-300 placeholder:text-slate-600"
+            placeholder="Search layers"
+            className="h-6 border-border/50 bg-accent/10 pl-7 text-[11px] text-foreground placeholder:text-muted-foreground/40 rounded"
           />
         </div>
       </div>
 
+      {/* Layer List */}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-px px-1 pb-2">
+        <div className="px-1 pb-2 py-1">
           {roots.length === 0 ? (
-            <p className="px-2 py-4 text-[11px] text-slate-600">
-              No layers. Use Add, or start from a template.
+            <p className="px-2 py-6 text-center text-[11px] text-muted-foreground/40">
+              No layers yet. Click Add to create one.
             </p>
           ) : (
             roots.map((element) => (
@@ -602,8 +615,9 @@ export function TraceElementsTree() {
         </div>
       </ScrollArea>
 
-      <div className="flex items-center justify-between border-t border-white/10 px-2 py-1 text-[9px] text-slate-600">
-        <span>{Object.keys(project.elements).length} layers</span>
+      {/* Footer */}
+      <div className="flex items-center justify-between border-t border-border/50 px-3 py-1.5 text-[9px] text-muted-foreground/40">
+        <span>{Object.keys(project.elements).length} layer{Object.keys(project.elements).length !== 1 ? 's' : ''}</span>
         <span className="font-mono">
           {project.width}×{project.height}
         </span>
