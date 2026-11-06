@@ -10,6 +10,8 @@ import { createScene } from '../storyboard';
 import type { TraceElement, TraceProject } from '../types';
 import { createNovaTraceMarkProject } from './default-project';
 import { expandRecipe } from '../recipes';
+import { instantiateSponsorCardTemplate } from './sponsor-card';
+import { instantiateLowerThirdTemplate } from './lower-third';
 
 export interface CompositionTemplateMeta {
   id: string;
@@ -429,6 +431,47 @@ export const COMPOSITION_TEMPLATES: CompositionTemplateMeta[] = [
     fps: 60,
     previewColor: '#f472b6',
     create: createLowerThird,
+  },
+  {
+    id: 'sponsor-card',
+    title: 'Sponsor card',
+    description: 'Logo stinger with animated feature list and glow accents.',
+    category: 'Branding',
+    width: 1920,
+    height: 1080,
+    durationMs: 3500,
+    fps: 60,
+    previewColor: '#0f172a',
+    create: (options) => {
+      const project = instantiateSponsorCardTemplate([
+        { title: 'Feature One', subtitle: 'Description' },
+        { title: 'Feature Two', subtitle: 'Description' },
+        { title: 'Feature Three', subtitle: 'Description' },
+      ]);
+      return base(project, options);
+    },
+  },
+  {
+    id: 'lower-third-overlay',
+    title: 'Lower third overlay',
+    description: 'Status card with title, subtext, and metric badge.',
+    category: 'Broadcast',
+    width: 1920,
+    height: 1080,
+    durationMs: 4000,
+    fps: 60,
+    previewColor: '#1e293b',
+    create: (options) => {
+      const project = instantiateLowerThirdTemplate({
+        title: 'Status Title',
+        subtitle: 'Subtext description',
+        metric: '5/10',
+        durationMs: options.durationMs ?? 4000,
+        enterDurationMs: 400,
+        exitDurationMs: 300,
+      });
+      return base(project, options);
+    },
   },
 ];
 

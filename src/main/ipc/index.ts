@@ -79,6 +79,8 @@ import { registerMotionProjectsHandlers } from './handlers/motion-projects';
 import { registerMotionExportHandlers } from './handlers/motion-export';
 import { registerMotionCopilotHandlers } from './handlers/motion-copilot';
 import { registerTraceHandlers } from './handlers/trace';
+import { registerSponsorCardHandlers } from './handlers/sponsor-card';
+import { registerLowerThirdHandlers } from './handlers/lower-third';
 import { registerModelBuilderHandlers } from './handlers/model-builder';
 import { registerMusicHandlers } from './handlers/music';
 import { registerMusicCopilotHandlers } from './handlers/music-copilot';
@@ -118,6 +120,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMotionExportHandlers({ mainWindow });
   registerMotionCopilotHandlers({ mainWindow });
   registerTraceHandlers({ mainWindow });
+  registerSponsorCardHandlers();
+  registerLowerThirdHandlers();
   registerModelBuilderHandlers({ mainWindow });
   registerMusicHandlers({ mainWindow });
   registerMusicCopilotHandlers({ mainWindow });

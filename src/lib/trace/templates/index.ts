@@ -12,3 +12,11 @@ export {
   type TemplateOptions,
 } from './composition-templates';
 export { createNovaTraceMarkProject } from './default-project';
+export {
+  instantiateSponsorCardTemplate,
+  type SponsorCardFeature,
+} from './sponsor-card';
+export {
+  instantiateLowerThirdTemplate,
+  type LowerThirdConfig,
+} from './lower-third';
