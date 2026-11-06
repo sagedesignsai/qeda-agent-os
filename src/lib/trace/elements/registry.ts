@@ -222,18 +222,51 @@ const TEXT_PROPS: PropertyDescriptor[] = [
   },
 ];
 
-const SPLINE_MOTION: PropertyDescriptor[] = [
+const LINE_COORDS: PropertyDescriptor[] = [
   {
-    property: 'pathProgress',
-    label: 'Path progress',
-    group: 'transform',
-    kind: 'percent',
+    property: 'x1',
+    label: 'X1',
+    group: 'geometry',
+    kind: 'number',
     step: 1,
-    min: 0,
-    max: 100,
-    attribute: 'pathProgress',
+    attribute: 'x1',
+  },
+  {
+    property: 'y1',
+    label: 'Y1',
+    group: 'geometry',
+    kind: 'number',
+    step: 1,
+    attribute: 'y1',
+  },
+  {
+    property: 'x2',
+    label: 'X2',
+    group: 'geometry',
+    kind: 'number',
+    step: 1,
+    attribute: 'x2',
+  },
+  {
+    property: 'y2',
+    label: 'Y2',
+    group: 'geometry',
+    kind: 'number',
+    step: 1,
+    attribute: 'y2',
   },
 ];
+
+const POLY_PROPS: PropertyDescriptor[] = [
+  {
+    property: 'points',
+    label: 'Points',
+    group: 'geometry',
+    kind: 'text',
+    attribute: 'points',
+  },
+];
+
 
 export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
   {
@@ -243,27 +276,6 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       defaultWidth: 320,
       defaultHeight: 80,
       properties: [...TRANSFORM, ...TEXT_PROPS, ...PAINT],
-    },
-    'kinetic-text': {
-      type: 'kinetic-text',
-      label: 'Kinetic text',
-      defaultWidth: 420,
-      defaultHeight: 90,
-      properties: [
-        ...TRANSFORM,
-        ...TEXT_PROPS,
-        {
-          property: 'revealProgress',
-          label: 'Reveal',
-          group: 'content',
-          kind: 'percent',
-          step: 1,
-          min: 0,
-          max: 100,
-          attribute: 'revealProgress',
-        },
-        ...PAINT,
-      ],
     },
     rect: {
       type: 'rect',
@@ -279,26 +291,54 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       defaultHeight: 160,
       properties: [...TRANSFORM, ...GEOMETRY, ...PAINT],
     },
+    ellipse: {
+      type: 'ellipse',
+      label: 'Ellipse',
+      defaultWidth: 160,
+      defaultHeight: 100,
+      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT],
+    },
+    line: {
+      type: 'line',
+      label: 'Line',
+      defaultWidth: 160,
+      defaultHeight: 2,
+      properties: [...TRANSFORM, ...LINE_COORDS, ...PAINT],
+    },
+    polyline: {
+      type: 'polyline',
+      label: 'Polyline',
+      defaultWidth: 160,
+      defaultHeight: 160,
+      properties: [...TRANSFORM, ...POLY_PROPS, ...PAINT],
+    },
     polygon: {
       type: 'polygon',
       label: 'Polygon',
       defaultWidth: 160,
       defaultHeight: 160,
-      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT],
-    },
-    shape: {
-      type: 'shape',
-      label: 'Shape',
-      defaultWidth: 160,
-      defaultHeight: 160,
-      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT],
+      properties: [...TRANSFORM, ...POLY_PROPS, ...PAINT],
     },
     path: {
       type: 'path',
       label: 'Vector path',
       defaultWidth: 240,
       defaultHeight: 120,
-      properties: [...TRANSFORM, ...TRIM, ...SPLINE_MOTION, ...PAINT],
+      properties: [...TRANSFORM, ...TRIM, ...PAINT],
+    },
+    image: {
+      type: 'image',
+      label: 'Image',
+      defaultWidth: 200,
+      defaultHeight: 200,
+      properties: [...TRANSFORM, ...GEOMETRY],
+    },
+    use: {
+      type: 'use',
+      label: 'Use / instance',
+      defaultWidth: 24,
+      defaultHeight: 24,
+      properties: [...TRANSFORM],
     },
     group: {
       type: 'group',
@@ -307,94 +347,12 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       defaultHeight: 200,
       properties: [...TRANSFORM],
     },
-    counter: {
-      type: 'counter',
-      label: 'Counter',
-      defaultWidth: 240,
-      defaultHeight: 90,
-      properties: [
-        ...TRANSFORM,
-        {
-          property: 'counterValue',
-          label: 'Value',
-          group: 'content',
-          kind: 'number',
-          step: 1,
-          attribute: 'counterValue',
-        },
-        ...PAINT,
-      ],
-    },
-    'progress-ring': {
-      type: 'progress-ring',
-      label: 'Progress ring',
-      defaultWidth: 160,
-      defaultHeight: 160,
-      properties: [
-        ...TRANSFORM,
-        {
-          property: 'progress',
-          label: 'Progress',
-          group: 'content',
-          kind: 'percent',
-          step: 1,
-          min: 0,
-          max: 100,
-          attribute: 'progress',
-        },
-      ],
-    },
-    'bar-chart': {
-      type: 'bar-chart',
-      label: 'Bar chart',
-      defaultWidth: 420,
-      defaultHeight: 300,
-      properties: [
-        ...TRANSFORM,
-        {
-          property: 'progress',
-          label: 'Grow',
-          group: 'content',
-          kind: 'percent',
-          step: 1,
-          min: 0,
-          max: 100,
-          attribute: 'progress',
-        },
-      ],
-    },
-    'lower-third': {
-      type: 'lower-third',
-      label: 'Lower third',
-      defaultWidth: 400,
-      defaultHeight: 72,
-      properties: [
-        ...TRANSFORM,
-        {
-          property: 'progress',
-          label: 'Reveal',
-          group: 'content',
-          kind: 'percent',
-          step: 1,
-          min: 0,
-          max: 100,
-          attribute: 'progress',
-        },
-      ],
-    },
-    'spline-tracer': {
-      type: 'spline-tracer',
-      label: 'Spline tracer',
-      defaultWidth: 24,
-      defaultHeight: 24,
-      properties: [...TRANSFORM, ...SPLINE_MOTION],
-    },
   };
 
 export function getElementDescriptor(
   type: TraceElementType,
 ): ElementDescriptor {
-  return ELEMENT_DESCRIPTORS[type] ?? ELEMENT_DESCRIPTORS.shape;
+  return ELEMENT_DESCRIPTORS[type] ?? ELEMENT_DESCRIPTORS.rect;
 }
 
 export function getAnimatableProperties(
@@ -442,9 +400,6 @@ export function defaultValueForProperty(
     case 'fillOpacity':
       return 1;
     case 'trimEnd':
-    case 'progress':
-    case 'revealProgress':
-      return 100;
     case 'fill':
       return element.attributes?.fill ?? '#ffffff';
     case 'stroke':
@@ -469,15 +424,14 @@ export function baseValueForProperty(
 
 export const ADDABLE_ELEMENT_TYPES: TraceElementType[] = [
   'text',
-  'kinetic-text',
   'rect',
   'circle',
+  'ellipse',
+  'line',
+  'polyline',
   'polygon',
   'path',
-  'counter',
-  'progress-ring',
-  'bar-chart',
-  'lower-third',
-  'spline-tracer',
+  'image',
+  'use',
   'group',
 ];

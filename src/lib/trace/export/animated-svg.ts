@@ -5,13 +5,14 @@
  *
  * No JavaScript and no external runtime: every animated property becomes SMIL
  * (`<animate>` / `<animateTransform>`), so the file plays in a browser, an
- * `<img>` tag, or an embed in a document. GSAP code export covers the cases
- * SMIL cannot express (typewriter text, interactive control).
+ * `<img>` tag, or an embed in a document. SMIL cannot animate text content;
+ * text-track recipes such as counters require the GSAP/TextPlugin export.
  *
  * Adapted from sagedesigns-os lib/motion/export/svg-animation-compiler.ts.
  */
 
 import { getValueAtTime } from '../animation/interpolator';
+import { migrateTraceProject } from '../migrate';
 import { resolveElementAtTime } from '../runtime/resolve-element';
 import {
   elementBodyMarkup,
@@ -167,54 +168,6 @@ function injectAnimations(body: string, animations: string): string {
   return `${body.slice(0, insertAt)}${animations}${body.slice(insertAt)}`;
 }
 
-function estimateTextWidth(element: TraceElement, text: string): number {
-  const fontSize = Number(element.attributes?.fontSize ?? 24);
-  const spacing = Number(element.attributes?.letterSpacing ?? 0);
-  return Math.max(
-    fontSize * 0.5,
-    text.length * fontSize * 0.6 + Math.max(0, text.length - 1) * spacing,
-  );
-}
-
-function clipReveal(
-  element: TraceElement,
-  revealTrack: PropertyTrack,
-  durationMs: number,
-  loop: boolean,
-  body: string,
-  timeMs: number,
-): { clip: string; body: string } {
-  const attributes = resolveElementAtTime(element, timeMs).attributes;
-  const fullText = String(attributes.text ?? '');
-  const fontSize = Number(attributes.fontSize ?? 44);
-  const width = estimateTextWidth(element, fullText);
-  const anchor = String(attributes.textAnchor ?? 'start');
-  const x = anchor === 'middle' ? -width / 2 : anchor === 'end' ? -width : 0;
-  const height = fontSize * 1.5;
-  const clipId = `trace-clip-${element.id}`;
-
-  const samples = buildSamples([revealTrack], durationMs, (at) => {
-    const raw = Number(getValueAtTime(revealTrack, at) ?? 0);
-    return Math.max(0, (width * Math.max(0, Math.min(100, raw))) / 100);
-  });
-
-  const splines = keySplines(samples);
-  const rect = `<rect x="${x}" y="${-height / 2}" width="${width}" height="${height}"><animate attributeName="width" values="${samples
-    .map((sample) => Number(sample.value).toFixed(2))
-    .join(';')}" keyTimes="${keyTimes(samples, durationMs)}" calcMode="${
-    splines ? 'spline' : 'linear'
-  }"${splines ? ` keySplines="${splines}"` : ''} dur="${(
-    durationMs / 1000
-  ).toFixed(
-    3,
-  )}s" repeatCount="${loop ? 'indefinite' : '1'}" fill="freeze" /></rect>`;
-
-  return {
-    clip: `<clipPath id="${clipId}">${rect}</clipPath>`,
-    body: `<g clip-path="url(#${clipId})">${body}</g>`,
-  };
-}
-
 function pathTrimAnimations(
   element: TraceElement,
   durationMs: number,
@@ -351,10 +304,9 @@ function animatedElementMarkup(
   }
 
   const geometry: string[] = [];
-  for (const property of ['width', 'height', 'rx', 'counterValue']) {
+  for (const property of ['width', 'height', 'rx']) {
     const track = trackFor(element, property);
     if (!track) continue;
-    if (property === 'counterValue') continue;
     geometry.push(
       animateTag(
         property === 'width' && element.type === 'circle' ? 'r' : property,
@@ -387,34 +339,7 @@ function animatedElementMarkup(
     body = injectAnimations(body, geometryXml);
   }
 
-  // Typewriter / reveal: clip the text body instead of animating textContent.
   let clip = '';
-  const revealTrack = trackFor(element, 'revealProgress');
-  if (element.type === 'kinetic-text' && revealTrack) {
-    const clipResult = clipReveal(
-      element,
-      revealTrack,
-      durationMs,
-      options.loop,
-      body,
-      timeMs,
-    );
-    clip = clipResult.clip;
-    body = clipResult.body;
-  }
-
-  const textTrack = trackFor(element, 'text');
-  if (textTrack && element.type === 'text') {
-    body = injectAnimations(
-      body,
-      animateTag(
-        'opacity',
-        buildSamples([textTrack], durationMs, () => 1),
-        durationMs,
-        { loop: options.loop },
-      ),
-    );
-  }
 
   const children = (element.childrenIds ?? [])
     .map((childId) => {
@@ -439,9 +364,10 @@ ${inheritedXml ? `<g>${inheritedXml}` : ''}${body}${inheritedXml ? '</g>' : ''}$
 }
 
 export function compileProjectToAnimatedSvg(
-  project: TraceProject,
+  inputProject: TraceProject,
   options: AnimatedSvgOptions = {},
 ): string {
+  const project = migrateTraceProject(inputProject);
   const loop = options.loop !== false;
   // Poster time: the last frame is the most representative settled state.
   const timeMs = Math.min(

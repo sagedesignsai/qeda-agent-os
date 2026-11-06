@@ -42,9 +42,12 @@ export type AnimatableProperty =
   | 'width'
   | 'height'
   | 'rx'
-  | 'counterValue'
-  | 'progress'
-  | 'revealProgress'
+  | 'ry'
+  | 'x1'
+  | 'y1'
+  | 'x2'
+  | 'y2'
+  | 'points'
   | 'pathProgress'
   | 'trimStart'
   | 'trimEnd'
@@ -103,30 +106,19 @@ export interface TraceGradient {
   r: number; // 0..1
 }
 export type TraceElementType =
-  | 'shape'
   | 'path'
   | 'rect'
   | 'circle'
-  | 'group'
-  | 'text'
+  | 'ellipse'
+  | 'line'
+  | 'polyline'
   | 'polygon'
-  | 'counter'
-  | 'progress-ring'
-  | 'bar-chart'
-  | 'kinetic-text'
-  | 'lower-third'
-  | 'spline-tracer';
+  | 'image'
+  | 'use'
+  | 'group'
+  | 'text';
 
 export type SceneTransition = 'cut' | 'fade' | 'slide';
-export type KineticTextEffect =
-  | 'typewriter'
-  | 'blur-fade'
-  | 'slide-up'
-  | 'pop'
-  | 'elastic-bounce'
-  | 'flip-pop'
-  | 'scramble'
-  | 'glitch-jump';
 
 /**
  * A storyboard scene is a contiguous time range inside a single

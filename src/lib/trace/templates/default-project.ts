@@ -371,7 +371,7 @@ export function createNovaTraceMarkProject(
     'nova-wordmark': element({
       id: 'nova-wordmark',
       name: 'Wordmark',
-      type: 'kinetic-text',
+      type: 'text',
       sceneId: 'scene-mark',
       origin: { x: 0, y: 0 },
       attributes: {
@@ -384,26 +384,25 @@ export function createNovaTraceMarkProject(
         fill: '#f8fafc',
         letterSpacing: 12,
         textAnchor: 'middle',
-        effect: 'typewriter',
-        revealProgress: 100,
+        opacity: 1,
       },
       tracks: [
         {
-          id: 'nova-wordmark-reveal',
-          property: 'revealProgress',
-          label: 'Reveal',
+          id: 'nova-wordmark-opacity',
+          property: 'opacity',
+          label: 'Opacity',
           keyframes: [
             {
-              id: 'nova-wordmark-reveal-1',
+              id: 'nova-wordmark-op-1',
               timeMs: 2900,
               value: 0,
-              easing: 'linear',
+              easing: 'power2.out',
             },
             {
-              id: 'nova-wordmark-reveal-2',
-              timeMs: 3900,
-              value: 100,
-              easing: 'linear',
+              id: 'nova-wordmark-op-2',
+              timeMs: 3800,
+              value: 1,
+              easing: 'power2.out',
             },
           ],
         },

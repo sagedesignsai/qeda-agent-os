@@ -16,6 +16,7 @@
 
 import { mapEasingToGsap } from '../runtime/gsap-compiler';
 import { staticSvgMarkup } from '../serialize/svg-markup';
+import { migrateTraceProject } from '../migrate';
 import type { PropertyTrack, TraceElement, TraceProject } from '../types';
 
 export interface GsapCodeOptions {
@@ -82,7 +83,10 @@ function trackTweenLines(
   const keys = track.keyframes.slice().sort((a, b) => a.timeMs - b.timeMs);
   if (keys.length === 0) return lines;
 
-  const target = selectorFor(element);
+  const target =
+    track.property === 'text'
+      ? `${selectorFor(element)} text`
+      : selectorFor(element);
 
   if (track.property === 'text') {
     for (let index = 0; index < keys.length - 1; index += 1) {
@@ -151,9 +155,10 @@ function timelineLines(project: TraceProject, indent: string): string[] {
 }
 
 export function generateGsapCode(
-  project: TraceProject,
+  inputProject: TraceProject,
   options: GsapCodeOptions,
 ): string {
+  const project = migrateTraceProject(inputProject);
   const { format, loop = true, componentName, includeMarkup = true } = options;
   const name = toPascalCase(componentName || project.name || 'TraceScene');
   const markup = staticSvgMarkup(project, project.durationMs * 0.7, {

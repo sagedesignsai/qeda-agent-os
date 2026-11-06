@@ -9,6 +9,7 @@
 
 import { createElement, useMemo, useState } from 'react';
 import {
+  ActivityIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleIcon,
@@ -18,6 +19,7 @@ import {
   FolderIcon,
   GroupIcon,
   HashIcon,
+  ImageIcon,
   LayersIcon,
   LockIcon,
   Maximize2Icon,
@@ -49,6 +51,8 @@ import type {
   TraceElementType,
   TraceProject,
 } from '@/lib/trace/types';
+import { ADDABLE_ELEMENT_TYPES } from '@/lib/trace/elements/registry';
+import { ELEMENT_RECIPES } from '@/lib/trace/ops/elements';
 import { useTraceStore } from '@/stores/trace-store';
 
 type ElementTypeOption = {
@@ -57,39 +61,65 @@ type ElementTypeOption = {
   icon: React.ComponentType<{ className?: string }>;
 };
 
-const ADD_OPTIONS: ElementTypeOption[] = [
-  { type: 'text', label: 'Text', icon: TypeIcon },
-  { type: 'kinetic-text', label: 'Kinetic text', icon: TypeIcon },
-  { type: 'rect', label: 'Rectangle', icon: SquareIcon },
-  { type: 'circle', label: 'Circle', icon: CircleIcon },
-  { type: 'polygon', label: 'Polygon', icon: Maximize2Icon },
-  { type: 'path', label: 'Vector path', icon: PencilIcon },
-  { type: 'counter', label: 'Counter', icon: HashIcon },
-  { type: 'progress-ring', label: 'Progress ring', icon: CircleIcon },
-  { type: 'bar-chart', label: 'Bar chart', icon: LayersIcon },
-  { type: 'lower-third', label: 'Lower third', icon: MinusIcon },
-  { type: 'group', label: 'Group', icon: FolderIcon },
-];
+type RecipeOption = {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+const PRIMITIVE_METADATA: Record<
+  TraceElementType,
+  Omit<ElementTypeOption, 'type'>
+> = {
+  rect: { label: 'Rectangle', icon: SquareIcon },
+  circle: { label: 'Circle', icon: CircleIcon },
+  ellipse: { label: 'Ellipse', icon: CircleIcon },
+  line: { label: 'Line', icon: MinusIcon },
+  polyline: { label: 'Polyline', icon: ActivityIcon },
+  polygon: { label: 'Polygon', icon: Maximize2Icon },
+  path: { label: 'Vector path', icon: PencilIcon },
+  text: { label: 'Text', icon: TypeIcon },
+  image: { label: 'Image', icon: ImageIcon },
+  use: { label: 'Use / Symbol', icon: CopyIcon },
+  group: { label: 'Group', icon: FolderIcon },
+};
+
+const PRIMITIVE_OPTIONS: ElementTypeOption[] = ADDABLE_ELEMENT_TYPES.map(
+  (type) => ({ type, ...PRIMITIVE_METADATA[type] }),
+);
+
+const RECIPE_ICONS: Record<string, RecipeOption['icon']> = {
+  'lower-third': MinusIcon,
+  'progress-ring': CircleIcon,
+  'bar-chart': LayersIcon,
+  'kinetic-text': TypeIcon,
+  counter: HashIcon,
+};
+const RECIPE_OPTIONS: RecipeOption[] = ELEMENT_RECIPES.map((recipe) => ({
+  id: recipe.id,
+  label: recipe.title,
+  icon: RECIPE_ICONS[recipe.id] ?? LayersIcon,
+}));
 
 function iconFor(element: TraceElement) {
   switch (element.type) {
     case 'text':
-    case 'kinetic-text':
       return TypeIcon;
     case 'circle':
-    case 'progress-ring':
+    case 'ellipse':
       return CircleIcon;
+    case 'line':
+      return MinusIcon;
+    case 'polyline':
+      return ActivityIcon;
+    case 'image':
+      return ImageIcon;
+    case 'use':
+      return CopyIcon;
     case 'path':
-    case 'spline-tracer':
       return PencilIcon;
     case 'group':
       return FolderIcon;
-    case 'counter':
-      return HashIcon;
-    case 'bar-chart':
-      return LayersIcon;
-    case 'lower-third':
-      return MinusIcon;
     default:
       return SquareIcon;
   }
@@ -113,20 +143,6 @@ function specFor(type: TraceElementType, project: TraceProject) {
         textAnchor: 'middle' as const,
         name: 'Text',
       };
-    case 'kinetic-text':
-      return {
-        type: 'kinetic-text' as const,
-        text: 'KINETIC',
-        x: centerX,
-        y: centerY,
-        fontSize: 84,
-        fontWeight: 800,
-        fill: '#f8fafc',
-        textAnchor: 'middle' as const,
-        effect: 'typewriter' as const,
-        revealProgress: 0,
-        name: 'Kinetic Text',
-      };
     case 'circle':
       return {
         type: 'circle' as const,
@@ -138,6 +154,62 @@ function specFor(type: TraceElementType, project: TraceProject) {
         stroke: '#38bdf8',
         strokeWidth: 2,
         name: 'Circle',
+      };
+    case 'ellipse':
+      return {
+        type: 'ellipse' as const,
+        x: x + 40,
+        y,
+        width: 200,
+        height: 120,
+        fill: 'rgba(56, 189, 248, 0.18)',
+        stroke: '#38bdf8',
+        strokeWidth: 2,
+        name: 'Ellipse',
+      };
+    case 'line':
+      return {
+        type: 'line' as const,
+        x,
+        y: centerY,
+        x1: 0,
+        y1: 0,
+        x2: 240,
+        y2: 0,
+        stroke: '#38bdf8',
+        strokeWidth: 3,
+        name: 'Line',
+      };
+    case 'polyline':
+      return {
+        type: 'polyline' as const,
+        x,
+        y,
+        points: '0,80 80,10 160,80 240,10 320,80',
+        fill: 'none',
+        stroke: '#38bdf8',
+        strokeWidth: 3,
+        name: 'Polyline',
+      };
+    case 'image':
+      return {
+        type: 'image' as const,
+        x,
+        y,
+        width: 240,
+        height: 160,
+        href: '',
+        name: 'Image',
+      };
+    case 'use':
+      return {
+        type: 'use' as const,
+        x,
+        y,
+        width: 100,
+        height: 100,
+        href: '',
+        name: 'Symbol',
       };
     case 'polygon':
       return {
@@ -163,54 +235,6 @@ function specFor(type: TraceElementType, project: TraceProject) {
         trimStart: 0,
         trimEnd: 100,
         name: 'Path',
-      };
-    case 'counter':
-      return {
-        type: 'counter' as const,
-        x,
-        y,
-        endVal: 1240,
-        prefix: '$',
-        fontSize: 72,
-        fill: '#f8fafc',
-        name: 'Counter',
-      };
-    case 'progress-ring':
-      return {
-        type: 'progress-ring' as const,
-        x: x + 40,
-        y,
-        radius: 70,
-        thickness: 10,
-        progress: 0,
-        progressColor: '#38bdf8',
-        trackColor: '#1e293b',
-        name: 'Progress Ring',
-      };
-    case 'bar-chart':
-      return {
-        type: 'bar-chart' as const,
-        x,
-        y,
-        width: 480,
-        height: 280,
-        progress: 0,
-        bars: [
-          { id: 'a', label: 'A', value: 42, color: '#0ea5e9' },
-          { id: 'b', label: 'B', value: 68, color: '#22d3ee' },
-          { id: 'c', label: 'C', value: 91, color: '#818cf8' },
-        ],
-        name: 'Bar Chart',
-      };
-    case 'lower-third':
-      return {
-        type: 'lower-third' as const,
-        x: 96,
-        y: Math.max(0, project.height - 180),
-        title: 'Speaker name',
-        subtitle: 'Role — organisation',
-        progress: 0,
-        name: 'Lower Third',
       };
     case 'group':
       return { type: 'group' as const, x: 0, y: 0, name: 'Group' };
@@ -480,6 +504,19 @@ export function TraceElementsTree() {
     const result = dispatch([
       { type: 'addElement', element: specFor(type, project) },
     ]);
+    const added = result?.recipeRootIds[0];
+    if (added) selectElement(added);
+  };
+
+  const applyPrefabRecipe = (recipeId: string) => {
+    const result = dispatch([
+      {
+        type: 'applyRecipe',
+        recipeId,
+        x: Math.round(project.width / 2 - 200),
+        y: Math.round(project.height / 2 - 100),
+      },
+    ]);
     const added = result?.diff.added[0];
     if (added) selectElement(added);
   };
@@ -502,16 +539,28 @@ export function TraceElementsTree() {
               Add
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide">
-              New layer
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-slate-400">
+              Primitives
             </DropdownMenuLabel>
-            {ADD_OPTIONS.map((option) => (
+            {PRIMITIVE_OPTIONS.map((option) => (
               <DropdownMenuItem
                 key={option.type}
                 onSelect={() => addElement(option.type)}
               >
                 <option.icon /> {option.label}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-purple-400">
+              Prefab Recipes
+            </DropdownMenuLabel>
+            {RECIPE_OPTIONS.map((recipe) => (
+              <DropdownMenuItem
+                key={recipe.id}
+                onSelect={() => applyPrefabRecipe(recipe.id)}
+              >
+                <recipe.icon className="text-purple-400" /> {recipe.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

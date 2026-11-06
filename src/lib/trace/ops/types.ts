@@ -150,7 +150,15 @@ export type TraceOp =
       groupId?: string;
       suffix?: string;
     }
-  | { type: 'applyRecipe'; recipeId: string }
+  | {
+      type: 'applyRecipe';
+      recipeId: string;
+      name?: string;
+      x?: number;
+      y?: number;
+      sceneId?: string | null;
+      options?: Record<string, any>;
+    }
   | { type: 'setDefs'; defs: string }
   | { type: 'setAudio'; tracks: AudioTrack[] }
   /**
@@ -184,6 +192,8 @@ export interface TraceApplyOpsResult {
   /** Number of ops that ran. A failed batch runs zero. */
   applied: number;
   diff: TraceOpDiff;
+  /** Root ids created by applyRecipe ops, in op order. */
+  recipeRootIds: string[];
   diagnostics: Diagnostic[];
   inverse: TraceOp[];
 }

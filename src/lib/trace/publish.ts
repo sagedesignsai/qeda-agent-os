@@ -12,6 +12,7 @@
 
 import type { TraceProject } from './types';
 import { ensureStoryboard, getStoryboardDuration } from './storyboard';
+import { migrateTraceProject } from './migrate';
 
 export interface TracePublishSourceRecord {
   id: string;
@@ -64,5 +65,5 @@ export function normalizeTraceProjectForPublish(
   project.durationMs =
     getStoryboardDuration(project.storyboard) || project.durationMs;
 
-  return project;
+  return migrateTraceProject(project);
 }

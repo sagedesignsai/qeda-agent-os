@@ -9,6 +9,7 @@ import { createBlankTraceProject } from '../defaults';
 import { createScene } from '../storyboard';
 import type { TraceElement, TraceProject } from '../types';
 import { createNovaTraceMarkProject } from './default-project';
+import { expandRecipe } from '../recipes';
 
 export interface CompositionTemplateMeta {
   id: string;
@@ -83,6 +84,23 @@ function createKineticType(options: TemplateOptions): TraceProject {
     name: 'Headline',
     durationMs: 4200,
   });
+
+  const headline = expandRecipe(
+    'kinetic-text',
+    {
+      x: 120,
+      y: 400,
+      text: 'MOVE THE STORY',
+      fontSize: 92,
+      fontWeight: 800,
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fill: '#f8fafc',
+      sceneId: scene.id,
+      name: 'Headline',
+    },
+    () => 'kinetic-headline',
+  );
+
   const elements: Record<string, TraceElement> = {
     'kinetic-rule': element({
       id: 'kinetic-rule',
@@ -119,47 +137,8 @@ function createKineticType(options: TemplateOptions): TraceProject {
         },
       ],
     }),
-    'kinetic-headline': element({
-      id: 'kinetic-headline',
-      name: 'Headline',
-      type: 'kinetic-text',
-      sceneId: scene.id,
-      origin: { x: 0, y: 0 },
-      attributes: {
-        x: 120,
-        y: 400,
-        text: 'MOVE THE STORY',
-        fontSize: 92,
-        fontWeight: 800,
-        fontFamily: 'Inter, system-ui, sans-serif',
-        fill: '#f8fafc',
-        letterSpacing: 4,
-        textAnchor: 'start',
-        effect: 'typewriter',
-        revealProgress: 100,
-      },
-      tracks: [
-        {
-          id: 'kinetic-headline-reveal',
-          property: 'revealProgress',
-          label: 'Reveal',
-          keyframes: [
-            {
-              id: 'kinetic-headline-1',
-              timeMs: 900,
-              value: 0,
-              easing: 'linear',
-            },
-            {
-              id: 'kinetic-headline-2',
-              timeMs: 2600,
-              value: 100,
-              easing: 'linear',
-            },
-          ],
-        },
-      ],
-    }),
+    'kinetic-headline': headline.root,
+    ...Object.fromEntries(headline.children.map((c) => [c.id, c])),
     'kinetic-sub': element({
       id: 'kinetic-sub',
       name: 'Subhead',
@@ -242,10 +221,64 @@ function createMetrics(options: TemplateOptions): TraceProject {
     name: 'Metrics',
     durationMs: 4000,
   });
+
+  const counter = expandRecipe(
+    'counter',
+    {
+      x: 120,
+      y: 240,
+      startVal: 0,
+      endVal: 428,
+      prefix: '$',
+      suffix: 'K',
+      caption: 'monthly recurring revenue',
+      fontSize: 96,
+      name: 'Revenue Counter',
+      sceneId: scene.id,
+    },
+    () => 'metrics-counter',
+  );
+
+  const ring = expandRecipe(
+    'progress-ring',
+    {
+      x: 900,
+      y: 210,
+      radius: 96,
+      thickness: 14,
+      progress: 86,
+      progressColor: '#38bdf8',
+      name: 'Efficiency Ring',
+      sceneId: scene.id,
+    },
+    () => 'metrics-ring',
+  );
+
+  const bars = expandRecipe(
+    'bar-chart',
+    {
+      x: 120,
+      y: 400,
+      width: 760,
+      height: 240,
+      barSpacing: 28,
+      barRadius: 6,
+      bars: [
+        { id: 'q1', label: 'Q1', value: 42, color: '#0ea5e9' },
+        { id: 'q2', label: 'Q2', value: 58, color: '#22d3ee' },
+        { id: 'q3', label: 'Q3', value: 71, color: '#818cf8' },
+        { id: 'q4', label: 'Q4', value: 96, color: '#f472b6' },
+      ],
+      name: 'Quarterly Bars',
+      sceneId: scene.id,
+    },
+    () => 'metrics-bars',
+  );
+
   const elements: Record<string, TraceElement> = {
     'metrics-label': element({
       id: 'metrics-label',
-      name: 'Label',
+      name: 'Section Label',
       type: 'text',
       sceneId: scene.id,
       attributes: {
@@ -260,128 +293,12 @@ function createMetrics(options: TemplateOptions): TraceProject {
       },
       tracks: [],
     }),
-    'metrics-counter': element({
-      id: 'metrics-counter',
-      name: 'Revenue Counter',
-      type: 'counter',
-      sceneId: scene.id,
-      attributes: {
-        x: 120,
-        y: 240,
-        prefix: '$',
-        suffix: 'K',
-        endVal: 428,
-        counterValue: 0,
-        decimals: 0,
-        fontSize: 96,
-        fontWeight: 800,
-        fill: '#f8fafc',
-        text: 'monthly recurring revenue',
-      },
-      tracks: [
-        {
-          id: 'metrics-counter-value',
-          property: 'counterValue',
-          label: 'Value',
-          keyframes: [
-            {
-              id: 'metrics-counter-1',
-              timeMs: 400,
-              value: 0,
-              easing: 'power2.out',
-            },
-            {
-              id: 'metrics-counter-2',
-              timeMs: 2400,
-              value: 428,
-              easing: 'power2.out',
-            },
-          ],
-        },
-      ],
-    }),
-    'metrics-ring': element({
-      id: 'metrics-ring',
-      name: 'Efficiency Ring',
-      type: 'progress-ring',
-      sceneId: scene.id,
-      attributes: {
-        x: 900,
-        y: 210,
-        radius: 96,
-        thickness: 14,
-        progress: 0,
-        progressColor: '#38bdf8',
-        trackColor: '#1e293b',
-        fill: '#f8fafc',
-        fontSize: 34,
-        fontWeight: 700,
-      },
-      tracks: [
-        {
-          id: 'metrics-ring-progress',
-          property: 'progress',
-          label: 'Progress',
-          keyframes: [
-            {
-              id: 'metrics-ring-1',
-              timeMs: 700,
-              value: 0,
-              easing: 'power2.inOut',
-            },
-            {
-              id: 'metrics-ring-2',
-              timeMs: 2600,
-              value: 86,
-              easing: 'power2.inOut',
-            },
-          ],
-        },
-      ],
-    }),
-    'metrics-bars': element({
-      id: 'metrics-bars',
-      name: 'Quarterly Bars',
-      type: 'bar-chart',
-      sceneId: scene.id,
-      attributes: {
-        x: 120,
-        y: 400,
-        width: 760,
-        height: 240,
-        barSpacing: 28,
-        barRadius: 6,
-        orientation: 'vertical',
-        progress: 0,
-        bars: [
-          { id: 'q1', label: 'Q1', value: 42, color: '#0ea5e9' },
-          { id: 'q2', label: 'Q2', value: 58, color: '#22d3ee' },
-          { id: 'q3', label: 'Q3', value: 71, color: '#818cf8' },
-          { id: 'q4', label: 'Q4', value: 96, color: '#f472b6' },
-        ],
-      },
-      tracks: [
-        {
-          id: 'metrics-bars-progress',
-          property: 'progress',
-          label: 'Grow',
-          keyframes: [
-            {
-              id: 'metrics-bars-1',
-              timeMs: 1200,
-              value: 0,
-              easing: 'back.out',
-            },
-            {
-              id: 'metrics-bars-2',
-              timeMs: 2600,
-              value: 100,
-              easing: 'back.out',
-            },
-          ],
-        },
-      ],
-    }),
+    'metrics-counter': counter.root,
+    ...Object.fromEntries(counter.children.map((c) => [c.id, c])),
+    'metrics-ring': ring.root,
+    ...Object.fromEntries(ring.children.map((c) => [c.id, c])),
+    'metrics-bars': bars.root,
+    ...Object.fromEntries(bars.children.map((c) => [c.id, c])),
   };
 
   return base(
@@ -411,46 +328,27 @@ function createLowerThird(options: TemplateOptions): TraceProject {
     name: 'Speaker',
     durationMs: 3600,
   });
-  const elements: Record<string, TraceElement> = {
-    'lower-third-card': element({
-      id: 'lower-third-card',
+
+  const lt = expandRecipe(
+    'lower-third',
+    {
+      x: 96,
+      y: 540,
+      width: 460,
+      height: 88,
+      title: 'Ada Lovelace',
+      subtitle: 'Computing pioneer — Analytical Engine',
+      accentColor: '#f472b6',
+      cardBg: 'rgba(12, 18, 32, 0.9)',
       name: 'Speaker Card',
-      type: 'lower-third',
       sceneId: scene.id,
-      attributes: {
-        x: 96,
-        y: 540,
-        width: 460,
-        height: 88,
-        progress: 0,
-        title: 'Ada Lovelace',
-        subtitle: 'Computing pioneer — Analytical Engine',
-        accentColor: '#f472b6',
-        cardBg: 'rgba(12, 18, 32, 0.9)',
-        opacity: 1,
-      },
-      tracks: [
-        {
-          id: 'lower-third-progress',
-          property: 'progress',
-          label: 'Reveal',
-          keyframes: [
-            {
-              id: 'lower-third-1',
-              timeMs: 500,
-              value: 0,
-              easing: 'power3.out',
-            },
-            {
-              id: 'lower-third-2',
-              timeMs: 1400,
-              value: 100,
-              easing: 'power3.out',
-            },
-          ],
-        },
-      ],
-    }),
+    },
+    () => 'lower-third-card',
+  );
+
+  const elements: Record<string, TraceElement> = {
+    'lower-third-card': lt.root,
+    ...Object.fromEntries(lt.children.map((c) => [c.id, c])),
   };
 
   return base(

@@ -147,18 +147,6 @@ export function opacityAt(element: TraceElement, timeMs: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
 }
 
-export function formatCounterNumber(
-  value: number,
-  decimals = 0,
-  thousands = true,
-): string {
-  const rounded = Number(value.toFixed(decimals));
-  if (!thousands) return rounded.toFixed(decimals);
-  const parts = rounded.toFixed(decimals).split('.');
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return parts.join('.');
-}
-
 export function formatTraceTimecode(timeMs: number): string {
   const safe = Math.max(0, timeMs);
   const totalSeconds = safe / 1000;

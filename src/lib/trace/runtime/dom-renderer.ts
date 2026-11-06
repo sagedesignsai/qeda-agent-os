@@ -8,8 +8,7 @@
  * playback, which is what keeps a scrubbing stage smooth.
  *
  * Every element group is rendered with `data-trace-id` and, for fast lookup,
- * `id="trace-elem-<elementId>"`. Role nodes inside (`data-role="..."`) are the
- * animated internals of parametric elements (counter values, ring arcs, bars).
+ * `id="trace-elem-<elementId>"`.
  *
  * Adapted from sagedesigns-os lib/motion/runtime/dom-renderer.ts.
  */
@@ -17,7 +16,6 @@
 import type { TraceElement, TraceProject } from '../types';
 import { getTraceRuntimeBridge } from './bridge';
 import {
-  formatCounterNumber,
   formatTraceTimecode,
   resolveElementAtTime,
 } from './resolve-element';
@@ -142,7 +140,18 @@ function applyTrackValue(
     }
     case 'rx':
       node.setAttribute('rx', String(value));
+      return;
+    case 'ry':
       node.setAttribute('ry', String(value));
+      return;
+    case 'x1':
+    case 'y1':
+    case 'x2':
+    case 'y2':
+      node.setAttribute(property, String(value));
+      return;
+    case 'points':
+      node.setAttribute('points', String(value));
       return;
     case 'fontSize':
       node.setAttribute('font-size', String(value));
@@ -153,10 +162,7 @@ function applyTrackValue(
       if (style) style.letterSpacing = `${value}px`;
       return;
     case 'text': {
-      const target =
-        node.querySelector(
-          '[data-role="text-content"], [data-role="kinetic-text-content"]',
-        ) ?? node;
+      const target = node.querySelector('text') ?? node;
       target.textContent = String(value);
       return;
     }
@@ -194,102 +200,6 @@ function applyTrackValue(
       return;
     default:
       return;
-  }
-}
-
-function updateParametricInternals(
-  node: SVGElement,
-  element: TraceElement,
-  attributes: Record<string, any>,
-): void {
-  if (element.type === 'counter') {
-    const value = Number(attributes.counterValue ?? attributes.endVal ?? 0);
-    const formatted = `${attributes.prefix ?? ''}${formatCounterNumber(
-      value,
-      Number(attributes.decimals ?? 0),
-      attributes.thousandsSeparator !== false,
-    )}${attributes.suffix ?? ''}`;
-    const valueNode = node.querySelector('[data-role="counter-value"]');
-    if (valueNode) valueNode.textContent = formatted;
-  }
-
-  if (element.type === 'progress-ring') {
-    const progress = Math.max(
-      0,
-      Math.min(100, Number(attributes.progress ?? 0)),
-    );
-    const radius = Number(attributes.r ?? attributes.radius ?? 50);
-    const circumference = 2 * Math.PI * radius;
-    const ring = node.querySelector('[data-role="progress-ring-indicator"]');
-    if (ring) {
-      ring.setAttribute('stroke-dasharray', String(circumference));
-      ring.setAttribute(
-        'stroke-dashoffset',
-        String(circumference * (1 - progress / 100)),
-      );
-    }
-    const label = node.querySelector('[data-role="progress-ring-label"]');
-    if (label && attributes.showPercentageLabel !== false)
-      label.textContent = `${Math.round(progress)}%`;
-  }
-
-  if (element.type === 'bar-chart') {
-    const progress = Math.max(
-      0,
-      Math.min(1, Number(attributes.progress ?? 100) / 100),
-    );
-    const bars = node.querySelectorAll<SVGRectElement>(
-      '[data-role="bar-chart-bar"]',
-    );
-    bars.forEach((bar) => {
-      const target = Number(bar.getAttribute('data-target-length') ?? 0);
-      const base = Number(bar.getAttribute('data-base-pos') ?? 0);
-      if (bar.getAttribute('data-orientation') === 'horizontal') {
-        bar.setAttribute('width', String(target * progress));
-      } else {
-        const height = target * progress;
-        bar.setAttribute('height', String(height));
-        bar.setAttribute('y', String(base - height));
-      }
-    });
-  }
-
-  if (element.type === 'kinetic-text') {
-    const reveal = Math.max(
-      0,
-      Math.min(100, Number(attributes.revealProgress ?? 100)),
-    );
-    const contentNode = node.querySelector(
-      '[data-role="kinetic-text-content"]',
-    );
-    if (contentNode) {
-      const effect = String(attributes.effect ?? 'typewriter');
-      const fullText = String(attributes.text ?? '');
-      if (effect === 'typewriter') {
-        contentNode.textContent = fullText.slice(
-          0,
-          Math.round((fullText.length * reveal) / 100),
-        );
-      } else {
-        const opacity = reveal / 100;
-        contentNode.setAttribute('opacity', String(opacity));
-        (
-          contentNode as SVGElement & { style: CSSStyleDeclaration }
-        ).style.filter = reveal < 99 ? `blur(${(1 - opacity) * 8}px)` : 'none';
-      }
-    }
-  }
-
-  if (element.type === 'lower-third') {
-    const progress = Math.max(
-      0,
-      Math.min(1, Number(attributes.progress ?? 100) / 100),
-    );
-    const accent = node.querySelector('[data-role="lower-third-accent"]');
-    if (accent) {
-      const fullWidth = Number(accent.getAttribute('data-full-width') ?? 160);
-      accent.setAttribute('width', String(fullWidth * progress));
-    }
   }
 }
 
@@ -344,8 +254,6 @@ export function applyElementAnimationAtTime(
       Number(attributes.trimOffset ?? 0),
     );
   }
-
-  updateParametricInternals(node, element, attributes);
 
   const origin = element.origin ?? { x: 0, y: 0 };
   node.style.transformOrigin = `${origin.x}px ${origin.y}px`;

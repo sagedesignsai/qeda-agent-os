@@ -28,6 +28,7 @@ import type {
 } from './types';
 import { TraceOpError } from './types';
 import { createElementFromSpec } from './elements';
+import { expandRecipe } from '../recipes';
 
 let opCounter = 0;
 
@@ -45,7 +46,6 @@ function nextId(prefix: string): string {
 const UNSUPPORTED_OPS: Record<string, string> = {
   applyPose: 'Character rigs are not part of Nova Trace v1.',
   setBoneRotation: 'Character rigs are not part of Nova Trace v1.',
-  applyRecipe: 'Element recipes are not wired into Nova Trace v1 yet.',
 };
 
 function emptyDiff(): TraceOpDiff {
@@ -186,6 +186,47 @@ function opAddElement(
   }
 
   project.elements[id] = element;
+}
+
+function opApplyRecipe(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'applyRecipe' }>,
+): string {
+  const sceneId =
+    op.sceneId === undefined ? activeSceneId(project) : op.sceneId;
+  const expanded = expandRecipe(
+    op.recipeId,
+    {
+      ...op.options,
+      name: op.name ?? op.options?.name,
+      x: op.x ?? op.options?.x,
+      y: op.y ?? op.options?.y,
+      sceneId,
+    },
+    (prefix) => nextId(prefix),
+  );
+
+  const ids = [expanded.root.id, ...expanded.children.map((child) => child.id)];
+  const duplicateId = ids.find((id) => project.elements[id]);
+  if (duplicateId) {
+    throw new TraceOpError(
+      'ELEMENT_DUPLICATE',
+      `Recipe element "${duplicateId}" already exists.`,
+    );
+  }
+
+  // Add root group element first
+  project.elements[expanded.root.id] = expanded.root;
+  project.rootElementIds = [
+    ...(project.rootElementIds ?? []),
+    expanded.root.id,
+  ];
+
+  // Add all recipe children
+  for (const child of expanded.children) {
+    project.elements[child.id] = child;
+  }
+  return expanded.rootId;
 }
 
 function opUpdateElement(
@@ -691,7 +732,7 @@ function applyOne(
   project: TraceProject,
   op: TraceOp,
   onDiagnostic: (diagnostic: Diagnostic) => void,
-): void {
+): string | undefined {
   const unsupported = UNSUPPORTED_OPS[op.type];
   if (unsupported) {
     onDiagnostic({
@@ -755,6 +796,8 @@ function applyOne(
     case 'insertFragment':
       opInsertFragment(project, op);
       return;
+    case 'applyRecipe':
+      return opApplyRecipe(project, op);
     case 'setDefs':
       opSetDefs(project, op);
       return;
@@ -826,10 +869,14 @@ export function applyOps(
   const diagnostics: Diagnostic[] = [];
   const original = cloneProject(project);
   const draft = cloneProject(project);
+  const recipeRootIds: string[] = [];
 
   try {
     for (const op of ops) {
-      applyOne(draft, op, (diagnostic) => diagnostics.push(diagnostic));
+      const rootId = applyOne(draft, op, (diagnostic) =>
+        diagnostics.push(diagnostic),
+      );
+      if (rootId) recipeRootIds.push(rootId);
     }
   } catch (error) {
     diagnostics.push({
@@ -848,6 +895,7 @@ export function applyOps(
       project: original,
       applied: 0,
       diff: emptyDiff(),
+      recipeRootIds: [],
       diagnostics,
       inverse: [],
     };
@@ -865,6 +913,7 @@ export function applyOps(
     project: draft,
     applied: ops.length,
     diff: diffProjects(original, draft),
+    recipeRootIds,
     diagnostics,
     inverse,
   };

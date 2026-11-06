@@ -5,12 +5,13 @@
  *
  * Shared by the animated-SVG exporter, the GSAP code generator and poster
  * rendering. The DOM contract matches the editor stage exactly:
- * `id="trace-elem-<id>"`, `data-trace-id`, and `data-role` internals.
+ * `id="trace-elem-<id>"` and `data-trace-id`.
  *
  * Pure string building — no React, no DOM.
  */
 
 import { resolveElementAtTime } from '../runtime/resolve-element';
+import { migrateTraceProject } from '../migrate';
 import type { TraceElement, TraceGradient, TraceProject } from '../types';
 
 export function escapeXml(value: string): string {
@@ -80,7 +81,7 @@ export function gradientsToDefs(
   return defs.join('');
 }
 
-function polygonPoints(sides: number, radius: number): string {
+export function polygonPoints(sides: number, radius: number): string {
   const count = Math.max(3, Math.round(sides));
   const points: string[] = [];
   for (let index = 0; index < count; index += 1) {
@@ -90,7 +91,7 @@ function polygonPoints(sides: number, radius: number): string {
   return points.join(' ');
 }
 
-function starPoints(radius: number, ratio: number): string {
+export function starPoints(radius: number, ratio: number): string {
   const points: string[] = [];
   for (let index = 0; index < 10; index += 1) {
     const current = index % 2 === 0 ? radius : radius * ratio;
@@ -144,10 +145,6 @@ export function elementBodyMarkup(
 ): string {
   const width = num(attributes.width, 100);
   const height = num(attributes.height, 100);
-  const kind =
-    element.type === 'shape'
-      ? String(attributes.shapeKind ?? 'rect')
-      : element.type;
 
   switch (element.type) {
     case 'text':
@@ -161,19 +158,68 @@ export function elementBodyMarkup(
         0,
       )}" text-anchor="${escapeXml(String(attributes.textAnchor ?? 'start'))}" dominant-baseline="${escapeXml(
         String(attributes.dominantBaseline ?? 'middle'),
-      )}" data-role="text-content">${escapeXml(String(attributes.text ?? ''))}</text>`;
+      )}">${escapeXml(String(attributes.text ?? ''))}</text>`;
 
-    case 'kinetic-text':
-      return `<text x="0" y="0" ${paintAttrs(attributes, '#ffffff')} font-size="${num(
-        attributes.fontSize,
-        44,
-      )}" font-family="${escapeXml(String(attributes.fontFamily ?? 'Inter, sans-serif'))}" font-weight="${escapeXml(
-        String(attributes.fontWeight ?? 800),
-      )}" letter-spacing="${num(attributes.letterSpacing, 0)}" text-anchor="${escapeXml(
-        String(attributes.textAnchor ?? 'start'),
-      )}" dominant-baseline="${escapeXml(
-        String(attributes.dominantBaseline ?? 'middle'),
-      )}" data-role="kinetic-text-content">${escapeXml(String(attributes.text ?? ''))}</text>`;
+    case 'rect':
+      return `<rect x="0" y="0" width="${width}" height="${height}" rx="${num(
+        attributes.rx,
+        0,
+      )}" ry="${num(attributes.ry, num(attributes.rx, 0))}" ${paintAttrs(attributes)} />`;
+
+    case 'circle':
+      return `<circle cx="${num(attributes.cx, width / 2)}" cy="${num(
+        attributes.cy,
+        height / 2,
+      )}" r="${num(
+        attributes.r,
+        num(attributes.radius, width / 2),
+      )}" ${paintAttrs(attributes)} />`;
+
+    case 'ellipse':
+      return `<ellipse cx="${width / 2}" cy="${height / 2}" rx="${num(
+        attributes.rx,
+        width / 2,
+      )}" ry="${num(attributes.ry, height / 2)}" ${paintAttrs(attributes)} />`;
+
+    case 'line':
+      return `<line x1="${num(attributes.x1, 0)}" y1="${num(
+        attributes.y1,
+        0,
+      )}" x2="${num(attributes.x2, width)}" y2="${num(
+        attributes.y2,
+        height,
+      )}" ${paintAttrs(attributes, 'none')} />`;
+
+    case 'polyline':
+      return `<polyline points="${escapeXml(
+        String(attributes.points ?? ''),
+      )}" ${paintAttrs(attributes, 'none')}${trimAttrs(attributes)} />`;
+
+    case 'polygon': {
+      if (attributes.points) {
+        return `<polygon points="${escapeXml(
+          String(attributes.points),
+        )}" ${paintAttrs(attributes)} />`;
+      }
+      return `<polygon points="${polygonPoints(
+        num(attributes.polygonSides, num(attributes.sides, 5)),
+        width / 2,
+      )}" transform="translate(${width / 2} ${height / 2})" ${paintAttrs(
+        attributes,
+      )} />`;
+    }
+
+    case 'image':
+      return `<image href="${escapeXml(
+        String(attributes.href ?? attributes.src ?? ''),
+      )}" x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="${escapeXml(
+        String(attributes.preserveAspectRatio ?? 'xMidYMid meet'),
+      )}" />`;
+
+    case 'use':
+      return `<use href="${escapeXml(
+        String(attributes.href ?? ''),
+      )}" x="0" y="0" width="${width}" height="${height}" />`;
 
     case 'path':
       return `<path d="${escapeXml(String(attributes.d ?? ''))}" ${paintAttrs(
@@ -181,165 +227,11 @@ export function elementBodyMarkup(
         'none',
       )} stroke-linecap="round" stroke-linejoin="round"${trimAttrs(attributes)} />`;
 
-    case 'counter':
-      return `<g><text x="0" y="0" ${paintAttrs(attributes, '#ffffff')} font-size="${num(
-        attributes.fontSize,
-        48,
-      )}" font-weight="${escapeXml(String(attributes.fontWeight ?? 800))}" dominant-baseline="middle" data-role="counter-value">${escapeXml(
-        `${attributes.prefix ?? ''}${num(
-          attributes.counterValue,
-          num(attributes.endVal, 0),
-        ).toFixed(num(attributes.decimals, 0))}${attributes.suffix ?? ''}`,
-      )}</text>${
-        attributes.text
-          ? `<text x="0" y="${num(attributes.fontSize, 48) + 8}" ${paintAttrs(
-              { fill: attributes.captionColor ?? '#94a3b8', stroke: 'none' },
-              '#94a3b8',
-            )} font-size="${Math.max(10, num(attributes.fontSize, 48) * 0.28)}" dominant-baseline="middle">${escapeXml(
-              String(attributes.text),
-            )}</text>`
-          : ''
-      }</g>`;
-
-    case 'progress-ring': {
-      const radius = num(attributes.radius, num(attributes.r, 40));
-      const thickness = num(attributes.thickness, 8);
-      const progress = Math.max(0, Math.min(100, num(attributes.progress, 0)));
-      const circumference = 2 * Math.PI * radius;
-      const center = radius + thickness / 2;
-      return `<g>
-  <circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${paint(
-    attributes.trackColor,
-    '#1e293b',
-  )}" stroke-width="${thickness}" />
-  <circle data-role="progress-ring-indicator" cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="${paint(
-    attributes.progressColor,
-    '#38bdf8',
-  )}" stroke-width="${thickness}" stroke-linecap="round" stroke-dasharray="${circumference}" stroke-dashoffset="${
-    circumference * (1 - progress / 100)
-  }" transform="rotate(-90 ${center} ${center})" />
-  <text data-role="progress-ring-label" x="${center}" y="${center}" ${paintAttrs(
-    { fill: attributes.fill ?? '#f8fafc', stroke: 'none' },
-    '#f8fafc',
-  )} font-size="${num(attributes.fontSize, 24)}" font-weight="${escapeXml(
-    String(attributes.fontWeight ?? 600),
-  )}" text-anchor="middle" dominant-baseline="middle">${Math.round(progress)}%</text>
-</g>`;
-    }
-
-    case 'bar-chart': {
-      const bars: Array<{
-        id?: string;
-        label?: string;
-        value: number;
-        color?: string;
-      }> = Array.isArray(attributes.bars) ? attributes.bars : [];
-      const max = num(
-        attributes.maxVal,
-        Math.max(1, ...bars.map((bar) => num(bar.value, 0))),
-      );
-      const chartWidth = num(attributes.width, 400);
-      const chartHeight = num(attributes.height, 300);
-      const spacing = num(attributes.barSpacing, 16);
-      const orientation = String(attributes.orientation ?? 'vertical');
-      const barThickness =
-        bars.length > 0
-          ? Math.max(
-              4,
-              ((orientation === 'vertical' ? chartWidth : chartHeight) -
-                spacing * (bars.length - 1)) /
-                bars.length,
-            )
-          : 0;
-      const progress =
-        Math.max(0, Math.min(100, num(attributes.progress, 100))) / 100;
-
-      const rects = bars
-        .map((bar, index) => {
-          const ratio = Math.max(0, num(bar.value, 0)) / Math.max(1, max);
-          const offset = index * (barThickness + spacing);
-          const color = paint(bar.color ?? attributes.fill, '#38bdf8');
-          if (orientation === 'horizontal') {
-            return `<rect data-role="bar-chart-bar" data-orientation="horizontal" data-target-length="${
-              chartWidth * ratio
-            }" data-base-pos="0" x="0" y="${offset}" width="${chartWidth * ratio * progress}" height="${barThickness}" rx="${num(
-              attributes.barRadius,
-              4,
-            )}" fill="${color}" />`;
-          }
-          const length = chartHeight * ratio;
-          return `<rect data-role="bar-chart-bar" data-orientation="vertical" data-target-length="${length}" data-base-pos="${chartHeight}" x="${offset}" y="${
-            chartHeight - length * progress
-          }" width="${barThickness}" height="${length * progress}" rx="${num(
-            attributes.barRadius,
-            4,
-          )}" fill="${color}" />`;
-        })
-        .join('');
-
-      return `<g>${rects}</g>`;
-    }
-
-    case 'lower-third': {
-      const cardWidth = num(attributes.width, 380);
-      const cardHeight = num(attributes.height, 64);
-      const progress =
-        Math.max(0, Math.min(100, num(attributes.progress, 100))) / 100;
-      const accentWidth = 4 * progress;
-      return `<g>
-  <rect x="0" y="0" width="${cardWidth}" height="${cardHeight}" rx="10" fill="${paint(
-    attributes.cardBg,
-    'rgba(15, 23, 42, 0.88)',
-  )}" stroke="rgba(148,163,184,0.22)" />
-  <rect data-role="lower-third-accent" data-full-width="4" x="0" y="0" width="${accentWidth}" height="${cardHeight}" rx="2" fill="${paint(
-    attributes.accentColor,
-    '#38bdf8',
-  )}" />
-  <text x="22" y="${cardHeight / 2 - 8}" fill="#f8fafc" font-size="18" font-weight="700" dominant-baseline="middle">${escapeXml(
-    String(attributes.title ?? ''),
-  )}</text>
-  <text x="22" y="${cardHeight / 2 + 12}" fill="#94a3b8" font-size="12" dominant-baseline="middle">${escapeXml(
-    String(attributes.subtitle ?? ''),
-  )}</text>
-</g>`;
-    }
-
-    case 'spline-tracer':
-      return `<circle data-role="tracer-dot" cx="0" cy="0" r="${num(attributes.r, 5)}" fill="${paint(
-        attributes.fill,
-        '#38bdf8',
-      )}" />`;
-
     case 'group':
       return '';
 
-    default: {
-      switch (kind) {
-        case 'circle':
-          return `<circle cx="${width / 2}" cy="${height / 2}" r="${width / 2}" ${paintAttrs(
-            attributes,
-          )} />`;
-        case 'ellipse':
-          return `<ellipse cx="${width / 2}" cy="${height / 2}" rx="${width / 2}" ry="${height / 2}" ${paintAttrs(
-            attributes,
-          )} />`;
-        case 'polygon':
-          return `<polygon points="${polygonPoints(
-            num(attributes.polygonSides, num(attributes.sides, 5)),
-            width / 2,
-          )}" transform="translate(${width / 2} ${height / 2})" ${paintAttrs(attributes)} />`;
-        case 'star':
-          return `<polygon points="${starPoints(
-            width / 2,
-            num(attributes.starRatio, 0.5),
-          )}" transform="translate(${width / 2} ${height / 2})" ${paintAttrs(attributes)} />`;
-        default:
-          return `<rect x="0" y="0" width="${width}" height="${height}" rx="${num(
-            attributes.rx,
-            0,
-          )}" ry="${num(attributes.ry, num(attributes.rx, 0))}" ${paintAttrs(attributes)} />`;
-      }
-    }
+    default:
+      return '';
   }
 }
 
@@ -377,10 +269,11 @@ export function elementTreeMarkup(
 }
 
 export function staticSvgMarkup(
-  project: TraceProject,
+  inputProject: TraceProject,
   timeMs: number,
   options: { background?: string; size?: boolean } = {},
 ): string {
+  const project = migrateTraceProject(inputProject);
   const defs = `${gradientsToDefs(project.gradients)}${project.defs ?? ''}`;
   const roots = project.rootElementIds
     .map((elementId) => elementTreeMarkup(project, elementId, timeMs))

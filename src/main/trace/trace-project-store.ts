@@ -19,6 +19,7 @@ import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic'
 
 import { createBlankTraceProject } from '../../lib/trace/defaults'
+import { migrateTraceProject } from '../../lib/trace/migrate'
 import type { TraceProject } from '../../lib/trace/types'
 import type { TraceProjectIndex, TraceProjectIndexRow } from './trace-project-index.js'
 
@@ -138,7 +139,7 @@ export class TraceProjectStore {
 
     this.index.touch(id, this.now().toISOString())
 
-    return { project: file.project, path: directory, revision: file.revision }
+    return { project: migrateTraceProject(file.project), path: directory, revision: file.revision }
   }
 
   async saveProject(

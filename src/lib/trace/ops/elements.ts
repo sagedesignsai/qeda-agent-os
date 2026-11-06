@@ -12,11 +12,10 @@
  */
 
 import type {
-  BarChartItem,
-  KineticTextEffect,
   TraceElement,
   TraceElementType,
 } from '../types';
+import { starPoints } from '../serialize/svg-markup';
 
 interface SpecBase {
   /** Caller-supplied id. Generated when omitted; always returned by the op. */
@@ -32,74 +31,6 @@ interface PositionedSpec extends SpecBase {
   /** Anchor. Center for text/composites, top-left for shapes. */
   x?: number;
   y?: number;
-}
-
-export interface KineticTextSpec extends PositionedSpec {
-  type: 'kinetic-text';
-  text: string;
-  fontSize?: number;
-  fontWeight?: number | string;
-  fontFamily?: string;
-  fill?: string;
-  opacity?: number;
-  textAnchor?: 'start' | 'middle' | 'end';
-  effect?: KineticTextEffect;
-  revealProgress?: number;
-  letterSpacing?: number;
-  staggerMs?: number;
-}
-
-export interface LowerThirdSpec extends PositionedSpec {
-  type: 'lower-third';
-  title: string;
-  subtitle?: string;
-  badgeText?: string;
-  accentColor?: string;
-  cardBg?: string;
-  width?: number;
-  height?: number;
-  opacity?: number;
-}
-
-export interface CounterSpec extends PositionedSpec {
-  type: 'counter';
-  /** Optional caption rendered under the number. */
-  text?: string;
-  startVal?: number;
-  endVal?: number;
-  prefix?: string;
-  suffix?: string;
-  decimals?: number;
-  fontSize?: number;
-  fontWeight?: number | string;
-  fill?: string;
-  opacity?: number;
-}
-
-export interface ProgressRingSpec extends PositionedSpec {
-  type: 'progress-ring';
-  radius?: number;
-  thickness?: number;
-  progress?: number;
-  progressColor?: string;
-  trackColor?: string;
-  showPercentageLabel?: boolean;
-  fontSize?: number;
-  fontWeight?: number | string;
-  fill?: string;
-  opacity?: number;
-}
-
-export interface BarChartSpec extends PositionedSpec {
-  type: 'bar-chart';
-  bars: BarChartItem[];
-  maxVal?: number;
-  width?: number;
-  height?: number;
-  barSpacing?: number;
-  barRadius?: number;
-  orientation?: 'vertical' | 'horizontal';
-  opacity?: number;
 }
 
 export interface TextSpec extends PositionedSpec {
@@ -121,11 +52,14 @@ export interface ShapeSpec extends PositionedSpec {
   width?: number;
   height?: number;
   radius?: number;
+  ry?: number;
+  starRatio?: number;
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
   opacity?: number;
   rx?: number;
+  points?: string;
 }
 
 export interface PathSpec extends PositionedSpec {
@@ -145,30 +79,52 @@ export interface GroupSpec extends PositionedSpec {
   opacity?: number;
 }
 
-export interface SplineTracerSpec extends SpecBase {
-  type: 'spline-tracer';
-  name?: string;
-  radius?: number;
-  fill?: string;
+export interface LineSpec extends PositionedSpec {
+  type: 'line';
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  stroke?: string;
+  strokeWidth?: number;
   opacity?: number;
-  tracerGlow?: boolean;
-  autoRotate?: boolean;
-  motionPathTargetId?: string;
-  motionPathData?: string;
-  pathProgress?: number;
+}
+
+export interface PolylineSpec extends PositionedSpec {
+  type: 'polyline';
+  points?: string;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  opacity?: number;
+}
+
+export interface ImageSpec extends PositionedSpec {
+  type: 'image';
+  href?: string;
+  width?: number;
+  height?: number;
+  preserveAspectRatio?: string;
+  opacity?: number;
+}
+
+export interface UseSpec extends PositionedSpec {
+  type: 'use';
+  href?: string;
+  width?: number;
+  height?: number;
+  opacity?: number;
 }
 
 export type TraceElementSpec =
-  | KineticTextSpec
-  | LowerThirdSpec
-  | CounterSpec
-  | ProgressRingSpec
-  | BarChartSpec
   | TextSpec
   | ShapeSpec
   | PathSpec
   | GroupSpec
-  | SplineTracerSpec;
+  | LineSpec
+  | PolylineSpec
+  | ImageSpec
+  | UseSpec;
 
 function withScene(element: TraceElement, spec: SpecBase): TraceElement {
   return {
@@ -215,11 +171,48 @@ export function createElementFromSpec(
         spec,
       );
     }
+    case 'star': {
+      const x = spec.x ?? 0;
+      const y = spec.y ?? 0;
+      const w = spec.width ?? 160;
+      const h = spec.height ?? w;
+      const radius = spec.radius ?? w / 2;
+      const starRatio = spec.starRatio ?? 0.5;
+      const points = starPoints(radius, starRatio)
+        .split(' ')
+        .map((point) => {
+          const [pointX, pointY] = point.split(',').map(Number);
+          return `${pointX + w / 2},${pointY + h / 2}`;
+        })
+        .join(' ');
+      return withScene(
+        {
+          id,
+          name: spec.name ?? 'Star',
+          type: 'polygon' as TraceElementType,
+          visible,
+          locked,
+          origin: { x, y },
+          attributes: {
+            x,
+            y,
+            width: w,
+            height: h,
+            points,
+            fill: spec.fill ?? '#38bdf8',
+            stroke: spec.stroke ?? 'none',
+            strokeWidth: spec.strokeWidth ?? 0,
+            opacity: spec.opacity ?? 1,
+          },
+          tracks: [],
+        },
+        spec,
+      );
+    }
     case 'rect':
     case 'circle':
     case 'ellipse':
-    case 'polygon':
-    case 'star': {
+    case 'polygon': {
       const x = spec.x ?? 0;
       const y = spec.y ?? 0;
       return withScene(
@@ -238,9 +231,112 @@ export function createElementFromSpec(
             height: spec.height ?? 100,
             radius: spec.radius,
             rx: spec.rx,
+            ry: spec.ry,
+            ...(spec.points ? { points: spec.points } : {}),
             fill: spec.fill ?? '#38bdf8',
             stroke: spec.stroke ?? 'none',
             strokeWidth: spec.strokeWidth ?? 0,
+            opacity: spec.opacity ?? 1,
+          },
+          tracks: [],
+        },
+        spec,
+      );
+    }
+    case 'line': {
+      const x = spec.x ?? 0;
+      const y = spec.y ?? 0;
+      return withScene(
+        {
+          id,
+          name: spec.name ?? 'Line',
+          type: 'line' as TraceElementType,
+          visible,
+          locked,
+          origin: { x, y },
+          attributes: {
+            x,
+            y,
+            x1: spec.x1 ?? 0,
+            y1: spec.y1 ?? 0,
+            x2: spec.x2 ?? 200,
+            y2: spec.y2 ?? 0,
+            stroke: spec.stroke ?? '#38bdf8',
+            strokeWidth: spec.strokeWidth ?? 2,
+            opacity: spec.opacity ?? 1,
+          },
+          tracks: [],
+        },
+        spec,
+      );
+    }
+    case 'polyline': {
+      const x = spec.x ?? 0;
+      const y = spec.y ?? 0;
+      return withScene(
+        {
+          id,
+          name: spec.name ?? 'Polyline',
+          type: 'polyline' as TraceElementType,
+          visible,
+          locked,
+          origin: { x, y },
+          attributes: {
+            x,
+            y,
+            points: spec.points ?? '0,60 60,0 120,60 180,0 240,60',
+            fill: spec.fill ?? 'none',
+            stroke: spec.stroke ?? '#38bdf8',
+            strokeWidth: spec.strokeWidth ?? 2,
+            opacity: spec.opacity ?? 1,
+          },
+          tracks: [],
+        },
+        spec,
+      );
+    }
+    case 'image': {
+      const x = spec.x ?? 0;
+      const y = spec.y ?? 0;
+      return withScene(
+        {
+          id,
+          name: spec.name ?? 'Image',
+          type: 'image' as TraceElementType,
+          visible,
+          locked,
+          origin: { x, y },
+          attributes: {
+            x,
+            y,
+            href: spec.href ?? '',
+            width: spec.width ?? 240,
+            height: spec.height ?? 160,
+            preserveAspectRatio: spec.preserveAspectRatio ?? 'xMidYMid meet',
+            opacity: spec.opacity ?? 1,
+          },
+          tracks: [],
+        },
+        spec,
+      );
+    }
+    case 'use': {
+      const x = spec.x ?? 0;
+      const y = spec.y ?? 0;
+      return withScene(
+        {
+          id,
+          name: spec.name ?? 'Use',
+          type: 'use' as TraceElementType,
+          visible,
+          locked,
+          origin: { x, y },
+          attributes: {
+            x,
+            y,
+            href: spec.href ?? '',
+            width: spec.width ?? 100,
+            height: spec.height ?? 100,
             opacity: spec.opacity ?? 1,
           },
           tracks: [],
@@ -296,186 +392,8 @@ export function createElementFromSpec(
       return withScene(element, spec);
     }
 
-    case 'spline-tracer': {
-      return withScene(
-        {
-          id,
-          name: spec.name ?? 'Spline Tracer',
-          type: 'spline-tracer' as TraceElementType,
-          visible,
-          locked,
-          origin: { x: 0, y: 0 },
-          attributes: {
-            r: spec.radius ?? 5,
-            fill: spec.fill ?? '#38bdf8',
-            opacity: spec.opacity ?? 1,
-            tracerGlow: spec.tracerGlow ?? true,
-            autoRotate: spec.autoRotate ?? true,
-            alignOrigin: [0.5, 0.5] as [number, number],
-            tailLength: 2,
-            pathProgress: spec.pathProgress ?? 0,
-            ...(spec.motionPathTargetId
-              ? { motionPathTargetId: spec.motionPathTargetId }
-              : {}),
-            ...(spec.motionPathData
-              ? { motionPathData: spec.motionPathData }
-              : {}),
-          },
-          tracks: [],
-        },
-        spec,
-      );
-    }
-    case 'kinetic-text': {
-      const x = spec.x ?? 0;
-      const y = spec.y ?? 0;
-      return withScene(
-        {
-          id,
-          name: spec.name ?? 'Kinetic Text',
-          type: 'kinetic-text' as TraceElementType,
-          visible,
-          locked,
-          origin: { x, y },
-          attributes: {
-            text: spec.text,
-            baseX: x,
-            baseY: y,
-            fontSize: spec.fontSize ?? 44,
-            fontWeight: spec.fontWeight ?? 800,
-            fontFamily: spec.fontFamily ?? 'Inter, sans-serif',
-            fill: spec.fill ?? '#ffffff',
-            textAnchor: spec.textAnchor ?? 'start',
-            letterSpacing: spec.letterSpacing ?? 0,
-            opacity: spec.opacity ?? 1,
-            effect: spec.effect ?? 'typewriter',
-            revealProgress: spec.revealProgress ?? 0,
-            staggerMs: spec.staggerMs ?? 0,
-          },
-          tracks: [],
-        },
-        spec,
-      );
-    }
-
-    case 'lower-third': {
-      const x = spec.x ?? 0;
-      const y = spec.y ?? 0;
-      return withScene(
-        {
-          id,
-          name: spec.name ?? 'Lower Third',
-          type: 'lower-third' as TraceElementType,
-          visible,
-          locked,
-          origin: { x, y },
-          attributes: {
-            title: spec.title,
-            subtitle: spec.subtitle ?? '',
-            badgeText: spec.badgeText ?? '',
-            accentColor: spec.accentColor ?? '#38bdf8',
-            cardBg: spec.cardBg ?? 'rgba(15, 23, 42, 0.85)',
-            width: spec.width ?? 380,
-            height: spec.height ?? 64,
-            x,
-            y,
-            opacity: spec.opacity ?? 1,
-          },
-          tracks: [],
-        },
-        spec,
-      );
-    }
-    case 'counter': {
-      const x = spec.x ?? 0;
-      const y = spec.y ?? 0;
-      return withScene(
-        {
-          id,
-          name: spec.name ?? 'Counter',
-          type: 'counter' as TraceElementType,
-          visible,
-          locked,
-          origin: { x, y },
-          attributes: {
-            text: spec.text ?? '',
-            startVal: spec.startVal ?? 0,
-            endVal: spec.endVal ?? 100,
-            prefix: spec.prefix ?? '',
-            suffix: spec.suffix ?? '',
-            decimals: spec.decimals ?? 0,
-            fontSize: spec.fontSize ?? 48,
-            fontWeight: spec.fontWeight ?? 800,
-            fill: spec.fill ?? '#ffffff',
-            opacity: spec.opacity ?? 1,
-            counterValue: 0,
-          },
-          tracks: [],
-        },
-        spec,
-      );
-    }
-
-    case 'progress-ring': {
-      const x = spec.x ?? 0;
-      const y = spec.y ?? 0;
-      return withScene(
-        {
-          id,
-          name: spec.name ?? 'Progress Ring',
-          type: 'progress-ring' as TraceElementType,
-          visible,
-          locked,
-          origin: { x, y },
-          attributes: {
-            radius: spec.radius ?? 40,
-            thickness: spec.thickness ?? 8,
-            progress: spec.progress ?? 0,
-            progressColor: spec.progressColor ?? '#38bdf8',
-            trackColor: spec.trackColor ?? '#e2e8f0',
-            showPercentageLabel: spec.showPercentageLabel ?? true,
-            fontSize: spec.fontSize ?? 24,
-            fontWeight: spec.fontWeight ?? 600,
-            fill: spec.fill ?? '#ffffff',
-            opacity: spec.opacity ?? 1,
-          },
-          tracks: [],
-        },
-        spec,
-      );
-    }
-
-    case 'bar-chart': {
-      const x = spec.x ?? 0;
-      const y = spec.y ?? 0;
-      return withScene(
-        {
-          id,
-          name: spec.name ?? 'Bar Chart',
-          type: 'bar-chart' as TraceElementType,
-          visible,
-          locked,
-          origin: { x, y },
-          attributes: {
-            bars: spec.bars,
-            maxVal: spec.maxVal,
-            width: spec.width ?? 400,
-            height: spec.height ?? 300,
-            barSpacing: spec.barSpacing ?? 16,
-            barRadius: spec.barRadius ?? 4,
-            orientation: spec.orientation ?? 'vertical',
-            opacity: spec.opacity ?? 1,
-          },
-          tracks: [],
-        },
-        spec,
-      );
-    }
-
-    default: {
-      const exhaustive: never = spec;
-      throw new Error(`Unknown element spec: ${JSON.stringify(exhaustive)}`);
-    }
+    default:
+      throw new Error('Unsupported element spec type.');
   }
 }
 

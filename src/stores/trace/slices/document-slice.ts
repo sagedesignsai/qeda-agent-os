@@ -6,6 +6,7 @@
  */
 
 import { applyOps } from '@/lib/trace/ops';
+import { migrateTraceProject } from '@/lib/trace/migrate';
 import type { TraceApplyOpsResult, TraceOp } from '@/lib/trace/ops/types';
 import type { TraceProject } from '@/lib/trace/types';
 
@@ -56,9 +57,10 @@ export const createDocumentSlice: TraceSliceCreator<
   ...initialState,
 
   loadProject: (project, options = {}) => {
+    const normalizedProject = migrateTraceProject(project);
     setHistoryOpActive(true);
     set({
-      project,
+      project: normalizedProject,
       projectPath: options.path ?? null,
       revision: options.revision ?? 0,
       dirty: false,
@@ -74,7 +76,7 @@ export const createDocumentSlice: TraceSliceCreator<
         selectedKeyframeIds: [],
         expandedElementIds: [],
         collapsedElementIds: [],
-        activeSceneId: activeSceneOf(project),
+        activeSceneId: activeSceneOf(normalizedProject),
       },
       past: [],
       future: [],

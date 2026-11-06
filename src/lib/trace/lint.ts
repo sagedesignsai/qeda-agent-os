@@ -47,9 +47,12 @@ const ANIMATABLE_PROPERTIES = new Set<AnimatableProperty>([
   'width',
   'height',
   'rx',
-  'counterValue',
-  'progress',
-  'revealProgress',
+  'ry',
+  'x1',
+  'y1',
+  'x2',
+  'y2',
+  'points',
   'pathProgress',
   'trimStart',
   'trimEnd',
@@ -67,13 +70,12 @@ const STRING_PROPERTIES = new Set<AnimatableProperty>([
   'stroke',
   'text',
   'strokeDasharray',
+  'points',
   'boxShadow',
   'backgroundColor',
   'borderColor',
   'color',
 ]);
-
-const TEXT_TYPES = new Set(['text', 'kinetic-text']);
 
 /** Duplicate keyframes closer than this are treated as accidental. */
 const DUPLICATE_KEYFRAME_TOLERANCE_MS = 10;
@@ -338,7 +340,7 @@ export function lintTraceProject(
       }
     }
 
-    if (TEXT_TYPES.has(element.type)) {
+    if (element.type === 'text') {
       const text =
         typeof element.attributes.text === 'string'
           ? element.attributes.text
