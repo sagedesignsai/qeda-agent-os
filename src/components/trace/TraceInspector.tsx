@@ -1,28 +1,35 @@
 /**
  * components/trace/TraceInspector.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Descriptor-driven property inspector.
+ * Descriptor-driven property inspector, laid out like a design panel:
+ * Transform (align to artboard, X/Y, rotation, scale), Layout (dimensions with
+ * aspect lock), Appearance, Fill, Stroke, Text, Path, Layer and Animation.
  *
  * Fields read the value resolved at the playhead (so an animated property shows
  * the frame you are looking at) and write through `updateAttributes`, which
- * auto-keyframes when a track already exists. The stopwatch on each row creates
- * or removes that track — the same interaction model as a desktop motion editor.
- *
- * Uses polished controls from the Motion Inspector (ScrubNumberField, ColorField)
- * and shadcn primitives (Select, Collapsible) for consistent theming and UX.
+ * auto-keyframes when a track already exists. Every numeric field is a
+ * `ScrubField`: drag the handle to scrub, commit once on release. The stopwatch
+ * lives inside the field and creates/removes that property's track.
  */
 
 import { useState } from 'react';
 import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  ClockIcon,
+  BlendIcon,
+  CaseSensitiveIcon,
   DiamondIcon,
+  EyeIcon,
+  EyeOffIcon,
+  FlipHorizontalIcon,
+  FlipVerticalIcon,
+  LockIcon,
+  RadiusIcon,
+  RotateCcwIcon,
+  RotateCwIcon,
+  SplineIcon,
   Trash2Icon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -33,11 +40,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
+  AlignGroup,
   ColorField,
-} from '@/components/motion/inspector/controls/color-field';
-import {
-  ScrubNumberField,
-} from '@/components/motion/inspector/controls/scrub-number';
+  FieldRow,
+  LinkToggle,
+  PairRow,
+  TrackButton,
+  type AlignKind,
+} from '@/components/trace/inspector/fields';
+import { PanelSection } from '@/components/trace/inspector/section';
+import { ScrubField } from '@/components/trace/inspector/scrub-field';
 import {
   getAnimatableProperties,
   getPropertyDescriptor,
@@ -45,6 +57,11 @@ import {
 } from '@/lib/trace/elements/registry';
 import { resolveElementAtTime } from '@/lib/trace/runtime/resolve-element';
 import { getElementPosition, positionPatch } from '@/lib/trace/resolve';
+import {
+  findElementDom,
+  measureElementBBox,
+} from '@/lib/trace/runtime/dom-renderer';
+import { getObbCorners } from '@/lib/trace/gizmo/geometry';
 import type {
   AnimatableProperty,
   Keyframe,
@@ -70,112 +87,7 @@ const EASINGS = [
   'bounce.out',
 ];
 
-function Section({
-  title,
-  children,
-  action,
-}: {
-  title: string;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
-  return (
-    <section className="border-b border-white/8 px-3 py-3">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-          {title}
-        </p>
-        {action}
-      </div>
-      <div className="space-y-2">{children}</div>
-    </section>
-  );
-}
-
-function FieldRow({
-  label,
-  children,
-  hasTrack,
-  onToggleTrack,
-}: {
-  label: string;
-  children: React.ReactNode;
-  hasTrack?: boolean;
-  onToggleTrack?: () => void;
-}) {
-  return (
-    <div className="group grid grid-cols-[1fr_auto] items-center gap-2">
-      <label className="flex min-w-0 items-center gap-1 text-[11px] text-slate-400">
-        <button
-          type="button"
-          onClick={onToggleTrack}
-          disabled={!onToggleTrack}
-          title={hasTrack ? 'Remove animation track' : 'Animate this property'}
-          className={
-            'flex size-4 shrink-0 items-center justify-center rounded ' +
-            (hasTrack
-              ? 'text-sky-300'
-              : 'text-slate-700 opacity-0 hover:text-slate-300 group-hover:opacity-100 disabled:hidden')
-          }
-          aria-label={hasTrack ? `Remove ${label} track` : `Animate ${label}`}
-        >
-          <ClockIcon className="size-3" />
-        </button>
-        <span className="truncate">{label}</span>
-      </label>
-      {children}
-    </div>
-  );
-}
-
-function NumberInput({
-  value,
-  step = 1,
-  onChange,
-}: {
-  value: number | string;
-  step?: number;
-  onChange: (value: number) => void;
-}) {
-  return (
-    <Input
-      type="number"
-      step={step}
-      value={Number.isFinite(Number(value)) ? Number(value) : 0}
-      onChange={(event) => {
-        const next = Number(event.target.value);
-        if (Number.isFinite(next)) onChange(next);
-      }}
-      className="h-7 w-full border-white/10 bg-white/[0.04] text-right font-mono text-[11px] text-slate-200 focus-visible:ring-sky-400/40"
-    />
-  );
-}
-
-function ColorInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const isPlainColor = /^#[0-9a-f]{3,8}$/i.test(value);
-  return (
-    <div className="flex items-center gap-1">
-      <input
-        type="color"
-        value={isPlainColor ? value : '#38bdf8'}
-        onChange={(event) => onChange(event.target.value)}
-        className="size-7 shrink-0 cursor-pointer rounded border border-white/10 bg-transparent p-0.5"
-        aria-label="Pick color"
-      />
-      <Input
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-7 border-white/10 bg-white/[0.04] font-mono text-[10px] text-slate-200 focus-visible:ring-sky-400/40"
-      />
-    </div>
-  );
-}
+/* ── Value helpers ─────────────────────────────────────────────────────────── */
 
 function propertyValue(
   element: TraceElement,
@@ -193,9 +105,42 @@ function propertyValue(
     ];
   }
   const raw = element.attributes?.[descriptor?.attribute ?? property];
-  if (raw !== undefined && raw !== null) return raw;
-  return descriptor?.kind === 'color' ? '#ffffff' : '';
+  if (raw !== undefined && raw !== null && raw !== '') return raw;
+
+  // Sensible defaults so an unset animated property doesn't read as 0%
+  // (the old panel showed a freshly selected layer at 0% opacity).
+  switch (property) {
+    case 'opacity':
+    case 'fillOpacity':
+    case 'scaleX':
+    case 'scaleY':
+      return 1;
+    case 'strokeWidth':
+      return 1;
+    case 'fontSize':
+      return 16;
+    default:
+      return descriptor?.kind === 'color' ? '#ffffff' : '';
+  }
 }
+
+function usePropertySetter(element: TraceElement, timeMs: number) {
+  const updateAttributes = useTraceStore((state) => state.updateAttributes);
+  return (property: AnimatableProperty, next: number | string) => {
+    if (property === 'x' || property === 'y') {
+      const position = getElementPosition(element, timeMs);
+      const target =
+        property === 'x'
+          ? { x: Number(next), y: position.y }
+          : { x: position.x, y: Number(next) };
+      updateAttributes(element.id, positionPatch(element, target, timeMs));
+      return;
+    }
+    updateAttributes(element.id, { [property]: next });
+  };
+}
+
+/* ── Generic descriptor field ──────────────────────────────────────────────── */
 
 function PropertyField({
   element,
@@ -204,73 +149,821 @@ function PropertyField({
   element: TraceElement;
   descriptor: PropertyDescriptor;
 }) {
-  const updateAttributes = useTraceStore((state) => state.updateAttributes);
-  const togglePropertyTrack = useTraceStore(
-    (state) => state.togglePropertyTrack,
-  );
   const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
-  const hasTrack = element.tracks.some(
-    (track) => track.property === descriptor.property,
-  );
+  const set = usePropertySetter(element, timeMs);
   const value = propertyValue(element, descriptor.property, timeMs);
+  const track = (
+    <TrackButton
+      element={element}
+      property={descriptor.property}
+      label={descriptor.label}
+    />
+  );
 
-  const set = (next: number | string) => {
-    if (descriptor.property === 'x' || descriptor.property === 'y') {
-      const position = getElementPosition(element, timeMs);
-      const target =
-        descriptor.property === 'x'
-          ? { x: Number(next), y: position.y }
-          : { x: position.x, y: Number(next) };
-      updateAttributes(element.id, positionPatch(element, target, timeMs));
-      return;
-    }
-    updateAttributes(element.id, { [descriptor.property]: next });
-  };
-
-  let control: React.ReactNode;
   if (descriptor.kind === 'color') {
-    control = <ColorInput value={String(value ?? '#ffffff')} onChange={set} />;
-  } else if (descriptor.kind === 'text') {
-    control = (
-      <textarea
-        value={String(value ?? '')}
-        onChange={(event) => set(event.target.value)}
-        rows={2}
-        className="w-full resize-y rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[11px] text-slate-200 outline-none focus:border-sky-400/40"
-      />
-    );
-  } else if (descriptor.kind === 'percent' && descriptor.max === 1) {
-    control = (
-      <NumberInput
-        value={Math.round(Number(value ?? 0) * 100)}
-        step={1}
-        onChange={(next) => set(Math.max(0, Math.min(1, next / 100)))}
-      />
-    );
-  } else {
-    control = (
-      <NumberInput
-        value={value as number}
-        step={descriptor.step ?? 1}
-        onChange={(next) => {
-          const min = descriptor.min ?? -Infinity;
-          const max = descriptor.max ?? Infinity;
-          set(Math.min(max, Math.max(min, next)));
-        }}
-      />
+    return (
+      <FieldRow label={descriptor.label} wide>
+        <ColorField
+          label={descriptor.label}
+          value={String(value ?? '#ffffff')}
+          onChange={(next) => set(descriptor.property, next)}
+          trailing={track}
+        />
+      </FieldRow>
     );
   }
 
+  if (descriptor.kind === 'select' && descriptor.options) {
+    return (
+      <FieldRow label={descriptor.label} wide>
+        <div className="flex items-center gap-1">
+          <Select
+            value={String(value ?? '')}
+            onValueChange={(next) => set(descriptor.property, next)}
+          >
+            <SelectTrigger
+              aria-label={descriptor.label}
+              className="h-7 min-w-0 flex-1 bg-muted/20 text-[11px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {descriptor.options.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {track}
+        </div>
+      </FieldRow>
+    );
+  }
+
+  if (descriptor.kind === 'boolean') {
+    return (
+      <FieldRow label={descriptor.label}>
+        <div className="group/row flex h-7 items-center justify-end gap-2">
+          {track}
+          <input
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(event) =>
+              set(descriptor.property, event.target.checked)
+            }
+            aria-label={descriptor.label}
+            className="size-4 accent-sky-500"
+          />
+        </div>
+      </FieldRow>
+    );
+  }
+
+  if (
+    descriptor.kind === 'text' ||
+    descriptor.kind === 'strokeDash' ||
+    descriptor.kind === 'boxShadow'
+  ) {
+    return (
+      <FieldRow label={descriptor.label} wide align="start">
+        <div className="group/row flex items-start gap-1">
+          <Input
+            value={String(value ?? '')}
+            onChange={(event) =>
+              set(descriptor.property, event.target.value)
+            }
+            aria-label={descriptor.label}
+            spellCheck={false}
+            className="h-7 min-w-0 flex-1 bg-muted/20 font-mono text-[11px]"
+          />
+          {track}
+        </div>
+      </FieldRow>
+    );
+  }
+
+  // Numeric kinds: number, percent, progress, borderRadius.
+  const ratio = descriptor.kind === 'percent' && descriptor.max === 1;
+  const numeric = Number(value);
+  const display = ratio
+    ? Math.round((Number.isFinite(numeric) ? numeric : 0) * 100)
+    : Number.isFinite(numeric)
+      ? numeric
+      : 0;
+  const suffix =
+    ratio || descriptor.kind === 'percent' || descriptor.kind === 'progress'
+      ? '%'
+      : descriptor.kind === 'borderRadius'
+        ? 'px'
+        : undefined;
+
   return (
-    <FieldRow
-      label={descriptor.label}
-      hasTrack={hasTrack}
-      onToggleTrack={() => togglePropertyTrack(element.id, descriptor.property)}
-    >
-      {control}
+    <FieldRow label={descriptor.label}>
+      <ScrubField
+        label={descriptor.label}
+        value={display}
+        min={ratio ? 0 : descriptor.min}
+        max={ratio ? 100 : descriptor.max}
+        step={ratio ? 1 : (descriptor.step ?? 1)}
+        suffix={suffix}
+        onChange={(next) =>
+          set(
+            descriptor.property,
+            ratio ? Math.max(0, Math.min(1, next / 100)) : next,
+          )
+        }
+        trailing={track}
+      />
     </FieldRow>
   );
 }
+
+/* ── Transform ─────────────────────────────────────────────────────────────── */
+
+function TransformSection({ element }: { element: TraceElement }) {
+  const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
+  const set = usePropertySetter(element, timeMs);
+  const updateAttributes = useTraceStore((state) => state.updateAttributes);
+  const project = useTraceStore((state) => state.project);
+  const [scaleLinked, setScaleLinked] = useState(false);
+
+  const x = Number(propertyValue(element, 'x', timeMs)) || 0;
+  const y = Number(propertyValue(element, 'y', timeMs)) || 0;
+  const rotation = Number(propertyValue(element, 'rotation', timeMs)) || 0;
+  const scaleX = Number(propertyValue(element, 'scaleX', timeMs)) || 1;
+  const scaleY = Number(propertyValue(element, 'scaleY', timeMs)) || 1;
+
+  const align = (kind: AlignKind) => {
+    if (!project) return;
+    const node = findElementDom(element.id) as SVGGraphicsElement | null;
+    if (!node) return;
+    const box = measureElementBBox(node);
+    if (!box) return;
+    const { transform } = resolveElementAtTime(element, timeMs);
+    const corners = getObbCorners(box, transform, element.origin ?? { x: 0, y: 0 });
+    const xs = [corners.nw.x, corners.ne.x, corners.se.x, corners.sw.x];
+    const ys = [corners.nw.y, corners.ne.y, corners.se.y, corners.sw.y];
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    let dx = 0;
+    let dy = 0;
+    if (kind === 'left') dx = 0 - minX;
+    if (kind === 'centerH') dx = project.width / 2 - (minX + maxX) / 2;
+    if (kind === 'right') dx = project.width - maxX;
+    if (kind === 'top') dy = 0 - minY;
+    if (kind === 'centerV') dy = project.height / 2 - (minY + maxY) / 2;
+    if (kind === 'bottom') dy = project.height - maxY;
+    if (dx === 0 && dy === 0) return;
+    // Move the base position only — alignment must not disturb rotation or
+    // scale tracks the way a full transform patch would.
+    updateAttributes(
+      element.id,
+      positionPatch(
+        element,
+        { x: transform.x + dx, y: transform.y + dy },
+        timeMs,
+      ),
+    );
+  };
+
+  const setScale = (axis: 'x' | 'y', percent: number) => {
+    const next = percent / 100;
+    if (scaleLinked) {
+      // One dispatch for both axes: a single undo entry, and no unrelated
+      // rotation/position keyframes (transformPatch would write those too).
+      updateAttributes(element.id, { scaleX: next, scaleY: next });
+      return;
+    }
+    set(axis === 'x' ? 'scaleX' : 'scaleY', next);
+  };
+
+  return (
+    <PanelSection
+      title="Transform"
+      action={
+        <>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Reset rotation"
+            title="Reset rotation to 0°"
+            onClick={() => set('rotation', 0)}
+            className="size-6 text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcwIcon className="size-3" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Flip horizontally"
+            title="Flip horizontally"
+            onClick={() => set('scaleX', -scaleX)}
+            className="size-6 text-muted-foreground hover:text-foreground"
+          >
+            <FlipHorizontalIcon className="size-3" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            aria-label="Flip vertically"
+            title="Flip vertically"
+            onClick={() => set('scaleY', -scaleY)}
+            className="size-6 text-muted-foreground hover:text-foreground"
+          >
+            <FlipVerticalIcon className="size-3" />
+          </Button>
+        </>
+      }
+    >
+      <AlignGroup onAlign={align} />
+
+      <PairRow
+        left={
+          <ScrubField
+            label="X position"
+            prefix="X"
+            tone="x"
+            value={x}
+            step={1}
+            onChange={(next) => set('x', next)}
+            trailing={
+              <TrackButton element={element} property="x" label="X position" />
+            }
+          />
+        }
+        right={
+          <ScrubField
+            label="Y position"
+            prefix="Y"
+            tone="y"
+            value={y}
+            step={1}
+            onChange={(next) => set('y', next)}
+            trailing={
+              <TrackButton element={element} property="y" label="Y position" />
+            }
+          />
+        }
+      />
+
+      <FieldRow label="Rotation">
+        <ScrubField
+          label="Rotation"
+          prefix={<RotateCwIcon className="size-3" />}
+          suffix="°"
+          value={rotation}
+          step={1}
+          onChange={(next) => set('rotation', next)}
+          trailing={
+            <TrackButton
+              element={element}
+              property="rotation"
+              label="Rotation"
+            />
+          }
+        />
+      </FieldRow>
+
+      <PairRow
+        link={
+          <LinkToggle
+            linked={scaleLinked}
+            onToggle={() => setScaleLinked((linked) => !linked)}
+            label="scale axes"
+          />
+        }
+        left={
+          <ScrubField
+            label="Scale X"
+            prefix="X"
+            tone="x"
+            suffix="%"
+            value={Math.round(scaleX * 100)}
+            step={1}
+            onChange={(next) => setScale('x', next)}
+            trailing={
+              <TrackButton element={element} property="scaleX" label="Scale X" />
+            }
+          />
+        }
+        right={
+          <ScrubField
+            label="Scale Y"
+            prefix="Y"
+            tone="y"
+            suffix="%"
+            value={Math.round(scaleY * 100)}
+            step={1}
+            onChange={(next) => setScale('y', next)}
+            trailing={
+              <TrackButton element={element} property="scaleY" label="Scale Y" />
+            }
+          />
+        }
+      />
+    </PanelSection>
+  );
+}
+
+/* ── Layout ────────────────────────────────────────────────────────────────── */
+
+function LayoutSection({ element }: { element: TraceElement }) {
+  const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
+  const set = usePropertySetter(element, timeMs);
+  const updateAttributes = useTraceStore((state) => state.updateAttributes);
+  const [linked, setLinked] = useState(false);
+
+  const hasWidth = getPropertyDescriptor(element.type, 'width') !== undefined;
+  const hasHeight =
+    getPropertyDescriptor(element.type, 'height') !== undefined;
+  const width = Number(propertyValue(element, 'width', timeMs));
+  const height = Number(propertyValue(element, 'height', timeMs));
+
+  const setDimension = (axis: 'width' | 'height', next: number) => {
+    const value = Math.max(0, next);
+    if (linked && Number.isFinite(width) && Number.isFinite(height)) {
+      if (axis === 'width' && width > 0) {
+        // One dispatch so an aspect-locked resize is a single undo entry.
+        updateAttributes(element.id, {
+          width: value,
+          height: Math.round((height * value) / width),
+        });
+        return;
+      }
+      if (axis === 'height' && height > 0) {
+        updateAttributes(element.id, {
+          height: value,
+          width: Math.round((width * value) / height),
+        });
+        return;
+      }
+    }
+    set(axis, value);
+  };
+
+  const remaining = getAnimatableProperties(element.type).filter(
+    (descriptor) =>
+      descriptor.group === 'geometry' &&
+      descriptor.property !== 'width' &&
+      descriptor.property !== 'height' &&
+      descriptor.property !== 'rx' &&
+      // Poly points are edited by the Path section below.
+      descriptor.property !== 'points' &&
+      // Radii live in Appearance so they read consistently across types.
+      descriptor.property !== 'borderRadius',
+  );
+
+  if (!hasWidth && remaining.length === 0) return null;
+
+  return (
+    <PanelSection title="Layout">
+      {hasWidth ? (
+        <PairRow
+          link={
+            hasHeight ? (
+              <LinkToggle
+                linked={linked}
+                onToggle={() => setLinked((value) => !value)}
+                label="dimensions"
+              />
+            ) : undefined
+          }
+          left={
+            <ScrubField
+              label="Width"
+              prefix="W"
+              value={Number.isFinite(width) ? width : 0}
+              step={1}
+              min={0}
+              onChange={(next) => setDimension('width', next)}
+              trailing={
+                <TrackButton element={element} property="width" label="Width" />
+              }
+            />
+          }
+          right={
+            hasHeight ? (
+              <ScrubField
+                label="Height"
+                prefix="H"
+                value={Number.isFinite(height) ? height : 0}
+                step={1}
+                min={0}
+                onChange={(next) => setDimension('height', next)}
+                trailing={
+                  <TrackButton
+                    element={element}
+                    property="height"
+                    label="Height"
+                  />
+                }
+              />
+            ) : (
+              <span />
+            )
+          }
+        />
+      ) : null}
+
+      {remaining.map((descriptor) => (
+        <PropertyField
+          key={descriptor.property}
+          element={element}
+          descriptor={descriptor}
+        />
+      ))}
+    </PanelSection>
+  );
+}
+
+/* ── Appearance ────────────────────────────────────────────────────────────── */
+
+const PAINT_PROPERTIES = new Set<string>([
+  'fill',
+  'fillOpacity',
+  'stroke',
+  'strokeWidth',
+  'strokeDasharray',
+  'strokeDashoffset',
+]);
+
+function AppearanceSection({ element }: { element: TraceElement }) {
+  const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
+  const set = usePropertySetter(element, timeMs);
+  const hasOpacity =
+    getPropertyDescriptor(element.type, 'opacity') !== undefined;
+  // Only a <rect> has a meaningful corner radius. See LayoutSection.
+  const hasRadius =
+    element.type === 'rect' &&
+    getPropertyDescriptor(element.type, 'rx') !== undefined;
+  const borderRadius =
+    hasRadius ? undefined : getPropertyDescriptor(element.type, 'borderRadius');
+  const opacity = Number(propertyValue(element, 'opacity', timeMs));
+  const radius = Number(propertyValue(element, 'rx', timeMs));
+
+  const remaining = getAnimatableProperties(element.type).filter(
+    (descriptor) =>
+      descriptor.group === 'appearance' &&
+      !PAINT_PROPERTIES.has(descriptor.property) &&
+      descriptor.property !== 'opacity',
+  );
+
+  if (!hasOpacity && !hasRadius && !borderRadius && remaining.length === 0) {
+    return null;
+  }
+
+  return (
+    <PanelSection title="Appearance">
+      {hasOpacity ? (
+        <FieldRow label="Opacity">
+          <ScrubField
+            label="Opacity"
+            prefix={<BlendIcon className="size-3" />}
+            suffix="%"
+            value={Math.round(
+              (Number.isFinite(opacity) ? opacity : 1) * 100,
+            )}
+            min={0}
+            max={100}
+            step={1}
+            onChange={(next) =>
+              set('opacity', Math.max(0, Math.min(1, next / 100)))
+            }
+            trailing={
+              <TrackButton
+                element={element}
+                property="opacity"
+                label="Opacity"
+              />
+            }
+          />
+        </FieldRow>
+      ) : null}
+
+      {hasRadius ? (
+        <FieldRow label="Corner radius">
+          <ScrubField
+            label="Corner radius"
+            prefix={<RadiusIcon className="size-3" />}
+            suffix="px"
+            value={Number.isFinite(radius) ? radius : 0}
+            min={0}
+            step={1}
+            onChange={(next) => set('rx', Math.max(0, next))}
+            trailing={
+              <TrackButton
+                element={element}
+                property="rx"
+                label="Corner radius"
+              />
+            }
+          />
+        </FieldRow>
+      ) : null}
+
+      {borderRadius ? (
+        <PropertyField element={element} descriptor={borderRadius} />
+      ) : null}
+
+      {remaining.map((descriptor) => (
+        <PropertyField
+          key={descriptor.property}
+          element={element}
+          descriptor={descriptor}
+        />
+      ))}
+    </PanelSection>
+  );
+}
+
+/* ── Fill / Stroke ─────────────────────────────────────────────────────────── */
+
+function FillSection({ element }: { element: TraceElement }) {
+  const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
+  const set = usePropertySetter(element, timeMs);
+  const hasFill = getPropertyDescriptor(element.type, 'fill') !== undefined;
+  const hasFillOpacity =
+    getPropertyDescriptor(element.type, 'fillOpacity') !== undefined;
+  if (!hasFill && !hasFillOpacity) return null;
+
+  const fill = String(
+    propertyValue(element, 'fill', timeMs) ?? '#ffffff',
+  );
+  const opacity = Number(propertyValue(element, 'fillOpacity', timeMs));
+
+  return (
+    <PanelSection title="Fill">
+      {hasFill ? (
+        <FieldRow label="Color" wide>
+          <ColorField
+            label="Fill"
+            value={fill}
+            onChange={(next) => set('fill', next)}
+            trailing={
+              <TrackButton element={element} property="fill" label="Fill" />
+            }
+          />
+        </FieldRow>
+      ) : null}
+      {hasFillOpacity ? (
+        <FieldRow label="Opacity">
+          <ScrubField
+            label="Fill opacity"
+            prefix={<BlendIcon className="size-3" />}
+            suffix="%"
+            value={Math.round(
+              (Number.isFinite(opacity) ? opacity : 1) * 100,
+            )}
+            min={0}
+            max={100}
+            step={1}
+            onChange={(next) =>
+              set('fillOpacity', Math.max(0, Math.min(1, next / 100)))
+            }
+            trailing={
+              <TrackButton
+                element={element}
+                property="fillOpacity"
+                label="Fill opacity"
+              />
+            }
+          />
+        </FieldRow>
+      ) : null}
+    </PanelSection>
+  );
+}
+
+function StrokeSection({ element }: { element: TraceElement }) {
+  const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
+  const set = usePropertySetter(element, timeMs);
+  const hasStroke =
+    getPropertyDescriptor(element.type, 'stroke') !== undefined;
+  const hasWidth =
+    getPropertyDescriptor(element.type, 'strokeWidth') !== undefined;
+  if (!hasStroke && !hasWidth) return null;
+
+  const stroke = String(
+    propertyValue(element, 'stroke', timeMs) ?? '#38bdf8',
+  );
+  const width = Number(propertyValue(element, 'strokeWidth', timeMs));
+  const dash = getPropertyDescriptor(element.type, 'strokeDasharray');
+  const dashOffset = getPropertyDescriptor(element.type, 'strokeDashoffset');
+
+  return (
+    <PanelSection title="Stroke">
+      {hasStroke ? (
+        <FieldRow label="Color" wide>
+          <ColorField
+            label="Stroke"
+            value={stroke}
+            onChange={(next) => set('stroke', next)}
+            trailing={
+              <TrackButton element={element} property="stroke" label="Stroke" />
+            }
+          />
+        </FieldRow>
+      ) : null}
+      {hasWidth ? (
+        <FieldRow label="Weight">
+          <ScrubField
+            label="Stroke width"
+            value={Number.isFinite(width) ? width : 0}
+            min={0}
+            step={0.5}
+            suffix="px"
+            onChange={(next) => set('strokeWidth', Math.max(0, next))}
+            trailing={
+              <TrackButton
+                element={element}
+                property="strokeWidth"
+                label="Stroke width"
+              />
+            }
+          />
+        </FieldRow>
+      ) : null}
+      {dash ? <PropertyField element={element} descriptor={dash} /> : null}
+      {dashOffset ? (
+        <PropertyField element={element} descriptor={dashOffset} />
+      ) : null}
+    </PanelSection>
+  );
+}
+
+/* ── Text ──────────────────────────────────────────────────────────────────── */
+
+function TextSection({ element }: { element: TraceElement }) {
+  const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
+  const set = usePropertySetter(element, timeMs);
+  const updateAttributes = useTraceStore((state) => state.updateAttributes);
+  const fontWeight = String(element.attributes.fontWeight ?? 400);
+  const fontFamily = String(
+    element.attributes.fontFamily ?? 'Inter, sans-serif',
+  );
+  const textAnchor = String(element.attributes.textAnchor ?? 'start');
+  const hasColor = getPropertyDescriptor(element.type, 'color') !== undefined;
+  const color = String(propertyValue(element, 'color', timeMs) ?? '#ffffff');
+
+  return (
+    <PanelSection title="Text">
+      <div className="group/row space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-muted-foreground">Content</span>
+          <TrackButton element={element} property="text" label="Text" />
+        </div>
+        <textarea
+          value={String(propertyValue(element, 'text', timeMs) ?? '')}
+          onChange={(event) => set('text', event.target.value)}
+          rows={2}
+          aria-label="Text content"
+          className="w-full resize-y rounded-md border border-input bg-muted/20 px-2 py-1.5 text-[11px] leading-relaxed text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
+        />
+      </div>
+
+      <PairRow
+        left={
+          <ScrubField
+            label="Font size"
+            prefix={<CaseSensitiveIcon className="size-3" />}
+            suffix="px"
+            value={Number(propertyValue(element, 'fontSize', timeMs)) || 1}
+            min={1}
+            step={1}
+            onChange={(next) => set('fontSize', Math.max(1, next))}
+            trailing={
+              <TrackButton
+                element={element}
+                property="fontSize"
+                label="Font size"
+              />
+            }
+          />
+        }
+        right={
+          <ScrubField
+            label="Tracking"
+            prefix={<SplineIcon className="size-3" />}
+            value={Number(propertyValue(element, 'letterSpacing', timeMs)) || 0}
+            step={0.5}
+            onChange={(next) => set('letterSpacing', next)}
+            trailing={
+              <TrackButton
+                element={element}
+                property="letterSpacing"
+                label="Tracking"
+              />
+            }
+          />
+        }
+      />
+
+      <FieldRow label="Weight">
+        <Select
+          value={fontWeight}
+          onValueChange={(next) =>
+            updateAttributes(element.id, { fontWeight: Number(next) })
+          }
+        >
+          <SelectTrigger
+            aria-label="Font weight"
+            className="h-7 bg-muted/20 text-[11px]"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {['400', '500', '600', '700', '800'].map((weight) => (
+              <SelectItem key={weight} value={weight}>
+                {weight}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldRow>
+
+      <FieldRow label="Font" wide>
+        <Select
+          value={fontFamily}
+          onValueChange={(next) =>
+            updateAttributes(element.id, { fontFamily: next })
+          }
+        >
+          <SelectTrigger
+            aria-label="Font family"
+            className="h-7 bg-muted/20 text-[11px]"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[
+              'Inter, sans-serif',
+              'system-ui, sans-serif',
+              'Georgia, serif',
+              'ui-monospace, monospace',
+            ].map((family) => (
+              <SelectItem key={family} value={family}>
+                {family}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldRow>
+
+      <FieldRow label="Align">
+        <div className="flex h-7 items-center gap-1">
+          {(
+            [
+              { value: 'start', label: 'Left' },
+              { value: 'middle', label: 'Centre' },
+              { value: 'end', label: 'Right' },
+            ] as const
+          ).map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={textAnchor === option.value ? 'secondary' : 'ghost'}
+              aria-pressed={textAnchor === option.value}
+              className="h-6 flex-1 px-1 text-[10px]"
+              onClick={() =>
+                updateAttributes(element.id, {
+                  textAnchor: option.value,
+                })
+              }
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </FieldRow>
+
+      {hasColor ? (
+        <FieldRow label="Color" wide>
+          <ColorField
+            label="Text color"
+            value={color}
+            onChange={(next) => set('color', next)}
+            trailing={
+              <TrackButton
+                element={element}
+                property="color"
+                label="Text color"
+              />
+            }
+          />
+        </FieldRow>
+      ) : null}
+    </PanelSection>
+  );
+}
+
+/* ── Animation tracks ──────────────────────────────────────────────────────── */
 
 function nearestKeyframe(
   element: TraceElement,
@@ -301,9 +994,9 @@ function TrackRows({ element }: { element: TraceElement }) {
 
   if (element.tracks.length === 0) {
     return (
-      <p className="text-[10px] leading-relaxed text-slate-600">
-        No animation yet. Click a stopwatch beside any property to start a track
-        at the playhead.
+      <p className="text-[10px] leading-relaxed text-muted-foreground">
+        No animation yet. Hover a property and click its stopwatch to start a
+        track at the playhead.
       </p>
     );
   }
@@ -315,10 +1008,10 @@ function TrackRows({ element }: { element: TraceElement }) {
         return (
           <div
             key={track.id}
-            className="rounded-md border border-white/8 bg-white/[0.02] p-1.5"
+            className="rounded-md border border-border/60 bg-muted/30 p-1.5"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-[11px] text-slate-300">
+              <span className="truncate text-[11px] text-foreground">
                 {getPropertyDescriptor(element.type, track.property)?.label ??
                   track.label}
               </span>
@@ -327,7 +1020,7 @@ function TrackRows({ element }: { element: TraceElement }) {
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className="size-6 text-slate-500 hover:bg-white/10 hover:text-sky-300"
+                  className="size-6 text-muted-foreground hover:text-sky-400"
                   onClick={() => addKeyframe(element.id, track.property)}
                   aria-label="Add keyframe at playhead"
                 >
@@ -337,7 +1030,7 @@ function TrackRows({ element }: { element: TraceElement }) {
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className="size-6 text-slate-500 hover:bg-rose-500/15 hover:text-rose-300"
+                  className="size-6 text-muted-foreground hover:text-rose-400"
                   onClick={() =>
                     removePropertyTrack(element.id, track.property)
                   }
@@ -350,39 +1043,39 @@ function TrackRows({ element }: { element: TraceElement }) {
 
             {nearest ? (
               <div className="mt-1 flex items-center gap-1">
-                <span className="w-14 shrink-0 font-mono text-[9px] text-slate-500">
+                <span className="w-14 shrink-0 font-mono text-[9px] text-muted-foreground">
                   {Math.round(nearest.keyframe.timeMs)}ms
                 </span>
-                <select
+                <Select
                   value={String(nearest.keyframe.easing)}
-                  onChange={(event) =>
+                  onValueChange={(next) =>
                     updateKeyframe(
                       element.id,
                       track.property,
                       nearest.keyframe.id,
-                      {
-                        easing: event.target.value,
-                      },
+                      { easing: next },
                     )
                   }
-                  className="h-6 min-w-0 flex-1 rounded border border-white/10 bg-white/5 px-1 text-[10px] text-slate-300 outline-none"
-                  aria-label="Keyframe easing"
                 >
-                  {EASINGS.map((easing) => (
-                    <option
-                      key={easing}
-                      value={easing}
-                      className="bg-slate-900"
-                    >
-                      {easing}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    aria-label="Keyframe easing"
+                    className="h-6 min-w-0 flex-1 bg-transparent px-1 text-[10px]"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EASINGS.map((easing) => (
+                      <SelectItem key={easing} value={easing}>
+                        {easing}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className="size-6 text-slate-600 hover:bg-rose-500/15 hover:text-rose-300"
+                  className="size-6 text-muted-foreground hover:text-rose-400"
                   onClick={() =>
                     deleteKeyframe(
                       element.id,
@@ -401,12 +1094,12 @@ function TrackRows({ element }: { element: TraceElement }) {
               {track.keyframes.map((keyframe) => (
                 <span
                   key={keyframe.id}
-                  className={
-                    'size-1.5 rotate-45 rounded-[1px] ' +
-                    (Math.abs(keyframe.timeMs - timeMs) <= 10
-                      ? 'bg-sky-300'
-                      : 'bg-slate-600')
-                  }
+                  className={cn(
+                    'size-1.5 rotate-45 rounded-[1px]',
+                    Math.abs(keyframe.timeMs - timeMs) <= 10
+                      ? 'bg-sky-400'
+                      : 'bg-muted-foreground/50',
+                  )}
                   title={`${Math.round(keyframe.timeMs)}ms`}
                 />
               ))}
@@ -417,6 +1110,8 @@ function TrackRows({ element }: { element: TraceElement }) {
     </div>
   );
 }
+
+/* ── Path data (double-click canvas editing entry point) ─────────────────── */
 
 function PathDataSection({ element }: { element: TraceElement }) {
   const updateAttributes = useTraceStore((state) => state.updateAttributes);
@@ -432,14 +1127,14 @@ function PathDataSection({ element }: { element: TraceElement }) {
     : String(element.attributes.d ?? '');
 
   return (
-    <Section
+    <PanelSection
       title="Path"
       action={
         <Button
           type="button"
           size="sm"
           variant="ghost"
-          className="h-6 px-1.5 text-[10px] text-slate-400 hover:bg-white/10 hover:text-white"
+          className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
           onClick={() => (editing ? endPathEdit() : startPathEdit(element.id))}
         >
           {editing ? 'Done editing' : 'Edit on canvas'}
@@ -465,15 +1160,17 @@ function PathDataSection({ element }: { element: TraceElement }) {
           }
         }}
         aria-label={isPoints ? 'Points data' : 'Path data'}
-        className="w-full resize-y rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 font-mono text-[10px] leading-relaxed text-slate-200 outline-none focus:border-sky-400/40"
+        className="w-full resize-y rounded-md border border-input bg-muted/20 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
       />
-      <p className="text-[9px] leading-relaxed text-slate-600">
-        Double-click the layer on canvas to edit anchors directly. Cmd/Ctrl+Enter
-        applies text edits.
+      <p className="text-[9px] leading-relaxed text-muted-foreground">
+        Double-click the layer on canvas to edit anchors directly.
+        Cmd/Ctrl+Enter applies text edits.
       </p>
-    </Section>
+    </PanelSection>
   );
 }
+
+/* ── Canvas (no selection) ─────────────────────────────────────────────────── */
 
 function CanvasInspector() {
   const project = useTraceStore((state) => state.project);
@@ -482,56 +1179,75 @@ function CanvasInspector() {
 
   return (
     <>
-      <Section title="Artboard">
-        <FieldRow label="Width">
-          <NumberInput
-            value={project.width}
-            step={2}
-            onChange={(width) =>
-              setCanvas({ width: Math.max(16, Math.round(width)) })
-            }
-          />
-        </FieldRow>
-        <FieldRow label="Height">
-          <NumberInput
-            value={project.height}
-            step={2}
-            onChange={(height) =>
-              setCanvas({ height: Math.max(16, Math.round(height)) })
-            }
-          />
-        </FieldRow>
-        <FieldRow label="Duration (ms)">
-          <NumberInput
-            value={project.durationMs}
-            step={100}
-            onChange={(durationMs) =>
-              setCanvas({ durationMs: Math.max(100, Math.round(durationMs)) })
-            }
-          />
-        </FieldRow>
-        <FieldRow label="Frame rate">
-          <NumberInput
-            value={project.fps}
-            step={1}
-            onChange={(fps) =>
-              setCanvas({ fps: Math.max(1, Math.min(120, Math.round(fps))) })
-            }
-          />
-        </FieldRow>
-      </Section>
+      <PanelSection title="Artboard">
+        <PairRow
+          left={
+            <ScrubField
+              label="Width"
+              prefix="W"
+              value={project.width}
+              min={16}
+              step={2}
+              onChange={(width) =>
+                setCanvas({ width: Math.max(16, Math.round(width)) })
+              }
+            />
+          }
+          right={
+            <ScrubField
+              label="Height"
+              prefix="H"
+              value={project.height}
+              min={16}
+              step={2}
+              onChange={(height) =>
+                setCanvas({ height: Math.max(16, Math.round(height)) })
+              }
+            />
+          }
+        />
+        <PairRow
+          left={
+            <ScrubField
+              label="Duration"
+              suffix="ms"
+              value={project.durationMs}
+              min={100}
+              step={100}
+              onChange={(durationMs) =>
+                setCanvas({
+                  durationMs: Math.max(100, Math.round(durationMs)),
+                })
+              }
+            />
+          }
+          right={
+            <ScrubField
+              label="Frame rate"
+              suffix="fps"
+              value={project.fps}
+              min={1}
+              max={120}
+              step={1}
+              onChange={(fps) =>
+                setCanvas({ fps: Math.max(1, Math.min(120, Math.round(fps))) })
+              }
+            />
+          }
+        />
+      </PanelSection>
 
-      <Section title="Document">
+      <PanelSection title="Document">
         <dl className="space-y-1.5 text-[11px]">
           <div className="flex justify-between">
-            <dt className="text-slate-500">Layers</dt>
-            <dd className="font-mono text-slate-300">
+            <dt className="text-muted-foreground">Layers</dt>
+            <dd className="font-mono text-foreground">
               {Object.keys(project.elements).length}
             </dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-slate-500">Tracks</dt>
-            <dd className="font-mono text-slate-300">
+            <dt className="text-muted-foreground">Tracks</dt>
+            <dd className="font-mono text-foreground">
               {Object.values(project.elements).reduce(
                 (sum, element) => sum + element.tracks.length,
                 0,
@@ -539,47 +1255,54 @@ function CanvasInspector() {
             </dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-slate-500">Scenes</dt>
-            <dd className="font-mono text-slate-300">
+            <dt className="text-muted-foreground">Scenes</dt>
+            <dd className="font-mono text-foreground">
               {project.storyboard?.scenes.length ?? 0}
             </dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-slate-500">Gradients</dt>
-            <dd className="font-mono text-slate-300">
+            <dt className="text-muted-foreground">Gradients</dt>
+            <dd className="font-mono text-foreground">
               {Object.keys(project.gradients ?? {}).length}
             </dd>
           </div>
         </dl>
-      </Section>
+      </PanelSection>
 
-      <Section title="Shortcuts">
-        <ul className="space-y-1 text-[10px] text-slate-500">
+      <PanelSection title="Shortcuts" defaultOpen={false}>
+        <ul className="space-y-1 text-[10px] text-muted-foreground">
           <li>
-            <span className="font-mono text-slate-400">Space</span> play / pause
+            <span className="font-mono text-foreground">Space</span> play /
+            pause
           </li>
           <li>
-            <span className="font-mono text-slate-400">⌘/Ctrl+Z</span> undo
+            <span className="font-mono text-foreground">⌘/Ctrl+Z</span> undo
           </li>
           <li>
-            <span className="font-mono text-slate-400">⌘/Ctrl+S</span> save
+            <span className="font-mono text-foreground">⌘/Ctrl+S</span> save
           </li>
           <li>
-            <span className="font-mono text-slate-400">⌘/Ctrl+D</span> duplicate
-            layer
+            <span className="font-mono text-foreground">⌘/Ctrl+D</span>{' '}
+            duplicate layer
           </li>
           <li>
-            <span className="font-mono text-slate-400">Delete</span> remove
-            layer / keyframe
+            <span className="font-mono text-foreground">Double-click path</span>{' '}
+            edit anchors
           </li>
           <li>
-            <span className="font-mono text-slate-400">← →</span> step 1 frame
+            <span className="font-mono text-foreground">Delete</span> remove
+            layer / keyframe / anchor
+          </li>
+          <li>
+            <span className="font-mono text-foreground">← →</span> step 1 frame
           </li>
         </ul>
-      </Section>
+      </PanelSection>
     </>
   );
 }
+
+/* ── Inspector root ────────────────────────────────────────────────────────── */
 
 export function TraceInspector() {
   const project = useTraceStore((state) => state.project);
@@ -590,20 +1313,92 @@ export function TraceInspector() {
     ? (project?.elements[selectedElementId] ?? null)
     : null;
 
-  const groups = element
-    ? (['transform', 'appearance', 'geometry', 'text', 'content'] as const)
-    : [];
+  const toggleFlag = (
+    patch: Partial<Pick<TraceElement, 'visible' | 'locked'>>,
+  ) => {
+    if (!element) return;
+    useTraceStore
+      .getState()
+      .dispatch([{ type: 'updateElement', id: element.id, ...patch }]);
+  };
 
   return (
-    <aside className="flex w-[304px] shrink-0 flex-col border-l border-white/10 bg-[#080e1a] text-slate-200">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-          {element ? 'Properties' : 'Composition'}
-        </p>
+    <aside className="flex w-[304px] shrink-0 flex-col border-l border-border bg-card text-card-foreground">
+      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
+        <div className="min-w-0 flex-1">
+          {element ? (
+            <Input
+              key={element.id}
+              defaultValue={element.name}
+              onBlur={(event) => {
+                const next = event.target.value.trim();
+                if (next && next !== element.name) {
+                  useTraceStore
+                    .getState()
+                    .dispatch([
+                      { type: 'updateElement', id: element.id, name: next },
+                    ]);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur();
+              }}
+              aria-label="Layer name"
+              className="h-7 border-transparent bg-transparent px-1 text-[12px] font-medium shadow-none hover:border-input focus-visible:border-input focus-visible:ring-0"
+            />
+          ) : (
+            <p className="truncate text-[12px] font-medium">
+              {project?.name ?? 'Composition'}
+            </p>
+          )}
+          <div className="flex min-w-0 items-center gap-1.5 px-1">
+            <span className="inline-flex shrink-0 rounded bg-muted px-1 py-px text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              {element ? element.type : 'artboard'}
+            </span>
+            {element ? (
+              <span className="truncate font-mono text-[9px] text-muted-foreground/70">
+                {element.id}
+              </span>
+            ) : null}
+          </div>
+        </div>
         {element ? (
-          <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[9px] text-slate-500">
-            {element.type}
-          </span>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => toggleFlag({ visible: !element.visible })}
+              title={element.visible ? 'Hide layer' : 'Show layer'}
+              aria-label={element.visible ? 'Hide layer' : 'Show layer'}
+              aria-pressed={!element.visible}
+              className={cn(
+                'text-muted-foreground hover:text-foreground',
+                !element.visible && 'text-muted-foreground/50',
+              )}
+            >
+              {element.visible ? (
+                <EyeIcon className="size-3.5" />
+              ) : (
+                <EyeOffIcon className="size-3.5" />
+              )}
+            </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => toggleFlag({ locked: !element.locked })}
+              title={element.locked ? 'Unlock layer' : 'Lock layer'}
+              aria-label={element.locked ? 'Unlock layer' : 'Lock layer'}
+              aria-pressed={element.locked}
+              className={cn(
+                'text-muted-foreground hover:text-foreground',
+                element.locked && 'text-sky-400 hover:text-sky-300',
+              )}
+            >
+              <LockIcon className="size-3.5" />
+            </Button>
+          </div>
         ) : null}
       </div>
 
@@ -612,31 +1407,24 @@ export function TraceInspector() {
           <CanvasInspector />
         ) : (
           <>
-            <Section title="Layer">
-              <Input
-                key={element.id}
-                defaultValue={element.name}
-                onBlur={(event) => {
-                  const next = event.target.value.trim();
-                  if (next && next !== element.name) {
-                    useTraceStore
-                      .getState()
-                      .dispatch([
-                        { type: 'updateElement', id: element.id, name: next },
-                      ]);
-                  }
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') event.currentTarget.blur();
-                }}
-                className="h-7 border-white/10 bg-white/[0.04] text-[11px] text-slate-200 focus-visible:ring-sky-400/40"
-              />
-              <div className="flex items-center gap-1">
+            <TransformSection element={element} />
+            <LayoutSection element={element} />
+            <AppearanceSection element={element} />
+            <FillSection element={element} />
+            <StrokeSection element={element} />
+            {element.type === 'text' ? <TextSection element={element} /> : null}
+            {element.type === 'path' ||
+            element.type === 'polyline' ||
+            element.type === 'polygon' ? (
+              <PathDataSection element={element} />
+            ) : null}
+            <PanelSection title="Layer">
+              <div className="flex items-center gap-1.5">
                 <Button
                   type="button"
                   size="sm"
-                  variant="ghost"
-                  className="h-6 px-1.5 text-[10px] text-slate-400 hover:bg-white/10 hover:text-white"
+                  variant="outline"
+                  className="h-7 flex-1 px-2 text-[10px]"
                   onClick={() =>
                     useTraceStore.getState().dispatch([
                       {
@@ -652,8 +1440,8 @@ export function TraceInspector() {
                 <Button
                   type="button"
                   size="sm"
-                  variant="ghost"
-                  className="h-6 px-1.5 text-[10px] text-slate-400 hover:bg-rose-500/15 hover:text-rose-300"
+                  variant="outline"
+                  className="h-7 flex-1 px-2 text-[10px] text-rose-400 hover:text-rose-300"
                   onClick={() =>
                     useTraceStore
                       .getState()
@@ -663,41 +1451,16 @@ export function TraceInspector() {
                   Delete
                 </Button>
               </div>
-            </Section>
-
-            {groups.map((group) => {
-              const fields = getAnimatableProperties(element.type).filter(
-                (descriptor) => descriptor.group === group,
-              );
-              if (fields.length === 0) return null;
-              return (
-                <Section key={group} title={group}>
-                  {fields.map((descriptor) => (
-                    <PropertyField
-                      key={descriptor.property}
-                      element={element}
-                      descriptor={descriptor}
-                    />
-                  ))}
-                </Section>
-              );
-            })}
-
-            {(element.type === 'path' ||
-              element.type === 'polyline' ||
-              element.type === 'polygon') && (
-              <PathDataSection element={element} />
-            )}
-
-            <Section title="Animation">
+            </PanelSection>
+            <PanelSection title="Animation">
               <TrackRows element={element} />
-            </Section>
+            </PanelSection>
           </>
         )}
       </ScrollArea>
 
-      <div className="border-t border-white/10 px-3 py-1.5">
-        <p className="truncate font-mono text-[9px] text-slate-600">
+      <div className="border-t border-border/60 px-3 py-1.5">
+        <p className="truncate font-mono text-[9px] text-muted-foreground">
           {element?.id ?? project?.id}
         </p>
       </div>
