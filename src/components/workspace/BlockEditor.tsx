@@ -339,6 +339,16 @@ export function BlockEditor({
       const index = blocks.findIndex((b) => b.id === id);
       if (block.type !== 'paragraph' && block.text === '') {
         event.preventDefault();
+        // Code blocks are structural — never collapse them to a paragraph on
+        // backspace; just delete the row instead so the fence doesn't survive.
+        if (block.type === 'code') {
+          const index = blocks.findIndex((b) => b.id === id);
+          const next = removeBlock(blocks, id);
+          applyBlocks(next);
+          const fallback = next[Math.min(Math.max(index, 0), next.length - 1)];
+          if (fallback) focusBlock(fallback.id);
+          return;
+        }
         applyBlocks(setBlockType(blocks, id, 'paragraph'));
         return;
       }
@@ -571,7 +581,12 @@ export function BlockEditor({
               <textarea
                 {...common}
                 rows={Math.max(2, block.text.split('\n').length)}
-                className={cn(common.className, 'px-3 py-2 font-mono text-xs')}
+                placeholder="Type code…"
+                className={cn(
+                  common.className,
+                  'px-3 py-2 font-mono text-xs',
+                  !block.text && 'min-h-[4rem] text-muted-foreground',
+                )}
               />
             </div>
           )}
@@ -689,8 +704,8 @@ export function BlockEditor({
         </DropdownMenu>
         <span className="text-[10px] text-muted-foreground/70">
           Markdown shortcuts: #, -, 1., - [ ], &gt;, ```, ![alt](url), --- ·
-          Enter splits · Tab indents · Alt+↑↓ moves · Paste markdown to insert
-          blocks
+          Enter splits · Tab indents · Shift+Tab outdents · Alt+↑↓ moves ·
+          Backspace at start deletes · Paste markdown to insert blocks
         </span>
         <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
           {blocks.length} {blocks.length === 1 ? 'block' : 'blocks'}

@@ -35,6 +35,7 @@ import Motion from './pages/Motion';
 import MotionBrowser from './pages/MotionBrowser';
 import Workspace from './pages/Workspace';
 import Builder from './pages/Builder';
+import OfflineAI from './pages/OfflineAI';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
 import { useAppLoading } from '@/hooks/use-app-loading';
 import type { Project } from '@/main/ipc/channels';
@@ -136,6 +137,9 @@ export const routes: RouteObject[] = [
           { path: ':notebookId/:pageId', element: <Workspace /> },
         ],
       },
+
+      // Offline AI — local, private inference with Transformers.js models.
+      { path: 'offline-ai', element: <OfflineAI /> },
 
       { path: '*', element: <Navigate to="/projects" replace /> },
     ],

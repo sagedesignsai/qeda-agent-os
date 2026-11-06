@@ -27,12 +27,12 @@ import {
   usePageDetail,
   usePages,
   usePageSearch,
-  useRecentPages,
 } from '@/hooks/use-workspace';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { BlockEditor } from '@/components/workspace/BlockEditor';
 import { PageInfoPanel } from '@/components/workspace/PageInfoPanel';
 import {
+  Loader2Icon,
   MessageSquareIcon,
   NotebookIcon,
   PanelRightIcon,
@@ -71,7 +71,11 @@ export default function Workspace() {
 
   const { notebooks, reload: reloadNotebooks } = useNotebooks();
   const { projects: projectRollups } = useProjects();
-  const { detail, reload: reloadDetail } = usePageDetail(pageId ?? null);
+  const {
+    detail,
+    reload: reloadDetail,
+    loading: pageLoading,
+  } = usePageDetail(pageId ?? null);
   const { projectId } = useProjectScope();
   const [infoOpen, setInfoOpen] = useState(true);
   const [query, setQuery] = useState('');
@@ -98,11 +102,11 @@ export default function Workspace() {
 
   const handleCreateNotebook = async (
     title: string,
-    projectId?: string | null,
+    ownerProjectId?: string | null,
   ) => {
     const notebook = await window.electron.ipc.invoke<Notebook>(
       'notebooks:create',
-      { title, projectId },
+      { title, projectId: ownerProjectId },
     );
     await reloadNotebooks();
     navigate(`/workspace/${notebook.id}`);
@@ -116,33 +120,43 @@ export default function Workspace() {
         parentPageId: null,
       });
       navigate(`/workspace/${targetNotebookId}/${page.id}`);
-    } catch {
-      toast.error('Failed to create page.');
+    } catch (err) {
+      toast.error(
+        `Failed to create page: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
   const handleRestoreVersion = async (versionId: string) => {
-    const ok = await window.electron.ipc.invoke<boolean>(
-      'pages:restore-version',
-      { versionId },
-    );
-    if (ok) {
+    try {
+      const ok = await window.electron.ipc.invoke<boolean>(
+        'pages:restore-version',
+        { versionId },
+      );
+      if (!ok) {
+        toast.error('Could not restore version. It may have been deleted.');
+        return;
+      }
       await reloadDetail(pageId ?? '');
       toast.success('Version restored.');
+    } catch (err) {
+      toast.error(
+        `Error restoring version: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
   const handleChatWithContext = (
     id: string,
     notebookContextId?: string,
-    projectId?: string | null,
+    chatProjectId?: string | null,
   ) => {
     navigate('/chat', {
       state: {
         chatContext: {
           pageId: id,
           notebookId: notebookContextId,
-          ...(projectId ? { projectId } : {}),
+          ...(chatProjectId ? { projectId: chatProjectId } : {}),
         },
       },
     });
@@ -150,6 +164,10 @@ export default function Workspace() {
 
   const handleResearchNotebook = (id: string) => {
     const notebook = notebooks.find((item) => item.id === id);
+    if (!notebook) {
+      toast.error('Notebook not found.');
+      return;
+    }
     navigate('/chat', {
       state: {
         chatContext: {
@@ -241,7 +259,9 @@ export default function Workspace() {
             />
 
             <div className="min-h-0 flex-1 overflow-hidden">
-              {detail ? (
+              {pageLoading && !detail ? (
+                <EditorSkeleton />
+              ) : detail ? (
                 <BlockEditor
                   pageId={detail.page.id}
                   title={detail.page.title}
@@ -254,7 +274,6 @@ export default function Workspace() {
                   projects={projectRollups.filter((p) => p.id !== 'inbox')}
                   selectedNotebookId={notebookId ?? null}
                   query={query}
-                  setQuery={setQuery}
                   createOpen={createOpen}
                   setCreateOpen={setCreateOpen}
                   onCreateNotebook={handleCreateNotebook}
@@ -263,7 +282,6 @@ export default function Workspace() {
                     navigate(`/workspace/${nbId}/${id}`)
                   }
                   onOpenNotebook={(nbId) => navigate(`/workspace/${nbId}`)}
-                  onChat={handleChatWithContext}
                   onResearchNotebook={handleResearchNotebook}
                   onNotebookUpdated={() => void reloadNotebooks()}
                 />
@@ -312,14 +330,12 @@ function NotebooksHome({
   projects,
   selectedNotebookId,
   query,
-  setQuery,
   createOpen,
   setCreateOpen,
   onCreateNotebook,
   onCreatePage,
   onOpenPage,
   onOpenNotebook,
-  onChat,
   onResearchNotebook,
   onNotebookUpdated,
 }: {
@@ -327,14 +343,12 @@ function NotebooksHome({
   projects: { id: string; name: string }[];
   selectedNotebookId: string | null;
   query: string;
-  setQuery: (q: string) => void;
   createOpen: boolean;
   setCreateOpen: (open: boolean) => void;
   onCreateNotebook: (title: string, projectId?: string | null) => Promise<void>;
   onCreatePage: (notebookId: string) => Promise<void>;
   onOpenPage: (id: string, notebookId: string) => void;
   onOpenNotebook: (notebookId: string) => void;
-  onChat: (id: string, notebookId?: string, projectId?: string | null) => void;
   onResearchNotebook: (notebookId: string) => void;
   onNotebookUpdated: () => void;
 }) {
@@ -423,29 +437,36 @@ function NotebooksHome({
         {query.trim() ? (
           <section className="space-y-3">
             <h2 className="text-sm font-semibold">Search results</h2>
-            {hits.length ? (
-              hits.map((hit) => (
-                <button
-                  key={hit.page_id}
-                  type="button"
-                  onClick={() => onOpenPage(hit.page_id, hit.notebook_id)}
-                  className="block w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/50"
-                >
-                  <span className="flex items-center justify-between gap-3 font-medium">
-                    {hit.title}
-                    <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {hit.notebook_title}
-                    {hit.project_id
-                      ? ` · ${projects.find((p) => p.id === hit.project_id)?.name ?? 'Project'}`
-                      : ''}
-                  </span>
-                  <span className="mt-2 block text-sm text-muted-foreground">
-                    {hit.snippet}
-                  </span>
-                </button>
-              ))
+            {searching ? (
+              <div className="flex items-center gap-2 rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+                <Loader2Icon className="size-4 animate-spin" />
+                Searching…
+              </div>
+            ) : hits.length ? (
+              <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+                {hits.map((hit) => (
+                  <button
+                    key={hit.page_id}
+                    type="button"
+                    onClick={() => onOpenPage(hit.page_id, hit.notebook_id)}
+                    className="block w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/50"
+                  >
+                    <span className="flex items-center justify-between gap-3 font-medium">
+                      {hit.title}
+                      <ArrowUpRightIcon className="size-4 shrink-0 text-muted-foreground" />
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {hit.notebook_title}
+                      {hit.project_id
+                        ? ` · ${projects.find((p) => p.id === hit.project_id)?.name ?? 'Project'}`
+                        : ''}
+                    </span>
+                    <span className="mt-2 block text-sm text-muted-foreground">
+                      {hit.snippet}
+                    </span>
+                  </button>
+                ))}
+              </div>
             ) : (
               <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
                 No matching pages yet. Try another phrase or start a research
@@ -539,7 +560,14 @@ function NotebooksHome({
                       onClick={() => onOpenPage(page.id, activeNotebook.id)}
                       className="block w-full rounded-md border bg-card p-3 text-left text-sm hover:bg-accent/50"
                     >
-                      {page.title || 'Untitled'}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate font-medium">
+                          {page.title || 'Untitled'}
+                        </span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {formatRelativeDate(page.updated_at)}
+                        </span>
+                      </div>
                     </button>
                   ))
                 ) : (
@@ -606,6 +634,42 @@ function NotebooksHome({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Format a Unix-epoch timestamp as a short, locale-stable relative label. */
+function formatRelativeDate(epochSeconds: number): string {
+  const seconds = Date.now() / 1000 - epochSeconds;
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 5) return `${weeks}w ago`;
+  const months = Math.floor(weeks / 4);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(months / 12);
+  return `${years}y ago`;
+}
+
+/** Skeleton shown while navigating to a new page so the user sees progress. */
+function EditorSkeleton() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b px-8 py-3">
+        <div className="h-5 w-40 animate-pulse rounded bg-muted" />
+        <div className="ml-auto h-4 w-16 animate-pulse rounded bg-muted" />
+      </div>
+      <div className="flex-1 space-y-3 overflow-y-auto px-8 py-6">
+        <div className="h-6 w-3/4 animate-pulse rounded bg-muted" />
+        <div className="h-4 w-full animate-pulse rounded bg-muted/60" />
+        <div className="h-4 w-5/6 animate-pulse rounded bg-muted/60" />
+        <div className="h-4 w-2/3 animate-pulse rounded bg-muted/60" />
+      </div>
     </div>
   );
 }

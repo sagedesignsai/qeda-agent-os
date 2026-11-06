@@ -241,6 +241,15 @@ export function registerSettingsHandlers({
 
   ipcMain.handle('services:list', () => listServiceStatuses());
 
+  // ── Hugging Face token ────────────────────────────────────────────────────
+  // The renderer process (browser environment) cannot read process.env, so
+  // Transformers.js never gets the Authorization header for HF downloads.
+  // This handler exposes the token so the renderer can inject it via env.fetch.
+
+  ipcMain.handle('settings:get-hf-token', () => {
+    return process.env.HF_TOKEN ?? process.env.HF_ACCESS_TOKEN ?? null;
+  });
+
   // ── MCP server management ─────────────────────────────────────────────────
 
   ipcMain.handle('mcp:statuses', () => mcpManager.getServerStatuses());

@@ -723,6 +723,12 @@ export interface IpcChannels {
     req: { projectId: string | null; explicitlyAllProjects?: boolean };
     res: void;
   };
+  /**
+   * Return the Hugging Face access token from the main process environment.
+   * The renderer (browser environment) cannot read process.env, so Transformers.js
+   * never gets the Authorization header. This channel bridges the gap.
+   */
+  'settings:get-hf-token': { req: void; res: string | null };
 
   // ── MCP server management ─────────────────────────────────────────────────
   /**
