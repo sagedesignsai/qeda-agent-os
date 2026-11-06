@@ -235,7 +235,7 @@ export function TaskStepsSheet({
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                    className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive"
                     onClick={() => void removeStep(step)}
                     aria-label="Delete step"
                   >

@@ -75,10 +75,18 @@ export function useProjects(): UseProjectsReturn {
 
   useEffect(() => {
     void refresh();
-    const off = window.electron.ipc.on('projects:changed', () => {
+    const offProjects = window.electron.ipc.on('projects:changed', () => {
       void refresh();
     });
-    return off;
+    // Rollups include task progress / overdue / focus time, so task
+    // mutations must refresh them too.
+    const offTasks = window.electron.ipc.on('tasks:changed', () => {
+      void refresh();
+    });
+    return () => {
+      offProjects();
+      offTasks();
+    };
   }, [refresh]);
 
   const createProject = useCallback(

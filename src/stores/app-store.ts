@@ -216,11 +216,17 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
   // Bridges
   discussTaskInChat: async (task, navigate) => {
     get().setFocusedTask(task);
+    // Create the session eagerly: Chat's one-shot `initialPrompt` effect
+    // requires a `sessionId` and is dropped on the blank route.
+    const session = await window.electron.ipc.invoke<{ id: string }>(
+      'sessions:create',
+      { title: task.title.slice(0, 32), projectId: task.project_id ?? null },
+    );
     const scopeParam = task.project_id
       ? `?project=${encodeURIComponent(task.project_id)}&task=${encodeURIComponent(task.id)}`
       : `?task=${encodeURIComponent(task.id)}`;
 
-    navigate(`/chat${scopeParam}`, {
+    navigate(`/chat/${session.id}${scopeParam}`, {
       state: {
         chatContext: {
           taskId: task.id,
@@ -239,7 +245,8 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       'terminal:session-create',
       {
         title: task.title,
-        projectId: task.project_id ?? null,
+        goal: task.title,
+        project_id: task.project_id ?? null,
       },
     );
     get().setActiveTerminal(session.id, task.id);
@@ -262,7 +269,7 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       try {
         const t = await window.electron.ipc.invoke<Task>('tasks:create', {
           title: trimmed,
-          projectId: pid,
+          project_id: pid,
           priority: 2,
         });
         if (t) created.push(t);

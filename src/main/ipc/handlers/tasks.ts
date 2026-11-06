@@ -32,6 +32,7 @@ import {
 import {
   createTask,
   deleteTask,
+  getTask,
   incrementPomodoro,
   listTasks,
   updateTask,
@@ -67,12 +68,15 @@ export function registerTasksHandlers({
     ) => listTasks({ status, projectId }),
   );
 
+  ipcMain.handle('tasks:get', (_e, { id }: { id: string }) => getTask(id));
+
   ipcMain.handle(
     'tasks:create',
     (_e, req: Parameters<typeof createTask>[0]) => {
       const task = createTask(req);
       refreshBadge();
-      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
+      if (!mainWindow.isDestroyed())
+        mainWindow.webContents.send('tasks:changed');
       return task;
     },
   );
@@ -85,7 +89,8 @@ export function registerTasksHandlers({
     ) => {
       const task = updateTask(id, patch);
       refreshBadge();
-      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
+      if (!mainWindow.isDestroyed())
+        mainWindow.webContents.send('tasks:changed');
       return task;
     },
   );
@@ -103,50 +108,78 @@ export function registerTasksHandlers({
     return task;
   });
 
-  ipcMain.handle('tasks:prioritize', async () => {
-    const { getSettings } = await import('../../ai/settings.js');
-    const { resolveModel } = await import('../../ai/provider.js');
-    const { generateText } = await import('ai');
-    const allTasks = listTasks();
-    if (allTasks.length === 0)
-      return { orderedIds: [], reasoning: 'No tasks to prioritize.' };
+  ipcMain.handle(
+    'tasks:prioritize',
+    async (_e, req?: { projectId?: string | null } | void) => {
+      const { getSettings } = await import('../../ai/settings.js');
+      const { resolveModel } = await import('../../ai/provider.js');
+      const { generateText } = await import('ai');
+      const allTasks = listTasks(
+        req?.projectId ? { projectId: req.projectId } : undefined,
+      );
+      if (allTasks.length === 0)
+        return { orderedIds: [], reasoning: 'No tasks to prioritize.' };
 
-    const settings = getSettings();
-    const model = resolveModel(settings.activeProvider, settings.activeModel);
+      const settings = getSettings();
+      const model = resolveModel(settings.activeProvider, settings.activeModel);
 
-    const taskList = allTasks
-      .map(
-        (t) =>
-          `- id:${t.id} priority:${t.priority} status:${t.status} title:"${t.title}"`,
-      )
-      .join('\n');
+      const taskList = allTasks
+        .map(
+          (t) =>
+            `- id:${t.id} priority:${t.priority} status:${t.status} title:"${t.title}"`,
+        )
+        .join('\n');
 
-    const result = await generateText({
-      model: model as any,
-      system:
-        'You are a productivity assistant. Given a list of tasks, return a JSON object with "orderedIds" (array of task ids, highest priority first) and "reasoning" (one sentence explaining your decision). Output only valid JSON.',
-      prompt: `Tasks:\n${taskList}\n\nReturn JSON only.`,
-      stopWhen: isStepCount(1),
-    });
+      const result = await generateText({
+        model: model as any,
+        system:
+          'You are a productivity assistant. Given a list of tasks, return a JSON object with "orderedIds" (array of task ids, highest priority first) and "reasoning" (one sentence explaining your decision). Output only valid JSON.',
+        prompt: `Tasks:\n${taskList}\n\nReturn JSON only.`,
+        stopWhen: isStepCount(1),
+      });
 
-    try {
-      const parsed = JSON.parse(result.text ?? '{}') as {
-        orderedIds?: string[];
-        reasoning?: string;
-      };
-      return {
-        orderedIds: parsed.orderedIds ?? allTasks.map((t) => t.id),
-        reasoning: parsed.reasoning ?? 'Prioritized by AI.',
-      };
-    } catch {
-      return {
-        orderedIds: allTasks.map((t) => t.id),
-        reasoning: 'Could not parse AI response. Order unchanged.',
-      };
-    }
-  });
+      try {
+        const parsed = JSON.parse(result.text ?? '{}') as {
+          orderedIds?: string[];
+          reasoning?: string;
+        };
+        const fallback = allTasks.map((t) => t.id);
+        const valid = Array.isArray(parsed.orderedIds)
+          ? parsed.orderedIds.filter((id) => fallback.includes(id))
+          : fallback;
+        // Append any missing ids deterministically so the sort never
+        // produces `-1` for unknown ids on the client.
+        const orderedIds = [
+          ...valid,
+          ...fallback.filter((id) => !valid.includes(id)),
+        ];
+        // Persist the new order so it survives reloads and drives
+        // `ORDER BY status, position` in `listTasks`.
+        orderedIds.forEach((id, idx) => {
+          try {
+            updateTask(id, { position: idx });
+          } catch {
+            // Best-effort per row; the client sort still applies.
+          }
+        });
+        return {
+          orderedIds,
+          reasoning: parsed.reasoning ?? 'Prioritized by AI.',
+        };
+      } catch {
+        return {
+          orderedIds: allTasks.map((t) => t.id),
+          reasoning: 'Could not parse AI response. Order unchanged.',
+        };
+      }
+    },
+  );
 
   // ── Focus system · breakdown steps ────────────────────────────────────────
+
+  const broadcastTasksChanged = () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
+  };
 
   ipcMain.handle('tasks:steps-list', (_e, { taskId }: { taskId: string }) =>
     listSteps(taskId),
@@ -154,18 +187,27 @@ export function registerTasksHandlers({
 
   ipcMain.handle(
     'tasks:step-add',
-    (_e, { taskId, title }: { taskId: string; title: string }) =>
-      createStep({ task_id: taskId, title }),
+    (_e, { taskId, title }: { taskId: string; title: string }) => {
+      const step = createStep({ task_id: taskId, title });
+      broadcastTasksChanged();
+      return step;
+    },
   );
 
   ipcMain.handle(
     'tasks:step-toggle',
-    (_e, { id, done }: { id: string; done: boolean }) => setStepDone(id, done),
+    (_e, { id, done }: { id: string; done: boolean }) => {
+      const res = setStepDone(id, done);
+      broadcastTasksChanged();
+      return res;
+    },
   );
 
-  ipcMain.handle('tasks:step-delete', (_e, { id }: { id: string }) =>
-    deleteStep(id),
-  );
+  ipcMain.handle('tasks:step-delete', (_e, { id }: { id: string }) => {
+    const res = deleteStep(id);
+    broadcastTasksChanged();
+    return res;
+  });
 
   ipcMain.handle('tasks:steps-progress', () => stepProgressMap());
 
@@ -181,7 +223,11 @@ export function registerTasksHandlers({
 
   ipcMain.handle(
     'tasks:block-create',
-    (_e, req: Parameters<typeof createBlock>[0]) => createBlock(req),
+    (_e, req: Parameters<typeof createBlock>[0]) => {
+      const block = createBlock(req);
+      broadcastTasksChanged();
+      return block;
+    },
   );
 
   ipcMain.handle(
@@ -189,12 +235,17 @@ export function registerTasksHandlers({
     (
       _e,
       { id, ...patch }: { id: string } & Parameters<typeof updateBlock>[1],
-    ) => updateBlock(id, patch),
+    ) => {
+      updateBlock(id, patch);
+      broadcastTasksChanged();
+    },
   );
 
-  ipcMain.handle('tasks:block-delete', (_e, { id }: { id: string }) =>
-    deleteBlock(id),
-  );
+  ipcMain.handle('tasks:block-delete', (_e, { id }: { id: string }) => {
+    const res = deleteBlock(id);
+    broadcastTasksChanged();
+    return res;
+  });
 
   // ── Focus system · sessions & stats ───────────────────────────────────────
 
@@ -204,7 +255,8 @@ export function registerTasksHandlers({
       const session = createFocusSession(req);
       // The stats strip and the task's pomodoro badge both live in the renderer;
       // one broadcast refreshes every mount instead of each page polling.
-      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('tasks:changed');
+      if (!mainWindow.isDestroyed())
+        mainWindow.webContents.send('tasks:changed');
       return session;
     },
   );

@@ -1085,12 +1085,13 @@ export interface IpcChannels {
     req: { status?: Task['status']; projectId?: string | null };
     res: Task[];
   };
+  'tasks:get': { req: { id: string }; res: Task | null };
   'tasks:create': {
     req: Pick<Task, 'title'> &
       Partial<
         Pick<
           Task,
-          'description' | 'priority' | 'due_at' | 'status' | 'project_id'
+          'description' | 'priority' | 'due_at' | 'estimate_mins' | 'status' | 'project_id'
         >
       >;
     res: Task;
@@ -1104,6 +1105,7 @@ export interface IpcChannels {
         | 'status'
         | 'priority'
         | 'due_at'
+        | 'estimate_mins'
         | 'position'
         | 'project_id'
       >
@@ -1120,7 +1122,7 @@ export interface IpcChannels {
   'tasks:increment-pomodoro': { req: { id: string }; res: void };
   /** Ask the agent to suggest a prioritized task order. */
   'tasks:prioritize': {
-    req: void;
+    req: { projectId?: string | null } | void;
     res: { orderedIds: string[]; reasoning: string };
   };
 
@@ -1204,12 +1206,19 @@ export interface IpcChannels {
   };
   /** Turn a brain dump into real tasks, creating them. */
   'tasks:brain-dump': {
-    req: { text: string };
+    req: { text: string; projectId?: string | null };
     res: { tasks: Task[]; note: string };
   };
   /** Propose (and persist) a realistic day of time blocks. */
   'tasks:plan-day': {
-    req: { day?: number; workStartMin?: number; workEndMin?: number } | void;
+    req:
+      | {
+          day?: number;
+          workStartMin?: number;
+          workEndMin?: number;
+          projectId?: string | null;
+        }
+      | void;
     res: { blocks: TaskBlock[]; note: string };
   };
 

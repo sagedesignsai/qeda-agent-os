@@ -45,31 +45,48 @@ export function registerCopilotHandlers({
         title: task.title,
         description: task.description,
       });
-      return { steps: createSteps(taskId, steps), note };
+      const created = createSteps(taskId, steps);
+      if (!mainWindow.isDestroyed())
+        mainWindow.webContents.send('tasks:changed');
+      return { steps: created, note };
     },
   );
 
-  ipcMain.handle('tasks:brain-dump', async (_e, { text }: { text: string }) => {
-    const trimmed = (text ?? '').trim();
-    if (!trimmed) return { tasks: [], note: 'Nothing to add.' };
-    const { tasks: drafts, note } = await expandBrainDump(trimmed);
-    const created = drafts.map((d) =>
-      createTask({
-        title: d.title,
-        description: d.description,
-        priority: d.priority,
-        estimate_mins: d.estimate_mins,
-        status: 'backlog',
-      }),
-    );
-    return { tasks: created, note };
-  });
+  ipcMain.handle(
+    'tasks:brain-dump',
+    async (
+      _e,
+      { text, projectId }: { text: string; projectId?: string | null },
+    ) => {
+      const trimmed = (text ?? '').trim();
+      if (!trimmed) return { tasks: [], note: 'Nothing to add.' };
+      const { tasks: drafts, note } = await expandBrainDump(trimmed);
+      const created = drafts.map((d) =>
+        createTask({
+          title: d.title,
+          description: d.description,
+          priority: d.priority,
+          estimate_mins: d.estimate_mins,
+          status: 'backlog',
+          project_id: projectId ?? null,
+        }),
+      );
+      if (created.length && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('tasks:changed');
+      return { tasks: created, note };
+    },
+  );
 
   ipcMain.handle(
     'tasks:plan-day',
     async (
       _e,
-      req: { day?: number; workStartMin?: number; workEndMin?: number } | void,
+      req: {
+        day?: number;
+        workStartMin?: number;
+        workEndMin?: number;
+        projectId?: string | null;
+      } | void,
     ) => {
       const nowSec = Math.floor(Date.now() / 1000);
       const dayStart = startOfDay(req?.day ?? nowSec);
@@ -77,7 +94,9 @@ export function registerCopilotHandlers({
       const workStartMin = req?.workStartMin ?? 9 * 60;
       const workEndMin = req?.workEndMin ?? 18 * 60;
 
-      const openTasks = listTasks().filter((t) => t.status !== 'done');
+      const openTasks = listTasks(
+        req?.projectId ? { projectId: req.projectId } : undefined,
+      ).filter((t) => t.status !== 'done');
       if (openTasks.length === 0) {
         return { blocks: [], note: 'No open tasks to schedule.' };
       }
@@ -108,12 +127,15 @@ export function registerCopilotHandlers({
           const start = dayStart + p.start_min * 60;
           return createBlock({
             task_id: p.task_id,
+            project_id: req?.projectId ?? null,
             title: p.title,
             start_at: start,
             end_at: start + p.duration_min * 60,
           });
         });
 
+      if (created.length && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('tasks:changed');
       return { blocks: created, note };
     },
   );

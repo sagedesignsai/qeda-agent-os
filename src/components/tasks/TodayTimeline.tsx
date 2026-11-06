@@ -183,7 +183,7 @@ export function TodayTimeline({
       const result = await window.electron.ipc.invoke<{
         blocks: unknown[];
         note: string;
-      }>('tasks:plan-day', {});
+      }>('tasks:plan-day', { projectId: projectId ?? null });
       await load();
       if ((result.blocks ?? []).length === 0) {
         toast.info('Nothing to schedule', {
@@ -375,7 +375,8 @@ export function TodayTimeline({
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="size-7 opacity-0 transition-opacity group-hover:opacity-100"
+                          aria-label="Block actions"
+                          className="size-7 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                         >
                           <MoreHorizontalIcon className="size-3.5" />
                         </Button>

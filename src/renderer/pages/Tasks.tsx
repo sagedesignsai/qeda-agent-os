@@ -85,6 +85,9 @@ import { HeaderTab, HeaderTabStrip } from '@/components/HeaderTabStrip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { BrainDumpDialog } from '@/components/tasks/BrainDumpDialog';
+import { WorkspacePicker } from '@/components/tasks/WorkspacePicker';
+import { startTaskInWorkspace } from '@/lib/task-launch';
+import type { WorkspaceKind } from '@/lib/workspace-suggestion';
 import { DocumentDrafterSheet } from '@/components/documents/drafter/DocumentDrafterSheet';
 import { TaskDialog } from '@/components/tasks/TaskDialog';
 import {
@@ -458,11 +461,20 @@ function FocusMode({
     try {
       const session = await window.electron.ipc.invoke<{ id: string }>(
         'terminal:session-create',
-        { title: task.title },
+        {
+          title: task.title,
+          goal: task.title,
+          project_id: task.project_id ?? null,
+        },
       );
-      onClose();
+      // Park in floating (timer keeps running / stays ready) instead of
+      // clearing focus — navigating away must not kill the pomodoro.
+      onMinimize();
+      const projectQuery = task.project_id
+        ? `&project=${encodeURIComponent(task.project_id)}`
+        : '';
       navigate(
-        `/terminal/${session.id}?goal=${encodeURIComponent(task.title)}`,
+        `/terminal/${session.id}?goal=${encodeURIComponent(task.title)}&task=${encodeURIComponent(task.id)}${projectQuery}`,
       );
     } catch {
       toast.error('Could not create terminal session');
@@ -881,6 +893,9 @@ export default function Tasks() {
   const [scheduleTaskId, setScheduleTaskId] = useState<string | null>(null);
   const [isPrioritizing, setIsPrioritizing] = useState(false);
   const [shuffleIndex, setShuffleIndex] = useState(0);
+  /** Task pending a workspace choice. `null` = picker closed. */
+  const [pickerTask, setPickerTask] = useState<Task | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   /**
    * The task the Document Drafter is open for. The sheet is always mounted —
@@ -898,12 +913,27 @@ export default function Tasks() {
     [tasks, stepProgress, shuffleIndex],
   );
 
-  const startFocus = useCallback(
+  const doStartFocus = useCallback(
     (task: Task) => {
       focus.startFocus(task);
     },
     [focus.startFocus],
   );
+
+  /**
+   * Explicit start (Focus button / Start Flow / Enter Flow / Today Focus):
+   * ask which execution workspace to work in. Drag-to-Active and card
+   * "Move" stay workspace-free (pure status moves via `handleMove`).
+   */
+  const requestStart = useCallback((task: Task) => {
+    setPickerTask(task);
+    setPickerOpen(true);
+  }, []);
+
+  const closePicker = useCallback(() => {
+    setPickerOpen(false);
+    setPickerTask(null);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -1011,22 +1041,24 @@ export default function Tasks() {
       // Dropping a card back where it came from is a no-op, not an XP event.
       if (!target || target.status === to) return;
 
-      if (to === 'done') {
-        void gamification.awardXp(
-          xpForTaskPriority(target.priority),
-          `task_p${target.priority}`,
-          id,
-        );
-        triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
-        // Completing the task you are focused on must end the session, or the
-        // timer keeps running against a finished task.
-        if (focus.focusedTask?.id === id) focus.clearFocus();
-      }
       setTasks((prev) =>
         prev.map((t) => (t.id === id ? { ...t, status: to } : t)),
       );
       try {
         await window.electron.ipc.invoke('tasks:update', { id, status: to });
+        // Award only after the write succeeds — previously XP fired before
+        // IPC and survived a failed update (double-award on retry).
+        if (to === 'done') {
+          void gamification.awardXp(
+            xpForTaskPriority(target.priority),
+            `task_p${target.priority}`,
+            id,
+          );
+          triggerParticleBurst(window.innerWidth / 2, window.innerHeight / 2);
+          // Completing the task you are focused on must end the session, or the
+          // timer keeps running against a finished task.
+          if (focus.focusedTask?.id === id) focus.clearFocus();
+        }
       } catch {
         toast.error('Could not update task');
         void load();
@@ -1038,11 +1070,59 @@ export default function Tasks() {
   const handleStartFlow = useCallback(
     (task: Task, e: React.MouseEvent) => {
       triggerParticleBurst(e.clientX, e.clientY);
-      void handleMove(task.id, 'active');
-      startFocus(task);
+      // The picker marks the task active via `startTaskInWorkspace`.
+      requestStart(task);
     },
-    [handleMove, startFocus],
+    [requestStart],
   );
+
+  const handleWorkspaceSelect = useCallback(
+    async (workspace: WorkspaceKind) => {
+      if (!pickerTask) return;
+      const task = pickerTask;
+      try {
+        const result = await startTaskInWorkspace(task, workspace, {
+          navigate,
+          onMarkedActive: (t) =>
+            setTasks((prev) =>
+              prev.map((row) =>
+                row.id === t.id ? { ...row, status: 'active' as const } : row,
+              ),
+            ),
+          onFocusTask: (t) => {
+            // Park in floating (ready) without opening the modal or
+            // auto-starting the timer. "Just Focus" is the only modal path.
+            focus.setFocusedTask(t);
+            if (focus.displayMode === 'closed') {
+              focus.setDisplayMode('floating');
+            }
+          },
+        });
+        closePicker();
+        if (result.kind === 'documents') {
+          setDrafterTask(task);
+        }
+      } catch {
+        toast.error('Could not start workspace');
+      }
+    },
+    // `focus` is a new object every render (useFocusSession returns a fresh
+    // object); depend on the stable setters + displayMode instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pickerTask, navigate, focus.setFocusedTask, focus.setDisplayMode, focus.displayMode, closePicker],
+  );
+
+  const handleJustFocus = useCallback(() => {
+    if (!pickerTask) {
+      closePicker();
+      return;
+    }
+    const task = pickerTask;
+    closePicker();
+    // Timer-only path: mark active then open the modal (timer stays idle until play).
+    if (task.status !== 'active') void handleMove(task.id, 'active');
+    doStartFocus({ ...task, status: 'active' });
+  }, [pickerTask, handleMove, doStartFocus, closePicker]);
 
   /** Burst at the click, then mark done. Shared by every "complete" affordance. */
   const handleComplete = useCallback(
@@ -1059,10 +1139,15 @@ export default function Tasks() {
       const result = await window.electron.ipc.invoke<{
         orderedIds: string[];
         reasoning: string;
-      }>('tasks:prioritize', {});
+      }>('tasks:prioritize', projectId ? { projectId } : {});
       const idOrder = result.orderedIds;
+      const orderIndex = new Map(idOrder.map((id, i) => [id, i]));
       setTasks((prev) =>
-        [...prev].sort((a, b) => idOrder.indexOf(a.id) - idOrder.indexOf(b.id)),
+        [...prev].sort(
+          (a, b) =>
+            (orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+            (orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+        ),
       );
       toast.success('Tasks prioritized by AI', {
         description: result.reasoning.slice(0, 120),
@@ -1260,7 +1345,7 @@ export default function Tasks() {
             stepProgress={stepProgress}
             refreshSignal={dataVersion}
             projectId={projectId}
-            onFocusTask={startFocus}
+            onFocusTask={requestStart}
             onOpenSteps={openSteps}
             onSendPrompt={handleSendCopilotPrompt}
             onOpenBrainDump={() => setBrainDumpOpen(true)}
@@ -1276,7 +1361,7 @@ export default function Tasks() {
             <SingleTaskLens
               tasks={tasks}
               stepProgress={stepProgress}
-              onFocus={startFocus}
+              onFocus={requestStart}
               onOpenSteps={openSteps}
               onComplete={(task, e) => {
                 triggerParticleBurst(e.clientX, e.clientY);
@@ -1295,7 +1380,7 @@ export default function Tasks() {
                   recommendation={status === 'active' ? recommendation : null}
                   onMove={handleMove}
                   onDelete={handleDelete}
-                  onFocus={startFocus}
+                  onFocus={requestStart}
                   onOpenSteps={openSteps}
                   onSchedule={openSchedule}
                   onEdit={openEdit}
@@ -1329,6 +1414,7 @@ export default function Tasks() {
           open ? setBrainDumpOpen(true) : closeBrainDump()
         }
         onCreated={(created) => setTasks((prev) => [...created, ...prev])}
+        projectId={projectId}
       />
 
       <CopilotPanel
@@ -1354,6 +1440,22 @@ export default function Tasks() {
         open={stepsOpen}
         onOpenChange={setStepsOpen}
         onChanged={() => void loadSteps()}
+      />
+
+      <WorkspacePicker
+        open={pickerOpen}
+        onOpenChange={(open) => {
+          if (!open) closePicker();
+          else setPickerOpen(true);
+        }}
+        task={pickerTask}
+        projectName={
+          pickerTask
+            ? (projectNameForTask.get(pickerTask.project_id) ?? projectName)
+            : projectName
+        }
+        onSelect={(ws) => void handleWorkspaceSelect(ws)}
+        onJustFocus={handleJustFocus}
       />
 
       {/*

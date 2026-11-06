@@ -37,6 +37,8 @@ export interface BrainDumpDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Called with the tasks the copilot created, for optimistic board updates. */
   onCreated: (tasks: Task[]) => void;
+  /** Scope the created tasks to the active project. Nullish = Inbox. */
+  projectId?: string | null;
 }
 
 const PRIORITY_TINT: Record<number, string> = {
@@ -49,6 +51,7 @@ export function BrainDumpDialog({
   open,
   onOpenChange,
   onCreated,
+  projectId,
 }: BrainDumpDialogProps) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
@@ -68,7 +71,7 @@ export function BrainDumpDialog({
       const result = await window.electron.ipc.invoke<{
         tasks: Task[];
         note: string;
-      }>('tasks:brain-dump', { text: value });
+      }>('tasks:brain-dump', { text: value, projectId: projectId ?? null });
       setCreated(result.tasks ?? []);
       setNote(result.note ?? '');
       onCreated(result.tasks ?? []);

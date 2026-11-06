@@ -13,6 +13,7 @@
 
 import { create } from 'zustand';
 import type { Task } from '@/main/ipc/channels';
+import { useAppStore } from '@/stores/app-store';
 import { presetAt } from '@/lib/focus/presets';
 import {
   durationsFromMinutes,
@@ -75,11 +76,22 @@ export const useFocusStore = create<FocusStoreState>((set, get) => ({
       timer: initialTimerState(durations.workSec),
       lastEvent: null,
     });
+    // Mirror into the cross-feature store so Chat/Terminal read the same
+    // task without a second fetch. focus-store owns the timer/display;
+    // app-store is the derived chat/terminal context.
+    useAppStore.setState({
+      focusedTask: task,
+      focusedTaskId: task?.id ?? null,
+    });
   },
 
   setFocusedTask: (task) => {
     set({ focusedTask: task });
     if (!task) set({ displayMode: 'closed' });
+    useAppStore.setState({
+      focusedTask: task,
+      focusedTaskId: task?.id ?? null,
+    });
   },
 
   setDisplayMode: (displayMode) => set({ displayMode }),
@@ -129,6 +141,7 @@ export const useFocusStore = create<FocusStoreState>((set, get) => ({
       timer: initialTimerState(durations.workSec),
       lastEvent: null,
     });
+    useAppStore.setState({ focusedTask: null, focusedTaskId: null });
   },
 }));
 

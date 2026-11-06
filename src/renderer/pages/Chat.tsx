@@ -167,6 +167,57 @@ export default function Chat() {
     if (state?.intent) setIntent(state.intent);
   }, [location.state]);
 
+  // Session-scoped resets: the `<Chat/>` component instance is reused across
+  // route param changes (React Router does not remount), so a one-shot ref set
+  // for session A would swallow session B's handover prompt, and `intent`
+  // (e.g. 'notebook') would leak into a manually started blank chat.
+  const prevSessionIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      prevSessionIdRef.current = sessionId;
+      initialPromptSentRef.current = false;
+    }
+    if (!sessionId) {
+      // Blank chat: no mode inheritance.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIntent(undefined);
+    }
+  }, [sessionId]);
+
+  // Safety net for handovers that land on the blank route (e.g. a stale
+  // `discussTaskInChat` caller that navigates to `/chat` with an
+  // `initialPrompt` but no session): create the session immediately so the
+  // one-shot auto-send below can fire. New callers should create eagerly.
+  useEffect(() => {
+    if (sessionId || initialPromptSentRef.current) return;
+    const state = location.state as ChatLocationState | null;
+    const prompt = state?.initialPrompt;
+    if (!prompt || creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
+    void (async () => {
+      try {
+        const session = await window.electron.ipc.invoke<{ id: string }>(
+          'sessions:create',
+          {
+            title: prompt.slice(0, 32).trim() || 'New Chat',
+            projectId: projectId ?? null,
+          },
+        );
+        pendingSendRef.current = prompt;
+        navigate(withScope(`/chat/${session.id}`), {
+          replace: true,
+          state: { ...state, initialPrompt: undefined },
+        });
+      } catch {
+        toast.error('Failed to start a new session.');
+      } finally {
+        creatingRef.current = false;
+        setCreating(false);
+      }
+    })();
+  }, [sessionId, location.state, projectId, navigate, withScope]);
+
   // Keep the breadcrumb title in sync with the active session.
   useEffect(() => {
     if (!sessionId) return undefined;
@@ -214,10 +265,20 @@ export default function Chat() {
     rawClearMessages();
   };
 
-  // Auto-scroll to bottom on new messages.
+  // Auto-scroll only when the reader is already at the bottom. Forcing
+  // scrollTop on every chunk yanked long tool cards / reasoning out from
+  // under the user while streaming.
+  const stickToBottomRef = useRef(true);
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, [messages, status]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [messages, status]);
 
@@ -373,7 +434,15 @@ export default function Chat() {
 
       {/* Middle Message / Welcome Area. On an empty conversation the welcome
           view owns the composer, so the docked bar below is suppressed. */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          stickToBottomRef.current =
+            el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
         {messages.length === 0 ? (
           <ChatWelcome
             onSend={handleSend}
