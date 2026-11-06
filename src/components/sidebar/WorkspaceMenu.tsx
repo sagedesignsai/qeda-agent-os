@@ -12,9 +12,11 @@
  * nested interactive elements.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useNotebooks, usePages } from '@/hooks/use-workspace';
+import { useProjects } from '@/hooks/use-projects';
+import { useProjectScope } from '@/hooks/use-project-scope';
 import type { Page } from '@/main/ipc/channels';
 import {
   SidebarContent,
@@ -27,6 +29,13 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,9 +62,17 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
 
   const { notebooks, reload: reloadNotebooks } = useNotebooks();
   const { pages, loading, setPages } = usePages(activeNotebookId ?? null);
+  const { projects } = useProjects();
+  const { projectId, withScope } = useProjectScope();
+
+  // Filter notebooks to active project if one is scoped, otherwise show all
+  const filteredNotebooks = projectId
+    ? notebooks.filter((n) => n.project_id === projectId)
+    : notebooks;
 
   const [creatingNotebook, setCreatingNotebook] = useState(false);
   const [notebookTitle, setNotebookTitle] = useState('');
+  const [notebookProjectId, setNotebookProjectId] = useState('none');
 
   const reloadPages = async (notebookId: string) => {
     try {
@@ -70,22 +87,34 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
 
   // ── Notebook actions ──────────────────────────────────────────────────────
 
-  const submitNotebook = async () => {
+  const submitNotebook = useCallback(async () => {
     const title = notebookTitle.trim();
     setNotebookTitle('');
     setCreatingNotebook(false);
-    if (!title) return;
+    if (!title) {
+      toast.error('Notebook name is required.');
+      return;
+    }
+    const duplicate = notebooks.find(
+      (n) => n.title.trim().toLowerCase() === title.toLowerCase(),
+    );
+    if (duplicate) {
+      toast.error(`A notebook named “${title}” already exists.`);
+      return;
+    }
     try {
       const notebook = await window.electron.ipc.invoke<{ id: string }>(
         'notebooks:create',
-        { title },
+        { title, projectId: notebookProjectId === 'none' ? null : notebookProjectId },
       );
       await reloadNotebooks();
-      navigate(`/workspace/${notebook.id}`);
+      navigate(withScope(`/workspace/${notebook.id}`));
+      setNotebookProjectId('none');
+      toast.success('Notebook created.');
     } catch {
       toast.error('Failed to create notebook.');
     }
-  };
+  }, [notebooks, reloadNotebooks]);
 
   const renameNotebook = async (id: string, current: string) => {
     const title = window.prompt('Rename notebook', current);
@@ -100,7 +129,7 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
   const deleteNotebook = async (id: string) => {
     if (!window.confirm('Delete this notebook and all its pages?')) return;
     await window.electron.ipc.invoke('notebooks:delete', { id });
-    if (activeNotebookId === id) navigate('/workspace');
+    if (activeNotebookId === id) navigate(withScope('/workspace'));
     void reloadNotebooks();
     toast.success('Notebook deleted.');
   };
@@ -119,7 +148,7 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
         parentPageId: parentPageId ?? null,
       });
       await reloadPages(notebookId);
-      navigate(`/workspace/${notebookId}/${page.id}`);
+      navigate(withScope(`/workspace/${notebookId}/${page.id}`));
     } catch {
       toast.error('Failed to create page.');
     }
@@ -139,7 +168,7 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
     if (!window.confirm('Delete this page?')) return;
     await window.electron.ipc.invoke('pages:delete', { id });
     if (activePageId === id && activeNotebookId) {
-      navigate(`/workspace/${activeNotebookId}`);
+      navigate(withScope(`/workspace/${activeNotebookId}`));
     }
     if (activeNotebookId) void reloadPages(activeNotebookId);
   };
@@ -182,7 +211,7 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
           </SidebarMenu>
 
           {creatingNotebook && (
-            <div className="px-1 pt-1">
+            <div className="px-1 pt-1 pb-2 space-y-2">
               <Input
                 autoFocus
                 value={notebookTitle}
@@ -198,6 +227,27 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
                 placeholder="Notebook name…"
                 className="h-7 text-xs"
               />
+              <div className="space-y-1">
+                <label className="block text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                  Project (optional)
+                </label>
+                <Select
+                  value={notebookProjectId}
+                  onValueChange={setNotebookProjectId}
+                >
+                  <SelectTrigger className="h-7 text-xs border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="p-1 text-xs">
+                    <SelectItem value="none">No project</SelectItem>
+                    {projects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
         </SidebarGroupContent>
@@ -209,7 +259,7 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
         </p>
       )}
 
-      {notebooks.map((notebook) => {
+      {filteredNotebooks.map((notebook) => {
         const isActiveNotebook = notebook.id === activeNotebookId;
         return (
           <SidebarGroup key={notebook.id}>
@@ -220,7 +270,7 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
                   <SidebarMenuButton
                     size="sm"
                     isActive={isActiveNotebook}
-                    onClick={() => navigate(`/workspace/${notebook.id}`)}
+                    onClick={() => navigate(withScope(`/workspace/${notebook.id}`))}
                   >
                     <NotebookIcon />
                     <span>{notebook.title}</span>
@@ -275,7 +325,7 @@ export function WorkspaceMenu({ onBack }: { onBack: () => void }) {
                         isActive={page.id === activePageId}
                         tooltip={page.title || 'Untitled'}
                         onClick={() =>
-                          navigate(`/workspace/${notebook.id}/${page.id}`)
+                          navigate(withScope(`/workspace/${notebook.id}/${page.id}`))
                         }
                         style={{ paddingLeft: `${8 + depthOf(page) * 12}px` }}
                       >

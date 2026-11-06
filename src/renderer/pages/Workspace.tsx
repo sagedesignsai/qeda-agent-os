@@ -7,7 +7,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
   ResizableHandle,
@@ -100,17 +100,34 @@ export default function Workspace() {
     ...(detail ? [{ label: detail.page.title || 'Untitled' }] : []),
   ];
 
-  const handleCreateNotebook = async (
-    title: string,
-    ownerProjectId?: string | null,
-  ) => {
-    const notebook = await window.electron.ipc.invoke<Notebook>(
-      'notebooks:create',
-      { title, projectId: ownerProjectId },
-    );
-    await reloadNotebooks();
-    navigate(`/workspace/${notebook.id}`);
-  };
+  const handleCreateNotebook = useCallback(
+    async (title: string, ownerProjectId?: string | null) => {
+      const cleanTitle = title.trim();
+      if (!cleanTitle) {
+        toast.error('Notebook name is required.');
+        return;
+      }
+      const duplicate = notebooks.find(
+        (n) => n.title.trim().toLowerCase() === cleanTitle.toLowerCase(),
+      );
+      if (duplicate) {
+        toast.error(`A notebook named “${cleanTitle}” already exists.`);
+        return;
+      }
+      try {
+        const notebook = await window.electron.ipc.invoke<Notebook>(
+          'notebooks:create',
+          { title: cleanTitle, projectId: ownerProjectId },
+        );
+        await reloadNotebooks();
+        navigate(`/workspace/${notebook.id}`);
+        toast.success('Notebook created.');
+      } catch {
+        toast.error('Could not create notebook.');
+      }
+    },
+    [notebooks, reloadNotebooks],
+  );
 
   const handleCreatePage = async (targetNotebookId: string) => {
     try {
@@ -364,17 +381,14 @@ function NotebooksHome({
   }, [query, search]);
 
   const saveNotebook = async () => {
-    if (!title.trim()) return;
-    try {
-      await onCreateNotebook(
-        title.trim(),
-        projectId === 'none' ? null : projectId,
-      );
-      setCreateOpen(false);
-      setTitle('');
-    } catch {
-      toast.error('Could not create notebook.');
+    const cleanTitle = title.trim();
+    if (!cleanTitle) {
+      toast.error('Notebook name is required.');
+      return;
     }
+    await onCreateNotebook(cleanTitle, projectId === 'none' ? null : projectId);
+    setCreateOpen(false);
+    setTitle('');
   };
 
   const changeNotebookProject = async (notebookId: string, value: string) => {
