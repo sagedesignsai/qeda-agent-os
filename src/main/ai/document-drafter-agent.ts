@@ -33,6 +33,7 @@ import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { documentDrafterTools } from '../tools/documents-drafter.js';
 import { createDocumentCapabilityTool } from '../tools/document-capability-tool.js';
+import { createDocumentDraftSubagentTool } from '../tools/document-draft-subagent.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { documentDrafterToolPolicies } from '../tools/policies/drafter.js';
 import { createPlanTools } from '../tools/plan.js';
@@ -207,6 +208,8 @@ export function createDocumentDrafterAgent(opts?: {
   documentId?: string;
   target?: ModelTarget;
   planManager?: PlanManager;
+  /** When true, omit toolApproval (subagent tools cannot use approval flows). */
+  forSubagent?: boolean;
 }) {
   const settings = getSettings();
   const providerId = opts?.target?.providerId ?? settings.activeProvider;
@@ -214,18 +217,34 @@ export function createDocumentDrafterAgent(opts?: {
   const model = resolveModel(providerId, modelId);
   const planManager = opts?.planManager ?? new PlanManager();
 
+  const draftSubagent: any = opts?.forSubagent
+    ? null
+    : createDocumentDraftSubagentTool({
+        createAgent: ({ documentId }) =>
+          createDocumentDrafterAgent({
+            documentId: documentId ?? opts?.documentId,
+            activeProject: opts?.activeProject,
+            taskId: opts?.taskId,
+            target: opts?.target,
+            forSubagent: true,
+          }),
+      });
+
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildInstructions(opts),
     tools: {
       ...documentDrafterTools,
       getDocumentCapability: createDocumentCapabilityTool(),
+      ...(draftSubagent ? { buildDocumentSections: draftSubagent } : {}),
       ...createPlanTools(planManager),
     },
     // Handles the dynamic-call guard internally; a dynamic call is not covered
     // by a name-keyed table, so it always requires approval. An unclassified
     // name denies with an explanatory reason rather than running unclassified.
-    toolApproval: drafterApproval,
+    // In subagent mode, approval is omitted (SDK forbids it inside subagents);
+    // the parent's tool approval gates the delegation itself.
+    ...(opts?.forSubagent ? {} : { toolApproval: drafterApproval }),
     stopWhen: [
       isStepCount(DRAFTER_STEP_BUDGET),
       planManager.stopCondition(),

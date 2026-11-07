@@ -98,6 +98,9 @@ export const documentDrafterToolPolicies: ToolPolicyMap = {
   // `destructive` => `user-approval`, which the UI renders as Approve/Deny.
   replaceBlock: t('destructive'),
 
+  // ── Subagent delegation (additive drafting) ─────────────────────────────────
+  buildDocumentSections: t('write-local'),
+
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),
   updatePlanItem: t('write-local'),

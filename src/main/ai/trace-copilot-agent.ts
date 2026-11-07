@@ -22,6 +22,7 @@ import { ToolLoopAgent, isStepCount } from 'ai';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createTraceTools } from '../tools/trace.js';
+import { createTraceCompositionSubagentTool } from '../tools/trace-composition-subagent.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { traceToolPolicies } from '../tools/policies/trace.js';
 import { createPlanTools } from '../tools/plan.js';
@@ -201,6 +202,8 @@ export function createTraceCopilotAgent(opts?: {
   target?: ModelTarget;
   broadcastChanged?: () => void;
   planManager?: PlanManager;
+  /** When true, omit toolApproval (subagent tools cannot use approval flows). */
+  forSubagent?: boolean;
 }) {
   const settings = getSettings();
   const providerId = opts?.target?.providerId ?? settings.activeProvider;
@@ -212,6 +215,21 @@ export function createTraceCopilotAgent(opts?: {
     broadcastChanged: opts?.broadcastChanged,
   });
 
+  // BuildComposition subagent: delegate full compositions to an isolated
+  // Trace subagent. Only on the parent; the subagent itself must not recurse.
+  const compositionSubagent: any = opts?.forSubagent
+    ? null
+    : createTraceCompositionSubagentTool({
+        createAgent: (projectId) =>
+          createTraceCopilotAgent({
+            projectId,
+            activeProject: opts?.activeProject,
+            target: opts?.target,
+            broadcastChanged: opts?.broadcastChanged,
+            forSubagent: true,
+          }),
+      });
+
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildInstructions({
@@ -220,9 +238,10 @@ export function createTraceCopilotAgent(opts?: {
     }),
     tools: {
       ...traceTools,
+      ...(compositionSubagent ? { buildComposition: compositionSubagent } : {}),
       ...createPlanTools(planManager),
     },
-    toolApproval: traceApproval,
+    ...(opts?.forSubagent ? {} : { toolApproval: traceApproval }),
     stopWhen: [
       isStepCount(TRACE_COPILOT_STEP_BUDGET),
       planManager.stopCondition(),

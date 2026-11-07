@@ -74,6 +74,9 @@ export const traceToolPolicies: ToolPolicyMap = {
   // the primary use is complex multi-element creation in one batch.
   dispatchOps: t('write-local'),
 
+  // ── Subagent delegation (additive composition) ─────────────────────────────
+  buildComposition: t('write-local'),
+
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),
   updatePlanItem: t('write-local'),
