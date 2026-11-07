@@ -14,6 +14,7 @@
 
 import { ToolLoopAgent, isStepCount } from 'ai';
 import { createMusicTools } from '../tools/music.js';
+import { getMusicCapability } from '../tools/capability-simple-tools.js';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import type { ModelTarget } from './fallback.js';
@@ -72,10 +73,13 @@ export function createMusicCopilotAgent(opts: MusicCopilotAgentOptions = {}) {
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildMusicInstructions(opts.context),
-    tools: createMusicTools({
-      onCommand: opts.onCommand,
-      onChanged: opts.onChanged,
-    }),
+    tools: {
+      ...createMusicTools({
+        onCommand: opts.onCommand,
+        onChanged: opts.onChanged,
+      }),
+      getMusicCapability,
+    },
     stopWhen: isStepCount(20),
   });
 }

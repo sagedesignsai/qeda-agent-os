@@ -46,6 +46,7 @@ import type { ModelTarget } from './fallback.js';
 import type { PlanManager } from './plan-manager.js';
 import { createPlanTools } from '../tools/plan.js';
 import { correspondenceCopilotTools } from '../tools/correspondence.js';
+import { getCorrespondenceCapability } from '../tools/capability-simple-tools.js';
 import { correspondenceCopilotApprovalPolicy } from '../tools/index.js';
 
 export interface CorrespondenceCopilotAgentInput {
@@ -125,6 +126,7 @@ export function createCorrespondenceCopilotAgent({
     model: model as any,
     tools: {
       ...correspondenceCopilotTools,
+      getCorrespondenceCapability,
       ...createPlanTools(planManager),
     } as unknown as ToolLoopAgent['tools'],
     toolApproval: correspondenceCopilotApprovalPolicy,

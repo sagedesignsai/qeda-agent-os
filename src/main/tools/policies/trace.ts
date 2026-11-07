@@ -65,6 +65,9 @@ export const traceToolPolicies: ToolPolicyMap = {
   // ── Export (read-only — generates output, does not mutate) ────────────────
   exportSvg: t('read'),
 
+  // ── Visual verification (read-only — renders an SVG frame to temp) ───────
+  renderTracePreview: t('read'),
+
   // ── Capability discovery (read-only — loads docs) ──────────────────────────
   getTraceCapability: t('read'),
 

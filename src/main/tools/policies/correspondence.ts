@@ -58,6 +58,9 @@ export const correspondenceToolPolicies: ToolPolicyMap = {
   listTasks: t('read'),
   listSequenceRuns: t('read'),
 
+  // ── Capability discovery (read-only — derived patterns) ────────────────────
+  getCorrespondenceCapability: t('read'),
+
   // ── Drafting: additive, never rewrites existing dispatch truth ─────────────
   draftMessage: t('write-local'),
   draftRecipients: t('write-local'),

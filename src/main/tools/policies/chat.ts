@@ -152,6 +152,7 @@ export const chatToolPolicies: ToolPolicyMap = {
   // cannot reach outside the project's configured root.
   getDocumentOutline: t('read'),
   readDocument: t('read'),
+  getDocumentCapability: t('read'),
   listProjectFiles: t('read'),
   readProjectFile: t('read'),
   createDocument: t('write-local'),
@@ -206,6 +207,16 @@ export const chatToolPolicies: ToolPolicyMap = {
   evaluateBrowser: t('write-local'),
   screenshotBrowser: t('read'),
   closeBrowser: t('write-local'),
+
+  // ── Workspace resources (read-only discovery) ─────────────────────────────────
+  listStudioTakes: t('read'),
+  listDocuments: t('read'),
+  listResearchRuns: t('read'),
+  listTerminalSessions: t('read'),
+  listSoundLabSessions: t('read'),
+  listKnowledgePages: t('read'),
+  listCodeProjects: t('read'),
+  listChatSessions: t('read'),
 
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),

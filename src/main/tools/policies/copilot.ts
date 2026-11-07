@@ -88,6 +88,16 @@ export const copilotToolPolicies: ToolPolicyMap = {
   searchProjectMemory: t('read'),
   listProjectMemories: t('read'),
 
+  // ── Workspace resources (read-only discovery) ─────────────────────────────────
+  listStudioTakes: t('read'),
+  listDocuments: t('read'),
+  listResearchRuns: t('read'),
+  listTerminalSessions: t('read'),
+  listSoundLabSessions: t('read'),
+  listKnowledgePages: t('read'),
+  listCodeProjects: t('read'),
+  listChatSessions: t('read'),
+
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),
   updatePlanItem: t('write-local'),

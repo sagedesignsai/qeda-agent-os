@@ -45,7 +45,7 @@ import { copilotTools } from '../main/ai/task-copilot-agent';
  * lands in it. Do not lower it to "make room"; raise it in
  * docs/agent-tooling-spec.md §8 in the same review that adds the tool.
  */
-const CEILING = { chat: 105, copilot: 50 } as const;
+const CEILING = { chat: 110, copilot: 50 } as const;
 
 describe('capability derivation', () => {
   it('gates destructive and cost, and nothing else, by default', () => {

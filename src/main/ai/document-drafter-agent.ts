@@ -35,7 +35,7 @@ import { documentDrafterTools } from '../tools/documents-drafter.js';
 import { createDocumentCapabilityTool } from '../tools/document-capability-tool.js';
 import { createDocumentDraftSubagentTool } from '../tools/document-draft-subagent.js';
 import { createApprovalPolicy } from '../tools/capability.js';
-import { documentDrafterToolPolicies } from '../tools/policies/drafter.js';
+import { documentDrafterToolPolicies, documentSubagentToolPolicies } from '../tools/policies/drafter.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
@@ -180,7 +180,10 @@ If you discover the scope has changed, call \`createPlan\` again with a revised 
  * (`getDocumentOutline`, `readDocument`, `listProjectFiles`, `readProjectFile`)
  * cannot mutate anything.
  */
-const drafterApproval = createApprovalPolicy(documentDrafterToolPolicies);
+const drafterApproval = createApprovalPolicy({
+  ...documentDrafterToolPolicies,
+  ...documentSubagentToolPolicies,
+});
 
 /**
  * Does calling this tool pause for user approval?

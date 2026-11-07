@@ -15,6 +15,7 @@ import { ToolLoopAgent, isStepCount } from 'ai';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createStudioTools } from '../tools/studio.js';
+import { getStudioCapability } from '../tools/capability-simple-tools.js';
 import { getStudioTake, type StudioTake } from '../db/studio-store.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
@@ -147,6 +148,7 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
     ),
     tools: {
       ...tools,
+      getStudioCapability,
       ...createPlanTools(planManager),
     },
     stopWhen: [isStepCount(25), planManager.stopCondition()],

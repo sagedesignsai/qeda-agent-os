@@ -98,11 +98,18 @@ export const documentDrafterToolPolicies: ToolPolicyMap = {
   // `destructive` => `user-approval`, which the UI renders as Approve/Deny.
   replaceBlock: t('destructive'),
 
-  // ── Subagent delegation (additive drafting) ─────────────────────────────────
-  buildDocumentSections: t('write-local'),
-
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),
   updatePlanItem: t('write-local'),
+};
+
+/**
+ * Agent-only subagent delegation. NOT shared with chat (the chat agent does
+ * not delegate drafting), so it lives outside `documentDrafterToolPolicies` —
+ * the §5.2 shared-parity test iterates that map and must stay about the six
+ * genuinely shared tools. The drafter's approval gate merges both maps.
+ */
+export const documentSubagentToolPolicies: ToolPolicyMap = {
+  buildDocumentSections: t('write-local'),
 };
 

@@ -23,6 +23,7 @@ import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createTraceTools } from '../tools/trace.js';
 import { createTraceCompositionSubagentTool } from '../tools/trace-composition-subagent.js';
+import { createTracePreviewTool } from '../tools/trace-preview-tool.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { traceToolPolicies } from '../tools/policies/trace.js';
 import { createPlanTools } from '../tools/plan.js';
@@ -146,7 +147,7 @@ Use \`dispatchOps\` for complex atomic mutations that combine element creation +
 Use \`applyRecipe\` to instantiate pre-built compositions: 'lower-third', 'kinetic-text', 'progress-ring', 'bar-chart', 'counter'.
 
 ### Verification
-Always call \`lintProject\` after major changes to catch errors (orphan elements, out-of-bounds keyframes, broken references).
+Always call \`lintProject\` after major changes to catch errors (orphan elements, out-of-bounds keyframes, broken references), then \`renderTracePreview\` to visually verify the frame before summarizing.
 
 ## Tone & Output
 - Confident, concise, action-oriented.
@@ -229,6 +230,7 @@ export function createTraceCopilotAgent(opts?: {
             forSubagent: true,
           }),
       });
+  const previewTool = createTracePreviewTool();
 
   return new ToolLoopAgent({
     model: model as any,
@@ -238,6 +240,7 @@ export function createTraceCopilotAgent(opts?: {
     }),
     tools: {
       ...traceTools,
+      renderTracePreview: previewTool,
       ...(compositionSubagent ? { buildComposition: compositionSubagent } : {}),
       ...createPlanTools(planManager),
     },

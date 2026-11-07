@@ -56,6 +56,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import { createDocumentCapabilityTool } from './document-capability-tool.js';
 import { getDocument, saveDocument } from '../db/documents.js';
 import type { PdfDocumentRecord } from '../db/documents.js';
 import { projectFilesTools } from './project-files.js';
@@ -620,6 +621,7 @@ export const documentDrafterTools = {
   createDocument,
   readDocument,
   getDocumentOutline,
+  getDocumentCapability: createDocumentCapabilityTool(),
   appendBlocks,
   insertBlocksAt,
   replaceBlock,
