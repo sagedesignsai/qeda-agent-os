@@ -510,6 +510,21 @@ export function createNovaTraceMarkProject(
       [GLOW_GRADIENT.id]: GLOW_GRADIENT,
       [STROKE_GRADIENT.id]: STROKE_GRADIENT,
     },
+    filters: {
+      'nova-neon': {
+        id: 'nova-neon',
+        label: 'Nova neon',
+        kind: 'glow',
+        region: 35,
+        colorSpace: 'sRGB',
+        primitives: [
+          { id: 'blur', kind: 'feGaussianBlur', in: 'SourceGraphic', result: 'blur', params: { stdDeviation: 5 } },
+          { id: 'flood', kind: 'feFlood', result: 'flood', params: { 'flood-color': '#38bdf8', 'flood-opacity': 0.7 } },
+          { id: 'composite', kind: 'feComposite', in: 'flood', in2: 'blur', result: 'glow', params: { operator: 'in' } },
+          { id: 'merge', kind: 'feMerge', params: { mergeNodes: ['glow', 'SourceGraphic'] } },
+        ],
+      },
+    },
     storyboard: {
       scenes,
       activeSceneId: scenes[0].id,

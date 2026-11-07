@@ -11,6 +11,7 @@
 
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
+import { filtersToDefs } from '@/lib/trace/filters/serialize';
 import {
   elementBodyMarkup,
   gradientsToDefs,
@@ -133,7 +134,7 @@ export function TraceRenderer({
   interactive = true,
   background,
 }: TraceRendererProps) {
-  const defs = `${gradientsToDefs(project.gradients)}${project.defs ?? ''}`;
+  const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${project.defs ?? ''}`;
   const roots = project.rootElementIds
     .map((elementId) => project.elements[elementId])
     .filter((element): element is TraceElement => Boolean(element));

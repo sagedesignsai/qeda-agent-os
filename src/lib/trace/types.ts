@@ -186,6 +186,8 @@ export interface AudioTrack {
   type?: 'music' | 'sfx' | 'voiceover';
 }
 
+import type { TraceFilter } from './filters/types';
+
 export interface TraceProject {
   id: string;
   name: string;
@@ -198,6 +200,8 @@ export interface TraceProject {
   defs?: string;
   /** Editor-authored gradients, keyed by id. Serialized into `defs` on every mutation. */
   gradients?: Record<string, TraceGradient>;
+  /** Editor-authored SVG filters, keyed by id. Serialized into `defs` on every mutation. */
+  filters?: Record<string, TraceFilter>;
   audioTracks?: AudioTrack[];
   /** Optional storyboard metadata. Legacy projects are migrated on load. */
   storyboard?: TraceStoryboard;

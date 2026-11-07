@@ -10,6 +10,7 @@
  * Pure string building — no React, no DOM.
  */
 
+import { filtersToDefs } from '../filters/serialize';
 import { resolveElementAtTime } from '../runtime/resolve-element';
 import { migrateTraceProject } from '../migrate';
 import type { TraceElement, TraceGradient, TraceProject } from '../types';
@@ -278,7 +279,7 @@ export function staticSvgMarkup(
   options: { background?: string; size?: boolean } = {},
 ): string {
   const project = migrateTraceProject(inputProject);
-  const defs = `${gradientsToDefs(project.gradients)}${project.defs ?? ''}`;
+  const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${project.defs ?? ''}`;
   const roots = project.rootElementIds
     .map((elementId) => elementTreeMarkup(project, elementId, timeMs))
     .join('\n');

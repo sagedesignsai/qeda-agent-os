@@ -36,6 +36,13 @@ const TEXT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 const TEXT_PREVIEW_RETURN_BYTES = 512 * 1024;
 const NULL_SNIFF_BYTES = 8 * 1024;
 
+/**
+ * Ceiling for inlining an image into a document. The base64 payload is ~4/3 of
+ * the file, and it lands in the project JSON, so a runaway photo would bloat
+ * every save and export of the document that embeds it.
+ */
+const EMBED_MAX_BYTES = 8 * 1024 * 1024;
+
 function assetsRootFor(projectId: string): string {
   return path.join(app.getPath('userData'), 'projects', projectId, 'assets');
 }
@@ -142,6 +149,41 @@ export function registerProjectFilesHandlers({
       return {
         text: buffer.toString('utf8'),
         truncated: stat.size > returnLimit,
+        sizeBytes: stat.size,
+      };
+    },
+  );
+
+  ipcMain.handle(
+    'project-files:read-data-url',
+    async (
+      _event,
+      { projectId, fileId }: { projectId: string; fileId: string },
+    ) => {
+      const record = requireRecord(projectId, fileId);
+      const mimeType = record.mime_type ?? 'application/octet-stream';
+
+      if (record.kind !== 'image' || !mimeType.startsWith('image/')) {
+        throw new Error('Only image files can be embedded in a document.');
+      }
+
+      const stat = await fs.stat(record.path);
+      if (!stat.isFile()) throw new Error('Not a file.');
+
+      if (stat.size > EMBED_MAX_BYTES) {
+        throw new Error(
+          `This image is too large to embed (${formatFileSize(
+            stat.size,
+          )}; the limit is ${formatFileSize(EMBED_MAX_BYTES)}).`,
+        );
+      }
+
+      // Base64 the bytes as they are on disk: an SVG stays byte-identical, and
+      // a raster needs no re-encode, so the embedded source matches the file.
+      const bytes = await fs.readFile(record.path);
+      return {
+        dataUrl: `data:${mimeType};base64,${bytes.toString('base64')}`,
+        mimeType,
         sizeBytes: stat.size,
       };
     },

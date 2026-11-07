@@ -33,9 +33,7 @@ export interface GizmoBBox {
   height: number;
 }
 
-export type GizmoHandle =
-  | 'move'
-  | 'rotate'
+export type GizmoScaleHandle =
   | 'nw'
   | 'n'
   | 'ne'
@@ -43,10 +41,11 @@ export type GizmoHandle =
   | 'se'
   | 's'
   | 'sw'
-  | 'w'
-  | 'origin';
+  | 'w';
 
-export const GIZMO_SCALE_HANDLES: GizmoHandle[] = [
+export type GizmoHandle = 'move' | 'rotate' | GizmoScaleHandle | 'origin';
+
+export const GIZMO_SCALE_HANDLES: GizmoScaleHandle[] = [
   'nw',
   'n',
   'ne',

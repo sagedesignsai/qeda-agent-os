@@ -46,6 +46,7 @@ export interface TraceProjectSnapshot {
   storyboard?: TraceStoryboard;
   defs?: string;
   gradients?: TraceProject['gradients'];
+  filters?: TraceProject['filters'];
   audioTracks?: AudioTrack[];
 }
 
@@ -176,6 +177,7 @@ export type TraceOp =
       options?: Record<string, any>;
     }
   | { type: 'setDefs'; defs: string }
+  | { type: 'setFilters'; filters: TraceProject['filters'] }
   | { type: 'setAudio'; tracks: AudioTrack[] }
   /**
    * Replaces document state from a snapshot. Used to express the inverse of a

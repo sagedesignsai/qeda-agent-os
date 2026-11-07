@@ -181,6 +181,13 @@ export interface ProjectFileTextResult {
   sizeBytes: number;
 }
 
+/** One catalogued image inlined as a `data:` URI, for embedding in a document. */
+export interface ProjectFileDataUrlResult {
+  dataUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 // ─── Classification ───────────────────────────────────────────────────────────
 
 const EXTENSION_KIND: Record<string, ProjectFileKind> = {

@@ -3,7 +3,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Descriptor-driven property inspector, laid out like a design panel:
  * Transform (align to artboard, X/Y, rotation, scale), Layout (dimensions with
- * aspect lock), Appearance, Fill, Stroke, Text, Path, Layer and Animation.
+ * aspect lock), Image source, Appearance, Fill, Stroke, Text, Path, Layer and
+ * Animation.
  *
  * Fields read the value resolved at the playhead (so an animated property shows
  * the frame you are looking at) and write through `updateAttributes`, which
@@ -48,6 +49,8 @@ import {
   TrackButton,
   type AlignKind,
 } from '@/components/trace/inspector/fields';
+import { FiltersSection } from '@/components/trace/inspector/filters';
+import { ImageSection } from '@/components/trace/inspector/image';
 import { PanelSection } from '@/components/trace/inspector/section';
 import { ScrubField } from '@/components/trace/inspector/scrub-field';
 import {
@@ -126,7 +129,7 @@ function propertyValue(
 
 function usePropertySetter(element: TraceElement, timeMs: number) {
   const updateAttributes = useTraceStore((state) => state.updateAttributes);
-  return (property: AnimatableProperty, next: number | string) => {
+  return (property: AnimatableProperty, next: number | string | boolean) => {
     if (property === 'x' || property === 'y') {
       const position = getElementPosition(element, timeMs);
       const target =
@@ -1304,7 +1307,12 @@ function CanvasInspector() {
 
 /* ── Inspector root ────────────────────────────────────────────────────────── */
 
-export function TraceInspector() {
+export function TraceInspector({
+  projectId,
+}: {
+  /** Document project, used to scope the image picker's file browser. */
+  projectId?: string | null;
+} = {}) {
   const project = useTraceStore((state) => state.project);
   const selectedElementId = useTraceStore(
     (state) => state.selection.selectedElementId,
@@ -1409,9 +1417,13 @@ export function TraceInspector() {
           <>
             <TransformSection element={element} />
             <LayoutSection element={element} />
+            {element.type === 'image' ? (
+              <ImageSection element={element} projectId={projectId} />
+            ) : null}
             <AppearanceSection element={element} />
             <FillSection element={element} />
             <StrokeSection element={element} />
+            <FiltersSection element={element} />
             {element.type === 'text' ? <TextSection element={element} /> : null}
             {element.type === 'path' ||
             element.type === 'polyline' ||

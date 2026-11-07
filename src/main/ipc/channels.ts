@@ -59,6 +59,7 @@ import type {
   ProjectLinkedCounts,
 } from '../db/projects.js';
 import type {
+  ProjectFileDataUrlResult,
   ProjectFileDirectory,
   ProjectFileEntry,
   ProjectFileKind,
@@ -171,6 +172,7 @@ export type {
   ProjectLinkedCounts,
 };
 export type {
+  ProjectFileDataUrlResult,
   ProjectFileDirectory,
   ProjectFileEntry,
   ProjectFileKind,
@@ -464,6 +466,10 @@ export interface IpcChannels {
   'trace:rename-project': { req: { projectId: string; name: string }; res: { name: string } };
   'trace:delete-project': { req: { projectId: string }; res: { deleted: boolean } };
   'trace:reveal-project': { req: { projectId: string }; res: void };
+  'trace:generate-template-thumbnail': {
+    req: { templateId: string };
+    res: { thumbnailSvg: string | null; error?: string };
+  };
   'trace:changed': void;
   // Export: the editor starts/cancels; the hidden render window reports chunks.
   'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
@@ -1161,6 +1167,14 @@ export interface IpcChannels {
   'project-files:read-text': {
     req: { projectId: string; fileId: string };
     res: ProjectFileTextResult;
+  };
+  /**
+   * Inline one catalogued image as a `data:` URI so it can be embedded in a
+   * document (e.g. a Trace `<image href>`) and survive export unchanged.
+   */
+  'project-files:read-data-url': {
+    req: { projectId: string; fileId: string };
+    res: ProjectFileDataUrlResult;
   };
   'project-files:reveal': {
     req: { projectId: string; fileId: string };

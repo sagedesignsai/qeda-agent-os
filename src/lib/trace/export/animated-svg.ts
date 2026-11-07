@@ -19,6 +19,7 @@ import {
   escapeXml,
   gradientsToDefs,
 } from '../serialize/svg-markup';
+import { filtersToDefs } from '../filters/serialize';
 import type {
   EasingType,
   PropertyTrack,
@@ -386,7 +387,7 @@ export function compileProjectToAnimatedSvg(
     })
     .join('\n');
 
-  const defs = `${gradientsToDefs(project.gradients)}${project.defs ?? ''}${clips.join('')}`;
+  const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${project.defs ?? ''}${clips.join('')}`;
   const background = options.background
     ? `<rect width="${project.width}" height="${project.height}" fill="${escapeXml(options.background)}" />`
     : '';

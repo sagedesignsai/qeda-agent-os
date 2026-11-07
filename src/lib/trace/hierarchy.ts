@@ -158,7 +158,7 @@ export function worldMatrix(
 
   while (cursor && !guard.has(cursor)) {
     guard.add(cursor);
-    const element = project.elements[cursor];
+    const element: TraceElement | undefined = project.elements[cursor];
     if (!element) break;
     chain.unshift(element);
     cursor = element.parentId ?? null;
@@ -190,7 +190,7 @@ export function checkReparent(
   project: TraceProject,
   elementId: string,
   parentId: string | null,
-): { allowed: boolean; reason: string } {
+): { allowed: true } | { allowed: false; reason: string } {
   if (!project.elements[elementId]) {
     return { allowed: false, reason: `Element "${elementId}" does not exist.` };
   }
@@ -365,12 +365,12 @@ export function commonParentId(
   if (elementIds.length === 0) return null;
   let candidate = project.elements[elementIds[0]]?.parentId ?? null;
   while (candidate) {
+    const parent: string = candidate;
     const holdsAll = elementIds.every(
-      (id) =>
-        id === candidate || isElementDescendant(project, id, candidate),
+      (id) => id === parent || isElementDescendant(project, id, parent),
     );
-    if (holdsAll) return candidate;
-    candidate = project.elements[candidate]?.parentId ?? null;
+    if (holdsAll) return parent;
+    candidate = project.elements[parent]?.parentId ?? null;
   }
   return null;
 }

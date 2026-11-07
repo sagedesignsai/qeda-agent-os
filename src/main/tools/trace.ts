@@ -136,7 +136,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const getProject = tool({
     description:
       'Get the current NovaTrace project: canvas size, duration, fps, element list with types and track counts, root element ids, scene count, and gradients. Use this first to understand what is already in the composition.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z
         .string()
         .describe('The trace project id to inspect.'),
@@ -153,7 +153,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const createProject = tool({
     description:
       'Create a new NovaTrace project from scratch or from a template. Returns the project id and a summary. Use this when starting a new composition.',
-    parameters: z.object({
+    inputSchema: z.object({
       name: z.string().describe('Project name, e.g. "Sponsor Card — Qeda"'),
       templateId: z
         .enum([
@@ -177,7 +177,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
 
       // Use the template system if specified
       const { instantiateCompositionTemplate } = await import(
-        '../../lib/trace/templates'
+        '../../lib/trace/templates/index.js'
       );
       const project = instantiateCompositionTemplate(templateId, {
         name,
@@ -191,7 +191,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
       broadcast();
       return {
         projectId: created.id,
-        ...summarizeProject(created.project ?? project),
+        ...summarizeProject({ ...project, name: created.name }),
       };
     },
   });
@@ -199,7 +199,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const lintProject = tool({
     description:
       'Lint a NovaTrace project for errors (orphan elements, keyframe issues, bounds violations, broken references). Returns ok/error/warning counts and diagnostic details. Use this after making changes to verify quality.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string().describe('The trace project id to lint.'),
     }),
     execute: async ({ projectId }) => {
@@ -216,7 +216,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const addElements = tool({
     description:
       'Add one or more elements to a NovaTrace project. Each element is a spec object with type, id (optional), name, position, and type-specific attributes. Elements are added as root-level unless parentId is specified. Returns the ids of created elements and a project summary.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string().describe('The trace project id.'),
       elements: z
         .array(
@@ -292,7 +292,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const updateElements = tool({
     description:
       'Update attributes of one or more existing elements. Pass the element id and a patch object of attributes to merge. Set an attribute to null to delete it.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       updates: z.array(
         z.object({
@@ -339,7 +339,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const setTracks = tool({
     description:
       'Set or replace animation tracks on elements. Each track targets one animatable property and contains keyframes (time in ms, value, easing). This is how you animate elements — position, opacity, scale, rotation, colors, etc. Existing tracks for the same property are replaced.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       tracks: z.array(
         z.object({
@@ -411,7 +411,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const setCanvas = tool({
     description:
       'Update the canvas dimensions, duration, or frame rate of a project.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       width: z.number().optional(),
       height: z.number().optional(),
@@ -446,7 +446,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const groupElements = tool({
     description:
       'Group multiple elements under a new group. The group is created at the common parent of the selected elements.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       elementIds: z.array(z.string()).min(1).describe('Element ids to group'),
       name: z.string().optional().describe('Group name'),
@@ -482,7 +482,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const deleteElements = tool({
     description:
       'Delete one or more elements (including their subtrees). This is irreversible — the user will be asked to approve.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       elementIds: z.array(z.string()).min(1).describe('Element ids to delete'),
     }),
@@ -514,7 +514,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const setDefs = tool({
     description:
       'Set the SVG defs block (gradients, filters, patterns). This is a full replacement of the defs string. Use this to add gradients referenced by element fill/stroke via url(#id).',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       defs: z.string().describe('SVG defs markup (e.g. <linearGradient ...>...</linearGradient>)'),
     }),
@@ -540,7 +540,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const applyRecipe = tool({
     description:
       'Instantiate a pre-built recipe (lower-third, kinetic-text, progress-ring, bar-chart, counter) into the project. The recipe creates a group with animated child elements at the specified position. Returns the root element id.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       recipeId: z
         .enum(['lower-third', 'kinetic-text', 'progress-ring', 'bar-chart', 'counter'])
@@ -586,7 +586,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const addScene = tool({
     description:
       'Add a storyboard scene to the project. Scenes partition the timeline for planning and can carry a director intent note.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       name: z.string().optional().describe('Scene name'),
       durationMs: z.number().optional().describe('Scene duration in ms (default 1500)'),
@@ -624,7 +624,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const exportSvg = tool({
     description:
       'Export a NovaTrace project as a static SVG at a specific time (defaults to 0ms). Returns the full SVG markup string. This is read-only — it does not modify the project. Use to preview or save a frame.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       timeMs: z.number().optional().describe('Time to sample in ms (default 0)'),
       background: z.string().optional().describe('Background fill color'),
@@ -646,7 +646,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const getTraceCapability = tool({
     description:
       'Ask the NovaTrace capability agent how to achieve something. Returns structured guidance: available patterns, element types, animation properties, easing types, color palettes, and design patterns. Call this BEFORE generating complex compositions to ground your output in real system capabilities. Ask "How do I create a [pattern]?" or "What properties can I animate on [type]?"',
-    parameters: z.object({
+    inputSchema: z.object({
       query: z
         .string()
         .describe('What you want to know, e.g. "How do I create a logo stinger with staggered feature reveals?"'),
@@ -690,7 +690,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
   const dispatchOps = tool({
     description:
       'Apply a raw batch of Trace ops directly. Use this for complex multi-step mutations that combine element creation, track setting, and canvas updates in one atomic operation. Ops apply in order, all-or-nothing.',
-    parameters: z.object({
+    inputSchema: z.object({
       projectId: z.string(),
       ops: z
         .array(z.record(z.string(), z.any()))

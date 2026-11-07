@@ -131,6 +131,7 @@ All document mutations are **ops** — pure data applied atomically by `applyOps
 | `updateScene` | Update scene name, intent, duration, transition |
 | `removeScene` | Remove scene + its elements |
 | `setDefs` | Set SVG defs (gradients, filters, patterns) |
+| `setFilters` | Set structured SVG filters (editor-authored, serialized into defs) |
 | `setAudio` | Set audio tracks |
 | `applyRecipe` | Instantiate a pre-built recipe |
 | `insertFragment` | Insert parsed SVG fragment |
@@ -138,6 +139,17 @@ All document mutations are **ops** — pure data applied atomically by `applyOps
 ### Op Batches
 Ops can be sent as arrays — they apply atomically (all or nothing).
 If any op fails, the project is unchanged.
+
+## Filters (SVG Effects)
+
+Filters are structured `TraceFilter` objects stored in `project.filters` (keyed by id) and serialized into `<defs>` alongside gradients. An element applies a filter via `attributes.filter = "url(#id)"`. The inspector **Effects** section provides:
+
+- Preset picker: drop shadow, neon/inner glow, blur, grayscale, sepia, hue shift, duotone, glitch/RGB split, film grain, liquid displacement, outline, emboss
+- Inline param editing (creative field renders): blur, offset X/Y, color, scale, radius — surfaced directly in the effect row
+- `⋯` popover for additional controls: per-primitive params, region expansion %, `color-interpolation-filters` (linearRGB/sRGB)
+- Filter defs from raw `project.defs` are also recognized (read-only ref)
+
+Filter primitives supported structurally: `feGaussianBlur`, `feOffset`, `feFlood`, `feComposite`, `feMerge` (+ merge nodes), `feBlend`, `feColorMatrix`, `feTurbulence`, `feDisplacementMap`, `feMorphology`, `feConvolveMatrix`, `feComponentTransfer`, `feDiffuseLighting/feSpecularLighting`, `feDropShadow`.
 
 ## Recipes (Pre-built Compositions)
 

@@ -8,6 +8,7 @@
 import { BrowserWindow, ipcMain, shell } from 'electron';
 
 import { instantiateCompositionTemplate } from '../../../lib/trace/templates';
+import { generateProjectThumbnail } from '../../../lib/trace/serialize/thumbnail';
 import type { TraceProject } from '../../../lib/trace/types';
 import { getTraceProjectStore } from '../../trace/service.js';
 
@@ -25,7 +26,19 @@ export function registerTraceHandlers({
     'trace:list-projects',
     async (_event, req?: { includeMissing?: boolean }) => {
       await store.rescan();
-      return { projects: store.listProjects(req?.includeMissing !== false) };
+      const summaries = store.listProjects(req?.includeMissing !== false);
+      // Generate thumbnails for non-missing projects
+      for (const summary of summaries) {
+        if (!summary.missing && !summary.thumbnailSvg) {
+          try {
+            const opened = await store.openProject(summary.id);
+            summary.thumbnailSvg = generateProjectThumbnail(opened.project);
+          } catch {
+            // Skip thumbnail generation if project can't be opened
+          }
+        }
+      }
+      return { projects: summaries };
     },
   );
 
@@ -95,6 +108,19 @@ export function registerTraceHandlers({
     async (_event, req: { projectId: string }) => {
       const opened = await store.openProject(req.projectId);
       shell.showItemInFolder(opened.path);
+    },
+  );
+
+  ipcMain.handle(
+    'trace:generate-template-thumbnail',
+    async (_event, req: { templateId: string }) => {
+      try {
+        const project = instantiateCompositionTemplate(req.templateId, {});
+        const svg = generateProjectThumbnail(project);
+        return { thumbnailSvg: svg };
+      } catch (cause) {
+        return { thumbnailSvg: null, error: cause instanceof Error ? cause.message : String(cause) };
+      }
     },
   );
 }

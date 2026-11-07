@@ -14,6 +14,7 @@
 import {
   GIZMO_HANDLE_SIZE_PX,
   GIZMO_ROTATE_STEM_PX,
+  GIZMO_SCALE_HANDLES,
   getHandlePositions,
   type GizmoBBox,
   type GizmoHandle,
@@ -55,17 +56,6 @@ const HANDLE_CURSORS: Record<GizmoHandle, string> = {
   w: 'ew-resize',
   origin: 'crosshair',
 };
-
-const SCALE_HANDLES: GizmoHandle[] = [
-  'nw',
-  'n',
-  'ne',
-  'e',
-  'se',
-  's',
-  'sw',
-  'w',
-];
 
 export function TraceTransformGizmo(props: TraceTransformGizmoProps) {
   const {
@@ -164,7 +154,7 @@ export function TraceTransformGizmo(props: TraceTransformGizmoProps) {
         pointerEvents="none"
       />
       {/* Scale handles */}
-      {SCALE_HANDLES.map((handle) => {
+      {GIZMO_SCALE_HANDLES.map((handle) => {
         const pos = positions[handle];
         if (!pos) return null;
         return (

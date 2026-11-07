@@ -4,7 +4,7 @@
  * Template-driven project creation for the Trace browser.
  */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PlusIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TracePreview } from '@/components/trace/TracePreview';
 import { COMPOSITION_TEMPLATES } from '@/lib/trace/templates';
 
 export type NewCompositionPayload = {
@@ -49,6 +50,32 @@ export function NewCompositionDialog({
   const [templateId, setTemplateId] = useState('nova-mark');
   const [size, setSize] = useState(SIZE_PRESETS[0]);
   const [creating, setCreating] = useState(false);
+  const [thumbnails, setThumbnails] = useState<Record<string, string | null>>({});
+  const fetchedRef = useRef(false);
+
+  // Fetch template thumbnails once when dialog opens
+  useEffect(() => {
+    if (!open || fetchedRef.current) return;
+    fetchedRef.current = true;
+
+    const fetchAll = async () => {
+      const results: Record<string, string | null> = {};
+      await Promise.all(
+        COMPOSITION_TEMPLATES.map(async (entry) => {
+          try {
+            const res = await window.electron.ipc.invoke<{
+              thumbnailSvg: string | null;
+            }>('trace:generate-template-thumbnail', { templateId: entry.id });
+            results[entry.id] = res.thumbnailSvg;
+          } catch {
+            results[entry.id] = null;
+          }
+        }),
+      );
+      setThumbnails(results);
+    };
+    void fetchAll();
+  }, [open]);
 
   const template = COMPOSITION_TEMPLATES.find(
     (entry) => entry.id === templateId,
@@ -108,6 +135,7 @@ export function NewCompositionDialog({
             <div className="grid max-h-64 grid-cols-2 gap-2 overflow-auto pr-1 sm:grid-cols-3">
               {COMPOSITION_TEMPLATES.map((entry) => {
                 const active = entry.id === templateId;
+                const thumbnailSvg = thumbnails[entry.id];
                 return (
                   <button
                     key={entry.id}
@@ -120,15 +148,12 @@ export function NewCompositionDialog({
                         : 'border-border bg-accent/15 hover:border-border/50')
                     }
                   >
-                    <div
-                      className="flex h-16 items-center justify-center rounded-md border border-border"
-                      style={{
-                        background: `radial-gradient(circle at 50% 40%, ${entry.previewColor}33, hsl(var(--card)) 72%)`,
-                      }}
-                    >
-                      <span
-                        className="size-7 rounded-full border-2"
-                        style={{ borderColor: entry.previewColor }}
+                    <div className="h-16 overflow-hidden rounded-md border border-border">
+                      <TracePreview
+                        svg={thumbnailSvg}
+                        width="100%"
+                        height={64}
+                        accentColor={entry.previewColor}
                       />
                     </div>
                     <div className="min-w-0">

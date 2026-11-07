@@ -92,6 +92,7 @@ function snapshotOf(project: TraceProject): TraceProjectSnapshot {
     storyboard: clone.storyboard,
     defs: clone.defs,
     gradients: clone.gradients,
+    filters: clone.filters,
     audioTracks: clone.audioTracks,
   };
 }
@@ -755,6 +756,13 @@ function opSetDefs(
   project.defs = op.defs;
 }
 
+function opSetFilters(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'setFilters' }>,
+): void {
+  project.filters = deepClone(op.filters);
+}
+
 function opSetAudio(
   project: TraceProject,
   op: Extract<TraceOp, { type: 'setAudio' }>,
@@ -776,6 +784,7 @@ function opRestore(
   project.storyboard = snapshot.storyboard;
   project.defs = snapshot.defs;
   project.gradients = snapshot.gradients;
+  project.filters = snapshot.filters;
   project.audioTracks = snapshot.audioTracks;
 }
 
@@ -853,6 +862,9 @@ function applyOne(
       return opApplyRecipe(project, op);
     case 'setDefs':
       opSetDefs(project, op);
+      return;
+    case 'setFilters':
+      opSetFilters(project, op);
       return;
     case 'setAudio':
       opSetAudio(project, op);

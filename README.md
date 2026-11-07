@@ -10,22 +10,25 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-35-47848F?logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white" alt="Electron 44" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19" />
-  <img src="https://img.shields.io/badge/TypeScript-5%20%7C%207-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/AI%20SDK-v7-000000?logo=vercel&logoColor=white" alt="Vercel AI SDK" />
+  <img src="https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white" alt="TypeScript 7" />
+  <img src="https://img.shields.io/badge/AI%20SDK-v7-000000?logo=vercel&logoColor=white" alt="Vercel AI SDK v7" />
+  <img src="https://img.shields.io/badge/Bun-1%2B-F9F1E1?logo=bun&logoColor=black" alt="Bun" />
   <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License" />
 </p>
 
-A **local agent OS** built on Electron, React 19, TypeScript, and the Vercel AI SDK. The agent
-runs in the Electron **main process** with real access to the local machine —
-filesystem, shell, clipboard and a local document index — and the renderer talks
-to it exclusively over typed IPC channels.
+A **local agent OS** built on Electron 44, React 19, TypeScript 7, and the Vercel AI SDK v7.
+Qeda runs **9 specialized AI agents** with **47+ tools** across a single SQLite database with
+**51+ tables**. The agent runs in the Electron **main process** with real access to the local
+machine — filesystem, shell, clipboard, and a local document index — and the renderer talks to
+it exclusively over **34 typed IPC handlers**.
 
-Describe a goal. Qeda plans the work, proposes each command, and waits for
-your approval before running anything. What comes back is not an ephemeral chat log but a
-record: every command, its output, and its exit code, written down and
-inspectable.
+Describe a goal. Qeda plans the work, proposes each command, and waits for your approval before
+running anything. What comes back is not an ephemeral chat log but a record: every command, its
+output, and its exit code, written down and inspectable.
+
+### Modules
 
 | Module | What it does |
 | --- | --- |
@@ -33,7 +36,16 @@ inspectable.
 | **Workspace** | Block-editor notebooks, version history, and local RAG over your own pages |
 | **Terminal** | Agent Mode (goal → plan → approve → execute) and Shell Mode (raw PTY + xterm.js) |
 | **Projects** | The spine: an outcome with a deadline, its tasks, its repo, its docs, and its chats in one place |
-| **Tasks & Focus** | Task manager with time blocking, synthesised soundscapes, focus sessions, and an AI copilot agent with tools |
+| **Tasks & Focus** | Task manager with time blocking, synthesised soundscapes, focus sessions, and an AI copilot |
+| **Correspondence** | Legal-grade letter drafting, contact management, dispatch tracking with escalation sequences |
+| **Documents** | Block-structured document studio with AI-assisted drafting agent |
+| **Studio** | Screen recording editor with AI copilot: kinetic zoom, captions, effects, social media kits |
+| **Music** | Music library, playlists, SoundLab synthesis (BPM/key entrainment), and scene-based playback |
+| **Motion** | 3D product showcase scenes with GLTF models, environments, and AI copilot |
+| **Trace** | 2D vector animation workspace with SVG elements, keyframe tracks, and AI copilot |
+| **Builder** | Coding agent integration with git worktree isolation and E2B cloud sandbox support |
+| **Offline AI** | Local private inference with Transformers.js models, no network required |
+| **Onboarding** | First-launch guided flow: welcome → project → first task → ready |
 
 ## The name
 
@@ -43,7 +55,7 @@ In modern productivity and software development, the hardest challenge is rarely
 
 The visual mark pairs a bold circular "Q" with an energetic lightning finish, symbolizing the transition from intention to accomplished outcome.
 
-Built with electron-vite, React 19, TypeScript, and Tailwind CSS, layering a high-performance, privileged local agent runtime directly into the OS shell.
+Built with electron-vite, React 19, TypeScript 7, and Tailwind CSS, layering a high-performance, privileged local agent runtime directly into the OS shell.
 
 ## Requirements
 
@@ -71,35 +83,126 @@ with `safeStorage`).
 
 ## Scripts
 
-| Script               | Purpose                                             |
-| -------------------- | --------------------------------------------------- |
-| `bun start`          | Dev server with main/preload/renderer hot reload    |
-| `bun run build`      | Bundle main, preload and renderer                   |
-| `bun run preview`    | Build and run the production bundles locally        |
-| `bun run package`    | Build installers with electron-builder              |
-| `bun test`           | Jest (jsdom) unit tests                             |
-| `bun run test:smoke` | Boots the built app and verifies the preload bridge |
-| `bun run lint`       | ESLint                                              |
+| Script                     | Purpose                                                     |
+| -------------------------- | ----------------------------------------------------------- |
+| `bun start`                | Dev server with main/preload/renderer hot reload            |
+| `bun run build`            | Bundle main, preload and renderer                           |
+| `bun run build:light`      | Bundle without source maps                                  |
+| `bun run preview`          | Build and run the production bundles locally                |
+| `bun run package`          | Build installers with electron-builder                      |
+| `bun run package:appimage` | Build Linux AppImage only                                   |
+| `bun test`                 | Jest (jsdom) unit tests                                     |
+| `bun run test:smoke`       | Boots the built app and verifies the preload bridge         |
+| `bun run test:export`      | Export smoke test via Electron                              |
+| `bun run typecheck`        | TypeScript type check (no emit)                             |
+| `bun run lint`             | ESLint                                                      |
+| `bun run lint:fix`         | ESLint with auto-fix                                        |
+| `bun run models:catalog`   | Build model catalog at pre-build time                       |
 
 ## Architecture
 
 ```
 src/
-├── main/                  # Everything privileged: Node, Electron, the agent
-│   ├── main.ts            # App bootstrap, window, DB + IPC registration
-│   ├── ai/
-│   │   ├── agent.ts       # ToolLoopAgent definition + system instructions
-│   │   ├── provider.ts    # Provider factory (AI Gateway / OpenAI-compatible)
-│   │   └── settings.ts    # Settings persisted with safeStorage-encrypted keys
-│   ├── tools/             # filesystem, shell, clipboard, RAG tool definitions
-│   ├── db/                # better-sqlite3 client, schema, session CRUD
-│   └── ipc/               # Typed channel contract + handlers
-├── hooks/                 # use-agent-chat (IPC transport), use-ipc
-├── components/            # chat/*, 50 ai-elements/*, vendored shadcn ui/*
-└── renderer/              # App shell, router, and views (Chat, Workspace, Terminal, Tasks, Projects)
+├── main/                          # Everything privileged: Node, Electron, the agents
+│   ├── main.ts                    # App bootstrap, window, DB + IPC registration
+│   ├── ai/                        # 20 files: 9 agents, provider registry, fallback
+│   │   ├── agent.ts               # Chat ToolLoopAgent (40/60/120 step budgets)
+│   │   ├── terminal-agent.ts      # Goal → plan → approve → execute shell agent
+│   │   ├── task-copilot-agent.ts  # Task breakdown, scheduling, brain dump expansion
+│   │   ├── studio-copilot-agent.ts# Video editing: kinetic zoom, captions, effects
+│   │   ├── motion-copilot-agent.ts# 3D scene editing and animation
+│   │   ├── music-copilot-agent.ts # Music library, playlists, scene mixing
+│   │   ├── correspondence-copilot-agent.ts # Legal letter drafting, contacts
+│   │   ├── document-drafter-agent.ts       # Block-structured document creation
+│   │   ├── model-builder-agent.ts  # 3D model building and scene state
+│   │   ├── trace-copilot-agent.ts  # 2D vector animation editing
+│   │   ├── registry.ts            # Provider registry (9 providers, free-first)
+│   │   ├── fallback.ts            # Automatic provider fallback on retryable errors
+│   │   └── settings.ts            # safeStorage-encrypted credentials
+│   ├── tools/                     # 25 files: 47+ tools across all domains
+│   │   ├── filesystem.ts          # readFile, listDir, writeFile, deleteFile
+│   │   ├── shell.ts               # runShell (approval-gated)
+│   │   ├── clipboard.ts           # read/write clipboard
+│   │   ├── web.ts                 # webSearch, fetchUrl, advancedSearch, scrapePage
+│   │   ├── rag.ts / workspace-rag.ts # searchDocs, indexFile, RAG over pages
+│   │   ├── workspace.ts           # listPages, createNotebook, writePage, etc.
+│   │   ├── tasks.ts               # CRUD tasks, blocks, projects, focus stats
+│   │   ├── studio.ts              # 769 lines: video editing tools
+│   │   ├── computer-use.ts        # Window control, screenshots, mouse/keyboard
+│   │   ├── browser-use.ts         # Browser automation with persistent sessions
+│   │   ├── capability.ts          # Approval policy framework (5 capability classes)
+│   │   └── policies/              # Per-surface approval policies (5 files)
+│   ├── db/                        # better-sqlite3 client, 51+ table schema, CRUD
+│   │   └── schema.ts              # 1,554 lines of idempotent DDL
+│   ├── services/                  # External service integrations
+│   │   └── registry.ts            # 10 services: Tavily, Exa, Serper, Firecrawl, etc.
+│   ├── browser-use.ts             # Electron BrowserWindow for browser automation
+│   └── ipc/                       # Typed channel contracts + 34 handlers
+│       ├── channels.ts            # 2,170 lines of typed IPC definitions
+│       └── handlers/              # 34 handler files covering all domains
+├── hooks/                         # use-agent-chat (IPC transport), use-ipc, copilot hooks
+├── components/                    # chat/*, 50+ ai-elements/*, shadcn ui/*
+├── lib/                           # Shared utilities, focus-audio, etc.
+├── stores/                        # Zustand state stores
+└── renderer/                      # App shell, router, and 14+ page views
+    ├── routes.tsx                 # Route tree with conditional homepage
+    └── pages/                     # 15 page components
 ```
 
-**Routes:** `/chat` Agent Chat & Research · `/workspace` Knowledge (notebooks & pages) · `/terminal` Agent & Shell PTY · `/tasks` Tasks & Focus · `/projects` Project Hub
+### Routes
+
+| Route | Page | Description |
+| --- | --- | --- |
+| `/projects` | Projects | Project hub grid and detail view |
+| `/chat` | Chat | Conversational agent with tool use and streaming |
+| `/workspace` | Workspace | Block-editor notebooks with version history |
+| `/terminal` | Terminal | Agent mode and shell PTY |
+| `/tasks` | Tasks | Task manager, kanban board, focus timer, soundscapes |
+| `/correspondence` | Correspondence | Legal letter drafting, contacts, dispatch tracking |
+| `/documents` | Documents | Block-structured document studio |
+| `/studio` | Studio | Screen recording editor with AI copilot |
+| `/music` | Music | Music library, playlists, SoundLab synthesis |
+| `/motion` | Motion | 3D product showcase scenes |
+| `/trace` | Trace | 2D vector animation workspace |
+| `/builder` | Builder | Coding agent with git worktree isolation |
+| `/offline-ai` | OfflineAI | Local inference with Transformers.js |
+| `/onboarding` | Onboarding | First-launch guided flow |
+
+### Agents
+
+Qeda runs **9 distinct AI agents**, each with its own system prompt, tool set, and approval policy:
+
+| Agent | File | Step Budget | Purpose |
+| --- | --- | --- | --- |
+| **Chat Agent** | `agent.ts` | 40 (chat) / 60 (research) / 120 (notebook) | General-purpose conversational agent with all tools |
+| **Terminal Agent** | `terminal-agent.ts` | Stateful loop | Goal → plan → approve → execute shell commands |
+| **Task Copilot** | `task-copilot-agent.ts` | 20 | Task breakdown, scheduling, brain dump expansion |
+| **Studio Copilot** | `studio-copilot-agent.ts` | 20 | Video editing: kinetic zoom, captions, effects, social kits |
+| **Motion Copilot** | `motion-copilot-agent.ts` | 20 | 3D scene editing and animation |
+| **Music Copilot** | `music-copilot-agent.ts` | 20 | Music library management, playlist creation, scene mixing |
+| **Correspondence Copilot** | `correspondence-copilot-agent.ts` | 20 | Legal letter drafting, contact management, dispatch tracking |
+| **Document Drafter** | `document-drafter-agent.ts` | 20 | Block-structured document creation and editing |
+| **Trace Copilot** | `trace-copilot-agent.ts` | 20 | 2D vector animation editing |
+
+### Tool Ecosystem
+
+**47+ tools** across **25 files** in `src/main/tools/`:
+
+- **Core**: `readFile`, `listDir`, `writeFile` (approval-gated), `deleteFile` (approval-gated), `runShell` (approval-gated), `readClipboard`, `writeClipboard` (approval-gated)
+- **Web & Research**: `webSearch`, `fetchUrl`, `advancedSearch`, `scrapePage`, `libraryDocs`
+- **RAG**: `searchDocs`, `listIndexed`, `indexFile`, `indexPage`, `removeFromIndex`
+- **Workspace**: `listPages`, `findPages`, `getPage`, `createNotebook`, `writeNotebook`, `writePage`, `appendToPage`, `relatedPages`
+- **Tasks & Projects**: `listTasks`, `createTask`, `addSteps`, `scheduleBlock`, `listProjects`, `createProject`, `assignTaskToProject`, `getFocusStats`
+- **Studio (Video)**: `getTakeDetails`, `addKineticZoom`, `cutSilenceOrRange`, `setCaptions`, `generateSocialKit` (769 lines of tools)
+- **Computer Use**: `captureScreenshot`, `moveMouse`, `click`, `typeText`, `pressKey`, `scroll`
+- **Browser Use**: `openBrowser`, `navigateBrowser`, `clickSelector`, `typeSelector`, `screenshotBrowser`
+- **Documents**: `createDocument`, `appendBlocks`, `insertBlocksAt`, `replaceBlock` (approval-gated)
+- **Correspondence**: Contact and message management with state-machine dispatch tracking
+- **Motion/Trace**: 3D scene and 2D vector animation operations
+
+### Approval Policy
+
+A capability-based approval framework with five classes: `read`, `write-local`, `destructive` (always requires user approval), `network`, and `cost`. Each agent surface has its own policy file derived from the same framework. Unclassified tools fail closed (denied with explanatory message). Per-surface policies live in `tools/policies/` (5 files).
 
 ### The agent loop
 
@@ -158,6 +261,7 @@ configuration at all.
 | Gemini | `generativelanguage.googleapis.com/v1beta/openai/` | `gemini-3.8-flash` |
 | NVIDIA NIM | `integrate.api.nvidia.com/v1` | `moonshotai/kimi-k2.6` |
 | Cohere | `api.cohere.ai/compatibility/v1` | (live list only) |
+| OpenCode Zen | — | Paid only (free tier blocked outside client) |
 | AI Gateway | — | `openai/gpt-4o-mini` |
 | OpenAI / Anthropic / Ollama | standard endpoints | — |
 
@@ -199,8 +303,30 @@ unrelated configuration such as custom providers or embedding settings.
 
 ### Storage & RAG
 
-One SQLite database in `userData` (`qeda.db`) holds `sessions`, `messages`,
-and the RAG tables (`chunks` + a `sqlite-vec` `embeddings` virtual table).
+One SQLite database in `userData` (`qeda.db`) holds **51+ tables** organized
+into domains:
+
+| Domain | Key Tables |
+| --- | --- |
+| **Chat** | `sessions`, `messages` (AI SDK `UIMessage` rows with `parts_json`) |
+| **Workspace** | `notebooks`, `pages`, `blocks` (paragraph, heading, code, todo, quote, image, divider), `tags`, `page_tags`, `backlinks`, `page_versions`, `pages_fts` (FTS5) |
+| **RAG** | `embeddings` (sqlite-vec virtual table), `chunks` (companion text and metadata) |
+| **Research** | `research_runs`, `research_sources`, `research_evidence` |
+| **Terminal** | `terminal_sessions`, `terminal_blocks` (command-output pairs with approval states) |
+| **Projects** | `projects`, `code_projects`, `project_files`, `project_file_scans` |
+| **Tasks & Focus** | `tasks`, `task_steps`, `task_blocks`, `focus_sessions`, `gamification_state`, `xp_ledger` |
+| **Correspondence** | `contacts`, `contact_channels`, `correspondence_messages`, `message_attachments`, `message_recipients`, `correspondence_events`, `sequences`, `sequence_steps`, `sequence_runs`, `sequence_step_runs` |
+| **Documents** | `documents` (block-structured drafts with `data_json`) |
+| **Studio (Video)** | `studio_takes` (recordings with cuts, zooms, captions, effects, overlays, styling, social kits, filmstrips, waveforms) |
+| **Music** | `soundlab_sessions`, `soundlab_tracks`, `music_folders`, `music_tracks`, `music_playlists`, `music_playlist_tracks`, `music_scenes`, `music_state`, `focus_session_tracks` |
+| **Motion (3D)** | `motion_projects` (GLTF scenes with environments) |
+| **Trace (2D)** | `trace_projects` (SVG vector animation with keyframes) |
+| **Builder** | `builder_sessions`, `builder_session_history` |
+
+All 51+ DDL statements are idempotent (`CREATE TABLE IF NOT EXISTS`). Data
+migrations converge (only fill NULLs, never overwrite). Each migration statement
+runs independently with non-fatal error handling.
+
 `indexFile` chunks and embeds a document; `searchDocs` runs a KNN query over the
 vectors.
 
@@ -283,6 +409,24 @@ container.
   the project is created on the last step so backing up can't leave a half-made
   row behind.
 
+### External Services
+
+Qeda integrates with **10 external services** beyond chat models, all optional
+and configured via Settings or environment variables:
+
+| Service | Category | Purpose |
+| --- | --- | --- |
+| **Tavily** | Search | AI-native web search with synthesized answers |
+| **Exa** | Search | Neural search with inline content extraction |
+| **Serper** | Search | Real Google SERP results |
+| **Firecrawl** | Scrape | JavaScript-heavy page scraping to markdown |
+| **Context7** | Docs | Version-specific library documentation |
+| **Unsplash** | Images | Stock photography |
+| **ElevenLabs** | Speech | High-quality text-to-speech |
+| **Deepgram** | Speech | TTS (Aura) and STT (Nova) |
+| **Cartesia** | Speech | Low-latency Sonic TTS |
+| **E2B** | Sandbox | Cloud sandboxes for Builder sessions |
+
 ## Testing notes
 
 Several dependencies (`streamdown`, `@streamdown/*`, `nanoid`,
@@ -297,3 +441,10 @@ mapped to lightweight mocks in `.erb/mocks/` via `jest.config.js`.
   working tree does not remove it from git history.
 - Renderer code never imports Node or Electron directly; everything goes through
   the `contextBridge` surface defined in `src/main/preload.ts`.
+- Destructive tools (`writeFile`, `deleteFile`, `runShell`, `writeClipboard`)
+  always require user approval before execution.
+- Browser-use sessions are sandboxed with `contextIsolation: true` and
+  `sandbox: true`.
+- Computer-use is gated by `settings.computerUse` (enabled + allowlist).
+- Correspondence rows are never written without user review (Harvest flow).
+- Credentials in packaged builds are encrypted via Electron's `safeStorage`.

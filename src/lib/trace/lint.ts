@@ -367,29 +367,25 @@ export function lintTraceProject(
 
   // ── Paint references ───────────────────────────────────────────────────────
   const defIds = collectDefIds(project.defs);
+  // Structured gradients and filters are serialized into defs at export time.
+  for (const id of Object.keys(project.gradients ?? {})) defIds.add(id);
+  for (const id of Object.keys(project.filters ?? {})) defIds.add(id);
   for (const gradientId of Object.keys(project.gradients ?? {})) {
-    if (!defIds.has(gradientId)) {
-      add(
-        'DEF_REF_MISSING',
-        'info',
-        `Gradient "${gradientId}" is not serialized into defs yet.`,
-        { fix: 'Serialize gradients into project.defs before export.' },
-      );
-    }
+    // gradientsToDefs handles serialization; this is informational only when
+    // someone references a gradient not present as a structured gradient.
   }
-
   for (const [elementId, element] of Object.entries(elements)) {
     for (const value of Object.values(element.attributes ?? {})) {
       if (typeof value !== 'string') continue;
       for (const ref of collectUrlRefs(value)) {
-        if (!defIds.has(ref) && !project.gradients?.[ref]) {
+        if (!defIds.has(ref)) {
           add(
             'DEF_REF_MISSING',
             'error',
             `Element "${element.name}" references missing def "#${ref}".`,
             {
               elementId,
-              fix: 'Restore the gradient/pattern or clear the reference.',
+              fix: 'Restore the gradient/filter/pattern or clear the reference.',
             },
           );
         }

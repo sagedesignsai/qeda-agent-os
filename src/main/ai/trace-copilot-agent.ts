@@ -130,7 +130,7 @@ Use \`addElements\` to create multiple elements in one call. Each element spec:
 - \`type\`: 'text', 'rect', 'circle', 'path', 'group', etc.
 - \`x\`, \`y\`: position on canvas (center for text, top-left for shapes)
 - \`id\`: optional (auto-generated if omitted)
-- Type-specific attributes: \`text\`+`fontSize`+`fill` for text, \`width\`+`height`+`fill`+`rx` for rect, \`d\` for path, etc.
+- Type-specific attributes: \`text\`+\`fontSize\`+\`fill\` for text, \`width\`+\`height\`+\`fill\`+\`rx\` for rect, \`d\` for path, etc.
 
 ### Animating Elements
 Use \`setTracks\` to set animation tracks. Each track:

@@ -673,7 +673,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           }}
           isPlaying={playback.isPlaying}
         />
-        <TraceInspector />
+        <TraceInspector projectId={projectId} />
       </div>
 
       {playback.isTimelineCollapsed ? (

@@ -269,7 +269,7 @@ export function parsePathData(d: string): PathModel {
     } else if (upper === 'T') {
       const end = readPoint(relative);
       if (!end) break;
-      const control = prevControl
+      const control: PathPoint = prevControl
         ? {
             x: 2 * start.x - prevControl.x,
             y: 2 * start.y - prevControl.y,
