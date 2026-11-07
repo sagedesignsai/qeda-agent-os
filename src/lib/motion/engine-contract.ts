@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { listMotionNodeTypes } from './node-registry';
+import { listMotionRecipes } from './recipes';
 import { applyMotionOps, listMotionOps, type MotionOpRequest } from './ops';
 import { applyMotionCommand as applyPlanned, planMotionCommand as createPlan, type MotionPlan } from './plan';
 import { MOTION_SCHEMA_VERSION } from './types';
@@ -49,7 +50,7 @@ export function describeMotionEngine(): MotionEngineManifest {
       since: 'motion-2/phase-1.5',
       ...(operation.id === 'timeline.setLoop' ? { deprecated: true } : {}),
     })),
-    recipes: [],
+    recipes: listMotionRecipes(),
   };
 }
 

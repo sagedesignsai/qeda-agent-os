@@ -17,6 +17,9 @@ import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createMotionTools, type MotionToolContext } from '../tools/motion.js';
 import { createModelBuilderSubagentTool } from '../tools/model-builder-subagent.js';
+import { createMotionCapabilityTool } from '../tools/motion-capability-tool.js';
+import { createMotionRecipeTool } from '../tools/motion-recipe-tool.js';
+import { createMotionVerifyTool } from '../tools/motion-verify-tool.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
@@ -90,6 +93,19 @@ You help users create, edit, and animate 3D motion scenes conversationally. You 
    - It plans and builds autonomously and returns a summary; prefer it over
      hand-sequencing many scene ops when the task has many interdependent parts
 
+6. **Capability Discovery** (getMotionCapability tool):
+   - Call FIRST for complex briefs ("How do I build a product hero?").
+     Returns composition patterns, matching node types, recipes, design practices.
+   - For simple tweaks, skip it and edit directly.
+
+7. **Recipes** (applyMotionRecipe tool):
+   - Senior-designer patterns as op batches: product-hero, stinger-3d, data-viz.
+   - Prefer a recipe over hand-sequencing nodes when the brief matches one.
+
+8. **Verification** (lintMotionProject + renderMotionPreview tools):
+   - Call lintMotionProject after major changes; renderMotionPreview for visual check.
+   - Fix blocking issues before summarizing.
+
 ## Tone & Output
 - Helpful, precise, and action-oriented.
 - When you execute tools, summarize what was added or changed in clean markdown.
@@ -126,6 +142,9 @@ export function createMotionCopilotAgent(opts: MotionCopilotAgentOptions) {
     getDocument: opts.getDocument,
     apply: opts.apply,
   });
+  const capabilityTool = createMotionCapabilityTool();
+  const recipeTool = createMotionRecipeTool(toolContext);
+  const verifyTools = createMotionVerifyTool(toolContext);
 
   return new ToolLoopAgent({
     model: model as any,
@@ -133,8 +152,11 @@ export function createMotionCopilotAgent(opts: MotionCopilotAgentOptions) {
     tools: {
       ...tools,
       buildModel: modelBuilderSubagent,
+      getMotionCapability: capabilityTool,
+      ...recipeTool,
+      ...verifyTools,
       ...createPlanTools(planManager),
     },
-    stopWhen: [isStepCount(25), planManager.stopCondition()],
+    stopWhen: [isStepCount(40), planManager.stopCondition()],
   });
 }

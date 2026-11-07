@@ -18,6 +18,7 @@ import { resolveModel } from './provider.js';
 import { createMotionTools, type MotionToolContext } from '../tools/motion.js';
 import { createBlenderTools } from '../tools/blender.js';
 import { createBlenderSpecialistTool } from './blender-specialist-agent.js';
+import { createMotionCapabilityTool } from '../tools/motion-capability-tool.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
@@ -71,6 +72,9 @@ You help users create 3D models from natural language descriptions. You don't ju
    - Generate complex geometry: arrays, radial patterns, grids, scatter, curves
    - Keep instance counts bounded (max 5000) for performance
    - Expose parameters in props for editability
+
+0. **Capability Discovery** (getMotionCapability tool):
+   - Call FIRST for complex briefs. Returns patterns, node types, recipes, design practices.
 
 4. **Blender Asset Generation** (blender.asset.generate tool, when available):
    - Generates a bespoke GLB with headless Blender and places it as model.gltf
@@ -126,11 +130,13 @@ export function createModelBuilderAgent(opts: ModelBuilderAgentOptions) {
   const blenderSpecialist = createBlenderSpecialistTool({
     target: opts.target,
   });
+  const capabilityTool = createMotionCapabilityTool();
 
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildModelBuilderInstructions(doc),
     tools: {
+      getMotionCapability: capabilityTool,
       ...sceneTools,
       ...blenderTools,
       'blenderSpecialist.buildAsset': blenderSpecialist,
