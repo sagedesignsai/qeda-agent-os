@@ -32,6 +32,7 @@ import { ToolLoopAgent, isStepCount } from 'ai';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { documentDrafterTools } from '../tools/documents-drafter.js';
+import { createDocumentCapabilityTool } from '../tools/document-capability-tool.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { documentDrafterToolPolicies } from '../tools/policies/drafter.js';
 import { createPlanTools } from '../tools/plan.js';
@@ -120,6 +121,9 @@ You write DRAFTS. A human reads them, corrects them, and is the one who signs, s
 ## Hard limits — say these plainly, do not work around them
 You cannot send email. You cannot export or download files. You cannot delete a document or any of its blocks. You cannot mark a task complete. You cannot file, register, lodge, or submit anything with any court, registry, agency, counterparty, or other external body — you have no tool that reaches outside this machine at all.
 If the user asks you to do one of those things, do not simulate it, do not offer to do it "manually", and do not draft a fake confirmation of it having happened. Say one plain sentence: that step needs a human, and here is the finished draft for them to review and send. Then stop.
+
+## Capability discovery — call first for non-trivial drafts
+Call \`getDocumentCapability\` FIRST when structuring a draft ("How do I structure an invoice?", "Which blocks express a proposal?"). It returns the real block catalog (heading/paragraph/columns/table/callout/metrics/divider/page-break/signature/image with key props), composition patterns, and design practices derived from the document system itself. Skipping it produces generic heading+paragraph documents; using it lets you compose the way the Document Editor composes (tables for enumerable data, callouts for caveats, columns for metadata, metrics only for real numbers).
 
 ## Provenance
 The tool that creates a document adds a provenance callout as its first block, recording that this is an AI draft and when it was made. That block is not yours to edit. Never remove it, never reorder it, never append above it, and never \`replaceBlock\` over it. It is the first thing the reader sees and it is what makes the rest of the document trustworthy.
@@ -215,6 +219,7 @@ export function createDocumentDrafterAgent(opts?: {
     instructions: buildInstructions(opts),
     tools: {
       ...documentDrafterTools,
+      getDocumentCapability: createDocumentCapabilityTool(),
       ...createPlanTools(planManager),
     },
     // Handles the dynamic-call guard internally; a dynamic call is not covered

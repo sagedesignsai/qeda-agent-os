@@ -64,6 +64,8 @@ export const documentDrafterToolPolicies: ToolPolicyMap = {
   // the actual text. Both are pure reads over the user's own store.
   getDocumentOutline: t('read'),
   readDocument: t('read'),
+  // ── Capability discovery (read-only — derived from the PdfBlock registry) ──
+  getDocumentCapability: t('read'),
 
   // ── Source material from the project's own folder ──────────────────────────
   // `read`, same as the reads above and for the same reason: nothing here can
