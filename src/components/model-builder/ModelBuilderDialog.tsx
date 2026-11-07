@@ -58,7 +58,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useIpcEvent } from '@/hooks/use-ipc';
 import { useModelBuilder } from '@/hooks/use-model-builder';
-import { createEmptyMotionDocument } from '@/lib/motion/defaults';
+import { createBlankMotionDocument } from '@/lib/motion/defaults';
 import type { MotionDocument } from '@/lib/motion/types';
 import { PlaybackClock } from '@/lib/timeline/clock';
 
@@ -97,9 +97,11 @@ export function ModelBuilderDialog({
   onOpenChange,
   onSave,
 }: ModelBuilderDialogProps) {
-  // Ephemeral document — created fresh each time the dialog opens
+  // Ephemeral document — created fresh each time the dialog opens.
+  // Blank (not starter): camera + lights + ground are present, but no product
+  // content competes with the user's model.
   const [document, setDocument] = useState<MotionDocument>(() =>
-    createEmptyMotionDocument({
+    createBlankMotionDocument({
       id: `model-builder-${Date.now()}`,
       name: 'Model Builder',
     }),
@@ -127,7 +129,7 @@ export function ModelBuilderDialog({
   useEffect(() => {
     if (open) {
       setDocument(
-        createEmptyMotionDocument({
+        createBlankMotionDocument({
           id: `model-builder-${Date.now()}`,
           name: 'Model Builder',
         }),

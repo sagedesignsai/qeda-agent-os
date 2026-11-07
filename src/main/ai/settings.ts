@@ -69,6 +69,20 @@ export interface AppSettings {
    */
   mcpServers?: McpServerSettings[];
   /**
+   * Blender asset generation for the Model Builder. Blender is a required
+   * dependency (5.2 LTS recommended); when enabled, the Model Builder agent
+   * gains a `generateBlenderAsset` tool backed by headless `bpy`.
+   * When disabled or Blender is absent, the tool returns a structured error
+   * and the agent falls back to procedural primitives.
+   */
+  blender?: {
+    enabled?: boolean;
+    /** Explicit path to the blender binary; auto-detected when unset. */
+    path?: string;
+    /** Per-job timeout (ms). Defaults to 90000. */
+    timeoutMs?: number;
+  };
+  /**
    * External-service API keys (Tavily, Firecrawl, Context7, Unsplash, speech…),
    * keyed by service id from services/registry.ts. Encrypted at rest; the
    * environment is used as a fallback at resolution time (see services/keys.ts).
@@ -157,6 +171,7 @@ function defaultSettings(): AppSettings {
     builderMaxSteps: DEFAULT_BUILDER_MAX_STEPS,
     e2bSandboxTemplate: DEFAULT_E2B_SANDBOX_TEMPLATE,
     mcpServers: [],
+    blender: { enabled: true, timeoutMs: 90_000 },
     providers: {},
     customProviders: [],
   };

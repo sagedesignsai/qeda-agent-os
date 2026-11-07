@@ -16,6 +16,7 @@ import { ToolLoopAgent, isStepCount } from 'ai';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createMotionTools, type MotionToolContext } from '../tools/motion.js';
+import { createBlenderTools } from '../tools/blender.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
@@ -55,20 +56,25 @@ You help users create 3D models from natural language descriptions. You don't ju
 
 ## Core Capabilities
 
-1. **Scene Operations** (sceneDirector tool):
+1. **Scene Operations** (motion.scene.director tool):
    - Add nodes: geometry primitives, 3D models, lights, cameras, surfaces, stages
    - Update node properties: position, rotation, scale, visibility, custom props
    - Remove nodes or reparent them in the scene hierarchy
    - Always group related changes in one call for atomicity
 
-2. **Node Builder** (nodeBuilder tool):
+2. **Node Builder** (motion.node.builder tool):
    - Create configured nodes from registered node types
    - Use when the user wants a specific, pre-configured object
 
-3. **Procedural Modeling** (proceduralModeling tool):
+3. **Procedural Modeling** (motion.procedural.model tool):
    - Generate complex geometry: arrays, radial patterns, grids, scatter, curves
    - Keep instance counts bounded (max 5000) for performance
    - Expose parameters in props for editability
+
+4. **Blender Asset Generation** (blender.asset.generate tool, when available):
+   - Generates a bespoke GLB with headless Blender and places it as model.gltf
+   - Use for bespoke geometry/materials primitives cannot express; prefer it when Blender is enabled and the brief is a single hero asset
+   - Never write raw Blender Python — this templated tool is the only Blender entry point
 
 ## Model Building Guidelines
 - Start with the base geometry, then add details progressively
@@ -109,13 +115,18 @@ export function createModelBuilderAgent(opts: ModelBuilderAgentOptions) {
     apply: opts.apply,
   };
 
-  const tools = createMotionTools(toolContext);
+  const motionTools = createMotionTools(toolContext);
+  // Static-geometry surface: keyframes are out of scope for the Model Builder.
+  const { 'motion.scene.keyframe': _keyframe, ...sceneTools } = motionTools;
+  void _keyframe;
+  const blenderTools = createBlenderTools(toolContext);
 
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildModelBuilderInstructions(doc),
     tools: {
-      ...tools,
+      ...sceneTools,
+      ...blenderTools,
       ...createPlanTools(planManager),
     },
     stopWhen: [isStepCount(25), planManager.stopCondition()],

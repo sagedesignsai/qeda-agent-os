@@ -162,4 +162,20 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     },
     notes: 'Optional Context7 API Key for higher rate limits.',
   },
+  {
+    id: 'blender',
+    name: 'MCP for Blender',
+    description:
+      'Control Blender 3D with any LLM: execute bpy code, visual-verify via renders, generate/import 3D assets.',
+    transport: 'stdio',
+    command: 'uvx',
+    args: ['mcp-for-blender'],
+    env: {
+      BLENDER_HOST: 'localhost',
+      BLENDER_PORT: '9876',
+    },
+    notes:
+      'Requires Blender 5.x running with the "MCP for Blender" add-on started (Sidebar N -> MCP for Blender -> Connect). ' +
+      'The add-on socket server has no authentication — keep it on localhost.',
+  },
 ];

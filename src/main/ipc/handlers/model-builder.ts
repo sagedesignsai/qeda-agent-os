@@ -27,6 +27,7 @@ import { PlanManager } from '../../ai/plan-manager.js';
 import {
   planMotionCommand,
   applyMotionCommand,
+  mintMotionApprovalToken,
   type MotionApplyResult,
 } from '../../../lib/motion/plan.js';
 import { diffMotionDocuments } from '../../../lib/motion/diff.js';
@@ -68,8 +69,13 @@ export function registerModelBuilderHandlers({
         plan: ReturnType<typeof planMotionCommand>,
       ): MotionApplyResult => {
         try {
+          const token = mintMotionApprovalToken(plan);
           const next = applyMotionCommand(currentDoc, plan, {
             now: new Date().toISOString(),
+            approvalToken: token,
+            // Ephemeral dialog: destructive ops (e.g. node remove) must still
+            // apply, otherwise they silently no-op as APPLY_ERROR.
+            confirmedDestructive: true,
           });
           currentDoc = next.document;
           return next;

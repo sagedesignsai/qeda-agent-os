@@ -16,6 +16,7 @@ import { ToolLoopAgent, isStepCount } from 'ai';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createMotionTools, type MotionToolContext } from '../tools/motion.js';
+import { createModelBuilderSubagentTool } from '../tools/model-builder-subagent.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
@@ -83,6 +84,12 @@ You help users create, edit, and animate 3D motion scenes conversationally. You 
    - Keep instance counts bounded (max 5000) for performance
    - Expose parameters in props for editability
 
+5. **Model Builder Subagent** (buildModel tool):
+   - Delegate a complex, multi-part hero asset (e.g. "build a full workspace
+     with desk, chair, lamp and monitor") to the Model Builder subagent
+   - It plans and builds autonomously and returns a summary; prefer it over
+     hand-sequencing many scene ops when the task has many interdependent parts
+
 ## Tone & Output
 - Helpful, precise, and action-oriented.
 - When you execute tools, summarize what was added or changed in clean markdown.
@@ -115,12 +122,17 @@ export function createMotionCopilotAgent(opts: MotionCopilotAgentOptions) {
   };
 
   const tools = createMotionTools(toolContext);
+  const modelBuilderSubagent = createModelBuilderSubagentTool({
+    getDocument: opts.getDocument,
+    apply: opts.apply,
+  });
 
   return new ToolLoopAgent({
     model: model as any,
     instructions: buildMotionInstructions(doc, opts.activeProject),
     tools: {
       ...tools,
+      buildModel: modelBuilderSubagent,
       ...createPlanTools(planManager),
     },
     stopWhen: [isStepCount(25), planManager.stopCondition()],
