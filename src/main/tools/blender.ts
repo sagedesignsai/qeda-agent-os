@@ -73,7 +73,13 @@ export function createBlenderTools(context: MotionToolContext) {
                 hash: 'blender-headless',
                 byteSize: job.bytes ?? 0,
                 createdAt: new Date().toISOString(),
-                metadata: { brief, style, seed, generatedBy: 'blender-5.2-headless' },
+                metadata: {
+                  brief,
+                  style,
+                  seed,
+                  generatedBy: 'blender-5.2-headless',
+                  previewPath: job.previewPath,
+                },
               },
             },
             {
@@ -94,6 +100,7 @@ export function createBlenderTools(context: MotionToolContext) {
           assetId,
           nodeId,
           bytes: job.bytes,
+          previewPath: job.previewPath,
           manifest: describeMotionEngine(),
           ...applied,
         };

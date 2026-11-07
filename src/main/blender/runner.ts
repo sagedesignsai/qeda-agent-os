@@ -29,6 +29,7 @@ export interface BlenderHealth {
 export interface BlenderJobResult {
   success: boolean;
   glbPath?: string;
+  previewPath?: string;
   bytes?: number;
   error?: string;
   excerpt?: string;
@@ -116,6 +117,7 @@ export async function runBlenderJob(input: BlenderJobInput): Promise<BlenderJobR
   const runId = `${Date.now()}-${randomBytes(4).toString('hex')}`;
   const baseDir = path.join(app.getPath('userData'), 'blender-jobs', runId);
   const glbPath = path.join(baseDir, 'output.glb');
+  const previewPath = path.join(baseDir, 'preview.png');
   const scriptPath = path.join(baseDir, 'job.py');
 
   try {
@@ -126,6 +128,7 @@ export async function runBlenderJob(input: BlenderJobInput): Promise<BlenderJobR
       seed: input.seed ?? 1,
       maxTriangles: input.maxTriangles ?? 50_000,
       outputPath: glbPath,
+      previewPath,
     });
     await fs.writeFile(scriptPath, script, 'utf8');
 
@@ -166,7 +169,17 @@ export async function runBlenderJob(input: BlenderJobInput): Promise<BlenderJobR
       return { success: false, error: 'Output is not a valid GLB (bad magic).' };
     }
 
-    return { success: true, glbPath, bytes: stat.size, stderrTail: tail(stderr) };
+    const previewOk = await fs
+      .stat(previewPath)
+      .then((s) => s.size > 0)
+      .catch(() => false);
+    return {
+      success: true,
+      glbPath,
+      previewPath: previewOk ? previewPath : undefined,
+      bytes: stat.size,
+      stderrTail: tail(stderr),
+    };
   } catch (error) {
     const e = error as { stdout?: string; stderr?: string; message?: string; code?: string };
     if (e.code === 'ETIMEDOUT') {

@@ -16,7 +16,7 @@
  *    approval-free (destructive ops are handled via plan tokens upstream).
  *  - Instructions demand a final summary so the parent gets useful signal.
  */
-import { tool } from 'ai';
+import { readUIMessageStream, toUIMessageStream, tool } from 'ai';
 import { z } from 'zod';
 import { createModelBuilderAgent } from '../ai/model-builder-agent';
 import type { ModelTarget } from '../ai/fallback';
@@ -57,7 +57,9 @@ export function createModelBuilderSubagentTool(opts: ModelBuilderSubagentOptions
       'The subagent autonomously plans and builds geometry/materials/lighting and returns a summary. ' +
       'Use for hero assets or multi-part models; for simple node tweaks use motion.scene.director directly.',
     inputSchema: buildModelInputSchema,
-    execute: async ({ task }, { abortSignal }) => {
+    // Streaming subagent per SDK docs 06-subagents.mdx: generator yields
+    // accumulated UIMessages as preliminary results so the UI shows progress.
+    execute: async function* ({ task }, { abortSignal }) {
       const before = opts.getDocument();
       const beforeNodes = before.scenes.reduce((s, sc) => s + sc.nodes.length, 0);
       const beforeAssets = before.assets.length;
@@ -71,16 +73,22 @@ export function createModelBuilderSubagentTool(opts: ModelBuilderSubagentOptions
       });
 
       try {
-        const result = await subagent.generate({
+        const result = await subagent.stream({
           prompt: task,
           abortSignal,
         });
 
+        for await (const message of readUIMessageStream({
+          stream: toUIMessageStream({ stream: result.stream as never }),
+        })) {
+          yield message;
+        }
+
+        const text = (await result.text)?.trim() ?? 'Model build complete.';
         const after = opts.getDocument();
         const afterNodes = after.scenes.reduce((s, sc) => s + sc.nodes.length, 0);
         const afterAssets = after.assets.length;
 
-        const text = result.text?.trim() ?? 'Model build complete.';
         const summary: ModelBuilderSubagentSummary = {
           success: true,
           summary:
@@ -105,9 +113,12 @@ export function createModelBuilderSubagentTool(opts: ModelBuilderSubagentOptions
       }
     },
     // Keep the parent context clean: the model sees only the summary.
-    // (Streaming variant with readUIMessageStream is a Phase-2 enhancement.)
+    // Preliminary (streamed) messages are replaced by the final summary.
     toModelOutput: ({ output }) => {
-      const s = output as ModelBuilderSubagentSummary;
+      const s = output as unknown as ModelBuilderSubagentSummary | undefined;
+      if (!s || typeof s !== 'object' || !('summary' in s)) {
+        return { type: 'text' as const, value: 'Model Builder subagent completed.' };
+      }
       return { type: 'text' as const, value: s.summary };
     },
   });

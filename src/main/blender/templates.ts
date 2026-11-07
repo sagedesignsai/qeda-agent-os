@@ -14,6 +14,7 @@ export interface BlenderTemplateInput {
   seed?: number;
   maxTriangles?: number;
   outputPath: string;
+  previewPath?: string;
 }
 
 const BASE = (input: BlenderTemplateInput) => `
@@ -33,7 +34,7 @@ if not collection:
     context.scene.collection.children.link(collection)
 `;
 
-const EXPORT = (outputPath: string) => `
+const EXPORT = (outputPath: string, previewPath?: string) => `
 # Export
 bpy.ops.export_scene.gltf(
     filepath=r"${outputPath}",
@@ -42,6 +43,28 @@ bpy.ops.export_scene.gltf(
     export_materials='EXPORT',
 )
 print("BLENDER_EXPORT_OK")
+${
+  previewPath
+    ? `
+# Visual verification preview (Workbench, fast, headless-safe)
+try:
+    bpy.context.scene.render.engine = 'BLENDER_WORKBENCH'
+    bpy.context.scene.render.resolution_x = 512
+    bpy.context.scene.render.resolution_y = 512
+    bpy.context.scene.render.film_transparent = True
+    bpy.context.scene.camera = None
+    bpy.ops.object.camera_add(location=(4, -4, 3))
+    cam = bpy.context.active_object
+    bpy.context.scene.camera = cam
+    cam.rotation_euler = (0.6, 0, 0.78)
+    bpy.context.scene.render.filepath = r"${previewPath}"
+    bpy.ops.render.render(write_still=True)
+    print("BLENDER_PREVIEW_OK")
+except Exception as e:
+    print("BLENDER_PREVIEW_SKIPPED", e)
+`
+    : ''
+}
 `;
 
 const MATERIAL = (style: BlenderStyle) => {
@@ -147,7 +170,7 @@ if mins:
     offset = -min(mins)
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.transform.translate(value=(0, 0, offset))
-${EXPORT(input.outputPath)}
+${EXPORT(input.outputPath, input.previewPath)}
 `;
   return body;
 }
