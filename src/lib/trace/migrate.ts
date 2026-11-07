@@ -534,27 +534,104 @@ function migrateSplineTracer(element: LegacyElement): TraceElement {
 }
 
 /**
- * Expand legacy macro elements while keeping their ids and parent/root slots.
- * A second invocation returns the same object without allocating.
+ * Properties that used to exist as animatable CSS concepts but that no
+ * renderer ever read: the vector serializer paints with `fill`/`stroke`/`rx`,
+ * and shadows are a filter. Documents may still carry them (the copilot could
+ * set them, older templates wrote them), so they are folded into their SVG
+ * equivalent on read and then dropped, together with their tracks.
  */
-export function migrateTraceProject(project: TraceProject): TraceProject {
-  const legacyElements = Object.values(project.elements)
-    .filter(isLegacy)
-    .map((element) => element as LegacyElement);
-  if (legacyElements.length === 0) return project;
+const RETIRED_PROPERTIES = new Set<string>([
+  'color',
+  'backgroundColor',
+  'borderColor',
+  'borderRadius',
+  'boxShadow',
+  'morphProgress',
+]);
 
-  const elements: Record<string, TraceElement> = { ...project.elements };
-  const occupiedIds = new Set(Object.keys(project.elements));
-  for (const element of legacyElements) {
-    const legacyType = String(element.type);
-    const migrated =
-      legacyType === 'shape' || legacyType === 'star'
-        ? [migrateShape(element)]
-        : legacyType === 'spline-tracer'
-          ? [migrateSplineTracer(element)]
-          : expandCompound(element, occupiedIds);
-    for (const item of migrated) elements[item.id] = item;
+function migrateRetiredProperties(element: TraceElement): TraceElement {
+  // This runs on every read of a document (including each export), so the
+  // common, already-clean case must not allocate.
+  const tracks = element.tracks.some((track) =>
+    RETIRED_PROPERTIES.has(track.property),
+  )
+    ? element.tracks.filter((track) => !RETIRED_PROPERTIES.has(track.property))
+    : element.tracks;
+  const tracksChanged = tracks.length !== element.tracks.length;
+  const hasRetiredAttributes = Object.keys(element.attributes).some((key) =>
+    RETIRED_PROPERTIES.has(key),
+  );
+  if (!hasRetiredAttributes) {
+    return tracksChanged ? { ...element, tracks } : element;
   }
 
-  return { ...project, elements };
+  const attributes: Record<string, any> = { ...element.attributes };
+  let attributesChanged = false;
+
+  // Only fill an empty slot: a project that already carried a real fill must
+  // keep it rather than being repainted by a legacy alias.
+  const adopt = (from: string, to: string) => {
+    if (attributes[to] !== undefined) return;
+    const value = attributes[from];
+    if (typeof value !== 'string' || value === '') return;
+    attributes[to] = value;
+    attributesChanged = true;
+  };
+
+  adopt('backgroundColor', 'fill');
+  adopt('color', 'fill');
+  adopt('borderColor', 'stroke');
+
+  if (element.type === 'rect' && attributes.rx === undefined) {
+    const legacyRadius = attributes.borderRadius;
+    if (typeof legacyRadius === 'number' && Number.isFinite(legacyRadius)) {
+      attributes.rx = legacyRadius;
+      attributesChanged = true;
+    }
+  }
+
+  for (const property of RETIRED_PROPERTIES) {
+    if (property in attributes) {
+      delete attributes[property];
+      attributesChanged = true;
+    }
+  }
+
+  if (!attributesChanged && !tracksChanged) return element;
+  return { ...element, attributes, tracks };
+}
+
+/**
+ * Normalize retired attributes, then expand legacy macro elements while keeping
+ * their ids and parent/root slots. A second invocation returns the same object
+ * without allocating.
+ */
+export function migrateTraceProject(project: TraceProject): TraceProject {
+  const elements: Record<string, TraceElement> = {};
+  let changed = false;
+  for (const [id, element] of Object.entries(project.elements)) {
+    const normalized = migrateRetiredProperties(element);
+    if (normalized !== element) changed = true;
+    elements[id] = normalized;
+  }
+
+  const legacyElements = Object.values(elements)
+    .filter(isLegacy)
+    .map((element) => element as LegacyElement);
+  if (legacyElements.length > 0) {
+    changed = true;
+    const occupiedIds = new Set(Object.keys(project.elements));
+    for (const element of legacyElements) {
+      const legacyType = String(element.type);
+      const migrated =
+        legacyType === 'shape' || legacyType === 'star'
+          ? [migrateShape(element)]
+          : legacyType === 'spline-tracer'
+            ? [migrateSplineTracer(element)]
+            : expandCompound(element, occupiedIds);
+      for (const item of migrated) elements[item.id] = item;
+    }
+  }
+
+  return changed ? { ...project, elements } : project;
 }

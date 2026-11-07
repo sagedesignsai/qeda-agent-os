@@ -94,6 +94,7 @@ export function ChatInput({
   return (
     <div
       data-streaming={isStreaming ? 'true' : undefined}
+      data-tour="chat-prompt"
       className={cn(
         'rounded-lg border transition-all duration-300',
         isStreaming

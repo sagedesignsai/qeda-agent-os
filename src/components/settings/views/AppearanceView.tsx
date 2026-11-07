@@ -7,7 +7,7 @@ import { useTheme } from 'next-themes';
 import { Label } from '@/components/ui/label';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Button } from '@/components/ui/button';
-import { MonitorIcon, MoonIcon, SunIcon } from 'lucide-react';
+import { CompassIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react';
 import { useAppearance } from '@/hooks/use-appearance';
 import { ColorField } from '@/components/motion/inspector/controls/color-field';
 import { THEME_PRESETS, TOKEN_NAMES } from '@/lib/theme-presets';
@@ -71,6 +71,31 @@ export function AppearanceView() {
           Tuned by the active preset (`--radius`, `--spacing`). Editing one
           value retunes the entire app consistently.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-border/60 bg-muted/40 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-medium text-foreground">App tour</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Re-watch the 4-step overview of Qeda's structure.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => {
+              void window.electron.ipc.invoke('settings:save', {
+                spotlightTourCompleted: false,
+              });
+              window.location.reload();
+            }}
+          >
+            <CompassIcon className="size-3.5" />
+            Show tour again
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3">

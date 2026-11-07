@@ -94,6 +94,11 @@ export interface AppSettings {
    */
   onboardingCompleted?: boolean;
   /**
+   * Set once the first-launch spotlight tour has been completed or skipped,
+   * so the structural overview is shown exactly once. Absent on a fresh install.
+   */
+  spotlightTourCompleted?: boolean;
+  /**
    * The project the user was last working in, restored on launch.
    *
    * This is a GLOBAL DEFAULT, not a per-surface scope. A surface that carries

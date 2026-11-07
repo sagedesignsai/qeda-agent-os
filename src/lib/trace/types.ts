@@ -52,12 +52,6 @@ export type AnimatableProperty =
   | 'trimStart'
   | 'trimEnd'
   | 'trimOffset'
-  | 'morphProgress'
-  | 'boxShadow'
-  | 'backgroundColor'
-  | 'borderColor'
-  | 'color'
-  | 'borderRadius'
   | 'filter';
 
 export interface Keyframe<T = number | string> {

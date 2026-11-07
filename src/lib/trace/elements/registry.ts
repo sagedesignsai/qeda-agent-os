@@ -19,7 +19,7 @@ export type PropertyGroup =
   'transform' | 'appearance' | 'geometry' | 'text' | 'content';
 
 export type PropertyKind =
-  'number' | 'percent' | 'color' | 'text' | 'boolean' | 'select' | 'borderRadius' | 'strokeDash' | 'boxShadow' | 'progress';
+  'number' | 'percent' | 'color' | 'text' | 'boolean' | 'select' | 'borderRadius' | 'strokeDash' | 'progress';
 
 export interface PropertyDescriptor {
   property: AnimatableProperty;
@@ -147,6 +147,11 @@ const PAINT: PropertyDescriptor[] = [
   },
 ];
 
+/**
+ * Size only. Shape-specific overrides (a circle's `r`, an ellipse's `rx`) are
+ * derived from these by the serializer, so exposing them again would give the
+ * panel a second, competing source of truth for the same edge.
+ */
 const GEOMETRY: PropertyDescriptor[] = [
   {
     property: 'width',
@@ -166,6 +171,10 @@ const GEOMETRY: PropertyDescriptor[] = [
     min: 0,
     attribute: 'height',
   },
+];
+
+/** Only a `<rect>` has corners, so only it advertises a corner radius. */
+const RADIUS: PropertyDescriptor[] = [
   {
     property: 'rx',
     label: 'Corner radius',
@@ -218,16 +227,6 @@ const TRIM: PropertyDescriptor[] = [
     max: 100,
     attribute: 'pathProgress',
   },
-  {
-    property: 'morphProgress',
-    label: 'Morph progress',
-    group: 'geometry',
-    kind: 'progress',
-    step: 1,
-    min: 0,
-    max: 100,
-    attribute: 'morphProgress',
-  },
 ];
 
 const TEXT_PROPS: PropertyDescriptor[] = [
@@ -254,13 +253,6 @@ const TEXT_PROPS: PropertyDescriptor[] = [
     kind: 'number',
     step: 0.5,
     attribute: 'letterSpacing',
-  },
-  {
-    property: 'color',
-    label: 'Text color',
-    group: 'text',
-    kind: 'color',
-    attribute: 'color',
   },
 ];
 
@@ -317,54 +309,18 @@ export const ELEMENT_DESCRIPTORS: Record<TraceElementType, ElementDescriptor> =
       label: 'Text',
       defaultWidth: 320,
       defaultHeight: 80,
-      properties: [...TRANSFORM, ...TEXT_PROPS, ...PAINT, {
-        property: 'boxShadow',
-        label: 'Drop shadow',
-        group: 'appearance',
-        kind: 'boxShadow',
-        attribute: 'boxShadow',
-      }, {
-        property: 'borderRadius',
-        label: 'Border radius',
-        group: 'geometry',
-        kind: 'borderRadius',
-        step: 1,
-        min: 0,
-        attribute: 'borderRadius',
-      }],
+      // Text is painted with `fill` (SVG has no `color`), so the Fill section is
+      // the text colour control and there is no second, inert colour field.
+      properties: [...TRANSFORM, ...TEXT_PROPS, ...PAINT],
     },
     rect: {
       type: 'rect',
       label: 'Rectangle',
       defaultWidth: 240,
       defaultHeight: 160,
-      properties: [...TRANSFORM, ...GEOMETRY, ...PAINT, {
-        property: 'boxShadow',
-        label: 'Drop shadow',
-        group: 'appearance',
-        kind: 'boxShadow',
-        attribute: 'boxShadow',
-      }, {
-        property: 'borderRadius',
-        label: 'Border radius',
-        group: 'geometry',
-        kind: 'borderRadius',
-        step: 1,
-        min: 0,
-        attribute: 'borderRadius',
-      }, {
-        property: 'backgroundColor',
-        label: 'Background',
-        group: 'appearance',
-        kind: 'color',
-        attribute: 'backgroundColor',
-      }, {
-        property: 'borderColor',
-        label: 'Border color',
-        group: 'appearance',
-        kind: 'color',
-        attribute: 'borderColor',
-      }],
+      // A rect paints with fill/stroke and rounds with `rx`; shadows are a
+      // filter (see the Filters section), not a CSS string on the element.
+      properties: [...TRANSFORM, ...GEOMETRY, ...RADIUS, ...PAINT],
     },
     circle: {
       type: 'circle',

@@ -726,6 +726,8 @@ export interface IpcChannels {
       serviceKeysSet: Record<string, boolean>;
       /** True once first-launch onboarding has been finished or skipped. */
       onboardingCompleted: boolean;
+      /** True once the first-launch spotlight tour has been completed or skipped. */
+      spotlightTourCompleted: boolean;
       /** Which agent runtime powers Builder coding turns. */
       builderEngine: BuilderEngine;
       /**

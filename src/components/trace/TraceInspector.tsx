@@ -3,8 +3,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Descriptor-driven property inspector, laid out like a design panel:
  * Transform (align to artboard, X/Y, rotation, scale), Layout (dimensions with
- * aspect lock), Image source, Appearance, Fill, Stroke, Text, Path, Layer and
- * Animation.
+ * aspect lock), Trim, Image source, Instance reference, Appearance, Fill,
+ * Stroke, Text, Path, Layer and Animation.
  *
  * Fields read the value resolved at the playhead (so an animated property shows
  * the frame you are looking at) and write through `updateAttributes`, which
@@ -22,6 +22,7 @@ import {
   EyeOffIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
+  ItalicIcon,
   LockIcon,
   RadiusIcon,
   RotateCcwIcon,
@@ -51,6 +52,7 @@ import {
 } from '@/components/trace/inspector/fields';
 import { FiltersSection } from '@/components/trace/inspector/filters';
 import { ImageSection } from '@/components/trace/inspector/image';
+import { InstanceSection } from '@/components/trace/inspector/instance';
 import { PanelSection } from '@/components/trace/inspector/section';
 import { ScrubField } from '@/components/trace/inspector/scrub-field';
 import {
@@ -223,11 +225,7 @@ function PropertyField({
     );
   }
 
-  if (
-    descriptor.kind === 'text' ||
-    descriptor.kind === 'strokeDash' ||
-    descriptor.kind === 'boxShadow'
-  ) {
+  if (descriptor.kind === 'text' || descriptor.kind === 'strokeDash') {
     return (
       <FieldRow label={descriptor.label} wide align="start">
         <div className="group/row flex items-start gap-1">
@@ -476,6 +474,14 @@ function TransformSection({ element }: { element: TraceElement }) {
 
 /* ── Layout ────────────────────────────────────────────────────────────────── */
 
+/** Path trim/motion properties own a panel of their own, not "Layout". */
+const TRIM_PROPERTIES = new Set<AnimatableProperty>([
+  'trimStart',
+  'trimEnd',
+  'trimOffset',
+  'pathProgress',
+]);
+
 function LayoutSection({ element }: { element: TraceElement }) {
   const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
   const set = usePropertySetter(element, timeMs);
@@ -518,8 +524,8 @@ function LayoutSection({ element }: { element: TraceElement }) {
       descriptor.property !== 'rx' &&
       // Poly points are edited by the Path section below.
       descriptor.property !== 'points' &&
-      // Radii live in Appearance so they read consistently across types.
-      descriptor.property !== 'borderRadius',
+      // Trim/progress live in the Trim panel below.
+      !TRIM_PROPERTIES.has(descriptor.property),
   );
 
   if (!hasWidth && remaining.length === 0) return null;
@@ -585,6 +591,31 @@ function LayoutSection({ element }: { element: TraceElement }) {
   );
 }
 
+/* ── Trim ──────────────────────────────────────────────────────────────────── */
+
+function TrimSection({ element }: { element: TraceElement }) {
+  const descriptors = getAnimatableProperties(element.type).filter((descriptor) =>
+    TRIM_PROPERTIES.has(descriptor.property),
+  );
+  if (descriptors.length === 0) return null;
+
+  return (
+    <PanelSection title="Trim">
+      {descriptors.map((descriptor) => (
+        <PropertyField
+          key={descriptor.property}
+          element={element}
+          descriptor={descriptor}
+        />
+      ))}
+      <p className="text-[9px] leading-relaxed text-muted-foreground">
+        Trim shortens the drawn stroke; progress slides the layer along its own
+        path.
+      </p>
+    </PanelSection>
+  );
+}
+
 /* ── Appearance ────────────────────────────────────────────────────────────── */
 
 const PAINT_PROPERTIES = new Set<string>([
@@ -601,12 +632,11 @@ function AppearanceSection({ element }: { element: TraceElement }) {
   const set = usePropertySetter(element, timeMs);
   const hasOpacity =
     getPropertyDescriptor(element.type, 'opacity') !== undefined;
-  // Only a <rect> has a meaningful corner radius. See LayoutSection.
+  // Only a <rect> advertises a corner radius (see registry's RADIUS), so the
+  // field cannot appear on a shape whose renderer ignores it.
   const hasRadius =
     element.type === 'rect' &&
     getPropertyDescriptor(element.type, 'rx') !== undefined;
-  const borderRadius =
-    hasRadius ? undefined : getPropertyDescriptor(element.type, 'borderRadius');
   const opacity = Number(propertyValue(element, 'opacity', timeMs));
   const radius = Number(propertyValue(element, 'rx', timeMs));
 
@@ -617,7 +647,7 @@ function AppearanceSection({ element }: { element: TraceElement }) {
       descriptor.property !== 'opacity',
   );
 
-  if (!hasOpacity && !hasRadius && !borderRadius && remaining.length === 0) {
+  if (!hasOpacity && !hasRadius && remaining.length === 0) {
     return null;
   }
 
@@ -668,10 +698,6 @@ function AppearanceSection({ element }: { element: TraceElement }) {
             }
           />
         </FieldRow>
-      ) : null}
-
-      {borderRadius ? (
-        <PropertyField element={element} descriptor={borderRadius} />
       ) : null}
 
       {remaining.map((descriptor) => (
@@ -743,9 +769,22 @@ function FillSection({ element }: { element: TraceElement }) {
   );
 }
 
+const LINE_CAPS = [
+  { value: 'butt', label: 'Butt' },
+  { value: 'round', label: 'Round' },
+  { value: 'square', label: 'Square' },
+];
+
+const LINE_JOINS = [
+  { value: 'miter', label: 'Miter' },
+  { value: 'round', label: 'Round' },
+  { value: 'bevel', label: 'Bevel' },
+];
+
 function StrokeSection({ element }: { element: TraceElement }) {
   const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
   const set = usePropertySetter(element, timeMs);
+  const updateAttributes = useTraceStore((state) => state.updateAttributes);
   const hasStroke =
     getPropertyDescriptor(element.type, 'stroke') !== undefined;
   const hasWidth =
@@ -758,6 +797,9 @@ function StrokeSection({ element }: { element: TraceElement }) {
   const width = Number(propertyValue(element, 'strokeWidth', timeMs));
   const dash = getPropertyDescriptor(element.type, 'strokeDasharray');
   const dashOffset = getPropertyDescriptor(element.type, 'strokeDashoffset');
+  // SVG's own defaults, so an unset attribute still shows the truth.
+  const lineCap = String(element.attributes.strokeLinecap ?? 'butt');
+  const lineJoin = String(element.attributes.strokeLinejoin ?? 'miter');
 
   return (
     <PanelSection title="Stroke">
@@ -792,6 +834,56 @@ function StrokeSection({ element }: { element: TraceElement }) {
           />
         </FieldRow>
       ) : null}
+      {hasWidth && Number.isFinite(width) && width > 0 ? (
+        <PairRow
+          left={
+            <Select
+              value={lineCap}
+              onValueChange={(next) =>
+                updateAttributes(element.id, { strokeLinecap: next })
+              }
+            >
+              <SelectTrigger
+                aria-label="Line cap"
+                title="Line cap"
+                className="h-7 bg-muted/20 text-[11px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LINE_CAPS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+          right={
+            <Select
+              value={lineJoin}
+              onValueChange={(next) =>
+                updateAttributes(element.id, { strokeLinejoin: next })
+              }
+            >
+              <SelectTrigger
+                aria-label="Line join"
+                title="Line join"
+                className="h-7 bg-muted/20 text-[11px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LINE_JOINS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        />
+      ) : null}
       {dash ? <PropertyField element={element} descriptor={dash} /> : null}
       {dashOffset ? (
         <PropertyField element={element} descriptor={dashOffset} />
@@ -811,8 +903,11 @@ function TextSection({ element }: { element: TraceElement }) {
     element.attributes.fontFamily ?? 'Inter, sans-serif',
   );
   const textAnchor = String(element.attributes.textAnchor ?? 'start');
-  const hasColor = getPropertyDescriptor(element.type, 'color') !== undefined;
-  const color = String(propertyValue(element, 'color', timeMs) ?? '#ffffff');
+  const fontStyle = String(element.attributes.fontStyle ?? 'normal');
+  const italic = fontStyle === 'italic';
+  const dominantBaseline = String(
+    element.attributes.dominantBaseline ?? 'middle',
+  );
 
   return (
     <PanelSection title="Text">
@@ -868,26 +963,44 @@ function TextSection({ element }: { element: TraceElement }) {
       />
 
       <FieldRow label="Weight">
-        <Select
-          value={fontWeight}
-          onValueChange={(next) =>
-            updateAttributes(element.id, { fontWeight: Number(next) })
-          }
-        >
-          <SelectTrigger
-            aria-label="Font weight"
-            className="h-7 bg-muted/20 text-[11px]"
+        <div className="flex items-center gap-1">
+          <Select
+            value={fontWeight}
+            onValueChange={(next) =>
+              updateAttributes(element.id, { fontWeight: Number(next) })
+            }
           >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {['400', '500', '600', '700', '800'].map((weight) => (
-              <SelectItem key={weight} value={weight}>
-                {weight}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+            <SelectTrigger
+              aria-label="Font weight"
+              className="h-7 min-w-0 flex-1 bg-muted/20 text-[11px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {['400', '500', '600', '700', '800'].map((weight) => (
+                <SelectItem key={weight} value={weight}>
+                  {weight}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            size="icon"
+            variant={italic ? 'secondary' : 'ghost'}
+            aria-pressed={italic}
+            title={italic ? 'Remove italic' : 'Italic'}
+            aria-label={italic ? 'Remove italic' : 'Italic'}
+            className="size-7 shrink-0"
+            onClick={() =>
+              updateAttributes(element.id, {
+                fontStyle: italic ? 'normal' : 'italic',
+              })
+            }
+          >
+            <ItalicIcon className="size-3.5" />
+          </Button>
+        </div>
       </FieldRow>
 
       <FieldRow label="Font" wide>
@@ -946,22 +1059,34 @@ function TextSection({ element }: { element: TraceElement }) {
         </div>
       </FieldRow>
 
-      {hasColor ? (
-        <FieldRow label="Color" wide>
-          <ColorField
-            label="Text color"
-            value={color}
-            onChange={(next) => set('color', next)}
-            trailing={
-              <TrackButton
-                element={element}
-                property="color"
-                label="Text color"
-              />
-            }
-          />
-        </FieldRow>
-      ) : null}
+      <FieldRow label="Baseline">
+        <div className="flex h-7 items-center gap-1">
+          {(
+            [
+              { value: 'hanging', label: 'Top' },
+              { value: 'middle', label: 'Middle' },
+              { value: 'text-after-edge', label: 'Bottom' },
+            ] as const
+          ).map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={dominantBaseline === option.value ? 'secondary' : 'ghost'}
+              aria-pressed={dominantBaseline === option.value}
+              title={`Anchor text to the ${option.label.toLowerCase()} of its Y position`}
+              className="h-6 flex-1 px-1 text-[10px]"
+              onClick={() =>
+                updateAttributes(element.id, {
+                  dominantBaseline: option.value,
+                })
+              }
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </FieldRow>
     </PanelSection>
   );
 }
@@ -1125,9 +1250,20 @@ function PathDataSection({ element }: { element: TraceElement }) {
   );
   const isPoints =
     element.type === 'polyline' || element.type === 'polygon';
+  const isPolygon = element.type === 'polygon';
   const value = isPoints
     ? String(element.attributes.points ?? '')
     : String(element.attributes.d ?? '');
+  // A polygon with no points is generated from its side count by the
+  // serializer, so the count is the control that matters until points exist.
+  const sides = Math.max(
+    3,
+    Math.round(
+      Number(element.attributes.polygonSides ?? element.attributes.sides ?? 5) ||
+        5,
+    ),
+  );
+  const regular = value.trim() === '';
 
   return (
     <PanelSection
@@ -1165,6 +1301,42 @@ function PathDataSection({ element }: { element: TraceElement }) {
         aria-label={isPoints ? 'Points data' : 'Path data'}
         className="w-full resize-y rounded-md border border-input bg-muted/20 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/25"
       />
+      {isPolygon ? (
+        <>
+          <FieldRow label="Sides">
+            <ScrubField
+              label="Sides"
+              value={sides}
+              min={3}
+              max={24}
+              step={1}
+              onChange={(next) =>
+                updateAttributes(element.id, {
+                  polygonSides: Math.max(3, Math.min(24, Math.round(next))),
+                })
+              }
+            />
+          </FieldRow>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[9px] leading-relaxed text-muted-foreground">
+              {regular
+                ? 'Drawn from the side count.'
+                : 'Points above override the side count.'}
+            </p>
+            {regular ? null : (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-6 shrink-0 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+                onClick={() => updateAttributes(element.id, { points: '' })}
+              >
+                Use regular
+              </Button>
+            )}
+          </div>
+        </>
+      ) : null}
       <p className="text-[9px] leading-relaxed text-muted-foreground">
         Double-click the layer on canvas to edit anchors directly.
         Cmd/Ctrl+Enter applies text edits.
@@ -1417,8 +1589,12 @@ export function TraceInspector({
           <>
             <TransformSection element={element} />
             <LayoutSection element={element} />
+            <TrimSection element={element} />
             {element.type === 'image' ? (
               <ImageSection element={element} projectId={projectId} />
+            ) : null}
+            {element.type === 'use' ? (
+              <InstanceSection element={element} />
             ) : null}
             <AppearanceSection element={element} />
             <FillSection element={element} />

@@ -6,6 +6,8 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { GenerateNotebookProvider } from '@/components/GenerateNotebookDialog';
 import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog';
+import { SpotlightTour } from '@/components/tour/SpotlightTour';
+import { useSpotlightTour } from '@/components/tour/useSpotlightTour';
 import { useProjects } from '@/hooks/use-projects';
 import { useAppStore } from '@/stores/app-store';
 import { FocusRuntime } from '@/components/focus/FocusRuntime';
@@ -25,6 +27,7 @@ export function AppLayout() {
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const { rollups, loading: projectsLoading } = useProjects();
+  const tour = useSpotlightTour();
 
   // A brand-new install should meet the welcome flow once. Gating on "no real
   // projects yet" too means an existing user upgrading into this build never
@@ -151,6 +154,17 @@ export function AppLayout() {
             navigate(`/projects/${id}`);
           }}
         />
+
+        {tour.showTour && tour.step && (
+          <SpotlightTour
+            step={tour.step}
+            currentStep={tour.currentStep}
+            totalSteps={tour.totalSteps}
+            onNext={tour.nextStep}
+            onPrev={tour.prevStep}
+            onClose={tour.closeTour}
+          />
+        )}
       </SidebarProvider>
     </GenerateNotebookProvider>
   );

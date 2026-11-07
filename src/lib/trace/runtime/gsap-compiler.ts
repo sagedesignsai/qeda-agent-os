@@ -98,12 +98,6 @@ export function mapPropertyToGsap(property: AnimatableProperty): string {
     case 'height':
     case 'rx':
       return property;
-    case 'backgroundColor':
-    case 'borderColor':
-    case 'color':
-    case 'borderRadius':
-    case 'boxShadow':
-      return property;
     default:
       return property;
   }

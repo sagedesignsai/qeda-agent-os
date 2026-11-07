@@ -1338,7 +1338,7 @@ export default function Tasks() {
   );
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-tour="tasks-page">
       {/* The Tabs root wraps the header because the Today/Board switcher lives
           in the header's `nav` slot, and Radix requires TabsList to descend
           from its Tabs context. */}
@@ -1423,6 +1423,7 @@ export default function Tasks() {
 
               <Button
                 size="sm"
+                data-tour="new-task-button"
                 className="h-7 gap-1.5 px-2.5 text-xs"
                 onClick={openCreate}
               >

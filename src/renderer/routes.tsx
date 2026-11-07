@@ -6,7 +6,7 @@
  * Structure (not exhaustive — Chat and Workspace are called out because they
  * are the two that take a param and are driven by a rail submenu):
  *   <AppLayout>                     – persistent shell (rail + framed content)
- *     ├── /                         – redirects to /projects
+ *     ├── /                         – redirects to /tasks
  *     ├── /chat                     – Chat index (blank conversation; the
  *     │                               session is created lazily by the first
  *     │                               message, not by landing here)
@@ -14,7 +14,7 @@
  *     ├── /workspace                – Notebooks index (no page selected)
  *     │     ├── /workspace/:notebookId
  *     │     └── /workspace/:notebookId/:pageId
- *     └── *                         – redirects to /projects
+ *     └── *                         – redirects to /tasks
  *
  * The route params mirror the selection held in the rail's section submenus
  * (ChatMenu / WorkspaceMenu), which is what keeps a single sidebar in play.
@@ -47,17 +47,19 @@ export const routes: RouteObject[] = [
     element: <AppLayout />,
     children: [
       /**
-       * The app's starting point is now conditional on project state:
+       * The app's starting point is conditional:
        *
-       *   1. An active project is set  → start on /chat (the research surface).
-       *   2. No active project, but at
-       *      least one project exists → start on /projects.
-       *   3. No projects at all        → start on /onboarding (create the first
+       *   1. No projects at all        → start on /onboarding (create the first
        *      project before anything else makes sense).
+       *   2. Otherwise                 → start on /tasks (the work dashboard).
+       *
+       * Tasks is the landing page because it shows what needs attention right
+       * now — today's blocks, overdue items, and active work — giving immediate
+       * orientation before the user navigates to a specific tool.
        *
        * This is the first render decision; the conditional redirect itself is
        * computed inside the route element so it can read the current project
-       * list and active-project id without a separate top-level context.
+       * list without a separate top-level context.
        */
       { index: true, element: <ProjectsHome /> },
 
@@ -153,15 +155,15 @@ export const routes: RouteObject[] = [
       // Offline AI — local, private inference with Transformers.js models.
       { path: 'offline-ai', element: <OfflineAI /> },
 
-      { path: '*', element: <Navigate to="/projects" replace /> },
+      { path: '*', element: <Navigate to="/tasks" replace /> },
     ],
   },
 ];
 
 /**
- * Conditional homepage: /chat when there is an active project, /projects when
- * there are projects but no active one, and /onboarding when the workspace is
- * empty. Signals the app loading overlay to fade out once IPC calls resolve.
+ * Conditional homepage: /tasks as the default landing page, or /onboarding when
+ * the workspace is empty (no projects). Signals the app loading overlay to fade
+ * out once IPC calls resolve.
  */
 function ProjectsHome() {
   const navigate = useNavigate();
@@ -190,20 +192,11 @@ function ProjectsHome() {
           return;
         }
 
-        if (activeProjectId) {
-          if (!cancelled) {
-            navigate(`/chat?project=${encodeURIComponent(activeProjectId)}`, {
-              replace: true,
-            });
-          }
-          return;
-        }
-
-        if (!cancelled) navigate('/projects', { replace: true });
+        if (!cancelled) navigate('/tasks', { replace: true });
       } catch {
-        // On error, still hide the overlay and fall back to projects
+        // On error, still hide the overlay and fall back to tasks
         if (!cancelled) setLoading(false);
-        if (!cancelled) navigate('/projects', { replace: true });
+        if (!cancelled) navigate('/tasks', { replace: true });
       }
     })();
     return () => {
@@ -224,7 +217,7 @@ function OnboardingRoute() {
   return (
     <OnboardingDialog
       open
-      onClose={() => navigate('/projects', { replace: true })}
+      onClose={() => navigate('/tasks', { replace: true })}
       onOpenProject={(id) =>
         navigate(`/projects/${encodeURIComponent(id)}`, { replace: true })
       }

@@ -349,9 +349,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
               'x', 'y', 'scaleX', 'scaleY', 'rotation', 'opacity',
               'fillOpacity', 'fill', 'stroke', 'strokeWidth', 'strokeDashoffset',
               'fontSize', 'letterSpacing', 'text', 'width', 'height', 'rx',
-              'pathProgress', 'trimStart', 'trimEnd', 'trimOffset',
-              'morphProgress', 'boxShadow', 'backgroundColor', 'color',
-              'borderRadius', 'filter',
+              'pathProgress', 'trimStart', 'trimEnd', 'trimOffset', 'filter',
             ])
             .describe('Property to animate'),
           label: z.string().optional().describe('Track label (defaults to property name)'),

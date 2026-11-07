@@ -265,7 +265,7 @@ export function AppSidebar({
   };
 
   return (
-    <Sidebar variant="floating" collapsible="icon">
+    <Sidebar variant="floating" collapsible="icon" data-tour="sidebar-rail">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -306,6 +306,7 @@ export function AppSidebar({
                   <SidebarMenuButton
                     size="sm"
                     tooltip="Search"
+                    data-tour="search-button"
                     onClick={onOpenCommandPalette}
                   >
                     <SearchIcon />

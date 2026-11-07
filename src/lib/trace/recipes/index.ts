@@ -9,6 +9,7 @@ import type {
 } from './types';
 
 export * from './types';
+export * from './fields';
 export { compileBarChartRecipe } from './bar-chart';
 export { compileCounterRecipe } from './counter';
 export { compileKineticTextRecipe } from './kinetic-text';

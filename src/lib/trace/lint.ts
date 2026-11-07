@@ -57,12 +57,6 @@ const ANIMATABLE_PROPERTIES = new Set<AnimatableProperty>([
   'trimStart',
   'trimEnd',
   'trimOffset',
-  'morphProgress',
-  'boxShadow',
-  'backgroundColor',
-  'borderColor',
-  'color',
-  'borderRadius',
   'filter',
 ]);
 
@@ -72,10 +66,6 @@ const STRING_PROPERTIES = new Set<AnimatableProperty>([
   'text',
   'strokeDasharray',
   'points',
-  'boxShadow',
-  'backgroundColor',
-  'borderColor',
-  'color',
   'filter',
 ]);
 

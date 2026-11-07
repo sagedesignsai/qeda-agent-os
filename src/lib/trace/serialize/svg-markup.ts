@@ -168,13 +168,9 @@ export function elementBodyMarkup(
       )}" ry="${num(attributes.ry, num(attributes.rx, 0))}" ${paintAttrs(attributes)} />`;
 
     case 'circle':
-      return `<circle cx="${num(attributes.cx, width / 2)}" cy="${num(
-        attributes.cy,
-        height / 2,
-      )}" r="${num(
-        attributes.r,
-        num(attributes.radius, width / 2),
-      )}" ${paintAttrs(attributes)} />`;
+      // Centre and radius come from the box, matching what the Layout fields and
+      // the animation runtime (which sets `r` from width) already assume.
+      return `<circle cx="${width / 2}" cy="${height / 2}" r="${width / 2}" ${paintAttrs(attributes)} />`;
 
     case 'ellipse':
       return `<ellipse cx="${width / 2}" cy="${height / 2}" rx="${num(
