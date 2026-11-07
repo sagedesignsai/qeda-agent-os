@@ -100,7 +100,10 @@ export function OfflineModelsView() {
     setupHfToken();
   }, []);
 
-  // Load the default offline model and downloaded model list from settings
+  // Load the default offline model and set initial download states from settings.
+  // We use the downloadedOfflineModels list from settings instead of creating
+  // transformersJS instances for every model, which would load the full
+  // Transformers.js library in parallel and cause OOM errors.
   useEffect(() => {
     if (seeded.current) return;
     seeded.current = true;
@@ -112,62 +115,33 @@ export function OfflineModelsView() {
         if (cancelled) return;
         const model = (settings?.offlineModel as string) ?? '';
         if (model) setDefaultModel(model);
-        // Pre-mark models that were previously downloaded
+
+        // Build initial download states from the persisted list
         const downloaded = (settings?.downloadedOfflineModels as string[]) ?? [];
-        if (downloaded.length > 0) {
-          setDownloads((prev) => {
-            const updated = { ...prev };
-            for (const id of downloaded) {
-              if (updated[id]?.status !== 'ready') {
-                updated[id] = { status: 'ready', progress: 100, error: null };
-              }
-            }
-            return updated;
-          });
+        const downloadedSet = new Set(downloaded);
+        const initial: Record<string, ModelDownloadState> = {};
+        for (const m of OFFLINE_MODELS) {
+          initial[m.id] = downloadedSet.has(m.id)
+            ? { status: 'ready', progress: 100, error: null }
+            : { status: 'idle', progress: 0, error: null };
         }
+        setDownloads(initial);
       })
-      .catch(console.error);
+      .catch(() => {
+        // If settings are unavailable, default all models to idle
+        if (!cancelled) {
+          const initial: Record<string, ModelDownloadState> = {};
+          for (const m of OFFLINE_MODELS) {
+            initial[m.id] = { status: 'idle', progress: 0, error: null };
+          }
+          setDownloads(initial);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
   }, []);
-
-  // Check availability for all models on mount
-  useEffect(() => {
-    let cancelled = false;
-
-    // Check each model's availability in parallel
-    const checks = OFFLINE_MODELS.map(async (model) => {
-      try {
-        const tjModel = transformersJS(model.id, {
-          device: webgpuAvailable ? 'webgpu' : 'wasm',
-        });
-        const availability = await tjModel.availability();
-        if (cancelled) return;
-        setDownloads((prev) => ({
-          ...prev,
-          [model.id]: {
-            status: availability === 'available' ? 'ready' : 'idle',
-            progress: availability === 'available' ? 100 : 0,
-            error: null,
-          },
-        }));
-      } catch {
-        if (!cancelled) {
-          setDownloads((prev) => ({
-            ...prev,
-            [model.id]: { status: 'idle', progress: 0, error: null },
-          }));
-        }
-      }
-    });
-
-    void Promise.allSettled(checks);
-    return () => {
-      cancelled = true;
-    };
-  }, [webgpuAvailable]);
 
   const filteredModels = useMemo(
     () => searchModels(query || undefined, category !== 'all' ? category : undefined),
@@ -208,18 +182,32 @@ export function OfflineModelsView() {
         updateDownload(model.id, { status: 'ready', progress: 100, error: null });
         // Persist the downloaded model id in settings so the main process
         // knows it is available for the offline provider model list.
+        // Fetch the current list first and append the new model id.
         window.electron.ipc
-          .invoke('settings:save', {
-            downloadedOfflineModels: [
-              model.id,
-            ],
+          .invoke<Record<string, unknown>>('settings:get')
+          .then((settings) => {
+            const downloaded = (settings?.downloadedOfflineModels as string[]) ?? [];
+            if (!downloaded.includes(model.id)) {
+              return window.electron.ipc.invoke('settings:save', {
+                downloadedOfflineModels: [...downloaded, model.id],
+              });
+            }
           })
           .catch(() => {});
         toast.success(`${model.name} downloaded and ready for offline use.`);
       }
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
-      const message = err instanceof Error ? err.message : 'Download failed';
+      let message = err instanceof Error ? err.message : 'Download failed';
+
+      // Provide a user-friendly message for memory allocation failures
+      if (message.includes('Array buffer allocation failed') ||
+          message.includes('Failed to allocate') ||
+          message.includes('out of memory') ||
+          message.toLowerCase().includes('oom')) {
+        message = `Not enough memory to download ${model.name} (${model.size}). ${model.minRam ? `Requires at least ${model.minRam} RAM.` : 'Try closing other applications or selecting a smaller model.'}`;
+      }
+
       updateDownload(model.id, { status: 'error', error: message });
       toast.error(`Failed to download ${model.name}: ${message}`);
     } finally {

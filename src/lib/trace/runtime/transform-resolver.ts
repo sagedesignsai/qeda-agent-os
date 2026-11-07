@@ -94,3 +94,33 @@ export function getElementOrigin(element: TraceElement): {
     y: numberOr(origin.y, 0),
   };
 }
+
+/**
+ * Accumulate the x/y offset of all ancestor elements at `timeMs`.
+ * Returns the total parent offset so the caller can convert a
+ * local (parent-relative) position to an artboard-global position.
+ * Ignores rotation/scale — only the translate component matters
+ * for converting getBBox() local coords to artboard coords.
+ */
+export function getAncestorOffsetAtTime(
+  elements: Record<string, TraceElement>,
+  elementId: string,
+  timeMs: number,
+): { x: number; y: number } {
+  let offsetX = 0;
+  let offsetY = 0;
+  let cursor = elements[elementId]?.parentId;
+  const visited = new Set<string>();
+
+  while (cursor && !visited.has(cursor)) {
+    visited.add(cursor);
+    const parent = elements[cursor];
+    if (!parent) break;
+    const parentTransform = getElementTransformAtTime(parent, timeMs);
+    offsetX += parentTransform.x;
+    offsetY += parentTransform.y;
+    cursor = parent.parentId;
+  }
+
+  return { x: offsetX, y: offsetY };
+}

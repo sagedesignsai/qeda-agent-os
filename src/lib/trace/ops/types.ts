@@ -86,13 +86,29 @@ export type TraceOp =
   | {
       type: 'reorderElement';
       id: string;
-      to: 'front' | 'back' | 'forward' | 'backward';
+      /** Named move. Ignored when `index` is provided. */
+      to?: 'front' | 'back' | 'forward' | 'backward';
+      /**
+       * Absolute slot in the destination sibling list, in paint order
+       * (bottom = 0). Index is measured after the element is removed.
+       */
+      index?: number;
+    }
+  | {
+      type: 'reparentElement';
+      id: string;
+      /** `null` moves the element to the artboard root. */
+      parentId: string | null;
+      /** Paint-order slot in the new parent. Defaults to the top. */
+      index?: number;
     }
   | {
       type: 'groupElements';
       elementIds: string[];
       groupId?: string;
       name?: string;
+      /** Rotation/scale pivot in the group's local space. */
+      origin?: Point;
     }
   | { type: 'ungroupElement'; id: string }
   | { type: 'setElementScene'; id: string; sceneId: string | null }

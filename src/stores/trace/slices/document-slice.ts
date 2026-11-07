@@ -74,6 +74,7 @@ export const createDocumentSlice: TraceSliceCreator<
       },
       selection: {
         selectedElementId: null,
+        selectedElementIds: [],
         selectedKeyframeIds: [],
         expandedElementIds: [],
         collapsedElementIds: [],
@@ -95,6 +96,7 @@ export const createDocumentSlice: TraceSliceCreator<
       playback: { ...get().playback, currentTimeMs: 0, isPlaying: false },
       selection: {
         selectedElementId: null,
+        selectedElementIds: [],
         selectedKeyframeIds: [],
         expandedElementIds: [],
         collapsedElementIds: [],
@@ -117,9 +119,23 @@ export const createDocumentSlice: TraceSliceCreator<
     if (!result.ok || diffIsEmpty(result)) return result;
 
     const selection = state.selection;
-    const selectionExists =
-      !selection.selectedElementId ||
-      Boolean(result.project.elements[selection.selectedElementId]);
+    const selectedElementIds = (selection.selectedElementIds ?? []).filter(
+      (id) => Boolean(result.project.elements[id]),
+    );
+    const primaryExists = Boolean(
+      selection.selectedElementId &&
+        result.project.elements[selection.selectedElementId],
+    );
+    if (
+      primaryExists &&
+      selection.selectedElementId &&
+      !selectedElementIds.includes(selection.selectedElementId)
+    ) {
+      selectedElementIds.push(selection.selectedElementId);
+    }
+    const selectedElementId = primaryExists
+      ? selection.selectedElementId
+      : (selectedElementIds[selectedElementIds.length - 1] ?? null);
 
     set({
       project: result.project,
@@ -131,9 +147,17 @@ export const createDocumentSlice: TraceSliceCreator<
         currentTimeMs: clampTime(result.project, state.playback.currentTimeMs),
       },
       selection: {
-        ...(selectionExists
-          ? selection
-          : { ...selection, selectedElementId: null, selectedKeyframeIds: [] }),
+        ...selection,
+        selectedElementId,
+        selectedElementIds,
+        selectedKeyframeIds: primaryExists
+          ? selection.selectedKeyframeIds
+          : [],
+        editingPathElementId: result.project.elements[
+          selection.editingPathElementId ?? ''
+        ]
+          ? selection.editingPathElementId
+          : null,
         activeSceneId: activeSceneOf(result.project) ?? selection.activeSceneId,
       },
     });
@@ -142,18 +166,24 @@ export const createDocumentSlice: TraceSliceCreator<
   },
 
   updateAttributes: (elementId, patch) => {
+    get().updateAttributesMany([{ elementId, patch }]);
+  },
+
+  updateAttributesMany: (entries) => {
     const state = get();
-    const element = state.project?.elements[elementId];
-    if (!element) return;
+    const timeMs = state.playback.currentTimeMs;
+    const ops: TraceOp[] = [];
 
-    const ops: TraceOp[] = [
-      { type: 'updateElement', id: elementId, attributes: patch },
-    ];
+    for (const { elementId, patch } of entries) {
+      const element = state.project?.elements[elementId];
+      if (!element) continue;
 
-    // Auto-keyframe: an existing track for an edited property gains a keyframe at
-    // the playhead, matching the behaviour of a professional motion editor.
-    if (state.playback.autoKeyframe) {
-      const timeMs = state.playback.currentTimeMs;
+      ops.push({ type: 'updateElement', id: elementId, attributes: patch });
+
+      // Auto-keyframe: an existing track for an edited property gains a
+      // keyframe at the playhead, matching a professional motion editor.
+      if (!state.playback.autoKeyframe) continue;
+
       for (const [property, value] of Object.entries(patch)) {
         if (value === null || value === undefined) continue;
         const track = element.tracks.find(
@@ -186,7 +216,7 @@ export const createDocumentSlice: TraceSliceCreator<
       }
     }
 
-    get().dispatch(ops);
+    if (ops.length > 0) get().dispatch(ops);
   },
 
   updateTransform: (elementId, transform, origin) => {

@@ -42,6 +42,7 @@ export const useTraceStore = create<TraceStoreState>()(
 registerTraceRuntimeBridge({
   getProject: () => useTraceStore.getState().project,
   getPlayback: () => useTraceStore.getState().playback,
+  getSelection: () => useTraceStore.getState().selection.selectedElementIds,
   commitTime: (timeMs) => useTraceStore.getState().setPlayhead(timeMs),
   setPlaying: (playing) => useTraceStore.getState().setPlaying(playing),
 });

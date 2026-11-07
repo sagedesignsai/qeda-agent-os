@@ -57,7 +57,8 @@ export type AnimatableProperty =
   | 'backgroundColor'
   | 'borderColor'
   | 'color'
-  | 'borderRadius';
+  | 'borderRadius'
+  | 'filter';
 
 export interface Keyframe<T = number | string> {
   id: string;

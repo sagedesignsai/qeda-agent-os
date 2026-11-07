@@ -3,6 +3,9 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Selection and tree expansion. Selecting a nested layer opens its ancestors so
  * the timeline never hides the current selection.
+ *
+ * `selectedElementId` stays the primary selection (inspector + gizmo); the full
+ * layer selection lives in `selectedElementIds` for grouping, batching and DnD.
  */
 
 import type {
@@ -32,6 +35,7 @@ export const createSelectionSlice: TraceSliceCreator<
 > = (set, get) => ({
   selection: {
     selectedElementId: null,
+    selectedElementIds: [],
     selectedKeyframeIds: [],
     expandedElementIds: [],
     collapsedElementIds: [],
@@ -39,13 +43,14 @@ export const createSelectionSlice: TraceSliceCreator<
     editingPathElementId: null,
   },
 
-  selectElement: (elementId) => {
+  selectElement: (elementId, options = {}) => {
     const project = get().project;
     if (!elementId || !project?.elements[elementId]) {
       set((state) => ({
         selection: {
           ...state.selection,
           selectedElementId: null,
+          selectedElementIds: [],
           selectedKeyframeIds: [],
           editingPathElementId: null,
         },
@@ -59,13 +64,45 @@ export const createSelectionSlice: TraceSliceCreator<
       expanded.add(elementId);
       ancestors.forEach((id) => expanded.add(id));
 
+      const previous = state.selection.selectedElementIds ?? [];
+      let selectedElementIds: string[];
+      if (options.additive) {
+        selectedElementIds = previous.includes(elementId)
+          ? previous.filter((id) => id !== elementId)
+          : [...previous, elementId];
+      } else {
+        selectedElementIds = [elementId];
+      }
+
+      if (selectedElementIds.length === 0) {
+        return {
+          selection: {
+            ...state.selection,
+            selectedElementId: null,
+            selectedElementIds: [],
+            selectedKeyframeIds: [],
+            editingPathElementId: null,
+            expandedElementIds: [...expanded],
+            collapsedElementIds: state.selection.collapsedElementIds.filter(
+              (id) => !ancestors.includes(id),
+            ),
+          },
+        };
+      }
+
+      const primary = selectedElementIds.includes(elementId)
+        ? elementId
+        : selectedElementIds[selectedElementIds.length - 1];
+
       return {
         selection: {
           ...state.selection,
-          selectedElementId: elementId,
+          selectedElementId: primary,
+          selectedElementIds,
           selectedKeyframeIds: [],
           editingPathElementId:
-            state.selection.editingPathElementId === elementId
+            selectedElementIds.length === 1 &&
+            state.selection.editingPathElementId === primary
               ? state.selection.editingPathElementId
               : null,
           expandedElementIds: [...expanded],
@@ -75,6 +112,84 @@ export const createSelectionSlice: TraceSliceCreator<
         },
       };
     });
+  },
+
+  selectElements: (elementIds, primaryId) => {
+    const project = get().project;
+    const ids = [...new Set(elementIds)].filter((id) =>
+      Boolean(project?.elements[id]),
+    );
+    if (ids.length === 0) {
+      set((state) => ({
+        selection: {
+          ...state.selection,
+          selectedElementId: null,
+          selectedElementIds: [],
+          selectedKeyframeIds: [],
+          editingPathElementId: null,
+        },
+      }));
+      return;
+    }
+
+    const expanded = new Set(get().selection.expandedElementIds);
+    const revealed = new Set<string>();
+    if (project) {
+      for (const id of ids) {
+        expanded.add(id);
+        ancestorsOf(project.elements, id).forEach((ancestor) => {
+          expanded.add(ancestor);
+          revealed.add(ancestor);
+        });
+      }
+    }
+
+    const primary =
+      primaryId && ids.includes(primaryId) ? primaryId : ids[ids.length - 1];
+    set((state) => ({
+      selection: {
+        ...state.selection,
+        selectedElementId: primary,
+        selectedElementIds: ids,
+        selectedKeyframeIds: [],
+        editingPathElementId:
+          ids.length === 1 &&
+          state.selection.editingPathElementId === primary
+            ? state.selection.editingPathElementId
+            : null,
+        expandedElementIds: [...expanded],
+        collapsedElementIds: state.selection.collapsedElementIds.filter(
+          (id) => !revealed.has(id),
+        ),
+      },
+    }));
+  },
+
+  selectAllElements: () => {
+    const project = get().project;
+    if (!project) return;
+    const ids = Object.keys(project.elements);
+    if (ids.length === 0) {
+      set((state) => ({
+        selection: {
+          ...state.selection,
+          selectedElementId: null,
+          selectedElementIds: [],
+          selectedKeyframeIds: [],
+          editingPathElementId: null,
+        },
+      }));
+      return;
+    }
+    set((state) => ({
+      selection: {
+        ...state.selection,
+        selectedElementId: ids[ids.length - 1],
+        selectedElementIds: ids,
+        selectedKeyframeIds: [],
+        editingPathElementId: null,
+      },
+    }));
   },
 
   selectKeyframe: (keyframeKey, additive = false) => {
@@ -94,10 +209,18 @@ export const createSelectionSlice: TraceSliceCreator<
         : [keyframeKey];
 
       const [elementId] = keyframeKey.split(':');
+      const isKnown = Boolean(elementId && state.project?.elements[elementId]);
       return {
         selection: {
           ...state.selection,
-          selectedElementId: elementId || state.selection.selectedElementId,
+          selectedElementId: isKnown
+            ? elementId
+            : state.selection.selectedElementId,
+          selectedElementIds: isKnown
+            ? state.selection.selectedElementIds.includes(elementId)
+              ? state.selection.selectedElementIds
+              : [elementId]
+            : state.selection.selectedElementIds,
           selectedKeyframeIds,
         },
       };
@@ -159,6 +282,7 @@ export const createSelectionSlice: TraceSliceCreator<
       selection: {
         ...state.selection,
         selectedElementId: elementId,
+        selectedElementIds: [elementId],
         selectedKeyframeIds: [],
         editingPathElementId: elementId,
       },

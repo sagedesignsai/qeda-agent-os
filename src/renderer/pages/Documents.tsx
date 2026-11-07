@@ -20,6 +20,7 @@ import { PlusIcon } from 'lucide-react';
 import { PageHeader, type PageCrumb } from '@/components/PageHeader';
 
 import { useProjectScope } from '@/hooks/use-project-scope';
+import { ProjectScopeChip } from '@/components/projects/ProjectScopeChip';
 import { useDocuments, useDocumentEditor } from '@/hooks/use-documents';
 import { WordProcessor } from '@/components/documents/word-processor';
 import { TemplatePickerModal } from '@/components/documents/TemplatePickerModal';

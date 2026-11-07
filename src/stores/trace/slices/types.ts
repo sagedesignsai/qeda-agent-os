@@ -31,7 +31,10 @@ export type TracePlayback = {
 };
 
 export type TraceSelection = {
+  /** Primary selection — what the inspector and gizmo edit. */
   selectedElementId: string | null;
+  /** Full selection, in click order. Always contains the primary id. */
+  selectedElementIds: string[];
   /** `elementId:trackId:keyframeId` */
   selectedKeyframeIds: string[];
   expandedElementIds: string[];
@@ -68,6 +71,10 @@ export type TraceDocumentActions = {
   closeProject: () => void;
   dispatch: (ops: TraceOp[]) => TraceApplyOpsResult | null;
   updateAttributes: (elementId: string, patch: Record<string, unknown>) => void;
+  /** Apply patches to several elements as one undo entry. */
+  updateAttributesMany: (
+    entries: Array<{ elementId: string; patch: Record<string, unknown> }>,
+  ) => void;
   updateTransform: (
     elementId: string,
     transform: {
@@ -104,7 +111,15 @@ export type TracePlaybackActions = {
 };
 
 export type TraceSelectionActions = {
-  selectElement: (elementId: string | null) => void;
+  selectElement: (
+    elementId: string | null,
+    options?: { additive?: boolean },
+  ) => void;
+  selectElements: (
+    elementIds: string[],
+    primaryId?: string | null,
+  ) => void;
+  selectAllElements: () => void;
   selectKeyframe: (keyframeKey: string | null, additive?: boolean) => void;
   toggleExpandElement: (elementId: string) => void;
   toggleCollapseElement: (elementId: string) => void;

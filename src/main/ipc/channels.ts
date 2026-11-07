@@ -58,6 +58,17 @@ import type {
   ProjectFocusDay,
   ProjectLinkedCounts,
 } from '../db/projects.js';
+import type {
+  ProjectFileDirectory,
+  ProjectFileEntry,
+  ProjectFileKind,
+  ProjectFileListResult,
+  ProjectFileRoot,
+  ProjectFileRootsInfo,
+  ProjectFileSelection,
+  ProjectFileSource,
+  ProjectFileTextResult,
+} from '../../lib/project-files.js';
 import type { CodeProject } from '../db/code-projects.js';
 import type { GamificationState } from '../../lib/gamification.js';
 import type { PdfDocumentRecord, PdfDocumentSummary } from '../db/documents.js';
@@ -158,6 +169,17 @@ export type {
   ProjectOverview,
   ProjectFocusDay,
   ProjectLinkedCounts,
+};
+export type {
+  ProjectFileDirectory,
+  ProjectFileEntry,
+  ProjectFileKind,
+  ProjectFileListResult,
+  ProjectFileRoot,
+  ProjectFileRootsInfo,
+  ProjectFileSelection,
+  ProjectFileSource,
+  ProjectFileTextResult,
 };
 export type { GamificationState };
 export type { PdfDocumentRecord, PdfDocumentSummary };
@@ -1102,6 +1124,56 @@ export interface IpcChannels {
   /** A project was created/updated/deleted — re-fetch.
    *  Declared as an event (no req/res). */
   'projects:changed': void;
+
+  // ── Project file browser ────────────────────────────────────────────────────
+  /**
+   * The project's scan roots and per-source counts. Returns immediately so the
+   * rail paints while the first catalog scan is still running.
+   */
+  'project-files:roots': {
+    req: { projectId: string };
+    res: ProjectFileRootsInfo;
+  };
+  /**
+   * One page of the catalog. Triggers a scan when the catalog is stale; pass
+   * `refresh` to force one.
+   */
+  'project-files:list': {
+    req: {
+      projectId: string;
+      source?: ProjectFileSource;
+      /** Restrict to one scan root (`repo`, `code:<id>`, `assets`). */
+      rootKey?: string;
+      /** Relative folder to browse; omit for a flat, searchable list. */
+      directory?: string | null;
+      kind?: ProjectFileKind;
+      /** Restrict to these filename extensions, without the leading dot. */
+      extensions?: string[];
+      query?: string;
+      includeMissing?: boolean;
+      limit?: number;
+      offset?: number;
+      refresh?: boolean;
+    };
+    res: ProjectFileListResult;
+  };
+  /** UTF-8 preview of one catalogued text or SVG file, capped in size. */
+  'project-files:read-text': {
+    req: { projectId: string; fileId: string };
+    res: ProjectFileTextResult;
+  };
+  'project-files:reveal': {
+    req: { projectId: string; fileId: string };
+    res: boolean;
+  };
+  'project-files:open': {
+    req: { projectId: string; fileId: string };
+    res: boolean;
+  };
+  /** A catalog scan finished — refresh the open browser. */
+  'project-files:changed': {
+    data: { projectId: string; scannedAt: number; fileCount: number };
+  };
 
   /** Prompt the user to select a directory on the local machine via native OS dialog. */
   'dialog:open-directory': {

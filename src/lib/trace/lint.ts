@@ -63,6 +63,7 @@ const ANIMATABLE_PROPERTIES = new Set<AnimatableProperty>([
   'borderColor',
   'color',
   'borderRadius',
+  'filter',
 ]);
 
 const STRING_PROPERTIES = new Set<AnimatableProperty>([
@@ -75,6 +76,7 @@ const STRING_PROPERTIES = new Set<AnimatableProperty>([
   'backgroundColor',
   'borderColor',
   'color',
+  'filter',
 ]);
 
 /** Duplicate keyframes closer than this are treated as accidental. */

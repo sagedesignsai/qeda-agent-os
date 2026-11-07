@@ -151,8 +151,17 @@ self.onmessage = (msg) => { handler.onmessage(msg); };
       setStatus('ready');
       setProgress(100);
     } catch (err) {
-      const message =
+      let message =
         err instanceof Error ? err.message : 'Failed to initialize offline AI';
+
+      // Provide a user-friendly message for memory allocation failures
+      if (message.includes('Array buffer allocation failed') ||
+          message.includes('Failed to allocate') ||
+          message.includes('out of memory') ||
+          message.toLowerCase().includes('oom')) {
+        message = `Not enough memory to load the offline AI model (${modelId}). Try closing other applications, using a smaller model, or enabling WebGPU if available.`;
+      }
+
       setError(message);
       setStatus('error');
     } finally {

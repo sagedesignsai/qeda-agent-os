@@ -83,6 +83,9 @@ function applyTrim(
     String(dashOffset);
 }
 
+/** Minimum opacity for selected elements so they stay visible on stage. */
+const SELECTED_MIN_OPACITY = 0.4;
+
 /** Write a single animated value to the property's correct DOM slot. */
 function applyTrackValue(
   node: SVGElement,
@@ -90,6 +93,7 @@ function applyTrackValue(
   property: string,
   value: string | number,
   attributes: Record<string, any>,
+  selectedIds?: Set<string>,
 ): void {
   const style = (node as SVGElement & { style?: CSSStyleDeclaration }).style;
   const tag = node.tagName.toLowerCase();
@@ -102,10 +106,15 @@ function applyTrackValue(
     case 'scaleY':
       // Transform properties are applied together below.
       return;
-    case 'opacity':
-      if (style) style.opacity = String(value);
-      node.setAttribute('opacity', String(value));
+    case 'opacity': {
+      let opacityValue = Number(value);
+      if (selectedIds?.has(element.id)) {
+        opacityValue = Math.max(opacityValue, SELECTED_MIN_OPACITY);
+      }
+      if (style) style.opacity = String(opacityValue);
+      node.setAttribute('opacity', String(opacityValue));
       return;
+    }
     case 'fill':
       node.setAttribute('fill', String(value));
       return;
@@ -198,6 +207,13 @@ function applyTrackValue(
         Number(value),
       );
       return;
+    case 'filter':
+      if (value === '' || value === null || value === undefined) {
+        node.removeAttribute('filter');
+      } else {
+        node.setAttribute('filter', String(value));
+      }
+      return;
     default:
       return;
   }
@@ -208,6 +224,7 @@ export function applyElementAnimationAtTime(
   node: SVGElement,
   element: TraceElement,
   timeMs: number,
+  selectedIds?: Set<string>,
   domOverride?: SVGElement | null,
 ): void {
   const { attributes, transform } = resolveElementAtTime(element, timeMs);
@@ -216,7 +233,7 @@ export function applyElementAnimationAtTime(
   for (const track of element.tracks ?? []) {
     const resolved = attributes[track.property];
     if (resolved === undefined) continue;
-    applyTrackValue(node, element, track.property, resolved, attributes);
+    applyTrackValue(node, element, track.property, resolved, attributes, selectedIds);
   }
 
   // Base attributes apply where no track animates them.
@@ -224,7 +241,11 @@ export function applyElementAnimationAtTime(
     (element.tracks ?? []).map((track) => track.property),
   );
   if (!animated.has('opacity') && attributes.opacity !== undefined) {
-    node.style.opacity = String(attributes.opacity);
+    let baseOpacity = Number(attributes.opacity);
+    if (selectedIds?.has(element.id)) {
+      baseOpacity = Math.max(baseOpacity, SELECTED_MIN_OPACITY);
+    }
+    node.style.opacity = String(baseOpacity);
   }
   if (!animated.has('fill') && attributes.fill !== undefined) {
     node.setAttribute('fill', String(attributes.fill));
@@ -237,6 +258,13 @@ export function applyElementAnimationAtTime(
   }
   if (!animated.has('fillOpacity') && attributes.fillOpacity !== undefined) {
     node.setAttribute('fill-opacity', String(attributes.fillOpacity));
+  }
+  if (!animated.has('filter') && attributes.filter !== undefined) {
+    if (attributes.filter === '' || attributes.filter === null) {
+      node.removeAttribute('filter');
+    } else {
+      node.setAttribute('filter', String(attributes.filter));
+    }
   }
 
   // Static trim settings (no trim track) still need dash geometry.
@@ -301,10 +329,15 @@ export function syncTraceDomAtTime(
   const doc = project ?? getTraceRuntimeBridge()?.getProject() ?? null;
   if (!doc) return;
 
+  const bridge = getTraceRuntimeBridge();
+  const selectedIds = bridge?.getSelection()
+    ? new Set(bridge.getSelection())
+    : undefined;
+
   for (const element of Object.values(doc.elements)) {
     const node = findElementDom(element.id);
     if (!node) continue;
-    applyElementAnimationAtTime(node, element, timeMs);
+    applyElementAnimationAtTime(node, element, timeMs, selectedIds);
   }
 
   updateTransportUi(timeMs, doc);

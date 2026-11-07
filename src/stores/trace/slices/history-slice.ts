@@ -48,10 +48,19 @@ export const createHistorySlice: TraceSliceCreator<
       dirty: true,
       saveState: 'idle',
       selection: selectionExists
-        ? { ...selection, selectedKeyframeIds: [] }
+        ? {
+            ...selection,
+            selectedElementIds: selection.selectedElementIds.filter(
+              (id) => Boolean(previous.elements[id]),
+            ),
+            selectedKeyframeIds: [],
+          }
         : {
             ...selection,
             selectedElementId: previous.rootElementIds[0] ?? null,
+            selectedElementIds: previous.rootElementIds[0]
+              ? [previous.rootElementIds[0]]
+              : [],
             selectedKeyframeIds: [],
           },
       playback: {
@@ -87,10 +96,19 @@ export const createHistorySlice: TraceSliceCreator<
       dirty: true,
       saveState: 'idle',
       selection: selectionExists
-        ? { ...selection, selectedKeyframeIds: [] }
+        ? {
+            ...selection,
+            selectedElementIds: selection.selectedElementIds.filter(
+              (id) => Boolean(next.elements[id]),
+            ),
+            selectedKeyframeIds: [],
+          }
         : {
             ...selection,
             selectedElementId: next.rootElementIds[0] ?? null,
+            selectedElementIds: next.rootElementIds[0]
+              ? [next.rootElementIds[0]]
+              : [],
             selectedKeyframeIds: [],
           },
       playback: {

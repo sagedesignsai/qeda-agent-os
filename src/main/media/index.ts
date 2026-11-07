@@ -17,9 +17,11 @@
 
 import { protocol } from 'electron';
 import { MUSIC_ART_HOST, MUSIC_MEDIA_HOST } from '../../lib/music/media.js';
+import { PROJECT_FILE_HOST } from '../../lib/project-files.js';
 import { STUDIO_OVERLAY_HOST, STUDIO_TAKE_HOST } from '../../lib/studio/media.js';
 import { serveMotionMedia } from './motion.js';
 import { serveMusicArt, serveMusicMedia } from './music.js';
+import { serveProjectFile } from './project-files.js';
 import { serveOverlay, serveStudioTake } from './studio.js';
 
 export const MEDIA_SCHEME = 'qeda-media';
@@ -42,6 +44,7 @@ export type MediaHostHandler = (request: Request) => Promise<Response> | Respons
 const HOSTS: Record<string, MediaHostHandler> = {
   [STUDIO_TAKE_HOST]: serveStudioTake,
   [STUDIO_OVERLAY_HOST]: serveOverlay,
+  [PROJECT_FILE_HOST]: serveProjectFile,
   motion: serveMotionMedia,
   'motion-staging': serveMotionMedia,
   [MUSIC_MEDIA_HOST]: serveMusicMedia,

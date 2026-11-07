@@ -46,13 +46,17 @@ import {
   measureElementBBox,
   syncTraceDomAtTime,
 } from '@/lib/trace/runtime/dom-renderer';
+import { getAncestorOffsetAtTime } from '@/lib/trace/runtime/transform-resolver';
 import type { TraceProject } from '@/lib/trace/types';
 
 export type TraceStageProps = {
   project: TraceProject;
   timeMs: number;
   selectedElementId: string | null;
-  onSelectElement: (elementId: string | null) => void;
+  onSelectElement: (
+    elementId: string | null,
+    options?: { additive?: boolean },
+  ) => void;
   onMoveElement: (
     elementId: string,
     position: { x: number; y: number },
@@ -111,14 +115,21 @@ export function TraceStage(props: TraceStageProps) {
   const selectedTransform: GizmoTransform | null = useMemo(() => {
     if (!selectedElement) return null;
     const { transform } = resolveElementAtTime(selectedElement, timeMs);
+    // For nested elements, add the accumulated parent offset so the gizmo
+    // appears at the correct artboard position, not the parent-relative one.
+    const ancestorOffset = getAncestorOffsetAtTime(
+      project.elements,
+      selectedElement.id,
+      timeMs,
+    );
     return {
-      x: transform.x,
-      y: transform.y,
+      x: transform.x + ancestorOffset.x,
+      y: transform.y + ancestorOffset.y,
       rotation: transform.rotation,
       scaleX: transform.scaleX,
       scaleY: transform.scaleY,
     };
-  }, [selectedElement, timeMs]);
+  }, [selectedElement, timeMs, project.elements]);
 
   const selectedOrigin: GizmoPoint = selectedElement?.origin ?? {
     x: 0,
@@ -169,6 +180,10 @@ export function TraceStage(props: TraceStageProps) {
       setSelectionBBox(null);
       return;
     }
+    // Keep the bbox in element-local coordinates. The transform already
+    // includes the ancestor offset, and localToArtboard in the gizmo
+    // will apply the transform to place the bbox at the correct artboard
+    // position. Adding the ancestor offset here would double-count it.
     setSelectionBBox({
       x: box.x,
       y: box.y,

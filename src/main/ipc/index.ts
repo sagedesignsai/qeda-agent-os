@@ -61,6 +61,7 @@ import { registerResearchHandlers } from './handlers/research';
 import { registerAgentChatHandlers } from './handlers/agent-chat';
 import { registerTerminalHandlers } from './handlers/terminal';
 import { registerProjectsHandlers } from './handlers/projects';
+import { registerProjectFilesHandlers } from './handlers/project-files';
 import { registerTasksHandlers } from './handlers/tasks';
 import { registerCopilotHandlers } from './handlers/copilot';
 import { registerGamificationHandlers } from './handlers/gamification';
@@ -84,6 +85,7 @@ import { registerLowerThirdHandlers } from './handlers/lower-third';
 import { registerModelBuilderHandlers } from './handlers/model-builder';
 import { registerMusicHandlers } from './handlers/music';
 import { registerMusicCopilotHandlers } from './handlers/music-copilot';
+import { registerTraceCopilotHandlers } from './handlers/trace-copilot';
 import { registerThemeHandlers } from './handlers/theme';
 
 /**
@@ -102,6 +104,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerAgentChatHandlers({ mainWindow });
   registerTerminalHandlers({ mainWindow });
   registerProjectsHandlers({ mainWindow });
+  registerProjectFilesHandlers({ mainWindow });
   registerTasksHandlers({ mainWindow });
   registerCopilotHandlers({ mainWindow });
   registerGamificationHandlers({ mainWindow });
@@ -125,5 +128,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerModelBuilderHandlers({ mainWindow });
   registerMusicHandlers({ mainWindow });
   registerMusicCopilotHandlers({ mainWindow });
+  registerTraceCopilotHandlers({ mainWindow });
   registerThemeHandlers();
 }

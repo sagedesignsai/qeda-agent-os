@@ -19,6 +19,7 @@ import { motion } from 'motion/react';
 import {
   FileTextIcon,
   FolderPlusIcon,
+  FolderSearchIcon,
   HammerIcon,
   InboxIcon,
   LayoutGridIcon,
@@ -54,6 +55,7 @@ import {
   PROJECT_STATUS_META,
 } from '@/components/projects/ProjectCard';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
+import { ProjectFileBrowserDialog } from '@/components/projects/ProjectFileBrowserDialog';
 import { ProjectListRow } from '@/components/projects/ProjectListRow';
 import { ProjectOverviewPanel } from '@/components/projects/ProjectOverviewPanel';
 import {
@@ -110,6 +112,7 @@ export default function Projects() {
   };
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [editing, setEditing] = useState<ProjectRollup | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ProjectRollup | null>(
     null,
@@ -260,6 +263,15 @@ export default function Projects() {
                 size="sm"
                 variant="outline"
                 className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                onClick={() => setFilesOpen(true)}
+              >
+                <FolderSearchIcon className="size-3.5" />
+                Files
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
                 onClick={() => openEdit(selected)}
               >
                 Edit
@@ -375,6 +387,11 @@ export default function Projects() {
           onOpenChange={setDialogOpen}
           project={selected.project}
           onSubmit={handleSubmit}
+        />
+        <ProjectFileBrowserDialog
+          open={filesOpen}
+          onOpenChange={setFilesOpen}
+          projectId={selected.project.id}
         />
         <DeleteDialog
           target={pendingDelete}

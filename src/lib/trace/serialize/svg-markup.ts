@@ -249,9 +249,13 @@ export function elementMarkup(
     attributes.opacity !== undefined
       ? ` opacity="${num(attributes.opacity, 1)}"`
       : '';
+  const filterAttr =
+    attributes.filter !== undefined && attributes.filter !== null && attributes.filter !== ''
+      ? ` filter="${escapeXml(String(attributes.filter))}"`
+      : '';
   return `<g id="trace-elem-${escapeXml(element.id)}" data-trace-id="${escapeXml(
     element.id,
-  )}"${transformAttr}${opacity}>${elementBodyMarkup(element, attributes)}</g>`;
+  )}"${transformAttr}${opacity}${filterAttr}>${elementBodyMarkup(element, attributes)}</g>`;
 }
 
 /** Render an element subtree (recursively) at `timeMs`. */

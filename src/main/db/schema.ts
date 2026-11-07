@@ -1191,6 +1191,65 @@ CREATE INDEX IF NOT EXISTS idx_focus_session_tracks_track
   ON focus_session_tracks(track_id);
 `;
 
+/**
+ * project_files – the persistent catalog behind the Project File Browser.
+ *
+ * One row per distinct file on disk, not per source: `sources_json` records
+ * every provenance that found it (a repo scan, a Studio take, a message
+ * attachment, a RAG chunk), so the same PDF does not appear four times in the
+ * selector. `id` is generated on first insert and preserved by the upsert, which
+ * keeps `qeda-media://project-file/<id>` URLs and in-flight selections valid
+ * across rescans.
+ *
+ * `path_key` is the dedupe key: an absolute path, lower-cased on the
+ * case-insensitive filesystems. Symlinks are never followed, so no realpath is
+ * needed per file.
+ *
+ * `missing_at` is set rather than deleting the row when a file a database record
+ * still points at disappears from disk — the browser can then say "this take's
+ * video is missing" instead of pretending the take never existed. Rows whose
+ * only provenance was a deleted database record are removed by the scanner.
+ */
+export const CREATE_PROJECT_FILES = `
+CREATE TABLE IF NOT EXISTS project_files (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  path_key       TEXT NOT NULL,
+  path           TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  relative_path  TEXT NOT NULL DEFAULT '',
+  root_key       TEXT NOT NULL DEFAULT '',
+  kind           TEXT NOT NULL DEFAULT 'other'
+                 CHECK(kind IN ('image','video','audio','document','text','archive','other')),
+  mime_type      TEXT NOT NULL DEFAULT '',
+  size_bytes     INTEGER,
+  mtime_ms       INTEGER,
+  sources_json   TEXT NOT NULL DEFAULT '[]',
+  primary_source TEXT NOT NULL DEFAULT 'repo',
+  meta_json      TEXT NOT NULL DEFAULT '{}',
+  missing_at     INTEGER,
+  last_seen_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE(project_id, path_key)
+);
+CREATE INDEX IF NOT EXISTS idx_project_files_project
+  ON project_files(project_id, primary_source, name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_project_files_kind
+  ON project_files(project_id, kind, name COLLATE NOCASE);
+`;
+
+/**
+ * project_file_scans – one bookkeeping row per project, so "is the catalog
+ * stale?" is answerable even when a project has no roots and therefore no files.
+ */
+export const CREATE_PROJECT_FILE_SCANS = `
+CREATE TABLE IF NOT EXISTS project_file_scans (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  scanned_at INTEGER NOT NULL,
+  file_count INTEGER NOT NULL DEFAULT 0,
+  truncated  INTEGER NOT NULL DEFAULT 0
+);
+`;
+
 /** DDL applied in order; every statement must be idempotent. */
 export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SESSIONS,
@@ -1242,6 +1301,8 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SEQUENCE_STEP_RUNS,
   CREATE_MOTION_PROJECTS,
   CREATE_TRACE_PROJECTS,
+  CREATE_PROJECT_FILES,
+  CREATE_PROJECT_FILE_SCANS,
 ];
 
 /** Bookkeeping table for future schema versions. */

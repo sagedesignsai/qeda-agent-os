@@ -29,6 +29,20 @@ import type {
 import { TraceOpError } from './types';
 import { createElementFromSpec } from './elements';
 import { expandRecipe } from '../recipes';
+import {
+  IDENTITY_MATRIX,
+  applyWorldTransform,
+  commonParentId,
+  detachFromParent,
+  groupInsertionIndex,
+  insertIntoParent,
+  matricesEqual,
+  reparentInProject,
+  siblingIds,
+  sortByPaintOrder,
+  topmostSelectedIds,
+  worldMatrix,
+} from '../hierarchy';
 
 let opCounter = 0;
 
@@ -165,7 +179,7 @@ function opSetCanvas(
 function opAddElement(
   project: TraceProject,
   op: Extract<TraceOp, { type: 'addElement' }>,
-): void {
+): string {
   const spec = op.element;
   const id = spec.id ?? nextId('element');
   if (project.elements[id]) {
@@ -186,6 +200,7 @@ function opAddElement(
   }
 
   project.elements[id] = element;
+  return id;
 }
 
 function opApplyRecipe(
@@ -300,9 +315,12 @@ function opDuplicateElement(
           : { y: (copy.attributes.y ?? 0) + offset.y }),
       };
     }
-    copy.parentId = original.parentId
-      ? (idMap.get(original.parentId) ?? null)
-      : null;
+    copy.parentId =
+      sourceId === op.id
+        ? (original.parentId ?? null)
+        : original.parentId
+          ? (idMap.get(original.parentId) ?? null)
+          : null;
     copy.childrenIds = (original.childrenIds ?? [])
       .map((childId) => idMap.get(childId))
       .filter((childId): childId is string => Boolean(childId));
@@ -315,6 +333,15 @@ function opDuplicateElement(
     const index = roots.indexOf(op.id);
     roots.splice(index < 0 ? roots.length : index + 1, 0, newRootId);
     project.rootElementIds = roots;
+  } else {
+    // Keep the copy next to its source inside the same parent.
+    const parent = project.elements[source.parentId];
+    if (parent) {
+      const children = [...(parent.childrenIds ?? [])];
+      const index = children.indexOf(op.id);
+      children.splice(index < 0 ? children.length : index + 1, 0, newRootId);
+      parent.childrenIds = children;
+    }
   }
 }
 
@@ -323,37 +350,50 @@ function opReorderElement(
   op: Extract<TraceOp, { type: 'reorderElement' }>,
 ): void {
   const element = mustElement(project, op.id);
-  const siblings = element.parentId
-    ? (mustElement(project, element.parentId).childrenIds ?? [])
-    : (project.rootElementIds ?? []);
+  const parentId = element.parentId ?? null;
+  const siblings = [...siblingIds(project, parentId)];
   const from = siblings.indexOf(op.id);
   if (from < 0) return;
+  if (op.index === undefined && !op.to) return;
 
-  const ordered = [...siblings];
-  ordered.splice(from, 1);
+  siblings.splice(from, 1);
 
   const to =
-    op.to === 'front'
-      ? ordered.length
-      : op.to === 'back'
-        ? 0
-        : op.to === 'forward'
-          ? Math.min(from + 1, ordered.length)
-          : Math.max(from - 1, 0);
-  ordered.splice(to, 0, op.id);
+    op.index !== undefined
+      ? Math.max(0, Math.min(Math.round(op.index), siblings.length))
+      : op.to === 'front'
+        ? siblings.length
+        : op.to === 'back'
+          ? 0
+          : op.to === 'forward'
+            ? Math.min(from + 1, siblings.length)
+            : Math.max(from - 1, 0);
+  siblings.splice(to, 0, op.id);
 
-  if (element.parentId) {
-    mustElement(project, element.parentId).childrenIds = ordered;
+  if (parentId) {
+    mustElement(project, parentId).childrenIds = siblings;
   } else {
-    project.rootElementIds = ordered;
+    project.rootElementIds = siblings;
   }
+}
+
+function opReparentElement(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'reparentElement' }>,
+): void {
+  reparentInProject(project, op.id, op.parentId, op.index);
 }
 
 function opGroupElements(
   project: TraceProject,
   op: Extract<TraceOp, { type: 'groupElements' }>,
 ): void {
-  const ids = op.elementIds.filter((id) => Boolean(project.elements[id]));
+  // Grouping an ancestor already moves its subtree; drop redundant children
+  // and keep the selection in paint order so stacking is preserved.
+  const ids = sortByPaintOrder(
+    project,
+    topmostSelectedIds(project, op.elementIds),
+  );
   if (ids.length === 0) {
     throw new TraceOpError(
       'ELEMENT_NOT_FOUND',
@@ -369,22 +409,25 @@ function opGroupElements(
     );
   }
 
-  const roots = project.rootElementIds ?? [];
-  const anchor = Math.min(
-    ...ids.map((id) => {
-      const i = roots.indexOf(id);
-      return i < 0 ? roots.length : i;
+  const parentId = commonParentId(project, ids);
+  const insertIndex = groupInsertionIndex(project, parentId, ids);
+  const memories = new Map(
+    ids.map((id) => {
+      const element = project.elements[id];
+      const previousParentId = element?.parentId ?? null;
+      return [
+        id,
+        {
+          world: worldMatrix(project, id),
+          parentWorld: previousParentId
+            ? worldMatrix(project, previousParentId)
+            : { ...IDENTITY_MATRIX },
+        },
+      ] as const;
     }),
   );
 
-  // First removed element's parent becomes the group's parent.
-  const firstParentId = project.elements[ids[0]]?.parentId ?? null;
-
-  detachIds(project, ids);
-  for (const id of ids) {
-    const element = project.elements[id];
-    if (element) element.parentId = groupId;
-  }
+  for (const id of ids) detachFromParent(project, id);
 
   const sceneId = project.elements[ids[0]]?.sceneId ?? null;
   project.elements[groupId] = {
@@ -394,21 +437,27 @@ function opGroupElements(
     visible: true,
     locked: false,
     sceneId,
-    origin: { x: 0, y: 0 },
-    attributes: { x: 0, y: 0, opacity: 1, childrenIds: ids },
+    origin: op.origin ? { ...op.origin } : { x: 0, y: 0 },
+    attributes: { x: 0, y: 0, opacity: 1 },
     tracks: [],
-    parentId: firstParentId,
+    parentId,
     childrenIds: ids,
   };
 
-  if (firstParentId) {
-    const parent = mustElement(project, firstParentId);
-    parent.childrenIds = [...(parent.childrenIds ?? []), groupId];
-  } else {
-    const nextRoots = project.rootElementIds ?? [];
-    nextRoots.splice(Math.min(anchor, nextRoots.length), 0, groupId);
-    project.rootElementIds = nextRoots;
+  // The group transform is identity, so children only need compensation when
+  // they came from a different parent space.
+  const groupWorld = worldMatrix(project, groupId);
+  for (const id of ids) {
+    const element = project.elements[id];
+    if (!element) continue;
+    element.parentId = groupId;
+    const memory = memories.get(id);
+    if (memory && !matricesEqual(memory.parentWorld, groupWorld)) {
+      applyWorldTransform(project, element, memory.world, groupId);
+    }
   }
+
+  insertIntoParent(project, parentId, groupId, insertIndex);
 }
 
 function opUngroupElement(
@@ -416,30 +465,32 @@ function opUngroupElement(
   op: Extract<TraceOp, { type: 'ungroupElement' }>,
 ): void {
   const group = mustElement(project, op.id);
+  const parentId = group.parentId ?? null;
+  const groupIndex = siblingIds(project, parentId).indexOf(group.id);
   const children = (group.childrenIds ?? []).filter((id) =>
     Boolean(project.elements[id]),
   );
+  const worlds = new Map(children.map((id) => [id, worldMatrix(project, id)]));
+  const groupWorld = worldMatrix(project, group.id);
+  const parentWorld = parentId
+    ? worldMatrix(project, parentId)
+    : { ...IDENTITY_MATRIX };
+  const needsCompensation = !matricesEqual(groupWorld, parentWorld);
 
-  for (const id of children) {
+  detachFromParent(project, group.id);
+  const insertAt =
+    groupIndex < 0 ? siblingIds(project, parentId).length : groupIndex;
+
+  children.forEach((id, offset) => {
     const child = project.elements[id];
-    if (child) child.parentId = group.parentId ?? null;
-  }
-
-  if (group.parentId) {
-    const parent = mustElement(project, group.parentId);
-    parent.childrenIds = (parent.childrenIds ?? []).flatMap((id) =>
-      id === group.id ? children : [id],
-    );
-  } else {
-    const roots = project.rootElementIds ?? [];
-    const index = roots.indexOf(group.id);
-    roots.splice(
-      index < 0 ? roots.length : index,
-      index < 0 ? 0 : 1,
-      ...children,
-    );
-    project.rootElementIds = roots;
-  }
+    if (!child) return;
+    detachFromParent(project, id);
+    child.parentId = parentId;
+    insertIntoParent(project, parentId, id, insertAt + offset);
+    if (!needsCompensation) return;
+    const world = worlds.get(id);
+    if (world) applyWorldTransform(project, child, world, parentId);
+  });
 
   delete project.elements[group.id];
 }
@@ -749,8 +800,7 @@ function applyOne(
       opSetCanvas(project, op);
       return;
     case 'addElement':
-      opAddElement(project, op);
-      return;
+      return opAddElement(project, op);
     case 'updateElement':
       opUpdateElement(project, op);
       return;
@@ -762,6 +812,9 @@ function applyOne(
       return;
     case 'reorderElement':
       opReorderElement(project, op);
+      return;
+    case 'reparentElement':
+      opReparentElement(project, op);
       return;
     case 'groupElements':
       opGroupElements(project, op);

@@ -25,7 +25,10 @@ export type TraceRendererProps = {
   project: TraceProject;
   timeMs: number;
   selectedElementId?: string | null;
-  onSelectElement?: (elementId: string | null) => void;
+  onSelectElement?: (
+    elementId: string | null,
+    options?: { additive?: boolean },
+  ) => void;
   onDoubleClickElement?: (elementId: string) => void;
   /** Extra attributes for the root SVG (export/poster use the serializers instead). */
   className?: string;
@@ -72,7 +75,9 @@ function ElementNode({
   const handlePointerDown = (event: ReactPointerEvent<SVGGElement>) => {
     if (!interactive || element.locked) return;
     event.stopPropagation();
-    onSelectElement?.(element.id);
+    onSelectElement?.(element.id, {
+      additive: event.shiftKey || event.metaKey || event.ctrlKey,
+    });
   };
 
   const handleDoubleClick = (event: React.MouseEvent<SVGGElement>) => {
@@ -88,6 +93,7 @@ function ElementNode({
       data-trace-type={element.type}
       style={transformStyle(element, timeMs)}
       opacity={resolved.attributes.opacity ?? 1}
+      filter={resolved.attributes.filter}
       onPointerDown={handlePointerDown}
       onDoubleClick={handleDoubleClick}
       className={

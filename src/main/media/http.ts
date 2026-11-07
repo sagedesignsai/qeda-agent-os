@@ -56,6 +56,21 @@ export function mediaContentType(filePath: string): string {
       return 'image/avif';
     case '.bmp':
       return 'image/bmp';
+    case '.pdf':
+      return 'application/pdf';
+    case '.md':
+    case '.mdx':
+      return 'text/markdown';
+    case '.txt':
+      return 'text/plain';
+    case '.json':
+    case '.jsonc':
+      return 'application/json';
+    case '.csv':
+      return 'text/csv';
+    case '.html':
+    case '.htm':
+      return 'text/html';
     default:
       return 'application/octet-stream';
   }

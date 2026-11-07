@@ -23,6 +23,8 @@ export type TracePlaybackSnapshot = {
 export interface TraceRuntimeBridge {
   getProject: () => TraceProject | null;
   getPlayback: () => TracePlaybackSnapshot;
+  /** Returns the IDs of currently selected elements. */
+  getSelection: () => string[];
   /** Commit the authoritative playhead after a pause, stop or scrub. */
   commitTime: (timeMs: number) => void;
   setPlaying: (playing: boolean) => void;
