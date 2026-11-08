@@ -234,7 +234,7 @@ export function BuilderChatPanel({
       aria-label="Builder conversation"
     >
       <Conversation className="flex-1">
-        <ConversationContent className="min-h-full p-0">
+        <ConversationContent className="min-h-full p-0 pb-20">
           {session ? (
             <div className="flex flex-col min-h-full">
               {workspace?.worktreePath ? (
@@ -262,15 +262,6 @@ export function BuilderChatPanel({
                   not isolated. Discard is disabled to protect existing files.
                   Stop this session and choose a repository again to start in a
                   worktree.
-                </div>
-              )}
-              {plan && (
-                <div className="sticky top-0 z-20 px-3 py-2 bg-background/80 backdrop-blur-sm border-b border-border/40">
-                  <PlanPanel
-                    plan={plan}
-                    isRunning={running}
-                    title="Builder Plan"
-                  />
                 </div>
               )}
               <BuilderActivityFeed
@@ -397,6 +388,15 @@ export function BuilderChatPanel({
           )}
         </ConversationContent>
         <ConversationScrollButton />
+        {plan && (
+          <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-2 bg-background/80 backdrop-blur-sm">
+            <PlanPanel
+              plan={plan}
+              isRunning={running}
+              title="Builder Plan"
+            />
+          </div>
+        )}
       </Conversation>
 
       <div className="shrink-0 border-t border-border/50 bg-background/90 p-3">

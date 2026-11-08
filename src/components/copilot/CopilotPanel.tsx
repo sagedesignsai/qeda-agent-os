@@ -165,16 +165,7 @@ export function CopilotPanel({
         </SheetHeader>
 
         <Conversation className="flex-1">
-          <ConversationContent className="p-0">
-            {plan && (
-              <div className="sticky top-0 z-20 p-3 bg-background/80 backdrop-blur-xs border-b border-border/40">
-                <PlanPanel
-                  plan={plan}
-                  isRunning={status === 'streaming'}
-                  title="Copilot Plan"
-                />
-              </div>
-            )}
+          <ConversationContent className="p-0 pb-20">
             <MessageList
               messages={messages}
               status={status}
@@ -185,6 +176,15 @@ export function CopilotPanel({
             />
           </ConversationContent>
           <ConversationScrollButton />
+          {plan && (
+            <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-3 bg-background/80 backdrop-blur-xs">
+              <PlanPanel
+                plan={plan}
+                isRunning={status === 'streaming'}
+                title="Copilot Plan"
+              />
+            </div>
+          )}
         </Conversation>
 
         {fallbackNotice && (

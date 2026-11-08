@@ -18,6 +18,9 @@ import { createStudioTools } from '../tools/studio.js';
 import { getStudioCapability } from '../tools/capability-simple-tools.js';
 import { getStudioTake, type StudioTake } from '../db/studio-store.js';
 import { createPlanTools } from '../tools/plan.js';
+import { computerUseTools } from '../tools/computer-use.js';
+import { browserUseTools } from '../tools/browser-use.js';
+import { studioCopilotApprovalPolicy } from '../tools/index.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
 
@@ -28,6 +31,8 @@ export interface StudioCopilotAgentOptions {
   target?: ModelTarget;
   broadcastChanged?: () => void;
   planManager?: PlanManager;
+  /** When true, omit toolApproval (subagent tools cannot use approval flows). */
+  forSubagent?: boolean;
 }
 
 function formatTimecode(ms: number): string {
@@ -109,6 +114,15 @@ You help developers turn raw screen recordings and software demos into stunning,
 5. **AI Social Release Kit**:
    - When asked for marketing material or release kit, use \`generateSocialKit\` to write high-converting launch copy (engaging headline, 2-3 sentence overview, viral Twitter/X thread starter with hashtags, changelog markdown, and LinkedIn update).
 
+6. **Autonomous Demo Recording**:
+   - When asked to record a demo, use \`startDemoRecording\` to begin capturing the screen.
+   - Use \`openBrowser\` with \`visible: true\` to open the app or product being demoed in a visible browser window.
+   - Drive the app using computer-use tools: \`moveMouse\`, \`click\`, \`typeText\`, \`scroll\` to navigate through the demo flow.
+   - Call \`markHighlight\` at each moment worth showing — its label becomes a timed caption and kinetic zoom on the finished take.
+   - Use \`screenshotBrowser\` or \`captureScreenshot\` to verify the visual state before marking highlights.
+   - Call \`stopDemoRecording\` to finish. The resulting take is automatically loaded with captions and zooms.
+   - Note: Computer Use must be enabled in Settings, and the target window must be on the allowlist.
+
 ## Tone & Output
 - Confident, creative, and action-oriented.
 - When you execute tools, summarize the exact changes made to the timeline in clean markdown (e.g. list timestamps and actions taken).
@@ -149,8 +163,11 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
     tools: {
       ...tools,
       getStudioCapability,
+      ...computerUseTools,
+      ...browserUseTools,
       ...createPlanTools(planManager),
     },
+    ...(opts.forSubagent ? {} : { toolApproval: studioCopilotApprovalPolicy }),
     stopWhen: [isStepCount(25), planManager.stopCondition()],
   });
 }

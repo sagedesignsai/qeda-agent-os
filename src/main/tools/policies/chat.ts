@@ -221,4 +221,24 @@ export const chatToolPolicies: ToolPolicyMap = {
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),
   updatePlanItem: t('write-local'),
+
+  // ── Sub-agent delegation (copilot agents as sub-agents) ────────────────────
+  // Each delegates to a specialized copilot agent that runs in isolated context
+  // and returns a summary. Classified `write-local` because they create or modify
+  // local state (tasks, video edits, correspondence drafts) but are recoverable.
+  focusPlan: t(
+    'write-local',
+    'not-applicable',
+    'Delegates to Focus Copilot subagent for task planning and scheduling. The subagent creates tasks, breaks them down, and schedules blocks — all additive or reversible operations.',
+  ),
+  studioEdit: t(
+    'write-local',
+    'not-applicable',
+    'Delegates to Studio Copilot subagent for video editing, demo recording, or marketing kit generation. The subagent edits one take\'s arrays — recoverable by hand.',
+  ),
+  correspondenceDraft: t(
+    'write-local',
+    'not-applicable',
+    'Delegates to Correspondence Copilot subagent for message drafting and reply tracking. The subagent drafts messages and proposes recipients — all queued, not sent.',
+  ),
 };

@@ -26,7 +26,7 @@ import { AppLayout } from './components/AppLayout';
 import Chat from './pages/Chat';
 import Terminal from './pages/Terminal';
 import Tasks from './pages/Tasks';
-import Correspondence from './pages/Correspondence';
+import Presence from './pages/Presence';
 import Projects from './pages/Projects';
 import Documents from './pages/Documents';
 import Studio from './pages/Studio';
@@ -75,10 +75,10 @@ export const routes: RouteObject[] = [
 
       { path: 'tasks', element: <Tasks /> },
 
-      // Correspondence is contact-centric rather than project-centric, so it has
-      // no sub-params yet: the rail's project scope arrives as `?project=` via
-      // `withScope`, exactly as it does for Tasks and Documents.
-      { path: 'correspondence', element: <Correspondence /> },
+      // Presence is the social presence coach — warm, encouraging, and
+      // project-scoped. Sits after Tasks so the relationship to daily work
+      // is discoverable.
+      { path: 'presence', element: <Presence /> },
 
       // Motion (product-showcase 3D) is deliberately a separate route from
       // Showcase Studio (/studio, screen captures). Same family of output,

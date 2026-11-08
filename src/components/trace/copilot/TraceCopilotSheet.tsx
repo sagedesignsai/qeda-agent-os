@@ -212,12 +212,7 @@ export function TraceCopilotSheet({
 
         {/* ── Conversation Stream ─────────────────────────────────────────────── */}
         <Conversation className="flex-1 overflow-hidden">
-          <ConversationContent className="p-0">
-            {plan && (
-              <div className="sticky top-0 z-20 px-3 pt-3 pb-1 bg-card/80 backdrop-blur-xs">
-                <PlanPanel plan={plan} />
-              </div>
-            )}
+          <ConversationContent className="p-0 pb-20">
             <MessageList
               messages={messages}
               status={status}
@@ -228,6 +223,11 @@ export function TraceCopilotSheet({
             />
           </ConversationContent>
           <ConversationScrollButton />
+          {plan && (
+            <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-1 bg-card/80 backdrop-blur-xs">
+              <PlanPanel plan={plan} />
+            </div>
+          )}
         </Conversation>
 
         {/* ── Model Fallback Notice ───────────────────────────────────────────── */}

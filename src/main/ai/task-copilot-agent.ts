@@ -199,6 +199,8 @@ export function createTaskCopilotAgent(opts?: {
   projectId?: string | null;
   target?: ModelTarget;
   planManager?: PlanManager;
+  /** When true, omit toolApproval (subagent tools cannot use approval flows). */
+  forSubagent?: boolean;
 }) {
   const settings = getSettings();
   const providerId = opts?.target?.providerId ?? settings.activeProvider;
@@ -232,8 +234,11 @@ If you discover the scope has changed, call \`createPlan\` again with a revised 
       ...createPlanTools(planManager),
     },
     // Handles the dynamic-call guard internally; a dynamic call is not covered
-    // by a name-keyed table, so it always requires approval.
-    toolApproval: copilotApproval,
+    // by a name-keyed table, so it always requires approval. An unclassified
+    // name denies with an explanatory reason rather than running unclassified.
+    // In subagent mode, approval is omitted (SDK forbids it inside subagents);
+    // the parent's tool approval gates the delegation itself.
+    ...(opts?.forSubagent ? {} : { toolApproval: copilotApproval }),
     stopWhen: [isStepCount(25), planManager.stopCondition()],
   });
 }

@@ -18,6 +18,7 @@ import { getRawSettings, setActiveProjectId } from '../../ai/settings';
 import {
   createProject,
   deleteProject,
+  deleteProjectWithOptions,
   getProject,
   listProjectRollups,
   listProjects,
@@ -25,6 +26,7 @@ import {
   reorderProjects,
   updateProject,
 } from '../../db/projects';
+import type { DeleteOptions, DisposalAction } from '../../db/projects';
 
 export function registerProjectsHandlers({
   mainWindow,
@@ -103,6 +105,85 @@ export function registerProjectsHandlers({
     }
     return removed;
   });
+
+  /** Convert a raw IPC disposal value to a `DisposalAction`. */
+  function parseDisposal(
+    raw: string | { migrate: string } | undefined,
+  ): DisposalAction | undefined {
+    if (raw === undefined) return undefined;
+    if (typeof raw === 'object' && 'migrate' in raw) {
+      // Validate: migration target must not be the project being deleted.
+      // The caller (this handler) will validate against `id`.
+      return { migrate: raw.migrate };
+    }
+    if (raw === 'inbox' || raw === 'detach' || raw === 'delete') {
+      return raw;
+    }
+    return undefined;
+  }
+
+  ipcMain.handle(
+    'projects:delete-with-options',
+    (
+      _e,
+      {
+        id,
+        options,
+      }: {
+        id: string;
+        options: {
+          tasks?: string | { migrate: string };
+          documents?: string | { migrate: string };
+          studioTakes?: string | { migrate: string };
+          terminalSessions?: string | { migrate: string };
+          chatSessions?: string | { migrate: string };
+          researchRuns?: string | { migrate: string };
+          soundLabSessions?: string | { migrate: string };
+          codeProjects?: string | { migrate: string };
+          knowledgePages?: string | { migrate: string };
+        };
+      },
+    ) => {
+      // Validate migration targets: must not be the project being deleted
+      // and must not be the Inbox (Inbox is handled by the 'inbox' action).
+      const keys = Object.keys(options) as Array<
+        keyof typeof options
+      >;
+      for (const key of keys) {
+        const val = options[key];
+        if (typeof val === 'object' && 'migrate' in val) {
+          if (val.migrate === id || val.migrate === 'inbox') {
+            // Invalid target — silently fall back to detach for safety.
+            (options as Record<string, DisposalAction>)[key] = 'detach';
+          }
+        }
+      }
+
+      const deleteOpts: DeleteOptions = {
+        tasks: parseDisposal(options.tasks),
+        documents: parseDisposal(options.documents),
+        studioTakes: parseDisposal(options.studioTakes),
+        terminalSessions: parseDisposal(options.terminalSessions),
+        chatSessions: parseDisposal(options.chatSessions),
+        researchRuns: parseDisposal(options.researchRuns),
+        soundLabSessions: parseDisposal(options.soundLabSessions),
+        codeProjects: parseDisposal(options.codeProjects),
+        knowledgePages: parseDisposal(options.knowledgePages),
+      };
+
+      const removed = deleteProjectWithOptions(id, deleteOpts);
+      if (removed) {
+        if (getRawSettings().activeProjectId === id) {
+          const settingsChanged = setActiveProjectId(null);
+          if (settingsChanged && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('settings:changed');
+          }
+        }
+        broadcastProjectsChanged();
+      }
+      return removed;
+    },
+  );
 
   ipcMain.handle(
     'dialog:open-directory',

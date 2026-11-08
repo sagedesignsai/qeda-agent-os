@@ -105,6 +105,28 @@ export interface ProjectLinkedCounts {
   knowledgePages: number;
 }
 
+// ─── Delete-with-options types ────────────────────────────────────────────────
+
+/** What to do with a category of data when a project is deleted. */
+export type DisposalAction =
+  | 'inbox' // Re-home to the Inbox.
+  | 'detach' // Set `project_id = NULL` (ephemeral data).
+  | 'delete' // Permanently remove the rows.
+  | { migrate: string }; // Migrate to another project by id.
+
+/** Per-category disposal instructions for `deleteProjectWithOptions()`. */
+export interface DeleteOptions {
+  tasks?: DisposalAction;
+  documents?: DisposalAction;
+  studioTakes?: DisposalAction;
+  terminalSessions?: DisposalAction;
+  chatSessions?: DisposalAction;
+  researchRuns?: DisposalAction;
+  soundLabSessions?: DisposalAction;
+  codeProjects?: DisposalAction;
+  knowledgePages?: DisposalAction;
+}
+
 // ─── Resource summary types ───────────────────────────────────────────────────
 
 /** Compact studio take summary for context rendering. */
@@ -581,40 +603,137 @@ export function reorderProjects(orderedIds: string[]): void {
 }
 
 /**
- * Delete a project. User-authored work is re-homed to the Inbox rather than
- * deleted; ephemeral associations (blocks, chats, terminal sessions) detach.
+ * Apply a disposal action to a single table.
+ * - `inbox` → re-home to the Inbox.
+ * - `detach` → set `project_id = NULL`.
+ * - `delete` → permanently remove rows.
+ * - `{ migrate }` → re-home to another project.
+ */
+function applyDisposal(
+  db: ReturnType<typeof getDb>,
+  table: string,
+  fromId: string,
+  action: DisposalAction,
+) {
+  if (action === 'inbox') {
+    db.prepare(
+      `UPDATE ${table} SET project_id = ? WHERE project_id = ?`,
+    ).run(INBOX_PROJECT_ID, fromId);
+  } else if (action === 'detach') {
+    db.prepare(
+      `UPDATE ${table} SET project_id = NULL WHERE project_id = ?`,
+    ).run(fromId);
+  } else if (action === 'delete') {
+    db.prepare(`DELETE FROM ${table} WHERE project_id = ?`).run(fromId);
+  } else if (typeof action === 'object' && 'migrate' in action) {
+    db.prepare(
+      `UPDATE ${table} SET project_id = ? WHERE project_id = ?`,
+    ).run(action.migrate, fromId);
+  }
+}
+
+/**
+ * Delete a project with per-category disposal instructions.
+ * Every operation runs inside a transaction so the delete is atomic.
  *
  * The Inbox itself cannot be deleted.
  */
-export function deleteProject(id: string): boolean {
+export function deleteProjectWithOptions(
+  id: string,
+  opts: DeleteOptions,
+): boolean {
   if (id === INBOX_PROJECT_ID) return false;
 
   const db = getDb();
   const tx = db.transaction(() => {
-    db.prepare(`UPDATE tasks SET project_id = ? WHERE project_id = ?`).run(
+    // User-authored work — defaults to Inbox.
+    if (opts.tasks) applyDisposal(db, 'tasks', id, opts.tasks);
+    else db.prepare(`UPDATE tasks SET project_id = ? WHERE project_id = ?`).run(
       INBOX_PROJECT_ID,
       id,
     );
+
+    if (opts.documents)
+      applyDisposal(db, 'documents', id, opts.documents);
+    else
+      db.prepare(
+        `UPDATE documents SET project_id = ? WHERE project_id = ?`,
+      ).run(INBOX_PROJECT_ID, id);
+
+    if (opts.studioTakes)
+      applyDisposal(db, 'studio_takes', id, opts.studioTakes);
+    else
+      db.prepare(
+        `UPDATE studio_takes SET project_id = ? WHERE project_id = ?`,
+      ).run(INBOX_PROJECT_ID, id);
+
+    // Ephemeral associations — defaults to detach.
+    if (opts.terminalSessions)
+      applyDisposal(db, 'terminal_sessions', id, opts.terminalSessions);
+    else
+      db.prepare(
+        `UPDATE terminal_sessions SET project_id = NULL WHERE project_id = ?`,
+      ).run(id);
+
+    if (opts.chatSessions)
+      applyDisposal(db, 'sessions', id, opts.chatSessions);
+    else
+      db.prepare(
+        `UPDATE sessions SET project_id = NULL WHERE project_id = ?`,
+      ).run(id);
+
+    // Task blocks are always detached (not user-configurable).
     db.prepare(
       `UPDATE task_blocks SET project_id = NULL WHERE project_id = ?`,
     ).run(id);
-    db.prepare(
-      `UPDATE sessions SET project_id = NULL WHERE project_id = ?`,
-    ).run(id);
-    db.prepare(
-      `UPDATE terminal_sessions SET project_id = NULL WHERE project_id = ?`,
-    ).run(id);
-    db.prepare(`UPDATE documents SET project_id = ? WHERE project_id = ?`).run(
-      INBOX_PROJECT_ID,
-      id,
-    );
-    db.prepare(
-      `UPDATE studio_takes SET project_id = ? WHERE project_id = ?`,
-    ).run(INBOX_PROJECT_ID, id);
+
+    // Optional categories — detach by default.
+    if (opts.researchRuns)
+      applyDisposal(db, 'research_runs', id, opts.researchRuns);
+    else
+      db.prepare(
+        `UPDATE research_runs SET project_id = NULL WHERE project_id = ?`,
+      ).run(id);
+
+    if (opts.soundLabSessions)
+      applyDisposal(db, 'soundlab_sessions', id, opts.soundLabSessions);
+    else
+      db.prepare(
+        `UPDATE soundlab_sessions SET project_id = NULL WHERE project_id = ?`,
+      ).run(id);
+
+    if (opts.codeProjects)
+      applyDisposal(db, 'code_projects', id, opts.codeProjects);
+    else
+      db.prepare(
+        `UPDATE code_projects SET project_id = NULL WHERE project_id = ?`,
+      ).run(id);
+
+    if (opts.knowledgePages)
+      applyDisposal(db, 'pages', id, opts.knowledgePages);
+    else
+      db.prepare(`UPDATE pages SET project_id = NULL WHERE project_id = ?`).run(
+        id,
+      );
+
+    // Finally, remove the project row.
     db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);
   });
   tx();
   return true;
+}
+
+/**
+ * Delete a project. User-authored work is re-homed to the Inbox rather than
+ * deleted; ephemeral associations (blocks, chats, terminal sessions) detach.
+ *
+ * The Inbox itself cannot be deleted.
+ *
+ * Delegates to `deleteProjectWithOptions()` with default options for backward
+ * compatibility.
+ */
+export function deleteProject(id: string): boolean {
+  return deleteProjectWithOptions(id, {});
 }
 
 /** Count tasks in a project (cheap helper for guards and the UI). */

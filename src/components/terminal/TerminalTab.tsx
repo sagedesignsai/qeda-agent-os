@@ -474,22 +474,14 @@ export function TerminalTab({
   // Agent mode: render blocks + goal input
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 min-h-0 overflow-y-auto"
-      >
-        <div className="mx-auto max-w-3xl px-4 py-6">
-          {plan && (
-            <div className="sticky top-0 z-20 mb-4 bg-background/80 backdrop-blur-xs">
-              <PlanPanel
-                plan={plan}
-                isRunning={status === 'running'}
-                title="Terminal Agent Plan"
-              />
-            </div>
-          )}
-          <AnimatePresence initial={false}>
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 min-h-0 overflow-y-auto pb-20"
+        >
+          <div className="mx-auto max-w-3xl px-4 py-6">
+            <AnimatePresence initial={false}>
             {!hasBlocks && !isRunning ? (
               <motion.div
                 key="welcome"
@@ -560,6 +552,16 @@ export function TerminalTab({
           </AnimatePresence>
           <div className="h-4" />
         </div>
+        </div>
+        {plan && (
+          <div className="absolute bottom-0 left-0 right-0 z-20 px-4 pb-2 bg-background/80 backdrop-blur-xs">
+            <PlanPanel
+              plan={plan}
+              isRunning={status === 'running'}
+              title="Terminal Agent Plan"
+            />
+          </div>
+        )}
       </div>
 
       {/* Goal input */}

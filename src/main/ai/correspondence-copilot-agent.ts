@@ -55,6 +55,8 @@ export interface CorrespondenceCopilotAgentInput {
   target: ModelTarget;
   planManager: PlanManager;
   broadcastChanged: () => void;
+  /** When true, omit toolApproval (subagent tools cannot use approval flows). */
+  forSubagent?: boolean;
 }
 
 const SYSTEM_INSTRUCTIONS = `
@@ -116,6 +118,7 @@ export function createCorrespondenceCopilotAgent({
   activeProject,
   target,
   planManager,
+  forSubagent,
 }: CorrespondenceCopilotAgentInput): ToolLoopAgent {
   const model = resolveModel(target.providerId, target.modelId);
   const instructions = activeProject
@@ -129,7 +132,7 @@ export function createCorrespondenceCopilotAgent({
       getCorrespondenceCapability,
       ...createPlanTools(planManager),
     } as unknown as ToolLoopAgent['tools'],
-    toolApproval: correspondenceCopilotApprovalPolicy,
+    ...(forSubagent ? {} : { toolApproval: correspondenceCopilotApprovalPolicy }),
     instructions,
     stopWhen: [isStepCount(25), planManager.stopCondition()],
   });

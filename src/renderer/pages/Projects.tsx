@@ -40,20 +40,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
   ProjectCard,
   projectIcon,
   PROJECT_STATUS_META,
 } from '@/components/projects/ProjectCard';
+import { ProjectDeleteDialog } from '@/components/projects/ProjectDeleteDialog';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectFileBrowserDialog } from '@/components/projects/ProjectFileBrowserDialog';
 import { ProjectListRow } from '@/components/projects/ProjectListRow';
@@ -96,7 +87,6 @@ export default function Projects() {
     loading,
     createProject,
     updateProject,
-    deleteProject,
     reorder,
   } = useProjects();
 
@@ -200,20 +190,6 @@ export default function Projects() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!pendingDelete) return;
-    const target = pendingDelete;
-    setPendingDelete(null);
-    try {
-      await deleteProject(target.project.id);
-      toast.success('Project deleted', {
-        description: 'Its tasks moved back to the Inbox.',
-      });
-      if (projectId === target.project.id) navigate('/projects');
-    } catch {
-      toast.error('Could not delete project');
-    }
-  };
 
   // ── Detail view ───────────────────────────────────────────────────────────
   if (projectId) {
@@ -393,10 +369,9 @@ export default function Projects() {
           onOpenChange={setFilesOpen}
           projectId={selected.project.id}
         />
-        <DeleteDialog
+        <ProjectDeleteDialog
           target={pendingDelete}
           onCancel={() => setPendingDelete(null)}
-          onConfirm={() => void handleDelete()}
         />
       </div>
     );
@@ -586,10 +561,9 @@ export default function Projects() {
         project={editing?.project ?? null}
         onSubmit={handleSubmit}
       />
-      <DeleteDialog
+      <ProjectDeleteDialog
         target={pendingDelete}
         onCancel={() => setPendingDelete(null)}
-        onConfirm={() => void handleDelete()}
       />
     </div>
   );
@@ -697,38 +671,3 @@ function NoProjectsState({
   );
 }
 
-function DeleteDialog({
-  target,
-  onCancel,
-  onConfirm,
-}: {
-  target: ProjectRollup | null;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <AlertDialog open={target !== null} onOpenChange={(o) => !o && onCancel()}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Delete “{target?.project.name}”?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {target && target.taskTotal > 0
-              ? `${target.taskTotal} task${
-                  target.taskTotal === 1 ? '' : 's'
-                } will move to the Inbox — nothing is lost.`
-              : 'This project will be removed. Nothing is lost.'}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}

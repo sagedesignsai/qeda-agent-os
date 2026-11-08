@@ -33,6 +33,8 @@ export interface MotionCopilotAgentOptions {
   target?: ModelTarget;
   broadcastChanged?: () => void;
   planManager?: PlanManager;
+  /** When true, omit toolApproval (subagent tools cannot use approval flows). */
+  forSubagent?: boolean;
 }
 
 function buildMotionInstructions(

@@ -66,6 +66,7 @@ import {
   AudioLinesIcon,
   WandSparklesIcon,
   SendIcon,
+  Share2Icon,
   BoxIcon,
   PenToolIcon,
 } from 'lucide-react';
@@ -99,10 +100,9 @@ interface AppSidebarProps {
 const NAV_ITEMS = [
   { to: '/projects', label: 'Projects', icon: FolderKanbanIcon },
   { to: '/tasks', label: 'Tasks', icon: CheckSquareIcon },
-  // Sits directly after Tasks: same family of "things I am responsible for", so
-  // the relationship to what is already overdue is discoverable rather than
-  // something the user has to remember exists.
-  { to: '/correspondence', label: 'Correspondence', icon: SendIcon },
+  // Sits directly after Tasks: the social presence coach helps users
+  // "knock on doors" and build their online presence, one step at a time.
+  { to: '/presence', label: 'Presence', icon: Share2Icon },
   { to: '/workspace', label: 'Notebooks', icon: NotebookIcon },
   { to: '/documents', label: 'Documents', icon: FileTextIcon },
   { to: '/studio', label: 'Showcase Studio', icon: VideoIcon },

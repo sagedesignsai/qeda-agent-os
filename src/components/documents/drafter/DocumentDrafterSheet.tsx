@@ -621,16 +621,7 @@ export function DocumentDrafterSheet({
 
         {/* ── Conversation ─────────────────────────────────────────────────── */}
         <Conversation className="flex-1 overflow-hidden">
-          <ConversationContent className="p-0">
-            {plan && (
-              <div className="sticky top-0 z-20 p-3 bg-background/80 backdrop-blur-xs border-b border-border/40">
-                <PlanPanel
-                  plan={plan}
-                  isRunning={status === 'streaming'}
-                  title="Drafter Plan"
-                />
-              </div>
-            )}
+          <ConversationContent className="p-0 pb-20">
             {showFirstPaint ? (
               firstPaint
             ) : (
@@ -645,6 +636,15 @@ export function DocumentDrafterSheet({
             )}
           </ConversationContent>
           <ConversationScrollButton />
+          {plan && (
+            <div className="absolute bottom-0 left-0 right-0 z-20 p-3 bg-background/80 backdrop-blur-xs">
+              <PlanPanel
+                plan={plan}
+                isRunning={status === 'streaming'}
+                title="Drafter Plan"
+              />
+            </div>
+          )}
         </Conversation>
 
         {/* ── Provider fallback ────────────────────────────────────────────── */}

@@ -36,16 +36,17 @@ import { copilotTools } from '../main/ai/task-copilot-agent';
 /**
  * Ceilings from spec §8.
  *
- * Chat is 101 today and copilot 34. `allTools` spreads EVERY registered group —
+ * Chat is 113 today and copilot 34. `allTools` spreads EVERY registered group —
  * filesystem, shell, clipboard, rag, web, workspace, services, repo, resources,
  * tasks (17), documents-drafter (10), computer-use (14), browser-use (7), studio
- * (10) and planning (2) — plus `indexPage`, so the chat count is the sum of the
- * group sizes rather than a curated subset. That is deliberate: chat is the
- * general surface, and this ceiling is the tripwire that notices when a new group
- * lands in it. Do not lower it to "make room"; raise it in
- * docs/agent-tooling-spec.md §8 in the same review that adds the tool.
+ * (10), planning (2), and sub-agent delegation (3: focusPlan, studioEdit,
+ * correspondenceDraft) — plus `indexPage`. The three sub-agent tools delegate to
+ * specialized copilot agents (Focus, Studio, Correspondence) that run in isolated
+ * context and return summaries. That is deliberate: chat is the orchestrator.
+ * Do not lower it to "make room"; raise it in docs/agent-tooling-spec.md §8
+ * in the same review that adds the tool.
  */
-const CEILING = { chat: 110, copilot: 50 } as const;
+const CEILING = { chat: 120, copilot: 50 } as const;
 
 describe('capability derivation', () => {
   it('gates destructive and cost, and nothing else, by default', () => {

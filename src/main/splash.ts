@@ -45,6 +45,11 @@ function buildSplashHtml(): string {
   const bgColor = persisted?.background || (isDark ? '#0e0f14' : '#f4f4f5');
   const logoColor = isDark ? '#e4e4e7' : '#18181b';
 
+/**
+ * The  viewBox and inner <g> offset mirror QedaLogomark — the raw path data
+ * lives around (60–160, 95–190) and must be translated to fit the viewBox,
+ * and pathLength="1" is required for the dashoffset draw animation to work.
+ */
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -100,15 +105,18 @@ function buildSplashHtml(): string {
 </head>
 <body>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70.891411 91.762123"
-     width="120" height="155"
-     class="qeda-logo-draw--loop"
-     style="transform: translate(-67.642249px, -97.588516px);">
-  <path class="qeda-logo-draw__ring"
-        d="${RING_PATH}"
-        fill="currentColor" stroke="currentColor" stroke-width="2"/>
-  <path class="qeda-logo-draw__bolt"
-        d="${BOLT_PATH}"
-        fill="currentColor" stroke="currentColor" stroke-width="2"/>
+     width="120" height="155" fill="none"
+     class="qeda-logo-draw--loop">
+  <g transform="translate(-67.642249,-97.588516)">
+    <path class="qeda-logo-draw__ring"
+          d="${RING_PATH}"
+          fill="currentColor" stroke="currentColor" stroke-width="1.4"
+          pathLength="1"/>
+    <path class="qeda-logo-draw__bolt"
+          d="${BOLT_PATH}"
+          fill="currentColor" stroke="currentColor" stroke-width="1.4"
+          pathLength="1"/>
+  </g>
 </svg>
 </body>
 </html>`;

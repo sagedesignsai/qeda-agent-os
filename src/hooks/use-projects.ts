@@ -15,6 +15,26 @@ import type {
   ProjectStatus,
 } from '@/main/ipc/channels';
 
+/** Disposal action for a single category when deleting a project. */
+export type DisposalActionValue =
+  | 'inbox'
+  | 'detach'
+  | 'delete'
+  | { migrate: string };
+
+/** Per-category disposal instructions for the delete dialog. */
+export interface DeleteOptions {
+  tasks?: DisposalActionValue;
+  documents?: DisposalActionValue;
+  studioTakes?: DisposalActionValue;
+  terminalSessions?: DisposalActionValue;
+  chatSessions?: DisposalActionValue;
+  researchRuns?: DisposalActionValue;
+  soundLabSessions?: DisposalActionValue;
+  codeProjects?: DisposalActionValue;
+  knowledgePages?: DisposalActionValue;
+}
+
 export interface CreateProjectInput {
   name: string;
   description?: string;
@@ -50,6 +70,11 @@ export interface UseProjectsReturn {
   createProject: (input: CreateProjectInput) => Promise<Project | null>;
   updateProject: (id: string, patch: UpdateProjectPatch) => Promise<void>;
   deleteProject: (id: string) => Promise<boolean>;
+  /** Delete with per-category disposal instructions. */
+  deleteProjectWithOptions: (
+    id: string,
+    options: DeleteOptions,
+  ) => Promise<boolean>;
   /** Persist a manual order (e.g. after a drag). `sort_order` = index. */
   reorder: (orderedIds: string[]) => Promise<void>;
 }
@@ -138,6 +163,18 @@ export function useProjects(): UseProjectsReturn {
     [refresh],
   );
 
+  const deleteProjectWithOptions = useCallback(
+    async (id: string, options: DeleteOptions): Promise<boolean> => {
+      const removed = await window.electron.ipc.invoke<boolean>(
+        'projects:delete-with-options',
+        { id, options },
+      );
+      await refresh();
+      return removed;
+    },
+    [refresh],
+  );
+
   const reorder = useCallback(async (orderedIds: string[]): Promise<void> => {
     // Optimistic: apply the new order locally so the dragged card does not
     // snap back to its old slot during the round-trip. Main broadcasts
@@ -164,6 +201,7 @@ export function useProjects(): UseProjectsReturn {
     createProject,
     updateProject,
     deleteProject,
+    deleteProjectWithOptions,
     reorder,
   };
 }

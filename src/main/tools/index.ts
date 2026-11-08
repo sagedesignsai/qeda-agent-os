@@ -44,6 +44,7 @@ export { chatToolPolicies } from './policies/chat.js';
 export { copilotToolPolicies } from './policies/copilot.js';
 export { correspondenceToolPolicies } from './policies/correspondence.js';
 export { traceToolPolicies } from './policies/trace.js';
+export { studioToolPolicies } from './policies/studio.js';
 export { createPlanTools } from './plan.js';
 export { createMotionTools, type MotionToolContext } from './motion.js';
 export { createTraceTools, type TraceTools } from './trace.js';
@@ -69,6 +70,10 @@ import { PlanManager } from '../ai/plan-manager.js';
 import { createApprovalPolicy } from './capability.js';
 import { chatToolPolicies } from './policies/chat.js';
 import { correspondenceToolPolicies } from './policies/correspondence.js';
+import { studioToolPolicies } from './policies/studio.js';
+import { createFocusPlanSubagentTool } from './focus-plan-subagent.js';
+import { createStudioEditSubagentTool } from './studio-edit-subagent.js';
+import { createCorrespondenceDraftSubagentTool } from './correspondence-draft-subagent.js';
 
 /**
  * Showcase Studio's editing verbs, as the chat agent sees them.
@@ -101,6 +106,11 @@ export const allTools = {
   ...workspaceResourceTools,
   ...createPlanTools(new PlanManager()),
   indexPage: indexPageTool,
+  // ── Sub-agent delegation tools (factories injected below) ──────────────────
+  // Placeholders — replaced by `registerSubagentTools()` at module init.
+  focusPlan: null as any,
+  studioEdit: null as any,
+  correspondenceDraft: null as any,
 };
 
 /**
@@ -123,9 +133,74 @@ export const correspondenceCopilotApprovalPolicy = createApprovalPolicy(
   correspondenceToolPolicies,
 );
 
+/**
+ * The Studio Copilot's approval gate, derived from
+ * `studioToolPolicies`.
+ *
+ * Used by the Studio Copilot agent's `toolApproval`. The Studio Copilot is
+ * the one copilot where the user is present (watching the Studio panel), so
+ * computer-use and browser-use tools are auto-approved like in the chat agent.
+ */
+export const studioCopilotApprovalPolicy = createApprovalPolicy(
+  studioToolPolicies,
+);
+
 export function requiresApproval(toolName: string): boolean {
   return (
     chatApprovalPolicy({ toolCall: { toolName, dynamic: false } }) ===
     'user-approval'
   );
 }
+
+/**
+ * Wire sub-agent delegation tools into `allTools`.
+ *
+ * Called once at module initialization after copilot agent factories are
+ * available. Each sub-agent tool receives a factory that builds a fresh
+ * copilot agent per delegation — the AI SDK pattern for context isolation.
+ *
+ * Must be called before the chat agent is constructed.
+ */
+import { createTaskCopilotAgent } from '../ai/task-copilot-agent.js';
+import { createStudioCopilotAgent } from '../ai/studio-copilot-agent.js';
+import { createCorrespondenceCopilotAgent } from '../ai/correspondence-copilot-agent.js';
+import { getSettings } from '../ai/settings.js';
+import { listStudioTakes } from '../db/studio-store.js';
+
+export function registerSubagentTools() {
+  const settings = getSettings();
+
+  allTools.focusPlan = createFocusPlanSubagentTool({
+    createAgent: ({ task, projectId }) =>
+      createTaskCopilotAgent({
+        activeProject: projectId,
+        projectId,
+        target: { providerId: settings.activeProvider, modelId: settings.activeModel },
+        forSubagent: true,
+      }),
+  });
+
+  allTools.studioEdit = createStudioEditSubagentTool({
+    createAgent: ({ task, takeId }) => {
+      const activeTakeId = takeId ?? listStudioTakes(null, 1)[0]?.id ?? 'default';
+      return createStudioCopilotAgent({
+        activeTakeId,
+        target: { providerId: settings.activeProvider, modelId: settings.activeModel },
+        forSubagent: true,
+      });
+    },
+  });
+
+  allTools.correspondenceDraft = createCorrespondenceDraftSubagentTool({
+    createAgent: ({ task }) =>
+      createCorrespondenceCopilotAgent({
+        target: { providerId: settings.activeProvider, modelId: settings.activeModel },
+        planManager: new PlanManager(),
+        broadcastChanged: () => {},
+        forSubagent: true,
+      }),
+  });
+}
+
+// Wire sub-agent tools at module initialization.
+registerSubagentTools();

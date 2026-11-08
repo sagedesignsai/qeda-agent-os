@@ -102,34 +102,15 @@ import type {
   Contact,
   ContactChannel,
   ContactWithChannels,
-  HarvestImportResult,
 } from '../db/correspondence.js';
 import type {
-  AdvanceResult,
-  Sequence,
-  SequenceDetail,
-  SequenceRunDetail,
-} from '../db/sequences.js';
-import type {
-  AttentionRow,
-  CorrespondenceEvent,
-  DispatchInput,
-  EscalationInput,
-  EscalationResult,
-  MessageAttachment,
-  MessageDetail,
-  MessageRecipient,
-  MessageSummary,
-  RecipientPatch,
-  RecipientPick,
-  RecipientWithContact,
-  SaveMessageInput,
-} from '../db/messages.js';
-import type {
-  HarvestChannelDraft,
-  HarvestRowDraft,
-  HarvestScanResult,
-} from '../../lib/harvest.js';
+  PresenceBatch,
+  PresenceBatchDetail,
+  PresenceItem,
+  PresenceItemPatch,
+  PresencePost,
+  PresenceProfile,
+} from '../db/presence.js';
 import type {
   ChannelVerification,
   ContactChannelKind,
@@ -189,25 +170,15 @@ export type {
   Contact,
   ContactChannel,
   ContactWithChannels,
-  HarvestImportResult,
 };
-export type { AdvanceResult, Sequence, SequenceDetail, SequenceRunDetail };
 export type {
-  AttentionRow,
-  CorrespondenceEvent,
-  EscalationInput,
-  EscalationResult,
-  MessageAttachment,
-  MessageDetail,
-  MessageRecipient,
-  MessageSummary,
-  RecipientWithContact,
-  SaveMessageInput,
-  DispatchInput,
-  RecipientPatch,
-  RecipientPick,
+  PresenceBatch,
+  PresenceBatchDetail,
+  PresenceItem,
+  PresenceItemPatch,
+  PresencePost,
+  PresenceProfile,
 };
-export type { HarvestChannelDraft, HarvestRowDraft, HarvestScanResult };
 export type {
   ChannelVerification,
   ContactChannelKind,
@@ -1127,6 +1098,31 @@ export interface IpcChannels {
   };
   /** Delete a project; its tasks are re-homed to the Inbox. */
   'projects:delete': { req: { id: string }; res: boolean };
+  /**
+   * Delete a project with per-category disposal instructions.
+   * Each option value is a disposal action:
+   * - `'inbox'` → re-home to the Inbox
+   * - `'detach'` → set `project_id = NULL`
+   * - `'delete'` → permanently remove rows
+   * - `{ migrate: string }` → re-home to another project by id
+   */
+  'projects:delete-with-options': {
+    req: {
+      id: string;
+      options: {
+        tasks?: string | { migrate: string };
+        documents?: string | { migrate: string };
+        studioTakes?: string | { migrate: string };
+        terminalSessions?: string | { migrate: string };
+        chatSessions?: string | { migrate: string };
+        researchRuns?: string | { migrate: string };
+        soundLabSessions?: string | { migrate: string };
+        codeProjects?: string | { migrate: string };
+        knowledgePages?: string | { migrate: string };
+      };
+    };
+    res: boolean;
+  };
   /** Persist a manual project order, e.g. after a drag. `sort_order` = index. */
   'projects:reorder': { req: { orderedIds: string[] }; res: void };
   /** A project was created/updated/deleted — re-fetch.
@@ -1830,247 +1826,80 @@ export interface IpcChannels {
   // which `use-documents.ts` already listens to — a second event would mean two
   // subscription sites and one of them would eventually be forgotten.
 
-  // ── Correspondence ─────────────────────────────────────────────────────────
+  // ── Presence ───────────────────────────────────────────────────────────────
   //
-  // The registry, plus Harvest — the extraction path that stops a system like
-  // this from failing at the first screen (nobody types 147 cells into a form).
+  // A warm social presence coach that helps users reconnect with society.
+  // Proposes post drafts, platform suggestions, connection prompts, and
+  // engagement prompts. The user acts manually — copy to clipboard, open
+  // the platform in the System Browser — and reports back. No autonomous
+  // posting. Reads contacts from the existing contacts table (read-only).
   //
-  // There is deliberately NO send channel here. v1 owns the intent, not the
-  // delivery: `message-dispatch` (Phase 2) records that something left, when, and
-  // on what clock. That is also what makes "an agent cannot send your legal
-  // correspondence" a structural fact rather than a policy setting.
-  /** Contacts with their channels, for one project scope or the whole registry. */
-  'correspondence:contacts-list': {
+  /** Batches for one project scope, newest first. */
+  'presence:batches-list': {
     req: { projectId?: string | null } | void;
-    res: ContactWithChannels[];
+    res: PresenceBatch[];
   };
-  /** Create or patch a contact. */
-  'correspondence:contact-save': {
-    req: {
-      id?: string;
-      projectId?: string | null;
-      kind?: ContactKind;
-      name: string;
-      role?: string;
-      parentId?: string | null;
-      notes?: string;
-    };
-    res: ContactWithChannels;
-  };
-  'correspondence:contact-delete': { req: { id: string }; res: boolean };
-  /**
-   * Create or patch one way of reaching a contact.
-   *
-   * Changing a channel's value re-opens its verification, because the previous
-   * check was about the previous address.
-   */
-  'correspondence:channel-save': {
-    req: {
-      id?: string;
-      contactId: string;
-      kind: ContactChannelKind;
-      value: string;
-      label?: string;
-      source?: ContactSource;
-      confidence?: number | null;
-    };
-    res: ContactChannel;
-  };
-  'correspondence:channel-delete': { req: { id: string }; res: boolean };
-  /** Record the outcome of checking a channel: confirmed, or bounced. */
-  'correspondence:channel-set-verified': {
-    req: { id: string; verified: ChannelVerification };
-    res: ContactChannel | null;
-  };
-  /** Registry totals for the rail badge and the project card. */
-  'correspondence:counts': {
-    req: { projectId?: string | null } | void;
-    res: { contacts: number; channels: number; unverified: number };
-  };
-  /**
-   * Read a source and propose contacts from it. Writes nothing.
-   *
-   * Returns drafts for a review grid, so the round trip is scan → review → import
-   * and the user's edit is the only thing that ever reaches the database.
-   */
-  'correspondence:harvest-scan': {
-    req: {
-      projectId?: string | null;
-      source:
-        | { kind: 'page'; pageId: string }
-        | { kind: 'document'; documentId: string }
-        | { kind: 'text'; text: string; label?: string };
-      /** Run the model pass on top of the deterministic scan. Defaults to true. */
-      useAgent?: boolean;
-    };
-    res: HarvestScanResult;
-  };
-  /** Write a reviewed harvest grid. Idempotent: re-importing merges. */
-  'correspondence:harvest-import': {
-    req: { projectId: string | null; rows: HarvestRowDraft[] };
-    res: HarvestImportResult;
-  };
-  // ── Messages and their per-recipient state ────────────────────────────────
-  //
-  // A message is a record, and `message_recipients` is the state machine: one row
-  // per body, each with its own absolute clock. `message-dispatch` is the only
-  // verb that starts a clock, and it does not perform any transport — see
-  // `db/messages.ts`. There is still no channel here that could send anything.
-  /** Sent and logged items for one scope, with their counts. */
-  'correspondence:messages-list': {
-    req: { projectId?: string | null } | void;
-    res: MessageSummary[];
-  };
-  'correspondence:message-get': {
+  /** One batch with its items. */
+  'presence:batch-get': {
     req: { id: string };
-    res: MessageDetail | null;
+    res: PresenceBatchDetail | null;
   };
-  /** Create or patch a message, including replacing its attachments. */
-  'correspondence:message-save': {
-    req: SaveMessageInput;
-    res: MessageDetail;
+  /** Generate a new batch of suggestions via the AI coach. */
+  'presence:generate': {
+    req: { projectId: string; focus?: string };
+    res: PresenceBatchDetail;
   };
-  'correspondence:message-delete': { req: { id: string }; res: boolean };
-  /** Reconcile the queued recipient list. Dispatched recipients are never touched. */
-  'correspondence:message-set-recipients': {
-    req: { messageId: string; picks: RecipientPick[] };
-    res: MessageDetail;
+  /** Update an item status, feedback, or body. */
+  'presence:item-update': {
+    req: { id: string; patch: PresenceItemPatch };
+    res: PresenceItem | null;
   };
-  /**
-   * Record that something was sent: stamps the time, starts each recipient's
-   * clock, and writes one event per body. Performs no delivery.
-   */
-  'correspondence:message-dispatch': {
-    req: DispatchInput;
-    res: MessageDetail;
-  };
-  /** Log a reply, record a reference, move or clear a deadline, mark no response. */
-  'correspondence:recipient-update': {
-    req: { id: string; patch: RecipientPatch };
-    res: RecipientWithContact | null;
-  };
-  /**
-   * Turn "they went quiet" into a task, in the existing task manager, linked back.
-   * Safe to repeat: a recipient that already has a chase task is reported, not
-   * duplicated.
-   */
-  'correspondence:recipient-escalate': {
-    req: EscalationInput;
-    res: EscalationResult;
-  };
-  /**
-   * The append-only trail for one recipient — every dispatch, reply, deadline
-   * change and escalation, oldest last. Read on demand from the lane.
-   */
-  'correspondence:recipient-events': {
-    req: { id: string };
-    res: CorrespondenceEvent[];
-  };
-  /** What needs the user, most urgent first — the board's verb surface. */
-  'correspondence:attention-list': {
-    req: { projectId?: string | null } | void;
-    res: AttentionRow[];
-  };
-  /**
-   * Every deadline still running, including comfortable ones — the rail's read.
-   * Wider than the attention list on purpose: an axis has to show the whole
-   * situation, not only the parts that need a decision.
-   */
-  'correspondence:clocks': {
-    req: { projectId?: string | null } | void;
-    res: RecipientWithContact[];
-  };
-  'correspondence:message-counts': {
-    req: { projectId?: string | null } | void;
-    res: {
-      messages: number;
-      awaiting: number;
-      overdue: number;
-      nextDueAt: number | null;
-    };
-  };
-  // ── Sequences ─────────────────────────────────────────────────────────────
-  //
-  // Wait → chase → escalate, as ordered steps. The runner is deterministic and
-  // session-driven: `sequence-advance` is called with the user present, and a step
-  // that came due while the app was closed is reported as stalled rather than fired.
-  // Nothing here decides what to do next with a model.
-  'correspondence:sequences-list': {
-    req: { projectId?: string | null } | void;
-    res: Sequence[];
-  };
-  /** Create a plan from an explicit step list (the UI sends a template's steps). */
-  'correspondence:sequence-create': {
+  'presence:item-delete': { req: { id: string }; res: boolean };
+  /** Log a post that was published. */
+  'presence:post-log': {
     req: {
-      projectId?: string | null;
-      name: string;
-      description?: string;
-      steps: Array<{
-        kind: 'wait' | 'branch' | 'escalate' | 'task' | 'stop';
-        title: string;
-        config?: Record<string, unknown>;
-      }>;
+      projectId: string | null;
+      platform: string;
+      content: string;
+      metrics?: string;
+      itemId?: string;
     };
-    res: SequenceDetail;
+    res: PresencePost;
   };
-  'correspondence:sequence-get': {
-    req: { id: string };
-    res: SequenceDetail | null;
-  };
-  /** Attach a plan to a dispatched message. Materialises every step up front. */
-  'correspondence:sequence-start': {
-    req: { sequenceId: string; messageId: string; projectId?: string | null };
-    res: SequenceRunDetail;
-  };
-  /** Where a plan stands — waiting, due, or stalled. */
-  'correspondence:sequence-run': {
-    req: { runId: string };
-    res: SequenceRunDetail | null;
-  };
-  'correspondence:sequence-runs-for-message': {
-    req: { messageId: string };
-    res: SequenceRunDetail[];
-  };
-  /**
-   * Advance exactly one named step. Called without `fireStepId` it fires nothing and
-   * only reports where the plan stands — there is no watch-and-fire path, so a plan
-   * can never advance while nobody asked.
-   */
-  'correspondence:sequence-advance': {
-    req: { runId: string; fireStepId?: string };
-    res: AdvanceResult;
-  };
-  'correspondence:sequence-stop': { req: { runId: string }; res: void };
-  /** Plans with a step that came due while the app was closed. Read at startup. */
-  'correspondence:sequence-stalled': {
+  'presence:posts-list': {
     req: { projectId?: string | null } | void;
-    res: SequenceRunDetail[];
+    res: PresencePost[];
   };
-
-  /** The registry changed — re-fetch. Declared as an event (no req/res). */
-  'correspondence:changed': void;
-
-  // ── Correspondence Copilot ──────────────────────────────────────────────────
-  /** Run one correspondence copilot turn. Streams back over `correspondence-copilot:stream-*`. */
-  'correspondence-copilot:chat': {
+  'presence:counts': {
+    req: { projectId?: string | null } | void;
+    res: { batches: number; pending: number; done: number; skipped: number };
+  };
+  /** Profile: onboarding answers, streak, preferences. */
+  'presence:profile-get': {
+    req: { projectId: string };
+    res: PresenceProfile | null;
+  };
+  'presence:profile-update': {
     req: {
-      messages: UIMessage[];
-      context?: { projectId?: string };
+      projectId: string;
+      onboardingComplete?: boolean;
+      platforms?: string[];
+      goal?: string;
     };
-    res: void;
+    res: PresenceProfile;
   };
-  'correspondence-copilot:stream-chunk': string;
-  'correspondence-copilot:stream-done': { runId: string };
-  'correspondence-copilot:stream-error': { error: string };
-  'correspondence-copilot:stream-fallback': {
-    fromProvider: string;
-    fromModel: string;
-    toProvider: string;
-    toModel: string;
-    reason: string;
+  /** Current streak count and last active date. */
+  'presence:streak-get': {
+    req: { projectId: string };
+    res: { streak_count: number; last_active_date: string | null };
   };
-  /** Pushed when the correspondence copilot creates or updates its plan. */
-  'correspondence-copilot:plan-event': { data: AgentPlanEvent };
+  /** Open a URL in the System Browser (visible BrowserWindow). */
+  'presence:open-browser': {
+    req: { url: string };
+    res: boolean;
+  };
+  /** The presence data changed — re-fetch. */
+  'presence:changed': void;
 
   // ── Music ───────────────────────────────────────────────────────────────────
   /** Watched library roots. */

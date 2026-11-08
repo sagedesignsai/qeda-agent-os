@@ -1250,6 +1250,72 @@ CREATE TABLE IF NOT EXISTS project_file_scans (
 );
 `;
 
+// ─── Presence ──────────────────────────────────────────────────────────────────
+// Replaces Correspondence UI with a warm social presence coach. Reads contacts
+// from the existing contacts table (read-only) and tracks suggestions, feedback,
+// and streaks across five platforms plus a generic "any" kind.
+
+export const CREATE_PRESENCE_BATCHES = `
+CREATE TABLE IF NOT EXISTS presence_batches (
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  focus        TEXT NOT NULL DEFAULT '',
+  context_json TEXT NOT NULL DEFAULT '{}',
+  created_at   INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_presence_batches_project
+  ON presence_batches(project_id, created_at);
+`;
+
+export const CREATE_PRESENCE_ITEMS = `
+CREATE TABLE IF NOT EXISTS presence_items (
+  id           TEXT PRIMARY KEY,
+  batch_id     TEXT NOT NULL REFERENCES presence_batches(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK(kind IN ('post_draft','platform_suggestion','connection_suggestion','engagement_prompt','group_suggestion')),
+  title        TEXT NOT NULL DEFAULT '',
+  body         TEXT NOT NULL DEFAULT '',
+  platform     TEXT NOT NULL DEFAULT 'any' CHECK(platform IN ('linkedin','x','facebook','instagram','discord','any')),
+  source_kind  TEXT,
+  source_id    TEXT,
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','done','skipped','edited')),
+  feedback     TEXT NOT NULL DEFAULT '',
+  outcome      TEXT NOT NULL DEFAULT '',
+  posted_at    INTEGER,
+  created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at   INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_presence_items_batch ON presence_items(batch_id);
+CREATE INDEX IF NOT EXISTS idx_presence_items_status ON presence_items(status);
+`;
+
+export const CREATE_PRESENCE_POSTS = `
+CREATE TABLE IF NOT EXISTS presence_posts (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  platform    TEXT NOT NULL CHECK(platform IN ('linkedin','x','facebook','instagram','discord','any')),
+  content     TEXT NOT NULL DEFAULT '',
+  posted_at   INTEGER NOT NULL DEFAULT (unixepoch()),
+  metrics     TEXT NOT NULL DEFAULT '',
+  item_id     TEXT REFERENCES presence_items(id) ON DELETE SET NULL,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_presence_posts_project ON presence_posts(project_id, posted_at);
+`;
+
+export const CREATE_PRESENCE_PROFILE = `
+CREATE TABLE IF NOT EXISTS presence_profile (
+  id                    TEXT PRIMARY KEY,
+  project_id            TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+  streak_count          INTEGER NOT NULL DEFAULT 0,
+  last_active_date      TEXT,
+  onboarding_complete   INTEGER NOT NULL DEFAULT 0,
+  platforms_json        TEXT NOT NULL DEFAULT '[]',
+  goal                  TEXT NOT NULL DEFAULT '',
+  created_at            INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at            INTEGER NOT NULL DEFAULT (unixepoch())
+);
+`;
+
 /** DDL applied in order; every statement must be idempotent. */
 export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_SESSIONS,
@@ -1303,6 +1369,10 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_TRACE_PROJECTS,
   CREATE_PROJECT_FILES,
   CREATE_PROJECT_FILE_SCANS,
+  CREATE_PRESENCE_BATCHES,
+  CREATE_PRESENCE_ITEMS,
+  CREATE_PRESENCE_POSTS,
+  CREATE_PRESENCE_PROFILE,
 ];
 
 /** Bookkeeping table for future schema versions. */
