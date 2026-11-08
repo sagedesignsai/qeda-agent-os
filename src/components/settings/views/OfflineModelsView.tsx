@@ -172,7 +172,7 @@ export function OfflineModelsView() {
 
       // Trigger initialization with a minimal generation call to download the model
       await generateText({
-        model: tjModel,
+        model: tjModel as any,
         prompt: '.',
         maxOutputTokens: 1,
         abortSignal: controller.signal,

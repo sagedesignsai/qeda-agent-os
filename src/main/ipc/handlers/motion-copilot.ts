@@ -119,6 +119,7 @@ export function registerMotionCopilotHandlers({
               getDocument,
               apply,
               activeProject,
+              projectId: projectId ?? undefined,
               target,
               broadcastChanged,
               planManager,

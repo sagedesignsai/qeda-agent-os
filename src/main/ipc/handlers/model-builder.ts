@@ -50,6 +50,8 @@ export function registerModelBuilderHandlers({
         messages: UIMessage[];
         context: {
           document: MotionDocument;
+          /** Real project the dialog was opened from, for GLB asset staging. */
+          projectId?: string;
         };
       },
     ) => {
@@ -120,11 +122,12 @@ export function registerModelBuilderHandlers({
           planManager.reset();
 
           try {
-            const agent = createModelBuilderAgent({
+            const agent = await createModelBuilderAgent({
               getDocument,
               apply,
               target,
               planManager,
+              projectId: context.projectId,
             });
 
             const result = await agent.stream({ messages: modelMessages });

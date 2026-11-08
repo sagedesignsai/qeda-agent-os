@@ -182,19 +182,19 @@ export function registerMotionProjectsHandlers({ mainWindow }: { mainWindow: Bro
   ipcMain.handle('motion:clean-unused-assets', async (_event, { projectId }: { projectId: string }) => assets.cleanUnusedFiles(projectId));
 
   ipcMain.handle('motion:search-remote-assets', async (_event, req: {
-    provider: 'polyhaven';
+    provider: 'polyhaven' | 'sketchfab';
     query: string;
     kind: 'model' | 'environment';
     limit?: number;
   }) => remoteAssets.search(req));
   ipcMain.handle('motion:remote-asset-variants', async (_event, req: {
-    provider: 'polyhaven';
+    provider: 'polyhaven' | 'sketchfab';
     assetId: string;
     kind: 'model' | 'environment';
   }) => remoteAssets.variants(req));
   ipcMain.handle('motion:import-remote-assets', async (_event, req: {
     projectId: string;
-    provider: 'polyhaven';
+    provider: 'polyhaven' | 'sketchfab';
     assetId: string;
     kind: 'model' | 'environment';
     variantId: string;

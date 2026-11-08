@@ -1,22 +1,22 @@
 /**
  * components/model-builder/ModelBuilderDialog.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Model Builder Dialog — a modal with Sidebar-based AI copilot and live 3D
+ * Model Builder Dialog — a modal with an AI copilot sidebar and live 3D
  * viewport. The user describes a 3D model in natural language, the AI agent
  * builds it step-by-step, and the 3D scene renders the model in real-time.
  *
- * Layout: Dialog → SidebarProvider → SidebarInset (3D viewport) + Sidebar
- * (copilot chat). The document is ephemeral — created on open, optionally
- * saved on close.
+ * Layout: Dialog → header + flex row → viewport (1fr) + copilot aside (fixed
+ * width). The document is ephemeral — created on open, optionally saved on
+ * close. NOTE: no nested SidebarProvider here (shadcn SidebarProvider/Sidebar
+ * use min-h-svh + fixed positioning, which overflows any modal container —
+ * the SidebarHeader/Content/Footer primitives alone are provider-free).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  BotIcon,
   BoxIcon,
   Grid3X3Icon,
-  PlusIcon,
   SaveIcon,
   SparklesIcon,
   SparkleIcon,
@@ -39,7 +39,6 @@ import {
 import { MessageList } from '@/components/chat/MessageList';
 import { PlanPanel } from '@/components/plan/PlanPanel';
 import { MotionSceneCanvas } from '@/components/motion/scene/MotionSceneCanvas';
-import type { MotionCameraView } from '@/components/motion/scene/MotionSceneCanvas';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -47,15 +46,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-} from '@/components/ui/sidebar';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { SidebarContent, SidebarFooter } from '@/components/ui/sidebar';
 import { useIpcEvent } from '@/hooks/use-ipc';
 import { useModelBuilder } from '@/hooks/use-model-builder';
 import { createBlankMotionDocument } from '@/lib/motion/defaults';
@@ -90,12 +81,15 @@ export interface ModelBuilderDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Called when the user chooses to save the created model. */
   onSave?: (document: MotionDocument) => void;
+  /** Real project the dialog was opened from, for GLB asset staging. */
+  projectId?: string;
 }
 
 export function ModelBuilderDialog({
   open,
   onOpenChange,
   onSave,
+  projectId,
 }: ModelBuilderDialogProps) {
   // Ephemeral document — created fresh each time the dialog opens.
   // Blank (not starter): camera + lights + ground are present, but no product
@@ -119,7 +113,7 @@ export function ModelBuilderDialog({
     clearMessages: rawClearMessages,
     plan,
     clearPlan,
-  } = useModelBuilder({ document });
+  } = useModelBuilder({ document, projectId });
 
   const clearMessages = useCallback(() => {
     clearPlan();
@@ -158,7 +152,6 @@ export function ModelBuilderDialog({
   );
 
   // Viewport settings
-  const [viewMode, setViewMode] = useState<MotionCameraView>('perspective');
   const [gridVisible, setGridVisible] = useState(true);
 
   const handleClose = useCallback(() => {
@@ -212,7 +205,7 @@ export function ModelBuilderDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="h-[90vh] w-[95vw] max-w-[95vw] gap-0 overflow-hidden p-0 sm:max-w-[95vw]"
+        className="flex h-[90vh] w-[95vw] max-w-[95vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[95vw]"
       >
         <DialogHeader className="border-b border-border/60 px-4 py-2">
           <div className="flex items-center justify-between">
@@ -245,156 +238,115 @@ export function ModelBuilderDialog({
           </div>
         </DialogHeader>
 
-        <div className="flex h-[calc(90vh-48px)]">
-          <SidebarProvider open defaultOpen>
-            {/* 3D Viewport */}
-            <SidebarInset className="relative overflow-hidden bg-background p-0">
-              {/* Viewport toolbar */}
-              <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-lg border border-border/60 bg-popover/80 p-1 backdrop-blur-xs">
-                <ToggleGroup
-                  type="single"
-                  value={viewMode}
-                  onValueChange={(val) =>
-                    val && setViewMode(val as MotionCameraView)
-                  }
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          {/* 3D Viewport */}
+          <div className="relative min-w-0 flex-1 overflow-hidden bg-background">
+            {/* Viewport toolbar */}
+            <div className="absolute right-3 top-3 z-10 flex items-center rounded-lg border border-border/60 bg-popover/80 p-1 backdrop-blur-xs">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={`size-7 ${gridVisible ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'}`}
+                onClick={() => setGridVisible((v) => !v)}
+                title="Toggle grid"
+              >
+                <Grid3X3Icon className="size-3.5" />
+              </Button>
+            </div>
+
+            <div className="h-full w-full">
+              <MotionSceneCanvas
+                doc={document}
+                clock={clock}
+                viewMode="perspective"
+                stageColor="hsl(var(--background))"
+                gridVisible={gridVisible}
+                zoom={1}
+                showEditorStage
+              />
+            </div>
+          </div>
+
+          {/* Copilot Sidebar */}
+          <aside className="flex w-80 min-w-80 shrink-0 flex-col border-l border-l-border/60">
+            <SidebarContent className="p-0">
+              <Conversation className="h-full">
+                <ConversationContent
+                  className={plan ? 'p-0 pb-28' : 'p-0 pb-6'}
                 >
-                  <ToggleGroupItem
-                    value="perspective"
-                    className="h-7 w-7 px-0 text-xs"
-                    title="Perspective"
-                  >
-                    <BoxIcon className="size-3.5" />
-                  </ToggleGroupItem>
-                </ToggleGroup>
+                  <MessageList
+                    messages={messages}
+                    status={status}
+                    error={error}
+                    onApproval={respondToApproval}
+                    emptyState={emptyState}
+                    onRetry={(text) => sendMessage(text)}
+                  />
+                </ConversationContent>
+                <ConversationScrollButton />
+                {plan && (
+                  <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-1 bg-card/80 backdrop-blur-xs">
+                    <PlanPanel
+                      plan={plan}
+                      isRunning={status === 'streaming'}
+                    />
+                  </div>
+                )}
+              </Conversation>
+            </SidebarContent>
+
+            {fallbackNotice && (
+              <div className="mx-3 my-2 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
+                <span className="truncate">
+                  Provider <strong>{fallbackNotice.fromProvider}</strong>{' '}
+                  unavailable ({fallbackNotice.reason}) — switched to{' '}
+                  <strong>{fallbackNotice.toProvider}</strong>
+                </span>
                 <Button
+                  size="icon"
                   variant="ghost"
-                  size="icon-sm"
-                  className={`size-7 ${gridVisible ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'}`}
-                  onClick={() => setGridVisible((v) => !v)}
-                  title="Toggle grid"
+                  className="size-5 shrink-0 text-amber-500 hover:text-amber-400"
+                  onClick={dismissFallbackNotice}
                 >
-                  <Grid3X3Icon className="size-3.5" />
+                  <XIcon className="size-3" />
                 </Button>
               </div>
+            )}
 
-              <div className="h-full w-full">
-                <MotionSceneCanvas
-                  doc={document}
-                  clock={clock}
-                  viewMode={viewMode}
-                  stageColor="hsl(var(--background))"
-                  gridVisible={gridVisible}
-                  zoom={1}
-                  showEditorStage
-                />
-              </div>
-            </SidebarInset>
-
-            {/* Copilot Sidebar */}
-            <Sidebar className="w-80 min-w-80 border-l border-l-border/60">
-              <SidebarHeader className="border-b border-border/40 px-3 py-2.5 bg-card/80">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <h2 className="flex items-center gap-2 text-xs font-semibold text-foreground tracking-tight">
-                      <BotIcon className="size-4 text-indigo-400 shrink-0" />
-                      <span>AI Assistant</span>
-                    </h2>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
-                    onClick={clearMessages}
-                    title="New session / Clear"
-                    disabled={messages.length === 0}
-                  >
-                    <PlusIcon className="size-3.5" />
-                    <span className="sr-only">New session</span>
-                  </Button>
-                </div>
-                <p className="text-[11px] text-muted-foreground pt-0.5">
-                  AI assistant for 3D model creation: geometry, materials, and
-                  scene composition.
-                </p>
-              </SidebarHeader>
-
-              <SidebarContent className="p-0">
-                <Conversation className="h-full">
-                  <ConversationContent className="p-0 pb-20">
-                    <MessageList
-                      messages={messages}
-                      status={status}
-                      error={error}
-                      onApproval={respondToApproval}
-                      emptyState={emptyState}
-                      onRetry={(text) => sendMessage(text)}
-                    />
-                  </ConversationContent>
-                  <ConversationScrollButton />
-                  {plan && (
-                    <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-1 bg-card/80 backdrop-blur-xs">
-                      <PlanPanel
-                        plan={plan}
-                        isRunning={status === 'streaming'}
-                      />
-                    </div>
-                  )}
-                </Conversation>
-              </SidebarContent>
-
-              {fallbackNotice && (
-                <div className="mx-3 my-2 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-500">
-                  <span className="truncate">
-                    Provider <strong>{fallbackNotice.fromProvider}</strong>{' '}
-                    unavailable ({fallbackNotice.reason}) — switched to{' '}
-                    <strong>{fallbackNotice.toProvider}</strong>
-                  </span>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-5 shrink-0 text-amber-500 hover:text-amber-400"
-                    onClick={dismissFallbackNotice}
-                  >
-                    <XIcon className="size-3" />
-                  </Button>
-                </div>
-              )}
-
-              <SidebarFooter className="border-t border-border/40 p-3 bg-card/60">
-                <PromptInput
-                  onSubmit={({ text }) => {
-                    const value = text.trim();
-                    if (value) sendMessage(value);
-                  }}
-                >
-                  <PromptInputBody>
-                    <PromptInputTextarea
-                      placeholder="Describe the 3D model you want to build…"
-                      className="text-xs min-h-12"
-                    />
-                  </PromptInputBody>
-                  <PromptInputFooter>
-                    <PromptInputTools>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-[11px] text-muted-foreground cursor-pointer"
-                        onClick={clearMessages}
-                        disabled={messages.length === 0}
-                      >
-                        Clear
-                      </Button>
-                    </PromptInputTools>
-                    <PromptInputSubmit
-                      status={status}
-                      disabled={status === 'streaming'}
-                    />
-                  </PromptInputFooter>
-                </PromptInput>
-              </SidebarFooter>
-            </Sidebar>
-          </SidebarProvider>
+            <SidebarFooter className="border-t border-border/40 p-3 bg-card/60">
+              <PromptInput
+                onSubmit={({ text }) => {
+                  const value = text.trim();
+                  if (value) sendMessage(value);
+                }}
+              >
+                <PromptInputBody>
+                  <PromptInputTextarea
+                    placeholder="Describe the 3D model you want to build…"
+                    className="text-xs min-h-12"
+                  />
+                </PromptInputBody>
+                <PromptInputFooter>
+                  <PromptInputTools>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-[11px] text-muted-foreground cursor-pointer"
+                      onClick={clearMessages}
+                      disabled={messages.length === 0}
+                    >
+                      Clear
+                    </Button>
+                  </PromptInputTools>
+                  <PromptInputSubmit
+                    status={status}
+                    disabled={status === 'streaming'}
+                  />
+                </PromptInputFooter>
+              </PromptInput>
+            </SidebarFooter>
+          </aside>
         </div>
       </DialogContent>
     </Dialog>

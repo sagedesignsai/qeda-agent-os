@@ -81,6 +81,23 @@ export interface AppSettings {
     path?: string;
     /** Per-job timeout (ms). Defaults to 90000. */
     timeoutMs?: number;
+    /**
+     * Global triangle budget for authored (LLM-written) geometry jobs.
+     * Defaults to 50000. Enforced from the GLB JSON chunk post-export.
+     */
+    maxTriangles?: number;
+    /**
+     * Authored generation: 'auto' allows `blender.asset.generate` to run
+     * LLM-authored PART code in the deterministic harness; 'off' restores
+     * template-only behavior. Defaults to 'auto'.
+     */
+    authoredGeneration?: 'auto' | 'off';
+    /**
+     * Provider/model used for the visual (T2) verification pass —
+     * optional; when unset the pipeline stays T1-only (programmatic).
+     * Reserved for P2; may be null.
+     */
+    visionModel?: string;
   };
   /**
    * External-service API keys (Tavily, Firecrawl, Context7, Unsplash, speech…),
@@ -171,7 +188,12 @@ function defaultSettings(): AppSettings {
     builderMaxSteps: DEFAULT_BUILDER_MAX_STEPS,
     e2bSandboxTemplate: DEFAULT_E2B_SANDBOX_TEMPLATE,
     mcpServers: [],
-    blender: { enabled: true, timeoutMs: 90_000 },
+    blender: {
+      enabled: true,
+      timeoutMs: 90_000,
+      maxTriangles: 50_000,
+      authoredGeneration: 'auto',
+    },
     providers: {},
     customProviders: [],
   };

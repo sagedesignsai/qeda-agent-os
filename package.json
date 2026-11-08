@@ -73,6 +73,7 @@
     ]
   },
   "dependencies": {
+    "@ai-sdk/cohere": "^4.0.78",
     "@ai-sdk/gateway": "^4.0.92",
     "@ai-sdk/mcp": "^2.0.73",
     "@ai-sdk/openai-compatible": "^3.0.55",

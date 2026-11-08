@@ -65,6 +65,13 @@ export interface MotionToolContext {
   getDocument(): MotionDocument;
   apply(plan: ReturnType<typeof planMotionCommand>): MotionApplyResult;
   now?: () => string;
+  /**
+   * Real project id when the document belongs to a saved project. Tools
+   * that produce files (Blender GLBs) use it to stage assets into the
+   * project bundle so paths are bundle-relative and resolvable. Absent
+   * for ephemeral documents.
+   */
+  projectId?: string;
 }
 
 function resultEnvelope(
@@ -178,7 +185,9 @@ export function createMotionTools(context: MotionToolContext) {
 
   const proceduralModeling = tool({
     description:
-      'Create a deterministic procedural Motion node. Keep instanceCount bounded and expose parameters in props so the result remains editable instead of expanding into thousands of nodes.',
+      'FALLBACK modeling tool — prefer blender.asset.generate first; use this when Blender is disabled, unavailable, ' +
+      'or its job failed after a retry. Also fine for briefs dominated by repeated elements (arrays, grids, scatter). ' +
+      'Keep instanceCount bounded and expose parameters in props so the result remains editable instead of expanding into thousands of nodes.',
     inputSchema: z.object({
       ...motionToolContextSchema.shape,
       nodeId: z.string().min(1),

@@ -17,7 +17,7 @@ import path from 'node:path';
 
 import type { MotionAssetStore, MotionImportError, MotionStagedAsset } from './asset-store.js';
 
-export type MotionRemoteProviderId = 'polyhaven';
+export type MotionRemoteProviderId = 'polyhaven' | 'sketchfab';
 export type MotionRemoteAssetKind = 'model' | 'environment';
 
 export type MotionRemoteAssetHit = {
@@ -135,8 +135,12 @@ export class MotionRemoteAssetError extends Error {
 
 const POLYHAVEN_API = 'https://api.polyhaven.com';
 const POLYHAVEN_HOSTS = ['api.polyhaven.com', 'dl.polyhaven.org'];
-const PROVIDER_CREDIT = 'Powered by Poly Haven';
-const LICENSE = 'CC0-1.0';
+const POLYHAVEN_CREDIT = 'Powered by Poly Haven';
+const POLYHAVEN_LICENSE = 'CC0-1.0';
+const SKETCHFAB_API = 'https://sketchfab.com';
+const SKETCHFAB_HOSTS = ['sketchfab.com', 'cdn.sketchfab.com', 'download.sketchfab.com'];
+const SKETCHFAB_CREDIT = 'Powered by Sketchfab';
+const SKETCHFAB_API_KEY = '5fdc660e8bf84e058ceed08029fa09e2';
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const FIRST_BYTE_TIMEOUT_MS = 30 * 1000;
 const DEFAULT_MAX_MODEL_BYTES = 200 * 1024 * 1024;
@@ -164,9 +168,60 @@ type PolyHavenFiles = {
   gltf?: Record<string, Record<string, PolyHavenFile>>;
 };
 
+type SketchfabModel = {
+  uid: string;
+  uid_original?: string;
+  name?: string;
+  description?: string;
+  user?: {
+    username?: string;
+    displayName?: string;
+  };
+  license?: {
+    slug: string;
+    label: string;
+    full_name?: string;
+    attribution_required?: boolean;
+  };
+  thumbnails?: Array<{ url: string; width: number; height: number }>;
+  thumbnail?: { url: string; width: number; height: number };
+  tags?: string[];
+  categories?: Array<{ slug: string; name: string }>;
+  isDownloadable?: boolean;
+  is_age_restricted?: boolean;
+  animationCount?: number;
+  vertex_count?: number;
+  face_count?: number;
+  view_count?: number;
+  like_count?: number;
+  comment_count?: number;
+  published_at?: string;
+  viewerUrl?: string;
+  archives?: Record<string, SketchfabArchive>;
+};
+
+type SketchfabArchive = {
+  format: string;
+  size_bytes?: number;
+  face_count?: number;
+  vertex_count?: number;
+};
+
+type SketchfabDownloadResponse = {
+  gltf?: { url: string; size: number; expires: number };
+  usdz?: { url: string; size: number; expires: number };
+};
+
+type SketchfabModelCache = {
+  fetchedAt: number;
+  models: Map<string, SketchfabModel>;
+};
+
 export class MotionRemoteAssetClient {
   private readonly catalogCache = new Map<string, { fetchedAt: number; order: string[]; items: Map<string, PolyHavenCatalogItem> }>();
   private readonly fileCache = new Map<string, { fetchedAt: number; files: PolyHavenFiles }>();
+  private readonly sketchfabCache: SketchfabModelCache = { fetchedAt: 0, models: new Map() };
+  private readonly sketchfabModelCache = new Map<string, { fetchedAt: number; model: SketchfabModel }>();
   private readonly activeDownloads = new Map<string, AbortController>();
 
   constructor(
@@ -181,13 +236,16 @@ export class MotionRemoteAssetClient {
     limit?: number;
   }): Promise<{ hits: MotionRemoteAssetHit[]; total: number; providerCredit: string }> {
     this.assertProvider(request.provider);
+    if (request.provider === 'sketchfab') {
+      return this.searchSketchfab({ ...request, provider: 'sketchfab' });
+    }
     const limit = Math.min(Math.max(Math.trunc(request.limit ?? 24), 1), 60);
     const catalog = await this.loadCatalog(request.kind);
     const ranked = rankCatalog(catalog, request.query, limit);
     return {
       hits: ranked.matches.map((item) => toHit(item, request.kind)),
       total: ranked.total,
-      providerCredit: PROVIDER_CREDIT,
+      providerCredit: POLYHAVEN_CREDIT,
     };
   }
 
@@ -203,13 +261,16 @@ export class MotionRemoteAssetClient {
     providerCredit: string;
   }> {
     this.assertProvider(request.provider);
+    if (request.provider === 'sketchfab') {
+      return this.variantsSketchfab({ ...request, provider: 'sketchfab' });
+    }
     const files = await this.loadFiles(request.assetId);
     const variants = request.kind === 'environment' ? hdriVariants(files) : modelVariants(files);
     return {
       variants,
-      license: LICENSE,
+      license: POLYHAVEN_LICENSE,
       pageUrl: pageUrlFor(request.assetId),
-      providerCredit: PROVIDER_CREDIT,
+      providerCredit: POLYHAVEN_CREDIT,
     };
   }
 
@@ -224,6 +285,9 @@ export class MotionRemoteAssetClient {
     },
   ): Promise<MotionRemoteImportResult> {
     this.assertProvider(request.provider);
+    if (request.provider === 'sketchfab') {
+      return this.importSketchfab(projectId, { ...request, provider: 'sketchfab' });
+    }
     assertSafeId(request.assetId);
     const controller = new AbortController();
     if (request.requestId) this.activeDownloads.set(request.requestId, controller);
@@ -304,7 +368,7 @@ export class MotionRemoteAssetClient {
           license: resolved.license,
           ...(resolved.creator ? { creator: resolved.creator } : {}),
           ...(resolved.attribution ? { attribution: resolved.attribution } : {}),
-          providerCredit: PROVIDER_CREDIT,
+          providerCredit: POLYHAVEN_CREDIT,
           retrievedAt: (this.options.now ?? (() => new Date()))().toISOString(),
           variant: request.variantId,
           upstreamUrl: resolved.files[0]?.url ?? '',
@@ -320,6 +384,227 @@ export class MotionRemoteAssetClient {
     }
   }
 
+  private async searchSketchfab(request: {
+    provider: 'sketchfab';
+    query: string;
+    kind: MotionRemoteAssetKind;
+    limit?: number;
+  }): Promise<{ hits: MotionRemoteAssetHit[]; total: number; providerCredit: string }> {
+    const limit = Math.min(Math.max(Math.trunc(request.limit ?? 24), 1), 60);
+    const params = new URLSearchParams();
+    params.set('downloadable', 'true');
+    params.set('count', String(limit));
+    if (request.query.trim()) {
+      params.set('q', request.query.trim());
+    }
+    params.set('sort_by', '-likeCount');
+    const url = `${SKETCHFAB_API}/v3/models?${params.toString()}`;
+    const models = await this.sketchfabRequest<SketchfabModel[]>(url);
+    if (!Array.isArray(models)) {
+      return { hits: [], total: 0, providerCredit: SKETCHFAB_CREDIT };
+    }
+    const hits: MotionRemoteAssetHit[] = [];
+    for (const model of models) {
+      if (!model.uid) continue;
+      const hit = sketchfabModelToHit(model, request.kind);
+      if (hit) hits.push(hit);
+    }
+    return { hits, total: hits.length, providerCredit: SKETCHFAB_CREDIT };
+  }
+
+  private async variantsSketchfab(request: {
+    provider: 'sketchfab';
+    assetId: string;
+    kind: MotionRemoteAssetKind;
+  }): Promise<{
+    variants: MotionRemoteVariant[];
+    license: string;
+    attribution?: string;
+    pageUrl: string;
+    providerCredit: string;
+  }> {
+    const model = await this.loadSketchfabModel(request.assetId);
+    const pageUrl = `https://sketchfab.com/3d-models/${model.uid}`;
+    const license = model.license?.label ?? 'Unknown';
+    const attribution = model.user?.displayName ?? model.user?.username;
+    const variants: MotionRemoteVariant[] = [];
+    if (model.archives) {
+      for (const [key, archive] of Object.entries(model.archives)) {
+        if (archive.format === 'gltf' || archive.format === 'glTF') {
+          variants.push({
+            id: 'gltf',
+            label: 'glTF Archive',
+            format: 'glb',
+            byteSize: archive.size_bytes,
+          });
+        }
+      }
+    }
+    if (variants.length === 0) {
+      variants.push({
+        id: 'gltf',
+        label: 'glTF Archive',
+        format: 'glb',
+      });
+    }
+    return { variants, license, attribution, pageUrl, providerCredit: SKETCHFAB_CREDIT };
+  }
+
+  private async importSketchfab(
+    projectId: string,
+    request: {
+      provider: 'sketchfab';
+      assetId: string;
+      kind: MotionRemoteAssetKind;
+      variantId: string;
+      requestId?: string;
+    },
+  ): Promise<MotionRemoteImportResult> {
+    const controller = new AbortController();
+    if (request.requestId) this.activeDownloads.set(request.requestId, controller);
+    try {
+      const model = await this.loadSketchfabModel(request.assetId, controller.signal);
+      if (!model.isDownloadable) {
+        if (request.requestId) this.activeDownloads.delete(request.requestId);
+        return this.failed(model.name ?? request.assetId, 'This model is not available for download.', 'MOTION_IMPORT_UNREADABLE');
+      }
+
+      const downloadUrl = `${SKETCHFAB_API}/v3/models/${encodeURIComponent(request.assetId)}/download`;
+      const downloadResp = await this.sketchfabRequestJson<SketchfabDownloadResponse>(
+        downloadUrl,
+        SKETCHFAB_HOSTS,
+        controller.signal,
+        { 'Authorization': `Bearer ${SKETCHFAB_API_KEY}` }
+      );
+      const gltfDownload = downloadResp?.gltf;
+      if (!gltfDownload?.url) {
+        if (request.requestId) this.activeDownloads.delete(request.requestId);
+        return this.failed(model.name ?? request.assetId, 'No glTF download available for this model.', 'MOTION_IMPORT_UNREADABLE');
+      }
+
+      const limit = this.options.maxModelBytes ?? DEFAULT_MAX_MODEL_BYTES;
+      if (gltfDownload.size > limit) {
+        if (request.requestId) this.activeDownloads.delete(request.requestId);
+        return this.failed(model.name ?? request.assetId, `This asset is too large to import (${formatBytes(gltfDownload.size)}).`, 'MOTION_IMPORT_TOO_LARGE');
+      }
+
+      const releaseSlot = await acquireImportSlot();
+      let tempDirectory: string | undefined;
+      try {
+        tempDirectory = await fs.mkdtemp(path.join(this.options.tempRoot ?? os.tmpdir(), 'qeda-motion-'));
+        const zipPath = path.join(tempDirectory, 'model.zip');
+        await this.download(gltfDownload.url, zipPath, {
+          maxBytes: limit,
+          signal: controller.signal,
+          onProgress: (bytes) => this.options.onProgress?.({
+            requestId: request.requestId,
+            assetId: request.assetId,
+            receivedBytes: bytes,
+            totalBytes: gltfDownload.size,
+          }),
+        });
+
+        if (controller.signal.aborted) {
+          if (request.requestId) this.activeDownloads.delete(request.requestId);
+          return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+        }
+
+        const extractedDir = path.join(tempDirectory, 'extracted');
+        await fs.mkdir(extractedDir, { recursive: true });
+        await extractZip(zipPath, extractedDir);
+
+        const gltfFile = await findGltfFile(extractedDir);
+        if (!gltfFile) {
+          if (request.requestId) this.activeDownloads.delete(request.requestId);
+          return this.failed(model.name ?? request.assetId, 'No glTF file found in the downloaded archive.', 'MOTION_IMPORT_UNREADABLE');
+        }
+
+        const stagedName = `${safeFileName(model.name ?? request.assetId)}.glb`;
+        const packedPath = path.join(tempDirectory, stagedName);
+        try {
+          await (this.options.packGltf ?? packGltfToGlb)(gltfFile, packedPath);
+        } catch (error) {
+          if (request.requestId) this.activeDownloads.delete(request.requestId);
+          return this.failed(model.name ?? request.assetId, `The model could not be converted to GLB: ${error instanceof Error ? error.message : String(error)}`, 'MOTION_IMPORT_PROBE_FAILED');
+        }
+
+        if (controller.signal.aborted) {
+          await this.assets.cancelImports(projectId, []);
+          if (request.requestId) this.activeDownloads.delete(request.requestId);
+          return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+        }
+
+        const staged = await this.assets.stageAssets(projectId, [packedPath]);
+        if (controller.signal.aborted) {
+          await this.assets.cancelImports(projectId, staged.items.map((entry) => entry.importId));
+          if (request.requestId) this.activeDownloads.delete(request.requestId);
+          return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+        }
+
+        const pageUrl = `https://sketchfab.com/3d-models/${model.uid}`;
+        const license = model.license?.label ?? 'Unknown';
+        const creator = model.user?.displayName ?? model.user?.username;
+        const provenance: Record<string, MotionRemoteProvenance> = {};
+        for (const stagedItem of staged.items) {
+          provenance[stagedItem.importId] = {
+            source: 'sketchfab',
+            sourceAssetId: request.assetId,
+            sourceUrl: pageUrl,
+            license,
+            ...(creator ? { creator } : {}),
+            providerCredit: SKETCHFAB_CREDIT,
+            retrievedAt: (this.options.now ?? (() => new Date()))().toISOString(),
+            variant: request.variantId,
+            upstreamUrl: gltfDownload.url,
+          };
+        }
+        return { items: staged.items, errors: staged.errors, provenance };
+      } catch (error) {
+        return this.failed(model.name ?? request.assetId, error instanceof Error ? error.message : String(error), 'MOTION_IMPORT_UNREADABLE');
+      } finally {
+        if (tempDirectory) await fs.rm(tempDirectory, { recursive: true, force: true }).catch(() => undefined);
+        if (request.requestId && this.activeDownloads.get(request.requestId) === controller) this.activeDownloads.delete(request.requestId);
+        releaseSlot();
+      }
+    } catch (error) {
+      if (request.requestId) this.activeDownloads.delete(request.requestId);
+      return this.failed(request.assetId, error instanceof Error ? error.message : String(error), 'MOTION_IMPORT_UNREADABLE');
+    }
+  }
+
+  private async loadSketchfabModel(uid: string, signal?: AbortSignal): Promise<SketchfabModel> {
+    const ttl = this.options.filesTtlMs ?? 10 * 60 * 1000;
+    const cached = this.sketchfabModelCache.get(uid);
+    if (cached && this.now() - cached.fetchedAt < ttl) return cached.model;
+    const url = `${SKETCHFAB_API}/v3/models/${encodeURIComponent(uid)}`;
+    const model = await this.sketchfabRequest<SketchfabModel>(url, signal);
+    if (!model || typeof model !== 'object') {
+      throw new MotionRemoteAssetError('Model not found on Sketchfab.', 'MOTION_REMOTE_NOT_FOUND');
+    }
+    this.sketchfabModelCache.set(uid, { fetchedAt: this.now(), model });
+    return model;
+  }
+
+  private async sketchfabRequest<T>(url: string, signal?: AbortSignal): Promise<T> {
+    const response = await this.open(url, SKETCHFAB_HOSTS, signal, { 'Authorization': `Bearer ${SKETCHFAB_API_KEY}` });
+    try {
+      const text = new TextDecoder().decode(await response.arrayBuffer());
+      return JSON.parse(text) as T;
+    } catch (error) {
+      throw new MotionRemoteAssetError(`The provider returned unreadable JSON: ${error instanceof Error ? error.message : String(error)}`, 'MOTION_REMOTE_CONTENT');
+    }
+  }
+
+  private async sketchfabRequestJson<T>(url: string, hosts: string[], signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
+    const response = await this.open(url, hosts, signal, extraHeaders);
+    try {
+      const text = new TextDecoder().decode(await response.arrayBuffer());
+      return JSON.parse(text) as T;
+    } catch (error) {
+      throw new MotionRemoteAssetError(`The provider returned unreadable JSON: ${error instanceof Error ? error.message : String(error)}`, 'MOTION_REMOTE_CONTENT');
+    }
+  }
+
   cancelImport(requestId: string): void {
     this.activeDownloads.get(requestId)?.abort(new DOMException('Import cancelled.', 'AbortError'));
   }
@@ -329,7 +614,7 @@ export class MotionRemoteAssetClient {
   }
 
   private assertProvider(provider: string): asserts provider is MotionRemoteProviderId {
-    if (provider !== 'polyhaven') {
+    if (provider !== 'polyhaven' && provider !== 'sketchfab') {
       throw new MotionRemoteAssetError(`Unknown asset provider "${provider}".`, 'MOTION_REMOTE_UNKNOWN_PROVIDER');
     }
   }
@@ -369,7 +654,7 @@ export class MotionRemoteAssetClient {
     const stagedName = `${safeFileName(item.name ?? item.slug)}${kind === 'model' ? '.glb' : ''}`;
     const base = {
       kind,
-      license: LICENSE,
+      license: POLYHAVEN_LICENSE,
       creator: authorsOf(item),
       pageUrl: pageUrlFor(item.slug),
     } as const;
@@ -428,7 +713,7 @@ export class MotionRemoteAssetClient {
     }
   }
 
-  private async open(url: string, hosts: string[], signal?: AbortSignal): Promise<MotionRemoteResponse> {
+  private async open(url: string, hosts: string[], signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<MotionRemoteResponse> {
     const fetchImpl = this.options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     const maxRedirects = this.options.maxRedirects ?? 3;
     let current = assertAllowedRemoteUrl(url, hosts).toString();
@@ -442,7 +727,10 @@ export class MotionRemoteAssetClient {
       );
       try {
         response = await fetchImpl(current, {
-          headers: { 'User-Agent': this.options.userAgent ?? 'Qeda Motion Asset Browser/1.0' },
+          headers: {
+            'User-Agent': this.options.userAgent ?? 'Qeda Motion Asset Browser/1.0',
+            ...(extraHeaders ?? {}),
+          },
           redirect: 'manual',
           signal: AbortSignal.any([controller.signal, timeoutSignal, ...(signal ? [signal] : [])]),
         });
@@ -680,12 +968,121 @@ function toHit(item: PolyHavenCatalogItem, kind: MotionRemoteAssetKind): MotionR
     name: item.name ?? item.slug,
     kind,
     ...(authorsOf(item) ? { creator: authorsOf(item) } : {}),
-    license: LICENSE,
+    license: POLYHAVEN_LICENSE,
     ...(item.thumbnail_url ? { thumbnailUrl: item.thumbnail_url } : {}),
     pageUrl: pageUrlFor(item.slug),
     ...(item.description ? { description: item.description } : {}),
     ...(item.download_count ? { popularity: item.download_count } : {}),
   };
+}
+
+function sketchfabModelToHit(model: SketchfabModel, kind: MotionRemoteAssetKind): MotionRemoteAssetHit | null {
+  if (!model.uid) return null;
+  const thumbnail = model.thumbnails?.[0]?.url ?? model.thumbnail?.url;
+  const creator = model.user?.displayName ?? model.user?.username;
+  const license = model.license?.label ?? 'Unknown';
+  return {
+    provider: 'sketchfab',
+    id: model.uid,
+    name: model.name ?? model.uid,
+    kind,
+    ...(creator ? { creator } : {}),
+    license,
+    ...(thumbnail ? { thumbnailUrl: thumbnail } : {}),
+    pageUrl: `https://sketchfab.com/3d-models/${model.uid}`,
+    ...(model.description ? { description: model.description } : {}),
+    ...(model.like_count ? { popularity: model.like_count } : {}),
+  };
+}
+
+async function extractZip(zipPath: string, destDir: string): Promise<void> {
+  const { execFile } = await import('node:child_process');
+  // Try system unzip first
+  const hasUnzip = await new Promise<boolean>((resolve) => {
+    execFile('sh', ['-c', 'which unzip'], { timeout: 5000 }, (err) => resolve(!err));
+  });
+  if (hasUnzip) {
+    await new Promise<void>((resolve, reject) => {
+      execFile('unzip', ['-o', zipPath, '-d', destDir], { timeout: 60_000 }, (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+    return;
+  }
+  // Fallback: use adm-zip if available
+  try {
+    const { default: AdmZip } = await import('adm-zip');
+    const zip = new AdmZip(zipPath);
+    zip.extractAllTo(destDir, true);
+    return;
+  } catch {
+    // Continue to manual extraction
+  }
+  // Last resort: use Node.js built-in decompression for simple ZIP files
+  const raw = await fs.readFile(zipPath);
+  await extractZipManual(raw, destDir);
+}
+
+async function extractZipManual(raw: Buffer, destDir: string): Promise<void> {
+  // Minimal ZIP central directory parser for common cases
+  let offset = raw.length - 22;
+  while (offset >= 0) {
+    if (raw.readUInt32LE(offset) === 0x06054b50) {
+      const centralDirOffset = raw.readUInt32LE(offset + 16);
+      const centralDirEntries = raw.readUInt16LE(offset + 10);
+      let pos = centralDirOffset;
+      for (let i = 0; i < centralDirEntries; i++) {
+        if (pos + 46 > raw.length) break;
+        if (raw.readUInt32LE(pos) !== 0x02014b50) break;
+        const compressionMethod = raw.readUInt16LE(pos + 10);
+        const compressedSize = raw.readUInt32LE(pos + 20);
+        const fileNameLength = raw.readUInt16LE(pos + 28);
+        const extraFieldLength = raw.readUInt16LE(pos + 30);
+        const fileCommentLength = raw.readUInt16LE(pos + 32);
+        const localHeaderOffset = raw.readUInt32LE(pos + 42);
+        pos += 46 + fileNameLength + extraFieldLength + fileCommentLength;
+        if (localHeaderOffset + 30 > raw.length) continue;
+        const localFileNameLength = raw.readUInt16LE(localHeaderOffset + 26);
+        const localExtraLength = raw.readUInt16LE(localHeaderOffset + 28);
+        const localDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
+        const fileName = raw.toString('utf8', localHeaderOffset + 30, localHeaderOffset + 30 + localFileNameLength);
+        if (fileName.includes('/')) continue; // skip directories
+        if (localDataOffset + compressedSize > raw.length) continue;
+        const relativePath = safeRelativePath(fileName);
+        if (!relativePath) continue;
+        const destPath = path.join(destDir, relativePath);
+        await fs.mkdir(path.dirname(destPath), { recursive: true });
+        if (compressionMethod === 0) {
+          await fs.writeFile(destPath, raw.subarray(localDataOffset, localDataOffset + compressedSize));
+        } else if (compressionMethod === 8) {
+          const zlib = await import('node:zlib');
+          const decompressed = zlib.unzipSync(raw.subarray(localDataOffset, localDataOffset + compressedSize));
+          await fs.writeFile(destPath, decompressed);
+        }
+      }
+      break;
+    }
+    offset -= 1;
+  }
+}
+
+async function findGltfFile(dir: string): Promise<string | null> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const result = await findGltfFile(fullPath);
+      if (result) return result;
+    }
+    if (entry.isFile()) {
+      const lower = entry.name.toLowerCase();
+      if (lower.endsWith('.gltf') || lower.endsWith('.glb')) {
+        return fullPath;
+      }
+    }
+  }
+  return null;
 }
 
 async function packGltfToGlb(entryPath: string, outputPath: string): Promise<void> {

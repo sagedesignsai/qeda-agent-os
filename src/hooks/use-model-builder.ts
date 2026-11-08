@@ -29,6 +29,8 @@ const MODEL_BUILDER_TRANSPORT: AgentTransport = {
 export interface UseModelBuilderOptions {
   /** The ephemeral Motion document for the agent to operate on. */
   document: MotionDocument;
+  /** Real project the dialog was opened from, for GLB asset staging. */
+  projectId?: string;
 }
 
 export interface UseModelBuilderReturn extends UseAgentChatReturn {
@@ -38,12 +40,14 @@ export interface UseModelBuilderReturn extends UseAgentChatReturn {
 
 export function useModelBuilder({
   document,
+  projectId,
 }: UseModelBuilderOptions): UseModelBuilderReturn {
   const agent = useAgentChat({
     sessionId: 'model-builder',
     transport: MODEL_BUILDER_TRANSPORT,
     context: {
       document,
+      projectId,
     },
     persist: false,
     hydrate: false,

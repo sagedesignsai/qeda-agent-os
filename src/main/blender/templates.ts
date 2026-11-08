@@ -19,6 +19,7 @@ export interface BlenderTemplateInput {
 
 const BASE = (input: BlenderTemplateInput) => `
 import bpy, math, random
+from mathutils import Vector
 random.seed(${input.seed ?? 1})
 
 # Clear default scene (Blender 5.x collections API)
@@ -164,7 +165,7 @@ mins, maxs = [], []
 for obj in bpy.data.objects:
     if obj.type == 'MESH':
         for corner in obj.bound_box:
-            world = obj.matrix_world @ __import__('mathutils').Vector(corner)
+            world = obj.matrix_world @ Vector(corner)
             mins.append(world.z)
 if mins:
     offset = -min(mins)

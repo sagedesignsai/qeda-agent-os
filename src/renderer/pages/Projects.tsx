@@ -26,6 +26,7 @@ import {
   ListIcon,
   Loader2Icon,
   PlusIcon,
+  SparklesIcon,
   TargetIcon,
   TerminalIcon,
   Trash2Icon,
@@ -171,8 +172,13 @@ export default function Projects() {
         toast.success('Project updated');
       } else {
         const created = await createProject(input as CreateProjectInput);
-        toast.success('Project created');
-        if (created) navigate(`/projects/${created.id}`);
+        if (created) {
+          // The receipt should carry the energy of starting something.
+          toast.success(`“${created.name}” is ready`, {
+            description: 'A fresh home for your outcome — settle in.',
+          });
+          navigate(`/projects/${created.id}`);
+        }
       }
     } catch {
       toast.error(
@@ -274,7 +280,7 @@ export default function Projects() {
         />
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <div className="mx-auto flex max-w-3xl flex-col gap-4">
+          <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant="outline"
@@ -320,6 +326,48 @@ export default function Projects() {
                 />
               </div>
             </div>
+
+            {/* Fresh-project welcome: taskless and docless means we just
+                landed here from "Create project" — greet, don't chart. */}
+            {!overviewLoading &&
+              overview !== null &&
+              project.id !== 'inbox' &&
+              selected.taskTotal === 0 &&
+              overview.linked.documents === 0 && (
+                <div className="rounded-xl border border-primary/25 bg-primary/[0.04] p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
+                      <SparklesIcon className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">
+                        A blank canvas — where to first?
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Common first moves for a new project. Nothing here is
+                        final.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Shortcut
+                          to={`/tasks?project=${project.id}`}
+                          icon={TargetIcon}
+                          label="Add your first task"
+                        />
+                        <Shortcut
+                          to={`/documents?project=${project.id}`}
+                          icon={FileTextIcon}
+                          label="Create the first doc"
+                        />
+                        <Shortcut
+                          to={`/terminal?project=${project.id}`}
+                          icon={TerminalIcon}
+                          label="Open a terminal"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
             {/* Shortcuts into the work */}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -447,7 +495,7 @@ export default function Projects() {
             }
           />
         ) : (
-          <div className="mx-auto flex max-w-5xl flex-col gap-6">
+          <div className="flex flex-col gap-6">
             {view === 'list' ? (
               <div className="overflow-hidden rounded-xl border bg-card/20">
                 <Table>

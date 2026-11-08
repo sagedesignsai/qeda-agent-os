@@ -1,9 +1,9 @@
 /**
  * components/motion/assets/MotionAssetMarketplaceDialog.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Browse and import 3D models into the current Motion bundle. Two sources:
+ * Browse and import 3D models into the current Motion bundle. Three sources:
  * — "Local Library": pre-installed GLB models shipped with the app (offline).
- * — "Catalog": public assets from Poly Haven (downloaded once, then offline).
+ * — "Catalog": public assets from Poly Haven or Sketchfab (downloaded once, then offline).
  *
  * Mounted only while open so a closed dialog never queries the provider.
  */
@@ -37,6 +37,7 @@ import type {
   MotionLocalModelEntry,
   MotionRemoteAssetHit,
   MotionRemoteAssetKind,
+  MotionRemoteProviderId,
   MotionRemoteVariant,
 } from '@/main/ipc/channels';
 
@@ -133,7 +134,11 @@ export function MotionAssetMarketplaceDialog({
             {tab === 'catalog' && marketplace.providerCredit ? ` · ${marketplace.providerCredit}` : ''}
           </span>
           <span className="hidden sm:inline">
-            {tab === 'local' ? 'Offline · bundled with the app' : 'CC0 · downloaded once, then bundled locally'}
+            {tab === 'local'
+              ? 'Offline · bundled with the app'
+              : marketplace.provider === 'sketchfab'
+                ? 'Creative Commons · downloaded once, then bundled locally'
+                : 'CC0 · downloaded once, then bundled locally'}
           </span>
         </footer>
       </DialogContent>
@@ -266,20 +271,34 @@ function CatalogPanel({
             <Input
               value={marketplace.query}
               onChange={(event) => marketplace.setQuery(event.target.value)}
-              placeholder="Search models and environments…"
+              placeholder="Search models…"
               className="h-8 pl-8 text-xs"
               aria-label="Search the asset catalog"
             />
           </div>
           <Tabs
-            value={marketplace.kind}
-            onValueChange={(value) => marketplace.setKind(value as MotionRemoteAssetKind)}
+            value={marketplace.provider}
+            onValueChange={(value) => {
+              marketplace.setProvider(value as MotionRemoteProviderId);
+              marketplace.setKind('model');
+            }}
           >
             <TabsList className="h-8">
-              <TabsTrigger value="model" className="text-xs">Models</TabsTrigger>
-              <TabsTrigger value="environment" className="text-xs">Environments</TabsTrigger>
+              <TabsTrigger value="polyhaven" className="text-xs">Poly Haven</TabsTrigger>
+              <TabsTrigger value="sketchfab" className="text-xs">Sketchfab</TabsTrigger>
             </TabsList>
           </Tabs>
+          {marketplace.provider === 'polyhaven' && (
+            <Tabs
+              value={marketplace.kind}
+              onValueChange={(value) => marketplace.setKind(value as MotionRemoteAssetKind)}
+            >
+              <TabsList className="h-8">
+                <TabsTrigger value="model" className="text-xs">Models</TabsTrigger>
+                <TabsTrigger value="environment" className="text-xs">Environments</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
         </div>
       </div>
 

@@ -16,15 +16,15 @@ import type {
   MotionRemoteAssetKind,
   MotionRemoteImportResult,
   MotionRemoteProgress,
+  MotionRemoteProviderId,
   MotionRemoteVariant,
 } from '@/main/ipc/channels';
 import { motionStore } from '@/hooks/use-motion-store';
 
 type ImportProgress = { receivedBytes: number; totalBytes?: number };
 
-const PROVIDER = 'polyhaven' as const;
-
 export function useMotionRemoteAssets(projectId: string) {
+  const [provider, setProvider] = useState<MotionRemoteProviderId>('polyhaven');
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<MotionRemoteAssetKind>('model');
   const [hits, setHits] = useState<MotionRemoteAssetHit[]>([]);
@@ -49,7 +49,7 @@ export function useMotionRemoteAssets(projectId: string) {
       void window.electron.ipc
         .invoke<{ hits: MotionRemoteAssetHit[]; total: number; providerCredit: string }>(
           'motion:search-remote-assets',
-          { provider: PROVIDER, query, kind, limit: 24 },
+          { provider, query, kind, limit: 24 },
         )
         .then((result) => {
           if (sequence !== searchSequence.current) return;
@@ -72,13 +72,13 @@ export function useMotionRemoteAssets(projectId: string) {
       clearTimeout(timer);
       if (searchSequence.current === sequence) searchSequence.current += 1;
     };
-  }, [query, kind, retryToken]);
+  }, [provider, query, kind, retryToken]);
 
   useEffect(() => {
     // Variant lists are provider- and kind-specific; a new query can reuse them.
     setVariants({});
     setVariantErrors({});
-  }, [kind]);
+  }, [kind, provider]);
 
   useEffect(() => window.electron.ipc.on('motion:remote-import-progress', (payload) => {
     const update = payload as MotionRemoteProgress;
@@ -102,7 +102,7 @@ export function useMotionRemoteAssets(projectId: string) {
     try {
       const result = await window.electron.ipc.invoke<{ variants: MotionRemoteVariant[] }>(
         'motion:remote-asset-variants',
-        { provider: PROVIDER, assetId: hit.id, kind: hit.kind },
+        { provider, assetId: hit.id, kind: hit.kind },
       );
       setVariants((current) => ({ ...current, [hit.id]: result.variants }));
       return result.variants;
@@ -110,7 +110,7 @@ export function useMotionRemoteAssets(projectId: string) {
       setVariantErrors((current) => ({ ...current, [hit.id]: message(cause) }));
       return [];
     }
-  }, [variants]);
+  }, [variants, provider]);
 
   const importAsset = useCallback(async (hit: MotionRemoteAssetHit, variantId: string): Promise<boolean> => {
     if (!projectId) return false;
@@ -123,7 +123,7 @@ export function useMotionRemoteAssets(projectId: string) {
     try {
       const staged = await window.electron.ipc.invoke<MotionRemoteImportResult>('motion:import-remote-assets', {
         projectId,
-        provider: PROVIDER,
+        provider,
         assetId: hit.id,
         kind: hit.kind,
         variantId,
@@ -154,7 +154,8 @@ export function useMotionRemoteAssets(projectId: string) {
       );
       const ops = committed.assets.map((asset) => ({ op: 'asset.add' as const, ...asset }));
       if (ops.length) {
-        const result = motionStore.commit(`Import ${hit.name} from Poly Haven`, ops);
+        const providerName = provider === 'sketchfab' ? 'Sketchfab' : 'Poly Haven';
+        const result = motionStore.commit(`Import ${hit.name} from ${providerName}`, ops);
         if (result.status === 'rejected' || result.status === 'pending') {
           throw result.error ?? new Error('The imported asset could not be added to the document.');
         }
@@ -194,6 +195,8 @@ export function useMotionRemoteAssets(projectId: string) {
   }, []);
 
   return {
+    provider,
+    setProvider,
     query,
     setQuery,
     kind,

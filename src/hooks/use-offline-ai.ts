@@ -143,7 +143,7 @@ self.onmessage = (msg) => { handler.onmessage(msg); };
       // Trigger initialization with a minimal generation call.
       // This causes the model to download and cache.
       await generateText({
-        model,
+        model: model as any,
         prompt: '.',
         maxOutputTokens: 1,
       });
@@ -181,7 +181,7 @@ self.onmessage = (msg) => { handler.onmessage(msg); };
       setStatus('generating');
 
       const result = streamText({
-        model,
+        model: model as any,
         prompt,
         maxOutputTokens: 256,
       });
@@ -213,7 +213,7 @@ self.onmessage = (msg) => { handler.onmessage(msg); };
 
       try {
         const result = await generateText({
-          model,
+          model: model as any,
           prompt,
           maxOutputTokens: 256,
         });

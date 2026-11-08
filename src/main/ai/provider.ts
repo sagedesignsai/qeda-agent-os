@@ -19,6 +19,7 @@
  */
 
 import { createGateway } from '@ai-sdk/gateway';
+import { createCohere } from '@ai-sdk/cohere';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { wrapLanguageModel, type EmbeddingModel, type LanguageModel } from 'ai';
 import { getSettings, type AppSettings } from './settings';
@@ -151,6 +152,12 @@ export function resolveModel(
     return gateway(modelId) as unknown as LanguageModel;
   }
 
+  // ── Cohere (dedicated provider for proper API format) ───────────────────────
+  if (providerId === 'cohere') {
+    const cohere = createCohere({ apiKey });
+    return cohere(modelId) as unknown as LanguageModel;
+  }
+
   // ── OpenAI-compatible (every other provider) ────────────────────────────────
   const compatibleModel = openAICompatible(
     providerId,
@@ -220,6 +227,12 @@ export function resolveEmbeddingModel(
     // The gateway's embedding factory is typed to its own model id union; the
     // cast is the same one resolveModel already makes for chat.
     return gateway.embeddingModel(modelId) as unknown as EmbeddingModel;
+  }
+
+  // ── Cohere (dedicated provider for proper API format) ───────────────────────
+  if (providerId === 'cohere') {
+    const cohere = createCohere({ apiKey });
+    return cohere.embeddingModel(modelId) as unknown as EmbeddingModel;
   }
 
   // `.embeddingModel(...)` is the whole point of this function: calling the

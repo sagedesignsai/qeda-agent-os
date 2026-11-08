@@ -30,6 +30,8 @@ export interface MotionCopilotAgentOptions {
   getDocument: () => MotionDocument;
   apply: MotionToolContext['apply'];
   activeProject?: string;
+  /** Real project id for staging generated GLBs into the project bundle. */
+  projectId?: string;
   target?: ModelTarget;
   broadcastChanged?: () => void;
   planManager?: PlanManager;
@@ -137,12 +139,14 @@ export function createMotionCopilotAgent(opts: MotionCopilotAgentOptions) {
   const toolContext: MotionToolContext = {
     getDocument: opts.getDocument,
     apply: opts.apply,
+    projectId: opts.projectId,
   };
 
   const tools = createMotionTools(toolContext);
   const modelBuilderSubagent = createModelBuilderSubagentTool({
     getDocument: opts.getDocument,
     apply: opts.apply,
+    projectId: opts.projectId,
   });
   const capabilityTool = createMotionCapabilityTool();
   const recipeTool = createMotionRecipeTool(toolContext);

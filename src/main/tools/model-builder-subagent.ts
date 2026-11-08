@@ -27,6 +27,8 @@ export interface ModelBuilderSubagentOptions {
   apply: MotionToolContext['apply'];
   /** Optional model target for the subagent; defaults to activeProvider/Model. */
   target?: ModelTarget;
+  /** Real project id for staging generated GLBs into the project bundle. */
+  projectId?: string;
 }
 
 export interface ModelBuilderSubagentSummary {
@@ -66,10 +68,11 @@ export function createModelBuilderSubagentTool(opts: ModelBuilderSubagentOptions
       const beforeRevision = before.revision;
 
       // Construct per-call: instructions snapshot the live document.
-      const subagent = createModelBuilderAgent({
+      const subagent = await createModelBuilderAgent({
         getDocument: opts.getDocument,
         apply: opts.apply,
         target: opts.target,
+        projectId: opts.projectId,
       });
 
       try {
