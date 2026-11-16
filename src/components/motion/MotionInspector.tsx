@@ -5,14 +5,16 @@
  * settings. Every persistent change goes through the Motion op registry.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AudioLinesIcon,
   BoxIcon,
   ClapperboardIcon,
   MonitorIcon,
+  PaletteIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
+  WrenchIcon,
 } from 'lucide-react';
 
 import { ModelPartsPanel } from '@/components/motion/inspector/ModelPartsPanel';
@@ -39,7 +41,9 @@ import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
 import { createMotionAutoKeyOps } from '@/lib/motion/auto-key';
 import { EASING_PRESETS, easingLabel } from '@/lib/motion/easing';
+import { readGltfAssetMetadata } from '@/lib/motion/gltf-structure';
 import { getMotionNodeType, hasAnimatableProperty } from '@/lib/motion/node-registry';
+import type { MotionPropertyHint } from '@/lib/motion/node-registry';
 import { findClip, findTrack } from '@/lib/motion/types';
 import type { MotionOpRequest } from '@/lib/motion/ops';
 import type { MotionEasing, MotionVector3 } from '@/lib/motion/types';
@@ -53,11 +57,64 @@ const RESOLUTIONS = [
 
 const FPS_OPTIONS = [24, 30, 60];
 
+type InspectorSectionId = 'selection' | 'transform' | 'appearance' | 'node' | 'output';
+
+/**
+ * One row of the inspector accordion. The panel keeps exactly one section open
+ * at a time, so the same header row is used for every section including Output.
+ */
+function InspectorSection({
+  title,
+  icon,
+  meta,
+  open,
+  onOpenChange,
+  children,
+}: {
+  title: string;
+  icon: ReactNode;
+  meta?: ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <CollapsibleTrigger className="flex h-8 w-full items-center gap-2 border-b border-border/50 px-3 text-left text-[11px] font-medium hover:bg-accent/30">
+        {icon}
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        {meta}
+        <span className="text-[9px] font-normal text-muted-foreground">
+          {open ? '−' : '+'}
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-b border-border/50 p-3">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
 export function MotionInspector() {
   const { doc, selection, autoKeyEnabled } = useMotionSnapshot();
-  const [outputOpen, setOutputOpen] = useState(true);
-  const [selectionOpen, setSelectionOpen] = useState(true);
+  const [openSection, setOpenSection] = useState<InspectorSectionId | null>('transform');
   const [commitError, setCommitError] = useState<string | null>(null);
+
+  // Accordion: opening one section closes every other, and closing the open one
+  // leaves the panel fully collapsed.
+  const sectionProps = (id: InspectorSectionId) => ({
+    open: openSection === id,
+    onOpenChange: (open: boolean) => setOpenSection(open ? id : null),
+  });
+
+  // Selection changes reveal the section that is most likely wanted next; the
+  // user's own tab choice survives node-to-node moves because the kind is stable.
+  const selectionKind = selection?.kind ?? null;
+  useEffect(() => {
+    setOpenSection(
+      selectionKind === 'node' ? 'transform' : selectionKind ? 'selection' : 'output',
+    );
+  }, [selectionKind]);
 
   const selectedData = useMemo(() => {
     if (!selection || selection.kind === 'node') return null;
@@ -129,6 +186,22 @@ export function MotionInspector() {
       }),
     );
   }, [targetDefinition, targetNodes]);
+
+  // "Appearance" gets its own section; everything else the node type declares is
+  // node-specific. Hints without a group fall into the node-specific bucket.
+  const { appearanceHints, nodeHints } = useMemo(() => {
+    const hints = targetDefinition?.propertyHints ?? {};
+    const appearance: Record<string, MotionPropertyHint> = {};
+    const rest: Record<string, MotionPropertyHint> = {};
+    for (const [property, hint] of Object.entries(hints)) {
+      if ((hint.group ?? 'Properties') === 'Appearance') appearance[property] = hint;
+      else rest[property] = hint;
+    }
+    return { appearanceHints: appearance, nodeHints: rest };
+  }, [targetDefinition]);
+  const hasAppearanceSection = Object.keys(appearanceHints).length > 0;
+  const hasNodeControls =
+    Object.keys(nodeHints).length > 0 || targetNode?.type === 'model.gltf';
 
   const [trackName, setTrackName] = useState(selectedData?.track.name ?? '');
   const [keyValue, setKeyValue] = useState(
@@ -345,6 +418,14 @@ export function MotionInspector() {
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3">
         <SlidersHorizontalIcon className="size-3.5 text-muted-foreground" />
         <h2 className="text-xs font-medium">Inspector</h2>
+        {targetNode && (
+          <>
+            <span aria-hidden className="text-muted-foreground/50">/</span>
+            <span className="min-w-0 truncate text-[10px] text-muted-foreground">
+              {targetNode.name}
+            </span>
+          </>
+        )}
         <Badge
           variant={selectedData ? 'secondary' : 'outline'}
           className="ml-auto h-4 px-1.5 text-[9px]"
@@ -371,27 +452,23 @@ export function MotionInspector() {
               {commitError}
             </p>
           )}
-          <Collapsible open={selectionOpen} onOpenChange={setSelectionOpen}>
-            <CollapsibleTrigger className="flex h-8 w-full items-center gap-2 border-b border-border/50 px-3 text-left text-[11px] font-medium hover:bg-accent/30">
-              {selectedData?.keyframe ? (
-                <AudioLinesIcon className="size-3.5 text-muted-foreground" />
-              ) : (
-                <BoxIcon className="size-3.5 text-muted-foreground" />
-              )}
-              <span className="flex-1 truncate">
-                {targetNode?.name ?? selectedData?.keyframe?.id ??
-                  selectedData?.clip?.name ??
-                  selectedData?.track.name ??
-                  'Selection'}
-              </span>
-              <span className="text-[9px] font-normal text-muted-foreground">
-                {selectionOpen ? '−' : '+'}
-              </span>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="border-b border-border/50 p-3">
-              {selectedData || targetNode ? (
-                <>
-                  {selectedData && <FieldGroup className="gap-3">
+          {selectedData && (
+            <InspectorSection
+              title={
+                selectedData.keyframe?.id ??
+                selectedData.clip?.name ??
+                selectedData.track.name
+              }
+              icon={
+                selectedData.keyframe ? (
+                  <AudioLinesIcon className="size-3.5 text-muted-foreground" />
+                ) : (
+                  <BoxIcon className="size-3.5 text-muted-foreground" />
+                )
+              }
+              {...sectionProps('selection')}
+            >
+              <FieldGroup className="gap-3">
                   <Field className="gap-1">
                     <FieldLabel
                       htmlFor="motion-track-name"
@@ -543,18 +620,21 @@ export function MotionInspector() {
                         </p>
                       </>
                     )}
-                  </FieldGroup>}
-                  {targetNode && (
-                    <div className="mt-4 border-t border-border/50 pt-3">
-                      <h3 className="mb-2 text-[10px] font-medium text-muted-foreground">
-                        Transform
-                      </h3>
-                      {targetNode.locked && (
-                        <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
-                          Locked — unlock this node in the scene panel to edit.
-                        </p>
-                      )}
-                      <TransformControls
+                  </FieldGroup>
+            </InspectorSection>
+          )}
+          {targetNode && (
+            <InspectorSection
+              title="Transform"
+              icon={<BoxIcon className="size-3.5 text-muted-foreground" />}
+              {...sectionProps('transform')}
+            >
+              {targetNode.locked && (
+                <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
+                  Locked — unlock this node in the scene panel to edit.
+                </p>
+              )}
+              <TransformControls
                         idPrefix="motion-transform"
                         position={targetNode.transform.position}
                         rotation={
@@ -578,66 +658,83 @@ export function MotionInspector() {
                         onScaleChange={(value) =>
                           updateNodeTransform('scale', value)
                         }
-                      />
-                    </div>
-                  )}
-                  {targetNode && targetDefinition?.propertyHints && (
-                    <div className="mt-4 border-t border-border/50 pt-3">
-                      <MotionPropertyFields
-                        hints={targetDefinition.propertyHints}
-                        values={targetPropertyValues}
+              />
+            </InspectorSection>
+          )}
+          {targetNode && hasAppearanceSection && (
+            <InspectorSection
+              title="Appearance"
+              icon={<PaletteIcon className="size-3.5 text-muted-foreground" />}
+              {...sectionProps('appearance')}
+            >
+              <MotionPropertyFields
+                hints={appearanceHints}
+                values={targetPropertyValues}
+                assets={doc.assets}
+                mixedProperties={mixedPropertyIds}
+                idPrefix={`motion-node-${targetNode.id}`}
+                disabled={targetNode.locked}
+                showGroupHeadings={false}
+                onChange={updateNodeProperty}
+              />
+            </InspectorSection>
+          )}
+          {targetNode && hasNodeControls && (
+            <InspectorSection
+              title="Specific Node Controls"
+              icon={<WrenchIcon className="size-3.5 text-muted-foreground" />}
+              {...sectionProps('node')}
+            >
+              <div className="flex flex-col gap-3">
+                {Object.keys(nodeHints).length > 0 && (
+                  <MotionPropertyFields
+                    hints={nodeHints}
+                    values={targetPropertyValues}
+                    assets={doc.assets}
+                    mixedProperties={mixedPropertyIds}
+                    idPrefix={`motion-node-${targetNode.id}`}
+                    disabled={targetNode.locked}
+                    onChange={updateNodeProperty}
+                  />
+                )}
+                {targetNode.type === 'model.gltf' &&
+                  (() => {
+                    const assetId = targetNode.props.assetId as string;
+                    const asset = assetId
+                      ? doc.assets.find((a) => a.id === assetId)
+                      : undefined;
+                    return (
+                      <ModelPartsPanel
+                        node={targetNode}
                         assets={doc.assets}
-                        mixedProperties={mixedPropertyIds}
-                        idPrefix={`motion-node-${targetNode.id}`}
-                        disabled={targetNode.locked}
-                        onChange={updateNodeProperty}
+                        metadata={readGltfAssetMetadata(asset?.metadata)}
+                        onUpdateProperty={updateNodeProperty}
                       />
-                    </div>
-                  )}
-                  {targetNode?.type === 'model.gltf' && (
-                    <div className="mt-4 border-t border-border/50 pt-3">
-                      {(() => {
-                        const assetId = targetNode.props.assetId as string;
-                        const asset = assetId
-                          ? doc.assets.find((a) => a.id === assetId)
-                          : undefined;
-                        const metadata = asset?.metadata as import('@/lib/motion/types').GltfAssetMetadata | undefined;
-                        return (
-                          <ModelPartsPanel
-                            node={targetNode}
-                            assets={doc.assets}
-                            metadata={metadata}
-                            onUpdateProperty={updateNodeProperty}
-                          />
-                        );
-                      })()}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="rounded-md border border-dashed border-border/70 px-3 py-4 text-center">
-                  <SparklesIcon className="mx-auto size-4 text-muted-foreground/70" />
-                  <p className="mt-2 text-[11px] font-medium">
-                    Nothing selected
-                  </p>
-                  <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                    Choose a scene object, clip, or keyframe to edit its
-                    properties.
-                  </p>
-                </div>
-              )}
-            </CollapsibleContent>
-          </Collapsible>
+                    );
+                  })()}
+              </div>
+            </InspectorSection>
+          )}
+          {!selectedData && !targetNode && (
+            <div className="m-3 rounded-md border border-dashed border-border/70 px-3 py-4 text-center">
+              <SparklesIcon className="mx-auto size-4 text-muted-foreground/70" />
+              <p className="mt-2 text-[11px] font-medium">Nothing selected</p>
+              <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
+                Choose a scene object, clip, or keyframe to edit its properties.
+              </p>
+            </div>
+          )}
 
-          <Collapsible open={outputOpen} onOpenChange={setOutputOpen}>
-            <CollapsibleTrigger className="flex h-8 w-full items-center gap-2 border-b border-border/50 px-3 text-left text-[11px] font-medium hover:bg-accent/30">
-              <MonitorIcon className="size-3.5 text-muted-foreground" />
-              <span className="flex-1">Output</span>
-              <span className="text-[9px] font-normal text-muted-foreground">
-                {outputOpen ? '−' : '+'}
+          <InspectorSection
+            title="Output"
+            icon={<MonitorIcon className="size-3.5 text-muted-foreground" />}
+            meta={
+              <span className="text-[9px] font-normal tabular-nums text-muted-foreground">
+                {doc.meta.output.width}×{doc.meta.output.height}
               </span>
-            </CollapsibleTrigger>
-            <CollapsibleContent className="border-b border-border/50 p-3">
+            }
+            {...sectionProps('output')}
+          >
               <FieldGroup className="gap-3">
                 <Field className="gap-1">
                   <FieldLabel
@@ -724,8 +821,7 @@ export function MotionInspector() {
                   intact.
                 </p>
               </FieldGroup>
-            </CollapsibleContent>
-          </Collapsible>
+          </InspectorSection>
         </div>
       </ScrollArea>
     </aside>

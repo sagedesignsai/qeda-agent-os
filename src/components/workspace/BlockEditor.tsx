@@ -59,6 +59,7 @@ import {
   TypeIcon,
   ChevronDownIcon,
   LoaderIcon,
+  RefreshCwIcon,
   CheckIcon,
   PlusIcon,
   MoreHorizontalIcon,
@@ -66,6 +67,8 @@ import {
   Trash2Icon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { usePages } from '@/hooks/use-workspace';
 
 const BLOCK_TYPE_ITEMS: {
   type: BlockType;
@@ -98,6 +101,7 @@ const BLOCK_TYPE_ITEMS: {
 
 interface BlockEditorProps {
   pageId: string;
+  notebookId?: string | null;
   title: string;
   initialBlocks: Block[];
   onTitleChange?: (title: string) => void;
@@ -108,6 +112,7 @@ const SAVE_DEBOUNCE_MS = 800;
 
 export function BlockEditor({
   pageId,
+  notebookId,
   title,
   initialBlocks,
   onTitleChange,
@@ -115,13 +120,28 @@ export function BlockEditor({
 }: BlockEditorProps) {
   const [blocks, setBlocks] = useState<Block[]>(initialBlocks);
   const [localTitle, setLocalTitle] = useState(title);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>(
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>(
     'idle',
   );
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusedBlockRef = useRef<string | null>(null);
   const textareaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
+
+  // ── [[ wiki-link autocomplete ─────────────────────────────────────────
+  const { pages: notebookPages } = usePages(notebookId ?? null);
+  const [linkComposer, setLinkComposer] = useState<{
+    isOpen: boolean;
+    blockId: string;
+    triggerPos: number; // index of the first '[' of '[['
+    query: string;
+    suggestions: { id: string; title: string }[];
+    selectedIndex: number;
+  } | null>(null);
+
+  const closeLinkComposer = () => setLinkComposer(null);
 
   // Re-bind when switching pages.
   useEffect(() => {
@@ -144,14 +164,47 @@ export function BlockEditor({
           })
           .then(() => {
             setSaveState('saved');
+            setSaveError(null);
+            setLastSavedAt(new Date());
             onSaved?.();
             setTimeout(() => setSaveState('idle'), 1500);
           })
-          .catch(() => setSaveState('idle'));
+          .catch((err) => {
+            setSaveState('error');
+            setSaveError(
+              err instanceof Error ? err.message : 'Save failed.',
+            );
+          });
       }, SAVE_DEBOUNCE_MS);
     },
     [pageId, onSaved],
   );
+
+  /** Re-attempt the pending save (used after a failure). */
+  const retrySave = () => {
+    if (saveState === 'saving') return;
+    setSaveState('saving');
+    setSaveError(null);
+    void window.electron.ipc
+      .invoke('pages:save-blocks', {
+        id: pageId,
+        blocks,
+        title: localTitle,
+      })
+      .then(() => {
+        setSaveState('saved');
+        setSaveError(null);
+        setLastSavedAt(new Date());
+        onSaved?.();
+        setTimeout(() => setSaveState('idle'), 1500);
+      })
+      .catch((err) => {
+        setSaveState('error');
+        setSaveError(
+          err instanceof Error ? err.message : 'Save failed.',
+        );
+      });
+  };
 
   useEffect(
     () => () => {
@@ -241,6 +294,65 @@ export function BlockEditor({
       next = updateBlock(blocks, id, { text });
     }
     applyBlocks(next);
+
+    // ── [[ wiki-link autocomplete detection ───────────────────────────
+    const lastTrigger = text.lastIndexOf('[[');
+    if (lastTrigger >= 0) {
+      const afterTrigger = text.slice(lastTrigger + 2);
+      const closing = afterTrigger.indexOf(']]');
+      if (closing < 0) {
+        // Unclosed [[ — offer page suggestions scoped to this notebook.
+        const query = afterTrigger;
+        const suggestions = notebookPages
+          .filter((p) =>
+            p.title.toLowerCase().includes(query.toLowerCase()),
+          )
+          .slice(0, 8)
+          .map((p) => ({ id: p.id, title: p.title }));
+        setLinkComposer({
+          isOpen: true,
+          blockId: id,
+          triggerPos: lastTrigger,
+          query,
+          suggestions,
+          selectedIndex: 0,
+        });
+        return;
+      }
+    }
+    closeLinkComposer();
+  };
+
+  /** Insert the selected page as a [[Page Title]] wiki link at the trigger. */
+  const handleLinkSelect = (pageId: string, pageTitle: string) => {
+    if (!linkComposer) return;
+    const block = blocks.find((b) => b.id === linkComposer.blockId);
+    if (!block) return;
+    const before = block.text.slice(0, linkComposer.triggerPos);
+    const after = block.text.slice(linkComposer.triggerPos + 2 + linkComposer.query.length);
+    const next = updateBlock(blocks, linkComposer.blockId, {
+      text: `${before}[[${pageTitle}]]${after}`,
+    });
+    applyBlocks(next);
+    closeLinkComposer();
+    focusBlock(linkComposer.blockId, linkComposer.triggerPos + 2 + pageTitle.length + 2);
+  };
+
+  /** Create a new page with the query as its title and link to it. */
+  const handleLinkCreate = async () => {
+    if (!linkComposer) return;
+    const title = linkComposer.query.trim();
+    if (!title) return;
+    try {
+      const created = await window.electron.ipc.invoke<{ id: string }>(
+        'pages:create',
+        { title, notebookId: notebookId ?? undefined },
+      );
+      handleLinkSelect(created.id, title);
+      toast.success(`Created page “${title}”.`);
+    } catch {
+      toast.error(`Failed to create page “${title}”.`);
+    }
   };
 
   const handleToggleTodo = (id: string, checked: boolean) => {
@@ -311,6 +423,51 @@ export function BlockEditor({
     id: string,
   ) => {
     const el = event.currentTarget;
+
+    // ── [[ composer keyboard nav ───────────────────────────────────────
+    if (linkComposer && linkComposer.blockId === id) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeLinkComposer();
+        return;
+      }
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setLinkComposer((prev) =>
+          prev
+            ? {
+                ...prev,
+                selectedIndex: (prev.selectedIndex + 1) % prev.suggestions.length,
+              }
+            : null,
+        );
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setLinkComposer((prev) =>
+          prev
+            ? {
+                ...prev,
+                selectedIndex:
+                  (prev.selectedIndex - 1 + prev.suggestions.length) %
+                  prev.suggestions.length,
+              }
+            : null,
+        );
+        return;
+      }
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        const selected = linkComposer.suggestions[linkComposer.selectedIndex];
+        if (selected) {
+          handleLinkSelect(selected.id, selected.title);
+        } else if (linkComposer.query.trim()) {
+          void handleLinkCreate();
+        }
+        return;
+      }
+    }
 
     // Slash menu shortcut hint is handled by typing "/" — the menu is a
     // lightweight dropdown rendered below the block toolbar.
@@ -650,7 +807,7 @@ export function BlockEditor({
               ))}
             </span>
           )}
-          <span className="ml-auto flex items-center gap-1">
+          <span className="ml-auto flex items-center gap-2">
             {saveState === 'saving' && (
               <>
                 <LoaderIcon className="h-3 w-3 animate-spin" /> Saving…
@@ -659,55 +816,214 @@ export function BlockEditor({
             {saveState === 'saved' && (
               <>
                 <CheckIcon className="h-3 w-3 text-green-500" /> Saved
+                {lastSavedAt && (
+                  <span className="text-muted-foreground">
+                    · {formatSaveTime(lastSavedAt)}
+                  </span>
+                )}
               </>
+            )}
+            {saveState === 'error' && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={retrySave}
+                className="h-6 px-1.5 text-[10px]"
+                title={saveError ?? 'Save failed.'}
+                aria-label="Retry save"
+              >
+                <RefreshCwIcon className="h-3 w-3" /> Retry
+              </Button>
             )}
           </span>
         </div>
       </div>
 
       {/* Toolbar */}
-      <div className="flex shrink-0 items-center gap-1 border-y bg-card/20 px-8 py-1.5">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-            >
-              <PlusIcon /> Block <ChevronDownIcon className="h-3 w-3" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            {BLOCK_TYPE_ITEMS.filter((item) => item.type !== 'paragraph').map(
-              ({ type, label, icon: Icon }) => (
-                <DropdownMenuItem
-                  key={type}
-                  onSelect={() => {
-                    const { blocks: next, id } = insertBlockAfter(
-                      blocks,
-                      focusedBlockRef.current,
-                      {
-                        id: newBlockId(),
-                        type,
-                        text: '',
-                      },
-                    );
-                    applyBlocks(next);
-                    focusBlock(id);
-                  }}
-                >
-                  <Icon className="h-3.5 w-3.5" /> {label}
-                </DropdownMenuItem>
-              ),
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <span className="text-[10px] text-muted-foreground/70">
-          Markdown shortcuts: #, -, 1., - [ ], &gt;, ```, ![alt](url), --- ·
-          Enter splits · Tab indents · Shift+Tab outdents · Alt+↑↓ moves ·
-          Backspace at start deletes · Paste markdown to insert blocks
-        </span>
-        <span className="ml-auto shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
+      <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-y bg-card/20 px-4 py-1.5">
+        {/* Block type buttons */}
+        <div className="flex items-center gap-0.5 border-r border-border pr-1">
+          <Button
+            variant={blocks.some((b) => b.type === 'heading1' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'heading1'));
+              }
+            }}
+            title="Heading 1"
+          >
+            <Heading1Icon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={blocks.some((b) => b.type === 'heading2' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'heading2'));
+              }
+            }}
+            title="Heading 2"
+          >
+            <Heading2Icon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={blocks.some((b) => b.type === 'heading3' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'heading3'));
+              }
+            }}
+            title="Heading 3"
+          >
+            <Heading3Icon className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* List and formatting buttons */}
+        <div className="flex items-center gap-0.5 border-r border-border pr-1">
+          <Button
+            variant={blocks.some((b) => b.type === 'bulleted-list' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'bulleted-list'));
+              }
+            }}
+            title="Bulleted list"
+          >
+            <ListIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={blocks.some((b) => b.type === 'numbered-list' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'numbered-list'));
+              }
+            }}
+            title="Numbered list"
+          >
+            <ListOrderedIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={blocks.some((b) => b.type === 'todo' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'todo'));
+              }
+            }}
+            title="To-do"
+          >
+            <CheckSquareIcon className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Quote, code, and other blocks */}
+        <div className="flex items-center gap-0.5 border-r border-border pr-1">
+          <Button
+            variant={blocks.some((b) => b.type === 'quote' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'quote'));
+              }
+            }}
+            title="Quote"
+          >
+            <QuoteIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={blocks.some((b) => b.type === 'code' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'code'));
+              }
+            }}
+            title="Code block"
+          >
+            <CodeIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={blocks.some((b) => b.type === 'image' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'image'));
+              }
+            }}
+            title="Image"
+          >
+            <ImageIcon className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={blocks.some((b) => b.type === 'divider' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (focusedBlockRef.current) {
+                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'divider'));
+              }
+            }}
+            title="Divider"
+          >
+            <MinusIcon className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Add block button */}
+        <div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+                title="Add new block"
+              >
+                <PlusIcon className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {BLOCK_TYPE_ITEMS.filter((item) => item.type !== 'paragraph').map(
+                ({ type, label, icon: Icon }) => (
+                  <DropdownMenuItem
+                    key={type}
+                    onSelect={() => {
+                      const { blocks: next, id } = insertBlockAfter(
+                        blocks,
+                        focusedBlockRef.current,
+                        {
+                          id: newBlockId(),
+                          type,
+                          text: '',
+                        },
+                      );
+                      applyBlocks(next);
+                      focusBlock(id);
+                    }}
+                  >
+                    <Icon className="h-3.5 w-3.5" /> {label}
+                  </DropdownMenuItem>
+                ),
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">
           {blocks.length} {blocks.length === 1 ? 'block' : 'blocks'}
         </span>
       </div>
@@ -731,4 +1047,15 @@ function listNumberFor(blocks: Block[], index: number): number {
       n = 1;
   }
   return n;
+}
+
+/** Format a save timestamp as a short relative label (e.g. "2m ago"). */
+function formatSaveTime(at: Date): string {
+  const seconds = (Date.now() - at.getTime()) / 1000;
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

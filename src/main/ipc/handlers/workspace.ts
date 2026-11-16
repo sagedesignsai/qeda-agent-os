@@ -8,7 +8,7 @@
  * ────────────────────────────────────────────────────────────────────────────
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import { isBlockType } from '../../../lib/markdown-blocks.js';
 import {
   createNotebook,
@@ -26,6 +26,7 @@ import {
   listTags,
   loadPageBlocks,
   loadPageMarkdown,
+  movePageToNotebook,
   relatedPages,
   restoreVersion,
   savePageBlocks,
@@ -35,7 +36,25 @@ import {
 } from '../../db/workspace';
 import { type PageDetail } from '../channels';
 
-export function registerWorkspaceHandlers(): void {
+export function registerWorkspaceHandlers({
+  mainWindow,
+}: {
+  mainWindow: BrowserWindow;
+}): void {
+  /**
+   * Tell the renderer the knowledge tree changed shape or naming.
+   *
+   * Every surface that lists notebooks or pages — the rail, the breadcrumb, the
+   * project dialog's notebook picker — refetches on this. Not broadcast for
+   * `pages:save-blocks`: that fires on every autosave and page bodies are not
+   * part of any tree.
+   */
+  const broadcastWorkspaceChanged = () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('workspace:changed');
+    }
+  };
+
   // ── Workspace: notebooks ──────────────────────────────────────────────────
 
   ipcMain.handle('notebooks:list', () => listNotebooks());
@@ -55,7 +74,16 @@ export function registerWorkspaceHandlers(): void {
         icon?: string;
         projectId?: string | null;
       },
-    ) => createNotebook(title, description, icon, projectId ?? null),
+    ) => {
+      const notebook = createNotebook(
+        title,
+        description,
+        icon,
+        projectId ?? null,
+      );
+      broadcastWorkspaceChanged();
+      return notebook;
+    },
   );
 
   ipcMain.handle(
@@ -72,11 +100,13 @@ export function registerWorkspaceHandlers(): void {
     ) => {
       const { id, ...rest } = patch;
       updateNotebook(id, rest);
+      broadcastWorkspaceChanged();
     },
   );
 
   ipcMain.handle('notebooks:delete', (_e, { id }: { id: string }) => {
     deleteNotebook(id);
+    broadcastWorkspaceChanged();
   });
 
   // ── Workspace: pages ──────────────────────────────────────────────────────
@@ -119,13 +149,18 @@ export function registerWorkspaceHandlers(): void {
         title,
         parentPageId,
       }: { notebookId: string; title: string; parentPageId?: string | null },
-    ) => createPage(notebookId, title, parentPageId ?? null),
+    ) => {
+      const page = createPage(notebookId, title, parentPageId ?? null);
+      broadcastWorkspaceChanged();
+      return page;
+    },
   );
 
   ipcMain.handle(
     'pages:rename',
     (_e, { id, title }: { id: string; title: string }) => {
       updatePage(id, { title });
+      broadcastWorkspaceChanged();
     },
   );
 
@@ -136,14 +171,26 @@ export function registerWorkspaceHandlers(): void {
       {
         id,
         parentPageId,
+        notebookId,
       }: { id: string; parentPageId: string | null; notebookId?: string },
     ) => {
-      updatePage(id, { parent_page: parentPageId });
+      // A move that names another notebook is a cross-notebook move: the whole
+      // subtree has to change `notebook_id` (and re-inherit the new project),
+      // not just gain a different parent. Re-parenting alone left the pages
+      // claiming the old notebook, so the rail could not render them.
+      if (notebookId) {
+        movePageToNotebook(id, notebookId);
+        if (parentPageId) updatePage(id, { parent_page: parentPageId });
+      } else {
+        updatePage(id, { parent_page: parentPageId });
+      }
+      broadcastWorkspaceChanged();
     },
   );
 
   ipcMain.handle('pages:delete', (_e, { id }: { id: string }) => {
     deletePage(id);
+    broadcastWorkspaceChanged();
   });
 
   ipcMain.handle(

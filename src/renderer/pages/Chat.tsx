@@ -60,6 +60,26 @@ interface SessionSummary {
   title: string;
 }
 
+/** The slice of a session row this page needs for context hydration. */
+interface SessionContextRow {
+  id: string;
+  context_json: string | null;
+}
+
+/**
+ * The durable half of a chat binding: the page / notebook / research run the
+ * conversation is about. Project and task are ambient — they come from the URL
+ * and the focused task — and are re-applied on every mount, so persisting them
+ * would freeze a stale scope onto the conversation.
+ */
+function durableContextJson(context: ChatContext | undefined): string | null {
+  if (!context) return null;
+  const durable: ChatContext = { ...context };
+  delete durable.projectId;
+  delete durable.taskId;
+  return Object.keys(durable).length > 0 ? JSON.stringify(durable) : null;
+}
+
 export default function Chat() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -167,6 +187,96 @@ export default function Chat() {
     if (state?.intent) setIntent(state.intent);
   }, [location.state]);
 
+  // Session-scoped binding state. `hydratedSession` gates persistence until the
+  // stored context has been read, so the first render of a conversation cannot
+  // overwrite the saved binding with the pre-hydration (empty) value.
+  const hydratedSessionRef = useRef<string | null>(null);
+  const [hydratedSession, setHydratedSession] = useState<string | null>(null);
+  // Session id created by this page a moment ago: its in-memory context is
+  // authoritative and hydration must not race the write that follows.
+  const createdSessionRef = useRef<string | null>(null);
+  // Route state captured per render, read by the session-only effect below.
+  // That effect must not re-run when the state is cleared after auto-send.
+  const locationStateRef = useRef<ChatLocationState | null>(
+    location.state as ChatLocationState | null,
+  );
+  locationStateRef.current = location.state as ChatLocationState | null;
+
+  /**
+   * Restore the page/notebook a conversation was bound to.
+   *
+   * Without this, the binding lived only in component state: opening the same
+   * conversation from the rail lost it, and a fresh mount started unbound. A
+   * handover arriving with route state wins over the stored value — it is the
+   * user's current intent.
+   */
+  useEffect(() => {
+    if (!sessionId) {
+      hydratedSessionRef.current = null;
+      setHydratedSession(null);
+      return;
+    }
+    if (hydratedSessionRef.current === sessionId) return;
+    hydratedSessionRef.current = sessionId;
+
+    if (createdSessionRef.current === sessionId) {
+      createdSessionRef.current = null;
+      setHydratedSession(sessionId);
+      return;
+    }
+
+    const handover = locationStateRef.current?.chatContext;
+    if (handover) {
+      setHydratedSession(sessionId);
+      return;
+    }
+
+    // Switching conversations: drop the previous page/notebook before the new
+    // one loads. Ambient project/task context is re-supplied by its own effects.
+    setChatContext((prev) => {
+      if (!prev) return prev;
+      const next: ChatContext = {};
+      if (prev.projectId) next.projectId = prev.projectId;
+      if (prev.taskId) next.taskId = prev.taskId;
+      return Object.keys(next).length > 0 ? next : undefined;
+    });
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const session = await window.electron.ipc.invoke<SessionContextRow | null>(
+          'sessions:get',
+          { id: sessionId },
+        );
+        if (cancelled || !session?.context_json) return;
+        const saved = JSON.parse(session.context_json) as ChatContext;
+        setChatContext((prev) => ({ ...saved, ...prev }));
+      } catch {
+        // A malformed row must not break the conversation.
+      } finally {
+        if (!cancelled) setHydratedSession(sessionId);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  // Persist the durable binding whenever it changes. Writing it on every change
+  // keeps "Chat about page" sticky across navigation and restarts.
+  const persistedContextJson = durableContextJson(chatContext);
+  useEffect(() => {
+    if (!sessionId || hydratedSession !== sessionId) return;
+    void window.electron.ipc
+      .invoke('sessions:set-context', {
+        id: sessionId,
+        contextJson: persistedContextJson,
+      })
+      .catch(() => {
+        // Best-effort: losing the binding is not worth interrupting the chat.
+      });
+  }, [sessionId, hydratedSession, persistedContextJson]);
+
   // Session-scoped resets: the `<Chat/>` component instance is reused across
   // route param changes (React Router does not remount), so a one-shot ref set
   // for session A would swallow session B's handover prompt, and `intent`
@@ -205,6 +315,7 @@ export default function Chat() {
           },
         );
         pendingSendRef.current = prompt;
+        createdSessionRef.current = session.id;
         navigate(withScope(`/chat/${session.id}`), {
           replace: true,
           state: { ...state, initialPrompt: undefined },
@@ -327,6 +438,7 @@ export default function Chat() {
           { title, projectId: projectId ?? null },
         );
         setSessionTitle(title);
+        createdSessionRef.current = session.id;
         pendingSendRef.current = trimmed;
         navigate(withScope(`/chat/${session.id}`), { replace: true });
       } catch {

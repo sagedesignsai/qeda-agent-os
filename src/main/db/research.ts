@@ -13,7 +13,13 @@
 
 import { randomUUID } from 'node:crypto';
 import { getDb } from './client.js';
-import { resolveKnowledgeProjectId } from './workspace.js';
+import { parseMarkdownToBlocks } from '../../lib/markdown-blocks.js';
+import {
+  createPageWithBlocks,
+  getPage,
+  resolveKnowledgeProjectId,
+  type Page,
+} from './workspace.js';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
 
@@ -129,25 +135,69 @@ export function listResearchRuns(
 ): ResearchRun[] {
   const db = getDb();
   const limit = filter.limit ?? 25;
-  if (filter.pageId) {
+  // Both filters combine with OR: the info panel asks for runs that target the
+  // current page *or* its whole notebook, because a notebook-scoped run (the
+  // "Research with Chat" flow) belongs on every page of that notebook. The old
+  // page-only branch hid those entirely.
+  if (filter.pageId || filter.notebookId) {
     return db
-      .prepare<[string, number], ResearchRun>(
-        'SELECT * FROM research_runs WHERE page_id = ? ORDER BY created_at DESC LIMIT ?',
+      .prepare<[string | null, string | null, number], ResearchRun>(
+        `SELECT * FROM research_runs
+          WHERE (page_id = ? OR notebook_id = ?)
+          ORDER BY created_at DESC
+          LIMIT ?`,
       )
-      .all(filter.pageId, limit);
-  }
-  if (filter.notebookId) {
-    return db
-      .prepare<[string, number], ResearchRun>(
-        'SELECT * FROM research_runs WHERE notebook_id = ? ORDER BY created_at DESC LIMIT ?',
-      )
-      .all(filter.notebookId, limit);
+      .all(filter.pageId ?? null, filter.notebookId ?? null, limit);
   }
   return db
     .prepare<[number], ResearchRun>(
       'SELECT * FROM research_runs ORDER BY created_at DESC LIMIT ?',
     )
     .all(limit);
+}
+
+export interface ResearchRunToPageOptions {
+  /** Notebook to file into; defaults to the run's own target. */
+  notebookId?: string;
+  /** Nest the new page under this page, when known. */
+  parentPageId?: string | null;
+  /** Override the page title; defaults to the research question. */
+  title?: string;
+}
+
+/**
+ * File a completed run's report as a new knowledge page.
+ *
+ * Research used to be a dead end: the report lived only on the run row, so the
+ * notebook never received what the agent learned. This is the bridge back, and
+ * it creates the page through `createPageWithBlocks` so the new page gets the
+ * same FTS, backlink, tag and version treatment as any hand-written one.
+ *
+ * Returns null when the run is missing, has no report yet, or has no notebook
+ * to land in.
+ */
+export function researchRunToPage(
+  runId: string,
+  options: ResearchRunToPageOptions = {},
+): Page | null {
+  const run = getResearchRun(runId);
+  if (!run || !run.report.trim()) return null;
+
+  // Prefer the caller's notebook (the page the user is looking at), then the
+  // run's own notebook, then the notebook of the page the run investigated.
+  let notebookId = options.notebookId ?? run.notebook_id ?? null;
+  if (!notebookId && run.page_id) {
+    notebookId = getPage(run.page_id)?.notebook_id ?? null;
+  }
+  if (!notebookId) return null;
+
+  const title = options.title?.trim() || run.question.trim() || 'Research report';
+  return createPageWithBlocks(
+    notebookId,
+    title,
+    parseMarkdownToBlocks(run.report),
+    options.parentPageId ?? null,
+  );
 }
 
 // ─── Sources ──────────────────────────────────────────────────────────────────

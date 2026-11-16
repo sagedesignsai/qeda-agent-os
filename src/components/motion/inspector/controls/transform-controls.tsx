@@ -1,27 +1,38 @@
 /**
  * components/motion/inspector/controls/transform-controls.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * The transform editor: a cartesian pad for position, an orbit sphere for
- * rotation, and a scale row that can be linked to edit all axes as one. Every
- * control still exposes numeric fields, because GUI aiming and exact entry are
- * complementary rather than competing.
+ * The transform editor, split into Position / Rotation / Scale tabs so a narrow
+ * inspector panel shows one visual control at a time instead of stacking three
+ * pads vertically.
+ *
+ * Position and rotation pair a direct-manipulation surface with numeric fields;
+ * scale gets a draggable bounding box, with a link toggle that edits all axes as
+ * one. Tabs are uncontrolled on purpose: switching node selection keeps the tab
+ * you were on.
  *
  * Rotation is passed in degrees here; the inspector owns the radians conversion
  * so the whole panel speaks one unit.
  */
 
 import { useState } from 'react';
-import { LinkIcon, UnlinkIcon } from 'lucide-react';
+import { Move3dIcon, Rotate3dIcon, Scale3dIcon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { MotionVector3 } from '@/lib/motion/types';
 
 import { PositionPad } from './position-pad';
 import { RotationOrb } from './rotation-orb';
+import { ScaleBox } from './scale-box';
 import { VectorField } from './vector-field';
 
 function toVector3(value: readonly number[]): MotionVector3 {
   return [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0];
+}
+
+/** Flags a selection whose nodes disagree on this property. */
+function MixedDot({ show }: { show?: boolean }) {
+  if (!show) return null;
+  return <span aria-hidden className="size-1 shrink-0 rounded-full bg-primary" />;
 }
 
 export type TransformControlsProps = {
@@ -65,8 +76,26 @@ export function TransformControls({
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <section aria-label="Position transform" className="flex flex-col gap-1.5">
+    <Tabs defaultValue="position" className="gap-2">
+      <TabsList variant="line" className="w-full justify-start">
+        <TabsTrigger value="position" className="h-7 flex-1 gap-1 px-1 text-[11px]">
+          <Move3dIcon className="size-3" />
+          Position
+          <MixedDot show={mixed?.position} />
+        </TabsTrigger>
+        <TabsTrigger value="rotation" className="h-7 flex-1 gap-1 px-1 text-[11px]">
+          <Rotate3dIcon className="size-3" />
+          Rotation
+          <MixedDot show={mixed?.rotation} />
+        </TabsTrigger>
+        <TabsTrigger value="scale" className="h-7 flex-1 gap-1 px-1 text-[11px]">
+          <Scale3dIcon className="size-3" />
+          Scale
+          <MixedDot show={mixed?.scale} />
+        </TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="position" className="mt-1 flex flex-col gap-2">
         <PositionPad
           id={`${idPrefix}-position-pad`}
           value={position}
@@ -82,9 +111,9 @@ export function TransformControls({
           disabled={disabled}
           onChange={(next) => onPositionChange(toVector3(next))}
         />
-      </section>
+      </TabsContent>
 
-      <section aria-label="Rotation transform" className="flex flex-col gap-1.5">
+      <TabsContent value="rotation" className="mt-1 flex flex-col gap-2">
         <RotationOrb
           id={`${idPrefix}-rotation-orb`}
           value={rotation}
@@ -100,9 +129,17 @@ export function TransformControls({
           disabled={disabled}
           onChange={(next) => onRotationChange(toVector3(next))}
         />
-      </section>
+      </TabsContent>
 
-      <section aria-label="Scale transform">
+      <TabsContent value="scale" className="mt-1 flex flex-col gap-2">
+        <ScaleBox
+          id={`${idPrefix}-scale-box`}
+          value={scale}
+          uniform={scaleLinked}
+          onUniformChange={() => setScaleLinked((linked) => !linked)}
+          disabled={disabled}
+          onChange={changeScale}
+        />
         <VectorField
           id={`${idPrefix}-scale`}
           label="Scale"
@@ -111,23 +148,13 @@ export function TransformControls({
           step={0.01}
           disabled={disabled}
           onChange={changeScale}
-          action={
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="size-4"
-              aria-pressed={scaleLinked}
-              aria-label={scaleLinked ? 'Unlink scale axes' : 'Link scale axes'}
-              title={scaleLinked ? 'Unlink scale axes' : 'Link scale axes'}
-              disabled={disabled}
-              onClick={() => setScaleLinked((linked) => !linked)}
-            >
-              {scaleLinked ? <LinkIcon className="size-3" /> : <UnlinkIcon className="size-3" />}
-            </Button>
-          }
         />
-      </section>
-    </div>
+        <p className="text-[10px] leading-relaxed text-muted-foreground">
+          {scaleLinked
+            ? 'Axes are linked — every handle scales the node uniformly.'
+            : 'Drag an edge for one axis, a corner for two. Shift for uniform.'}
+        </p>
+      </TabsContent>
+    </Tabs>
   );
 }

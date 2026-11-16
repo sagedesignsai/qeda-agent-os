@@ -15,8 +15,10 @@ import {
   createSession,
   deleteSession,
   ensureSession,
+  getSession,
   listSessions,
   loadMessages,
+  updateSessionContext,
   updateSessionProject,
   updateSessionTitle,
   upsertMessage,
@@ -99,6 +101,22 @@ export function registerSessionsHandlers({
 
   ipcMain.handle('sessions:messages', (_e, { id }: { id: string }) =>
     loadMessages(id),
+  );
+
+  ipcMain.handle('sessions:get', (_e, { id }: { id: string }) =>
+    getSession(id) ?? null,
+  );
+
+  // Binding a page/notebook changes what the conversation is about, not the
+  // conversation list (which shows title and recency), so no broadcast.
+  ipcMain.handle(
+    'sessions:set-context',
+    (
+      _e,
+      { id, contextJson }: { id: string; contextJson: string | null },
+    ) => {
+      updateSessionContext(id, contextJson);
+    },
   );
 
   // The renderer owns the reconstructed UIMessages, so it hands them back for

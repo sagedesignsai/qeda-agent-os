@@ -46,6 +46,8 @@ type MotionPropertyFieldsProps = {
   idPrefix?: string;
   mixedProperties?: ReadonlySet<string>;
   disabled?: boolean;
+  /** Hide per-group headings when the caller already names the group. */
+  showGroupHeadings?: boolean;
   onChange: (property: string, value: PropertyValue) => void;
 };
 
@@ -446,6 +448,7 @@ export function MotionPropertyFields({
   idPrefix = 'motion-property',
   mixedProperties = new Set(),
   disabled = false,
+  showGroupHeadings = true,
   onChange,
 }: MotionPropertyFieldsProps) {
   const groups = useMemo(() => {
@@ -463,9 +466,11 @@ export function MotionPropertyFields({
     <div className="flex flex-col gap-3">
       {groups.map(([group, fields]) => (
         <section key={group} aria-label={`${group} properties`}>
-          <h3 className="mb-2 text-[10px] font-medium text-muted-foreground">
-            {group}
-          </h3>
+          {showGroupHeadings && (
+            <h3 className="mb-2 text-[10px] font-medium text-muted-foreground">
+              {group}
+            </h3>
+          )}
           <FieldGroup className="gap-2.5">
             {fields.map(([property, hint]) => (
               <div key={property}>

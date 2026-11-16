@@ -20,6 +20,7 @@ import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { readGltfAssetMetadata } from '@/lib/motion/gltf-structure';
 import type { MotionAsset, MotionNode } from '@/lib/motion/types';
 import type { GltfAssetMetadata, GltfPart, MaterialOverride, PartOverride, SurfaceBinding } from '@/lib/motion/types';
 
@@ -40,10 +41,14 @@ export function ModelPartsPanel({
   const materialOverrides = (node.props.materialOverrides as Record<string, MaterialOverride>) ?? {};
   const partOverrides = (node.props.partOverrides as Record<string, PartOverride>) ?? {};
 
+  // `asset.metadata` is also used for import provenance, so `parts`/`materials`
+  // are genuinely absent until the glTF structure has been parsed.
+  const { parts, materials } = readGltfAssetMetadata(metadata);
+
   const [partsOpen, setPartsOpen] = useState(true);
   const [materialsOpen, setMaterialsOpen] = useState(true);
 
-  if (!metadata || metadata.parts.length === 0) {
+  if (parts.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border/50 px-3 py-4 text-center">
         <p className="text-[11px] font-medium text-muted-foreground">
@@ -83,11 +88,11 @@ export function ModelPartsPanel({
       <Collapsible open={partsOpen} onOpenChange={setPartsOpen}>
         <CollapsibleTrigger className="flex w-full items-center gap-1 text-left text-[10px] font-medium text-muted-foreground hover:text-foreground">
           {partsOpen ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
-          <span>Parts ({metadata.parts.length})</span>
+          <span>Parts ({parts.length})</span>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-2 flex flex-col gap-2">
-            {metadata.parts.map((part) => (
+            {parts.map((part) => (
               <PartRow
                 key={part.name}
                 part={part}
@@ -104,15 +109,15 @@ export function ModelPartsPanel({
       </Collapsible>
 
       {/* Materials Section */}
-      {metadata.materials.length > 0 && (
+      {materials.length > 0 && (
         <Collapsible open={materialsOpen} onOpenChange={setMaterialsOpen}>
           <CollapsibleTrigger className="flex w-full items-center gap-1 text-left text-[10px] font-medium text-muted-foreground hover:text-foreground">
             {materialsOpen ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
-            <span>Materials ({metadata.materials.length})</span>
+            <span>Materials ({materials.length})</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
             <div className="mt-2 flex flex-col gap-2">
-              {metadata.materials.map((mat) => (
+              {materials.map((mat) => (
                 <MaterialRow
                   key={mat.name}
                   material={mat}

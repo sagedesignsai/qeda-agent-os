@@ -178,20 +178,36 @@ export function ProjectDialog({
     return () => clearTimeout(timer);
   }, [name, open, editing, rollups]);
 
-  // Load notebooks lazily, once per open. Fresh each time is fine — a dialog is
-  // short-lived and this avoids subscribing to a change event we do not own.
+  // Load notebooks lazily, once per open (and again if the dialog is reused for
+  // a different project). Fresh each time is fine — a dialog is short-lived and
+  // this avoids subscribing to a change event we do not own.
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     void (async () => {
       try {
         const list =
           await window.electron.ipc.invoke<Notebook[]>('notebooks:list');
+        if (cancelled) return;
         setNotebooks(list ?? []);
+        // `projects.notebook_id` is only the user's explicit pick. A notebook
+        // created from the Workspace writes the other direction
+        // (`notebooks.project_id`), so a project that owns exactly one notebook
+        // should still show it as linked instead of "None".
+        if (!project?.notebook_id) {
+          const owned = (list ?? []).filter(
+            (candidate) => candidate.project_id === project?.id,
+          );
+          if (owned.length === 1) setNotebookId(owned[0].id);
+        }
       } catch {
-        setNotebooks([]);
+        if (!cancelled) setNotebooks([]);
       }
     })();
-  }, [open]);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, project?.id, project?.notebook_id]);
 
   const handleSubmit = async () => {
     const trimmed = name.trim();

@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,
   title      TEXT NOT NULL DEFAULT 'New Chat',
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  -- JSON-serialised ChatContext (page / notebook / research run) so a chat's
+  -- workspace binding survives navigation and restart. NULL = unbound.
+  context_json TEXT,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -1517,6 +1520,7 @@ export function applyMigrations(db: {
       'project_id',
       'TEXT REFERENCES projects(id) ON DELETE SET NULL',
     );
+    addColumn('sessions', 'context_json', 'TEXT');
 
     addColumn(
       'documents',

@@ -95,6 +95,25 @@ export function parseGltfStructure(gltf: GLTF): GltfAssetMetadata {
   };
 }
 
+/**
+ * Read glTF structure out of a free-form `asset.metadata` bag.
+ *
+ * Metadata is `Record<string, unknown>` and is shared with provenance written by
+ * remote imports (provider, upstream id, license…), so `parts` and `materials`
+ * are absent for every model that has not been parsed yet. Callers must treat
+ * that as "no structure", never as a crash.
+ */
+export function readGltfAssetMetadata(value: unknown): GltfAssetMetadata {
+  const candidate = (value && typeof value === 'object' ? value : {}) as {
+    parts?: unknown;
+    materials?: unknown;
+  };
+  return {
+    parts: Array.isArray(candidate.parts) ? (candidate.parts as GltfPart[]) : [],
+    materials: Array.isArray(candidate.materials) ? (candidate.materials as GltfMaterial[]) : [],
+  };
+}
+
 function getMaterialName(material: unknown): string | undefined {
   if (!material) return undefined;
   if (Array.isArray(material)) {

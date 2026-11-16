@@ -98,8 +98,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerSessionsHandlers({ mainWindow });
   registerSettingsHandlers({ mainWindow });
   registerToolsHandlers({ mainWindow });
-  registerWorkspaceHandlers();
-  registerResearchHandlers();
+  registerWorkspaceHandlers({ mainWindow });
+  registerResearchHandlers({ mainWindow });
   registerAgentChatHandlers({ mainWindow });
   registerTerminalHandlers({ mainWindow });
   registerProjectsHandlers({ mainWindow });

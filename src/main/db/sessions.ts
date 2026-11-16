@@ -17,6 +17,12 @@ export interface Session {
   title: string;
   /** Owning project, or null when unassigned. */
   project_id: string | null;
+  /**
+   * JSON-serialised `ChatContext` (page / notebook / research run bound to the
+   * conversation), or null when unbound. Persisted so the binding survives
+   * leaving the page and restarting the app.
+   */
+  context_json: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -102,6 +108,23 @@ export function updateSessionProject(
       'UPDATE sessions SET project_id = ?, updated_at = unixepoch() WHERE id = ?',
     )
     .run(projectId, id);
+}
+
+/**
+ * Persist (or clear) the workspace context bound to a session.
+ *
+ * Stored as opaque JSON: the renderer is the only producer and consumer, and
+ * the shape is `ChatContext`. `updated_at` is deliberately left alone — binding
+ * a page is not conversation activity, and bumping it would reorder the recents
+ * list every time a chat is opened.
+ */
+export function updateSessionContext(
+  id: string,
+  contextJson: string | null,
+): void {
+  getDb()
+    .prepare('UPDATE sessions SET context_json = ? WHERE id = ?')
+    .run(contextJson, id);
 }
 
 /**

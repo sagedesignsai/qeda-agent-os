@@ -16,7 +16,7 @@ const NAV_TARGETS: { label: string; path: string }[] = [
   { label: 'Agent Chat', path: '/chat' },
   { label: 'Tasks & Focus', path: '/tasks' },
   { label: 'Projects', path: '/projects' },
-  { label: 'Workspace', path: '/workspace' },
+  { label: 'Notebooks', path: '/workspace' },
   { label: 'Terminal', path: '/terminal' },
   { label: 'Documents', path: '/documents' },
   { label: 'Studio', path: '/studio' },

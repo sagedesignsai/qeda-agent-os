@@ -7,7 +7,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
   ResizableHandle,
@@ -28,11 +28,14 @@ import {
   usePages,
   usePageSearch,
 } from '@/hooks/use-workspace';
+import { newBlockId } from '@/lib/markdown-blocks';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { BlockEditor } from '@/components/workspace/BlockEditor';
 import { PageInfoPanel } from '@/components/workspace/PageInfoPanel';
+import { WorkspaceChatPanel } from '@/components/workspace/WorkspaceChatPanel';
 import {
   Loader2Icon,
+  LayoutPanelLeftIcon,
   MessageSquareIcon,
   NotebookIcon,
   PanelRightIcon,
@@ -61,6 +64,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useProjects } from '@/hooks/use-projects';
+import { OverflowMenu } from '@/components/OverflowMenu';
 
 export default function Workspace() {
   const navigate = useNavigate();
@@ -76,8 +80,12 @@ export default function Workspace() {
     reload: reloadDetail,
     loading: pageLoading,
   } = usePageDetail(pageId ?? null);
-  const { projectId } = useProjectScope();
+  const { pages: notebookPages, ready: pagesReady } = usePages(
+    notebookId ?? null,
+  );
+  const { projectId, withScope } = useProjectScope();
   const [infoOpen, setInfoOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -92,10 +100,67 @@ export default function Workspace() {
   const activeNotebook =
     notebooks.find((n) => n.id === contextNotebookId) ?? null;
 
+  // Auto-navigate to first page if notebook is selected but no page is chosen.
+  // Gated on `pagesReady`: until the list for *this* notebook has loaded, `[]`
+  // means "unknown", not "empty".
+  useEffect(() => {
+    if (!notebookId || pageId || !pagesReady) return;
+    if (notebookPages.length > 0) {
+      navigate(withScope(`/workspace/${notebookId}/${notebookPages[0].id}`), {
+        replace: true,
+      });
+    }
+  }, [notebookId, pageId, pagesReady, notebookPages, navigate, withScope]);
+
+  // Auto-create first page if notebook is selected and genuinely empty.
+  // The in-flight ref guards StrictMode/effect re-runs: two concurrent creates
+  // would race and leave a duplicate "Page 1" behind.
+  const creatingFirstPageFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !notebookId ||
+      pageId ||
+      !pagesReady ||
+      notebookPages.length > 0 ||
+      !activeNotebook ||
+      creatingFirstPageFor.current === notebookId
+    ) {
+      return;
+    }
+    creatingFirstPageFor.current = notebookId;
+    void (async () => {
+      try {
+        const page = await window.electron.ipc.invoke<Page>('pages:create', {
+          notebookId,
+          title: `${activeNotebook.title} - Page 1`,
+          parentPageId: null,
+        });
+        navigate(withScope(`/workspace/${notebookId}/${page.id}`), {
+          replace: true,
+        });
+      } catch (err) {
+        console.error('Failed to create first page:', err);
+        // Allow a retry only after a failure. On success the guard stays set:
+        // navigating to the new page must not race a second create.
+        if (creatingFirstPageFor.current === notebookId) {
+          creatingFirstPageFor.current = null;
+        }
+      }
+    })();
+  }, [
+    notebookId,
+    pageId,
+    pagesReady,
+    notebookPages,
+    activeNotebook,
+    navigate,
+    withScope,
+  ]);
+
   const crumbs: PageCrumb[] = [
-    { label: 'Notebooks', to: '/workspace' },
+    { label: 'Notebooks', to: withScope('/workspace') },
     ...(activeNotebook
-      ? [{ label: activeNotebook.title, to: `/workspace/${activeNotebook.id}` }]
+      ? [{ label: activeNotebook.title, to: withScope(`/workspace/${activeNotebook.id}`) }]
       : []),
     ...(detail ? [{ label: detail.page.title || 'Untitled' }] : []),
   ];
@@ -115,18 +180,23 @@ export default function Workspace() {
         return;
       }
       try {
+        // An active `?project=` scope files new work into that project, like
+        // tasks and captures do. An explicit `null` from the dialog means the
+        // user chose "No project" and wins.
+        const scopedOwner =
+          ownerProjectId === undefined ? projectId : ownerProjectId;
         const notebook = await window.electron.ipc.invoke<Notebook>(
           'notebooks:create',
-          { title: cleanTitle, projectId: ownerProjectId },
+          { title: cleanTitle, projectId: scopedOwner },
         );
         await reloadNotebooks();
-        navigate(`/workspace/${notebook.id}`);
+        navigate(withScope(`/workspace/${notebook.id}`));
         toast.success('Notebook created.');
       } catch {
         toast.error('Could not create notebook.');
       }
     },
-    [notebooks, reloadNotebooks],
+    [notebooks, reloadNotebooks, withScope, projectId],
   );
 
   const handleCreatePage = async (targetNotebookId: string) => {
@@ -136,7 +206,7 @@ export default function Workspace() {
         title: 'Untitled',
         parentPageId: null,
       });
-      navigate(`/workspace/${targetNotebookId}/${page.id}`);
+      navigate(withScope(`/workspace/${targetNotebookId}/${page.id}`));
     } catch (err) {
       toast.error(
         `Failed to create page: ${err instanceof Error ? err.message : String(err)}`,
@@ -159,6 +229,32 @@ export default function Workspace() {
     } catch (err) {
       toast.error(
         `Error restoring version: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
+
+  /** Append the assistant's last reply as a new paragraph block in the page. */
+  const handleAppendToPage = async (text: string) => {
+    if (!detail || !pageId) return;
+    try {
+      const nextBlocks = [
+        ...detail.blocks,
+        {
+          id: newBlockId(),
+          type: 'paragraph' as const,
+          text,
+        },
+      ];
+      await window.electron.ipc.invoke('pages:save-blocks', {
+        id: pageId,
+        blocks: nextBlocks,
+        title: detail.page.title,
+      });
+      await reloadDetail(pageId);
+      toast.success('Appended to page.');
+    } catch (err) {
+      toast.error(
+        `Failed to append: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   };
@@ -195,6 +291,21 @@ export default function Workspace() {
     });
   };
 
+  /** Start a research investigation about the current page (via Chat). */
+  const handleResearchPage = () => {
+    if (!detail) return;
+    navigate('/chat', {
+      state: {
+        intent: 'research',
+        chatContext: {
+          pageId: detail.page.id,
+          notebookId: detail.page.notebook_id,
+          ...(detail.page.project_id ? { projectId: detail.page.project_id } : {}),
+        },
+      },
+    });
+  };
+
   return (
     <div className="h-full w-full overflow-hidden bg-background">
       <ResizablePanelGroup orientation="horizontal" className="h-full w-full">
@@ -226,50 +337,82 @@ export default function Workspace() {
                     </>
                   )}
                   {detail && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1.5 text-xs text-muted-foreground"
-                      onClick={() =>
-                        handleChatWithContext(
-                          detail.page.id,
-                          detail.page.notebook_id,
-                          detail.page.project_id,
-                        )
-                      }
-                    >
-                      <MessageSquareIcon className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">Chat about page</span>
-                    </Button>
-                  )}
-                  {notebookId && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 shrink-0 gap-1.5 text-xs text-muted-foreground"
-                      onClick={() => void handleCreatePage(notebookId)}
-                    >
-                      <PlusIcon className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">New page</span>
-                    </Button>
-                  )}
-                  {detail && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant={infoOpen ? 'secondary' : 'ghost'}
-                          size="icon"
-                          className="h-7 w-7 shrink-0 text-muted-foreground"
-                          onClick={() => setInfoOpen((v) => !v)}
-                          aria-label="Toggle info panel"
+                    <>
+                      {/* Page switcher — compact pill style */}
+                      {notebookPages.length > 1 && (
+                        <Select
+                          value={detail.page.id}
+                          onValueChange={(pageId) =>
+                            navigate(withScope(`/workspace/${notebookId}/${pageId}`))
+                          }
                         >
-                          <PanelRightIcon className="h-3.5 w-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        {infoOpen ? 'Hide info panel' : 'Show info panel'}
-                      </TooltipContent>
-                    </Tooltip>
+                          <SelectTrigger className="h-6 w-[160px] shrink-0 gap-1 rounded-md border-0 bg-transparent px-2 text-xs text-foreground shadow-none hover:bg-secondary/50">
+                            <SelectValue placeholder="Select page" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {notebookPages
+                              .sort((a, b) => a.sort_order - b.sort_order)
+                              .map((page) => (
+                                <SelectItem key={page.id} value={page.id}>
+                                  {page.title || 'Untitled'}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+
+                      {/* Secondary actions collapsed into overflow menu */}
+                      <OverflowMenu
+                        label="More page actions"
+                        items={[
+                          {
+                            label: 'Chat about page',
+                            icon: <MessageSquareIcon className="h-3.5 w-3.5" />,
+                            onSelect: () =>
+                              handleChatWithContext(
+                                detail.page.id,
+                                detail.page.notebook_id,
+                                detail.page.project_id,
+                              ),
+                          },
+                          {
+                            label: 'Research page',
+                            icon: <FlaskConicalIcon className="h-3.5 w-3.5" />,
+                            onSelect: handleResearchPage,
+                          },
+                          {
+                            label: chatOpen ? 'Hide docked chat' : 'Show docked chat',
+                            icon: <LayoutPanelLeftIcon className="h-3.5 w-3.5" />,
+                            onSelect: () => {
+                              setInfoOpen(false);
+                              setChatOpen((v) => !v);
+                            },
+                          },
+                          { separatorBefore: true, label: 'New page', icon: <PlusIcon className="h-3.5 w-3.5" />, onSelect: () => notebookId && void handleCreatePage(notebookId) },
+                        ]}
+                      />
+
+                      {/* Panel toggle — always visible */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant={infoOpen ? 'secondary' : 'ghost'}
+                            size="icon"
+                            className="h-7 w-7 shrink-0 text-muted-foreground"
+                            onClick={() => {
+                              setChatOpen(false);
+                              setInfoOpen((v) => !v);
+                            }}
+                            aria-label="Toggle info panel"
+                          >
+                            <PanelRightIcon className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          {infoOpen ? 'Hide info panel' : 'Show info panel'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </>
                   )}
                 </>
               }
@@ -281,24 +424,30 @@ export default function Workspace() {
               ) : detail ? (
                 <BlockEditor
                   pageId={detail.page.id}
+                  notebookId={detail.page.notebook_id}
                   title={detail.page.title}
                   initialBlocks={detail.blocks}
                   onSaved={pageId ? () => void reloadDetail(pageId) : undefined}
                 />
+              ) : notebookId ? (
+                // Notebook is selected but navigating to first page
+                <EditorSkeleton />
               ) : (
                 <NotebooksHome
                   notebooks={filteredNotebooks}
                   projects={projectRollups.filter((p) => p.id !== 'inbox')}
                   selectedNotebookId={notebookId ?? null}
+                  defaultProjectId={projectId}
                   query={query}
                   createOpen={createOpen}
                   setCreateOpen={setCreateOpen}
                   onCreateNotebook={handleCreateNotebook}
                   onCreatePage={handleCreatePage}
                   onOpenPage={(id, nbId) =>
-                    navigate(`/workspace/${nbId}/${id}`)
+                    navigate(withScope(`/workspace/${nbId}/${id}`))
                   }
-                  onOpenNotebook={(nbId) => navigate(`/workspace/${nbId}`)}
+                  onOpenNotebook={(nbId) => navigate(withScope(`/workspace/${nbId}`))}
+                  onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
                   onResearchNotebook={handleResearchNotebook}
                   onNotebookUpdated={() => void reloadNotebooks()}
                 />
@@ -322,7 +471,7 @@ export default function Workspace() {
                 detail={detail}
                 onNavigate={(id) => {
                   if (contextNotebookId) {
-                    navigate(`/workspace/${contextNotebookId}/${id}`);
+                    navigate(withScope(`/workspace/${contextNotebookId}/${id}`));
                   }
                 }}
                 onChatWithContext={(id) =>
@@ -337,6 +486,28 @@ export default function Workspace() {
             </ResizablePanel>
           </>
         )}
+        {detail && chatOpen && (
+          <>
+            <ResizableHandle withHandle />
+
+            <ResizablePanel
+              id="workspace-chat"
+              defaultSize="340px"
+              minSize="240px"
+              maxSize="520px"
+              className="border-l"
+            >
+              <WorkspaceChatPanel
+                pageId={detail.page.id}
+                notebookId={detail.page.notebook_id}
+                projectId={detail.page.project_id}
+                open={chatOpen}
+                onOpenChange={setChatOpen}
+                onAppendToPage={handleAppendToPage}
+              />
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
     </div>
   );
@@ -346,6 +517,7 @@ function NotebooksHome({
   notebooks,
   projects,
   selectedNotebookId,
+  defaultProjectId,
   query,
   createOpen,
   setCreateOpen,
@@ -353,12 +525,15 @@ function NotebooksHome({
   onCreatePage,
   onOpenPage,
   onOpenNotebook,
+  onOpenProject,
   onResearchNotebook,
   onNotebookUpdated,
 }: {
   notebooks: Notebook[];
   projects: { id: string; name: string }[];
   selectedNotebookId: string | null;
+  /** Project from the `?project=` lens, pre-selected for new notebooks. */
+  defaultProjectId?: string | null;
   query: string;
   createOpen: boolean;
   setCreateOpen: (open: boolean) => void;
@@ -366,11 +541,17 @@ function NotebooksHome({
   onCreatePage: (notebookId: string) => Promise<void>;
   onOpenPage: (id: string, notebookId: string) => void;
   onOpenNotebook: (notebookId: string) => void;
+  onOpenProject: (projectId: string) => void;
   onResearchNotebook: (notebookId: string) => void;
   onNotebookUpdated: () => void;
 }) {
   const [title, setTitle] = useState('');
-  const [projectId, setProjectId] = useState('none');
+  const [projectId, setProjectId] = useState(defaultProjectId ?? 'none');
+  // Keep the pre-selected owner in step with the scope when the user changes
+  // `?project=` without remounting this surface.
+  useEffect(() => {
+    setProjectId(defaultProjectId ?? 'none');
+  }, [defaultProjectId]);
   const { hits, searching, search } = usePageSearch();
   const activeNotebook = notebooks.find((n) => n.id === selectedNotebookId);
   const { pages: activePages } = usePages(selectedNotebookId);
@@ -520,19 +701,48 @@ function NotebooksHome({
                           <span className="block text-xs text-muted-foreground">
                             {notebook.description || 'Notebook'}
                           </span>
+                          {notebook.updated_at && (
+                            <span className="block text-xs text-muted-foreground">
+                              Last edited ·
+                              {formatRelativeDate(notebook.updated_at)}
+                            </span>
+                          )}
                         </span>
                         <ArrowUpRightIcon className="size-4 text-muted-foreground" />
                       </button>
-                      <div className="mt-4 flex items-center gap-2 border-t pt-3">
-                        <FolderKanbanIcon className="size-3.5 text-muted-foreground" />
+                      <div className="mt-4 flex items-center justify-between border-t pt-3">
+                        <div className="flex items-center gap-2">
+                          <FolderKanbanIcon className="size-3.5 text-muted-foreground" />
+                          {notebook.project_id ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenProject(notebook.project_id!);
+                              }}
+                              className="text-xs hover:underline text-primary"
+                              aria-label={`Go to project`}
+                            >
+                              {projects.find((p) => p.id === notebook.project_id)?.name ||
+                                'Project'}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              No project
+                            </span>
+                          )}
+                        </div>
                         <Select
                           value={notebook.project_id ?? 'none'}
                           onValueChange={(value) =>
                             void changeNotebookProject(notebook.id, value)
                           }
                         >
-                          <SelectTrigger className="h-7 flex-1 border-0 px-1 text-xs shadow-none">
-                            <SelectValue placeholder="Link to project" />
+                          <SelectTrigger 
+                            className="h-6 w-auto border-0 px-1 text-[10px] shadow-none"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-[10px]">Change</span>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">
@@ -545,11 +755,6 @@ function NotebooksHome({
                             ))}
                           </SelectContent>
                         </Select>
-                        {notebook.project_id && (
-                          <span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] text-primary">
-                            Project-linked
-                          </span>
-                        )}
                       </div>
                     </div>
                   ))}

@@ -678,6 +678,17 @@ export interface IpcChannels {
     res: void;
   };
   'sessions:messages': { req: { id: string }; res: UIMessage[] };
+  /** Load a single session row, including its persisted workspace context. */
+  'sessions:get': { req: { id: string }; res: Session | null };
+  /**
+   * Persist (or clear) the workspace binding of a session: the page or notebook
+   * the conversation is about. Stored as opaque JSON so the `ChatContext` shape
+   * can evolve without a migration.
+   */
+  'sessions:set-context': {
+    req: { id: string; contextJson: string | null };
+    res: void;
+  };
   /** Persist the renderer's reconstructed conversation (upsert by message id). */
   'sessions:save-messages': {
     req: { sessionId: string; messages: UIMessage[] };
@@ -883,12 +894,31 @@ export interface IpcChannels {
   'pages:search': { req: { query: string; limit?: number }; res: SearchHit[] };
   'pages:restore-version': { req: { versionId: string }; res: boolean };
   'workspace:tags': { req: void; res: { name: string; count: number }[] };
+  /**
+   * A notebook or page was created, renamed, moved, re-scoped or deleted.
+   *
+   * Broadcast so every surface showing a knowledge tree — the rail, the page
+   * breadcrumb, the project dialog's notebook picker — refetches. Same shape as
+   * `projects:changed`. Deliberately NOT emitted for `pages:save-blocks`:
+   * typing autosaves every 800 ms and the tree does not depend on page bodies.
+   */
+  'workspace:changed': void;
 
   // ── Research ──────────────────────────────────────────────────────────────
   'research:trace': { req: { runId: string }; res: ResearchTrace | null };
   'research:list': {
     req: { pageId?: string; notebookId?: string };
     res: ResearchRun[];
+  };
+  /** File a completed run's report as a page in (or near) its target notebook. */
+  'research:to-page': {
+    req: {
+      runId: string;
+      notebookId?: string;
+      parentPageId?: string | null;
+      title?: string;
+    };
+    res: Page | null;
   };
 
   // ── Agent chat (streaming via IPC event emitter) ──────────────────────────

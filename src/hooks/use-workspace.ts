@@ -34,18 +34,71 @@ export function useNotebooks() {
     void reload();
   }, [reload]);
 
+  // The notebook list is affected by two things outside this hook: knowledge
+  // mutations (rename, re-scope, delete, agent-created notebook) and project
+  // changes (a project delete re-homes or removes its notebooks, and the
+  // project dialog's link picker reads the same rows).
+  useEffect(() => {
+    const offWorkspace = window.electron.ipc.on('workspace:changed', () => {
+      void reload();
+    });
+    const offProjects = window.electron.ipc.on('projects:changed', () => {
+      void reload();
+    });
+    return () => {
+      offWorkspace();
+      offProjects();
+    };
+  }, [reload]);
+
   return { notebooks, loading, reload };
 }
 
 export function usePages(notebookId: string | null) {
   const [pages, setPages] = useState<Page[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(Boolean(notebookId));
+  /**
+   * Which notebook the current `pages` array describes.
+   *
+   * `pages === []` is ambiguous — "this notebook has no pages" and "the list is
+   * still in flight" look identical. That ambiguity used to make the Workspace
+   * page auto-create a duplicate "Page 1" every time an existing notebook was
+   * opened from the index, so consumers get an explicit readiness signal.
+   */
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  /** Latest selection, so a slow response for the previous notebook is dropped. */
+  const currentNotebook = useRef(notebookId);
+  currentNotebook.current = notebookId;
+
+  const reload = useCallback(async (id: string) => {
+    setLoading(true);
+    try {
+      const data = await window.electron.ipc.invoke<Page[]>('pages:list', {
+        notebookId: id,
+      });
+      if (currentNotebook.current !== id) return;
+      setPages(data ?? []);
+      setLoadedFor(id);
+    } catch {
+      if (currentNotebook.current !== id) return;
+      setPages([]);
+      setLoadedFor(id);
+    } finally {
+      if (currentNotebook.current === id) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!notebookId) {
       setPages([]);
+      setLoadedFor(null);
+      setLoading(false);
       return;
     }
+    // Clear immediately: the previous notebook's pages must never render under
+    // the new notebook's id, nor feed the auto-navigate/auto-create effects.
+    setPages([]);
+    setLoadedFor(null);
     let cancelled = false;
     setLoading(true);
     void (async () => {
@@ -53,11 +106,15 @@ export function usePages(notebookId: string | null) {
         const data = await window.electron.ipc.invoke<Page[]>('pages:list', {
           notebookId,
         });
-        if (!cancelled) setPages(data ?? []);
+        if (cancelled) return;
+        setPages(data ?? []);
       } catch {
         if (!cancelled) setPages([]);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoadedFor(notebookId);
+          setLoading(false);
+        }
       }
     })();
     return () => {
@@ -65,7 +122,19 @@ export function usePages(notebookId: string | null) {
     };
   }, [notebookId]);
 
-  return { pages, loading, setPages };
+  // Any tree mutation — from this rail, the page header, an agent tool or
+  // another window — refetches the selected notebook's list.
+  useEffect(() => {
+    if (!notebookId) return;
+    return window.electron.ipc.on('workspace:changed', () => {
+      void reload(notebookId);
+    });
+  }, [notebookId, reload]);
+
+  /** True once `pages` is guaranteed to describe `notebookId`. */
+  const ready = notebookId === null || loadedFor === notebookId;
+
+  return { pages, loading, ready, loadedFor, reload, setPages };
 }
 
 export function usePageDetail(pageId: string | null) {

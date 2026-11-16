@@ -14,6 +14,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getDb } from './client.js';
+import { forgetPages } from './knowledge-index.js';
 import {
   parseMarkdownToBlocks,
   serializeBlocksToMarkdown,
@@ -100,6 +101,15 @@ export function createNotebook(
   db.prepare(
     'INSERT INTO notebooks (id, title, description, icon, project_id) VALUES (?, ?, ?, ?, ?)',
   ).run(id, title, description, icon, projectId);
+  // A notebook created inside a project should be discoverable from that
+  // project's dialog too. Only fill an empty pointer: `projects.notebook_id` is
+  // the user's chosen primary notebook, and a second notebook for the same
+  // project must not silently steal it.
+  if (projectId) {
+    db.prepare(
+      'UPDATE projects SET notebook_id = ? WHERE id = ? AND notebook_id IS NULL',
+    ).run(id, projectId);
+  }
   return db
     .prepare<[string], Notebook>('SELECT * FROM notebooks WHERE id = ?')
     .get(id)!;
@@ -127,6 +137,12 @@ export function updateNotebook(
   },
 ): void {
   const db = getDb();
+  // Read before the write: re-homing has to release the old project's pointer,
+  // and once the row is updated the previous owner is gone.
+  const previousProjectId =
+    patch.project_id !== undefined
+      ? (getNotebook(id)?.project_id ?? null)
+      : null;
   const fields: string[] = [];
   const values: unknown[] = [];
   if (patch.title !== undefined)
@@ -147,11 +163,32 @@ export function updateNotebook(
   // would keep claiming the old project and vanish from the new one.
   if (patch.project_id !== undefined) {
     syncNotebookScope(id, patch.project_id);
+    syncProjectNotebookPointer(id, previousProjectId, patch.project_id);
   }
 }
 
 export function deleteNotebook(id: string): void {
-  getDb().prepare('DELETE FROM notebooks WHERE id = ?').run(id);
+  const db = getDb();
+  const pageIds = db
+    .prepare<[string], { id: string }>(
+      'SELECT id FROM pages WHERE notebook_id = ?',
+    )
+    .all(id)
+    .map((row) => row.id);
+
+  const tx = db.transaction(() => {
+    // FK cascade removes the pages, blocks, tags, backlinks and versions — but
+    // not the FTS/RAG copies, which have no foreign key back to `pages`.
+    forgetPages(pageIds);
+    // Runs lose their notebook with the FK, but `project_id` is a copy that no
+    // cascade reaches. Detach them so a deleted notebook does not keep
+    // inflating its project's research count.
+    db.prepare(
+      'UPDATE research_runs SET project_id = NULL WHERE notebook_id = ?',
+    ).run(id);
+    db.prepare('DELETE FROM notebooks WHERE id = ?').run(id);
+  });
+  tx();
 }
 
 /**
@@ -173,6 +210,33 @@ function syncNotebookScope(notebookId: string, projectId: string | null): void {
   db.prepare(
     'UPDATE research_runs SET project_id = ? WHERE notebook_id = ?',
   ).run(projectId, notebookId);
+}
+
+/**
+ * Keep `projects.notebook_id` — the pointer the project dialog reads — in step
+ * with `notebooks.project_id`, which is the canonical owner.
+ *
+ * It is only ever filled when empty. A project may collect several notebooks,
+ * and the one the user explicitly chose in the project dialog must not be
+ * replaced just because another notebook was filed into the same project.
+ * Un-linking clears it only when this notebook was the project's chosen one.
+ */
+function syncProjectNotebookPointer(
+  notebookId: string,
+  previousProjectId: string | null,
+  nextProjectId: string | null,
+): void {
+  const db = getDb();
+  if (previousProjectId && previousProjectId !== nextProjectId) {
+    db.prepare(
+      'UPDATE projects SET notebook_id = NULL WHERE id = ? AND notebook_id = ?',
+    ).run(previousProjectId, notebookId);
+  }
+  if (nextProjectId) {
+    db.prepare(
+      'UPDATE projects SET notebook_id = ? WHERE id = ? AND notebook_id IS NULL',
+    ).run(notebookId, nextProjectId);
+  }
 }
 
 /**
@@ -270,11 +334,68 @@ export function updatePage(
   ).run(...values);
 }
 
-/** Delete a page plus its FTS entry. Cascades remove blocks/versions/edges. */
+/** Page ids in a page's subtree, root first, using a recursive CTE. */
+function pageSubtreeIds(id: string): string[] {
+  return getDb()
+    .prepare<[string], { id: string }>(
+      `WITH RECURSIVE subtree(id) AS (
+         SELECT id FROM pages WHERE id = ?
+         UNION ALL
+         SELECT p.id FROM pages p JOIN subtree s ON p.parent_page = s.id
+       )
+       SELECT id FROM subtree`,
+    )
+    .all(id)
+    .map((row) => row.id);
+}
+
+/**
+ * Move a page and its subtree into another notebook.
+ *
+ * Children move with the root: leaving them behind would give a page a parent
+ * in a notebook it does not belong to, which the rail cannot render. The moved
+ * root becomes a top-level page in its new notebook, and every page in the
+ * subtree re-inherits the new notebook's project so the project's knowledge
+ * read stays correct.
+ */
+export function movePageToNotebook(pageId: string, notebookId: string): void {
+  const db = getDb();
+  const notebook = getNotebook(notebookId);
+  if (!notebook) {
+    throw new Error(`No notebook with id ${notebookId}`);
+  }
+
+  const ids = pageSubtreeIds(pageId);
+  if (ids.length === 0) return;
+
+  const tx = db.transaction(() => {
+    const update = db.prepare(
+      'UPDATE pages SET notebook_id = ?, project_id = ?, updated_at = unixepoch() WHERE id = ?',
+    );
+    for (const id of ids) {
+      update.run(notebookId, notebook.project_id ?? null, id);
+    }
+    db.prepare('UPDATE pages SET parent_page = NULL WHERE id = ?').run(pageId);
+  });
+  tx();
+}
+
+/** Delete a page, its subtree, and every derived index row. */
 export function deletePage(id: string): void {
   const db = getDb();
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM pages_fts WHERE page_id = ?').run(id);
+    const ids = pageSubtreeIds(id);
+    // The FK cascade removes the child page rows, but not their FTS/RAG copies.
+    forgetPages(ids);
+    // A page-only run loses its target; clear the copied project id too, but
+    // keep it when the run also belongs to a notebook that still exists.
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(', ');
+      db.prepare(
+        `UPDATE research_runs SET project_id = NULL
+          WHERE notebook_id IS NULL AND page_id IN (${placeholders})`,
+      ).run(...ids);
+    }
     db.prepare('DELETE FROM pages WHERE id = ?').run(id);
   });
   tx();
@@ -387,12 +508,20 @@ export function listOutgoingLinks(pageId: string): Page[] {
 
 // ─── Versions ─────────────────────────────────────────────────────────────────
 
+/**
+ * How many snapshots a page keeps. The UI shows the newest 50, and autosave
+ * produces one per edit pause, so an unbounded table was both invisible and
+ * permanently growing. Pruning to the same number the panel displays keeps the
+ * stored history honest about what the user can actually restore.
+ */
+const MAX_VERSIONS_PER_PAGE = 50;
+
 export function listPageVersions(pageId: string): PageVersion[] {
   return getDb()
-    .prepare<[string], PageVersion>(
-      'SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC LIMIT 50',
+    .prepare<[string, number], PageVersion>(
+      'SELECT * FROM page_versions WHERE page_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
     )
-    .all(pageId);
+    .all(pageId, MAX_VERSIONS_PER_PAGE);
 }
 
 export function getVersion(versionId: string): PageVersion | undefined {
@@ -487,17 +616,33 @@ export function savePageBlocks(
     const insertEdge = db.prepare(
       'INSERT OR IGNORE INTO backlinks (from_page, to_page) VALUES (?, ?)',
     );
+    const pageExists = db.prepare<[string], { id: string }>(
+      'SELECT id FROM pages WHERE id = ?',
+    );
+    // `[[Page]]` resolves inside the page's own notebook first, then falls back
+    // to the most recently edited match. The old bare `LIMIT 1` was neither
+    // scoped nor deterministic, so a same-titled page in another project could
+    // receive the edge depending on row order.
+    const resolveWiki = db.prepare<[string, string], { id: string }>(
+      `SELECT id FROM pages
+        WHERE title = ?
+        ORDER BY (notebook_id = ?) DESC, updated_at DESC, rowid DESC
+        LIMIT 1`,
+    );
     for (const link of extractDocLinks(blocks)) {
       if (link.target.startsWith('doc:')) {
         const targetId = link.target.slice('doc:'.length).trim();
-        if (targetId && targetId !== pageId) insertEdge.run(pageId, targetId);
+        if (!targetId || targetId === pageId) continue;
+        // `backlinks.to_page` is a real foreign key, so a stale or typo'd
+        // `doc:` target aborts the entire save transaction (INSERT OR IGNORE
+        // does not ignore FK violations). Skip dangling ids instead: the link
+        // stays in the markdown and starts resolving again if the page returns.
+        if (!pageExists.get(targetId)) continue;
+        insertEdge.run(pageId, targetId);
       } else if (link.target.startsWith('wiki:')) {
         const name = link.target.slice('wiki:'.length).trim();
-        const target = db
-          .prepare<[string], { id: string }>(
-            'SELECT id FROM pages WHERE title = ? LIMIT 1',
-          )
-          .get(name);
+        if (!name) continue;
+        const target = resolveWiki.get(name, page?.notebook_id ?? '');
         if (target && target.id !== pageId) insertEdge.run(pageId, target.id);
       }
     }
@@ -513,18 +658,41 @@ export function savePageBlocks(
 
     // 6. Version snapshot.
     if (!options.skipVersion) {
-      const current = db
-        .prepare<[string], Page>('SELECT * FROM pages WHERE id = ?')
+      const title = options.title ?? page?.title ?? '';
+      const latest = db
+        .prepare<[string], { title: string; markdown: string }>(
+          `SELECT title, markdown FROM page_versions
+            WHERE page_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            LIMIT 1`,
+        )
         .get(pageId);
-      db.prepare(
-        'INSERT INTO page_versions (id, page_id, title, markdown, origin) VALUES (?, ?, ?, ?, ?)',
-      ).run(
-        randomUUID(),
-        pageId,
-        options.title ?? current?.title ?? '',
-        markdown,
-        options.versionOrigin ?? 'manual',
-      );
+      // Autosave snapshots every ~800 ms, so an unchanged body must not add a
+      // row: history would fill with identical entries and the panel only shows
+      // the newest 50 anyway.
+      if (!latest || latest.title !== title || latest.markdown !== markdown) {
+        db.prepare(
+          'INSERT INTO page_versions (id, page_id, title, markdown, origin) VALUES (?, ?, ?, ?, ?)',
+        ).run(
+          randomUUID(),
+          pageId,
+          title,
+          markdown,
+          options.versionOrigin ?? 'manual',
+        );
+
+        // Keep the stored history to the window the UI can actually restore.
+        db.prepare(
+          `DELETE FROM page_versions
+            WHERE page_id = ?
+              AND id NOT IN (
+                SELECT id FROM page_versions
+                 WHERE page_id = ?
+                 ORDER BY created_at DESC, rowid DESC
+                 LIMIT ?
+              )`,
+        ).run(pageId, pageId, MAX_VERSIONS_PER_PAGE);
+      }
     }
   });
 

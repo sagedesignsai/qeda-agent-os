@@ -17,6 +17,7 @@ import { nanoid } from 'nanoid';
 import { getDb } from './client.js';
 import { INBOX_PROJECT_ID } from './schema.js';
 import { dayKey, startOfDay } from './focus-sessions.js';
+import { forgetPages } from './knowledge-index.js';
 import type { Task } from './tasks.js';
 
 export { INBOX_PROJECT_ID };
@@ -709,12 +710,28 @@ export function deleteProjectWithOptions(
         `UPDATE code_projects SET project_id = NULL WHERE project_id = ?`,
       ).run(id);
 
+    // Pages removed by a `delete` disposal also have rows in the FTS5 and RAG
+    // indexes, which are not foreign-keyed to `pages`. Collect their ids before
+    // the delete so the content stops being searchable (deleted pages were
+    // still answering `searchDocs`).
+    let doomedPageIds: string[] = [];
+    if (opts.knowledgePages === 'delete') {
+      doomedPageIds = db
+        .prepare<[string], { id: string }>(
+          'SELECT id FROM pages WHERE project_id = ?',
+        )
+        .all(id)
+        .map((row) => row.id);
+    }
+
     if (opts.knowledgePages)
       applyDisposal(db, 'pages', id, opts.knowledgePages);
     else
       db.prepare(`UPDATE pages SET project_id = NULL WHERE project_id = ?`).run(
         id,
       );
+
+    if (doomedPageIds.length) forgetPages(doomedPageIds);
 
     // Finally, remove the project row.
     db.prepare(`DELETE FROM projects WHERE id = ?`).run(id);

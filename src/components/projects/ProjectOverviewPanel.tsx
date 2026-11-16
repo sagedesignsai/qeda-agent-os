@@ -13,7 +13,9 @@
 
 import { Link } from 'react-router';
 import {
+  BookOpenIcon,
   FileTextIcon,
+  FlaskConicalIcon,
   MailIcon,
   MessageSquareIcon,
   TerminalIcon,
@@ -72,6 +74,18 @@ export function ProjectOverviewPanel({
       label: 'Documents',
       value: linked.documents,
       to: `/documents?project=${project.id}`,
+    },
+    {
+      icon: BookOpenIcon,
+      label: 'Knowledge pages',
+      value: linked.knowledgePages,
+      to: `/workspace?project=${project.id}`,
+    },
+    {
+      icon: FlaskConicalIcon,
+      label: 'Research runs',
+      value: linked.researchRuns,
+      to: `/workspace?project=${project.id}`,
     },
     {
       icon: VideoIcon,

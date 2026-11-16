@@ -27,7 +27,7 @@ function formatRelativeDate(epochSeconds: number): string {
   const years = Math.floor(months / 12);
   return `${years}y ago`;
 }
-import type { PageDetail, ResearchRun } from '@/main/ipc/channels';
+import type { Page, PageDetail, ResearchRun } from '@/main/ipc/channels';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -36,9 +36,11 @@ import {
   HistoryIcon,
   FlaskConicalIcon,
   RotateCcwIcon,
+  FilePlus2Icon,
   LoaderIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface PageInfoPanelProps {
   detail: PageDetail | null;
@@ -56,6 +58,7 @@ export function PageInfoPanel({
   const [runs, setRuns] = useState<ResearchRun[]>([]);
   const [runLoading, setRunLoading] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [savingRunId, setSavingRunId] = useState<string | null>(null);
   const [trace, setTrace] = useState<
     import('@/main/ipc/channels').ResearchTrace | null
   >(null);
@@ -67,8 +70,14 @@ export function PageInfoPanel({
     }
     let cancelled = false;
     setRunLoading(true);
+    // Page *and* notebook: a notebook-scoped run (started from "Research with
+    // Chat" on the notebook) belongs on every page of that notebook, so a
+    // page-only query hid it here entirely.
     window.electron.ipc
-      .invoke<ResearchRun[]>('research:list', { pageId: detail.page.id })
+      .invoke<ResearchRun[]>('research:list', {
+        pageId: detail.page.id,
+        notebookId: detail.page.notebook_id,
+      })
       .then((data) => {
         if (!cancelled) setRuns(data ?? []);
         return data;
@@ -82,7 +91,7 @@ export function PageInfoPanel({
     return () => {
       cancelled = true;
     };
-  }, [detail?.page.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail?.page.id, detail?.page.notebook_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTrace = async (runId: string) => {
     if (openRunId === runId) {
@@ -95,6 +104,37 @@ export function PageInfoPanel({
     >('research:trace', { runId });
     setTrace(data);
     setOpenRunId(runId);
+  };
+
+  /**
+   * File a finished run's report into the current notebook as a child of this
+   * page, then open it. Until now a completed report could only be read inside
+   * this panel — the notebook never received it.
+   */
+  const saveRunAsPage = async (run: ResearchRun) => {
+    if (!detail) return;
+    setSavingRunId(run.id);
+    try {
+      const page = await window.electron.ipc.invoke<Page | null>(
+        'research:to-page',
+        {
+          runId: run.id,
+          notebookId: detail.page.notebook_id,
+          parentPageId: detail.page.id,
+          title: run.question,
+        },
+      );
+      if (!page) {
+        toast.error('This run has no report to file yet.');
+        return;
+      }
+      toast.success('Research report filed as a page.');
+      onNavigate(page.id);
+    } catch {
+      toast.error('Could not file the report as a page.');
+    } finally {
+      setSavingRunId(null);
+    }
   };
 
   if (!detail) {
@@ -254,6 +294,20 @@ export function PageInfoPanel({
                     {run.status}
                   </span>
                 </button>
+                {run.report.trim() && (
+                  <div className="flex justify-end border-t px-2 py-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 gap-1 px-1.5 text-[11px]"
+                      disabled={savingRunId === run.id}
+                      onClick={() => void saveRunAsPage(run)}
+                    >
+                      <FilePlus2Icon className="h-3 w-3" />
+                      {savingRunId === run.id ? 'Filing…' : 'Save as page'}
+                    </Button>
+                  </div>
+                )}
                 {openRunId === run.id && trace && (
                   <div className="space-y-2 border-t p-2">
                     {trace.sources.length === 0 && (

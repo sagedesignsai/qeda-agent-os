@@ -97,27 +97,25 @@ export function usePresenceBrowser(): PresenceBrowserControls & {
 
   const [browserState, setBrowserState] = useState<BrowserTabState | null>(null);
 
-  useIpcEvent('presence:browser-state', ([payload]: unknown[]) => {
-    const data = payload as { id: string; url: string; title: string; canGoBack: boolean; canGoForward: boolean };
+  useIpcEvent('presence:browser-state', (...args: unknown[]) => {
+    const data = args[0] as { id: string; url: string; title: string; canGoBack: boolean; canGoForward: boolean };
     setBrowserState((prev) => {
       if (prev?.url === data.url && prev?.title === data.title) return prev;
-      return {
-        ...prev,
-        ...data,
-        error: null,
-      };
+      return prev
+        ? { ...prev, ...data, error: null }
+        : { ...data, loading: false, error: null };
     });
   });
 
-  useIpcEvent('presence:browser-loading', ([payload]: unknown[]) => {
-    const data = payload as { id: string; loading: boolean };
+  useIpcEvent('presence:browser-loading', (...args: unknown[]) => {
+    const data = args[0] as { id: string; loading: boolean };
     setBrowserState((prev) =>
       prev ? { ...prev, loading: data.loading } : prev,
     );
   });
 
-  useIpcEvent('presence:browser-error', ([payload]: unknown[]) => {
-    const data = payload as { id: string; error: string };
+  useIpcEvent('presence:browser-error', (...args: unknown[]) => {
+    const data = args[0] as { id: string; error: string };
     setBrowserState((prev) =>
       prev ? { ...prev, error: data.error, loading: false } : prev,
     );

@@ -36,6 +36,7 @@ import {
   VideoIcon,
   TerminalIcon,
   Music2Icon,
+  NotebookIcon,
   PlayIcon,
   PauseIcon,
   SkipBackIcon,
@@ -47,6 +48,18 @@ import { useMusicStore } from '@/stores/music-store';
 import { useFocusStore } from '@/stores/focus-store';
 import { useSoundscapeStore } from '@/stores/soundscape-store';
 import { BUILTIN_SCENES } from '@/lib/music/scenes';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { toast } from 'sonner';
 interface SessionLite {
   id: string;
   title: string;
@@ -80,6 +93,8 @@ export function CommandPalette({
   const [query, setQuery] = useState('');
   const [sessions, setSessions] = useState<SessionLite[]>([]);
   const [docs, setDocs] = useState<DocLite[]>([]);
+  const [createNotebookOpen, setCreateNotebookOpen] = useState(false);
+  const [notebookTitle, setNotebookTitle] = useState('');
 
   // Load recent sessions and documents whenever the palette opens.
   useEffect(() => {
@@ -115,6 +130,24 @@ export function CommandPalette({
   const run = (fn: () => void | Promise<void>) => {
     void fn();
     close();
+  };
+
+  const submitNotebook = async () => {
+    const title = notebookTitle.trim();
+    if (!title) return;
+    try {
+      const notebook = await window.electron.ipc.invoke<{ id: string }>(
+        'notebooks:create',
+        { title, projectId: null },
+      );
+      setCreateNotebookOpen(false);
+      setNotebookTitle('');
+      close();
+      navigate(`/workspace/${notebook.id}`);
+      toast.success('Notebook created.');
+    } catch {
+      toast.error('Failed to create notebook.');
+    }
   };
 
   const matchingDocs =
@@ -171,6 +204,10 @@ export function CommandPalette({
               <span>Music</span>
               <CommandShortcut>⌘7</CommandShortcut>
             </CommandItem>
+            <CommandItem onSelect={() => run(() => navigate('/workspace'))}>
+              <NotebookIcon />
+              <span>Notebooks</span>
+            </CommandItem>
           </CommandGroup>
 
           <CommandSeparator />
@@ -187,6 +224,15 @@ export function CommandPalette({
             <CommandItem onSelect={() => run(() => navigate('/chat'))}>
               <PlusIcon />
               <span>New chat</span>
+            </CommandItem>
+            <CommandItem
+              onSelect={() => {
+                setCreateNotebookOpen(true);
+                close();
+              }}
+            >
+              <NotebookIcon />
+              <span>New notebook…</span>
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -329,6 +375,45 @@ export function CommandPalette({
           )}
         </CommandList>
       </Command>
+
+      <Dialog open={createNotebookOpen} onOpenChange={setCreateNotebookOpen}>
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>New notebook</DialogTitle>
+            <DialogDescription>
+              Keep related notes and research together.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="palette-notebook-title">Name</Label>
+            <Input
+              id="palette-notebook-title"
+              value={notebookTitle}
+              onChange={(e) => setNotebookTitle(e.target.value)}
+              placeholder="e.g. Market research"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submitNotebook();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setCreateNotebookOpen(false)}
+              disabled={!notebookTitle.trim()}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={submitNotebook}
+              disabled={!notebookTitle.trim()}
+            >
+              Create notebook
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </CommandDialog>
   );
 }

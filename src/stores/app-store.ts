@@ -25,12 +25,7 @@
  */
 
 import { create } from 'zustand';
-import type {
-  Task,
-  Project,
-  ChatContext,
-  ResearchRun,
-} from '@/main/ipc/channels';
+import type { Task, Project, ResearchRun } from '@/main/ipc/channels';
 
 export interface AppStoreState {
   // ── Focused / active task ──────────────────────────────────────────────────
@@ -54,14 +49,6 @@ export interface AppStoreState {
   setActiveResearchRun: (run: ResearchRun | null) => void;
   clearActiveResearchRun: () => void;
 
-  // ── Active workspace note / page ───────────────────────────────────────────
-  activeNotebookId: string | null;
-  activePageId: string | null;
-  setActiveWorkspace: (
-    notebookId: string | null,
-    pageId?: string | null,
-  ) => void;
-
   // ── Active terminal session ────────────────────────────────────────────────
   activeTerminalSessionId: string | null;
   linkedTerminalTaskId: string | null;
@@ -71,9 +58,6 @@ export interface AppStoreState {
   ) => void;
 
   // ── Cross-feature action bridges ───────────────────────────────────────────
-  /** Build a complete ChatContext object from current store state */
-  getEffectiveChatContext: () => ChatContext;
-
   /** Hand over a task to Chat for AI planning, breakdown, or consultation */
   discussTaskInChat: (
     task: Task,
@@ -174,22 +158,10 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
     set({
       activeResearchRun: run,
       activeResearchRunId: run?.id ?? null,
-      ...(run?.notebook_id ? { activeNotebookId: run.notebook_id } : {}),
-      ...(run?.page_id ? { activePageId: run.page_id } : {}),
     });
   },
   clearActiveResearchRun: () =>
     set({ activeResearchRun: null, activeResearchRunId: null }),
-
-  // Workspace
-  activeNotebookId: null,
-  activePageId: null,
-  setActiveWorkspace: (notebookId, pageId = null) => {
-    set({
-      activeNotebookId: notebookId,
-      activePageId: pageId,
-    });
-  },
 
   // Terminal
   activeTerminalSessionId: null,
@@ -199,18 +171,6 @@ export const useAppStore = create<AppStoreState>((set, get) => ({
       activeTerminalSessionId: sessionId,
       linkedTerminalTaskId: linkedTaskId,
     });
-  },
-
-  // Effective chat context
-  getEffectiveChatContext: () => {
-    const s = get();
-    const ctx: ChatContext = {};
-    if (s.activeProjectId) ctx.projectId = s.activeProjectId;
-    if (s.focusedTaskId) ctx.taskId = s.focusedTaskId;
-    if (s.activeNotebookId) ctx.notebookId = s.activeNotebookId;
-    if (s.activePageId) ctx.pageId = s.activePageId;
-    if (s.activeResearchRunId) ctx.researchRunId = s.activeResearchRunId;
-    return ctx;
   },
 
   // Bridges
