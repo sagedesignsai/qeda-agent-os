@@ -38,6 +38,11 @@ describe('presence data layer', () => {
     db.pragma('foreign_keys = ON');
     applyMigrations(db);
     useTestDatabase(db);
+    // Presence rows carry a real foreign key to projects. Seed the project the
+    // tests scope themselves to, otherwise every insert fails the constraint.
+    db.prepare(
+      "INSERT INTO projects (id, name) VALUES ('project-1', 'Test Project')",
+    ).run();
   });
 
   afterEach(() => {
@@ -48,7 +53,9 @@ describe('presence data layer', () => {
   // ── Batches ──────────────────────────────────────────────────────────────
 
   it('creates and lists batches', () => {
-    const batch = createBatch('project-1', 'Build LinkedIn presence', { goal: 'personal_brand' });
+    const batch = createBatch('project-1', 'Build LinkedIn presence', {
+      goal: 'personal_brand',
+    });
     expect(batch.id).toBeDefined();
     expect(batch.project_id).toBe('project-1');
 
@@ -82,7 +89,15 @@ describe('presence data layer', () => {
 
   it('creates an item with pending status', () => {
     const batch = createBatch('project-1', '', {});
-    const item = createItem(batch.id, 'connection_suggestion', 'Reach out', 'Body text', 'x', 'contact', 'contact-1');
+    const item = createItem(
+      batch.id,
+      'connection_suggestion',
+      'Reach out',
+      'Body text',
+      'x',
+      'contact',
+      'contact-1',
+    );
     expect(item.status).toBe('pending');
     expect(item.kind).toBe('connection_suggestion');
     expect(item.platform).toBe('x');
@@ -90,9 +105,20 @@ describe('presence data layer', () => {
 
   it('updates item status and feedback', () => {
     const batch = createBatch('project-1', '', {});
-    const item = createItem(batch.id, 'post_draft', 'Title', 'Body', 'any', null, null);
+    const item = createItem(
+      batch.id,
+      'post_draft',
+      'Title',
+      'Body',
+      'any',
+      null,
+      null,
+    );
 
-    const updated = updateItem(item.id, { status: 'done', feedback: 'Got 5 likes!' });
+    const updated = updateItem(item.id, {
+      status: 'done',
+      feedback: 'Got 5 likes!',
+    });
     expect(updated).not.toBeNull();
     expect(updated!.status).toBe('done');
     expect(updated!.feedback).toBe('Got 5 likes!');
@@ -100,7 +126,15 @@ describe('presence data layer', () => {
 
   it('deletes an item', () => {
     const batch = createBatch('project-1', '', {});
-    const item = createItem(batch.id, 'post_draft', 'Title', 'Body', 'any', null, null);
+    const item = createItem(
+      batch.id,
+      'post_draft',
+      'Title',
+      'Body',
+      'any',
+      null,
+      null,
+    );
     expect(deleteItem(item.id)).toBe(true);
     expect(getItem(item.id)).toBeNull();
   });
@@ -110,7 +144,15 @@ describe('presence data layer', () => {
   it('returns batch with items', () => {
     const batch = createBatch('project-1', '', {});
     createItem(batch.id, 'post_draft', 'T1', 'B1', 'linkedin', null, null);
-    createItem(batch.id, 'engagement_prompt', 'T2', 'B2', 'discord', null, null);
+    createItem(
+      batch.id,
+      'engagement_prompt',
+      'T2',
+      'B2',
+      'discord',
+      null,
+      null,
+    );
 
     const detail = getBatchDetail(batch.id);
     expect(detail).not.toBeNull();
@@ -132,8 +174,24 @@ describe('presence data layer', () => {
 
   it('counts batches and item statuses', () => {
     const batch = createBatch('project-1', '', {});
-    const item1 = createItem(batch.id, 'post_draft', 'T1', 'B1', 'linkedin', null, null);
-    const item2 = createItem(batch.id, 'post_draft', 'T2', 'B2', 'x', null, null);
+    const item1 = createItem(
+      batch.id,
+      'post_draft',
+      'T1',
+      'B1',
+      'linkedin',
+      null,
+      null,
+    );
+    const item2 = createItem(
+      batch.id,
+      'post_draft',
+      'T2',
+      'B2',
+      'x',
+      null,
+      null,
+    );
     updateItem(item1.id, { status: 'done' });
     updateItem(item2.id, { status: 'skipped' });
 

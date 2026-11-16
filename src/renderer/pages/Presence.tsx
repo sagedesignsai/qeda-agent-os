@@ -1,213 +1,109 @@
 /**
  * renderer/pages/Presence.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * The Presence coach page — warm greeting, onboarding, batches with
- * conversational suggestion cards, and an empty state that invites action.
+ * The Presence workspace: coach on the left, embedded platform tabs on the right.
+ *
+ * The page itself is mostly composition. It owns three things:
+ *   • the project scope and the reads the header needs (counts, streak);
+ *   • one "auto prompt" slot, so the header action, onboarding, and the empty
+ *     queue can all ask the coach for a batch through the same path;
+ *   • the two-pane frame.
+ *
+ * The coach owns its own conversation. The browser pane owns its own tabs. That
+ * separation matters: a chat turn and a tab switch are independent, and neither
+ * should remount the other.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState } from 'react';
-import { useProjectScope } from '@/hooks/use-project-scope';
+import { useCallback, useRef, useState } from 'react';
+import { PlusIcon } from 'lucide-react';
+import { PageHeader } from '@/components/PageHeader';
+import { Button } from '@/components/ui/button';
+import { PresenceBrowserPane } from '@/components/presence/PresenceBrowserPane';
 import {
-  usePresenceBatches,
-  usePresenceBatchDetail,
-  usePresenceCounts,
-  usePresenceProfile,
-  usePresenceActions,
-} from '@/hooks/use-presence';
-import { CoachGreeting } from '@/components/presence/CoachGreeting';
-import { OnboardingDialog } from '@/components/presence/OnboardingDialog';
-import { SuggestionCard } from '@/components/presence/SuggestionCard';
+  PresenceCoachPanel,
+  type PresenceAutoPrompt,
+} from '@/components/presence/PresenceCoachPanel';
 import { StreakBadge } from '@/components/presence/StreakBadge';
-import { ChevronDownIcon, ChevronRightIcon, SparklesIcon } from 'lucide-react';
-import type { PresenceBatch } from '@/main/ipc/channels';
-
-function BatchList({
-  batches,
-  expandedBatches,
-  onToggleBatch,
-}: {
-  batches: PresenceBatch[];
-  expandedBatches: Set<string>;
-  onToggleBatch: (id: string) => void;
-}) {
-  return (
-    <div className="space-y-4 pt-4">
-      {batches.map((batch) => (
-        <BatchItem
-          key={batch.id}
-          batch={batch}
-          isExpanded={expandedBatches.has(batch.id)}
-          onToggle={() => onToggleBatch(batch.id)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function BatchItem({
-  batch,
-  isExpanded,
-  onToggle,
-}: {
-  batch: PresenceBatch;
-  isExpanded: boolean;
-  onToggle: () => void;
-}) {
-  const { detail } = usePresenceBatchDetail(batch.id);
-  const items = detail?.items ?? [];
-  const doneCount = items.filter((i) => i.status === 'done').length;
-
-  return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-700">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-3 px-5 py-4 text-left"
-      >
-        {isExpanded ? (
-          <ChevronDownIcon className="h-4 w-4 text-zinc-400" />
-        ) : (
-          <ChevronRightIcon className="h-4 w-4 text-zinc-400" />
-        )}
-        <div className="flex-1">
-          <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            {detail?.batch.focus || 'Suggestions'}
-          </p>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500">
-            {items.length} suggestions · {doneCount} done
-          </p>
-        </div>
-      </button>
-      {isExpanded && (
-        <div className="space-y-3 border-t border-zinc-100 px-5 py-4 dark:border-zinc-800">
-          {items.length === 0 ? (
-            <p className="text-sm text-zinc-400 dark:text-zinc-500">Loading suggestions...</p>
-          ) : (
-            items.map((item) => <SuggestionCard key={item.id} item={item} />)
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+import { useProjectScope } from '@/hooks/use-project-scope';
+import { usePresenceCounts, usePresenceProfile } from '@/hooks/use-presence';
+import { PRESENCE_GENERATION_PROMPT } from '@/lib/presence';
 
 export default function Presence() {
   const { projectId } = useProjectScope();
-  const { onboardingComplete } = usePresenceProfile(projectId);
-  const { batches } = usePresenceBatches(projectId);
+  const {
+    profile,
+    platforms,
+    loading: profileLoading,
+  } = usePresenceProfile(projectId);
   const { counts } = usePresenceCounts(projectId);
-  const { generate } = usePresenceActions();
 
-  const [showOnboarding, setShowOnboarding] = useState(!onboardingComplete);
-  const [generating, setGenerating] = useState(false);
-  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
+  const [autoPrompt, setAutoPrompt] = useState<PresenceAutoPrompt | null>(null);
+  const promptSequence = useRef(0);
 
-  const handleGenerate = async () => {
-    if (!projectId) return;
-    setGenerating(true);
-    try {
-      const detail = await generate(projectId);
-      setExpandedBatches((prev) => new Set(prev).add(detail.batch.id));
-    } catch {
-      // Error handled by AI layer
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const toggleBatch = (id: string) => {
-    setExpandedBatches((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const seedGeneration = useCallback(() => {
+    promptSequence.current += 1;
+    setAutoPrompt({
+      id: promptSequence.current,
+      text: PRESENCE_GENERATION_PROMPT,
     });
-  };
-
-  // Show onboarding dialog on first run
-  if (showOnboarding && projectId) {
-    return (
-      <OnboardingDialog
-        projectId={projectId}
-        onClose={() => setShowOnboarding(false)}
-        onGenerate={handleGenerate}
-      />
-    );
-  }
+  }, []);
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight">Presence</h1>
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader
+        crumbs={[{ label: 'Presence' }]}
+        subtitle="Your social presence coach"
+        meta={
+          <div className="flex items-center gap-2">
             <StreakBadge projectId={projectId} />
+            <span className="hidden text-[11px] text-muted-foreground lg:inline">
+              {counts.pending} to do · {counts.done} done
+            </span>
           </div>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            {counts.pending} pending · {counts.done} done · {counts.skipped} skipped
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleGenerate}
-          disabled={generating || !projectId}
-          className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
-          <SparklesIcon className="h-4 w-4" />
-          {generating ? 'Generating...' : 'Generate suggestions'}
-        </button>
-      </div>
+        }
+        actions={
+          <Button
+            type="button"
+            size="sm"
+            onClick={seedGeneration}
+            disabled={!projectId}
+            className="h-7 bg-amber-500 px-2.5 text-[11px] text-white hover:bg-amber-600"
+          >
+            <PlusIcon className="size-3.5" />
+            New suggestions
+          </Button>
+        }
+      />
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto">
-        {!projectId ? (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              Select a project to start building your presence.
-            </p>
-          </div>
-        ) : batches.length === 0 ? (
-          /* Empty state */
-          <div className="flex h-full flex-col items-center justify-center px-4 text-center">
-            <div className="rounded-2xl border border-zinc-200 bg-gradient-to-br from-orange-50 to-amber-50 p-8 dark:border-zinc-700 dark:from-orange-950/30 dark:to-amber-950/30">
-              <h2 className="text-xl font-semibold text-zinc-700 dark:text-zinc-300">
-                Your social presence journey starts here
-              </h2>
-              <p className="mt-3 max-w-md text-sm text-zinc-500 dark:text-zinc-400">
-                I'll help you build your online presence, one step at a time. Let me suggest some
-                posts to make, people to connect with, and platforms to join.
-              </p>
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={generating}
-                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                <SparklesIcon className="h-4 w-4" />
-                {generating ? 'Generating...' : 'Generate suggestions'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* Batches list */
-          <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
-            {/* Greeting section */}
-            <CoachGreeting
-              projectId={projectId}
-              onGenerate={handleGenerate}
-              generating={generating}
-            />
+      <div className="flex min-h-0 flex-1">
+        <aside className="flex w-[21rem] shrink-0 flex-col border-r border-border/60 bg-card/10 lg:w-[23rem]">
+          {/*
+            Keyed by project: the coach conversation and the open platform tabs
+            are both project-scoped. Remounting on a project switch drops the old
+            transcript and closes the old native tabs instead of letting them
+            bleed across scopes.
+          */}
+          <PresenceCoachPanel
+            key={`coach:${projectId ?? 'none'}`}
+            projectId={projectId}
+            profile={profile}
+            profileLoading={profileLoading}
+            counts={counts}
+            platforms={platforms}
+            autoPrompt={autoPrompt}
+            onAutoPromptConsumed={() => setAutoPrompt(null)}
+            onGenerate={seedGeneration}
+          />
+        </aside>
 
-            {/* Batches */}
-            <BatchList
-              batches={batches}
-              expandedBatches={expandedBatches}
-              onToggleBatch={toggleBatch}
-            />
-          </div>
-        )}
+        <section className="min-w-0 flex-1">
+          <PresenceBrowserPane
+            key={`browser:${projectId ?? 'none'}`}
+            projectId={projectId}
+            platforms={platforms}
+          />
+        </section>
       </div>
     </div>
   );

@@ -96,7 +96,8 @@ export type PlanEventChannel =
   | 'terminal:plan-event'
   | 'motion-copilot:plan-event'
   | 'model-builder:plan-event'
-  | 'trace-copilot:plan-event';
+  | 'trace-copilot:plan-event'
+  | 'presence-copilot:plan-event';
 
 /**
  * Live subscription to any *:plan-event channel.

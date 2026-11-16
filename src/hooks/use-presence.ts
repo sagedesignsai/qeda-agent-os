@@ -27,6 +27,7 @@ export function usePresenceBatches(projectId: string | null) {
     channel: 'presence:batches-list',
     event: 'presence:changed',
     enabled: !!projectId,
+    request: { projectId },
     select: (raw) => (Array.isArray(raw) ? (raw as PresenceBatch[]) : []),
   });
 
@@ -46,6 +47,7 @@ export function usePresenceBatchDetail(batchId: string | null) {
     event: 'presence:changed',
     enabled: !!batchId,
     resourceKey: batchId ?? '',
+    request: { id: batchId },
   });
 
   return {
@@ -68,6 +70,7 @@ export function usePresenceCounts(projectId: string | null) {
     channel: 'presence:counts',
     event: 'presence:changed',
     enabled: !!projectId,
+    request: { projectId },
   });
 
   return {
@@ -85,6 +88,7 @@ export function usePresencePosts(projectId: string | null) {
     channel: 'presence:posts-list',
     event: 'presence:changed',
     enabled: !!projectId,
+    request: { projectId },
     select: (raw) => (Array.isArray(raw) ? (raw as PresencePost[]) : []),
   });
 
@@ -99,12 +103,14 @@ export function usePresencePosts(projectId: string | null) {
 // ── Profile ───────────────────────────────────────────────────────────────────
 
 export function usePresenceProfile(projectId: string | null) {
-  const { data, loading, error, refresh } = useDbResource<PresenceProfile | null>({
-    channel: 'presence:profile-get',
-    event: 'presence:changed',
-    enabled: !!projectId,
-    resourceKey: projectId ?? '',
-  });
+  const { data, loading, error, refresh } =
+    useDbResource<PresenceProfile | null>({
+      channel: 'presence:profile-get',
+      event: 'presence:changed',
+      enabled: !!projectId,
+      resourceKey: projectId ?? '',
+      request: { projectId },
+    });
 
   const platforms = useMemo(() => {
     if (!data?.platforms_json) return [];
@@ -113,7 +119,7 @@ export function usePresenceProfile(projectId: string | null) {
     } catch {
       return [];
     }
-  }, [data?.platforms_json]);
+  }, [data]);
 
   return {
     profile: data,
@@ -137,11 +143,13 @@ export function usePresenceStreak(projectId: string | null) {
     event: 'presence:changed',
     enabled: !!projectId,
     resourceKey: projectId ?? '',
+    request: { projectId },
   });
 
   const streakCount = data?.streak_count ?? 0;
   const lastActiveDate = data?.last_active_date ?? null;
-  const milestoneMessage = streakCount > 0 ? getMilestoneMessage(streakCount) : null;
+  const milestoneMessage =
+    streakCount > 0 ? getMilestoneMessage(streakCount) : null;
 
   return {
     streakCount,
@@ -171,7 +179,10 @@ export function useGreeting(projectId: string | null) {
 
 export interface PresenceActions {
   generate: (projectId: string, focus?: string) => Promise<PresenceBatchDetail>;
-  updateItem: (id: string, patch: PresenceItemPatch) => Promise<PresenceItem | null>;
+  updateItem: (
+    id: string,
+    patch: PresenceItemPatch,
+  ) => Promise<PresenceItem | null>;
   deleteItem: (id: string) => Promise<boolean>;
   logPost: (input: {
     projectId: string | null;
@@ -190,29 +201,31 @@ export interface PresenceActions {
 }
 
 export function usePresenceActions(): PresenceActions {
-  const generate = useCallback(
-    async (projectId: string, focus?: string) => {
-      const result = await window.electron.ipc.invoke('presence:generate', { projectId, focus });
-      return result as PresenceBatchDetail;
-    },
-    [],
-  );
+  const generate = useCallback(async (projectId: string, focus?: string) => {
+    const result = await window.electron.ipc.invoke('presence:generate', {
+      projectId,
+      focus,
+    });
+    return result as PresenceBatchDetail;
+  }, []);
 
   const updateItem = useCallback(
     async (id: string, patch: PresenceItemPatch) => {
-      const result = await window.electron.ipc.invoke('presence:item-update', { id, patch });
+      const result = await window.electron.ipc.invoke('presence:item-update', {
+        id,
+        patch,
+      });
       return result as PresenceItem | null;
     },
     [],
   );
 
-  const deleteItem = useCallback(
-    async (id: string) => {
-      const result = await window.electron.ipc.invoke('presence:item-delete', { id });
-      return result as boolean;
-    },
-    [],
-  );
+  const deleteItem = useCallback(async (id: string) => {
+    const result = await window.electron.ipc.invoke('presence:item-delete', {
+      id,
+    });
+    return result as boolean;
+  }, []);
 
   const logPost = useCallback(
     async (input: {
@@ -222,19 +235,21 @@ export function usePresenceActions(): PresenceActions {
       metrics?: string;
       itemId?: string;
     }) => {
-      const result = await window.electron.ipc.invoke('presence:post-log', input);
+      const result = await window.electron.ipc.invoke(
+        'presence:post-log',
+        input,
+      );
       return result as PresencePost;
     },
     [],
   );
 
-  const openBrowser = useCallback(
-    async (url: string) => {
-      const result = await window.electron.ipc.invoke('presence:open-browser', { url });
-      return result as boolean;
-    },
-    [],
-  );
+  const openBrowser = useCallback(async (url: string) => {
+    const result = await window.electron.ipc.invoke('presence:open-browser', {
+      url,
+    });
+    return result as boolean;
+  }, []);
 
   const updateProfile = useCallback(
     async (input: {
@@ -243,11 +258,21 @@ export function usePresenceActions(): PresenceActions {
       platforms?: string[];
       goal?: string;
     }) => {
-      const result = await window.electron.ipc.invoke('presence:profile-update', input);
+      const result = await window.electron.ipc.invoke(
+        'presence:profile-update',
+        input,
+      );
       return result as PresenceProfile;
     },
     [],
   );
 
-  return { generate, updateItem, deleteItem, logPost, openBrowser, updateProfile };
+  return {
+    generate,
+    updateItem,
+    deleteItem,
+    logPost,
+    openBrowser,
+    updateProfile,
+  };
 }

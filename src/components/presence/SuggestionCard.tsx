@@ -1,267 +1,278 @@
 /**
  * components/presence/SuggestionCard.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Three-state card (pending / done / skipped) with conversational copy.
- * Platform suggestions show a "Join Platform" button.
+ * One suggestion, as a dense row in the coach queue.
+ *
+ * The queue is the left pane of a split layout, so the row leads with the two
+ * things a user needs to decide whether to act: what kind of move this is and
+ * where it happens. The title follows, and the body stays collapsed.
+ *
+ * Clicking the row copies the draft. That is deliberately the only effect of the
+ * primary click: social platforms cannot be prefilled from a URL, and silently
+ * stealing the right-hand tab mid-read is worse than a clipboard write. Acting
+ * on the item (done / skip / edit / feedback) lives in the expanded panel where
+ * it cannot be hit by accident.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState } from 'react';
-import { CopyIcon, ExternalLinkIcon, Undo2Icon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  CopyIcon,
+  FileTextIcon,
+  GlobeIcon,
+  MessageCircleIcon,
+  Undo2Icon,
+  UserPlusIcon,
+  UsersIcon,
+} from 'lucide-react';
 import type { PresenceItem } from '@/main/ipc/channels';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import { usePresenceActions } from '@/hooks/use-presence';
-import { KIND_LABELS, PLATFORM_LABELS, PLATFORM_URLS, STATUS_LABELS } from '@/lib/presence';
+import {
+  KIND_LABELS,
+  PLATFORM_LABELS,
+  type PresenceKind,
+  type PresencePlatform,
+} from '@/lib/presence';
 
 interface SuggestionCardProps {
   item: PresenceItem;
 }
 
-export function SuggestionCard({ item }: SuggestionCardProps) {
-  const [feedback, setFeedback] = useState('');
-  const [body, setBody] = useState(item.body);
-  const { updateItem, openBrowser } = usePresenceActions();
+const KIND_ICONS: Record<PresenceKind, typeof FileTextIcon> = {
+  post_draft: FileTextIcon,
+  platform_suggestion: GlobeIcon,
+  connection_suggestion: UserPlusIcon,
+  engagement_prompt: MessageCircleIcon,
+  group_suggestion: UsersIcon,
+};
 
-  const handleCopy = async () => {
+const STATUS_STYLES: Record<string, string> = {
+  pending: 'bg-muted text-muted-foreground',
+  done: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+  skipped: 'bg-muted text-muted-foreground/70',
+  edited: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+};
+
+export function SuggestionCard({ item }: SuggestionCardProps) {
+  const { updateItem } = usePresenceActions();
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [body, setBody] = useState(item.body);
+  const [feedback, setFeedback] = useState(item.feedback);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A refreshed item (broadcast, project switch) is the source of truth unless
+  // the user has an expanded editor open on it.
+  useEffect(() => {
+    if (!expanded) {
+      setBody(item.body);
+      setFeedback(item.feedback);
+    }
+  }, [item.body, item.feedback, expanded]);
+
+  useEffect(
+    () => () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+
+  const kindIcon = KIND_ICONS[item.kind as PresenceKind] ?? FileTextIcon;
+  const Icon = kindIcon;
+  const platformLabel =
+    item.platform === 'any'
+      ? null
+      : (PLATFORM_LABELS[item.platform as PresencePlatform] ?? item.platform);
+  const isResolved = item.status === 'done' || item.status === 'skipped';
+  const dirty = body !== item.body;
+
+  const copy = async () => {
     try {
       await navigator.clipboard.writeText(body);
+      setCopied(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1800);
     } catch {
-      // Clipboard API not available
+      // Clipboard access can be denied; the expanded panel still exposes the
+      // text so the user can select it manually.
     }
   };
 
-  const handleOpenPlatform = async () => {
-    if (item.platform !== 'any') {
-      const url = PLATFORM_URLS[item.platform as keyof typeof PLATFORM_URLS] ?? '';
-      if (url) await openBrowser(url);
-    }
-  };
-
-  const handleStatus = async (status: 'done' | 'skipped' | 'edited') => {
+  const setStatus = async (status: 'done' | 'skipped' | 'pending') => {
     await updateItem(item.id, { status });
   };
 
-  const handleSaveFeedback = async () => {
+  const saveEdit = async () => {
+    if (!dirty) return;
+    await updateItem(item.id, { body, status: 'edited' });
+  };
+
+  const saveFeedback = async () => {
     await updateItem(item.id, { feedback });
   };
 
-  const handleUndo = async () => {
-    await updateItem(item.id, { status: 'pending' });
-  };
-
-  const handleBodyChange = (newBody: string) => {
-    setBody(newBody);
-  };
-
-  // ── Skipped state ────────────────────────────────────────────────────────
-
-  if (item.status === 'skipped') {
-    return (
-      <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-5 dark:border-zinc-700 dark:bg-zinc-900/50">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">
-            {KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind}
-          </span>
-          {item.platform !== 'any' && (
-            <>
-              <span className="text-zinc-300 dark:text-zinc-600">·</span>
-              <span className="text-xs text-zinc-400 dark:text-zinc-500">
-                {PLATFORM_LABELS[item.platform as keyof typeof PLATFORM_LABELS] ?? item.platform}
-              </span>
-            </>
-          )}
-          <span className="ml-auto rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
-            {STATUS_LABELS[item.status as keyof typeof STATUS_LABELS]}
-          </span>
-        </div>
-        <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
-          No problem — we'll try something else next time.
-        </p>
-        <button
-          type="button"
-          onClick={handleUndo}
-          className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
-        >
-          <Undo2Icon className="h-3 w-3" />
-          Undo
-        </button>
-      </div>
-    );
-  }
-
-  // ── Done state ───────────────────────────────────────────────────────────
-
-  if (item.status === 'done') {
-    return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-5 dark:border-emerald-800 dark:bg-emerald-950/20">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-            {KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind}
-          </span>
-          {item.platform !== 'any' && (
-            <>
-              <span className="text-emerald-300 dark:text-emerald-700">·</span>
-              <span className="text-xs text-emerald-600 dark:text-emerald-400">
-                {PLATFORM_LABELS[item.platform as keyof typeof PLATFORM_LABELS] ?? item.platform}
-              </span>
-            </>
-          )}
-          <span className="ml-auto rounded-full bg-emerald-200 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-800 dark:text-emerald-300">
-            {STATUS_LABELS[item.status as keyof typeof STATUS_LABELS]}
-          </span>
-        </div>
-        <p className="mt-3 text-sm text-emerald-700 dark:text-emerald-300">
-          Nice! How did it go? Any reactions or comments worth noting? (This helps me suggest
-          better next time)
-        </p>
-        <textarea
-          value={feedback}
-          onChange={(e) => setFeedback(e.target.value)}
-          placeholder="Tell me what happened..."
-          rows={3}
-          className="mt-3 w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm placeholder:text-emerald-300 focus:border-emerald-400 focus:outline-none dark:border-emerald-700 dark:bg-zinc-900 dark:placeholder:text-emerald-600"
-        />
-        <button
-          type="button"
-          onClick={handleSaveFeedback}
-          className="mt-2 text-xs font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-        >
-          Save feedback
-        </button>
-      </div>
-    );
-  }
-
-  // ── Platform suggestion ──────────────────────────────────────────────────
-
-  if (item.kind === 'platform_suggestion') {
-    const platformName =
-      PLATFORM_LABELS[item.platform as keyof typeof PLATFORM_LABELS] ?? item.platform;
-    return (
-      <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-violet-600 dark:text-violet-400">
-            {KIND_LABELS[item.kind as keyof typeof KIND_LABELS]}
-          </span>
-          {item.platform !== 'any' && (
-            <>
-              <span className="text-zinc-300 dark:text-zinc-600">·</span>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                {platformName}
-              </span>
-            </>
-          )}
-        </div>
-        <p className="mt-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          {item.title}
-        </p>
-        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{item.body}</p>
-        <div className="mt-4 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleOpenPlatform}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700"
-          >
-            <ExternalLinkIcon className="h-3 w-3" />
-            Join {platformName}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleStatus('done')}
-            className="text-xs font-medium text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-300"
-          >
-            I'll post this
-          </button>
-          <button
-            type="button"
-            onClick={() => handleStatus('skipped')}
-            className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-          >
-            Not today
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Pending state (default) ──────────────────────────────────────────────
-
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500">
-          {KIND_LABELS[item.kind as keyof typeof KIND_LABELS] ?? item.kind}
-        </span>
-        {item.platform !== 'any' && (
-          <>
-            <span className="text-zinc-300 dark:text-zinc-600">·</span>
-            <span className="text-xs text-zinc-400 dark:text-zinc-500">
-              {PLATFORM_LABELS[item.platform as keyof typeof PLATFORM_LABELS] ?? item.platform}
-            </span>
-          </>
-        )}
-      </div>
-      <p className="mt-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-        {item.title}
-      </p>
-      <textarea
-        value={body}
-        onChange={(e) => handleBodyChange(e.target.value)}
-        onBlur={() => {
-          if (body !== item.body) {
-            updateItem(item.id, { body });
-          }
-        }}
-        rows={4}
-        className="mt-2 w-full rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm leading-relaxed text-zinc-600 resize-none focus:border-zinc-300 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:focus:border-zinc-600"
-      />
-      {item.source_kind && (
-        <span className="mt-2 inline-block text-xs text-zinc-400 dark:text-zinc-500">
-          Based on {item.source_kind}: {item.source_id ?? 'unknown'}
-        </span>
+    <div
+      className={cn(
+        'rounded-lg border bg-card/40 transition-colors',
+        expanded
+          ? 'border-amber-500/40'
+          : 'border-border/60 hover:border-border',
+        isResolved && 'opacity-80',
       )}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+    >
+      <div className="flex items-start gap-1 p-2">
         <button
           type="button"
-          onClick={handleCopy}
-          className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          onClick={() => void copy()}
+          title="Copy this draft"
+          className="flex min-w-0 flex-1 items-start gap-2 rounded-md p-0.5 text-left"
         >
-          <CopyIcon className="h-3 w-3" />
-          Copy
+          <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground">
+            <Icon className="size-3" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {KIND_LABELS[item.kind as PresenceKind] ?? item.kind}
+              {platformLabel && (
+                <>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span className="normal-case tracking-normal">
+                    {platformLabel}
+                  </span>
+                </>
+              )}
+            </span>
+            <span className="mt-0.5 block truncate text-xs font-medium text-foreground">
+              {item.title}
+            </span>
+            <span
+              className={cn(
+                'mt-0.5 block truncate text-[11px]',
+                copied
+                  ? 'text-emerald-600 dark:text-emerald-400'
+                  : 'text-muted-foreground',
+              )}
+            >
+              {copied ? 'Copied — paste it on the platform' : item.body}
+            </span>
+          </span>
         </button>
-        {item.platform !== 'any' && (
-          <button
-            type="button"
-            onClick={handleOpenPlatform}
-            className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
-          >
-            <ExternalLinkIcon className="h-3 w-3" />
-            Open {PLATFORM_LABELS[item.platform as keyof typeof PLATFORM_LABELS] ?? item.platform}
-          </button>
-        )}
+
+        <span
+          className={cn(
+            'mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+            STATUS_STYLES[item.status] ?? STATUS_STYLES.pending,
+          )}
+        >
+          {item.status === 'pending' ? 'To do' : item.status}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Collapse suggestion' : 'Expand suggestion'}
+          className="mt-0.5 rounded-md p-1 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+        >
+          <ChevronDownIcon
+            className={cn(
+              'size-3.5 transition-transform',
+              expanded && 'rotate-180',
+            )}
+          />
+        </button>
       </div>
-      <div className="mt-3 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => handleStatus('done')}
-          className="text-xs font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
-        >
-          I'll post this
-        </button>
-        <button
-          type="button"
-          onClick={() => handleStatus('skipped')}
-          className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-        >
-          Not today
-        </button>
-        <button
-          type="button"
-          onClick={() => handleStatus('edited')}
-          className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-        >
-          Let me think about it
-        </button>
-      </div>
+
+      {expanded && (
+        <div className="space-y-2 border-t border-border/60 px-2.5 pb-2.5 pt-2">
+          <Textarea
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            rows={5}
+            aria-label="Suggestion body"
+            className="min-h-20 resize-y bg-background/60 text-xs leading-relaxed"
+          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void copy()}
+              className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+            >
+              <CopyIcon className="size-3" />
+              Copy
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveEdit()}
+              disabled={!dirty}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-500/40 px-2 py-1 text-[11px] font-medium text-amber-700 disabled:opacity-40 dark:text-amber-300"
+            >
+              <CheckIcon className="size-3" />
+              Save edit
+            </button>
+            {item.status === 'pending' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void setStatus('done')}
+                  className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
+                >
+                  <CheckIcon className="size-3" />
+                  I&apos;ll post this
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void setStatus('skipped')}
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Not today
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void setStatus('pending')}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              >
+                <Undo2Icon className="size-3" />
+                Undo
+              </button>
+            )}
+          </div>
+
+          {item.status === 'done' && (
+            <div className="space-y-1">
+              <label
+                htmlFor={`feedback-${item.id}`}
+                className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              >
+                How did it go?
+              </label>
+              <Textarea
+                id={`feedback-${item.id}`}
+                value={feedback}
+                onChange={(event) => setFeedback(event.target.value)}
+                rows={2}
+                placeholder="Reactions, comments, anything worth remembering…"
+                className="min-h-12 text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => void saveFeedback()}
+                disabled={feedback === item.feedback}
+                className="text-[11px] font-medium text-emerald-600 disabled:opacity-40 dark:text-emerald-400"
+              >
+                Save feedback
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

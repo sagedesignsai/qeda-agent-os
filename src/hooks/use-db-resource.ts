@@ -35,10 +35,10 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface DbResourceOptions<T> {
-  /** IPC channel to read from. Must be a `req: void | {}` list-style channel. */
+  /** IPC channel to read from. */
   channel: string;
   /**
    * Channel main broadcasts after any mutation of this resource. This is not
@@ -58,6 +58,15 @@ export interface DbResourceOptions<T> {
    * use it for per-entity resources such as one notebook's pages.
    */
   resourceKey?: string;
+  /**
+   * Optional request payload forwarded to the IPC channel. Use it for channels
+   * whose contract takes a scope or id (`{ projectId }`, `{ id }`, …).
+   *
+   * The payload is serialised to a key so an inline object literal does not
+   * cause a refetch on every render; a refetch happens only when the payload's
+   * contents actually change.
+   */
+  request?: unknown;
 }
 
 export interface DbResource<T> {
@@ -74,10 +83,24 @@ export function useDbResource<T>({
   select,
   enabled = true,
   resourceKey,
+  request,
 }: DbResourceOptions<T>): DbResource<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+
+  // Serialise the request to a stable key, then rebuild it from that key. This
+  // keeps the payload identity stable across renders while still refetching
+  // when its contents change. Presence payloads are plain JSON structures.
+  const requestKey = request === undefined ? '' : JSON.stringify(request);
+  const stableRequest = useMemo<unknown>(() => {
+    if (requestKey === '') return undefined;
+    try {
+      return JSON.parse(requestKey);
+    } catch {
+      return undefined;
+    }
+  }, [requestKey]);
   // Consumers commonly pass an inline selector. Keep the latest selector
   // without making refresh (and therefore the loading effect) change identity
   // on every render.
@@ -92,7 +115,7 @@ export function useDbResource<T>({
       return;
     }
     try {
-      const raw = await window.electron.ipc.invoke(channel);
+      const raw = await window.electron.ipc.invoke(channel, stableRequest);
       // `select` is the consumer's transform; without it the payload is the shape.
       const currentSelect = selectRef.current;
       setData(currentSelect ? currentSelect(raw) : (raw as T));
@@ -102,7 +125,7 @@ export function useDbResource<T>({
     } finally {
       setLoading(false);
     }
-  }, [channel, enabled]);
+  }, [channel, enabled, stableRequest]);
 
   // Load on mount, and whenever the identity of the resource changes.
   useEffect(() => {

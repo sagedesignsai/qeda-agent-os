@@ -11,11 +11,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { getDb } from './client.js';
-import type {
-  PresenceKind,
-  PresencePlatform,
-  PresenceStatus,
-  PresenceGoal,
+import {
+  localDateString,
+  type PresenceKind,
+  type PresencePlatform,
+  type PresenceStatus,
 } from '../../lib/presence.js';
 
 // ─── Row types ────────────────────────────────────────────────────────────────
@@ -101,9 +101,12 @@ export function listBatches(projectId?: string | null): PresenceBatch[] {
 
 export function getBatch(id: string): PresenceBatch | null {
   const db = getDb();
-  return db
-    .prepare<[string], PresenceBatch>('SELECT * FROM presence_batches WHERE id = ?')
-    .get(id) as PresenceBatch | null;
+  const row = db
+    .prepare<[string], PresenceBatch>(
+      'SELECT * FROM presence_batches WHERE id = ?',
+    )
+    .get(id) as PresenceBatch | undefined;
+  return row ?? null;
 }
 
 export function createBatch(
@@ -113,10 +116,7 @@ export function createBatch(
 ): PresenceBatch {
   const db = getDb();
   const id = randomUUID();
-  db.prepare<
-    [string, string | null, string, string],
-    unknown
-  >(
+  db.prepare<[string, string | null, string, string], unknown>(
     'INSERT INTO presence_batches (id, project_id, focus, context_json) VALUES (?, ?, ?, ?)',
   ).run(id, projectId, focus, JSON.stringify(contextJson));
   return {
@@ -131,9 +131,7 @@ export function createBatch(
 export function deleteBatch(id: string): boolean {
   const db = getDb();
   const info = db
-    .prepare<[string]>(
-      'DELETE FROM presence_batches WHERE id = ?',
-    )
+    .prepare<[string]>('DELETE FROM presence_batches WHERE id = ?')
     .run(id);
   return info.changes > 0;
 }
@@ -151,9 +149,12 @@ export function listItems(batchId: string): PresenceItem[] {
 
 export function getItem(id: string): PresenceItem | null {
   const db = getDb();
-  return db
-    .prepare<[string], PresenceItem>('SELECT * FROM presence_items WHERE id = ?')
-    .get(id) as PresenceItem | null;
+  const row = db
+    .prepare<[string], PresenceItem>(
+      'SELECT * FROM presence_items WHERE id = ?',
+    )
+    .get(id) as PresenceItem | undefined;
+  return row ?? null;
 }
 
 export function createItem(
@@ -170,7 +171,18 @@ export function createItem(
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
     'INSERT INTO presence_items (id, batch_id, kind, title, body, platform, source_kind, source_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, batchId, kind, title, body, platform, sourceKind, sourceId, now, now);
+  ).run(
+    id,
+    batchId,
+    kind,
+    title,
+    body,
+    platform,
+    sourceKind,
+    sourceId,
+    now,
+    now,
+  );
   return {
     id,
     batch_id: batchId,
@@ -189,7 +201,10 @@ export function createItem(
   };
 }
 
-export function updateItem(id: string, patch: PresenceItemPatch): PresenceItem | null {
+export function updateItem(
+  id: string,
+  patch: PresenceItemPatch,
+): PresenceItem | null {
   const db = getDb();
   const existing = getItem(id);
   if (!existing) return null;
@@ -234,9 +249,9 @@ export function updateItem(id: string, patch: PresenceItemPatch): PresenceItem |
 
 export function deleteItem(id: string): boolean {
   const db = getDb();
-  const info = db.prepare<[string]>(
-    'DELETE FROM presence_items WHERE id = ?',
-  ).run(id);
+  const info = db
+    .prepare<[string]>('DELETE FROM presence_items WHERE id = ?')
+    .run(id);
   return info.changes > 0;
 }
 
@@ -253,7 +268,16 @@ export function logPost(
   const id = randomUUID();
   const now = Math.floor(Date.now() / 1000);
   db.prepare<
-    [string, string | null, string, string, number, string, string | null, number],
+    [
+      string,
+      string | null,
+      string,
+      string,
+      number,
+      string,
+      string | null,
+      number,
+    ],
     unknown
   >(
     'INSERT INTO presence_posts (id, project_id, platform, content, posted_at, metrics, item_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
@@ -296,36 +320,47 @@ export function counts(projectId?: string | null): {
 } {
   const db = getDb();
   const batchWhere = projectId ? 'WHERE project_id = ?' : '';
-  const itemWhere = projectId
-    ? 'WHERE pb.project_id = ?'
-    : 'INNER JOIN presence_batches pb ON pb.id = pi.batch_id';
 
   const batches = projectId
-    ? db.prepare<[string]>(
-        `SELECT COUNT(*) FROM presence_batches ${batchWhere}`,
-      ).get(projectId) as { 'COUNT(*)': number }
-    : db.prepare<[]>(
-        `SELECT COUNT(*) FROM presence_batches ${batchWhere}`,
-      ).get() as { 'COUNT(*)': number };
+    ? (db
+        .prepare<[string]>(
+          `SELECT COUNT(*) FROM presence_batches ${batchWhere}`,
+        )
+        .get(projectId) as { 'COUNT(*)': number })
+    : (db
+        .prepare<[]>(`SELECT COUNT(*) FROM presence_batches ${batchWhere}`)
+        .get() as { 'COUNT(*)': number });
 
   const countRow = projectId
-    ? db.prepare<[string]>(
-        `SELECT
+    ? (db
+        .prepare<[string]>(
+          `SELECT
           SUM(CASE WHEN pi.status = 'pending' THEN 1 ELSE 0 END) AS pending,
           SUM(CASE WHEN pi.status = 'done' THEN 1 ELSE 0 END) AS done,
           SUM(CASE WHEN pi.status = 'skipped' THEN 1 ELSE 0 END) AS skipped
         FROM presence_items pi
         INNER JOIN presence_batches pb ON pb.id = pi.batch_id
         WHERE pb.project_id = ?`,
-      ).all(projectId)[0] as { pending: number | null; done: number | null; skipped: number | null }
-    : db.prepare<[]>(
-        `SELECT
+        )
+        .all(projectId)[0] as {
+        pending: number | null;
+        done: number | null;
+        skipped: number | null;
+      })
+    : (db
+        .prepare<[]>(
+          `SELECT
           SUM(CASE WHEN pi.status = 'pending' THEN 1 ELSE 0 END) AS pending,
           SUM(CASE WHEN pi.status = 'done' THEN 1 ELSE 0 END) AS done,
           SUM(CASE WHEN pi.status = 'skipped' THEN 1 ELSE 0 END) AS skipped
         FROM presence_items pi
         INNER JOIN presence_batches pb ON pb.id = pi.batch_id`,
-      ).all()[0] as { pending: number | null; done: number | null; skipped: number | null };
+        )
+        .all()[0] as {
+        pending: number | null;
+        done: number | null;
+        skipped: number | null;
+      });
 
   return {
     batches: batches['COUNT(*)'] ?? 0,
@@ -366,10 +401,7 @@ export function ensureProfile(projectId: string): PresenceProfile {
   const db = getDb();
   const id = randomUUID();
   const now = Math.floor(Date.now() / 1000);
-  db.prepare<
-    [string, string, number, number],
-    unknown
-  >(
+  db.prepare<[string, string, number, number], unknown>(
     'INSERT INTO presence_profile (id, project_id, created_at, updated_at) VALUES (?, ?, ?, ?)',
   ).run(id, projectId, now, now);
   return {
@@ -444,7 +476,7 @@ export function updateProfile(
  */
 export function updateStreak(projectId: string): number {
   const profile = ensureProfile(projectId);
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateString();
 
   if (profile.last_active_date === today) {
     // Already active today, no change needed
@@ -453,7 +485,7 @@ export function updateStreak(projectId: string): number {
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayStr = localDateString(yesterday);
 
   let newStreak: number;
   if (profile.last_active_date === yesterdayStr) {

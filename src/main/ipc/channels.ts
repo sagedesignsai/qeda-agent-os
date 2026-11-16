@@ -111,6 +111,7 @@ import type {
   PresencePost,
   PresenceProfile,
 } from '../db/presence.js';
+import type { PresenceBrowserBounds } from '../../lib/presence.js';
 import type {
   ChannelVerification,
   ContactChannelKind,
@@ -179,6 +180,7 @@ export type {
   PresencePost,
   PresenceProfile,
 };
+export type { PresenceBrowserBounds };
 export type {
   ChannelVerification,
   ContactChannelKind,
@@ -1849,11 +1851,36 @@ export interface IpcChannels {
     req: { id: string };
     res: PresenceBatchDetail | null;
   };
-  /** Generate a new batch of suggestions via the AI coach. */
+  /**
+   * Generate a new batch of suggestions. Runs one Presence Copilot turn to
+   * completion and returns the batch the agent created.
+   *
+   * This path is deliberately silent: it does NOT write to
+   * `presence-copilot:stream-*`. Those channels belong to the chat surface, and
+   * a one-shot generate firing into them would splice its reasoning into
+   * whatever conversation is open. The UI generates through `presence:chat`.
+   */
   'presence:generate': {
     req: { projectId: string; focus?: string };
     res: PresenceBatchDetail;
   };
+  /** Run one Presence Copilot chat turn. Streams over `presence-copilot:stream-*`. */
+  'presence:chat': {
+    req: { messages: UIMessage[]; context?: { projectId?: string } };
+    res: void;
+  };
+  'presence-copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'presence-copilot:stream-done': { runId: string };
+  'presence-copilot:stream-error': { error: string };
+  'presence-copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  /** Pushed when the Presence Copilot creates or updates its plan. */
+  'presence-copilot:plan-event': { data: AgentPlanEvent };
   /** Update an item status, feedback, or body. */
   'presence:item-update': {
     req: { id: string; patch: PresenceItemPatch };
@@ -1898,11 +1925,39 @@ export interface IpcChannels {
     req: { projectId: string };
     res: { streak_count: number; last_active_date: string | null };
   };
-  /** Open a URL in the System Browser (visible BrowserWindow). */
+  /** Open a URL in the legacy standalone System Browser window. */
   'presence:open-browser': {
     req: { url: string };
     res: boolean;
   };
+
+  // ── Embedded Presence browser (WebContentsView tabs) ─────────────────────
+  /**
+   * Show a tab over the measured pane. Creates the native view on first use and
+   * hides whichever tab was visible. Idempotent for the same id.
+   */
+  'presence:browser-show': {
+    req: { id: string; url: string; bounds: PresenceBrowserBounds };
+    res: void;
+  };
+  /** Reposition an already-visible tab after a layout/resize change. */
+  'presence:browser-bounds': {
+    req: { id: string; bounds: PresenceBrowserBounds };
+    res: void;
+  };
+  /** Hide the visible tab without destroying it (e.g. switching to Activity). */
+  'presence:browser-hide': { req: void; res: void };
+  /** Destroy one tab and free its page. */
+  'presence:browser-close': { req: { id: string }; res: void };
+  /** Destroy every Presence tab (page unmount). */
+  'presence:browser-close-all': { req: void; res: void };
+  'presence:browser-navigate': {
+    req: { id: string; url: string };
+    res: void;
+  };
+  'presence:browser-reload': { req: { id: string }; res: void };
+  'presence:browser-back': { req: { id: string }; res: void };
+
   /** The presence data changed — re-fetch. */
   'presence:changed': void;
 

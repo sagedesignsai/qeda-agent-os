@@ -9,6 +9,23 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+// ─── Embedded browser ─────────────────────────────────────────────────────────
+
+/**
+ * Bounds of the area the Presence page hands to the main process for an
+ * embedded `WebContentsView` (Electron DIP, relative to the window content).
+ *
+ * Renderer sends the measured `getBoundingClientRect()` of the browser pane; the
+ * main process places the native view exactly there, so the page can lay out
+ * tabs in React while the site itself stays out of the renderer's DOM.
+ */
+export interface PresenceBrowserBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 // ─── Platforms ────────────────────────────────────────────────────────────────
 
 export const PRESENCE_PLATFORMS = [
@@ -97,22 +114,53 @@ export const GOAL_LABELS: Record<PresenceGoal, string> = {
   learning: 'Learning',
 };
 
+// ─── Coach prompts ────────────────────────────────────────────────────────────
+
+/**
+ * The instruction the coach receives when the user asks for a new batch.
+ *
+ * Kept here rather than in the page so the header action, the empty state, and
+ * the onboarding finish all produce the same agent turn — the agent is the one
+ * that decides what to write; this is only the brief.
+ */
+export const PRESENCE_GENERATION_PROMPT =
+  'Generate a fresh batch of presence suggestions for this project. Mix post drafts, connection ideas, engagement prompts, and platform or group suggestions where they fit. Create the batch and its items with your tools.';
+
+// ─── Calendar helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Local calendar date as `YYYY-MM-DD`.
+ *
+ * Streaks are a human-day concept: activity at 11pm belongs to that local day,
+ * not whichever UTC day `toISOString()` happens to report. Shared by the
+ * renderer greeting and the main-process streak writer so both agree.
+ */
+export function localDateString(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // ─── Greeting copy templates ──────────────────────────────────────────────────
 
 /**
  * Returns a greeting message based on the user's streak and activity state.
  */
-export function getGreetingMessage(streakCount: number, lastActiveDate: string | null, onboardingComplete: boolean): string {
+export function getGreetingMessage(
+  streakCount: number,
+  lastActiveDate: string | null,
+  onboardingComplete: boolean,
+): string {
   if (!onboardingComplete) {
     return '';
   }
 
   // Check if the streak is active (last active today or yesterday)
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-  const yesterday = new Date(today);
+  const todayStr = localDateString();
+  const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayStr = localDateString(yesterday);
 
   if (!lastActiveDate) {
     return 'Ready to start? Here are some ideas.';
@@ -126,17 +174,17 @@ export function getGreetingMessage(streakCount: number, lastActiveDate: string |
   }
 
   if (lastActiveDate === yesterdayStr) {
-    return 'Welcome back! Let\'s keep the momentum going.';
+    return "Welcome back! Let's keep the momentum going.";
   }
 
   // Streak broken
-  return 'Welcome back! Let\'s pick up where you left off.';
+  return "Welcome back! Let's pick up where you left off.";
 }
 
 /** Milestone celebration messages for streak days. */
 export const MILESTONE_MESSAGES: Record<number, string> = {
-  3: '3 days in a row — you\'re building a habit!',
-  7: 'Week 1 complete! You\'re finding your rhythm.',
+  3: "3 days in a row — you're building a habit!",
+  7: "Week 1 complete! You're finding your rhythm.",
   14: 'Two weeks! This is becoming part of your routine.',
   30: 'One month! Your social presence is growing.',
 };

@@ -36,18 +36,18 @@ export function StreakBadge({ projectId, className }: StreakBadgeProps) {
     <>
       <div
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-full bg-orange-50 px-3 py-1 text-sm font-medium text-orange-600 dark:bg-orange-950 dark:text-orange-400',
+          'inline-flex h-6 items-center gap-1 rounded-full bg-amber-500/15 px-2 text-[11px] font-medium text-amber-700 dark:text-amber-300',
           className,
         )}
-        title={`${streakCount} days in a row`}
+        title={`${streakCount} day${streakCount === 1 ? '' : 's'} in a row`}
       >
-        <FlameIcon className="h-4 w-4" />
-        <span>{streakCount}</span>
+        <FlameIcon className="size-3.5" />
+        <span className="tabular-nums">{streakCount}</span>
       </div>
 
       {showMilestone && milestoneMessage && (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-3 text-sm font-medium text-white shadow-lg">
+          <div className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 text-sm font-medium text-white shadow-lg">
             {milestoneMessage}
           </div>
         </div>
