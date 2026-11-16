@@ -3,36 +3,86 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * The first internal Presence tab: streak and activity.
  *
- * It only shows facts the database actually holds — current streak, last active
- * day, item counts, and logged posts. There is deliberately no invented
- * contribution calendar: a fake grid of "active days" would be a lie the rest of
- * the app cannot back up.
+ * Shows facts the database actually holds — current streak, last active day,
+ * item counts, logged posts, and a real activity calendar derived from the
+ * presence_activity ledger.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { useMemo } from 'react';
 import { FlameIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  usePresenceActivityDays,
   usePresenceCounts,
   usePresencePosts,
   usePresenceStreak,
 } from '@/hooks/use-presence';
 import {
   MILESTONE_MESSAGES,
+  nextMilestoneTarget,
   PLATFORM_LABELS,
   type PresencePlatform,
 } from '@/lib/presence';
 import { cn } from '@/lib/utils';
 
-const MILESTONES = Object.keys(MILESTONE_MESSAGES)
-  .map(Number)
-  .sort((a, b) => a - b);
+const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-function nextMilestone(streak: number): number {
+function ActivityCalendar({
+  activityDays,
+}: {
+  activityDays: { date: string }[];
+}) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const today = now.getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const activeSet = useMemo(
+    () => new Set(activityDays.map((d) => d.date)),
+    [activityDays],
+  );
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
   return (
-    MILESTONES.find((value) => value > streak) ??
-    MILESTONES[MILESTONES.length - 1]
+    <div className="rounded-lg border border-border/60 bg-card/40 p-3">
+      <p className="mb-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {now.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+      </p>
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {DAYS.map((d) => (
+          <div key={d} className="py-1 text-[9px] font-medium text-muted-foreground">
+            {d}
+          </div>
+        ))}
+        {cells.map((day, i) => {
+          if (day === null) return <div key={`e-${i}`} />;
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isActive = activeSet.has(dateStr);
+          const isToday = day === today;
+          return (
+            <div
+              key={dateStr}
+              className={cn(
+                'flex h-6 w-6 items-center justify-center rounded text-[10px]',
+                isActive
+                  ? 'bg-amber-500/20 font-semibold text-amber-600 dark:text-amber-400'
+                  : 'text-muted-foreground',
+                isToday && !isActive && 'border border-amber-500/40',
+              )}
+            >
+              {day}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -75,7 +125,9 @@ export function PresenceActivityView({
   const { counts } = usePresenceCounts(projectId);
   const { posts, loading: postsLoading } = usePresencePosts(projectId);
 
-  const target = nextMilestone(streakCount);
+  const { activityDays } = usePresenceActivityDays(projectId);
+
+  const target = nextMilestoneTarget(streakCount);
   const progress = Math.min(100, Math.round((streakCount / target) * 100));
 
   return (
@@ -147,6 +199,8 @@ export function PresenceActivityView({
             tone="text-amber-600 dark:text-amber-400"
           />
         </div>
+
+        <ActivityCalendar activityDays={activityDays} />
 
         <section className="space-y-2">
           <div className="flex items-center justify-between">

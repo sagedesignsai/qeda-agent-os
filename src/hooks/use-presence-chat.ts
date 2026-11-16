@@ -12,6 +12,7 @@
  */
 
 import type { UIMessage } from 'ai';
+import { useCallback } from 'react';
 import { useAgentChat } from './use-agent-chat';
 import { useIpcPlan } from './use-agent-plan';
 
@@ -64,5 +65,12 @@ export function usePresenceChat(projectId: string | null): PresenceChatState {
     'presence-copilot',
   );
 
-  return { ...chat, plan, clearPlan };
+  const abortStream = useCallback(() => {
+    if (chat.status !== 'streaming') return;
+    window.electron.ipc.invoke('presence:abort').catch(() => {
+      // The turn may have completed before the abort request reached main.
+    });
+  }, [chat.status]);
+
+  return { ...chat, abortStream, plan, clearPlan };
 }

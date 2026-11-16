@@ -10,11 +10,21 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useIpcEvent } from '@/hooks/use-ipc';
 import type { PresenceBrowserBounds } from '@/main/ipc/channels';
 
 async function call(channel: string, payload?: unknown): Promise<void> {
   await window.electron.ipc.invoke(channel, payload);
+}
+
+export interface BrowserTabState {
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+  error: string | null;
 }
 
 export interface PresenceBrowserControls {
@@ -30,9 +40,13 @@ export interface PresenceBrowserControls {
   navigate: (id: string, url: string) => Promise<void>;
   reload: (id: string) => Promise<void>;
   back: (id: string) => Promise<void>;
+  forward: (id: string) => Promise<void>;
+  openExternal: (id: string) => Promise<void>;
 }
 
-export function usePresenceBrowser(): PresenceBrowserControls {
+export function usePresenceBrowser(): PresenceBrowserControls & {
+  browserState: BrowserTabState | null;
+} {
   const show = useCallback(
     (id: string, url: string, bounds: PresenceBrowserBounds) =>
       call('presence:browser-show', { id, url, bounds }),
@@ -69,6 +83,46 @@ export function usePresenceBrowser(): PresenceBrowserControls {
     [],
   );
 
+  const forward = useCallback(
+    (id: string) => call('presence:browser-forward', { id }),
+    [],
+  );
+
+  const openExternal = useCallback(
+    (id: string) => call('presence:browser-open-external', { id }),
+    [],
+  );
+
+  // ── Browser state from main process ──────────────────────────────────────
+
+  const [browserState, setBrowserState] = useState<BrowserTabState | null>(null);
+
+  useIpcEvent('presence:browser-state', ([payload]: unknown[]) => {
+    const data = payload as { id: string; url: string; title: string; canGoBack: boolean; canGoForward: boolean };
+    setBrowserState((prev) => {
+      if (prev?.url === data.url && prev?.title === data.title) return prev;
+      return {
+        ...prev,
+        ...data,
+        error: null,
+      };
+    });
+  });
+
+  useIpcEvent('presence:browser-loading', ([payload]: unknown[]) => {
+    const data = payload as { id: string; loading: boolean };
+    setBrowserState((prev) =>
+      prev ? { ...prev, loading: data.loading } : prev,
+    );
+  });
+
+  useIpcEvent('presence:browser-error', ([payload]: unknown[]) => {
+    const data = payload as { id: string; error: string };
+    setBrowserState((prev) =>
+      prev ? { ...prev, error: data.error, loading: false } : prev,
+    );
+  });
+
   // Leaving the page must not leave a logged-in social tab floating above the
   // next route. Hiding is enough for the route change itself; the pane closes
   // its own tabs on unmount.
@@ -83,7 +137,19 @@ export function usePresenceBrowser(): PresenceBrowserControls {
   // Stable identity: the pane uses this object as an effect dependency, and a
   // fresh literal each render would re-send placement commands continuously.
   return useMemo(
-    () => ({ show, setBounds, hide, close, closeAll, navigate, reload, back }),
-    [show, setBounds, hide, close, closeAll, navigate, reload, back],
+    () => ({
+      show,
+      setBounds,
+      hide,
+      close,
+      closeAll,
+      navigate,
+      reload,
+      back,
+      forward,
+      openExternal,
+      browserState,
+    }),
+    [show, setBounds, hide, close, closeAll, navigate, reload, back, forward, openExternal, browserState],
   );
 }

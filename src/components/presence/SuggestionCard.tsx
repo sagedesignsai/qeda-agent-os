@@ -26,6 +26,7 @@ import {
   Undo2Icon,
   UserPlusIcon,
   UsersIcon,
+  SendIcon,
 } from 'lucide-react';
 import type { PresenceItem } from '@/main/ipc/channels';
 import { Textarea } from '@/components/ui/textarea';
@@ -34,12 +35,14 @@ import { usePresenceActions } from '@/hooks/use-presence';
 import {
   KIND_LABELS,
   PLATFORM_LABELS,
+  PRESENCE_PLATFORMS,
   type PresenceKind,
   type PresencePlatform,
 } from '@/lib/presence';
 
 interface SuggestionCardProps {
   item: PresenceItem;
+  projectId: string | null;
 }
 
 const KIND_ICONS: Record<PresenceKind, typeof FileTextIcon> = {
@@ -54,15 +57,22 @@ const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-muted text-muted-foreground',
   done: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
   skipped: 'bg-muted text-muted-foreground/70',
-  edited: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
 };
 
-export function SuggestionCard({ item }: SuggestionCardProps) {
-  const { updateItem } = usePresenceActions();
+export function SuggestionCard({ item, projectId }: SuggestionCardProps) {
+  const { updateItem, logPost } = usePresenceActions();
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [body, setBody] = useState(item.body);
   const [feedback, setFeedback] = useState(item.feedback);
+  const [showLogPost, setShowLogPost] = useState(false);
+  const [postMetrics, setPostMetrics] = useState('');
+  const [postContent, setPostContent] = useState(item.body);
+  const [postPlatform, setPostPlatform] = useState<PresencePlatform | ''>(
+    item.platform === 'any' ? '' : item.platform,
+  );
+  const [postError, setPostError] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // A refreshed item (broadcast, project switch) is the source of truth unless
@@ -103,16 +113,43 @@ export function SuggestionCard({ item }: SuggestionCardProps) {
   };
 
   const setStatus = async (status: 'done' | 'skipped' | 'pending') => {
-    await updateItem(item.id, { status });
+    await updateItem(item.id, { status }, projectId);
   };
 
   const saveEdit = async () => {
     if (!dirty) return;
-    await updateItem(item.id, { body, status: 'edited' });
+    await updateItem(item.id, { body }, projectId);
   };
 
   const saveFeedback = async () => {
-    await updateItem(item.id, { feedback });
+    await updateItem(item.id, { feedback }, projectId);
+  };
+
+  const handleLogPost = async () => {
+    if (!postPlatform || !postContent.trim()) {
+      setPostError('Choose a platform and add the content that was posted.');
+      return;
+    }
+    setPosting(true);
+    setPostError(null);
+    try {
+      await logPost({
+        projectId,
+        platform: postPlatform,
+        content: postContent.trim(),
+        metrics: postMetrics,
+        itemId: item.id,
+      });
+      setShowLogPost(false);
+      setPostMetrics('');
+      setPostError(null);
+    } catch (error) {
+      setPostError(
+        error instanceof Error ? error.message : 'Failed to log this post.',
+      );
+    } finally {
+      setPosting(false);
+    }
   };
 
   return (
@@ -223,7 +260,7 @@ export function SuggestionCard({ item }: SuggestionCardProps) {
                   className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
                 >
                   <CheckIcon className="size-3" />
-                  I&apos;ll post this
+                  Mark done
                 </button>
                 <button
                   type="button"
@@ -261,14 +298,92 @@ export function SuggestionCard({ item }: SuggestionCardProps) {
                 placeholder="Reactions, comments, anything worth remembering…"
                 className="min-h-12 text-xs"
               />
-              <button
-                type="button"
-                onClick={() => void saveFeedback()}
-                disabled={feedback === item.feedback}
-                className="text-[11px] font-medium text-emerald-600 disabled:opacity-40 dark:text-emerald-400"
-              >
-                Save feedback
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveFeedback()}
+                  disabled={feedback === item.feedback}
+                  className="text-[11px] font-medium text-emerald-600 disabled:opacity-40 dark:text-emerald-400"
+                >
+                  Save feedback
+                </button>
+                {item.posted_at ? (
+                  <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                    Post logged
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLogPost((visible) => !visible);
+                      setPostContent(body);
+                      setPostPlatform(
+                        item.platform === 'any' ? '' : item.platform,
+                      );
+                      setPostError(null);
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                  >
+                    <SendIcon className="size-3" />
+                    {showLogPost ? 'Cancel' : 'Log post'}
+                  </button>
+                )}
+              </div>
+
+              {showLogPost && (
+                <div className="space-y-2 rounded-lg bg-blue-500/5 p-2">
+                  <label
+                    htmlFor={`post-platform-${item.id}`}
+                    className="sr-only"
+                  >
+                    Platform where you posted
+                  </label>
+                  <select
+                    id={`post-platform-${item.id}`}
+                    value={postPlatform}
+                    onChange={(event) =>
+                      setPostPlatform(event.target.value as PresencePlatform | '')
+                    }
+                    className="w-full rounded-md border border-border/60 bg-background/50 px-2 py-1 text-[11px]"
+                  >
+                    <option value="">Choose platform</option>
+                    {PRESENCE_PLATFORMS.filter(
+                      (platform) => platform !== 'any',
+                    ).map((platform) => (
+                      <option key={platform} value={platform}>
+                        {PLATFORM_LABELS[platform]}
+                      </option>
+                    ))}
+                  </select>
+                  <Textarea
+                    value={postContent}
+                    onChange={(event) => setPostContent(event.target.value)}
+                    rows={3}
+                    aria-label="Published post content"
+                    className="min-h-16 text-xs"
+                  />
+                  <input
+                    type="text"
+                    placeholder="e.g., 24 likes, 5 comments"
+                    value={postMetrics}
+                    onChange={(event) => setPostMetrics(event.target.value)}
+                    className="w-full rounded-md border border-border/60 bg-background/50 px-2 py-1 text-[11px]"
+                  />
+                  {postError && (
+                    <p role="alert" className="text-[11px] text-destructive">
+                      {postError}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleLogPost()}
+                    disabled={posting || !projectId}
+                    className="w-full rounded-md bg-blue-600/20 px-2 py-1 text-[11px] font-medium text-blue-600 hover:bg-blue-600/30 disabled:opacity-50 dark:text-blue-400"
+                  >
+                    {posting ? 'Logging...' : 'Confirm log'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

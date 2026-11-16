@@ -12,6 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import { getDb } from './client.js';
 import {
+  displayStreak,
   localDateString,
   type PresenceKind,
   type PresencePlatform,
@@ -41,6 +42,7 @@ export interface PresenceItem {
   feedback: string;
   outcome: string;
   posted_at: number | null;
+  edited_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -60,6 +62,7 @@ export interface PresenceProfile {
   id: string;
   project_id: string;
   streak_count: number;
+  best_streak: number;
   last_active_date: string | null;
   onboarding_complete: boolean;
   platforms_json: string;
@@ -196,6 +199,7 @@ export function createItem(
     feedback: '',
     outcome: '',
     posted_at: null,
+    edited_at: null,
     created_at: now,
     updated_at: now,
   };
@@ -204,13 +208,17 @@ export function createItem(
 export function updateItem(
   id: string,
   patch: PresenceItemPatch,
+  projectId?: string,
 ): PresenceItem | null {
   const db = getDb();
   const existing = getItem(id);
   if (!existing) return null;
+  if (projectId) assertItemInProject(id, projectId);
 
   const updates: string[] = [];
   const values: (string | number | null)[] = [];
+
+  const bodyEdited = patch.body !== undefined && patch.body !== existing.body;
 
   if (patch.status !== undefined) {
     updates.push('status = ?');
@@ -231,6 +239,10 @@ export function updateItem(
   if (patch.body !== undefined) {
     updates.push('body = ?');
     values.push(patch.body);
+    if (bodyEdited) {
+      updates.push('edited_at = ?');
+      values.push(Math.floor(Date.now() / 1000));
+    }
   }
 
   if (updates.length === 0) return existing;
@@ -240,15 +252,24 @@ export function updateItem(
   values.push(now);
   values.push(id);
 
-  db.prepare(
-    `UPDATE presence_items SET ${updates.join(', ')} WHERE id = ?`,
-  ).run(...values);
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE presence_items SET ${updates.join(', ')} WHERE id = ?`,
+    ).run(...values);
+
+    if (projectId && patch.status === 'done') {
+      recordActivity(projectId, 'done', id);
+    } else if (projectId && bodyEdited) {
+      recordActivity(projectId, 'edited', id);
+    }
+  })();
 
   return getItem(id);
 }
 
-export function deleteItem(id: string): boolean {
+export function deleteItem(id: string, projectId?: string): boolean {
   const db = getDb();
+  if (projectId) assertItemInProject(id, projectId);
   const info = db
     .prepare<[string]>('DELETE FROM presence_items WHERE id = ?')
     .run(id);
@@ -265,23 +286,45 @@ export function logPost(
   itemId: string | null,
 ): PresencePost {
   const db = getDb();
+  if (itemId) {
+    if (!projectId) {
+      throw new Error('A project is required when logging a post for an item');
+    }
+    assertItemInProject(itemId, projectId);
+  }
+
   const id = randomUUID();
   const now = Math.floor(Date.now() / 1000);
-  db.prepare<
-    [
-      string,
-      string | null,
-      string,
-      string,
-      number,
-      string,
-      string | null,
-      number,
-    ],
-    unknown
-  >(
-    'INSERT INTO presence_posts (id, project_id, platform, content, posted_at, metrics, item_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(id, projectId, platform, content, now, metrics, itemId, now);
+  db.transaction(() => {
+    db.prepare<
+      [
+        string,
+        string | null,
+        string,
+        string,
+        number,
+        string,
+        string | null,
+        number,
+      ],
+      unknown
+    >(
+      'INSERT INTO presence_posts (id, project_id, platform, content, posted_at, metrics, item_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    ).run(id, projectId, platform, content, now, metrics, itemId, now);
+
+    if (itemId && projectId) {
+      db.prepare(
+        `UPDATE presence_items
+         SET posted_at = ?, body = ?,
+             edited_at = CASE WHEN body <> ? THEN ? ELSE edited_at END,
+             updated_at = ?
+         WHERE id = ?`,
+      ).run(now, content, content, now, now, itemId);
+    }
+
+    if (projectId) recordActivity(projectId, 'posted', itemId);
+  })();
+
   return {
     id,
     project_id: projectId,
@@ -408,6 +451,7 @@ export function ensureProfile(projectId: string): PresenceProfile {
     id,
     project_id: projectId,
     streak_count: 0,
+    best_streak: 0,
     last_active_date: null,
     onboarding_complete: false,
     platforms_json: '[]',
@@ -471,7 +515,7 @@ export function updateProfile(
 // ─── Streak helpers ───────────────────────────────────────────────────────────
 
 /**
- * Compute and update the streak after an item is marked done/edited.
+ * Compute and update the streak after a recorded activity.
  * Returns the new streak count.
  */
 export function updateStreak(projectId: string): number {
@@ -496,10 +540,14 @@ export function updateStreak(projectId: string): number {
     newStreak = 1;
   }
 
-  updateProfile(projectId, {
-    streak_count: newStreak,
-    last_active_date: today,
-  });
+  // Update best_streak if current streak is higher
+  const newBestStreak = Math.max(profile.best_streak, newStreak);
+
+  const db = getDb();
+  const now = Math.floor(Date.now() / 1000);
+  db.prepare(
+    'UPDATE presence_profile SET streak_count = ?, best_streak = ?, last_active_date = ?, updated_at = ? WHERE project_id = ?',
+  ).run(newStreak, newBestStreak, today, now, projectId);
 
   return newStreak;
 }
@@ -514,9 +562,49 @@ export function getStreak(projectId: string): {
     return { streak_count: 0, last_active_date: null };
   }
   return {
-    streak_count: profile.streak_count,
+    streak_count: displayStreak(
+      profile.streak_count,
+      profile.last_active_date,
+    ),
     last_active_date: profile.last_active_date,
   };
+}
+
+// ─── Ownership validation ────────────────────────────────────────────────────
+
+/**
+ * Verify that an item belongs to a project, throw if not.
+ */
+export function assertItemInProject(
+  itemId: string,
+  projectId: string,
+): PresenceItem {
+  const item = getItem(itemId);
+  if (!item) {
+    throw new Error(`Item not found: ${itemId}`);
+  }
+  const batch = getBatch(item.batch_id);
+  if (!batch || batch.project_id !== projectId) {
+    throw new Error(`Item does not belong to project: ${itemId}`);
+  }
+  return item;
+}
+
+/**
+ * Verify that a batch belongs to a project, throw if not.
+ */
+export function assertBatchInProject(
+  batchId: string,
+  projectId: string,
+): PresenceBatch {
+  const batch = getBatch(batchId);
+  if (!batch) {
+    throw new Error(`Batch not found: ${batchId}`);
+  }
+  if (batch.project_id !== projectId) {
+    throw new Error(`Batch does not belong to project: ${batchId}`);
+  }
+  return batch;
 }
 
 // ─── Recent items for AI context ──────────────────────────────────────────────
@@ -536,14 +624,96 @@ export function listRecentItems(
         `SELECT pi.* FROM presence_items pi
          INNER JOIN presence_batches pb ON pb.id = pi.batch_id
          WHERE pb.project_id = ?
-         ORDER BY pi.created_at DESC
+         ORDER BY pi.updated_at DESC
          LIMIT ?`,
       )
       .all(projectId, limit) as PresenceItem[];
   }
   return db
     .prepare<[number], PresenceItem>(
-      `SELECT * FROM presence_items ORDER BY created_at DESC LIMIT ?`,
+      `SELECT * FROM presence_items ORDER BY updated_at DESC LIMIT ?`,
     )
     .all(limit) as PresenceItem[];
+}
+
+// ─── Activity ledger (streak tracking) ────────────────────────────────────────
+
+export interface PresenceActivity {
+  id: string;
+  project_id: string;
+  date: string;
+  source: 'done' | 'edited' | 'posted';
+  item_id: string | null;
+  created_at: number;
+}
+
+/**
+ * Record an activity event for streak tracking.
+ * Idempotent per date due to UNIQUE(project_id, date) constraint.
+ */
+export function recordActivity(
+  projectId: string,
+  source: 'done' | 'edited' | 'posted',
+  itemId: string | null = null,
+): PresenceActivity {
+  const db = getDb();
+  const id = randomUUID();
+  const date = localDateString();
+  const now = Math.floor(Date.now() / 1000);
+
+  db.prepare<
+    [string, string, string, string, string | null, number],
+    unknown
+  >(
+    `INSERT INTO presence_activity (id, project_id, date, source, item_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(project_id, date) DO UPDATE SET
+       source = excluded.source,
+       item_id = COALESCE(excluded.item_id, presence_activity.item_id)`,
+  ).run(id, projectId, date, source, itemId, now);
+
+  const activity = db
+    .prepare<[string, string], PresenceActivity>(
+      'SELECT * FROM presence_activity WHERE project_id = ? AND date = ?',
+    )
+    .get(projectId, date) as PresenceActivity | undefined;
+  if (!activity) {
+    throw new Error(`Failed to record Presence activity for project ${projectId}`);
+  }
+
+  updateStreak(projectId);
+  return activity;
+}
+
+/**
+ * Get activity for a date range or just today.
+ */
+export function getActivityBetween(
+  projectId: string,
+  startDate: string,
+  endDate: string,
+): PresenceActivity[] {
+  const db = getDb();
+  return db
+    .prepare<[string, string, string], PresenceActivity>(
+      'SELECT * FROM presence_activity WHERE project_id = ? AND date >= ? AND date <= ? ORDER BY date DESC',
+    )
+    .all(projectId, startDate, endDate) as PresenceActivity[];
+}
+
+/**
+ * Get activity for a single date.
+ */
+export function getActivityForDate(
+  projectId: string,
+  date: string,
+): PresenceActivity | null {
+  const db = getDb();
+  return (
+    db
+      .prepare<[string, string], PresenceActivity>(
+        'SELECT * FROM presence_activity WHERE project_id = ? AND date = ?',
+      )
+      .get(projectId, date) as PresenceActivity | undefined
+  ) ?? null;
 }

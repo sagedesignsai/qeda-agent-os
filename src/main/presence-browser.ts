@@ -73,6 +73,7 @@ interface ViewEntry {
   id: string;
   view: WebContentsView;
   attached: boolean;
+  lastUrl: string | null;
 }
 
 const views = new Map<string, ViewEntry>();
@@ -178,6 +179,56 @@ function ensureView(id: string, url: string): ViewEntry {
   contents.on('will-navigate', guardNavigation);
   contents.on('will-redirect', guardNavigation);
 
+  // Track navigation state and emit to renderer
+  contents.on('did-navigate', () => {
+    const entry = views.get(id);
+    if (entry) {
+      entry.lastUrl = contents.getURL();
+    }
+    if (owner && !owner.isDestroyed() && visibleId === id) {
+      owner.webContents.send('presence:browser-state', {
+        id,
+        url: contents.getURL(),
+        title: contents.getTitle(),
+        canGoBack: contents.canGoBack(),
+        canGoForward: contents.canGoForward(),
+      });
+    }
+  });
+
+  contents.on('page-title-updated', () => {
+    if (owner && !owner.isDestroyed() && visibleId === id) {
+      owner.webContents.send('presence:browser-state', {
+        id,
+        url: contents.getURL(),
+        title: contents.getTitle(),
+        canGoBack: contents.canGoBack(),
+        canGoForward: contents.canGoForward(),
+      });
+    }
+  });
+
+  contents.on('did-start-loading', () => {
+    if (owner && !owner.isDestroyed() && visibleId === id) {
+      owner.webContents.send('presence:browser-loading', { id, loading: true });
+    }
+  });
+
+  contents.on('did-stop-loading', () => {
+    if (owner && !owner.isDestroyed() && visibleId === id) {
+      owner.webContents.send('presence:browser-loading', { id, loading: false });
+    }
+  });
+
+  contents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    if (owner && !owner.isDestroyed() && visibleId === id) {
+      owner.webContents.send('presence:browser-error', {
+        id,
+        error: errorDescription || `Error code ${errorCode}`,
+      });
+    }
+  });
+
   // Popups are common on social sites (compose windows, OAuth). Never let one
   // create a bare Electron window; navigate in place when it is safe.
   contents.setWindowOpenHandler(({ url: target }) => {
@@ -189,7 +240,7 @@ function ensureView(id: string, url: string): ViewEntry {
     return { action: 'deny' };
   });
 
-  const entry: ViewEntry = { id, view, attached: false };
+  const entry: ViewEntry = { id, view, attached: false, lastUrl: url };
   views.set(id, entry);
 
   void contents.loadURL(url).catch(() => {
@@ -337,4 +388,25 @@ export function goBackPresenceView(id: string): void {
   if (!entry) return;
   const history = entry.view.webContents.navigationHistory;
   if (history.canGoBack()) history.goBack();
+}
+
+export function goForwardPresenceView(id: string): void {
+  const entry = views.get(id);
+  if (!entry) return;
+  const history = entry.view.webContents.navigationHistory;
+  if (history.canGoForward()) history.goForward();
+}
+
+export function openPresenceViewExternal(id: string): void {
+  const entry = views.get(id);
+  if (!entry) return;
+  const url = entry.view.webContents.getURL();
+  if (url && /^https?:/i.test(url)) {
+    void shell.openExternal(url);
+  }
+}
+
+export function getPresenceViewLastUrl(id: string): string | null {
+  const entry = views.get(id);
+  return entry?.lastUrl ?? null;
 }

@@ -84,7 +84,6 @@ export const PRESENCE_STATUSES = [
   'pending',
   'done',
   'skipped',
-  'edited',
 ] as const;
 
 export type PresenceStatus = (typeof PRESENCE_STATUSES)[number];
@@ -93,7 +92,6 @@ export const STATUS_LABELS: Record<PresenceStatus, string> = {
   pending: 'Pending',
   done: 'Done',
   skipped: 'Skipped',
-  edited: 'Edited',
 };
 
 // ─── Onboarding goals ─────────────────────────────────────────────────────────
@@ -142,7 +140,37 @@ export function localDateString(date: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-// ─── Greeting copy templates ──────────────────────────────────────────────────
+// ─── Streak helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Derives the current streak count from stored streak data and last_active_date.
+ * 
+ * The streak is only active if the user acted today or yesterday (local calendar).
+ * If the streak was broken (gap of 2+ days), returns 0 for display purposes,
+ * while preserving the stored count as "best run" for history.
+ */
+export function displayStreak(
+  storedStreakCount: number,
+  lastActiveDate: string | null,
+  today: string = localDateString(),
+): number {
+  if (!lastActiveDate || storedStreakCount === 0) {
+    return 0;
+  }
+
+  const [year, month, day] = today.split('-').map(Number);
+  const yesterday = new Date(year, month - 1, day);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = localDateString(yesterday);
+
+  // Streak is active only if last activity was today or yesterday
+  if (lastActiveDate === today || lastActiveDate === yesterdayStr) {
+    return storedStreakCount;
+  }
+
+  // Streak is broken
+  return 0;
+}
 
 /**
  * Returns a greeting message based on the user's streak and activity state.
@@ -156,6 +184,9 @@ export function getGreetingMessage(
     return '';
   }
 
+  // Derive the current streak (0 if broken)
+  const currentStreak = displayStreak(streakCount, lastActiveDate);
+
   // Check if the streak is active (last active today or yesterday)
   const todayStr = localDateString();
   const yesterday = new Date();
@@ -167,8 +198,8 @@ export function getGreetingMessage(
   }
 
   if (lastActiveDate === todayStr) {
-    if (streakCount >= 3) {
-      return `You're on a ${streakCount}-day streak — you're building a habit!`;
+    if (currentStreak >= 3) {
+      return `You're on a ${currentStreak}-day streak — you're building a habit!`;
     }
     return 'Great start! Keep it going.';
   }
@@ -191,5 +222,36 @@ export const MILESTONE_MESSAGES: Record<number, string> = {
 
 /** Check if a streak count hits a milestone. */
 export function getMilestoneMessage(streakCount: number): string | null {
-  return MILESTONE_MESSAGES[streakCount] ?? null;
+  if (MILESTONE_MESSAGES[streakCount]) {
+    return MILESTONE_MESSAGES[streakCount];
+  }
+  if (streakCount > 30 && streakCount % 30 === 0) {
+    return `${streakCount} days — you're unstoppable!`;
+  }
+  return null;
+}
+
+/** Calculate next milestone target. */
+export function nextMilestoneTarget(streakCount: number): number {
+  const milestones = [3, 7, 14, 30];
+  for (const m of milestones) {
+    if (streakCount < m) return m;
+  }
+  // Beyond 30, next milestone is next 30-day boundary
+  return Math.ceil((streakCount + 1) / 30) * 30;
+}
+
+/** Calculate progress to next milestone. */
+export function milestoneProgress(streakCount: number): {
+  current: number;
+  target: number;
+  percent: number;
+} {
+  const target = nextMilestoneTarget(streakCount);
+  const current = Math.max(0, streakCount);
+  return {
+    current,
+    target,
+    percent: Math.min(100, Math.round((current / target) * 100)),
+  };
 }

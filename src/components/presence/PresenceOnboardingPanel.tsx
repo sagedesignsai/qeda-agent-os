@@ -36,8 +36,12 @@ interface PresenceOnboardingPanelProps {
   projectId: string;
   initialPlatforms?: string[];
   initialGoal?: string;
+  /** When true, skip the intro step and show "Save" instead of "Start my streak". */
+  editMode?: boolean;
   /** Called after the profile is saved. `generate` starts the first batch. */
   onComplete: (generate: boolean) => void;
+  /** Called when the user cancels edit mode. */
+  onCancel?: () => void;
 }
 
 const PLATFORM_CHOICES = PRESENCE_PLATFORMS.filter(
@@ -48,9 +52,11 @@ export function PresenceOnboardingPanel({
   projectId,
   initialPlatforms = [],
   initialGoal = '',
+  editMode = false,
   onComplete,
+  onCancel,
 }: PresenceOnboardingPanelProps) {
-  const [step, setStep] = useState<Step>('intro');
+  const [step, setStep] = useState<Step>(editMode ? 'platforms' : 'intro');
   const [platforms, setPlatforms] = useState<string[]>(initialPlatforms);
   const [goal, setGoal] = useState(initialGoal);
   const [saving, setSaving] = useState(false);
@@ -88,36 +94,53 @@ export function PresenceOnboardingPanel({
 
   return (
     <div className="flex h-full flex-col overflow-y-auto p-4">
-      <div className="mb-4 flex items-center gap-2">
-        <div className="flex size-8 items-center justify-center rounded-full bg-amber-500/15">
-          <SparklesIcon className="size-4 text-amber-500" />
+      <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center gap-2 mb-0">
+          <div className="flex size-8 items-center justify-center rounded-full bg-amber-500/15">
+            <SparklesIcon className="size-4 text-amber-500" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold tracking-tight">
+              {editMode ? 'Edit your setup' : 'Your presence coach'}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {editMode
+                ? 'Update your platforms and goal.'
+                : 'Three quick questions, then I\'ll suggest the first moves.'}
+            </p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-semibold tracking-tight">
-            Your presence coach
-          </p>
-          <p className="text-[11px] text-muted-foreground">
-            Three quick questions, then I&apos;ll suggest the first moves.
-          </p>
-        </div>
+        {editMode && onCancel && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+            onClick={onCancel}
+          >
+            Done
+          </Button>
+        )}
       </div>
 
       {/* Step rail */}
-      <div className="mb-5 flex items-center gap-1.5">
-        {(['intro', 'platforms', 'goal'] as Step[]).map((value, index) => (
-          <div
-            key={value}
-            className={cn(
-              'h-1 flex-1 rounded-full transition-colors',
-              index <= ['intro', 'platforms', 'goal'].indexOf(step)
-                ? 'bg-amber-500'
-                : 'bg-muted',
-            )}
-          />
-        ))}
-      </div>
+      {!editMode && (
+        <div className="mb-5 flex items-center gap-1.5">
+          {(['intro', 'platforms', 'goal'] as Step[]).map((value, index) => (
+            <div
+              key={value}
+              className={cn(
+                'h-1 flex-1 rounded-full transition-colors',
+                index <= ['intro', 'platforms', 'goal'].indexOf(step)
+                  ? 'bg-amber-500'
+                  : 'bg-muted',
+              )}
+            />
+          ))}
+        </div>
+      )}
 
-      {step === 'intro' && (
+      {step === 'intro' && !editMode && (
         <div className="flex flex-1 flex-col">
           <h2 className="text-base font-semibold tracking-tight">
             Build a presence you can keep up with
@@ -274,10 +297,10 @@ export function PresenceOnboardingPanel({
               type="button"
               size="sm"
               className="bg-amber-500 text-xs text-white hover:bg-amber-600"
-              onClick={() => void save({ generate: true })}
+              onClick={() => void save({ generate: editMode ? false : true })}
               disabled={saving}
             >
-              {saving ? 'Saving…' : 'Start my streak'}
+              {saving ? 'Saving…' : editMode ? 'Save changes' : 'Start my streak'}
               <SparklesIcon className="size-3.5" />
             </Button>
           </div>

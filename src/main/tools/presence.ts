@@ -17,10 +17,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import {
-  generatePresenceBatch,
-  type PresenceSuggestionItem,
-} from '../ai/presence-coach.js';
-import {
   listBatches,
   getBatchDetail,
   createBatch,
@@ -32,14 +28,17 @@ import {
   getProfile,
   updateProfile,
   getStreak,
-  updateStreak,
   listRecentItems,
+  assertItemInProject,
+  assertBatchInProject,
   type PresenceBatch,
   type PresenceItem,
   type PresenceProfile,
 } from '../db/presence.js';
-import { getProject } from '../db/projects.js';
-import { listContacts as dbListContacts } from '../db/correspondence.js';
+import {
+  getContact as dbGetContact,
+  listContacts as dbListContacts,
+} from '../db/correspondence.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,6 +71,7 @@ function serializeItem(item: PresenceItem) {
     feedback: item.feedback,
     outcome: item.outcome,
     posted_at: item.posted_at,
+    edited_at: item.edited_at,
   };
 }
 
@@ -168,6 +168,19 @@ export function createPresenceTools(projectId: string | null) {
     }),
     execute: async (input) => {
       try {
+        const projectId = requireProjectId();
+        // Verify batch belongs to this project
+        assertBatchInProject(input.batch_id, projectId);
+        if (input.source_kind === 'contact') {
+          if (!input.source_id) {
+            throw new Error('A contact source id is required for this suggestion.');
+          }
+          const contact = dbGetContact(input.source_id);
+          if (!contact || contact.project_id !== projectId) {
+            throw new Error('The contact source is not part of this project.');
+          }
+        }
+        
         const item = createItem(
           input.batch_id,
           input.kind,
@@ -182,95 +195,6 @@ export function createPresenceTools(projectId: string | null) {
           success: true,
           item_id: item.id,
           message: `Created ${input.kind}: "${item.title}"`,
-        };
-      } catch (err) {
-        return {
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-    },
-  });
-
-  // ── Legacy (backward compatibility) ────────────────────────────────────────
-
-  /**
-   * Generate a fresh batch of presence suggestions via the AI coach.
-   * The old non-agentic flow. Still available so a parent agent can delegate the
-   * whole generation in one call, but the copilot normally uses
-   * createPresenceBatch + createPresenceItem.
-   */
-  const generatePresenceBatchTool = tool({
-    description:
-      'Generate a new batch of social presence suggestions using the AI coach (non-agentic). Deprecated in favor of createPresenceBatch + createPresenceItem for agentic flows.',
-    inputSchema: z.object({
-      focus: z
-        .string()
-        .optional()
-        .describe(
-          'Optional theme or focus area for this batch (e.g., "LinkedIn thought leadership", "Community engagement"). If omitted, suggestions will be general.',
-        ),
-    }),
-    execute: async (input) => {
-      try {
-        const scopedProjectId = requireProjectId();
-
-        // Gather context
-        const contacts = dbListContacts(scopedProjectId).slice(0, 20);
-        const recentItems = listRecentItems(scopedProjectId, 10);
-        const profile = getProfile(scopedProjectId);
-        const project = getProject(scopedProjectId);
-
-        const result = await generatePresenceBatch({
-          projectId: scopedProjectId,
-          focus: input.focus,
-          context: {
-            projectName: project?.name ?? '',
-            projectOutcome: (project as any)?.outcome ?? '',
-            projectDeadline: (project as any)?.deadline ?? null,
-            contacts: contacts.map((c: any) => ({
-              name: c.name,
-              role: c.role,
-              id: c.id,
-            })),
-            recentItems: recentItems.map((item) => ({
-              kind: item.kind,
-              status: item.status,
-              feedback: item.feedback,
-              title: item.title,
-            })),
-            onboardingPlatforms: profile
-              ? (JSON.parse(profile.platforms_json) as string[])
-              : [],
-            onboardingGoal: profile?.goal ?? '',
-            streakCount: profile?.streak_count ?? 0,
-          },
-        });
-
-        // Create batch and items
-        const batch = createBatch(scopedProjectId, input.focus ?? '', {
-          focus: input.focus,
-          generatedAt: Math.floor(Date.now() / 1000),
-        });
-
-        result.items.forEach((item: PresenceSuggestionItem) => {
-          createItem(
-            batch.id,
-            item.kind,
-            item.title,
-            item.body,
-            item.platform,
-            item.sourceKind,
-            item.sourceId,
-          );
-        });
-
-        return {
-          success: true,
-          batch_id: batch.id,
-          summary: result.summary,
-          item_count: result.items.length,
-          message: `Generated ${result.items.length} suggestions: ${result.summary}`,
         };
       } catch (err) {
         return {
@@ -361,6 +285,7 @@ export function createPresenceTools(projectId: string | null) {
     }),
     execute: async (input) => {
       try {
+        assertBatchInProject(input.batch_id, requireProjectId());
         const detail = getBatchDetail(input.batch_id);
         if (!detail) {
           return { success: false, error: 'Batch not found' };
@@ -442,13 +367,13 @@ export function createPresenceTools(projectId: string | null) {
    */
   const updatePresenceItem = tool({
     description:
-      'Update a presence item: mark as done/skipped/edited, add feedback, or update the body text. Automatically updates the streak if marked done.',
+      'Update a presence item: mark as done/skipped, add feedback, or update the body text. Automatically updates the streak if marked done or body edited.',
     inputSchema: z.object({
       item_id: z.string().describe('The item ID'),
       status: z
-        .enum(['pending', 'done', 'skipped', 'edited'])
+        .enum(['pending', 'done', 'skipped'])
         .optional()
-        .describe('New status'),
+        .describe('New status (do not use "edited"; just update the body)'),
       feedback: z
         .string()
         .optional()
@@ -462,30 +387,23 @@ export function createPresenceTools(projectId: string | null) {
     execute: async (input) => {
       try {
         const scopedProjectId = requireProjectId();
+        // Verify ownership
+        assertItemInProject(input.item_id, scopedProjectId);
         const updated = updateItem(input.item_id, {
           status: input.status,
           feedback: input.feedback,
           body: input.body,
           posted_at: input.posted_at,
-        });
+        }, scopedProjectId);
 
         if (!updated) {
           return { success: false, error: 'Item not found' };
         }
 
-        // Update streak if marked done/edited (the same rule the IPC path uses).
-        if (input.status === 'done' || input.status === 'edited') {
-          const newStreak = updateStreak(scopedProjectId);
-          return {
-            success: true,
-            item: serializeItem(updated),
-            streak_updated: newStreak,
-          };
-        }
-
         return {
           success: true,
           item: serializeItem(updated),
+          streak_count: getStreak(scopedProjectId).streak_count,
         };
       } catch (err) {
         return {
@@ -507,7 +425,10 @@ export function createPresenceTools(projectId: string | null) {
     }),
     execute: async (input) => {
       try {
-        const deleted = deleteItem(input.item_id);
+        const projectId = requireProjectId();
+        // Verify ownership
+        assertItemInProject(input.item_id, projectId);
+        const deleted = deleteItem(input.item_id, projectId);
         if (!deleted) {
           return { success: false, error: 'Item not found' };
         }
@@ -573,8 +494,6 @@ export function createPresenceTools(projectId: string | null) {
     // Batch and item creation (agentic flow)
     createPresenceBatch,
     createPresenceItem,
-    // Batch generation (backward compat)
-    generatePresenceBatch: generatePresenceBatchTool,
     // Read context
     getPresenceProfile,
     getPresenceStreak,
@@ -586,33 +505,54 @@ export function createPresenceTools(projectId: string | null) {
     updatePresenceItem,
     deletePresenceItem,
     updatePresenceProfile,
-    // Dispatch is a separate UI action, not an autonomous agent verb.
-    logPresencePost: tool({
+    // ── Contacts (for connection suggestions) ──────────────────────────────────
+    listContacts: tool({
       description:
-        'Record a post the user published manually. Only call this when the user confirms they posted it.',
+        'List contacts in this project for connection-based suggestions. Returns name, role, and channels for each contact.',
+      inputSchema: z.object({}),
+      execute: async () => {
+        try {
+          const projectId = requireProjectId();
+          const contacts = dbListContacts(projectId).slice(0, 50).map((c) => ({
+            id: c.id,
+            name: c.name,
+            kind: c.kind,
+            role: c.role,
+            channels: c.channels
+              .map((ch) => `${ch.kind}: ${ch.value}`)
+              .join('; '),
+          }));
+          return { success: true, count: contacts.length, contacts };
+        } catch (err) {
+          return { success: false, error: String(err) };
+        }
+      },
+    }),
+    getContact: tool({
+      description:
+        'Get details for a specific contact by id. Use this when building a connection suggestion.',
       inputSchema: z.object({
-        platform: z
-          .enum(['linkedin', 'x', 'facebook', 'instagram', 'discord', 'any'])
-          .describe('Where it was posted'),
-        content: z.string().min(1).describe('The published content'),
-        metrics: z.string().optional().describe('Any engagement metrics'),
-        item_id: z.string().optional().describe('Related suggestion item id'),
+        contact_id: z.string().describe('The contact id'),
       }),
       execute: async (input) => {
         try {
-          const post = logPost(
-            requireProjectId(),
-            input.platform,
-            input.content,
-            input.metrics ?? '',
-            input.item_id ?? null,
-          );
-          return { success: true, post };
-        } catch (err) {
+          const projectId = requireProjectId();
+          const contact = dbGetContact(input.contact_id);
+          if (!contact || contact.project_id !== projectId) {
+            return { success: false, error: `Contact not found: ${input.contact_id}` };
+          }
           return {
-            success: false,
-            error: err instanceof Error ? err.message : String(err),
+            success: true,
+            contact: {
+              id: contact.id,
+              name: contact.name,
+              kind: contact.kind,
+              role: contact.role,
+              notes: contact.notes,
+            },
           };
+        } catch (err) {
+          return { success: false, error: String(err) };
         }
       },
     }),

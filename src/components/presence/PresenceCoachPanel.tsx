@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ListIcon, MessageSquareIcon, SparklesIcon } from 'lucide-react';
+import { ListIcon, MessageSquareIcon, SettingsIcon, SparklesIcon } from 'lucide-react';
 import {
   PromptInput,
   PromptInputBody,
@@ -45,6 +45,8 @@ interface PresenceCoachPanelProps {
   onAutoPromptConsumed: () => void;
   /** Ask the page to seed a generation turn (used by onboarding and the queue). */
   onGenerate: () => void;
+  /** Open the edit profile panel. */
+  onEditProfile?: () => void;
 }
 
 export function PresenceCoachPanel({
@@ -56,6 +58,7 @@ export function PresenceCoachPanel({
   autoPrompt,
   onAutoPromptConsumed,
   onGenerate,
+  onEditProfile,
 }: PresenceCoachPanelProps) {
   const chat = usePresenceChat(projectId);
   const { sendMessage } = chat;
@@ -147,25 +150,39 @@ export function PresenceCoachPanel({
           )}
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
-          onClick={() => setChatOpen((value) => !value)}
-        >
-          {chatOpen ? (
-            <>
-              <ListIcon className="size-3" />
-              Queue
-            </>
-          ) : (
-            <>
-              <MessageSquareIcon className="size-3" />
-              Chat
-            </>
+        <div className="flex items-center gap-1">
+          {onEditProfile && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-6 text-muted-foreground hover:text-foreground"
+              onClick={onEditProfile}
+              title="Edit setup"
+            >
+              <SettingsIcon className="size-3.5" />
+            </Button>
           )}
-        </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
+            onClick={() => setChatOpen((value) => !value)}
+          >
+            {chatOpen ? (
+              <>
+                <ListIcon className="size-3" />
+                Queue
+              </>
+            ) : (
+              <>
+                <MessageSquareIcon className="size-3" />
+                Chat
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">

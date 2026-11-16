@@ -39,10 +39,6 @@ export const presenceCopilotToolPolicies: ToolPolicyMap = {
   // Create batch/item (additive, approved)
   createPresenceBatch: t('write-local'),
   createPresenceItem: t('write-local'),
-  logPresencePost: t('write-local'),
-
-  // Generate (backward compat, additive)
-  generatePresenceBatch: t('write-local'),
 
   // Update/delete (destructive, requires approval)
   updatePresenceItem: t('destructive'),
@@ -59,6 +55,10 @@ export const presenceCopilotToolPolicies: ToolPolicyMap = {
   findPages: t('read'),
   listPages: t('read'),
   getPage: t('read'),
+
+  // Contacts for connection suggestions
+  listContacts: t('read'),
+  getContact: t('read'),
 
   // Search
   searchDocs: t('read'),

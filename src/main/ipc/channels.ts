@@ -104,6 +104,7 @@ import type {
   ContactWithChannels,
 } from '../db/correspondence.js';
 import type {
+  PresenceActivity,
   PresenceBatch,
   PresenceBatchDetail,
   PresenceItem,
@@ -111,7 +112,10 @@ import type {
   PresencePost,
   PresenceProfile,
 } from '../db/presence.js';
-import type { PresenceBrowserBounds } from '../../lib/presence.js';
+import type {
+  PresenceBrowserBounds,
+  PresencePlatform,
+} from '../../lib/presence.js';
 import type {
   ChannelVerification,
   ContactChannelKind,
@@ -173,6 +177,7 @@ export type {
   ContactWithChannels,
 };
 export type {
+  PresenceActivity,
   PresenceBatch,
   PresenceBatchDetail,
   PresenceItem,
@@ -1848,8 +1853,12 @@ export interface IpcChannels {
   };
   /** One batch with its items. */
   'presence:batch-get': {
-    req: { id: string };
+    req: { id: string; projectId: string | null };
     res: PresenceBatchDetail | null;
+  };
+  'presence:batch-delete': {
+    req: { id: string; projectId: string | null };
+    res: boolean;
   };
   /**
    * Generate a new batch of suggestions. Runs one Presence Copilot turn to
@@ -1869,6 +1878,11 @@ export interface IpcChannels {
     req: { messages: UIMessage[]; context?: { projectId?: string } };
     res: void;
   };
+  /** Abort the currently running Presence Copilot turn. */
+  'presence:abort': {
+    req: void;
+    res: boolean;
+  };
   'presence-copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
   'presence-copilot:stream-done': { runId: string };
   'presence-copilot:stream-error': { error: string };
@@ -1883,18 +1897,21 @@ export interface IpcChannels {
   'presence-copilot:plan-event': { data: AgentPlanEvent };
   /** Update an item status, feedback, or body. */
   'presence:item-update': {
-    req: { id: string; patch: PresenceItemPatch };
+    req: { id: string; projectId: string | null; patch: PresenceItemPatch };
     res: PresenceItem | null;
   };
-  'presence:item-delete': { req: { id: string }; res: boolean };
+  'presence:item-delete': {
+    req: { id: string; projectId: string | null };
+    res: boolean;
+  };
   /** Log a post that was published. */
   'presence:post-log': {
     req: {
       projectId: string | null;
-      platform: string;
+      platform: PresencePlatform;
       content: string;
       metrics?: string;
-      itemId?: string;
+      itemId?: string | null;
     };
     res: PresencePost;
   };
@@ -1925,10 +1942,10 @@ export interface IpcChannels {
     req: { projectId: string };
     res: { streak_count: number; last_active_date: string | null };
   };
-  /** Open a URL in the legacy standalone System Browser window. */
-  'presence:open-browser': {
-    req: { url: string };
-    res: boolean;
+  /** Activity ledger rows for a date range. */
+  'presence:activity-days': {
+    req: { projectId: string | null; startDate: string; endDate: string };
+    res: PresenceActivity[];
   };
 
   // ── Embedded Presence browser (WebContentsView tabs) ─────────────────────
@@ -1957,6 +1974,23 @@ export interface IpcChannels {
   };
   'presence:browser-reload': { req: { id: string }; res: void };
   'presence:browser-back': { req: { id: string }; res: void };
+  'presence:browser-forward': { req: { id: string }; res: void };
+  'presence:browser-open-external': { req: { id: string }; res: void };
+  /**
+   * Streamed when a browser tab navigates, changes title, or loads/fails.
+   * Renderer uses to display URL, title, loading state, error messages.
+   */
+  'presence:browser-state': {
+    data: {
+      id: string;
+      url: string;
+      title: string;
+      canGoBack: boolean;
+      canGoForward: boolean;
+    };
+  };
+  'presence:browser-loading': { data: { id: string; loading: boolean } };
+  'presence:browser-error': { data: { id: string; error: string } };
 
   /** The presence data changed — re-fetch. */
   'presence:changed': void;

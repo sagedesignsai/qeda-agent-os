@@ -18,7 +18,12 @@ import type {
   PresencePost,
   PresenceProfile,
 } from '@/main/ipc/channels';
-import { getGreetingMessage, getMilestoneMessage } from '@/lib/presence';
+import type { PresencePlatform } from '@/lib/presence';
+import {
+  displayStreak,
+  getGreetingMessage,
+  getMilestoneMessage,
+} from '@/lib/presence';
 
 // ── Batches ───────────────────────────────────────────────────────────────────
 
@@ -41,13 +46,17 @@ export function usePresenceBatches(projectId: string | null) {
 
 // ── Batch detail ──────────────────────────────────────────────────────────────
 
-export function usePresenceBatchDetail(batchId: string | null) {
+export function usePresenceBatchDetail(
+  batchId: string | null,
+  projectId: string | null,
+  enabled = true,
+) {
   const { data, loading, error, refresh } = useDbResource<PresenceBatchDetail>({
     channel: 'presence:batch-get',
     event: 'presence:changed',
-    enabled: !!batchId,
-    resourceKey: batchId ?? '',
-    request: { id: batchId },
+    enabled: enabled && !!batchId && !!projectId,
+    resourceKey: `${projectId ?? ''}:${batchId ?? ''}`,
+    request: { id: batchId, projectId },
   });
 
   return {
@@ -100,6 +109,40 @@ export function usePresencePosts(projectId: string | null) {
   };
 }
 
+// ── Activity days ─────────────────────────────────────────────────────────────
+
+export interface PresenceActivityDay {
+  date: string;
+  source: 'done' | 'edited' | 'posted';
+}
+
+export function usePresenceActivityDays(projectId: string | null) {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const startStr = startDate.toISOString().slice(0, 10);
+  const endStr = endDate.toISOString().slice(0, 10);
+
+  const { data, loading, error, refresh } = useDbResource<PresenceActivityDay[]>({
+    channel: 'presence:activity-days',
+    event: 'presence:changed',
+    enabled: !!projectId,
+    resourceKey: `${projectId ?? ''}:activity:${startStr}:${endStr}`,
+    request: { projectId, startDate: startStr, endDate: endStr },
+    select: (raw) => {
+      const rows = Array.isArray(raw) ? (raw as any[]) : [];
+      return rows.map((r) => ({ date: r.date, source: r.source }));
+    },
+  });
+
+  return {
+    activityDays: data ?? [],
+    loading,
+    error,
+    refresh,
+  };
+}
+
 // ── Profile ───────────────────────────────────────────────────────────────────
 
 export function usePresenceProfile(projectId: string | null) {
@@ -146,13 +189,20 @@ export function usePresenceStreak(projectId: string | null) {
     request: { projectId },
   });
 
-  const streakCount = data?.streak_count ?? 0;
+  const storedStreakCount = data?.streak_count ?? 0;
   const lastActiveDate = data?.last_active_date ?? null;
+  
+  // Derive the current streak (0 if broken)
+  const currentStreak = useMemo(
+    () => displayStreak(storedStreakCount, lastActiveDate),
+    [storedStreakCount, lastActiveDate],
+  );
+  
   const milestoneMessage =
-    streakCount > 0 ? getMilestoneMessage(streakCount) : null;
+    currentStreak > 0 ? getMilestoneMessage(currentStreak) : null;
 
   return {
-    streakCount,
+    streakCount: currentStreak,
     lastActiveDate,
     milestoneMessage,
     loading,
@@ -182,16 +232,17 @@ export interface PresenceActions {
   updateItem: (
     id: string,
     patch: PresenceItemPatch,
+    projectId: string | null,
   ) => Promise<PresenceItem | null>;
-  deleteItem: (id: string) => Promise<boolean>;
+  deleteItem: (id: string, projectId: string | null) => Promise<boolean>;
   logPost: (input: {
     projectId: string | null;
-    platform: string;
+    platform: PresencePlatform;
     content: string;
     metrics?: string;
     itemId?: string;
   }) => Promise<PresencePost>;
-  openBrowser: (url: string) => Promise<boolean>;
+  deleteBatch: (batchId: string, projectId: string | null) => Promise<boolean>;
   updateProfile: (input: {
     projectId: string;
     onboardingComplete?: boolean;
@@ -210,9 +261,14 @@ export function usePresenceActions(): PresenceActions {
   }, []);
 
   const updateItem = useCallback(
-    async (id: string, patch: PresenceItemPatch) => {
+    async (
+      id: string,
+      patch: PresenceItemPatch,
+      projectId: string | null,
+    ) => {
       const result = await window.electron.ipc.invoke('presence:item-update', {
         id,
+        projectId,
         patch,
       });
       return result as PresenceItem | null;
@@ -220,17 +276,21 @@ export function usePresenceActions(): PresenceActions {
     [],
   );
 
-  const deleteItem = useCallback(async (id: string) => {
-    const result = await window.electron.ipc.invoke('presence:item-delete', {
-      id,
-    });
-    return result as boolean;
-  }, []);
+  const deleteItem = useCallback(
+    async (id: string, projectId: string | null) => {
+      const result = await window.electron.ipc.invoke('presence:item-delete', {
+        id,
+        projectId,
+      });
+      return result as boolean;
+    },
+    [],
+  );
 
   const logPost = useCallback(
     async (input: {
       projectId: string | null;
-      platform: string;
+      platform: PresencePlatform;
       content: string;
       metrics?: string;
       itemId?: string;
@@ -243,13 +303,6 @@ export function usePresenceActions(): PresenceActions {
     },
     [],
   );
-
-  const openBrowser = useCallback(async (url: string) => {
-    const result = await window.electron.ipc.invoke('presence:open-browser', {
-      url,
-    });
-    return result as boolean;
-  }, []);
 
   const updateProfile = useCallback(
     async (input: {
@@ -267,12 +320,23 @@ export function usePresenceActions(): PresenceActions {
     [],
   );
 
+  const deleteBatch = useCallback(
+    async (batchId: string, projectId: string | null) => {
+      const result = await window.electron.ipc.invoke('presence:batch-delete', {
+        id: batchId,
+        projectId,
+      });
+      return result as boolean;
+    },
+    [],
+  );
+
   return {
     generate,
     updateItem,
     deleteItem,
     logPost,
-    openBrowser,
+    deleteBatch,
     updateProfile,
   };
 }

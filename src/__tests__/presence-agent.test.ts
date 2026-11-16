@@ -75,6 +75,19 @@ describe('presence copilot policy', () => {
     }
   });
 
+  it('classifies contacts tools as read', () => {
+    expect(
+      presenceCopilotApprovalPolicy({
+        toolCall: { toolName: 'listContacts', dynamic: false },
+      }),
+    ).toBe('not-applicable');
+    expect(
+      presenceCopilotApprovalPolicy({
+        toolCall: { toolName: 'getContact', dynamic: false },
+      }),
+    ).toBe('not-applicable');
+  });
+
   it('fails closed on an unclassified tool', () => {
     const decision = presenceCopilotApprovalPolicy({
       toolCall: { toolName: 'mysteryPresenceTool', dynamic: false },

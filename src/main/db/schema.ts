@@ -1281,6 +1281,7 @@ CREATE TABLE IF NOT EXISTS presence_items (
   feedback     TEXT NOT NULL DEFAULT '',
   outcome      TEXT NOT NULL DEFAULT '',
   posted_at    INTEGER,
+  edited_at    INTEGER,
   created_at   INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at   INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -1307,6 +1308,7 @@ CREATE TABLE IF NOT EXISTS presence_profile (
   id                    TEXT PRIMARY KEY,
   project_id            TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
   streak_count          INTEGER NOT NULL DEFAULT 0,
+  best_streak           INTEGER NOT NULL DEFAULT 0,
   last_active_date      TEXT,
   onboarding_complete   INTEGER NOT NULL DEFAULT 0,
   platforms_json        TEXT NOT NULL DEFAULT '[]',
@@ -1314,6 +1316,19 @@ CREATE TABLE IF NOT EXISTS presence_profile (
   created_at            INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at            INTEGER NOT NULL DEFAULT (unixepoch())
 );
+`;
+
+export const CREATE_PRESENCE_ACTIVITY = `
+CREATE TABLE IF NOT EXISTS presence_activity (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  date        TEXT NOT NULL,
+  source      TEXT NOT NULL CHECK(source IN ('done','edited','posted')),
+  item_id     TEXT REFERENCES presence_items(id) ON DELETE SET NULL,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  UNIQUE(project_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_presence_activity_project ON presence_activity(project_id, date);
 `;
 
 /** DDL applied in order; every statement must be idempotent. */
@@ -1373,6 +1388,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_PRESENCE_ITEMS,
   CREATE_PRESENCE_POSTS,
   CREATE_PRESENCE_PROFILE,
+  CREATE_PRESENCE_ACTIVITY,
 ];
 
 /** Bookkeeping table for future schema versions. */
@@ -1572,6 +1588,45 @@ export function applyMigrations(db: {
       'research_runs',
       'project_id',
       'TEXT REFERENCES projects(id) ON DELETE SET NULL',
+    );
+
+    // Presence: edited_at column for tracking edit events separately from status
+    addColumn('presence_items', 'edited_at', 'INTEGER');
+
+    // Presence: best_streak for historical tracking
+    addColumn('presence_profile', 'best_streak', 'INTEGER NOT NULL DEFAULT 0');
+
+    execOptional(
+      'presence activity backfill',
+      `INSERT OR IGNORE INTO presence_activity
+         (id, project_id, date, source, item_id, created_at)
+       SELECT lower(hex(randomblob(16))), pb.project_id,
+              date(pi.updated_at, 'unixepoch', 'localtime'),
+              CASE WHEN MAX(CASE WHEN pi.status = 'edited' THEN 1 ELSE 0 END) = 1
+                   THEN 'edited' ELSE 'done' END,
+              NULL, MAX(pi.updated_at)
+       FROM presence_items pi
+       JOIN presence_batches pb ON pb.id = pi.batch_id
+       WHERE pb.project_id IS NOT NULL
+         AND pi.status IN ('done', 'edited')
+       GROUP BY pb.project_id, date(pi.updated_at, 'unixepoch', 'localtime')`,
+    );
+    execOptional(
+      'presence post activity backfill',
+      `INSERT OR IGNORE INTO presence_activity
+         (id, project_id, date, source, item_id, created_at)
+       SELECT lower(hex(randomblob(16))), project_id,
+              date(posted_at, 'unixepoch', 'localtime'),
+              'posted', NULL, MAX(posted_at)
+       FROM presence_posts
+       WHERE project_id IS NOT NULL
+       GROUP BY project_id, date(posted_at, 'unixepoch', 'localtime')`,
+    );
+    execOptional(
+      'presence edited status migration',
+      `UPDATE presence_items
+       SET status = 'pending', edited_at = COALESCE(edited_at, updated_at)
+       WHERE status = 'edited'`,
     );
 
     // Indexes on back-filled columns are created HERE, never inline in the

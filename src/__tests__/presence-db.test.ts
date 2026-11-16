@@ -21,6 +21,7 @@ import {
   listPosts,
   listRecentItems,
   logPost,
+  recordActivity,
   updateItem,
   counts,
   getProfile,
@@ -28,7 +29,14 @@ import {
   updateProfile,
   getStreak,
   updateStreak,
+  assertItemInProject,
+  getActivityBetween,
 } from '../main/db/presence';
+import {
+  displayStreak,
+  getMilestoneMessage,
+  localDateString,
+} from '../lib/presence';
 
 describe('presence data layer', () => {
   let db: Database.Database;
@@ -124,6 +132,55 @@ describe('presence data layer', () => {
     expect(updated!.feedback).toBe('Got 5 likes!');
   });
 
+  it('keeps done status when the user edits a suggestion and records one daily activity', () => {
+    const batch = createBatch('project-1', '', {});
+    const item = createItem(
+      batch.id,
+      'post_draft',
+      'Title',
+      'Original body',
+      'linkedin',
+      null,
+      null,
+    );
+
+    updateItem(item.id, { status: 'done' }, 'project-1');
+    const edited = updateItem(
+      item.id,
+      { body: 'Corrected body' },
+      'project-1',
+    );
+
+    expect(edited?.status).toBe('done');
+    expect(edited?.body).toBe('Corrected body');
+    expect(edited?.edited_at).toBeGreaterThan(0);
+    expect(
+      getActivityBetween('project-1', localDateString(), localDateString()),
+    ).toHaveLength(1);
+    expect(getStreak('project-1').streak_count).toBe(1);
+    expect(listPosts('project-1')).toHaveLength(0);
+  });
+
+  it('rejects item access from another project', () => {
+    db.prepare(
+      "INSERT INTO projects (id, name) VALUES ('project-2', 'Other Project')",
+    ).run();
+    const batch = createBatch('project-1', '', {});
+    const item = createItem(
+      batch.id,
+      'post_draft',
+      'Title',
+      'Body',
+      'linkedin',
+      null,
+      null,
+    );
+
+    expect(() => assertItemInProject(item.id, 'project-2')).toThrow(
+      /does not belong to project/i,
+    );
+  });
+
   it('deletes an item', () => {
     const batch = createBatch('project-1', '', {});
     const item = createItem(
@@ -170,6 +227,35 @@ describe('presence data layer', () => {
     expect(posts).toHaveLength(1);
   });
 
+  it('links an explicitly logged post to its item and records activity', () => {
+    const batch = createBatch('project-1', '', {});
+    const item = createItem(
+      batch.id,
+      'post_draft',
+      'Title',
+      'Body',
+      'linkedin',
+      null,
+      null,
+    );
+
+    const post = logPost(
+      'project-1',
+      'linkedin',
+      'Published body',
+      '12 likes',
+      item.id,
+    );
+
+    expect(post.item_id).toBe(item.id);
+    expect(getItem(item.id)?.posted_at).toBe(post.posted_at);
+    expect(getItem(item.id)?.body).toBe('Published body');
+    expect(getItem(item.id)?.edited_at).toBeGreaterThan(0);
+    expect(getActivityBetween('project-1', localDateString(), localDateString()))
+      .toHaveLength(1);
+    expect(getStreak('project-1').streak_count).toBe(1);
+  });
+
   // ── Counts ───────────────────────────────────────────────────────────────
 
   it('counts batches and item statuses', () => {
@@ -200,6 +286,19 @@ describe('presence data layer', () => {
     expect(c.done).toBe(1);
     expect(c.skipped).toBe(1);
     expect(c.pending).toBe(0);
+  });
+
+  describe('presence streak display', () => {
+    it('keeps a streak active today or yesterday and clears it after a gap', () => {
+      expect(displayStreak(8, '2026-11-16', '2026-11-16')).toBe(8);
+      expect(displayStreak(8, '2026-11-15', '2026-11-16')).toBe(8);
+      expect(displayStreak(8, '2026-11-14', '2026-11-16')).toBe(0);
+    });
+
+    it('only celebrates milestones reached today', () => {
+      expect(getMilestoneMessage(31)).toBeNull();
+      expect(getMilestoneMessage(60)).toContain('60 days');
+    });
   });
 
   // ── Recent items ─────────────────────────────────────────────────────────
@@ -256,5 +355,63 @@ describe('presence data layer', () => {
     const s = getStreak('nonexistent');
     expect(s.streak_count).toBe(0);
     expect(s.last_active_date).toBeNull();
+  });
+
+  it('does not present a stored streak as active after a gap', () => {
+    updateProfile('project-1', {
+      streak_count: 12,
+      last_active_date: '2000-01-01',
+    });
+
+    expect(getStreak('project-1').streak_count).toBe(0);
+  });
+
+  // ── Activity ledger idempotency ──────────────────────────────────────────
+
+  it('records only one activity row per day regardless of how many actions occur', () => {
+    const batch = createBatch('project-1', '', {});
+    const item = createItem(
+      batch.id,
+      'post_draft',
+      'T',
+      'B',
+      'linkedin',
+      null,
+      null,
+    );
+
+    // Multiple actions on the same day
+    updateItem(item.id, { status: 'done' }, 'project-1');
+    updateItem(item.id, { body: 'Edited body' }, 'project-1');
+    recordActivity('project-1', 'posted', item.id);
+
+    const today = localDateString();
+    const activities = getActivityBetween('project-1', today, today);
+    expect(activities).toHaveLength(1);
+  });
+
+  it('updates the source on conflict but keeps one row', () => {
+    const batch = createBatch('project-1', '', {});
+    const item = createItem(
+      batch.id,
+      'post_draft',
+      'T',
+      'B',
+      'linkedin',
+      null,
+      null,
+    );
+
+    updateItem(item.id, { status: 'done' }, 'project-1');
+    const today = localDateString();
+    let activities = getActivityBetween('project-1', today, today);
+    expect(activities).toHaveLength(1);
+    expect(activities[0].source).toBe('done');
+
+    // Second action same day should update source but not add a row
+    recordActivity('project-1', 'posted', item.id);
+    activities = getActivityBetween('project-1', today, today);
+    expect(activities).toHaveLength(1);
+    expect(activities[0].source).toBe('posted');
   });
 });

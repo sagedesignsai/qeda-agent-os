@@ -10,12 +10,13 @@
  */
 
 import { useMemo, useState } from 'react';
-import { ChevronRightIcon, SparklesIcon } from 'lucide-react';
+import { ChevronRightIcon, SparklesIcon, Trash2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SuggestionCard } from './SuggestionCard';
 import {
   useGreeting,
+  usePresenceActions,
   usePresenceBatchDetail,
   usePresenceBatches,
 } from '@/hooks/use-presence';
@@ -38,41 +39,61 @@ function formatBatchDate(seconds: number): string {
 function BatchSection({
   batch,
   defaultOpen,
+  projectId,
 }: {
   batch: PresenceBatch;
   defaultOpen: boolean;
+  projectId: string | null;
 }) {
-  const { detail, loading } = usePresenceBatchDetail(batch.id);
   const [open, setOpen] = useState<boolean | null>(null);
   const isOpen = open ?? defaultOpen;
+  const { detail, loading } = usePresenceBatchDetail(batch.id, projectId, isOpen);
+  const { deleteBatch } = usePresenceActions();
 
   const items = detail?.items ?? [];
   const pending = items.filter((item) => item.status === 'pending').length;
   const done = items.filter((item) => item.status === 'done').length;
 
+  const handleDelete = () => {
+    if (window.confirm('Delete this batch and all its suggestions?')) {
+      void deleteBatch(batch.id, projectId);
+    }
+  };
+
   return (
-    <section className="rounded-xl border border-border/60 bg-background/40">
-      <button
-        type="button"
-        onClick={() => setOpen(!isOpen)}
-        aria-expanded={isOpen}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
-      >
-        <ChevronRightIcon
-          className={cn(
-            'size-3.5 shrink-0 text-muted-foreground transition-transform',
-            isOpen && 'rotate-90',
-          )}
-        />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-foreground">
-            {batch.focus || 'Suggestions'}
-          </p>
-          <p className="text-[10px] text-muted-foreground">
-            {formatBatchDate(batch.created_at)} · {pending} to do · {done} done
-          </p>
-        </div>
-      </button>
+    <section className="group/section rounded-xl border border-border/60 bg-background/40">
+      <div className="flex">
+        <button
+          type="button"
+          onClick={() => setOpen(!isOpen)}
+          aria-expanded={isOpen}
+          className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left"
+        >
+          <ChevronRightIcon
+            className={cn(
+              'size-3.5 shrink-0 text-muted-foreground transition-transform',
+              isOpen && 'rotate-90',
+            )}
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold text-foreground">
+              {batch.focus || 'Suggestions'}
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              {formatBatchDate(batch.created_at)} · {pending} to do · {done} done
+            </p>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={handleDelete}
+          aria-label="Delete batch"
+          title="Delete batch"
+          className="mr-1.5 self-center rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-destructive group-hover/section:opacity-100"
+        >
+          <Trash2Icon className="size-3.5" />
+        </button>
+      </div>
 
       {isOpen && (
         <div className="space-y-1.5 border-t border-border/50 p-1.5">
@@ -86,7 +107,13 @@ function BatchSection({
               This batch is empty.
             </p>
           ) : (
-            items.map((item) => <SuggestionCard key={item.id} item={item} />)
+            items.map((item) => (
+              <SuggestionCard
+                key={item.id}
+                item={item}
+                projectId={projectId}
+              />
+            ))
           )}
         </div>
       )}
@@ -189,7 +216,12 @@ export function PresenceQueue({
       </div>
 
       {visibleBatches.map((batch, index) => (
-        <BatchSection key={batch.id} batch={batch} defaultOpen={index === 0} />
+        <BatchSection
+          key={batch.id}
+          batch={batch}
+          defaultOpen={index === 0}
+          projectId={projectId}
+        />
       ))}
 
       {batches.length > 4 && (

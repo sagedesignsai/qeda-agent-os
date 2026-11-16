@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftIcon,
+  ArrowRightIcon,
+  ExternalLinkIcon,
   FlameIcon,
   GlobeIcon,
   PlusIcon,
@@ -91,6 +93,7 @@ export function PresenceBrowserPane({
   platforms,
 }: PresenceBrowserPaneProps) {
   const browser = usePresenceBrowser();
+  const { browserState } = browser;
   const [tabs, setTabs] = useState<PresenceTab[]>([ACTIVITY_TAB]);
   const [activeId, setActiveId] = useState<string>(ACTIVITY_TAB.id);
   const [bounds, setBounds] = useState<PresenceBrowserBounds | null>(null);
@@ -315,8 +318,20 @@ export function PresenceBrowserPane({
                 className="size-6 text-muted-foreground hover:text-foreground"
                 onClick={() => void browser.back(activeTab.id)}
                 title="Back"
+                disabled={browserState?.canGoBack !== true}
               >
                 <ArrowLeftIcon className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-6 text-muted-foreground hover:text-foreground"
+                onClick={() => void browser.forward(activeTab.id)}
+                title="Forward"
+                disabled={browserState?.canGoForward !== true}
+              >
+                <ArrowRightIcon className="size-3.5" />
               </Button>
               <Button
                 type="button"
@@ -327,6 +342,16 @@ export function PresenceBrowserPane({
                 title="Reload"
               >
                 <RotateCwIcon className="size-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-6 text-muted-foreground hover:text-foreground"
+                onClick={() => void browser.openExternal(activeTab.id)}
+                title="Open in browser"
+              >
+                <ExternalLinkIcon className="size-3.5" />
               </Button>
             </>
           )}
@@ -391,6 +416,30 @@ export function PresenceBrowserPane({
           </DropdownMenu>
         </div>
       </div>
+
+      {/* URL pill and loading bar for web tabs */}
+      {activeTab?.kind === 'web' && browserState && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/40 bg-card/10 px-3 py-1">
+          {browserState.loading && (
+            <div className="h-0.5 flex-1 overflow-hidden rounded-full bg-muted">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-amber-500/60" />
+            </div>
+          )}
+          {!browserState.loading && browserState.url && (
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[11px] text-muted-foreground">
+              <GlobeIcon className="size-3 shrink-0" />
+              <span className="truncate">
+                {browserState.title || new URL(browserState.url).hostname}
+              </span>
+            </div>
+          )}
+          {browserState.error && (
+            <p className="ml-auto shrink-0 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[10px] text-destructive">
+              {browserState.error}
+            </p>
+          )}
+        </div>
+      )}
 
       <div ref={contentRef} className="relative min-h-0 flex-1 overflow-hidden">
         {activeTab?.kind === 'internal' ? (

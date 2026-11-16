@@ -18,13 +18,14 @@
 import { randomUUID } from 'node:crypto';
 import type { UIMessage } from 'ai';
 import type { BrowserWindow } from 'electron';
-import { ipcMain, shell } from 'electron';
-import { openBrowser } from '../../browser-use.js';
+import { ipcMain } from 'electron';
 import {
   attachPresenceBrowser,
   closeAllPresenceViews,
   closePresenceView,
   goBackPresenceView,
+  goForwardPresenceView,
+  openPresenceViewExternal,
   hidePresenceView,
   navigatePresenceView,
   reloadPresenceView,
@@ -45,11 +46,19 @@ import {
 import { resolveModelChain } from '../../ai/provider.js';
 import { createPresenceCopilotAgent } from '../../ai/presence-copilot-agent.js';
 import type { AgentPlanEvent } from '../../../lib/agent-plan.js';
-import type { PresenceBrowserBounds } from '../../../lib/presence.js';
 import {
+  PRESENCE_PLATFORMS,
+  type PresenceBrowserBounds,
+  type PresencePlatform,
+} from '../../../lib/presence.js';
+import {
+  assertBatchInProject,
+  assertItemInProject,
+  deleteBatch,
   deleteItem,
   getBatch,
   getBatchDetail,
+  getActivityBetween,
   listBatches,
   listPosts,
   logPost,
@@ -58,7 +67,7 @@ import {
   getProfile,
   updateProfile,
   getStreak,
-  updateStreak,
+  type PresenceActivity,
   type PresenceBatchDetail,
   type PresenceItem,
   type PresenceItemPatch,
@@ -80,6 +89,11 @@ function send(
 function broadcastChanged(mainWindow: BrowserWindow): void {
   send(mainWindow, 'presence:changed');
 }
+
+// ─── Abort control ────────────────────────────────────────────────────────────
+
+const presenceAbortControllers = new Map<string, AbortController>();
+const ABORT_SESSION_ID = 'presence-copilot';
 
 interface PresenceTurnOptions {
   mainWindow: BrowserWindow;
@@ -111,83 +125,128 @@ async function runPresenceTurn({
   quiet = false,
 }: PresenceTurnOptions): Promise<void> {
   const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const modelMessages = await prepareModelMessages(messages);
-  const activeProject = renderProjectContext({ projectId });
-
-  const chain = resolveModelChain();
-  if (chain.length === 0) {
-    throw new Error(
-      'No model configured. Pick a provider and model in Settings.',
-    );
+  const abortController = new AbortController();
+  if (presenceAbortControllers.has(ABORT_SESSION_ID)) {
+    throw new Error('The Presence coach is already running a turn.');
   }
+  presenceAbortControllers.set(ABORT_SESSION_ID, abortController);
+  let cancellationSent = false;
+  const notifyCancelled = () => {
+    if (cancellationSent) return;
+    cancellationSent = true;
+    send(mainWindow, 'agent:stream-cancelled', {
+      sessionId: ABORT_SESSION_ID,
+    });
+    broadcastChanged(mainWindow);
+  };
 
-  let lastError: unknown;
+  try {
+    const modelMessages = await prepareModelMessages(messages);
+    const activeProject = renderProjectContext({ projectId });
 
-  for (let attempt = 0; attempt < chain.length; attempt += 1) {
-    const target = chain[attempt];
-    let emitted = false;
+    const chain = resolveModelChain();
+    if (chain.length === 0) {
+      throw new Error(
+        'No model configured. Pick a provider and model in Settings.',
+      );
+    }
 
-    try {
-      const planManager = new PlanManager((event: AgentPlanEvent) => {
-        if (quiet) return;
-        send(mainWindow, 'presence-copilot:plan-event', event);
-      });
+    let lastError: unknown;
 
-      const agent = createPresenceCopilotAgent({
-        projectId,
-        activeProject,
-        target,
-        planManager,
-      });
-
-      const result = await agent.stream({ messages: modelMessages });
-
-      let streamError: unknown;
-      for await (const chunk of result.fullStream) {
-        if (mainWindow.isDestroyed()) return;
-        if (chunk?.type === 'error') {
-          streamError = chunk.error;
-          break;
-        }
-        if (isOutputChunk(chunk?.type)) emitted = true;
-        if (!quiet) {
-          send(
-            mainWindow,
-            'presence-copilot:stream-chunk',
-            JSON.stringify(chunk),
-          );
-        }
+    for (let attempt = 0; attempt < chain.length; attempt += 1) {
+      if (abortController.signal.aborted) {
+        notifyCancelled();
+        return;
       }
 
-      if (streamError) throw streamError;
+      const target = chain[attempt];
+      let emitted = false;
 
-      if (!quiet) send(mainWindow, 'presence-copilot:stream-done', { runId });
-      // The agent's tools may have created batches, items, or profile rows.
-      broadcastChanged(mainWindow);
-      return;
-    } catch (err) {
-      lastError = err;
-
-      const isLast = attempt === chain.length - 1;
-      const canFallback = !emitted && !isLast && isRetryableProviderError(err);
-
-      if (!canFallback) break;
-
-      const next = chain[attempt + 1];
-      if (!quiet) {
-        send(mainWindow, 'presence-copilot:stream-fallback', {
-          fromProvider: target.providerId,
-          fromModel: target.modelId,
-          toProvider: next.providerId,
-          toModel: next.modelId,
-          reason: describeFallbackReason(err),
+      try {
+        const planManager = new PlanManager((event: AgentPlanEvent) => {
+          if (quiet) return;
+          send(mainWindow, 'presence-copilot:plan-event', event);
         });
+
+        const agent = createPresenceCopilotAgent({
+          projectId,
+          activeProject,
+          target,
+          planManager,
+        });
+
+        const result = await agent.stream({
+          messages: modelMessages,
+          abortSignal: abortController.signal,
+        });
+
+        let streamError: unknown;
+        for await (const chunk of result.fullStream) {
+          if (mainWindow.isDestroyed()) return;
+          if (abortController.signal.aborted) {
+            notifyCancelled();
+            return;
+          }
+          if (chunk?.type === 'error') {
+            streamError = chunk.error;
+            break;
+          }
+          if (isOutputChunk(chunk?.type)) emitted = true;
+          if (!quiet) {
+            send(
+              mainWindow,
+              'presence-copilot:stream-chunk',
+              JSON.stringify(chunk),
+            );
+          }
+        }
+
+        if (streamError) throw streamError;
+
+        if (abortController.signal.aborted) {
+          notifyCancelled();
+          return;
+        }
+
+        if (!quiet) send(mainWindow, 'presence-copilot:stream-done', { runId });
+        broadcastChanged(mainWindow);
+        return;
+      } catch (err) {
+        if (abortController.signal.aborted) {
+          notifyCancelled();
+          return;
+        }
+
+        lastError = err;
+        const isLast = attempt === chain.length - 1;
+        const canFallback = !emitted && !isLast && isRetryableProviderError(err);
+        if (!canFallback) break;
+
+        const next = chain[attempt + 1];
+        if (!quiet) {
+          send(mainWindow, 'presence-copilot:stream-fallback', {
+            fromProvider: target.providerId,
+            fromModel: target.modelId,
+            toProvider: next.providerId,
+            toModel: next.modelId,
+            reason: describeFallbackReason(err),
+          });
+        }
       }
     }
-  }
 
-  throw lastError;
+    throw lastError ?? new Error('Presence coach turn failed.');
+  } catch (err) {
+    if (abortController.signal.aborted) {
+      notifyCancelled();
+      return;
+    }
+    throw err;
+  } finally {
+    if (presenceAbortControllers.get(ABORT_SESSION_ID) === abortController) {
+      presenceAbortControllers.delete(ABORT_SESSION_ID);
+    }
+  }
 }
 
 function generationPrompt(focus?: string): string {
@@ -211,15 +270,43 @@ export function registerPresenceHandlers({
   ipcMain.handle(
     'presence:batches-list',
     (_event, payload?: { projectId?: string | null }) => {
-      const projectId = payload?.projectId ?? null;
-      return listBatches(projectId);
+      const projectId = resolveActiveProjectId(payload?.projectId);
+      return projectId ? listBatches(projectId) : [];
     },
   );
 
   ipcMain.handle(
     'presence:batch-get',
-    (_event, { id }: { id: string }): PresenceBatchDetail | null => {
+    (
+      _event,
+      {
+        id,
+        projectId: scopedProjectId,
+      }: { id: string; projectId: string | null },
+    ): PresenceBatchDetail | null => {
+      const projectId = resolveActiveProjectId(scopedProjectId);
+      if (!projectId) return null;
+      const batch = getBatch(id);
+      if (!batch) return null;
+      assertBatchInProject(id, projectId);
       return getBatchDetail(id);
+    },
+  );
+
+  ipcMain.handle(
+    'presence:batch-delete',
+    (
+      _event,
+      { id, projectId: scopedProjectId }: { id: string; projectId: string | null },
+    ): boolean => {
+      const projectId = resolveActiveProjectId(scopedProjectId);
+      if (!projectId) {
+        throw new Error('Select a project before deleting a presence batch.');
+      }
+      assertBatchInProject(id, projectId);
+      const deleted = deleteBatch(id);
+      if (deleted) broadcastChanged(mainWindow);
+      return deleted;
     },
   );
 
@@ -310,26 +397,40 @@ export function registerPresenceHandlers({
     },
   );
 
+  /**
+   * Abort the currently running presence copilot turn.
+   */
+  ipcMain.handle('presence:abort', (): boolean => {
+    const controller = presenceAbortControllers.get(ABORT_SESSION_ID);
+    if (controller) {
+      controller.abort();
+      return true;
+    }
+    return false;
+  });
+
   // ── Items ────────────────────────────────────────────────────────────────
 
   ipcMain.handle(
     'presence:item-update',
     (
       _event,
-      { id, patch }: { id: string; patch: PresenceItemPatch },
+      {
+        id,
+        projectId: scopedProjectId,
+        patch,
+      }: {
+        id: string;
+        projectId: string | null;
+        patch: PresenceItemPatch;
+      },
     ): PresenceItem | null => {
-      const updated = updateItem(id, patch);
-      if (updated && (patch.status === 'done' || patch.status === 'edited')) {
-        // Update streak — need project_id from the batch.
-        try {
-          const batch = getBatch(updated.batch_id);
-          if (batch?.project_id) {
-            updateStreak(batch.project_id);
-          }
-        } catch {
-          // Streak update failed — don't block the item update.
-        }
+      const projectId = resolveActiveProjectId(scopedProjectId);
+      if (!projectId) {
+        throw new Error('Select a project before updating a presence item.');
       }
+      assertItemInProject(id, projectId);
+      const updated = updateItem(id, patch, projectId);
       broadcastChanged(mainWindow);
       return updated;
     },
@@ -337,8 +438,16 @@ export function registerPresenceHandlers({
 
   ipcMain.handle(
     'presence:item-delete',
-    (_event, { id }: { id: string }): boolean => {
-      const deleted = deleteItem(id);
+    (
+      _event,
+      { id, projectId: scopedProjectId }: { id: string; projectId: string | null },
+    ): boolean => {
+      const projectId = resolveActiveProjectId(scopedProjectId);
+      if (!projectId) {
+        throw new Error('Select a project before deleting a presence item.');
+      }
+      assertItemInProject(id, projectId);
+      const deleted = deleteItem(id, projectId);
       if (deleted) broadcastChanged(mainWindow);
       return deleted;
     },
@@ -355,18 +464,30 @@ export function registerPresenceHandlers({
         platform,
         content,
         metrics = '',
-        itemId = null as any,
+        itemId = null,
       }: {
         projectId: string | null;
-        platform: string;
+        platform: PresencePlatform;
         content: string;
         metrics?: string;
-        itemId?: string;
+        itemId?: string | null;
       },
     ): PresencePost => {
+      const resolvedProjectId = resolveActiveProjectId(projectId);
+      if (!resolvedProjectId) {
+        throw new Error('No active project to log post to');
+      }
+      if (!PRESENCE_PLATFORMS.includes(platform)) {
+        throw new Error(`Unsupported Presence platform: ${platform}`);
+      }
+      if (!content.trim()) {
+        throw new Error('Post content cannot be empty.');
+      }
+      if (itemId) assertItemInProject(itemId, resolvedProjectId);
+
       const post = logPost(
-        projectId,
-        platform as any,
+        resolvedProjectId,
+        platform,
         content,
         metrics,
         itemId,
@@ -379,8 +500,8 @@ export function registerPresenceHandlers({
   ipcMain.handle(
     'presence:posts-list',
     (_event, payload?: { projectId?: string | null }) => {
-      const projectId = payload?.projectId ?? null;
-      return listPosts(projectId);
+      const projectId = resolveActiveProjectId(payload?.projectId);
+      return projectId ? listPosts(projectId) : [];
     },
   );
 
@@ -389,8 +510,10 @@ export function registerPresenceHandlers({
   ipcMain.handle(
     'presence:counts',
     (_event, payload?: { projectId?: string | null }) => {
-      const projectId = payload?.projectId ?? null;
-      return counts(projectId);
+      const projectId = resolveActiveProjectId(payload?.projectId);
+      return projectId
+        ? counts(projectId)
+        : { batches: 0, pending: 0, done: 0, skipped: 0 };
     },
   );
 
@@ -399,7 +522,8 @@ export function registerPresenceHandlers({
   ipcMain.handle(
     'presence:profile-get',
     (_event, { projectId }: { projectId: string }): PresenceProfile | null => {
-      return getProfile(projectId);
+      const resolvedProjectId = resolveActiveProjectId(projectId);
+      return resolvedProjectId ? getProfile(resolvedProjectId) : null;
     },
   );
 
@@ -419,13 +543,17 @@ export function registerPresenceHandlers({
         goal?: string;
       },
     ): PresenceProfile => {
-      const patch: any = {};
+      const resolvedProjectId = resolveActiveProjectId(projectId);
+      if (!resolvedProjectId) {
+        throw new Error('Select a project before updating the Presence profile.');
+      }
+      const patch: Parameters<typeof updateProfile>[1] = {};
       if (onboardingComplete !== undefined)
         patch.onboarding_complete = onboardingComplete;
       if (platforms !== undefined)
         patch.platforms_json = JSON.stringify(platforms);
       if (goal !== undefined) patch.goal = goal;
-      const profile = updateProfile(projectId, patch);
+      const profile = updateProfile(resolvedProjectId, patch);
       broadcastChanged(mainWindow);
       return profile;
     },
@@ -436,23 +564,27 @@ export function registerPresenceHandlers({
   ipcMain.handle(
     'presence:streak-get',
     (_event, { projectId }: { projectId: string }) => {
-      return getStreak(projectId);
+      const resolvedProjectId = resolveActiveProjectId(projectId);
+      return resolvedProjectId ? getStreak(resolvedProjectId) : {
+        streak_count: 0,
+        last_active_date: null,
+      };
     },
   );
 
-  // ── Standalone System Browser (legacy) ───────────────────────────────────
-
   ipcMain.handle(
-    'presence:open-browser',
-    (_event, { url }: { url: string }): boolean => {
-      try {
-        openBrowser(url, { visible: true, partition: 'presence' });
-        return true;
-      } catch {
-        // Fallback to external browser
-        shell.openExternal(url);
-        return false;
-      }
+    'presence:activity-days',
+    (
+      _event,
+      { projectId, startDate, endDate }: {
+        projectId: string | null;
+        startDate: string;
+        endDate: string;
+      },
+    ): PresenceActivity[] => {
+      const resolvedProjectId = resolveActiveProjectId(projectId);
+      if (!resolvedProjectId) return [];
+      return getActivityBetween(resolvedProjectId, startDate, endDate);
     },
   );
 
@@ -514,5 +646,13 @@ export function registerPresenceHandlers({
 
   ipcMain.handle('presence:browser-back', (_event, { id }: { id: string }) => {
     goBackPresenceView(id);
+  });
+
+  ipcMain.handle('presence:browser-forward', (_event, { id }: { id: string }) => {
+    goForwardPresenceView(id);
+  });
+
+  ipcMain.handle('presence:browser-open-external', (_event, { id }: { id: string }) => {
+    openPresenceViewExternal(id);
   });
 }

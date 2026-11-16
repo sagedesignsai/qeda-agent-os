@@ -20,6 +20,7 @@ import { PlusIcon } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { PresenceBrowserPane } from '@/components/presence/PresenceBrowserPane';
+import { PresenceOnboardingPanel } from '@/components/presence/PresenceOnboardingPanel';
 import {
   PresenceCoachPanel,
   type PresenceAutoPrompt,
@@ -39,6 +40,7 @@ export default function Presence() {
   const { counts } = usePresenceCounts(projectId);
 
   const [autoPrompt, setAutoPrompt] = useState<PresenceAutoPrompt | null>(null);
+  const [editMode, setEditMode] = useState(false);
   const promptSequence = useRef(0);
 
   const seedGeneration = useCallback(() => {
@@ -84,17 +86,30 @@ export default function Presence() {
             transcript and closes the old native tabs instead of letting them
             bleed across scopes.
           */}
-          <PresenceCoachPanel
-            key={`coach:${projectId ?? 'none'}`}
-            projectId={projectId}
-            profile={profile}
-            profileLoading={profileLoading}
-            counts={counts}
-            platforms={platforms}
-            autoPrompt={autoPrompt}
-            onAutoPromptConsumed={() => setAutoPrompt(null)}
-            onGenerate={seedGeneration}
-          />
+          {editMode && projectId ? (
+            <PresenceOnboardingPanel
+              key={`edit:${projectId}`}
+              projectId={projectId}
+              initialPlatforms={platforms}
+              initialGoal={profile?.goal ?? ''}
+              editMode
+              onComplete={() => setEditMode(false)}
+              onCancel={() => setEditMode(false)}
+            />
+          ) : (
+            <PresenceCoachPanel
+              key={`coach:${projectId ?? 'none'}`}
+              projectId={projectId}
+              profile={profile}
+              profileLoading={profileLoading}
+              counts={counts}
+              platforms={platforms}
+              autoPrompt={autoPrompt}
+              onAutoPromptConsumed={() => setAutoPrompt(null)}
+              onGenerate={seedGeneration}
+              onEditProfile={() => setEditMode(true)}
+            />
+          )}
         </aside>
 
         <section className="min-w-0 flex-1">
