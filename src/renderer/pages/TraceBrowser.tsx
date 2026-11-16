@@ -12,7 +12,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import {
   ClockIcon,
-  FilePlus2Icon,
   LayersIcon,
   LucideIcon,
   Maximize2Icon,
@@ -27,6 +26,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PageHeader } from '@/components/PageHeader';
 import { TracePreview } from '@/components/trace/TracePreview';
+import { TraceEmptyState } from '@/components/trace/TraceEmptyState';
 import {
   NewCompositionDialog,
   type NewCompositionPayload,
@@ -156,6 +156,17 @@ export default function TraceBrowser() {
             New composition
           </Button>
         }
+        center={
+          <div className="relative w-56 sm:w-72">
+            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search compositions…"
+              className="h-7 rounded-full pl-8 text-xs"
+            />
+          </div>
+        }
       />
 
       <ScrollArea className="min-h-0 flex-1">
@@ -178,19 +189,6 @@ export default function TraceBrowser() {
             </div>
           ) : null}
 
-          {/* Search bar */}
-          <div className="mb-6">
-            <div className="relative max-w-sm">
-              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search compositions"
-                className="pl-9"
-              />
-            </div>
-          </div>
-
           {/* Content */}
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20">
@@ -200,31 +198,11 @@ export default function TraceBrowser() {
               </p>
             </div>
           ) : visibleProjects.length === 0 ? (
-            /* Empty state */
-            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 py-20">
-              <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-                <FilePlus2Icon className="size-5 text-muted-foreground" />
-              </div>
-              <p className="mt-4 text-sm font-medium">
-                {query ? 'No matching compositions' : 'No compositions yet'}
-              </p>
-              <p className="mt-1 max-w-xs text-center text-xs text-muted-foreground">
-                {query
-                  ? 'Try a different search term.'
-                  : 'Start from a template and make it yours.'}
-              </p>
-              {!query && (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="mt-4"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <PlusIcon data-icon="inline-start" />
-                  New composition
-                </Button>
-              )}
-            </div>
+            /* Animated empty state */
+            <TraceEmptyState
+              isFiltered={query.trim().length > 0}
+              onCreateClick={() => setCreateOpen(true)}
+            />
           ) : (
             /* Project grid */
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

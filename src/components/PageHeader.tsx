@@ -66,6 +66,13 @@ interface PageHeaderProps {
   meta?: ReactNode;
   /** Commands. Keep this to a primary action plus an overflow menu. */
   actions?: ReactNode;
+  /**
+   * Content that is absolutely centred within the header row, independent of
+   * the flanking identity and action groups. Ideal for a search bar that
+   * should sit visually in the middle of the header without pushing the
+   * identity or actions aside.
+   */
+  center?: ReactNode;
   /** Inline content in the action cluster, between `meta` and `actions`. */
   children?: ReactNode;
   className?: string;
@@ -78,13 +85,14 @@ export function PageHeader({
   nav,
   meta,
   actions,
+  center,
   children,
   className,
 }: PageHeaderProps) {
   return (
     <header
       className={cn(
-        'flex min-h-10 shrink-0 items-center gap-2 border-b bg-card/20 px-3 backdrop-blur-xs',
+        'relative flex min-h-10 shrink-0 items-center gap-2 border-b bg-card/20 px-3 backdrop-blur-xs',
         className,
       )}
     >
@@ -139,6 +147,18 @@ export function PageHeader({
       {nav && (
         <div data-slot="page-header-nav" className="flex shrink-0">
           {nav}
+        </div>
+      )}
+
+      {/* Absolutely-centred slot — does not affect the flex flow of the flanking
+          identity and action groups, so both sides truncate/shrink independently.
+          Use for things like a search bar that must sit in the visual middle. */}
+      {center && (
+        <div
+          data-slot="page-header-center"
+          className="pointer-events-none absolute inset-x-0 flex items-center justify-center"
+        >
+          <div className="pointer-events-auto">{center}</div>
         </div>
       )}
 
