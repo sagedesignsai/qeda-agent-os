@@ -140,7 +140,6 @@ const POLYHAVEN_LICENSE = 'CC0-1.0';
 const SKETCHFAB_API = 'https://sketchfab.com';
 const SKETCHFAB_HOSTS = ['sketchfab.com', 'cdn.sketchfab.com', 'download.sketchfab.com'];
 const SKETCHFAB_CREDIT = 'Powered by Sketchfab';
-const SKETCHFAB_API_KEY = '5fdc660e8bf84e058ceed08029fa09e2';
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const FIRST_BYTE_TIMEOUT_MS = 30 * 1000;
 const DEFAULT_MAX_MODEL_BYTES = 200 * 1024 * 1024;
@@ -174,42 +173,53 @@ type SketchfabModel = {
   name?: string;
   description?: string;
   user?: {
+    uid?: string;
     username?: string;
     displayName?: string;
   };
   license?: {
-    slug: string;
+    uid?: string;
     label: string;
-    full_name?: string;
-    attribution_required?: boolean;
   };
-  thumbnails?: Array<{ url: string; width: number; height: number }>;
-  thumbnail?: { url: string; width: number; height: number };
+  thumbnails?: {
+    images?: Array<{ url: string; width: number; height: number }>;
+  };
   tags?: string[];
   categories?: Array<{ slug: string; name: string }>;
   isDownloadable?: boolean;
-  is_age_restricted?: boolean;
+  isAgeRestricted?: boolean;
   animationCount?: number;
-  vertex_count?: number;
-  face_count?: number;
-  view_count?: number;
-  like_count?: number;
-  comment_count?: number;
-  published_at?: string;
+  vertexCount?: number;
+  faceCount?: number;
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
+  publishedAt?: string;
+  createdAt?: string;
   viewerUrl?: string;
   archives?: Record<string, SketchfabArchive>;
 };
 
 type SketchfabArchive = {
-  format: string;
-  size_bytes?: number;
-  face_count?: number;
-  vertex_count?: number;
+  type: string;
+  size?: number;
+  faceCount?: number;
+  vertexCount?: number;
 };
 
 type SketchfabDownloadResponse = {
   gltf?: { url: string; size: number; expires: number };
+  glb?: { url: string; size: number; expires: number };
   usdz?: { url: string; size: number; expires: number };
+  source?: { url: string; size: number; expires: number };
+};
+
+type SketchfabSearchResponse = {
+  results?: SketchfabModel[];
+  total_count?: number;
+  cursors?: { next?: string; previous?: string };
+  next?: string;
+  previous?: string;
 };
 
 type SketchfabModelCache = {
@@ -399,7 +409,8 @@ export class MotionRemoteAssetClient {
     }
     params.set('sort_by', '-likeCount');
     const url = `${SKETCHFAB_API}/v3/models?${params.toString()}`;
-    const models = await this.sketchfabRequest<SketchfabModel[]>(url);
+    const response = await this.sketchfabRequest<SketchfabSearchResponse>(url);
+    const models = response?.results;
     if (!Array.isArray(models)) {
       return { hits: [], total: 0, providerCredit: SKETCHFAB_CREDIT };
     }
@@ -430,12 +441,19 @@ export class MotionRemoteAssetClient {
     const variants: MotionRemoteVariant[] = [];
     if (model.archives) {
       for (const [key, archive] of Object.entries(model.archives)) {
-        if (archive.format === 'gltf' || archive.format === 'glTF') {
+        if (archive.type === 'glb') {
+          variants.push({
+            id: 'glb',
+            label: 'GLB (single file)',
+            format: 'glb',
+            byteSize: archive.size,
+          });
+        } else if (archive.type === 'gltf' || archive.type === 'glTF') {
           variants.push({
             id: 'gltf',
             label: 'glTF Archive',
             format: 'glb',
-            byteSize: archive.size_bytes,
+            byteSize: archive.size,
           });
         }
       }
@@ -469,96 +487,162 @@ export class MotionRemoteAssetClient {
         return this.failed(model.name ?? request.assetId, 'This model is not available for download.', 'MOTION_IMPORT_UNREADABLE');
       }
 
+      const sketchfabKey = process.env.SKETCHFAB_API_KEY;
+      if (!sketchfabKey) {
+        if (request.requestId) this.activeDownloads.delete(request.requestId);
+        return this.failed(model.name ?? request.assetId, 'Sketchfab API key is not configured. Set SKETCHFAB_API_KEY in your .env file.', 'MOTION_IMPORT_UNREADABLE');
+      }
       const downloadUrl = `${SKETCHFAB_API}/v3/models/${encodeURIComponent(request.assetId)}/download`;
       const downloadResp = await this.sketchfabRequestJson<SketchfabDownloadResponse>(
         downloadUrl,
         SKETCHFAB_HOSTS,
         controller.signal,
-        { 'Authorization': `Bearer ${SKETCHFAB_API_KEY}` }
+        { 'Authorization': `Token ${sketchfabKey}` }
       );
-      const gltfDownload = downloadResp?.gltf;
-      if (!gltfDownload?.url) {
+
+      // Prefer GLB (single file, no ZIP extraction) over glTF (ZIP archive)
+      const download = downloadResp?.glb ?? downloadResp?.gltf;
+      if (!download?.url) {
         if (request.requestId) this.activeDownloads.delete(request.requestId);
-        return this.failed(model.name ?? request.assetId, 'No glTF download available for this model.', 'MOTION_IMPORT_UNREADABLE');
+        return this.failed(model.name ?? request.assetId, 'No download available for this model.', 'MOTION_IMPORT_UNREADABLE');
       }
 
       const limit = this.options.maxModelBytes ?? DEFAULT_MAX_MODEL_BYTES;
-      if (gltfDownload.size > limit) {
+      if (download.size > limit) {
         if (request.requestId) this.activeDownloads.delete(request.requestId);
-        return this.failed(model.name ?? request.assetId, `This asset is too large to import (${formatBytes(gltfDownload.size)}).`, 'MOTION_IMPORT_TOO_LARGE');
+        return this.failed(model.name ?? request.assetId, `This asset is too large to import (${formatBytes(download.size)}).`, 'MOTION_IMPORT_TOO_LARGE');
       }
 
       const releaseSlot = await acquireImportSlot();
       let tempDirectory: string | undefined;
       try {
         tempDirectory = await fs.mkdtemp(path.join(this.options.tempRoot ?? os.tmpdir(), 'qeda-motion-'));
-        const zipPath = path.join(tempDirectory, 'model.zip');
-        await this.download(gltfDownload.url, zipPath, {
-          maxBytes: limit,
-          signal: controller.signal,
-          onProgress: (bytes) => this.options.onProgress?.({
-            requestId: request.requestId,
-            assetId: request.assetId,
-            receivedBytes: bytes,
-            totalBytes: gltfDownload.size,
-          }),
-        });
 
-        if (controller.signal.aborted) {
-          if (request.requestId) this.activeDownloads.delete(request.requestId);
-          return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+        // GLB is a single file — download directly; glTF is a ZIP that needs extraction
+        const isGlb = downloadResp?.glb !== undefined;
+        if (isGlb) {
+          const glbPath = path.join(tempDirectory, 'model.glb');
+          await this.download(download.url, glbPath, {
+            maxBytes: limit,
+            signal: controller.signal,
+            onProgress: (bytes) => this.options.onProgress?.({
+              requestId: request.requestId,
+              assetId: request.assetId,
+              receivedBytes: bytes,
+              totalBytes: download.size,
+            }),
+          });
+
+          if (controller.signal.aborted) {
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+          }
+
+          const stagedName = `${safeFileName(model.name ?? request.assetId)}.glb`;
+          const packedPath = path.join(tempDirectory, stagedName);
+          await fs.rename(glbPath, packedPath);
+
+          if (controller.signal.aborted) {
+            await this.assets.cancelImports(projectId, []);
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+          }
+
+          const staged = await this.assets.stageAssets(projectId, [packedPath]);
+          if (controller.signal.aborted) {
+            await this.assets.cancelImports(projectId, staged.items.map((entry) => entry.importId));
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+          }
+
+          const pageUrl = `https://sketchfab.com/3d-models/${model.uid}`;
+          const license = model.license?.label ?? 'Unknown';
+          const creator = model.user?.displayName ?? model.user?.username;
+          const provenance: Record<string, MotionRemoteProvenance> = {};
+          for (const stagedItem of staged.items) {
+            provenance[stagedItem.importId] = {
+              source: 'sketchfab',
+              sourceAssetId: request.assetId,
+              sourceUrl: pageUrl,
+              license,
+              ...(creator ? { creator } : {}),
+              providerCredit: SKETCHFAB_CREDIT,
+              retrievedAt: (this.options.now ?? (() => new Date()))().toISOString(),
+              variant: request.variantId,
+              upstreamUrl: download.url,
+            };
+          }
+          return { items: staged.items, errors: staged.errors, provenance };
+        } else {
+          // glTF is a ZIP archive — download, extract, and pack to GLB
+          const zipPath = path.join(tempDirectory, 'model.zip');
+          await this.download(download.url, zipPath, {
+            maxBytes: limit,
+            signal: controller.signal,
+            onProgress: (bytes) => this.options.onProgress?.({
+              requestId: request.requestId,
+              assetId: request.assetId,
+              receivedBytes: bytes,
+              totalBytes: download.size,
+            }),
+          });
+
+          if (controller.signal.aborted) {
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+          }
+
+          const extractedDir = path.join(tempDirectory, 'extracted');
+          await fs.mkdir(extractedDir, { recursive: true });
+          await extractZip(zipPath, extractedDir);
+
+          const gltfFile = await findGltfFile(extractedDir);
+          if (!gltfFile) {
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, 'No glTF file found in the downloaded archive.', 'MOTION_IMPORT_UNREADABLE');
+          }
+
+          const stagedName = `${safeFileName(model.name ?? request.assetId)}.glb`;
+          const packedPath = path.join(tempDirectory, stagedName);
+          try {
+            await (this.options.packGltf ?? packGltfToGlb)(gltfFile, packedPath);
+          } catch (error) {
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, `The model could not be converted to GLB: ${error instanceof Error ? error.message : String(error)}`, 'MOTION_IMPORT_PROBE_FAILED');
+          }
+
+          if (controller.signal.aborted) {
+            await this.assets.cancelImports(projectId, []);
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+          }
+
+          const staged = await this.assets.stageAssets(projectId, [packedPath]);
+          if (controller.signal.aborted) {
+            await this.assets.cancelImports(projectId, staged.items.map((entry) => entry.importId));
+            if (request.requestId) this.activeDownloads.delete(request.requestId);
+            return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
+          }
+
+          const pageUrl = `https://sketchfab.com/3d-models/${model.uid}`;
+          const license = model.license?.label ?? 'Unknown';
+          const creator = model.user?.displayName ?? model.user?.username;
+          const provenance: Record<string, MotionRemoteProvenance> = {};
+          for (const stagedItem of staged.items) {
+            provenance[stagedItem.importId] = {
+              source: 'sketchfab',
+              sourceAssetId: request.assetId,
+              sourceUrl: pageUrl,
+              license,
+              ...(creator ? { creator } : {}),
+              providerCredit: SKETCHFAB_CREDIT,
+              retrievedAt: (this.options.now ?? (() => new Date()))().toISOString(),
+              variant: request.variantId,
+              upstreamUrl: download.url,
+            };
+          }
+          return { items: staged.items, errors: staged.errors, provenance };
         }
-
-        const extractedDir = path.join(tempDirectory, 'extracted');
-        await fs.mkdir(extractedDir, { recursive: true });
-        await extractZip(zipPath, extractedDir);
-
-        const gltfFile = await findGltfFile(extractedDir);
-        if (!gltfFile) {
-          if (request.requestId) this.activeDownloads.delete(request.requestId);
-          return this.failed(model.name ?? request.assetId, 'No glTF file found in the downloaded archive.', 'MOTION_IMPORT_UNREADABLE');
-        }
-
-        const stagedName = `${safeFileName(model.name ?? request.assetId)}.glb`;
-        const packedPath = path.join(tempDirectory, stagedName);
-        try {
-          await (this.options.packGltf ?? packGltfToGlb)(gltfFile, packedPath);
-        } catch (error) {
-          if (request.requestId) this.activeDownloads.delete(request.requestId);
-          return this.failed(model.name ?? request.assetId, `The model could not be converted to GLB: ${error instanceof Error ? error.message : String(error)}`, 'MOTION_IMPORT_PROBE_FAILED');
-        }
-
-        if (controller.signal.aborted) {
-          await this.assets.cancelImports(projectId, []);
-          if (request.requestId) this.activeDownloads.delete(request.requestId);
-          return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
-        }
-
-        const staged = await this.assets.stageAssets(projectId, [packedPath]);
-        if (controller.signal.aborted) {
-          await this.assets.cancelImports(projectId, staged.items.map((entry) => entry.importId));
-          if (request.requestId) this.activeDownloads.delete(request.requestId);
-          return this.failed(model.name ?? request.assetId, 'Import cancelled.', 'MOTION_IMPORT_UNREADABLE');
-        }
-
-        const pageUrl = `https://sketchfab.com/3d-models/${model.uid}`;
-        const license = model.license?.label ?? 'Unknown';
-        const creator = model.user?.displayName ?? model.user?.username;
-        const provenance: Record<string, MotionRemoteProvenance> = {};
-        for (const stagedItem of staged.items) {
-          provenance[stagedItem.importId] = {
-            source: 'sketchfab',
-            sourceAssetId: request.assetId,
-            sourceUrl: pageUrl,
-            license,
-            ...(creator ? { creator } : {}),
-            providerCredit: SKETCHFAB_CREDIT,
-            retrievedAt: (this.options.now ?? (() => new Date()))().toISOString(),
-            variant: request.variantId,
-            upstreamUrl: gltfDownload.url,
-          };
-        }
-        return { items: staged.items, errors: staged.errors, provenance };
       } catch (error) {
         return this.failed(model.name ?? request.assetId, error instanceof Error ? error.message : String(error), 'MOTION_IMPORT_UNREADABLE');
       } finally {
@@ -586,7 +670,11 @@ export class MotionRemoteAssetClient {
   }
 
   private async sketchfabRequest<T>(url: string, signal?: AbortSignal): Promise<T> {
-    const response = await this.open(url, SKETCHFAB_HOSTS, signal, { 'Authorization': `Bearer ${SKETCHFAB_API_KEY}` });
+    const sketchfabKey = process.env.SKETCHFAB_API_KEY;
+    if (!sketchfabKey) {
+      throw new MotionRemoteAssetError('Sketchfab API key is not configured. Set SKETCHFAB_API_KEY in your .env file.', 'MOTION_REMOTE_UNKNOWN_PROVIDER');
+    }
+    const response = await this.open(url, SKETCHFAB_HOSTS, signal, { 'Authorization': `Token ${sketchfabKey}` });
     try {
       const text = new TextDecoder().decode(await response.arrayBuffer());
       return JSON.parse(text) as T;
@@ -978,7 +1066,7 @@ function toHit(item: PolyHavenCatalogItem, kind: MotionRemoteAssetKind): MotionR
 
 function sketchfabModelToHit(model: SketchfabModel, kind: MotionRemoteAssetKind): MotionRemoteAssetHit | null {
   if (!model.uid) return null;
-  const thumbnail = model.thumbnails?.[0]?.url ?? model.thumbnail?.url;
+  const thumbnail = model.thumbnails?.images?.[0]?.url;
   const creator = model.user?.displayName ?? model.user?.username;
   const license = model.license?.label ?? 'Unknown';
   return {
@@ -991,7 +1079,7 @@ function sketchfabModelToHit(model: SketchfabModel, kind: MotionRemoteAssetKind)
     ...(thumbnail ? { thumbnailUrl: thumbnail } : {}),
     pageUrl: `https://sketchfab.com/3d-models/${model.uid}`,
     ...(model.description ? { description: model.description } : {}),
-    ...(model.like_count ? { popularity: model.like_count } : {}),
+    ...(model.likeCount ? { popularity: model.likeCount } : {}),
   };
 }
 

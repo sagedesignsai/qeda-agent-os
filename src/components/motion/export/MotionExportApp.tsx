@@ -34,12 +34,6 @@ function nextPaint(): Promise<void> {
   });
 }
 
-function backgroundOf(job: MotionRenderJobPayload): string {
-  const scene = job.document.scenes.find((candidate) => candidate.id === job.document.activeSceneId);
-  if (scene?.background?.type === 'color') return scene.background.color;
-  return job.document.brand.colors.background || '#171a22';
-}
-
 export function MotionExportStageView({
   job,
   onStage,
@@ -80,7 +74,9 @@ export function MotionExportStageView({
         doc={job.document}
         clock={clock}
         viewMode="perspective"
-        stageColor={backgroundOf(job)}
+        // Fallback only: the canvas resolves the scene's own world and paints
+        // that, so exported frames match the preview instead of the brand colour.
+        stageColor={job.document.brand.colors.background || '#171a22'}
         gridVisible={false}
         zoom={1}
         showEditorStage={false}

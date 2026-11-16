@@ -221,7 +221,7 @@ export type MotionBrand = {
 
 export type MotionScene = {
   id: string; name: string; nodes: MotionNode[]; timeline: Omit<MotionTimeline, 'loop'> & { loop?: MotionLoop };
-  cameraId: string | null; background?: { type: 'color'; color: string } | { type: 'transparent' } | { type: 'environment'; assetId: string; intensity?: number; blur?: number };
+  cameraId: string | null; background?: { type: 'color'; color: string } | { type: 'transparent' } | { type: 'environment'; assetId: string; intensity?: number; blur?: number; rotation?: number };
   stateMachines?: unknown[];
 };
 

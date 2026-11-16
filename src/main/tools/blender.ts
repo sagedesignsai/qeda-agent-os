@@ -21,6 +21,7 @@ import { describeMotionEngine } from '../../lib/motion/engine-contract.js';
 import { getSettings } from '../ai/settings';
 import { runBlenderJob, runAuthoredBlenderJob, type BlenderReport } from '../blender/runner';
 import { getMotionAssetStore } from '../motion/service';
+import { blenderPreviewUrlForPath } from '../../lib/blender-preview.js';
 import type { MotionAsset } from '../../lib/motion/types';
 
 const nodePlacementSchema = {
@@ -153,6 +154,162 @@ const placeAsset = (
   }
 };
 
+/**
+ * Build the ops for a turntable preview scene: the camera orbits the placed
+ * asset in a full circle over `duration` seconds, on a looping timeline.
+ *
+ * The renderer always aims the camera at the origin (`lookAt(0,0,0)` in
+ * applyMotionFrame), so an orbit is just position.x/z keyframes on a circle
+ * — no per-frame camera math needed. 17 keys per axis (16 segments + the
+ * closing key at 2π) keep angular velocity constant with linear easing and
+ * land back on the start position, so the loop is seamless.
+ *
+ * Exported so the orbit shape has a regression test.
+ */
+export function buildTurntableOps(
+  doc: import('../../lib/motion/types').MotionDocument,
+  args: {
+    nodeId?: string;
+    duration?: number;
+    radius?: number;
+    height?: number;
+    suffix?: string;
+  } = {},
+): {
+  ops: import('../../lib/motion/ops').MotionOpRequest[];
+  cameraId: string;
+  clipId: string;
+  orbitDuration: number;
+  targetNodeId: string;
+} {
+  const target =
+    args.nodeId != null
+      ? doc.scene.nodes.find((node) => node.id === args.nodeId)
+      : doc.scene.nodes.find((node) => node.type === 'model.gltf');
+  if (!target) {
+    throw new Error(
+      args.nodeId != null
+        ? `Node "${args.nodeId}" does not exist.`
+        : 'No placed model.gltf node to orbit. Generate or import an asset first.',
+    );
+  }
+
+  const suffix = args.suffix ?? `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const clipId = `turntable-clip-${suffix}`;
+  const trackId = `turntable-track-${suffix}`;
+  const placementId = `turntable-placement-${suffix}`;
+  const channelXId = `turntable-chn-x-${suffix}`;
+  const channelZId = `turntable-chn-z-${suffix}`;
+
+  const radius = args.radius ?? 6;
+  const height = args.height ?? 1.5;
+  // On an already-animated timeline, orbit over the existing duration rather
+  // than resizing the composition out from under the user's clips.
+  const hasClips = doc.timeline.clips.length > 0;
+  const orbitDuration = hasClips
+    ? doc.timeline.duration
+    : (args.duration ?? 6);
+
+  const ops: import('../../lib/motion/ops').MotionOpRequest[] = [];
+
+  if (!hasClips && Math.abs(doc.timeline.duration - orbitDuration) > 1e-9) {
+    ops.push({ op: 'timeline.setDuration', duration: orbitDuration });
+  }
+
+  // Camera: reuse the scene camera when one exists, else create one. Either
+  // way the rest pose is the orbit start ([0, height, radius], no rotation —
+  // the frame binding lookAts the origin and applies rotation after).
+  const existingCamera = doc.scene.nodes.find((node) =>
+    node.type.startsWith('camera.'),
+  );
+  const cameraId = existingCamera?.id ?? `turntable-camera-${suffix}`;
+  if (existingCamera) {
+    ops.push({
+      op: 'scene.node.update',
+      nodeId: cameraId,
+      transform: { position: [0, height, radius], rotation: [0, 0, 0] },
+    });
+  } else {
+    ops.push({
+      op: 'scene.node.add',
+      nodeId: cameraId,
+      type: 'camera.perspective',
+      name: 'Turntable Camera',
+      transform: { position: [0, height, radius], rotation: [0, 0, 0] },
+      props: { fov: 32 },
+    });
+  }
+
+  const hasLight = doc.scene.nodes.some((node) => node.type.startsWith('light.'));
+  if (!hasLight) {
+    ops.push({
+      op: 'scene.node.add',
+      nodeId: `turntable-light-${suffix}`,
+      type: 'light.ambient',
+      name: 'Turntable Light',
+      props: { intensity: 1.2 },
+    });
+  }
+
+  ops.push({ op: 'track.add', trackId, name: 'Turntable', targetId: cameraId });
+  ops.push({
+    op: 'clip.create',
+    clipId,
+    name: 'Camera orbit',
+    duration: orbitDuration,
+  });
+  ops.push({
+    op: 'channel.add',
+    clipId,
+    channelId: channelXId,
+    targetId: cameraId,
+    property: 'position.x',
+  });
+  ops.push({
+    op: 'channel.add',
+    clipId,
+    channelId: channelZId,
+    targetId: cameraId,
+    property: 'position.z',
+  });
+
+  const segments = 16;
+  const endTime = orbitDuration - 0.01;
+  for (let i = 0; i <= segments; i += 1) {
+    const theta = (Math.PI * 2 * i) / segments;
+    const time = (endTime * i) / segments;
+    ops.push({
+      op: 'keyframe.add',
+      clipId,
+      channelId: channelXId,
+      keyframeId: `turntable-kf-x-${suffix}-${i}`,
+      time,
+      value: radius * Math.sin(theta),
+      easing: { type: 'linear' },
+    });
+    ops.push({
+      op: 'keyframe.add',
+      clipId,
+      channelId: channelZId,
+      keyframeId: `turntable-kf-z-${suffix}-${i}`,
+      time,
+      value: radius * Math.cos(theta),
+      easing: { type: 'linear' },
+    });
+  }
+
+  ops.push({ op: 'placement.add', trackId, placementId, clipId, start: 0 });
+  ops.push({
+    op: 'timeline.setLoop',
+    enabled: true,
+    start: 0,
+    end: orbitDuration,
+  });
+  ops.push({ op: 'timeline.setPlayMode', playMode: 'loop' });
+
+  return { ops, cameraId, clipId, orbitDuration, targetNodeId: target.id };
+}
+
 export function createBlenderTools(context: MotionToolContext) {
   const generateBlenderAsset = tool({
     description:
@@ -255,6 +412,8 @@ export function createBlenderTools(context: MotionToolContext) {
           nodeId,
           bytes: job.bytes,
           previewPath: job.previewPath,
+          // Renderer-addressable preview (qeda-media), for the tool card.
+          previewUrl: blenderPreviewUrlForPath(job.previewPath),
           report: job.report,
           manifest: describeMotionEngine(),
           ...placed.applied,
@@ -321,6 +480,7 @@ export function createBlenderTools(context: MotionToolContext) {
         nodeId,
         bytes: job.bytes,
         previewPath: job.previewPath,
+        previewUrl: blenderPreviewUrlForPath(job.previewPath),
         manifest: describeMotionEngine(),
         ...placed.applied,
       };
@@ -418,9 +578,81 @@ export function createBlenderTools(context: MotionToolContext) {
     },
   });
 
+  /**
+   * `blender.asset.turntable` — stage a preview scene where the camera
+   * orbits the placed asset in a full circle on a looping timeline. The
+   * Model Builder viewport plays the document while the agent works, so
+   * the user sees the model from every side without manual camera work.
+   */
+  const turntableAsset = tool({
+    description:
+      'Stage a turntable preview scene: the camera orbits the placed asset in a full circle (looping timeline). ' +
+      'Call after placing a generated/imported asset so the viewport continuously shows it from every angle. ' +
+      'Reuses the scene camera when one exists; adds lights only when the scene has none. ' +
+      'On an already-animated timeline the orbit spans the existing duration instead of resizing the composition.',
+    inputSchema: z.object({
+      nodeId: z
+        .string()
+        .min(1)
+        .optional()
+        .describe('Model node to orbit (defaults to the first placed model.gltf node).'),
+      duration: z
+        .number()
+        .min(1)
+        .max(60)
+        .default(6)
+        .describe('Seconds per full orbit (fresh timelines only).'),
+      radius: z
+        .number()
+        .min(1)
+        .max(50)
+        .default(6)
+        .describe('Orbit radius in scene units.'),
+      height: z
+        .number()
+        .min(0)
+        .max(20)
+        .default(1.5)
+        .describe('Camera height; the camera always looks at the asset.'),
+    }),
+    execute: async ({ nodeId, duration, radius, height }) => {
+      try {
+        const built = buildTurntableOps(context.getDocument(), {
+          nodeId,
+          duration,
+          radius,
+          height,
+        });
+        const plan = planMotionCommand(context.getDocument(), built.ops, {
+          now: new Date().toISOString(),
+        });
+        const applied = context.apply(plan);
+        return {
+          success: true,
+          kind: 'turntable' as const,
+          targetNodeId: built.targetNodeId,
+          cameraId: built.cameraId,
+          clipId: built.clipId,
+          duration: built.orbitDuration,
+          radius,
+          height,
+          manifest: describeMotionEngine(),
+          ...applied,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          kind: 'turntable' as const,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  });
+
   return {
     'blender.asset.generate': generateBlenderAsset,
     'blender.asset.import': importBlenderAsset,
+    'blender.asset.turntable': turntableAsset,
   };
 }
 

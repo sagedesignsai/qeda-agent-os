@@ -16,6 +16,8 @@ import {
   getMotionThreeRenderer,
   MissingRenderer,
 } from '@/components/motion/scene/MotionNodeRenderers';
+import { MotionWorldBinding } from '@/components/motion/scene/MotionWorldBinding';
+import { resolveSceneWorld } from '@/lib/motion/environment';
 import {
   applyMotionFrame,
   motionNumberProp,
@@ -296,6 +298,11 @@ export function MotionSceneCanvas({
   onReady,
 }: MotionSceneCanvasProps) {
   const readyCalled = useRef(false);
+  // The world is document state, not editor chrome: both this canvas and the
+  // export window resolve it the same way, so the preview is what renders.
+  const activeScene =
+    doc.scenes.find((scene) => scene.id === doc.activeSceneId) ?? doc.scenes[0];
+  const world = resolveSceneWorld(activeScene, doc.assets, doc.meta.id);
   return (
     <Canvas
       aria-label="Three-dimensional Motion document scene"
@@ -303,7 +310,7 @@ export function MotionSceneCanvas({
       dpr={dpr}
       frameloop="demand"
       shadows
-      gl={{ antialias: true, alpha: false, preserveDrawingBuffer }}
+      gl={{ antialias: true, alpha: true, preserveDrawingBuffer }}
       fallback={
         <div
           role="status"
@@ -314,11 +321,14 @@ export function MotionSceneCanvas({
       }
       onCreated={({ gl }) => {
         gl.outputColorSpace = SRGBColorSpace;
+        // Transparent scenes need a canvas that can actually be transparent;
+        // the world binding sets the real clear alpha for this document.
+        gl.setClearAlpha(1);
         onCanvasReady?.(gl.domElement);
       }}
       onPointerMissed={() => onSelectNode?.(null)}
     >
-      <color attach="background" args={[stageColor]} />
+      <MotionWorldBinding world={world} fallbackColor={stageColor} />
       {gridVisible && (
         <gridHelper
           args={[16, 32, new Color('#50596b'), new Color('#353c49')]}

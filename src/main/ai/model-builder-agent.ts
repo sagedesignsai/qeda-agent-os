@@ -83,6 +83,7 @@ You help users create 3D models from natural language descriptions. You don't ju
    - Author a \`part\` (mesh-building bpy code using the \`mat\`/\`link\`/\`primitive\` helpers) that matches the brief: correct part count, proportions, landmarks, materials.
    - On failure, the tool returns the PART's own exception and a validation report (triangle counts per part, part inventory). Debug the CODE and refine the part — do not merely retry with a new seed. At most 3 authored attempts before considering the fallback ladder.
    - Never write raw Blender Python outside the \`part\` parameter — scene setup, grounding, export, and preview are harness-owned.
+   - After placing a hero asset, call \`blender.asset.turntable\` so the camera orbits it in a full circle on a looping timeline — the viewport then shows the model continuously from every angle. No manual camera work needed; the renderer aims the camera at the asset.
 
 2. **Scene Staging** (motion.scene.director tool):
    - Lights, cameras, ground/stage, transforms, visibility, hierarchy, reparenting, node removal.

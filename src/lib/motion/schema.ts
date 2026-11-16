@@ -128,7 +128,7 @@ const sceneV4Schema = z.object({
   background: z.discriminatedUnion('type', [
     z.object({ type: z.literal('color'), color: z.string() }),
     z.object({ type: z.literal('transparent') }),
-    z.object({ type: z.literal('environment'), assetId: z.string(), intensity: z.number().optional(), blur: z.number().optional() }),
+    z.object({ type: z.literal('environment'), assetId: z.string(), intensity: z.number().optional(), blur: z.number().optional(), rotation: z.number().optional() }),
   ]).optional(),
   stateMachines: z.array(z.unknown()).optional(),
 });

@@ -45,6 +45,26 @@ export function createSession(
     .get(id)!;
 }
 
+/**
+ * Create a session with a caller-chosen id, or leave it untouched.
+ *
+ * Surfaces with a stable session id (the Model Builder keys its thread by
+ * project) need the row to exist before the first message is persisted —
+ * `messages.session_id` has a foreign key — but must not reset an existing
+ * thread's title or project on every mount.
+ */
+export function ensureSession(
+  id: string,
+  title = 'New Chat',
+  projectId: string | null = null,
+): void {
+  getDb()
+    .prepare(
+      'INSERT INTO sessions (id, title, project_id) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING',
+    )
+    .run(id, title, projectId);
+}
+
 export function listSessions(opts?: { projectId?: string | null }): Session[] {
   if (opts?.projectId !== undefined) {
     return getDb()

@@ -5,6 +5,11 @@ import {
   planMotionCommand,
 } from '../../lib/motion/engine-contract.js';
 import { applyMotionCommand, type MotionApplyResult } from '../../lib/motion/plan.js';
+import {
+  buildEnvironmentPresetOps,
+  MOTION_ENVIRONMENT_PRESETS,
+} from '../../lib/motion/environment.js';
+import { createMotionId } from '../../lib/motion/ids.js';
 import type { MotionDocument, MotionNodeTransform } from '../../lib/motion/types.js';
 import type { MotionOpRequest } from '../../lib/motion/ops.js';
 
@@ -237,8 +242,68 @@ export function createMotionTools(context: MotionToolContext) {
     },
   });
 
+  const environment = tool({
+    description:
+      'Set the scene world (solid colour, transparency, or an HDRI that lights the scene) and apply lighting/backdrop presets. ' +
+      'Prefer a preset over hand-building lights: it materializes a deterministic rig and re-applying it updates that rig in place. ' +
+      'Import HDRI files as environment assets first; then tune individual nodes with motion.scene.director.',
+    inputSchema: z.discriminatedUnion('action', [
+      z.object({
+        action: z.literal('setBackground'),
+        ...motionToolContextSchema.shape,
+        background: z.discriminatedUnion('type', [
+          z.object({ type: z.literal('color'), color: z.string().min(1) }).strict(),
+          z.object({ type: z.literal('transparent') }).strict(),
+          z
+            .object({
+              type: z.literal('environment'),
+              assetId: z.string().min(1),
+              intensity: z.number().min(0).max(10).optional(),
+              blur: z.number().min(0).max(1).optional(),
+              rotation: z.number().optional(),
+            })
+            .strict(),
+        ]),
+      }),
+      z.object({
+        action: z.literal('applyPreset'),
+        ...motionToolContextSchema.shape,
+        presetId: z
+          .string()
+          .min(1)
+          .describe(
+            `One of: ${MOTION_ENVIRONMENT_PRESETS.map((preset) => preset.id).join(', ')}`,
+          ),
+      }),
+    ]),
+    execute: async (input) => {
+      try {
+        const doc = context.getDocument();
+        const sceneId = input.sceneId ?? doc.activeSceneId;
+        const operations: MotionOpRequest[] = input.action === 'setBackground'
+          ? [{ op: 'scene.setBackground', sceneId, background: input.background }]
+          : buildEnvironmentPresetOps(
+              sceneId === doc.activeSceneId ? doc : { ...doc, activeSceneId: sceneId },
+              input.presetId,
+              () => createMotionId('scene'),
+            );
+        return resultEnvelope(
+          context,
+          'motion.environment',
+          input.action === 'setBackground'
+            ? 'Environment: set background'
+            : `Environment: apply ${input.presetId}`,
+          operations,
+        );
+      } catch (error) {
+        return errorResult(error, 'motion.environment');
+      }
+    },
+  });
+
   return {
     'motion.scene.director': sceneDirector,
+    'motion.environment': environment,
     'motion.scene.keyframe': keyframe,
     'motion.node.builder': nodeBuilder,
     'motion.procedural.model': proceduralModeling,

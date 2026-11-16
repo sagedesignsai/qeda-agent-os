@@ -21,6 +21,7 @@ import fs from 'node:fs/promises';
 import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { runAuthoredBlenderJob, probeBlender } from '../blender/runner.js';
+import { blenderPreviewUrlForPath } from '../../lib/blender-preview.js';
 import type { ModelTarget } from './fallback.js';
 
 export interface BlenderSpecialistOptions {
@@ -31,6 +32,8 @@ export interface BlenderSpecialistResult {
   success: boolean;
   glbPath?: string;
   previewPath?: string;
+  /** Renderer-addressable preview (qeda-media), for the tool card. */
+  previewUrl?: string;
   bytes?: number;
   attempts: number;
   notes: string;
@@ -246,6 +249,7 @@ export function createBlenderSpecialistTool(opts: BlenderSpecialistOptions = {})
             success: true,
             glbPath: latest.glbPath,
             previewPath: latest.previewPath,
+            previewUrl: blenderPreviewUrlForPath(latest.previewPath),
             bytes: latest.bytes,
             attempts: generations.length,
             notes:

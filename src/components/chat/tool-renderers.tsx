@@ -913,10 +913,91 @@ function MotionPlanCard({
   );
 }
 
+// ─── Blender asset generation ───────────────────────────────────────────────
+
+/**
+ * `blender.asset.generate` / `blender.asset.import` /
+ * `blenderSpecialist.buildAsset` — what the user actually wants to see is the
+ * preview render of the generated model, plus the asset facts (generator,
+ * size, triangle count). Reads defensively: a result without a preview still
+ * renders the summary.
+ */
+export function BlenderAssetCard({ output }: { output: Output }) {
+  const previewUrl = asString(output.previewUrl);
+  const generatedBy = asString(output.generatedBy);
+  const bytes = asNumber(output.bytes);
+  const nodeId = asString(output.nodeId);
+  const assetId = asString(output.assetId);
+  const attempts = asNumber(output.attempts);
+  const report = (
+    output.report && typeof output.report === 'object' ? output.report : {}
+  ) as Output;
+  const triCount = asNumber(report.tri_count);
+  const partCount = asNumber(report.part_count);
+
+  const sourceLabel =
+    generatedBy === 'authored'
+      ? 'AI-authored'
+      : generatedBy === 'template'
+        ? 'Template'
+        : asString(output.source) === 'import'
+          ? 'Imported'
+          : 'Blender';
+
+  return (
+    <CardShell className="w-full max-w-md">
+      <CardHeader
+        icon={<BoxIcon className="size-4" />}
+        label="Blender model"
+        meta={
+          <>
+            <Badge variant="secondary" className="text-xs">
+              {sourceLabel}
+            </Badge>
+            {bytes !== undefined && (
+              <Badge variant="outline" className="text-xs">
+                {Math.round(bytes / 1024)} KB
+              </Badge>
+            )}
+          </>
+        }
+      />
+      {previewUrl ? (
+        <img
+          src={previewUrl}
+          alt="Preview render of the generated model"
+          loading="lazy"
+          className="max-h-64 w-full object-contain bg-muted/20"
+        />
+      ) : (
+        <p className="px-3 py-3 text-xs text-muted-foreground">
+          No preview render was produced for this asset.
+        </p>
+      )}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 border-t px-3 py-2 text-[11px] text-muted-foreground">
+        {nodeId && <span>node: {nodeId}</span>}
+        {assetId && <span>asset: {assetId}</span>}
+        {triCount !== undefined && (
+          <span>{triCount.toLocaleString()} tris</span>
+        )}
+        {partCount !== undefined && (
+          <span>
+            {partCount} part{partCount === 1 ? '' : 's'}
+          </span>
+        )}
+        {attempts !== undefined && <span>{attempts} attempt{attempts === 1 ? '' : 's'}</span>}
+      </div>
+    </CardShell>
+  );
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /** Tool names that have a purpose-built renderer. */
 export const SPECIALIZED_TOOLS = new Set([
+  'blender_asset_generate',
+  'blender_asset_import',
+  'blenderSpecialist_buildAsset',
   'motion_scene_director',
   'motion_node_builder',
   'motion_procedural_modeling',
@@ -955,6 +1036,10 @@ export function renderSpecializedTool(
   if (isFailed(data)) return null;
 
   switch (toolName) {
+    case 'blender_asset_generate':
+    case 'blender_asset_import':
+    case 'blenderSpecialist_buildAsset':
+      return <BlenderAssetCard output={data} />;
     case 'motion_scene_director':
       return <MotionPlanCard output={data} namespace="motion.scene.director" />;
     case 'motion_node_builder':

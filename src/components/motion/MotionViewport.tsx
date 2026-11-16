@@ -16,6 +16,7 @@ import {
   Rotate3DIcon,
 } from 'lucide-react';
 
+import { MotionWorldPopover } from '@/components/motion/MotionWorldPopover';
 import { MotionSceneCanvas } from '@/components/motion/scene/MotionSceneCanvas';
 import type {
   MotionCameraView,
@@ -34,16 +35,9 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
+import { resolveSceneWorld } from '@/lib/motion/environment';
 import { createMotionId } from '@/lib/motion/ids';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 import { buildMotionSceneCreation } from '@/lib/motion/scene-create';
@@ -66,6 +60,9 @@ export function MotionViewport() {
   const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
   const loadingTimer = useRef<number | null>(null);
+  const activeScene =
+    doc.scenes.find((scene) => scene.id === doc.activeSceneId) ?? doc.scenes[0];
+  const world = resolveSceneWorld(activeScene, doc.assets, doc.meta.id);
 
   const addNode = (type: string) => {
     if (!listMotionNodeTypes().some((item) => item.id === type)) return;
@@ -156,29 +153,11 @@ export function MotionViewport() {
             <Grid2X2Icon data-icon />
           </Button>
 
-          <Select
-            value={stageTone}
-            onValueChange={(value) => {
-              if (value === 'graphite' || value === 'slate' || value === 'paper') {
-                setStageTone(value);
-              }
-            }}
-          >
-            <SelectTrigger
-              size="sm"
-              className="h-7 w-[102px] text-[10px]"
-              aria-label="Preview background"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="graphite">Graphite</SelectItem>
-                <SelectItem value="slate">Slate</SelectItem>
-                <SelectItem value="paper">Paper</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <MotionWorldPopover
+            doc={doc}
+            stageTone={stageTone}
+            onStageToneChange={setStageTone}
+          />
 
           <div className="ml-1 flex items-center gap-0.5 border-l border-border/60 pl-1">
             <Button
@@ -282,6 +261,19 @@ export function MotionViewport() {
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <div className="relative min-h-0 flex-1 overflow-hidden">
+            {/* An alpha world is transparent in the canvas; the checkerboard
+                sits behind it so the user can see there is no backdrop. */}
+            {world?.kind === 'transparent' && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  backgroundImage:
+                    'repeating-conic-gradient(#22262f 0% 25%, #171a21 0% 50%)',
+                  backgroundSize: '16px 16px',
+                }}
+              />
+            )}
             {loading && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/60 backdrop-blur-sm">
                 <div className="flex flex-col items-center gap-3">

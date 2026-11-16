@@ -18,7 +18,15 @@ import { geometryPrimitives } from './primitives';
 import { productNodes } from './product';
 import { sceneGroup } from './scene';
 import { shapeEllipse, shapeRect } from './shapes';
-import { stageBackdrop, stageGrid, stageGround, stageParticles, stagePedestal } from './stage';
+import {
+  stageBackdrop,
+  stageCyclorama,
+  stageFog,
+  stageGrid,
+  stageGround,
+  stageParticles,
+  stagePedestal,
+} from './stage';
 import { screenImage, screenVideo } from './surfaces';
 import { textBody, textCaption, textQuote, textTitle } from './text';
 import { uiNodes } from './ui';
@@ -43,8 +51,10 @@ export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
   stageGround,
   stagePedestal,
   stageBackdrop,
+  stageCyclorama,
   stageGrid,
   stageParticles,
+  stageFog,
   modelGltf,
   ...proceduralNodes,
   lightAmbient,

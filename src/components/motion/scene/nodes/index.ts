@@ -39,7 +39,15 @@ import {
 } from './product';
 import { CameraRenderer, GroupRenderer } from './scene';
 import { ShapeRenderer } from './shapes';
-import { BackdropRenderer, GridRenderer, GroundRenderer, ParticlesRenderer, PedestalRenderer } from './stage';
+import {
+  BackdropRenderer,
+  CycloramaRenderer,
+  FogRenderer,
+  GridRenderer,
+  GroundRenderer,
+  ParticlesRenderer,
+  PedestalRenderer,
+} from './stage';
 import { ImageScreenRenderer } from './surfaces';
 import { TextNodeRenderer } from './text';
 import { AnnotationRenderer, BrowserRenderer, ChatRenderer, CodeCardRenderer, CursorRenderer, NotificationRenderer, TerminalRenderer } from './ui';
@@ -78,6 +86,8 @@ registerMotionThreeRenderer('stage.pedestal', PedestalRenderer);
 registerMotionThreeRenderer('stage.backdrop', BackdropRenderer);
 registerMotionThreeRenderer('stage.grid', GridRenderer);
 registerMotionThreeRenderer('stage.particles', ParticlesRenderer);
+registerMotionThreeRenderer('stage.cyclorama', CycloramaRenderer);
+registerMotionThreeRenderer('stage.fog', FogRenderer);
 registerMotionThreeRenderer('product.mug', MugRenderer);
 registerMotionThreeRenderer('product.bottle', BottleRenderer);
 registerMotionThreeRenderer('product.apparel', ApparelRenderer);

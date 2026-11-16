@@ -153,7 +153,20 @@ export function ModelRenderer({
           if (!metadataCommitted.current && asset && !asset.metadata?.parts) {
             metadataCommitted.current = true;
             const structure = parseGltfStructure(loaded);
-            if (structure.parts.length > 0) {
+            // `motionStore.commit` targets the EDITOR's document. Ephemeral
+            // surfaces (the Model Builder dialog) render a document the store
+            // does not own, so committing there would reference an asset id the
+            // store document lacks — and the Parts metadata would be dropped by
+            // an op error instead of surfacing after the document is promoted.
+            let storeHasAsset = false;
+            try {
+              storeHasAsset = motionStore
+                .getDocument()
+                .assets.some((item) => item.id === asset.id);
+            } catch {
+              storeHasAsset = false;
+            }
+            if (structure.parts.length > 0 && storeHasAsset) {
               const meta: GltfAssetMetadata = structure;
               motionStore.commit('Parse model structure', [
                 { op: 'asset.update-metadata', assetId: asset.id, metadata: meta },

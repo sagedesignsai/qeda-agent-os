@@ -5,6 +5,7 @@
  * snapshot and the editor runs the same function for live blocking feedback.
  */
 
+import { isEnvironmentMedia, sceneWorldAssetIds } from '../environment';
 import { getMotionNodeType } from '../node-registry';
 import type { MotionDocument, MotionScene } from '../types';
 import type { MotionRenderRange } from './render-plan';
@@ -89,6 +90,36 @@ export function preflightMotionExport(
     if (!existsInBundle || !isAvailable) {
       const asset = document.assets.find((item) => item.id === assetId);
       add({ severity: 'blocking', code: 'MOTION_ASSET_MISSING', message: asset ? `Media asset “${asset.name}” is missing from the project bundle.` : `Referenced media asset “${assetId}” is not in the project.`, sceneId: scene.id, assetId, action: 'Relink or remove the missing media.' });
+    }
+  }
+
+  // The world is scene-level state, not a node prop, so the prop walk above
+  // never sees it: an unlinked HDRI used to pass preflight and render unlit.
+  for (const assetId of sceneWorldAssetIds(scene)) {
+    const asset = document.assets.find((item) => item.id === assetId);
+    const available = options.availableAssetIds?.has(assetId) ?? Boolean(asset);
+    if (!asset || !available) {
+      add({
+        severity: 'blocking',
+        code: 'MOTION_WORLD_ASSET_MISSING',
+        message: asset
+          ? `Background environment “${asset.name}” is missing from the project bundle.`
+          : `Background environment “${assetId}” is not in the project.`,
+        sceneId: scene.id,
+        assetId,
+        action: 'Relink the environment or switch the world to a solid colour.',
+      });
+      continue;
+    }
+    if (!isEnvironmentMedia(asset)) {
+      add({
+        severity: 'blocking',
+        code: 'MOTION_WORLD_FORMAT_UNSUPPORTED',
+        message: `Background environment “${asset.name}” is not an HDR or EXR image.`,
+        sceneId: scene.id,
+        assetId,
+        action: 'Import a .hdr or .exr environment.',
+      });
     }
   }
 

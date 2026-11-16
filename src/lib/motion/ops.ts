@@ -1036,7 +1036,7 @@ registerMotionOp<'scene.setBackground'>({
     background: z.discriminatedUnion('type', [
       z.object({ type: z.literal('color'), color: z.string().min(1) }).strict(),
       z.object({ type: z.literal('transparent') }).strict(),
-      z.object({ type: z.literal('environment'), assetId: z.string().min(1), intensity: z.number().optional(), blur: z.number().optional() }).strict(),
+      z.object({ type: z.literal('environment'), assetId: z.string().min(1), intensity: z.number().optional(), blur: z.number().optional(), rotation: z.number().optional() }).strict(),
     ]),
   }).strict(),
   reduce: (doc, { sceneId, background }) => {

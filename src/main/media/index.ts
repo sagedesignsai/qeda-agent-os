@@ -18,7 +18,9 @@
 import { protocol } from 'electron';
 import { MUSIC_ART_HOST, MUSIC_MEDIA_HOST } from '../../lib/music/media.js';
 import { PROJECT_FILE_HOST } from '../../lib/project-files.js';
+import { BLENDER_PREVIEW_HOST } from '../../lib/blender-preview.js';
 import { STUDIO_OVERLAY_HOST, STUDIO_TAKE_HOST } from '../../lib/studio/media.js';
+import { serveBlenderPreview } from './blender-preview.js';
 import { serveMotionMedia } from './motion.js';
 import { serveMusicArt, serveMusicMedia } from './music.js';
 import { serveProjectFile } from './project-files.js';
@@ -47,6 +49,7 @@ const HOSTS: Record<string, MediaHostHandler> = {
   [PROJECT_FILE_HOST]: serveProjectFile,
   motion: serveMotionMedia,
   'motion-staging': serveMotionMedia,
+  [BLENDER_PREVIEW_HOST]: serveBlenderPreview,
   [MUSIC_MEDIA_HOST]: serveMusicMedia,
   [MUSIC_ART_HOST]: serveMusicArt,
 };

@@ -14,6 +14,7 @@ import {
   clearMessages,
   createSession,
   deleteSession,
+  ensureSession,
   listSessions,
   loadMessages,
   updateSessionProject,
@@ -56,6 +57,19 @@ export function registerSessionsHandlers({
       const session = createSession(title, projectId ?? null);
       broadcastSessionsChanged();
       return session;
+    },
+  );
+
+  // Stable-id surfaces (Model Builder) create their thread once, idempotently.
+  // No broadcast: an empty thread is not worth a refetch until it has messages.
+  ipcMain.handle(
+    'sessions:ensure',
+    (
+      _e,
+      { id, title, projectId }: { id: string; title?: string; projectId?: string | null },
+    ) => {
+      if (!id) return;
+      ensureSession(id, title ?? 'New Chat', projectId ?? null);
     },
   );
 

@@ -13,7 +13,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BoxIcon,
   Grid3X3Icon,
@@ -76,6 +76,23 @@ const SUGGESTIONS = [
   },
 ];
 
+/**
+ * The dialog document's `meta.id` must be the REAL project id when there is one.
+ *
+ * `model.gltf` renderers resolve their GLB via
+ * `qeda-media://motion/<document.meta.id>/<assetId>`, and generated assets are
+ * staged into the project's bundle at generation time. With an ephemeral
+ * `model-builder-<ts>` id every asset URL 404s, so a successfully generated
+ * model still renders as "missing". Without a project the id stays ephemeral
+ * (direct-path registration, preview only).
+ */
+function createDialogDocument(projectId?: string): MotionDocument {
+  return createBlankMotionDocument({
+    id: projectId ?? `model-builder-${Date.now()}`,
+    name: 'Model Builder',
+  });
+}
+
 export interface ModelBuilderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -95,10 +112,7 @@ export function ModelBuilderDialog({
   // Blank (not starter): camera + lights + ground are present, but no product
   // content competes with the user's model.
   const [document, setDocument] = useState<MotionDocument>(() =>
-    createBlankMotionDocument({
-      id: `model-builder-${Date.now()}`,
-      name: 'Model Builder',
-    }),
+    createDialogDocument(projectId),
   );
 
   // Reset document and messages when dialog opens
@@ -120,17 +134,12 @@ export function ModelBuilderDialog({
     rawClearMessages();
   }, [clearPlan, rawClearMessages]);
 
+  // Fresh scene per open. The CONVERSATION is persisted (see
+  // use-model-builder), so it is deliberately not cleared here — the Clear
+  // button is the only thing that discards the transcript.
   useEffect(() => {
-    if (open) {
-      setDocument(
-        createBlankMotionDocument({
-          id: `model-builder-${Date.now()}`,
-          name: 'Model Builder',
-        }),
-      );
-      clearMessages();
-    }
-  }, [open, clearMessages]);
+    if (open) setDocument(createDialogDocument(projectId));
+  }, [open, projectId]);
 
   // Receive updated document from the agent after each turn
   useIpcEvent('model-builder:doc-updated', (raw: unknown) => {
@@ -140,16 +149,30 @@ export function ModelBuilderDialog({
     }
   });
 
-  // Playback clock for the 3D viewport (paused — static preview)
+  // Playback clock for the 3D viewport. The document's play mode drives it:
+  // a looping timeline (e.g. a turntable orbit staged by the agent) plays
+  // continuously; the clock starts itself whenever the scene gains clips.
+  const documentRef = useRef(document);
+  documentRef.current = document;
   const clock = useMemo(
     () =>
       new PlaybackClock({
-        duration: () => document.timeline.duration,
-        playMode: () => 'once',
+        duration: () => documentRef.current.timeline.duration,
+        playMode: () => documentRef.current.timeline.playMode ?? 'once',
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
+
+  const clipCount = document.timeline.clips.length;
+  useEffect(() => {
+    if (clipCount > 0) {
+      clock.play();
+    } else {
+      clock.pause();
+      clock.seek(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clipCount]);
 
   // Viewport settings
   const [gridVisible, setGridVisible] = useState(true);
@@ -268,7 +291,7 @@ export function ModelBuilderDialog({
           </div>
 
           {/* Copilot Sidebar */}
-          <aside className="flex w-80 min-w-80 shrink-0 flex-col border-l border-l-border/60">
+          <aside className="flex w-[28rem] min-w-[28rem] shrink-0 flex-col border-l border-l-border/60">
             <SidebarContent className="p-0">
               <Conversation className="h-full">
                 <ConversationContent

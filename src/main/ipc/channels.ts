@@ -665,6 +665,11 @@ export interface IpcChannels {
     req: { id: string; projectId: string | null };
     res: void;
   };
+  /** Create a session row with a caller-chosen id (idempotent). */
+  'sessions:ensure': {
+    req: { id: string; title?: string; projectId?: string | null };
+    res: void;
+  };
   'sessions:messages': { req: { id: string }; res: UIMessage[] };
   /** Persist the renderer's reconstructed conversation (upsert by message id). */
   'sessions:save-messages': {
