@@ -50,7 +50,7 @@ export const PROVIDERS: ProviderConfig[] = [
     id: 'openrouter',
     name: 'OpenRouter (free models)',
     baseURL: 'https://openrouter.ai/api/v1',
-    apiKeyEnvs: ['OPENROUTER_API_KEY'],
+    apiKeyEnvs: ['OPENROUTER_API_KEY', 'OPENROUTER_API_KEY_2', 'OPENROUTER_API_KEY_3'],
     freeModels: [
       'qwen/qwen3.8-27b:free',
       'z-ai/glm-5.2:free',
@@ -149,13 +149,39 @@ export function getProvider(id: string): ProviderConfig | undefined {
   return PROVIDERS.find((provider) => provider.id === id);
 }
 
-/** First environment variable that is set for this provider, and its value. */
+/**
+ * Round-robin key rotation counter — keyed by provider id.
+ *
+ * We rotate across all configured `apiKeyEnvs` entries so that rate-limit
+ * budgets are spread evenly across keys. The counter is in-process and resets
+ * on restart, which is fine: the goal is load distribution, not strict fairness.
+ */
+const keyRotationIndex = new Map<string, number>();
+
+/**
+ * Return one of the provider's configured API keys, rotating round-robin across
+ * all env vars that are set.
+ *
+ * Legacy behaviour (single key, or fallback names like GEMINI_API_KEY vs
+ * GOOGLE_GENERATIVE_AI_API_KEY) is fully preserved: if only one entry is set
+ * that one is always returned.
+ */
 export function envApiKey(provider: ProviderConfig): string | undefined {
-  for (const name of provider.apiKeyEnvs ?? []) {
-    const value = process.env[name];
-    if (value && value.trim()) return value.trim();
-  }
-  return undefined;
+  const envs = provider.apiKeyEnvs ?? [];
+
+  // Collect all keys that are actually present in the environment.
+  const available = envs
+    .map((name) => ({ name, value: process.env[name]?.trim() }))
+    .filter((e): e is { name: string; value: string } => Boolean(e.value));
+
+  if (available.length === 0) return undefined;
+  if (available.length === 1) return available[0].value;
+
+  // Round-robin: advance the index each call and wrap around.
+  const prev = keyRotationIndex.get(provider.id) ?? 0;
+  const next = (prev + 1) % available.length;
+  keyRotationIndex.set(provider.id, next);
+  return available[next].value;
 }
 
 /**
