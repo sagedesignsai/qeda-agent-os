@@ -66,6 +66,12 @@ export interface PropertyTrack {
   property: AnimatableProperty;
   label: string;
   keyframes: Keyframe[];
+  /**
+   * Hold each keyframe until the next one instead of interpolating. Used by
+   * recipes that must show exact values (a counter's text), where blending two
+   * strings would erase and retype characters.
+   */
+  discrete?: boolean;
 }
 
 export interface Point {

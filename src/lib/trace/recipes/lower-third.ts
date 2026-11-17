@@ -27,7 +27,7 @@ export const compileLowerThirdRecipe: RecipeCompiler<
     visible: true,
     locked: false,
     sceneId,
-    origin: { x, y },
+    origin: { x: width / 2, y: height / 2 },
     attributes: { x, y, width, height },
     tracks: [],
     childrenIds: [cardId, accentId, titleId, subtitleId],
@@ -119,7 +119,7 @@ export const compileLowerThirdRecipe: RecipeCompiler<
     locked: false,
     sceneId,
     parentId: rootId,
-    origin: { x: 22, y: height / 2 - 8 },
+    origin: { x: 0, y: 0 },
     attributes: {
       x: 22,
       y: height / 2 - 8,
@@ -181,7 +181,7 @@ export const compileLowerThirdRecipe: RecipeCompiler<
     locked: false,
     sceneId,
     parentId: rootId,
-    origin: { x: 22, y: height / 2 + 12 },
+    origin: { x: 0, y: 0 },
     attributes: {
       x: 22,
       y: height / 2 + 12,

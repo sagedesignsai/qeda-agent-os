@@ -19,7 +19,12 @@ export const compileProgressRingRecipe: RecipeCompiler<
   const showLabel = options.showPercentageLabel !== false;
   const sceneId = options.sceneId ?? null;
 
+  // The footprint includes the stroke; the circle box must be exactly the
+  // diameter it is drawn at, otherwise `r` (width / 2) and the dash
+  // circumference disagree and the ring never closes.
   const size = radius * 2 + thickness;
+  const circleSize = radius * 2;
+  const circleOffset = thickness / 2;
   const circumference = 2 * Math.PI * radius;
   const targetOffset = circumference * (1 - progress / 100);
 
@@ -33,7 +38,7 @@ export const compileProgressRingRecipe: RecipeCompiler<
     visible: true,
     locked: false,
     sceneId,
-    origin: { x, y },
+    origin: { x: size / 2, y: size / 2 },
     attributes: { x, y, width: size, height: size },
     tracks: [],
     childrenIds,
@@ -47,13 +52,12 @@ export const compileProgressRingRecipe: RecipeCompiler<
     locked: false,
     sceneId,
     parentId: rootId,
-    origin: { x: size / 2, y: size / 2 },
+    origin: { x: radius, y: radius },
     attributes: {
-      x: 0,
-      y: 0,
-      width: size,
-      height: size,
-      radius,
+      x: circleOffset,
+      y: circleOffset,
+      width: circleSize,
+      height: circleSize,
       fill: 'none',
       stroke: trackColor,
       strokeWidth: thickness,
@@ -70,13 +74,12 @@ export const compileProgressRingRecipe: RecipeCompiler<
     locked: false,
     sceneId,
     parentId: rootId,
-    origin: { x: size / 2, y: size / 2 },
+    origin: { x: radius, y: radius },
     attributes: {
-      x: 0,
-      y: 0,
-      width: size,
-      height: size,
-      radius,
+      x: circleOffset,
+      y: circleOffset,
+      width: circleSize,
+      height: circleSize,
       rotation: -90,
       fill: 'none',
       stroke: progressColor,
@@ -120,7 +123,7 @@ export const compileProgressRingRecipe: RecipeCompiler<
       locked: false,
       sceneId,
       parentId: rootId,
-      origin: { x: size / 2, y: size / 2 },
+      origin: { x: 0, y: 0 },
       attributes: {
         x: size / 2,
         y: size / 2,

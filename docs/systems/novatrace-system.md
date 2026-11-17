@@ -156,10 +156,12 @@ Filter primitives supported structurally: `feGaussianBlur`, `feOffset`, `feFlood
 | Recipe | Elements | Animation |
 |--------|----------|-----------|
 | `lower-third` | Card bg + accent bar + title + subtitle | Card fades in, accent bar grows, text slides in |
-| `progress-ring` | Track circle + progress arc + label | Arc draws on via strokeDashoffset, percentage counts up |
-| `bar-chart` | Group of bars + labels | Bars grow from 0 to value height |
+| `progress-ring` | Track circle + progress arc + label | Arc draws on via strokeDashoffset; the label shows the target percentage (static) |
+| `bar-chart` | Group of bars + labels | Bars grow from 0 to their value, one after another |
 | `kinetic-text` | Word-by-word text elements | Each word fades + slides up with stagger |
-| `counter` | Number text + caption | Number animates from start to end value |
+| `counter` | Number text + caption | Number steps through exact values from start to end |
+
+Recipes are inserted as an ordinary group of primitive children, so every layer and track stays editable. A track can set `discrete: true` to hold each keyframe instead of interpolating; the counter uses this so its text never passes through the typewriter interpolator.
 
 ## Templates
 

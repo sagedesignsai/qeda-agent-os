@@ -25,12 +25,26 @@ const slider = (
   step: number,
 ): MotionPropertyHint => ({ label, control: 'slider', group, min, max, step });
 
+/** Non-spatial parent that keeps one shot's look effects together. */
+const lookStack: MotionNodeTypeDefinition = {
+  id: 'fx.stack',
+  label: 'Look stack',
+  category: 'fx',
+  description: 'A container for the effects that make up one look.',
+  defaultName: 'Look',
+  propsSchema: z.object({}),
+  defaultProps: {},
+  animatableProperties: {},
+  allowedParents: [],
+};
+
 const bloom: MotionNodeTypeDefinition = {
   id: 'fx.bloom',
   label: 'Bloom',
   category: 'fx',
   description: 'Glow around bright areas — highlights, emissive parts and practical lights.',
   defaultName: 'Bloom',
+  allowedParents: ['fx.stack'],
   propsSchema: z.object({
     intensity: z.number().min(0).max(5),
     threshold: z.number().min(0).max(1),
@@ -55,6 +69,7 @@ const grade: MotionNodeTypeDefinition = {
   category: 'fx',
   description: 'Exposure, contrast, saturation and a warm/cool temperature push.',
   defaultName: 'Grade',
+  allowedParents: ['fx.stack'],
   propsSchema: z.object({
     exposure: z.number().min(-3).max(3),
     contrast: z.number().min(-1).max(1),
@@ -85,6 +100,7 @@ const vignette: MotionNodeTypeDefinition = {
   category: 'fx',
   description: 'Darkens the frame corners so the eye stays on the subject.',
   defaultName: 'Vignette',
+  allowedParents: ['fx.stack'],
   propsSchema: z.object({
     offset: z.number().min(0).max(1),
     darkness: z.number().min(0).max(1),
@@ -106,6 +122,7 @@ const grain: MotionNodeTypeDefinition = {
   category: 'fx',
   description: 'Fine luma noise that keeps gradients from looking too clean.',
   defaultName: 'Grain',
+  allowedParents: ['fx.stack'],
   propsSchema: z.object({
     amount: z.number().min(0).max(1),
   }),
@@ -124,6 +141,7 @@ const chroma: MotionNodeTypeDefinition = {
   category: 'fx',
   description: 'Splits red and blue toward the edges — a subtle lens fingerprint.',
   defaultName: 'Chroma',
+  allowedParents: ['fx.stack'],
   propsSchema: z.object({
     offset: z.number().min(0).max(0.01),
     radial: z.boolean(),
@@ -146,6 +164,7 @@ const letterbox: MotionNodeTypeDefinition = {
   category: 'fx',
   description: 'Bakes in a widescreen frame — bars top and bottom, or sides for square.',
   defaultName: 'Letterbox',
+  allowedParents: ['fx.stack'],
   propsSchema: z.object({
     aspect: z.number().min(1).max(3.5),
     opacity: z.number().min(0).max(1),
@@ -162,6 +181,7 @@ const letterbox: MotionNodeTypeDefinition = {
 };
 
 export const effectNodes: readonly MotionNodeTypeDefinition[] = [
+  lookStack,
   bloom,
   grade,
   vignette,

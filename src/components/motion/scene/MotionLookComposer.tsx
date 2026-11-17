@@ -77,6 +77,7 @@ export function MotionLookComposer({
   const camera = useThree((state) => state.camera);
   const bundle = useRef<ComposerBundle | null>(null);
   const drawingSize = useRef(new Vector2());
+  const logicalSize = useRef(new Vector2());
   const lastSize = useRef({ width: 0, height: 0 });
 
   useEffect(
@@ -100,6 +101,17 @@ export function MotionLookComposer({
     const rig = rigOf(camera);
     const dofEnabled = Boolean(rig?.node && rig.node.props.dofEnabled);
 
+    // EffectComposer allocates its render targets in drawing-buffer pixels in
+    // its constructor, so do not create it while the canvas is still at 0×0.
+    // Its setSize API takes logical renderer dimensions and applies the DPR
+    // itself; passing getDrawingBufferSize() here would multiply the DPR twice.
+    gl.getSize(logicalSize.current);
+    const { width, height } = gl.getDrawingBufferSize(drawingSize.current);
+    if (
+      logicalSize.current.x <= 0 || logicalSize.current.y <= 0 ||
+      width <= 0 || height <= 0
+    ) return;
+
     // Structure, not parameters: adding/removing an effect or toggling DOF
     // recompiles the pass; animating intensity must not.
     const key = `${lookStackKey(looks)}::${dofEnabled ? rig?.node?.id ?? '' : ''}`;
@@ -108,7 +120,9 @@ export function MotionLookComposer({
       if (bundle.current) disposeBundle(bundle.current);
 
       const composer = new EffectComposer(gl, {
-        multisampling: gl.capabilities.isWebGL2 ? 4 : 0,
+        // Two samples in the offscreen target preserve edge quality without
+        // the large memory and fill-rate cost of 4× MSAA at editor DPRs.
+        multisampling: gl.capabilities.isWebGL2 ? 2 : 0,
         frameBufferType: HalfFloatType,
       });
       composer.addPass(new RenderPass(scene, camera));
@@ -127,9 +141,10 @@ export function MotionLookComposer({
     }
 
     const active = bundle.current;
-    const { width, height } = gl.getDrawingBufferSize(drawingSize.current);
     if (active && (width !== lastSize.current.width || height !== lastSize.current.height)) {
-      active.composer.setSize(width, height);
+      // EffectComposer.setSize expects logical pixels; it queries the renderer
+      // drawing buffer internally and applies its pixel ratio exactly once.
+      active.composer.setSize(logicalSize.current.x, logicalSize.current.y);
       lastSize.current = { width, height };
     }
     if (!active) return;

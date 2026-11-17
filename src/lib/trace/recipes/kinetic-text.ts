@@ -39,7 +39,7 @@ export const compileKineticTextRecipe: RecipeCompiler<
       locked: false,
       sceneId,
       parentId: rootId,
-      origin: { x: currentX, y: 0 },
+      origin: { x: 0, y: 0 },
       attributes: {
         x: currentX,
         y: 0,
@@ -104,7 +104,7 @@ export const compileKineticTextRecipe: RecipeCompiler<
     visible: true,
     locked: false,
     sceneId,
-    origin: { x, y },
+    origin: { x: currentX / 2, y: (fontSize * 1.2) / 2 },
     attributes: { x, y, width: currentX, height: fontSize * 1.2 },
     tracks: [],
     childrenIds,

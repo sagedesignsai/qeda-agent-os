@@ -25,7 +25,13 @@ export interface RecipeBar {
 }
 
 export type RecipeFieldSpec =
-  | { key: string; label: string; kind: 'text'; placeholder?: string; maxLength?: number }
+  | {
+      key: string;
+      label: string;
+      kind: 'text';
+      placeholder?: string;
+      maxLength?: number;
+    }
   | {
       key: string;
       label: string;
@@ -72,11 +78,42 @@ export const RECIPE_SETUPS: Record<RecipeId, RecipeSetup> = {
     title: 'KPI Counter',
     summary: 'A number that rolls up to a target, with an optional caption.',
     fields: [
-      { key: 'endVal', label: 'Counts to', kind: 'number', min: 0, max: 1000000, step: 1 },
-      { key: 'prefix', label: 'Prefix', kind: 'text', placeholder: '$', maxLength: 8 },
-      { key: 'suffix', label: 'Suffix', kind: 'text', placeholder: '%', maxLength: 8 },
-      { key: 'caption', label: 'Caption', kind: 'text', placeholder: 'Optional label' },
-      { key: 'decimals', label: 'Decimals', kind: 'number', min: 0, max: 3, step: 1 },
+      {
+        key: 'endVal',
+        label: 'Counts to',
+        kind: 'number',
+        min: 0,
+        max: 1000000,
+        step: 1,
+      },
+      {
+        key: 'prefix',
+        label: 'Prefix',
+        kind: 'text',
+        placeholder: '$',
+        maxLength: 8,
+      },
+      {
+        key: 'suffix',
+        label: 'Suffix',
+        kind: 'text',
+        placeholder: '%',
+        maxLength: 8,
+      },
+      {
+        key: 'caption',
+        label: 'Caption',
+        kind: 'text',
+        placeholder: 'Optional label',
+      },
+      {
+        key: 'decimals',
+        label: 'Decimals',
+        kind: 'number',
+        min: 0,
+        max: 3,
+        step: 1,
+      },
       { key: 'fill', label: 'Colour', kind: 'color' },
       {
         key: 'durationMs',
@@ -112,8 +149,24 @@ export const RECIPE_SETUPS: Record<RecipeId, RecipeSetup> = {
         step: 1,
         suffix: '%',
       },
-      { key: 'radius', label: 'Radius', kind: 'number', min: 16, max: 200, step: 1, suffix: 'px' },
-      { key: 'thickness', label: 'Stroke', kind: 'number', min: 2, max: 40, step: 1, suffix: 'px' },
+      {
+        key: 'radius',
+        label: 'Radius',
+        kind: 'number',
+        min: 16,
+        max: 200,
+        step: 1,
+        suffix: 'px',
+      },
+      {
+        key: 'thickness',
+        label: 'Stroke',
+        kind: 'number',
+        min: 2,
+        max: 40,
+        step: 1,
+        suffix: 'px',
+      },
       { key: 'progressColor', label: 'Indicator', kind: 'color' },
       { key: 'trackColor', label: 'Track', kind: 'color' },
     ],
@@ -151,8 +204,21 @@ export const RECIPE_SETUPS: Record<RecipeId, RecipeSetup> = {
     title: 'Kinetic Text',
     summary: 'A headline revealed word by word, each word its own layer.',
     fields: [
-      { key: 'text', label: 'Headline', kind: 'text', placeholder: 'Kinetic typography' },
-      { key: 'fontSize', label: 'Size', kind: 'number', min: 12, max: 240, step: 1, suffix: 'px' },
+      {
+        key: 'text',
+        label: 'Headline',
+        kind: 'text',
+        placeholder: 'Kinetic typography',
+      },
+      {
+        key: 'fontSize',
+        label: 'Size',
+        kind: 'number',
+        min: 12,
+        max: 240,
+        step: 1,
+        suffix: 'px',
+      },
       { key: 'fill', label: 'Colour', kind: 'color' },
       {
         key: 'staggerMs',
@@ -176,8 +242,18 @@ export const RECIPE_SETUPS: Record<RecipeId, RecipeSetup> = {
     title: 'Lower Third',
     summary: 'A broadcast speaker card with an accent reveal.',
     fields: [
-      { key: 'title', label: 'Name', kind: 'text', placeholder: 'Speaker name' },
-      { key: 'subtitle', label: 'Role', kind: 'text', placeholder: 'Role — Organisation' },
+      {
+        key: 'title',
+        label: 'Name',
+        kind: 'text',
+        placeholder: 'Speaker name',
+      },
+      {
+        key: 'subtitle',
+        label: 'Role',
+        kind: 'text',
+        placeholder: 'Role — Organisation',
+      },
       { key: 'accentColor', label: 'Accent', kind: 'color' },
     ],
     defaults: {
@@ -202,6 +278,67 @@ export function recipeDefaults(recipeId: RecipeId): Record<string, unknown> {
   return copy;
 }
 
+function sizeOption(
+  options: Record<string, unknown>,
+  key: string,
+  fallback: number,
+): number {
+  const value = options[key];
+  if (value === '' || value === null || value === undefined) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Approximate local size of a recipe, using the same defaults and geometry as
+ * its compiler. The layer panel uses it to centre a new recipe on the canvas
+ * without compiling a throwaway document.
+ */
+export function estimateRecipeSize(
+  recipeId: RecipeId,
+  options: Record<string, unknown> = {},
+): { width: number; height: number } {
+  switch (recipeId) {
+    case 'lower-third':
+      return {
+        width: sizeOption(options, 'width', 460),
+        height: sizeOption(options, 'height', 64),
+      };
+    case 'progress-ring': {
+      const size =
+        sizeOption(options, 'radius', 50) * 2 +
+        sizeOption(options, 'thickness', 8);
+      return { width: size, height: size };
+    }
+    case 'bar-chart':
+      return {
+        width: sizeOption(options, 'width', 480),
+        height: sizeOption(options, 'height', 260),
+      };
+    case 'kinetic-text': {
+      const fontSize = sizeOption(options, 'fontSize', 48);
+      const text =
+        typeof options.text === 'string' && options.text.trim()
+          ? options.text
+          : 'KINETIC TYPOGRAPHY';
+      const words = text.split(/\s+/).filter(Boolean);
+      const chars = words.reduce((total, word) => total + word.length, 0);
+      const spaces = Math.max(0, words.length - 1);
+      return {
+        width: Math.max(
+          1,
+          Math.round((chars * 0.58 + spaces * 0.35) * fontSize),
+        ),
+        height: Math.round(fontSize * 1.2),
+      };
+    }
+    case 'counter': {
+      const fontSize = sizeOption(options, 'fontSize', 48);
+      return { width: fontSize * 4, height: fontSize * 1.5 };
+    }
+  }
+}
+
 function clampNumber(
   value: unknown,
   field: Extract<RecipeFieldSpec, { kind: 'number' }>,
@@ -217,9 +354,13 @@ function clampNumber(
 function sanitizeBars(value: unknown, fallback: RecipeBar[]): RecipeBar[] {
   if (!Array.isArray(value)) return fallback;
   const rows = value
-    .filter((row): row is Record<string, unknown> => !!row && typeof row === 'object')
+    .filter(
+      (row): row is Record<string, unknown> => !!row && typeof row === 'object',
+    )
     .map((row) => ({
-      label: String(row.label ?? '').trim().slice(0, 12),
+      label: String(row.label ?? '')
+        .trim()
+        .slice(0, 12),
       value:
         typeof row.value === 'number' && Number.isFinite(row.value)
           ? Math.min(1000, Math.max(0, Math.round(row.value)))
@@ -273,13 +414,18 @@ export function sanitizeRecipeOptions(
       }
       case 'select': {
         const value = String(raw ?? fallback ?? '');
-        options[field.key] = field.options.some((option) => option.value === value)
+        options[field.key] = field.options.some(
+          (option) => option.value === value,
+        )
           ? value
           : fallback;
         break;
       }
       case 'bars': {
-        options[field.key] = sanitizeBars(raw, (fallback as RecipeBar[]) ?? DEFAULT_BARS);
+        options[field.key] = sanitizeBars(
+          raw,
+          (fallback as RecipeBar[]) ?? DEFAULT_BARS,
+        );
         break;
       }
     }

@@ -21,7 +21,8 @@ export const compileBarChartRecipe: RecipeCompiler<BarChartRecipeOptions> = (
     { id: 'c', label: 'Q3', value: 62, color: '#818cf8' },
     { id: 'd', label: 'Q4', value: 95, color: '#c084fc' },
   ];
-  const bars = options.bars && options.bars.length > 0 ? options.bars : defaultBars;
+  const bars =
+    options.bars && options.bars.length > 0 ? options.bars : defaultBars;
 
   const maxVal = options.maxVal ?? Math.max(1, ...bars.map((b) => b.value));
   const count = bars.length;
@@ -52,9 +53,12 @@ export const compileBarChartRecipe: RecipeCompiler<BarChartRecipeOptions> = (
       orientation === 'vertical'
         ? height - 20 - barLength
         : index * (barWidth + barSpacing);
-    const baseline = orientation === 'vertical' ? height - 20 : 0;
+    const vertical = orientation === 'vertical';
+    const baseline = vertical ? height - 20 : 0;
     const baseColor = bar.color ?? '#38bdf8';
     const delay = 200 + index * 100;
+    const barBoxWidth = vertical ? barWidth : barLength;
+    const barBoxHeight = vertical ? barLength : barWidth;
 
     const barElem: TraceElement = {
       id: barId,
@@ -64,12 +68,14 @@ export const compileBarChartRecipe: RecipeCompiler<BarChartRecipeOptions> = (
       locked: false,
       sceneId,
       parentId: rootId,
-      origin: { x: barX, y: height - 20 },
+      // Local pivot for rotation/scale; parent-space coordinates here would
+      // make a transformed bar swing around the chart origin.
+      origin: { x: barBoxWidth / 2, y: barBoxHeight / 2 },
       attributes: {
         x: barX,
         y: barY,
-        width: orientation === 'vertical' ? barWidth : barLength,
-        height: orientation === 'vertical' ? barLength : barWidth,
+        width: barBoxWidth,
+        height: barBoxHeight,
         rx: barRadius,
         ry: barRadius,
         fill: baseColor,
@@ -78,23 +84,49 @@ export const compileBarChartRecipe: RecipeCompiler<BarChartRecipeOptions> = (
       },
       tracks: [
         {
-          id: `${barId}-height`,
-          property: orientation === 'vertical' ? 'height' : 'width',
-          label: orientation === 'vertical' ? 'Height' : 'Width',
+          id: `${barId}-${vertical ? 'height' : 'width'}`,
+          property: vertical ? 'height' : 'width',
+          label: vertical ? 'Height' : 'Width',
           keyframes: [
-            { id: `${barId}-length-1`, timeMs: delay, value: 0, easing: 'power2.out' },
-            { id: `${barId}-length-2`, timeMs: delay + 600, value: barLength, easing: 'power2.out' },
+            {
+              id: `${barId}-length-1`,
+              timeMs: delay,
+              value: 0,
+              easing: 'power2.out',
+            },
+            {
+              id: `${barId}-length-2`,
+              timeMs: delay + 600,
+              value: barLength,
+              easing: 'power2.out',
+            },
           ],
         },
-        {
-          id: `${barId}-${orientation === 'vertical' ? 'y' : 'x'}`,
-          property: orientation === 'vertical' ? 'y' : 'x',
-          label: orientation === 'vertical' ? 'Y' : 'X',
-          keyframes: [
-            { id: `${barId}-pos-1`, timeMs: delay, value: baseline, easing: 'power2.out' },
-            { id: `${barId}-pos-2`, timeMs: delay + 600, value: orientation === 'vertical' ? barY : 0, easing: 'power2.out' },
-          ],
-        },
+        // Vertical bars grow upward, so their top edge moves. Horizontal bars
+        // grow rightward from x = 0 and need no position track.
+        ...(vertical
+          ? [
+              {
+                id: `${barId}-y`,
+                property: 'y' as const,
+                label: 'Y',
+                keyframes: [
+                  {
+                    id: `${barId}-pos-1`,
+                    timeMs: delay,
+                    value: baseline,
+                    easing: 'power2.out' as const,
+                  },
+                  {
+                    id: `${barId}-pos-2`,
+                    timeMs: delay + 600,
+                    value: barY,
+                    easing: 'power2.out' as const,
+                  },
+                ],
+              },
+            ]
+          : []),
       ],
     };
 
@@ -106,19 +138,10 @@ export const compileBarChartRecipe: RecipeCompiler<BarChartRecipeOptions> = (
       locked: false,
       sceneId,
       parentId: rootId,
-      origin:
-        orientation === 'vertical'
-          ? { x: barX + barWidth / 2, y: height }
-          : { x: barLength, y: barY + barWidth / 2 },
+      origin: { x: 0, y: 0 },
       attributes: {
-        x:
-          orientation === 'vertical'
-            ? barX + barWidth / 2
-            : barLength + 8,
-        y:
-          orientation === 'vertical'
-            ? height
-            : barY + barWidth / 2,
+        x: orientation === 'vertical' ? barX + barWidth / 2 : barLength + 8,
+        y: orientation === 'vertical' ? height : barY + barWidth / 2,
         text: bar.label,
         fontSize: 12,
         fontWeight: 500,
@@ -134,8 +157,18 @@ export const compileBarChartRecipe: RecipeCompiler<BarChartRecipeOptions> = (
           property: 'opacity',
           label: 'Opacity',
           keyframes: [
-            { id: `${labelId}-op-1`, timeMs: delay + 100, value: 0, easing: 'power2.out' },
-            { id: `${labelId}-op-2`, timeMs: delay + 500, value: 1, easing: 'power2.out' },
+            {
+              id: `${labelId}-op-1`,
+              timeMs: delay + 100,
+              value: 0,
+              easing: 'power2.out',
+            },
+            {
+              id: `${labelId}-op-2`,
+              timeMs: delay + 500,
+              value: 1,
+              easing: 'power2.out',
+            },
           ],
         },
       ],
@@ -151,7 +184,7 @@ export const compileBarChartRecipe: RecipeCompiler<BarChartRecipeOptions> = (
     visible: true,
     locked: false,
     sceneId,
-    origin: { x, y },
+    origin: { x: width / 2, y: height / 2 },
     attributes: { x, y, width, height },
     tracks: [],
     childrenIds,

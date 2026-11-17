@@ -121,6 +121,11 @@ export type TraceOp =
       label?: string;
       /** Reuse an existing track id instead of generating one. */
       trackId?: string;
+      /**
+       * Hold each keyframe until the next instead of interpolating. Omit to
+       * keep the existing track's setting.
+       */
+      discrete?: boolean;
     }
   | { type: 'deleteTrack'; elementId: string; property: AnimatableProperty }
   | {

@@ -49,6 +49,9 @@ export function getValueAtTime(
     }
   }
 
+  // Discrete tracks hold the last keyframe; they never blend values.
+  if (track.discrete) return kPrev.value;
+
   const duration = kNext.timeMs - kPrev.timeMs;
   if (duration <= 0) return kPrev.value;
 

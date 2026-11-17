@@ -11,10 +11,8 @@
  * Adapted from sagedesigns-os lib/motion/ops/elements.ts for Nova Trace.
  */
 
-import type {
-  TraceElement,
-  TraceElementType,
-} from '../types';
+import type { TraceElement, TraceElementType } from '../types';
+import type { RecipeId } from '../recipes/types';
 import { starPoints } from '../serialize/svg-markup';
 
 interface SpecBase {
@@ -399,7 +397,7 @@ export function createElementFromSpec(
 
 /** Recipe ids understood by `applyRecipe`. */
 export interface RecipeMeta {
-  id: string;
+  id: RecipeId;
   title: string;
   description: string;
 }

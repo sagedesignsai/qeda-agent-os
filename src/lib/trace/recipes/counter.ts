@@ -21,6 +21,8 @@ export const compileCounterRecipe: RecipeCompiler<CounterRecipeOptions> = (
   const fill = options.fill ?? '#f8fafc';
   const durationMs = options.durationMs ?? 1800;
   const sceneId = options.sceneId ?? null;
+  const rootWidth = fontSize * 4;
+  const rootHeight = fontSize * 1.5;
 
   const childrenIds = [valueId];
   if (caption) childrenIds.push(captionId);
@@ -78,6 +80,9 @@ export const compileCounterRecipe: RecipeCompiler<CounterRecipeOptions> = (
         property: 'text',
         label: 'Value',
         keyframes,
+        // A counter must show the exact value at each step; blending strings
+        // through the typewriter interpolator would erase and retype digits.
+        discrete: true,
       },
     ],
   };
@@ -137,8 +142,8 @@ export const compileCounterRecipe: RecipeCompiler<CounterRecipeOptions> = (
     visible: true,
     locked: false,
     sceneId,
-    origin: { x, y },
-    attributes: { x, y, width: fontSize * 4, height: fontSize * 1.5 },
+    origin: { x: rootWidth / 2, y: rootHeight / 2 },
+    attributes: { x, y, width: rootWidth, height: rootHeight },
     tracks: [],
     childrenIds,
   };

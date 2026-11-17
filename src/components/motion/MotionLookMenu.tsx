@@ -20,7 +20,12 @@ import {
 } from '@/components/ui/popover';
 import { motionStore } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
-import { describeLookStack, isMotionLookNode, resolveLookStack } from '@/lib/motion/look';
+import {
+  describeLookStack,
+  isMotionLookNode,
+  motionLookRemovalRoots,
+  resolveLookStack,
+} from '@/lib/motion/look';
 import { expandLookPreset, listLookPresets } from '@/lib/motion/look-presets';
 import type { MotionDocument } from '@/lib/motion/types';
 
@@ -29,6 +34,7 @@ export function MotionLookMenu({ doc }: { doc: MotionDocument }) {
   const activeScene =
     doc.scenes.find((scene) => scene.id === doc.activeSceneId) ?? doc.scenes[0];
   const lookNodes = activeScene.nodes.filter((node) => isMotionLookNode(node.type));
+  const lookRoots = motionLookRemovalRoots(activeScene.nodes);
   const stack = resolveLookStack(activeScene, motionStore.clock.getTime());
   const summary = describeLookStack(stack);
 
@@ -37,7 +43,7 @@ export function MotionLookMenu({ doc }: { doc: MotionDocument }) {
       `Apply look: ${label}`,
       expandLookPreset(
         presetId,
-        { existingLookNodeIds: lookNodes.map((node) => node.id) },
+        { existingLookNodeIds: lookRoots.map((node) => node.id) },
         createMotionId,
       ),
     );
@@ -45,10 +51,10 @@ export function MotionLookMenu({ doc }: { doc: MotionDocument }) {
   };
 
   const clearLook = () => {
-    if (lookNodes.length === 0) return;
+    if (lookRoots.length === 0) return;
     motionStore.commit(
       'Clear look',
-      lookNodes.map((node) => ({ op: 'scene.node.remove' as const, nodeId: node.id })),
+      lookRoots.map((node) => ({ op: 'scene.node.remove' as const, nodeId: node.id })),
     );
     setOpen(false);
   };
@@ -74,7 +80,7 @@ export function MotionLookMenu({ doc }: { doc: MotionDocument }) {
             <p className="text-[11px] font-medium">Look</p>
             <p className="truncate text-[10px] text-muted-foreground">{summary}</p>
           </div>
-          {lookNodes.length > 0 && (
+          {lookRoots.length > 0 && (
             <Button
               type="button"
               variant="ghost"

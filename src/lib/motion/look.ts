@@ -52,6 +52,29 @@ export function isMotionLookNode(type: string): boolean {
   return type in KIND_BY_NODE_TYPE;
 }
 
+export function isMotionLookContainerNode(type: string): boolean {
+  return type === 'fx.stack';
+}
+
+/** Top-level nodes to remove when replacing/clearing a look. */
+export function motionLookRemovalRoots(nodes: readonly MotionNode[]): MotionNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  return nodes.filter((node) => {
+    if (isMotionLookContainerNode(node.type)) return true;
+    if (!isMotionLookNode(node.type)) return false;
+    let parentId = node.parentId;
+    const seen = new Set<string>();
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      if (isMotionLookContainerNode(parent.type)) return false;
+      parentId = parent.parentId;
+    }
+    return true;
+  });
+}
+
 function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -162,7 +185,21 @@ export function resolveLookStack(
   scene: LookScene,
   time: number,
 ): MotionResolvedLook[] {
-  const live = scene.nodes.filter((node) => node.visible && isMotionLookNode(node.type));
+  const byId = new Map(scene.nodes.map((node) => [node.id, node]));
+  const isEnabled = (node: MotionNode): boolean => {
+    if (!node.visible) return false;
+    let parentId = node.parentId;
+    const seen = new Set<string>();
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      if (!parent.visible) return false;
+      parentId = parent.parentId;
+    }
+    return true;
+  };
+  const live = scene.nodes.filter((node) => isEnabled(node) && isMotionLookNode(node.type));
   if (live.length === 0) return [];
 
   const sampled = sampleSceneTimeline(scene as MotionScene, time);

@@ -65,6 +65,8 @@ import { cn } from '@/lib/utils';
 
 function nodeIcon(node: MotionNode) {
   const category = getMotionNodeType(node.type)?.category;
+  if (node.type === 'fx.stack') return FolderIcon;
+  if (category === 'fx') return WandSparklesIcon;
   if (node.type.startsWith('text.')) return TypeIcon;
   if (category === 'camera') return CameraIcon;
   if (category === 'lighting') return LightbulbIcon;

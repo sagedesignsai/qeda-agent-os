@@ -19,7 +19,7 @@ import {
 import { MotionWorldBinding } from '@/components/motion/scene/MotionWorldBinding';
 import { MotionLookComposer } from '@/components/motion/scene/MotionLookComposer';
 import { resolveSceneWorld } from '@/lib/motion/environment';
-import { isMotionLookNode } from '@/lib/motion/look';
+import { isMotionLookContainerNode, isMotionLookNode } from '@/lib/motion/look';
 import {
   applyMotionFrame,
   motionNumberProp,
@@ -247,7 +247,9 @@ function DocumentScene({
   // Look nodes are data, not geometry: they feed the composer and must never
   // reach the renderer lookup (which would draw a "missing node" placeholder).
   const sceneNodes = useMemo(
-    () => doc.scene.nodes.filter((node) => !isMotionLookNode(node.type)),
+    () => doc.scene.nodes.filter(
+      (node) => !isMotionLookNode(node.type) && !isMotionLookContainerNode(node.type),
+    ),
     [doc.scene.nodes],
   );
   const childrenByParent = useMemo(() => indexNodes(sceneNodes), [sceneNodes]);

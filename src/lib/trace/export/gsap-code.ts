@@ -89,6 +89,24 @@ function trackTweenLines(
       : selectorFor(element);
 
   if (track.property === 'text') {
+    if (track.discrete) {
+      // Exact strings (counters): snap at each keyframe instead of typing
+      // through TextPlugin, matching the runtime's discrete evaluation.
+      lines.push(
+        `${indent}tl.set("${target}", { text: { value: ${JSON.stringify(
+          String(keys[0].value),
+        )} } }, 0);`,
+      );
+      for (let index = 1; index < keys.length; index += 1) {
+        lines.push(
+          `${indent}tl.set("${target}", { text: { value: ${JSON.stringify(
+            String(keys[index].value),
+          )} } }, ${(keys[index].timeMs / 1000).toFixed(3)});`,
+        );
+      }
+      return lines;
+    }
+
     for (let index = 0; index < keys.length - 1; index += 1) {
       const from = keys[index];
       const to = keys[index + 1];

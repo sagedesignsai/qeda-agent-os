@@ -520,12 +520,16 @@ function opSetTrack(
     existing.keyframes = keyframes;
     existing.property = op.property;
     if (op.label) existing.label = op.label;
+    // Preserve recipe semantics (e.g. a counter's stepped text) unless the
+    // caller explicitly overrides them.
+    if (op.discrete !== undefined) existing.discrete = op.discrete;
   } else {
     tracks.push({
       id: op.trackId ?? nextId('track'),
       property: op.property,
       label: op.label ?? op.property,
       keyframes,
+      ...(op.discrete ? { discrete: true } : {}),
     });
   }
 

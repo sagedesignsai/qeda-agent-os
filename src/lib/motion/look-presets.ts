@@ -117,12 +117,20 @@ export function expandLookPreset(
   for (const nodeId of options.existingLookNodeIds ?? []) {
     ops.push({ op: 'scene.node.remove', nodeId });
   }
+  const stackId = idFactory('scene');
+  ops.push({
+    op: 'scene.node.add',
+    nodeId: stackId,
+    type: 'fx.stack',
+    name: `${preset.label} Look`,
+  });
   for (const node of preset.nodes) {
     ops.push({
       op: 'scene.node.add',
       nodeId: idFactory('scene'),
       type: node.type,
       name: node.name,
+      parentId: stackId,
       props: node.props,
       transform: { position: [0, 0, 0] },
     });

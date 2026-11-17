@@ -64,7 +64,10 @@ function mappedTrack(
   };
 }
 
-function formatCounterValue(value: number | string, attributes: Record<string, any>): string {
+function formatCounterValue(
+  value: number | string,
+  attributes: Record<string, any>,
+): string {
   const numeric = Number(value);
   const decimals = Math.max(0, Math.round(Number(attributes.decimals ?? 0)));
   const formatted = Number.isFinite(numeric)
@@ -145,11 +148,12 @@ function expandCompound(
       if (oldValueTracks.length) {
         mappedChildTracks.set(
           `${rootId}-value`,
-          oldValueTracks.map((track) =>
-            mappedTrack(track, 'text', 'Value', (value) =>
+          oldValueTracks.map((track) => ({
+            ...mappedTrack(track, 'text', 'Value', (value) =>
               formatCounterValue(value, attrs),
             ),
-          ),
+            discrete: true,
+          })),
         );
       }
       passThroughTracks = element.tracks.filter((track) =>
@@ -183,18 +187,21 @@ function expandCompound(
               'Progress',
               (value) =>
                 circumference *
-                (1 -
-                  Math.max(0, Math.min(100, Number(value))) / 100),
+                (1 - Math.max(0, Math.min(100, Number(value))) / 100),
             ),
           ),
         );
         mappedChildTracks.set(
           `${rootId}-label`,
-          progressTracks.map((track) =>
-            mappedTrack(track, 'text', 'Progress label', (value) =>
-              `${Math.round(Number(value))}%`,
+          progressTracks.map((track) => ({
+            ...mappedTrack(
+              track,
+              'text',
+              'Progress label',
+              (value) => `${Math.round(Number(value))}%`,
             ),
-          ),
+            discrete: true,
+          })),
         );
       }
       passThroughTracks = element.tracks.filter((track) =>
@@ -227,7 +234,8 @@ function expandCompound(
               { id: 'd', label: 'Q4', value: 95, color: '#c084fc' },
             ];
         const max = Number(
-          attrs.maxVal ?? Math.max(1, ...bars.map((bar: any) => Number(bar.value) || 0)),
+          attrs.maxVal ??
+            Math.max(1, ...bars.map((bar: any) => Number(bar.value) || 0)),
         );
         const vertical = options.orientation !== 'horizontal';
         const extent = Number(vertical ? options.height : options.width);
@@ -258,8 +266,11 @@ function expandCompound(
           );
           const positionTracks = vertical
             ? progressTracks.map((track) =>
-                mappedTrack(track, 'y', 'Progress position', (value) =>
-                  baseline - asLength(value),
+                mappedTrack(
+                  track,
+                  'y',
+                  'Progress position',
+                  (value) => baseline - asLength(value),
                 ),
               )
             : progressTracks.map((track) =>
@@ -287,7 +298,9 @@ function expandCompound(
         staggerMs: attrs.staggerMs ?? 90,
       };
       const revealTracks = tracksFor(element, 'revealProgress');
-      const words = String(attrs.text ?? '').split(/\s+/).filter(Boolean);
+      const words = String(attrs.text ?? '')
+        .split(/\s+/)
+        .filter(Boolean);
       if (revealTracks.length) {
         words.forEach((_word, index) => {
           const wordId = `${rootId}-word-${index}`;
@@ -303,11 +316,17 @@ function expandCompound(
           mappedChildTracks.set(
             wordId,
             revealTracks.flatMap((track) => [
-              mappedTrack(track, 'opacity', 'Reveal opacity', (value) =>
-                wordProgress(value) / 100,
+              mappedTrack(
+                track,
+                'opacity',
+                'Reveal opacity',
+                (value) => wordProgress(value) / 100,
               ),
-              mappedTrack(track, 'y', 'Reveal position', (value) =>
-                24 * (1 - wordProgress(value) / 100),
+              mappedTrack(
+                track,
+                'y',
+                'Reveal position',
+                (value) => 24 * (1 - wordProgress(value) / 100),
               ),
             ]),
           );
@@ -336,8 +355,11 @@ function expandCompound(
         mappedChildTracks.set(
           `${rootId}-accent`,
           progressTracks.map((track) =>
-            mappedTrack(track, 'width', 'Progress', (value) =>
-              (4 * Math.max(0, Math.min(100, Number(value)))) / 100,
+            mappedTrack(
+              track,
+              'width',
+              'Progress',
+              (value) => (4 * Math.max(0, Math.min(100, Number(value)))) / 100,
             ),
           ),
         );
@@ -366,10 +388,8 @@ function expandCompound(
     childIdMap.set(child.id, childId);
     const mappedTracks = mappedChildTracks.get(child.id) ?? [];
     const role = child.id.slice(rootId.length + 1);
-    const progress = Math.max(
-      0,
-      Math.min(100, Number(attrs.progress ?? 100)),
-    ) / 100;
+    const progress =
+      Math.max(0, Math.min(100, Number(attrs.progress ?? 100))) / 100;
     const childAttributes = { ...child.attributes };
     if (legacyType === 'counter' && role === 'value') {
       childAttributes.text = formatCounterValue(
@@ -388,10 +408,7 @@ function expandCompound(
         childAttributes.fontWeight = attrs.fontWeight ?? 600;
         childAttributes.fill = attrs.fill ?? '#f8fafc';
       }
-    } else if (
-      legacyType === 'bar-chart' &&
-      /^bar-\d+$/.test(role)
-    ) {
+    } else if (legacyType === 'bar-chart' && /^bar-\d+$/.test(role)) {
       const index = Number(role.slice('bar-'.length));
       const bars = Array.isArray(options.bars) ? options.bars : [];
       const bar = bars[index];
@@ -420,28 +437,27 @@ function expandCompound(
         childAttributes.width = length * progress;
         childAttributes.height = thickness;
       }
-    } else if (
-      legacyType === 'bar-chart' &&
-      role.startsWith('label-')
-    ) {
+    } else if (legacyType === 'bar-chart' && role.startsWith('label-')) {
       child.visible = false;
     } else if (legacyType === 'counter' && role === 'caption') {
       const fontSize = Number(attrs.fontSize ?? 48);
       childAttributes.y = fontSize + 8;
       childAttributes.dominantBaseline = 'middle';
       child.origin = { x: 0, y: fontSize + 8 };
-    } else if (legacyType === 'lower-third' && child.id === `${rootId}-accent`) {
-      childAttributes.width = 4 * progress;
     } else if (
       legacyType === 'lower-third' &&
-      child.id === `${rootId}-card`
+      child.id === `${rootId}-accent`
     ) {
+      childAttributes.width = 4 * progress;
+    } else if (legacyType === 'lower-third' && child.id === `${rootId}-card`) {
       childAttributes.rx = 10;
     } else if (legacyType === 'kinetic-text' && role.startsWith('word-')) {
       const wordIndex = Number(role.slice('word-'.length));
       const wordCount = Math.max(
         1,
-        String(attrs.text ?? '').split(/\s+/).filter(Boolean).length,
+        String(attrs.text ?? '')
+          .split(/\s+/)
+          .filter(Boolean).length,
       );
       const reveal = Math.max(
         0,
@@ -471,9 +487,7 @@ function expandCompound(
     passThroughTracks,
   );
   root.childrenIds = [
-    ...(expanded.root.childrenIds ?? []).map(
-      (id) => childIdMap.get(id) ?? id,
-    ),
+    ...(expanded.root.childrenIds ?? []).map((id) => childIdMap.get(id) ?? id),
     ...(element.childrenIds ?? []),
   ];
   return [root, ...children];

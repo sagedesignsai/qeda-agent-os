@@ -12,7 +12,14 @@
  * order in `handleDragEnd`.
  */
 
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   DndContext,
   PointerSensor,
@@ -88,6 +95,8 @@ import {
   ungroupableIds,
   ungroupSelectedElements,
 } from '@/components/trace/grouping';
+import { RecipeSetupDialog } from '@/components/trace/dialogs/RecipeSetupDialog';
+import { estimateRecipeSize, type RecipeId } from '@/lib/trace/recipes';
 import { useTraceStore } from '@/stores/trace-store';
 
 type ElementTypeOption = {
@@ -97,7 +106,7 @@ type ElementTypeOption = {
 };
 
 type RecipeOption = {
-  id: string;
+  id: RecipeId;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
 };
@@ -359,8 +368,7 @@ function buildDisplayRows(
       parentId: element.parentId ?? null,
     });
 
-    const collapsed =
-      !needle && collapsedElementIds.includes(elementId);
+    const collapsed = !needle && collapsedElementIds.includes(elementId);
     if (collapsed) return;
 
     // Topmost child first.
@@ -409,7 +417,10 @@ function Row({
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(element.name);
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
-  const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 });
+  const [contextMenuPosition, setContextMenuPosition] = useState({
+    x: 0,
+    y: 0,
+  });
 
   const children = (element.childrenIds ?? [])
     .map((childId) => project.elements[childId])
@@ -430,7 +441,11 @@ function Row({
     : dragState.id === element.id ||
       isElementDescendant(project, element.id, dragState.id);
 
-  const { setNodeRef: setDragRef, listeners, attributes } = useDraggable({
+  const {
+    setNodeRef: setDragRef,
+    listeners,
+    attributes,
+  } = useDraggable({
     id: `trace-drag-${element.id}`,
     data: { elementId: element.id },
     disabled: !dragEnabled,
@@ -615,9 +630,11 @@ function Row({
       </button>
 
       {/* Actions Menu (hover button) */}
-      <DropdownMenu onOpenChange={(open) => {
-        if (!open) setContextMenuOpen(false);
-      }}>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (!open) setContextMenuOpen(false);
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <button
             type="button"
@@ -662,21 +679,27 @@ function Row({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() =>
-              dispatch([{ type: 'reorderElement', id: element.id, to: 'front' }])
+              dispatch([
+                { type: 'reorderElement', id: element.id, to: 'front' },
+              ])
             }
           >
             <BringToFrontIcon className="size-3" /> Bring to front
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() =>
-              dispatch([{ type: 'reorderElement', id: element.id, to: 'forward' }])
+              dispatch([
+                { type: 'reorderElement', id: element.id, to: 'forward' },
+              ])
             }
           >
             <MoveUpIcon className="size-3" /> Bring forward
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() =>
-              dispatch([{ type: 'reorderElement', id: element.id, to: 'backward' }])
+              dispatch([
+                { type: 'reorderElement', id: element.id, to: 'backward' },
+              ])
             }
           >
             <MoveDownIcon className="size-3" /> Send backward
@@ -700,7 +723,11 @@ function Row({
                   <DropdownMenuItem
                     onSelect={() =>
                       dispatch([
-                        { type: 'setElementScene', id: element.id, sceneId: null },
+                        {
+                          type: 'setElementScene',
+                          id: element.id,
+                          sceneId: null,
+                        },
                       ])
                     }
                   >
@@ -785,21 +812,27 @@ function Row({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() =>
-              dispatch([{ type: 'reorderElement', id: element.id, to: 'front' }])
+              dispatch([
+                { type: 'reorderElement', id: element.id, to: 'front' },
+              ])
             }
           >
             <BringToFrontIcon className="size-3" /> Bring to front
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() =>
-              dispatch([{ type: 'reorderElement', id: element.id, to: 'forward' }])
+              dispatch([
+                { type: 'reorderElement', id: element.id, to: 'forward' },
+              ])
             }
           >
             <MoveUpIcon className="size-3" /> Bring forward
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() =>
-              dispatch([{ type: 'reorderElement', id: element.id, to: 'backward' }])
+              dispatch([
+                { type: 'reorderElement', id: element.id, to: 'backward' },
+              ])
             }
           >
             <MoveDownIcon className="size-3" /> Send backward
@@ -823,7 +856,11 @@ function Row({
                   <DropdownMenuItem
                     onSelect={() =>
                       dispatch([
-                        { type: 'setElementScene', id: element.id, sceneId: null },
+                        {
+                          type: 'setElementScene',
+                          id: element.id,
+                          sceneId: null,
+                        },
                       ])
                     }
                   >
@@ -898,6 +935,7 @@ export function TraceElementsTree() {
   const anchorRef = useRef<string | null>(null);
   const [dragState, setDragState] = useState<DragState>(EMPTY_DRAG);
   const [altKey, setAltKey] = useState(false);
+  const [recipeDraft, setRecipeDraft] = useState<RecipeId | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -927,7 +965,8 @@ export function TraceElementsTree() {
   const selectedIds = selection.selectedElementIds ?? [];
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const canGroup = useMemo(
-    () => (project ? topmostSelectedIds(project, selectedIds).length >= 2 : false),
+    () =>
+      project ? topmostSelectedIds(project, selectedIds).length >= 2 : false,
     [project, selectedIds],
   );
   const canUngroup = useMemo(
@@ -945,10 +984,7 @@ export function TraceElementsTree() {
         const from = ids.indexOf(anchorRef.current);
         const to = ids.indexOf(elementId);
         if (from >= 0 && to >= 0) {
-          const range = ids.slice(
-            Math.min(from, to),
-            Math.max(from, to) + 1,
-          );
+          const range = ids.slice(Math.min(from, to), Math.max(from, to) + 1);
           selectElements(range, elementId);
           return;
         }
@@ -969,13 +1005,18 @@ export function TraceElementsTree() {
     if (added) selectElement(added);
   };
 
-  const applyPrefabRecipe = (recipeId: string) => {
+  const insertRecipe = (
+    recipeId: RecipeId,
+    options: Record<string, unknown>,
+  ) => {
+    const { width, height } = estimateRecipeSize(recipeId, options);
     const result = dispatch([
       {
         type: 'applyRecipe',
         recipeId,
-        x: Math.round(project.width / 2 - 200),
-        y: Math.round(project.height / 2 - 100),
+        x: Math.round(project.width / 2 - width / 2),
+        y: Math.round(project.height / 2 - height / 2),
+        options,
       },
     ]);
     const added = result?.recipeRootIds[0] ?? result?.diff.added[0];
@@ -1023,8 +1064,7 @@ export function TraceElementsTree() {
     if (!currentProject) return;
 
     const data = over.data.current as
-      | { elementId?: string; root?: boolean }
-      | undefined;
+      { elementId?: string; root?: boolean } | undefined;
 
     if (data?.root) {
       state.dispatch([
@@ -1127,7 +1167,8 @@ export function TraceElementsTree() {
                   onSelect={() => addElement(option.type)}
                   className="text-[11px]"
                 >
-                  <option.icon className="size-3 text-muted-foreground/60" /> {option.label}
+                  <option.icon className="size-3 text-muted-foreground/60" />{' '}
+                  {option.label}
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator />
@@ -1137,10 +1178,11 @@ export function TraceElementsTree() {
               {RECIPE_OPTIONS.map((recipe) => (
                 <DropdownMenuItem
                   key={recipe.id}
-                  onSelect={() => applyPrefabRecipe(recipe.id)}
+                  onSelect={() => setRecipeDraft(recipe.id)}
                   className="text-[11px]"
                 >
-                  <recipe.icon className="size-3 text-violet-400/80" /> {recipe.label}
+                  <recipe.icon className="size-3 text-violet-400/80" />{' '}
+                  {recipe.label}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -1215,6 +1257,15 @@ export function TraceElementsTree() {
           {project.width}×{project.height}
         </span>
       </div>
+
+      <RecipeSetupDialog
+        open={recipeDraft !== null}
+        recipeId={recipeDraft}
+        onOpenChange={(open) => {
+          if (!open) setRecipeDraft(null);
+        }}
+        onInsert={insertRecipe}
+      />
     </aside>
   );
 }
