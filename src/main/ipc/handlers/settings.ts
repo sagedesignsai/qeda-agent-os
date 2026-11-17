@@ -18,6 +18,7 @@ import {
   setActiveProjectId,
   type AppSettings,
 } from '../../ai/settings';
+import { performChatGPTSignIn } from '../../ai/chatgpt-auth';
 import { mcpManager } from '../../ai/mcp/manager';
 import { listServiceStatuses } from '../../services/keys';
 import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '../../../lib/builder-engine';
@@ -221,6 +222,23 @@ export function registerSettingsHandlers({
     const settings = getSettings();
 
     return PROVIDERS.map((provider) => {
+      // ChatGPT is an OAuth session, not an API key. Its "signed in" state
+      // lives under settings.chatgptAuth, not providers.chatgpt.apiKey.
+      if (provider.id === 'chatgpt') {
+        const signedIn = Boolean(getSettings().chatgptAuth?.accessToken);
+        return {
+          id: provider.id,
+          name: provider.name,
+          baseURL: provider.baseURL,
+          freeModels: provider.freeModels ?? [],
+          note: provider.note,
+          apiKeyEnvs: provider.apiKeyEnvs ?? [],
+          apiKeySet: signedIn,
+          apiKeySource: signedIn ? 'settings' : null,
+          apiKeyPreference: 'settings',
+        };
+      }
+
       const fromSettings = settings.providers?.[provider.id]?.apiKey;
       const hasStoredKey = Boolean(fromSettings && fromSettings.trim());
       const hasEnvKey = Boolean(envApiKey(provider));
@@ -299,5 +317,28 @@ export function registerSettingsHandlers({
   ipcMain.handle('mcp:reload', async () => {
     const { activeCount } = await mcpManager.loadToolsForEnabledServers();
     return { activeCount };
+  });
+
+  // ── ChatGPT OAuth ────────────────────────────────────────────────────────
+
+  ipcMain.handle('chatgpt:signin', async () => {
+    return await performChatGPTSignIn();
+  });
+
+  ipcMain.handle('chatgpt:status', () => {
+    const s = getSettings();
+    return {
+      signedIn: Boolean(s.chatgptAuth?.accessToken),
+      expiresAt: s.chatgptAuth?.expiresAt,
+      clientId: s.chatgptAuth?.clientId,
+    };
+  });
+
+  ipcMain.handle('chatgpt:signout', () => {
+    const raw = getRawSettings();
+    const { chatgptAuth: _chatgptAuth, ...rest } = raw;
+    void _chatgptAuth;
+    saveSettings(rest);
+    return;
   });
 }

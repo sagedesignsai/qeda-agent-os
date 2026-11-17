@@ -192,4 +192,65 @@ describe('Motion remote asset client', () => {
     expect(result.errors[0].message).toMatch(/size limit/);
     expect(await fs.readdir(tempRoot)).toEqual([]);
   });
+
+  it('downloads a Sketchfab model from its scheme-less signed archive host', async () => {
+    process.env.SKETCHFAB_API_KEY = 'test-token';
+    const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 2, 0, 0, 0, 12, 0, 0, 0]);
+    const contacted: string[] = [];
+    const fetch: MotionRemoteFetch = async (url) => {
+      contacted.push(url);
+      if (url.includes('/download')) {
+        return response(200, JSON.stringify({
+          glb: {
+            url: 'sketchfab-prod-media.s3.eu-west-1.amazonaws.com/archives/x/model.glb',
+            size: glb.length,
+            expires: 300,
+          },
+        }), { 'content-type': 'application/json' });
+      }
+      if (url.includes('/v3/models/abcdef')) {
+        return response(200, JSON.stringify({
+          uid: 'abcdef',
+          name: 'Sketchfab Thing',
+          isDownloadable: true,
+          license: { uid: 'ccby', label: 'CC-BY-4.0' },
+          user: { displayName: 'Artist' },
+        }), { 'content-type': 'application/json' });
+      }
+      if (url.startsWith('https://sketchfab-prod-media.s3.eu-west-1.amazonaws.com/')) {
+        return response(200, glb, { 'content-type': 'model/gltf-binary' });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    };
+
+    try {
+      const client = new MotionRemoteAssetClient({
+        stageAssets: async (_projectId, paths) => {
+          expect(await fs.readFile(paths[0])).toEqual(Buffer.from(glb));
+          return {
+            items: [{
+              importId: 'imp_sf', name: 'Sketchfab Thing', sourceName: 'Sketchfab Thing.glb',
+              probeUrl: 'qeda-media://motion-staging/imp_sf', kind: 'model',
+              mimeType: 'model/gltf-binary', byteSize: glb.length, warnings: [],
+            }],
+            errors: [],
+          };
+        },
+        cancelImports: async () => undefined,
+      }, { fetch, tempRoot });
+
+      const result = await client.import('prj_test', {
+        provider: 'sketchfab', assetId: 'abcdef', kind: 'model', variantId: 'glb',
+      });
+
+      expect(result.errors).toEqual([]);
+      expect(result.provenance.imp_sf).toMatchObject({
+        source: 'sketchfab', sourceAssetId: 'abcdef', license: 'CC-BY-4.0', creator: 'Artist',
+      });
+      expect(contacted.some((url) => url.startsWith('https://sketchfab-prod-media.s3.eu-west-1.amazonaws.com/'))).toBe(true);
+      expect(await fs.readdir(tempRoot)).toEqual([]);
+    } finally {
+      delete process.env.SKETCHFAB_API_KEY;
+    }
+  });
 });

@@ -48,12 +48,12 @@ describe('Motion browser', () => {
     render(<MemoryRouter><MotionBrowser /></MemoryRouter>);
     await screen.findByText('Your first scene starts here');
     fireEvent.click(screen.getByRole('button', { name: 'Start from a template' }));
-    fireEvent.click(screen.getByRole('button', { name: /Social loop/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Social ad/ }));
     fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Launch loop' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
 
     await waitFor(() => expect(invokeMock).toHaveBeenCalledWith('motion:create-project', {
-      name: 'Launch loop', templateId: 'social-loop',
+      name: 'Launch loop', templateId: 'social-ad',
     }));
     expect(navigateMock).toHaveBeenCalledWith('/motion/prj_new');
   });

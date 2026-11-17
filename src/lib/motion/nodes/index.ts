@@ -8,6 +8,7 @@
 
 import { cameraPerspective } from './camera';
 import type { MotionNodeTypeDefinition } from './definition';
+import { effectNodes } from './effects';
 import { deviceNodes } from './geometry';
 import { dataNodes } from './data';
 import { graphicNodes } from './graphics';
@@ -61,6 +62,7 @@ export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
   lightDirectional,
   lightPoint,
   lightSpot,
+  ...effectNodes,
 ];
 
 export type { MotionNodeTypeDefinition } from './definition';

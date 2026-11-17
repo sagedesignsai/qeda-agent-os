@@ -53,8 +53,7 @@ describe('Motion editor shell', () => {
   it('composes the scene, preview, timeline and inspector panels', () => {
     render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
-    expect(screen.getByRole('tab', { name: 'Scene' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Assets' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide scene panel' })).toBeInTheDocument();
     expect(
       screen.getByRole('region', { name: 'Motion preview' }),
     ).toBeInTheDocument();
@@ -71,6 +70,8 @@ describe('Motion editor shell', () => {
   it('selects a scene track and edits it through the Motion op registry', () => {
     render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
+    // Tracks live in the collapsible outline section at the bottom of the panel.
+    fireEvent.click(screen.getByRole('button', { name: /^Tracks/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Select Product' }));
     const nameInput = screen.getByLabelText('Track name');
     expect(nameInput).toHaveValue('Product');
@@ -89,6 +90,8 @@ describe('Motion editor shell', () => {
     render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select scene object Product' }));
+    // Device dimensions are node-specific hints, not appearance hints.
+    fireEvent.click(screen.getByRole('button', { name: /Specific Node Controls/ }));
     const widthInput = screen.getByLabelText('Width');
 
     fireEvent.change(widthInput, { target: { value: '4.1' } });
@@ -106,11 +109,15 @@ describe('Motion editor shell', () => {
     ).toBe(4.1);
   });
 
-  it('enables media import now that assets are stored durably', () => {
+  it('binds a durable document asset to a surface through its node controls', () => {
     render(<MotionEditor canUndo={false} canRedo={false} motionProject={mockMotionProject} />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Assets' }));
-    expect(screen.getByRole('button', { name: 'Import media' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Select scene object Dashboard screen' }));
+    fireEvent.click(screen.getByRole('button', { name: /Specific Node Controls/ }));
+
+    // The asset picker is the import surface now that assets live in the
+    // document; the starter bundle already contains the dashboard image.
+    expect(screen.getByRole('button', { name: 'Image' })).toBeEnabled();
     expect(motionStore.getDocument().assets).toHaveLength(1);
   });
 

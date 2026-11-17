@@ -28,6 +28,7 @@ export const MOTION_NODE_CATEGORIES = [
   'camera',
   'scene',
   'stage',
+  'fx',
 ] as const;
 
 export type MotionNodeCategory = (typeof MOTION_NODE_CATEGORIES)[number];
@@ -45,6 +46,7 @@ export const MOTION_CATEGORY_LABELS: Record<MotionNodeCategory, string> = {
   camera: 'Camera',
   scene: 'Containers',
   stage: 'Stage',
+  fx: 'Look & FX',
 };
 
 /**
@@ -54,7 +56,7 @@ export const MOTION_CATEGORY_LABELS: Record<MotionNodeCategory, string> = {
  */
 export type MotionPropertyHint = {
   label?: string;
-  control?: 'text' | 'textarea' | 'number' | 'slider' | 'color' | 'vector3' | 'asset' | 'select' | 'segmented' | 'toggle';
+  control?: 'text' | 'textarea' | 'number' | 'slider' | 'color' | 'vector3' | 'asset' | 'select' | 'segmented' | 'toggle' | 'node';
   min?: number;
   max?: number;
   step?: number;
@@ -62,6 +64,8 @@ export type MotionPropertyHint = {
   assetKind?: MotionAssetKind;
   /** The prop may be absent, so the asset picker offers an explicit "No asset". */
   optional?: boolean;
+  /** Shown as secondary help under the control. */
+  description?: string;
   options?: Array<{ value: string; label: string }>;
 };
 

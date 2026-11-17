@@ -12,8 +12,14 @@ import type { Group, Material, Object3D } from 'three';
 import { evaluateMotionFrame } from '@/lib/motion/evaluate';
 import type { MotionDocument, MotionNode } from '@/lib/motion/types';
 import { getMotionAnimatedPropApplier } from './animated-props';
+import {
+  applyCameraPose,
+  resolveAimTarget,
+  resolveFocusDistance,
+  type MotionCameraView,
+} from './camera-pose';
 
-export type MotionCameraView = 'perspective' | 'front';
+export type { MotionCameraView } from './camera-pose';
 
 export function motionNumberProp(node: MotionNode, key: string, fallback: number): number {
   const value = node.props[key];
@@ -133,39 +139,39 @@ export function applyMotionFrame({
 
   applyOpacity(scene, 1, opacityById);
 
-  const cameraNode = frame.nodes.find((node) => node.type === 'camera.perspective');
+  const cameraNode =
+    (motionScene?.cameraId
+      ? frame.nodes.find((node) => node.id === motionScene.cameraId)
+      : undefined) ?? frame.nodes.find((node) => node.type.startsWith('camera.'));
   if (camera instanceof PerspectiveCamera) {
     const fov = cameraNode ? motionNumberProp(cameraNode, 'fov', camera.fov) : camera.fov;
     const near = cameraNode ? motionNumberProp(cameraNode, 'near', camera.near) : camera.near;
     const far = cameraNode ? motionNumberProp(cameraNode, 'far', camera.far) : camera.far;
-    const zoom = cameraNode ? motionNumberProp(cameraNode, 'zoom', 1) : 1;
+    // The lens zoom lives on the node; the `zoom` argument is the editor's
+    // viewport zoom. Naming the local value `zoom` shadowed the option, so the
+    // viewport control did nothing and the lens zoom was applied twice.
+    const lensZoom = cameraNode ? motionNumberProp(cameraNode, 'zoom', 1) : 1;
     camera.fov = fov;
     camera.near = near;
     camera.far = far;
-    camera.zoom = zoom;
-    const projection = `${fov}:${near}:${far}:${zoom}`;
+    camera.zoom = lensZoom;
+    const projection = `${fov}:${near}:${far}:${lensZoom}`;
     if (!cachedProjection || cachedProjection.current !== projection) {
       camera.updateProjectionMatrix();
       if (cachedProjection) cachedProjection.current = projection;
     }
 
-    if (viewMode === 'front') {
-      camera.position.set(0, 0, 6.1 / zoom);
-      camera.lookAt(0, 0, 0);
-    } else if (cameraNode) {
-      camera.position.set(
-        cameraNode.transform.position[0] / zoom,
-        cameraNode.transform.position[1] / zoom,
-        cameraNode.transform.position[2] / zoom,
-      );
-      camera.lookAt(0, 0, 0);
-      camera.rotateX(cameraNode.transform.rotation[0]);
-      camera.rotateY(cameraNode.transform.rotation[1]);
-      camera.rotateZ(cameraNode.transform.rotation[2]);
-    } else {
-      // No camera node in the document — use the Canvas default position.
-      camera.position.set(3.7 / zoom, 2.7 / zoom, 5.1 / zoom);
-      camera.lookAt(0, 0, 0);
-    }
+    // The aim target must be resolved after transforms were written above: it
+    // reads the target's world matrix, which the node loop just moved.
+    const aimTarget = cameraNode ? resolveAimTarget(cameraNode, groups) : null;
+    applyCameraPose({ camera, node: cameraNode, viewMode, zoom, time, aimTarget });
+
+    // The composer runs at a later `useFrame` priority and reads this snapshot
+    // instead of re-evaluating the timeline. One frame, one evaluation.
+    camera.userData.motionRig = {
+      node: cameraNode ?? null,
+      aimTarget,
+      focusDistance: resolveFocusDistance(cameraNode, aimTarget, camera),
+    };
   }
 }

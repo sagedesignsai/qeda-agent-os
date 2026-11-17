@@ -268,5 +268,54 @@ describe('McpManager', () => {
       expect(disabledStatus?.state).toBe('disabled');
       expect(disabledStatus?.toolsCount).toBe(0);
     });
+
+    it('executes a tool on an MCP server via executeTool', async () => {
+      const server: McpServerSettings = {
+        id: 'exec-server',
+        name: 'Execution Server',
+        enabled: true,
+        transport: 'stdio',
+        command: 'node',
+      };
+      mockSettingsServers = [server];
+
+      const mockExecute = jest.fn().mockResolvedValue({ success: true, count: 42 });
+      (createMCPClient as jest.Mock).mockImplementationOnce(async () => ({
+        tools: jest.fn().mockResolvedValue({
+          run_calc: {
+            description: 'Run calculation',
+            execute: mockExecute,
+          },
+        }),
+        listTools: jest.fn().mockResolvedValue({ tools: [] }),
+        close: jest.fn().mockResolvedValue(undefined),
+      }));
+
+      const result = await mcpManager.executeTool('exec-server', 'run_calc', { x: 10 });
+      expect(result).toEqual({ success: true, count: 42 });
+      expect(mockExecute).toHaveBeenCalledWith(
+        { x: 10 },
+        expect.objectContaining({ toolCallId: expect.any(String) }),
+      );
+    });
+
+    it('throws when executeTool is called for an unconfigured server or unknown tool', async () => {
+      mockSettingsServers = [];
+      await expect(mcpManager.executeTool('missing-server', 'tool_a')).rejects.toThrow(
+        /not configured/,
+      );
+
+      const server: McpServerSettings = {
+        id: 'known-server',
+        name: 'Known Server',
+        enabled: true,
+        transport: 'stdio',
+        command: 'node',
+      };
+      mockSettingsServers = [server];
+      await expect(mcpManager.executeTool('known-server', 'nonexistent_tool')).rejects.toThrow(
+        /not found on MCP server/,
+      );
+    });
   });
 });

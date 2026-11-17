@@ -3,6 +3,7 @@ import { buildTemplate, type TemplateSpec, type MotionTemplate, type MotionTempl
 export type { MotionTemplate, MotionTemplateCategory } from './spec';
 
 import { commerceTemplates } from './commerce';
+import { cinematicTemplates } from './cinematic';
 import { softwareTemplates } from './software';
 import { brandTemplates } from './brand';
 import { dataTemplates } from './data';
@@ -14,6 +15,7 @@ import { causeTemplates } from './cause';
 
 const ALL_SPECS: TemplateSpec[] = [
   ...commerceTemplates,
+  ...cinematicTemplates,
   ...softwareTemplates,
   ...brandTemplates,
   ...dataTemplates,
@@ -32,6 +34,7 @@ export const MOTION_TEMPLATES: readonly MotionTemplate[] = ALL_SPECS.map((spec) 
   duration: spec.scenes.reduce((a, s) => a + s.duration, 0),
   width: spec.width,
   height: spec.height,
+  fps: spec.fps ?? 30,
   sceneCount: spec.scenes.length,
   tags: spec.tags ?? [],
 }));

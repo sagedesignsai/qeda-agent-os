@@ -368,21 +368,11 @@ export class MotionAssetStore {
         errors.push(importError(record?.sourceName ?? commit.importId, importCode(typed.code), typed.message));
       }
     }
-    // Persist the updated document so resolveAsset can find the new assets
-    // immediately, rather than waiting for the renderer's debounced auto-save.
-    if (assets.length > 0) {
-      const updatedDocument = {
-        ...opened.document,
-        revision: opened.document.revision + 1,
-        assets: [...opened.document.assets, ...assets],
-        meta: { ...opened.document.meta, updatedAt: this.now().toISOString() },
-      };
-      try {
-        await this.projects.saveProject(projectId, updatedDocument);
-      } catch {
-        // Save failure is non-fatal: the renderer will save on next auto-save.
-      }
-    }
+    // Committing moves files into the project; it deliberately does not touch the
+    // document. The renderer owns asset references and applies one undoable
+    // `asset.add` batch once this resolves (see use-motion-assets and the
+    // add-node dialog). Writing here would double-add the asset for every caller
+    // and bump the revision behind the store's back.
     return { assets, errors };
   }
 

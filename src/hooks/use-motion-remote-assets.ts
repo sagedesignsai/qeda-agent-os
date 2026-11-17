@@ -23,7 +23,10 @@ import { motionStore } from '@/hooks/use-motion-store';
 
 type ImportProgress = { receivedBytes: number; totalBytes?: number };
 
-export function useMotionRemoteAssets(projectId: string) {
+export function useMotionRemoteAssets(
+  projectId: string,
+  { searchEnabled = true }: { searchEnabled?: boolean } = {},
+) {
   const [provider, setProvider] = useState<MotionRemoteProviderId>('polyhaven');
   const [query, setQuery] = useState('');
   const [kind, setKind] = useState<MotionRemoteAssetKind>('model');
@@ -43,6 +46,14 @@ export function useMotionRemoteAssets(projectId: string) {
   const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
+    // Browsing the local library must not touch the network, so the catalog is
+    // only fetched while its tab is showing. Any in-flight result is retired on
+    // the way out so it cannot land after the tab closes.
+    if (!searchEnabled) {
+      searchSequence.current += 1;
+      setIsSearching(false);
+      return;
+    }
     const sequence = ++searchSequence.current;
     const timer = setTimeout(() => {
       setIsSearching(true);
@@ -72,7 +83,7 @@ export function useMotionRemoteAssets(projectId: string) {
       clearTimeout(timer);
       if (searchSequence.current === sequence) searchSequence.current += 1;
     };
-  }, [provider, query, kind, retryToken]);
+  }, [provider, query, kind, retryToken, searchEnabled]);
 
   useEffect(() => {
     // Variant lists are provider- and kind-specific; a new query can reuse them.
@@ -102,7 +113,9 @@ export function useMotionRemoteAssets(projectId: string) {
     try {
       const result = await window.electron.ipc.invoke<{ variants: MotionRemoteVariant[] }>(
         'motion:remote-asset-variants',
-        { provider, assetId: hit.id, kind: hit.kind },
+        // The hit carries its provider; reading component state here would go
+        // stale as soon as the provider tab changes.
+        { provider: hit.provider, assetId: hit.id, kind: hit.kind },
       );
       setVariants((current) => ({ ...current, [hit.id]: result.variants }));
       return result.variants;
@@ -110,7 +123,7 @@ export function useMotionRemoteAssets(projectId: string) {
       setVariantErrors((current) => ({ ...current, [hit.id]: message(cause) }));
       return [];
     }
-  }, [variants, provider]);
+  }, [variants]);
 
   const importAsset = useCallback(async (hit: MotionRemoteAssetHit, variantId: string): Promise<boolean> => {
     if (!projectId) return false;
@@ -123,7 +136,9 @@ export function useMotionRemoteAssets(projectId: string) {
     try {
       const staged = await window.electron.ipc.invoke<MotionRemoteImportResult>('motion:import-remote-assets', {
         projectId,
-        provider,
+        // Provider comes from the hit, not from component state: this callback
+        // is memoized, so a captured `provider` would be the mount-time value.
+        provider: hit.provider,
         assetId: hit.id,
         kind: hit.kind,
         variantId,
@@ -154,7 +169,7 @@ export function useMotionRemoteAssets(projectId: string) {
       );
       const ops = committed.assets.map((asset) => ({ op: 'asset.add' as const, ...asset }));
       if (ops.length) {
-        const providerName = provider === 'sketchfab' ? 'Sketchfab' : 'Poly Haven';
+        const providerName = hit.provider === 'sketchfab' ? 'Sketchfab' : 'Poly Haven';
         const result = motionStore.commit(`Import ${hit.name} from ${providerName}`, ops);
         if (result.status === 'rejected' || result.status === 'pending') {
           throw result.error ?? new Error('The imported asset could not be added to the document.');

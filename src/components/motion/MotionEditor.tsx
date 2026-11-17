@@ -36,12 +36,6 @@ import { MotionTimeline } from '@/components/motion/MotionTimeline';
 import { MotionViewport } from '@/components/motion/MotionViewport';
 import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -231,61 +225,6 @@ export function MotionEditor({
             <span className="truncate px-0.5 text-[11px] font-medium text-foreground/90">
               {doc.meta.name}
             </span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 max-w-36 px-1.5 text-[11px]"
-                >
-                  <span className="truncate">
-                    {activeScene?.name ?? 'Scene'}
-                  </span>
-                  <span className="ml-0.5 text-[10px] text-muted-foreground">
-                    {doc.timeline.duration.toFixed(1)}s
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                {doc.scenes.map((scene) => (
-                  <DropdownMenuItem
-                    key={scene.id}
-                    onSelect={() =>
-                      motionStore.commit('Switch scene', [
-                        { op: 'document.setActiveScene', sceneId: scene.id },
-                      ])
-                    }
-                  >
-                    {scene.id === doc.activeSceneId ? '\u2713 ' : ''}
-                    {scene.name} \u00b7 {scene.timeline.duration.toFixed(1)}s
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuItem onSelect={() => createScene(false)}>
-                  + New scene
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => createScene(true)}>
-                  Duplicate scene
-                </DropdownMenuItem>
-                {doc.scenes.length > 1 && activeScene && (
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      const confirmation = window.prompt(
-                        `Delete "${activeScene.name}" (${activeScene.timeline.duration.toFixed(1)}s)? Type the scene name to confirm.`,
-                      );
-                      if (confirmation === activeScene.name)
-                        motionStore.commit(
-                          'Delete scene',
-                          [{ op: 'scene.remove', sceneId: activeScene.id }],
-                          { approved: true },
-                        );
-                    }}
-                  >
-                    Delete scene...
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
 
           {/* Command bar — centered, full-width between left and right sections */}

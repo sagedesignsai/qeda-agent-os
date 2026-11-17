@@ -173,9 +173,11 @@ export const MCP_SERVER_PRESETS: McpServerPreset[] = [
     env: {
       BLENDER_HOST: 'localhost',
       BLENDER_PORT: '9876',
+      BLENDER_MCP_SAFE_MODE: '0',
     },
     notes:
-      'Requires Blender 5.x running with the "MCP for Blender" add-on started (Sidebar N -> MCP for Blender -> Connect). ' +
-      'The add-on socket server has no authentication — keep it on localhost.',
+      'Requires Blender 4.x/5.x running with the "MCP for Blender" add-on started (Sidebar N -> MCP for Blender -> Connect). ' +
+      'Set BLENDER_MCP_SAFE_MODE=1 to restrict file and network access in scripts. ' +
+      'For remote sessions, tunnel port 9876 via SSH (ssh -NL 9876:localhost:9876 user@host).',
   },
 ];

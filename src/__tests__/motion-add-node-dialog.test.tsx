@@ -51,7 +51,7 @@ describe('MotionAddNodeDialog', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Add Node' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Devices' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Geometry' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Surfaces & Text' })).toBeInTheDocument();
 
     const searchInput = screen.getByPlaceholderText('Search nodes…');

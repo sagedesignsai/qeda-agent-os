@@ -340,6 +340,56 @@ class McpManager {
   }
 
   /**
+   * Execute an MCP tool on an active or connected server.
+   */
+  async executeTool(
+    serverId: string,
+    toolName: string,
+    args: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    let entry = this.activeClients.get(serverId);
+    if (!entry) {
+      const configured = getSettings().mcpServers ?? [];
+      const server = configured.find((s) => s.id === serverId);
+      if (!server) {
+        throw new Error(`MCP server "${serverId}" is not configured.`);
+      }
+      const { client, tools, toolSummaries } = await this.connectServer(server);
+      entry = {
+        client,
+        tools,
+        toolSummaries,
+        server,
+        connectedAt: Date.now(),
+      };
+      this.activeClients.set(serverId, entry);
+    }
+
+    const tool = entry.tools[toolName];
+    if (!tool) {
+      throw new Error(
+        `Tool "${toolName}" not found on MCP server "${serverId}". Discovered tools: ${Object.keys(entry.tools).join(', ')}`,
+      );
+    }
+
+    if (
+      typeof (tool as { execute?: (...a: unknown[]) => unknown }).execute ===
+      'function'
+    ) {
+      return await (
+        tool as { execute: (...a: unknown[]) => Promise<unknown> }
+      ).execute(args, {
+        messages: [],
+        toolCallId: `call-${Date.now()}`,
+      });
+    }
+
+    throw new Error(
+      `Tool "${toolName}" on server "${serverId}" does not have an execute handler.`,
+    );
+  }
+
+  /**
    * Close all active MCP connections and release process / socket resources.
    */
   async closeAll(): Promise<void> {

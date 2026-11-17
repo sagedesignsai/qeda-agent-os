@@ -17,14 +17,12 @@ import {
   VideoIcon,
   FolderKanbanIcon,
   Trash2Icon,
-  PlusIcon,
   Share2Icon,
   DownloadIcon,
-  ChevronDownIcon,
-  LayersIcon,
   PanelLeft as PanelLeftIcon,
   PanelRight as PanelRightIcon,
   SparklesIcon,
+  Circle,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -58,6 +56,7 @@ import { StudioRecordingBar } from '@/components/studio/StudioRecordingBar';
 import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
 import { StudioContentPanel } from '@/components/studio/content/StudioContentPanel';
 import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
+import { StudioCommandBar } from '@/components/studio/StudioCommandBar';
 import type { ContentItemPayload } from '@/components/studio/content/items/ContentCardItem';
 import {
   compositionDurationMs,
@@ -150,6 +149,7 @@ export default function Studio() {
     string | null
   >(null);
   const [videoCropDialogOpen, setVideoCropDialogOpen] = useState(false);
+  const [commandBarOpen, setCommandBarOpen] = useState(false);
 
   // Content library & inspector panel states & refs
   const [contentPanelCollapsed, setContentPanelCollapsed] = useState(false);
@@ -198,6 +198,41 @@ export default function Studio() {
       titleInputRef.current?.select();
     }
   }, [isEditingTitle]);
+
+  // ── Keyboard Shortcuts ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+        // But still allow Cmd+K to open command bar
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+          e.preventDefault();
+          setCommandBarOpen(true);
+        }
+        return;
+      }
+
+      // Cmd+K / Ctrl+K: Open command bar
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCommandBarOpen(true);
+      }
+
+      // Only handle other shortcuts if we're in an active take
+      if (!activeTake) return;
+
+      // Space: Play/Pause (only if not in an input field)
+      if (e.code === 'Space' && target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        setIsPlaying(!isPlaying);
+        timelineStore.setPlaying(!isPlaying);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTake, isPlaying]);
 
   // Resolve a lightweight streaming URL when the active take changes.
   useEffect(() => {
@@ -703,83 +738,47 @@ export default function Studio() {
               { label: activeTake ? activeTake.title : 'No take selected' },
             ]}
             title={
-              <span className="inline-flex items-center gap-2">
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/30 bg-primary/20 text-primary">
-                  <VideoIcon className="size-3" />
-                </span>
-                <span className="truncate">
-                  {activeTake ? activeTake.title : 'Showcase Studio'}
-                </span>
+              <span className="truncate font-semibold">
+                {activeTake ? activeTake.title : 'Showcase Studio'}
               </span>
             }
-            nav={
-              /* Takes Selector Dropdown — this is the editor's view
-                   switcher, so it belongs in `nav` rather than the action
-                   cluster. */
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 shrink-0 gap-1.5 px-2.5 text-xs font-normal"
-                    aria-label="Switch take"
-                  >
-                    <LayersIcon className="w-3 h-3 text-muted-foreground shrink-0" />
-                    {/* Deliberately not the take title — the heading beside it
-                        already says that. This is the switcher for *other*
-                        takes, so it names the set instead. */}
-                    <span className="hidden sm:inline">
-                      {takes.length === 1 ? '1 take' : `${takes.length} takes`}
-                    </span>
-                    <ChevronDownIcon className="w-3 h-3 opacity-50 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="w-64 max-h-72 overflow-y-auto"
+            nav={null}
+            center={
+              /* Command Bar - Searchable Input */
+              activeTake && (
+                <div
+                  onClick={() => setCommandBarOpen(true)}
+                  className="relative w-96 max-w-md cursor-text"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setCommandBarOpen(true);
+                    }
+                  }}
                 >
-                  {takes.length === 0 ? (
-                    <div className="p-3 text-xs text-muted-foreground text-center">
-                      No recorded takes yet.
-                    </div>
-                  ) : (
-                    takes.map((t) => (
-                      <DropdownMenuItem
-                        key={t.id}
-                        onClick={() => {
-                          loadTake(t.id);
-                          navigate(`/studio/${t.id}`);
-                        }}
-                        className="flex flex-col items-start gap-0.5 text-xs py-2"
-                      >
-                        <span className="font-medium truncate w-full">
-                          {t.title}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {(t.durationMs / 1000).toFixed(1)}s • {t.sourceType}
-                        </span>
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => setSourcePickerOpen(true)}
-                    className="text-xs text-primary gap-2"
+                  <div className="flex items-center gap-2 px-3 py-1.5 h-8 rounded-md bg-secondary/30 border border-secondary/50 hover:border-secondary/70 hover:bg-secondary/40 transition-all duration-200 group"
                   >
-                    <PlusIcon className="w-3.5 h-3.5" />
-                    New Showcase Recording
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            }
-            meta={
-              projectName && (
-                <div className="hidden items-center gap-1 rounded-full border border-border/50 bg-secondary px-2 py-0.5 text-[10px] font-medium text-secondary-foreground lg:flex">
-                  <FolderKanbanIcon className="size-3 shrink-0 text-primary" />
-                  <span className="max-w-[120px] truncate">{projectName}</span>
+                    <span className="text-[10px] opacity-50 font-mono">⌘K</span>
+                    <input
+                      type="text"
+                      placeholder="Commands…"
+                      readOnly
+                      className="flex-1 bg-transparent text-xs text-muted-foreground placeholder-muted-foreground/50 outline-none cursor-pointer"
+                      onClick={() => setCommandBarOpen(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault();
+                          setCommandBarOpen(true);
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               )
             }
+            meta={null}
             actions={
               activeTake && (
                 <>
@@ -821,41 +820,44 @@ export default function Studio() {
 
                   <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border/60" />
 
-                  {/* Recording is the primary command; labels drop below sm
-                      so the row survives a narrow window. */}
+                  {/* Primary AI Actions */}
                   <Button
-                    variant="outline"
+                    variant="default"
                     size="sm"
-                    className="h-7 shrink-0 gap-1.5 px-2.5 text-xs font-medium text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
-                    onClick={() => setSourcePickerOpen(true)}
-                    title="Record a new screen or window take"
+                    className="h-7 shrink-0 gap-1.5 px-3 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+                    onClick={() => {
+                      setCopilotInitialPrompt(null);
+                      setCopilotOpen(true);
+                    }}
+                    title="Open AI Director copilot"
                   >
-                    <span className="size-2 shrink-0 animate-pulse rounded-full bg-rose-500" />
-                    <span className="hidden sm:inline">Record Take</span>
+                    <SparklesIcon className="w-3.5 h-3.5 transition-transform duration-300 group-hover:animate-spin" />
+                    <span>AI Director</span>
                   </Button>
 
-                  {/* Three secondary commands plus delete collapse into one
-                      overflow menu rather than six inline buttons. */}
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-7 shrink-0 gap-1.5 px-3 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+                    onClick={handleOpenSocialKit}
+                    disabled={isGeneratingSocialKit}
+                    title="Generate social media release kit"
+                  >
+                    <Share2Icon className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Release Kit</span>
+                    <span className="sm:hidden">Kit</span>
+                  </Button>
+
+                  <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border/60" />
+
+                  {/* Remaining secondary commands in overflow menu */}
                   <OverflowMenu
                     label="More studio actions"
                     items={[
                       {
-                        label: 'AI Director',
-                        icon: (
-                          <SparklesIcon className="size-3.5 text-indigo-400" />
-                        ),
-                        onSelect: () => {
-                          setCopilotInitialPrompt(null);
-                          setCopilotOpen(true);
-                        },
-                      },
-                      {
-                        label: 'Release Kit',
-                        icon: (
-                          <Share2Icon className="size-3.5 text-indigo-400" />
-                        ),
-                        disabled: isGeneratingSocialKit,
-                        onSelect: handleOpenSocialKit,
+                        label: 'Record Take',
+                        icon: <Circle className="size-3.5 text-rose-500 fill-rose-500" />,
+                        onSelect: () => setSourcePickerOpen(true),
                       },
                       {
                         label: 'Export MP4',
@@ -899,13 +901,13 @@ export default function Studio() {
                 <ResizablePanel
                   id="studio-content-panel"
                   panelRef={leftPanelRef}
-                  defaultSize="22%"
-                  minSize="15%"
-                  maxSize="35%"
+                  defaultSize="20%"
+                  minSize="14%"
+                  maxSize="32%"
                   collapsible
-                  collapsedSize="48px"
+                  collapsedSize="44px"
                   onResize={(size) => {
-                    setContentPanelCollapsed(size.inPixels <= 52);
+                    setContentPanelCollapsed(size.inPixels <= 48);
                   }}
                   className="flex flex-col min-w-0 overflow-hidden"
                 >
@@ -928,9 +930,9 @@ export default function Studio() {
                   maxSize="80%"
                   className="flex flex-col overflow-hidden min-w-0"
                 >
-                  <main className="flex-1 flex flex-col p-2 md:p-3 overflow-hidden items-center justify-between gap-2 h-full w-full">
-                    {/* Editable Title Bar */}
-                    <div className="w-full flex items-center justify-between px-2 shrink-0">
+                  <main className="flex-1 flex flex-col p-2 md:p-3 overflow-hidden items-center justify-between gap-1.5 h-full w-full">
+                    {/* Canvas Header: Title + Source Info (Dense Layout) */}
+                    <div className="w-full flex items-center justify-between px-2 shrink-0 py-1.5 rounded-md bg-background/40 border border-border/30 hover:border-border/50 transition-all duration-200">
                       {isEditingTitle ? (
                         <Input
                           ref={titleInputRef}
@@ -940,7 +942,9 @@ export default function Studio() {
                           onKeyDown={(e) =>
                             e.key === 'Enter' && handleTitleSubmit()
                           }
-                          className="h-8 text-sm font-semibold max-w-sm"
+                          className="h-7 text-sm font-semibold max-w-xs px-2 py-1 bg-primary/5 border-primary/30 focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
+                          placeholder="Take title..."
+                          autoFocus
                         />
                       ) : (
                         <button
@@ -949,22 +953,24 @@ export default function Studio() {
                             setTitleInput(activeTake.title);
                             setIsEditingTitle(true);
                           }}
-                          className="text-sm font-semibold hover:text-primary cursor-pointer transition-colors flex items-center gap-1.5 bg-transparent border-0 p-0 text-left"
-                          title="Click to rename take"
+                          className="flex-1 text-left flex items-center gap-2 px-2 py-1 rounded transition-all duration-150 hover:bg-primary/5 group"
+                          title="Click to edit take title"
                         >
-                          <span>{activeTake.title}</span>
-                          <span className="text-[10px] text-muted-foreground font-normal">
-                            (edit)
+                          <span className="text-sm font-semibold text-foreground truncate">
+                            {activeTake.title}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
+                            edit
                           </span>
                         </button>
                       )}
 
-                      <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <span className="capitalize">
-                          {activeTake.sourceType} Capture
+                      <div className="flex items-center gap-2 ml-auto pl-2 text-xs text-muted-foreground shrink-0 font-mono transition-colors duration-200">
+                        <span className="hidden sm:inline capitalize opacity-75">
+                          {activeTake.sourceType}
                         </span>
-                        <span>•</span>
-                        <span>
+                        <span className="text-border/50">•</span>
+                        <span className="font-medium">
                           {(activeTake.durationMs / 1000).toFixed(1)}s
                         </span>
                       </div>
@@ -1002,13 +1008,13 @@ export default function Studio() {
                 <ResizablePanel
                   id="studio-inspector-panel"
                   panelRef={rightPanelRef}
-                  defaultSize="22%"
-                  minSize="15%"
-                  maxSize="35%"
+                  defaultSize="20%"
+                  minSize="14%"
+                  maxSize="32%"
                   collapsible
                   collapsedSize="0px"
                   onResize={(size) => {
-                    setInspectorCollapsed(size.inPixels <= 20);
+                    setInspectorCollapsed(size.inPixels <= 16);
                   }}
                   className="flex flex-col min-w-0 overflow-hidden"
                 >
@@ -1100,6 +1106,46 @@ export default function Studio() {
           initialPrompt={copilotInitialPrompt}
           onInitialPromptHandled={() => setCopilotInitialPrompt(null)}
           onChanged={() => loadTake(activeTake.id)}
+        />
+      )}
+
+      {/* ── Studio Command Bar ─────────────────────────────────────────────── */}
+      {activeTake && (
+        <StudioCommandBar
+          open={commandBarOpen}
+          onOpenChange={setCommandBarOpen}
+          isPlaying={isPlaying}
+          contentLibraryOpen={!contentPanelCollapsed}
+          inspectorOpen={!inspectorCollapsed}
+          onToggleContentLibrary={toggleLeftPanel}
+          onToggleInspector={toggleRightPanel}
+          onTogglePlayback={handleTogglePlayback}
+          onRestartPlayback={handleRestartPlayback}
+          onZoomToFit={() => {
+            /* Placeholder for zoom to fit */
+          }}
+          onRecord={() => setSourcePickerOpen(true)}
+          onExport={() => void exportVideo('mp4')}
+          onSocialKit={handleOpenSocialKit}
+          onMagicDraft={handleRunMagicDraftViaCopilot}
+          onAIDirector={() => {
+            setCopilotInitialPrompt(null);
+            setCopilotOpen(true);
+          }}
+          onSelectTool={() => {
+            /* Set select tool on timeline */
+          }}
+          onBladeTool={() => {
+            /* Set blade tool on timeline */
+          }}
+          onSplitAtPlayhead={() => {
+            /* Split at playhead */
+          }}
+          onDeleteClip={() => {
+            /* Delete selected clip */
+          }}
+          activeTool="select"
+          selectedClipId={null}
         />
       )}
     </div>

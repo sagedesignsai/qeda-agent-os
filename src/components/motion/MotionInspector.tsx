@@ -21,6 +21,7 @@ import { ModelPartsPanel } from '@/components/motion/inspector/ModelPartsPanel';
 import { MotionPropertyFields } from '@/components/motion/inspector/MotionPropertyFields';
 import { TransformControls } from '@/components/motion/inspector/controls/transform-controls';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Collapsible,
   CollapsibleContent,
@@ -41,9 +42,12 @@ import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
 import { createMotionAutoKeyOps } from '@/lib/motion/auto-key';
 import { EASING_PRESETS, easingLabel } from '@/lib/motion/easing';
+import { evaluateMotionFrame } from '@/lib/motion/evaluate';
 import { readGltfAssetMetadata } from '@/lib/motion/gltf-structure';
 import { getMotionNodeType, hasAnimatableProperty } from '@/lib/motion/node-registry';
 import type { MotionPropertyHint } from '@/lib/motion/node-registry';
+import { expandCameraMove, listCameraMoves } from '@/lib/motion/moves';
+import { motionWorldPosition } from '@/lib/motion/transforms';
 import { findClip, findTrack } from '@/lib/motion/types';
 import type { MotionOpRequest } from '@/lib/motion/ops';
 import type { MotionEasing, MotionVector3 } from '@/lib/motion/types';
@@ -57,7 +61,13 @@ const RESOLUTIONS = [
 
 const FPS_OPTIONS = [24, 30, 60];
 
-type InspectorSectionId = 'selection' | 'transform' | 'appearance' | 'node' | 'output';
+type InspectorSectionId =
+  | 'selection'
+  | 'transform'
+  | 'appearance'
+  | 'node'
+  | 'moves'
+  | 'output';
 
 /**
  * One row of the inspector accordion. The panel keeps exactly one section open
@@ -691,6 +701,8 @@ export function MotionInspector() {
                     hints={nodeHints}
                     values={targetPropertyValues}
                     assets={doc.assets}
+                    nodes={doc.scene.nodes}
+                    excludeNodeId={targetNode.id}
                     mixedProperties={mixedPropertyIds}
                     idPrefix={`motion-node-${targetNode.id}`}
                     disabled={targetNode.locked}
@@ -713,6 +725,66 @@ export function MotionInspector() {
                     );
                   })()}
               </div>
+            </InspectorSection>
+          )}
+          {targetNode?.type.startsWith('camera.') && (
+            <InspectorSection
+              title="Camera moves"
+              icon={<ClapperboardIcon className="size-3.5 text-muted-foreground" />}
+              meta={<span className="text-[9px] text-muted-foreground">from current pose</span>}
+              {...sectionProps('moves')}
+            >
+              <div className="grid grid-cols-2 gap-1.5">
+                {listCameraMoves().map((move) => (
+                  <Button
+                    key={move.id}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    title={move.description}
+                    disabled={targetNode.locked}
+                    className="h-auto min-h-12 flex-col items-start gap-0.5 whitespace-normal px-2 py-1.5 text-left"
+                    onClick={() => {
+                      const targetId =
+                        typeof targetNode.props.targetId === 'string'
+                          ? targetNode.props.targetId
+                          : undefined;
+                      const playhead = motionStore.clock.getTime();
+                      // Plan from what the camera actually shows at the playhead,
+                      // not its authored rest pose: applying a move mid-animation
+                      // must not pop on the first frame. The aim target's world
+                      // position becomes the pivot, so moves arc around the subject.
+                      const frame = evaluateMotionFrame(
+                        { id: doc.activeSceneId, nodes: doc.scene.nodes, timeline: doc.timeline },
+                        playhead,
+                      );
+                      const camera = frame.nodes.find((node) => node.id === targetNode.id) ?? targetNode;
+                      const pivot = targetId ? motionWorldPosition(frame.nodes, targetId) : null;
+                      runCommit(`Camera move: ${move.label}`, expandCameraMove(
+                        move.id,
+                        {
+                          cameraId: targetNode.id,
+                          from: camera.transform,
+                          targetId: targetId ?? undefined,
+                          pivot,
+                          start: playhead,
+                          duration: 2.5,
+                        },
+                        createMotionId,
+                      ));
+                    }}
+                  >
+                    <span className="text-[11px] font-medium">{move.label}</span>
+                    <span className="text-[9px] leading-tight text-muted-foreground">
+                      {move.description}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                Moves animate from the camera's pose at the playhead, pivot on its aim
+                target, and land as ordinary keyframes you can keep editing.
+              </p>
             </InspectorSection>
           )}
           {!selectedData && !targetNode && (

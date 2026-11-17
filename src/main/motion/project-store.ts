@@ -12,7 +12,7 @@ import path from 'node:path';
 
 import { createStarterMotionDocument } from '../../lib/motion/defaults';
 import { parseMotionDocument, serializeMotionDocument } from '../../lib/motion/schema';
-import type { MotionDocument } from '../../lib/motion/types';
+import { MOTION_SCHEMA_VERSION, type MotionDocument } from '../../lib/motion/types';
 import type { MotionProjectIndex, MotionProjectIndexRow } from './project-index.js';
 // v8 exports the writer as module.exports; a named `writeFile` import is undefined in Electron's bundle.
 import writeFileAtomic from 'write-file-atomic';
@@ -149,14 +149,14 @@ export class MotionProjectStore {
     try {
       const raw = JSON.parse(await fs.readFile(canonicalPath, 'utf8')) as Record<string, unknown>;
       const schemaVersion = typeof raw.schemaVersion === 'number' ? raw.schemaVersion : 0;
-      newerSchema = schemaVersion > 4;
+      newerSchema = schemaVersion > MOTION_SCHEMA_VERSION;
       if (newerSchema) {
         throw new MotionProjectError(
           `This project was made with a newer version of Motion (schema ${schemaVersion}). Update the app to open it.`,
           'MOTION_PROJECT_NEWER_SCHEMA',
         );
       }
-      migrated = schemaVersion < 4;
+      migrated = schemaVersion < MOTION_SCHEMA_VERSION;
       document = parseMotionDocument(raw);
       canonicalRevision = document.revision;
     } catch (error) {

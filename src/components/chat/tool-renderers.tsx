@@ -30,6 +30,11 @@ import {
   BoxIcon,
   Layers3Icon,
   WandSparklesIcon,
+  EyeIcon,
+  CodeIcon,
+  DownloadIcon,
+  CheckIcon,
+  CopyIcon,
 } from 'lucide-react';
 import {
   Sources,
@@ -942,7 +947,9 @@ export function BlenderAssetCard({ output }: { output: Output }) {
         ? 'Template'
         : asString(output.source) === 'import'
           ? 'Imported'
-          : 'Blender';
+          : asString(output.source) === 'mcp-sync'
+            ? 'Live Blender'
+            : 'Blender';
 
   return (
     <CardShell className="w-full max-w-md">
@@ -991,6 +998,443 @@ export function BlenderAssetCard({ output }: { output: Output }) {
   );
 }
 
+// ─── Live Blender MCP Tool Renderers ─────────────────────────────────────────
+
+export function BlenderLookCard({
+  output,
+  input = {},
+}: {
+  output: Output;
+  input?: Record<string, unknown>;
+}) {
+  const mode = asString(output.mode) || asString(input.mode) || 'viewport';
+  const shading = asString(output.shading) || asString(input.shading);
+  const target = asArray<string>(output.target ?? input.target);
+
+  let imgSrc = asString(output.image) || asString(output.previewUrl) || asString(output.data);
+  if (!imgSrc) {
+    const content = asArray<{ type?: string; data?: string; mimeType?: string }>(output.content);
+    const imgItem = content.find((c) => c && c.type === 'image' && c.data);
+    if (imgItem?.data) {
+      imgSrc = `data:${imgItem.mimeType || 'image/png'};base64,${imgItem.data}`;
+    }
+  } else if (
+    imgSrc &&
+    !imgSrc.startsWith('data:') &&
+    !imgSrc.startsWith('http') &&
+    !imgSrc.startsWith('blob:') &&
+    !imgSrc.startsWith('/')
+  ) {
+    imgSrc = `data:image/png;base64,${imgSrc}`;
+  }
+
+  const stats = (output.stats && typeof output.stats === 'object' ? output.stats : {}) as Output;
+  const tris = asNumber(stats.tris ?? output.tris);
+  const quads = asNumber(stats.quads ?? output.quads);
+  const ngons = asNumber(stats.ngons ?? output.ngons);
+  const nonManifold = asNumber(stats.non_manifold ?? output.non_manifold);
+  const looseVerts = asNumber(stats.loose_vertices ?? output.loose_vertices);
+  const hasTopologyStats = tris !== undefined || quads !== undefined || ngons !== undefined;
+
+  return (
+    <CardShell className="w-full max-w-lg">
+      <CardHeader
+        icon={<EyeIcon className="size-4" />}
+        label="Blender Scene View"
+        meta={
+          <>
+            <Badge variant="secondary" className="text-xs capitalize">
+              {mode}
+            </Badge>
+            {shading && (
+              <Badge variant="outline" className="text-xs capitalize">
+                {shading}
+              </Badge>
+            )}
+            {target.length > 0 && (
+              <Badge variant="outline" className="text-xs truncate max-w-[120px]">
+                {target.join(', ')}
+              </Badge>
+            )}
+          </>
+        }
+      />
+      {imgSrc ? (
+        <div className="relative bg-black/60 flex items-center justify-center overflow-hidden">
+          <img
+            src={imgSrc}
+            alt={`Blender ${mode} view`}
+            loading="lazy"
+            className="max-h-80 w-full object-contain"
+          />
+        </div>
+      ) : (
+        <div className="p-3 text-xs text-muted-foreground">
+          {asString(output.message) || 'Image view captured.'}
+        </div>
+      )}
+      {hasTopologyStats && (
+        <div className="grid grid-cols-4 gap-2 border-t bg-muted/20 px-3 py-2 text-xs">
+          {tris !== undefined && (
+            <div>
+              <span className="text-muted-foreground block text-[10px]">Tris</span>
+              <span className="font-mono font-medium">{tris.toLocaleString()}</span>
+            </div>
+          )}
+          {quads !== undefined && (
+            <div>
+              <span className="text-muted-foreground block text-[10px]">Quads</span>
+              <span className="font-mono font-medium">{quads.toLocaleString()}</span>
+            </div>
+          )}
+          {ngons !== undefined && (
+            <div>
+              <span className="text-muted-foreground block text-[10px]">Ngons</span>
+              <span className={cn('font-mono font-medium', ngons > 0 ? 'text-amber-500' : '')}>
+                {ngons.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {nonManifold !== undefined && (
+            <div>
+              <span className="text-muted-foreground block text-[10px]">Non-manifold</span>
+              <span className={cn('font-mono font-medium', nonManifold > 0 ? 'text-red-500' : '')}>
+                {nonManifold.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {looseVerts !== undefined && looseVerts > 0 && (
+            <div>
+              <span className="text-muted-foreground block text-[10px]">Loose Verts</span>
+              <span className="font-mono font-medium text-amber-500">{looseVerts}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </CardShell>
+  );
+}
+
+export function BlenderCodeCard({
+  input,
+  output,
+}: {
+  input: Record<string, unknown>;
+  output: Output;
+}) {
+  const code = asString(input.code);
+  const result = asString(output.result) || asString(output.stdout) || (typeof output === 'string' ? output : '');
+  const stderr = asString(output.stderr) || asString(output.error);
+  const [copied, setCopied] = useState(false);
+  const [showCode, setShowCode] = useState(true);
+
+  const copyCode = () => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <CardShell className="w-full max-w-lg font-mono text-xs">
+      <CardHeader
+        icon={<CodeIcon className="size-4" />}
+        label="Blender Python (bpy)"
+        meta={
+          <div className="flex items-center gap-1.5">
+            <Badge variant="secondary" className="text-[10px] font-sans">
+              executed
+            </Badge>
+            <button
+              type="button"
+              onClick={copyCode}
+              title="Copy code"
+              className="rounded p-1 hover:bg-muted text-muted-foreground hover:text-foreground"
+            >
+              {copied ? <CheckIcon className="size-3 text-emerald-500" /> : <CopyIcon className="size-3" />}
+            </button>
+          </div>
+        }
+      />
+      {code && (
+        <div className="relative border-b bg-muted/40 p-2.5">
+          <div className="flex items-center justify-between pb-1 text-[10px] font-sans text-muted-foreground">
+            <span>Script</span>
+            <button
+              type="button"
+              onClick={() => setShowCode(!showCode)}
+              className="text-[10px] hover:underline"
+            >
+              {showCode ? 'collapse' : 'expand'}
+            </button>
+          </div>
+          {showCode && (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-[11px] leading-relaxed text-foreground/90">
+              {code}
+            </pre>
+          )}
+        </div>
+      )}
+      {(result || stderr) && (
+        <div className="bg-background/80 p-2.5">
+          <span className="block pb-1 text-[10px] font-sans text-muted-foreground">Console Output</span>
+          {result && (
+            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all text-[11px] text-emerald-600 dark:text-emerald-400">
+              {result}
+            </pre>
+          )}
+          {stderr && (
+            <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-all text-[11px] text-red-500">
+              {stderr}
+            </pre>
+          )}
+        </div>
+      )}
+    </CardShell>
+  );
+}
+
+export function BlenderSceneInfoCard({
+  output,
+  input = {},
+}: {
+  output: Output;
+  input?: Record<string, unknown>;
+}) {
+  const objects = asArray<Record<string, unknown>>(output.objects);
+  const textSummary = asString(output.text) || asString(output.summary) || asString(output.result);
+  const query = asString(input.query) || asString(input.root);
+
+  return (
+    <CardShell className="w-full max-w-lg">
+      <CardHeader
+        icon={<Layers3Icon className="size-4" />}
+        label="Blender Scene Hierarchy"
+        meta={
+          <>
+            {query && (
+              <Badge variant="outline" className="text-xs">
+                {query}
+              </Badge>
+            )}
+            <Badge variant="secondary" className="text-xs">
+              {objects.length > 0 ? `${objects.length} objects` : 'Scene info'}
+            </Badge>
+          </>
+        }
+      />
+      {objects.length > 0 ? (
+        <div className="max-h-60 overflow-y-auto divide-y divide-border/40 text-xs">
+          {objects.map((obj, i) => {
+            const name = asString(obj.name) || `Object ${i + 1}`;
+            const dims = asArray<number>(obj.dimensions);
+            const grounded = obj.grounded === true || obj.is_grounded === true;
+            const faces = asNumber(obj.face_count ?? obj.faces);
+            const materials = asArray<string>(obj.materials);
+
+            return (
+              <div key={i} className="flex items-center justify-between p-2 hover:bg-muted/30">
+                <div className="flex flex-col gap-0.5 truncate">
+                  <span className="font-medium truncate">{name}</span>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    {dims.length >= 3 && (
+                      <span>
+                        {dims[0].toFixed(2)}m × {dims[1].toFixed(2)}m × {dims[2].toFixed(2)}m
+                      </span>
+                    )}
+                    {faces !== undefined && <span>{faces.toLocaleString()} faces</span>}
+                    {materials.length > 0 && <span>mat: {materials.join(', ')}</span>}
+                  </div>
+                </div>
+                <div>
+                  {obj.grounded !== undefined && (
+                    <Badge
+                      variant={grounded ? 'outline' : 'secondary'}
+                      className={cn(
+                        'text-[10px]',
+                        grounded ? 'border-emerald-500/40 text-emerald-500' : 'text-amber-500',
+                      )}
+                    >
+                      {grounded ? 'Grounded' : 'Floating'}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : textSummary ? (
+        <pre className="max-h-56 overflow-auto p-2.5 font-mono text-[11px] whitespace-pre-wrap bg-muted/20">
+          {textSummary}
+        </pre>
+      ) : (
+        <p className="p-3 text-xs text-muted-foreground">Scene inspected successfully.</p>
+      )}
+    </CardShell>
+  );
+}
+
+export function BlenderAssetsCard({
+  output,
+  input = {},
+}: {
+  output: Output;
+  input?: Record<string, unknown>;
+}) {
+  const source = asString(input.source) || asString(output.source) || 'library';
+  const query = asString(input.query) || asString(output.query);
+  const results = asArray<Record<string, unknown>>(output.results ?? output.assets);
+
+  return (
+    <CardShell className="w-full max-w-lg">
+      <CardHeader
+        icon={<SearchIcon className="size-4" />}
+        label="3D Asset Search"
+        meta={
+          <>
+            <Badge variant="secondary" className="text-xs uppercase">
+              {source}
+            </Badge>
+            {results.length > 0 && (
+              <Badge variant="outline" className="text-xs">
+                {results.length} found
+              </Badge>
+            )}
+          </>
+        }
+      />
+      {query && (
+        <div className="border-b bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+          Query: <span className="font-medium text-foreground">"{query}"</span>
+        </div>
+      )}
+      {results.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2 p-2.5 max-h-72 overflow-y-auto">
+          {results.slice(0, 10).map((item, i) => {
+            const id = asString(item.id) || asString(item.uid) || `${i}`;
+            const name = asString(item.name) || asString(item.title) || id;
+            const preview = asString(item.preview) || asString(item.thumbnail);
+            const licence = asString(item.licence) || asString(item.license);
+
+            return (
+              <div
+                key={id}
+                className="flex flex-col overflow-hidden rounded-md border border-border/60 bg-muted/10 p-1.5 text-xs"
+              >
+                {preview && (
+                  <img
+                    src={preview}
+                    alt={name}
+                    loading="lazy"
+                    className="h-24 w-full rounded object-cover bg-black/20 mb-1.5"
+                  />
+                )}
+                <span className="font-medium truncate text-[11px]" title={name}>
+                  {name}
+                </span>
+                <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span className="truncate max-w-[90px] font-mono">{id}</span>
+                  {licence && <Badge variant="outline" className="text-[9px] px-1 py-0">{licence}</Badge>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="p-3 text-xs text-muted-foreground">
+          {asString(output.message) || 'No assets found matching the query.'}
+        </p>
+      )}
+    </CardShell>
+  );
+}
+
+export function BlenderImportCard({
+  output,
+  input = {},
+}: {
+  output: Output;
+  input?: Record<string, unknown>;
+}) {
+  const source = asString(input.source) || asString(output.source) || 'library';
+  const id = asString(input.id) || asString(output.id);
+  const targetSize = asNumber(input.target_size);
+  const applyTo = asArray<string>(input.apply_to);
+
+  return (
+    <CardShell className="w-full max-w-md">
+      <CardHeader
+        icon={<DownloadIcon className="size-4" />}
+        label="Blender Asset Imported"
+        meta={
+          <Badge variant="secondary" className="text-xs uppercase">
+            {source}
+          </Badge>
+        }
+      />
+      <div className="p-3 text-xs space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Asset ID:</span>
+          <span className="font-mono font-medium truncate max-w-[200px]">{id}</span>
+        </div>
+        {targetSize !== undefined && (
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Target Size:</span>
+            <span>{targetSize} m</span>
+          </div>
+        )}
+        {applyTo.length > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Applied to:</span>
+            <span className="truncate max-w-[200px]">{applyTo.join(', ')}</span>
+          </div>
+        )}
+        <div className="pt-1 text-emerald-600 dark:text-emerald-400 font-medium text-[11px]">
+          ✓ Imported into Blender session
+        </div>
+      </div>
+    </CardShell>
+  );
+}
+
+export function BlenderGuideCard({
+  output,
+  input = {},
+}: {
+  output: Output;
+  input?: Record<string, unknown>;
+}) {
+  const topic = asString(input.topic) || asString(output.topic) || 'Blender';
+  const guideText = asString(output.guide) || asString(output.content) || asString(output.result);
+
+  return (
+    <CardShell className="w-full max-w-lg">
+      <CardHeader
+        icon={<BookOpenIcon className="size-4" />}
+        label="Blender Workflow Guide"
+        meta={
+          <Badge variant="secondary" className="text-xs capitalize">
+            {topic}
+          </Badge>
+        }
+      />
+      <div className="p-3 text-xs space-y-2">
+        <p className="text-muted-foreground">
+          Loaded craft guide for <span className="font-medium text-foreground">{topic}</span> into agent context.
+        </p>
+        {guideText && (
+          <details className="text-[11px] text-muted-foreground">
+            <summary className="cursor-pointer hover:underline py-1">View guide details</summary>
+            <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap rounded bg-muted/30 p-2 font-mono text-[10px]">
+              {guideText}
+            </pre>
+          </details>
+        )}
+      </div>
+    </CardShell>
+  );
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /** Tool names that have a purpose-built renderer. */
@@ -998,6 +1442,20 @@ export const SPECIALIZED_TOOLS = new Set([
   'blender_asset_generate',
   'blender_asset_import',
   'blenderSpecialist_buildAsset',
+  'blender_session_sync',
+  'blender.session.sync',
+  'execute_blender_code',
+  'mcp_blender_execute_blender_code',
+  'look',
+  'mcp_blender_look',
+  'get_scene_info',
+  'mcp_blender_get_scene_info',
+  'search_assets',
+  'mcp_blender_search_assets',
+  'import_asset',
+  'mcp_blender_import_asset',
+  'get_guide',
+  'mcp_blender_get_guide',
   'motion_scene_director',
   'motion_node_builder',
   'motion_procedural_modeling',
@@ -1039,7 +1497,27 @@ export function renderSpecializedTool(
     case 'blender_asset_generate':
     case 'blender_asset_import':
     case 'blenderSpecialist_buildAsset':
+    case 'blender_session_sync':
+    case 'blender.session.sync':
       return <BlenderAssetCard output={data} />;
+    case 'look':
+    case 'mcp_blender_look':
+      return <BlenderLookCard output={data} input={input} />;
+    case 'execute_blender_code':
+    case 'mcp_blender_execute_blender_code':
+      return <BlenderCodeCard output={data} input={input} />;
+    case 'get_scene_info':
+    case 'mcp_blender_get_scene_info':
+      return <BlenderSceneInfoCard output={data} input={input} />;
+    case 'search_assets':
+    case 'mcp_blender_search_assets':
+      return <BlenderAssetsCard output={data} input={input} />;
+    case 'import_asset':
+    case 'mcp_blender_import_asset':
+      return <BlenderImportCard output={data} input={input} />;
+    case 'get_guide':
+    case 'mcp_blender_get_guide':
+      return <BlenderGuideCard output={data} input={input} />;
     case 'motion_scene_director':
       return <MotionPlanCard output={data} namespace="motion.scene.director" />;
     case 'motion_node_builder':

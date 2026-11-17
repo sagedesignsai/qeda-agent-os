@@ -10,8 +10,10 @@
  * the standard asset pipeline — no network required.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { app } from 'electron';
 
 export type MotionLocalModelEntry = {
   id: string;
@@ -39,31 +41,42 @@ export type MotionLocalModelEntry = {
 };
 
 let _catalog: MotionLocalModelEntry[] | null = null;
+let _modelsDirectory: string | null | undefined;
+
+/**
+ * Directory holding `catalog.json` and the GLB files next to it.
+ *
+ * Packaged: electron-builder copies `assets/**` into the app's resources folder.
+ * Dev: the main bundle lives in `release/app/dist/main`, so the bundle directory
+ * says nothing about where the repo root is — Electron's app path is the repo
+ * root under electron-vite, with the process cwd as a last resort.
+ */
+function modelsDirectory(): string | null {
+  if (_modelsDirectory !== undefined) return _modelsDirectory;
+
+  const candidates: string[] = [];
+  if (app?.isPackaged) candidates.push(join(process.resourcesPath, 'assets', 'models'));
+  try {
+    const appPath = app?.getAppPath?.();
+    if (appPath) candidates.push(join(appPath, 'assets', 'models'));
+  } catch {
+    // Some Electron test doubles do not implement getAppPath().
+  }
+  candidates.push(join(process.cwd(), 'assets', 'models'));
+
+  for (const directory of candidates) {
+    if (existsSync(join(directory, 'catalog.json'))) return (_modelsDirectory = directory);
+  }
+  return (_modelsDirectory = null);
+}
 
 function loadCatalog(): MotionLocalModelEntry[] {
   if (_catalog) return _catalog;
-
-  // In production, assets/ is bundled in the app.asar.
-  // In dev, resolve relative to the source root.
-  let catalogPath: string | null = null;
-
-  // Try the release path first (production)
-  try {
-    catalogPath = join(process.resourcesPath, 'assets', 'models', 'catalog.json');
-    readFileSync(catalogPath, 'utf8');
-  } catch {
-    // Fall back to dev path
-    try {
-      catalogPath = join(__dirname, '..', '..', '..', 'assets', 'models', 'catalog.json');
-      readFileSync(catalogPath, 'utf8');
-    } catch {
-      // If neither works, return empty
-      return (_catalog = []);
-    }
-  }
+  const directory = modelsDirectory();
+  if (!directory) return (_catalog = []);
 
   try {
-    const raw = readFileSync(catalogPath!, 'utf8');
+    const raw = readFileSync(join(directory, 'catalog.json'), 'utf8');
     const parsed = JSON.parse(raw) as { models: MotionLocalModelEntry[] };
     return (_catalog = parsed.models ?? []);
   } catch {
@@ -86,18 +99,16 @@ export function resolveLocalModelPath(modelId: string): string | null {
   const model = loadCatalog().find((m) => m.id === modelId);
   if (!model) return null;
 
-  let basePath: string | null = null;
-  try {
-    basePath = join(process.resourcesPath, 'assets', 'models');
-    readFileSync(join(basePath, model.relativePath));
-  } catch {
-    try {
-      basePath = join(__dirname, '..', '..', '..', 'assets', 'models');
-      readFileSync(join(basePath, model.relativePath));
-    } catch {
-      return null;
-    }
-  }
+  const directory = modelsDirectory();
+  if (!directory) return null;
 
-  return join(basePath!, model.relativePath);
+  const modelPath = join(directory, model.relativePath);
+  try {
+    // Preview requests hit this per range request, so stat instead of reading
+    // the whole GLB just to prove it exists.
+    if (!statSync(modelPath).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return modelPath;
 }

@@ -194,6 +194,47 @@ function getFriendlyToolSummary(
       title = domain ? `Scraping ${domain}` : 'Scraping webpage';
       break;
     }
+    case 'execute_blender_code':
+    case 'mcp_blender_execute_blender_code':
+      title = 'Execute Python in Blender';
+      break;
+    case 'look':
+    case 'mcp_blender_look': {
+      const mode = typeof input.mode === 'string' ? input.mode : 'viewport';
+      title = `Capture Blender ${mode} view`;
+      break;
+    }
+    case 'get_scene_info':
+    case 'mcp_blender_get_scene_info':
+      title = 'Inspect Blender scene hierarchy';
+      break;
+    case 'search_assets':
+    case 'mcp_blender_search_assets': {
+      const src = typeof input.source === 'string' ? input.source : '3D';
+      const q = typeof input.query === 'string' ? ` "${input.query}"` : '';
+      title = `Search ${src} assets${q}`;
+      break;
+    }
+    case 'import_asset':
+    case 'mcp_blender_import_asset': {
+      const src = typeof input.source === 'string' ? input.source : '3D';
+      title = `Import asset from ${src}`;
+      break;
+    }
+    case 'get_guide':
+    case 'mcp_blender_get_guide': {
+      const topic = typeof input.topic === 'string' ? input.topic : '';
+      title = topic ? `Load Blender guide: ${topic}` : 'Load Blender workflow guide';
+      break;
+    }
+    case 'generate_3d':
+    case 'mcp_blender_generate_3d':
+      title = 'Generate 3D model with AI';
+      break;
+    case 'blender_session_sync':
+    case 'blender.session.sync':
+      title = 'Sync live Blender model to scene';
+      break;
     default:
       title = toolName;
   }

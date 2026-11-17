@@ -69,12 +69,12 @@ function TimelineTimecodeDisplay({ durationMs }: { durationMs: number }) {
   }, []);
 
   return (
-    <div className="font-mono text-xs flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/30 border border-border/30">
-      <span className="text-foreground font-semibold tabular-nums">
+    <div className="font-mono text-xs flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-background/50 border border-border/40">
+      <span className="text-foreground font-bold tabular-nums">
         {formatTimecode(displayTimeMs)}
       </span>
-      <span className="opacity-40">/</span>
-      <span className="text-muted-foreground tabular-nums">
+      <span className="opacity-40 text-[10px]">/</span>
+      <span className="text-muted-foreground text-[10px] tabular-nums">
         {formatTimecode(durationMs)}
       </span>
     </div>
@@ -105,188 +105,200 @@ export function TimelineToolbar({
   } = useTimelineTools();
 
   return (
-    <div className="h-10 w-full flex items-center justify-between px-3 bg-secondary/40 border-b border-border/40 select-none text-xs">
-      {/* ── Left Editing Tools ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1">
-        {/* Undo */}
+    <div className="h-9 w-full flex items-center justify-between px-2 bg-background/40 border-b border-border/40 select-none text-xs gap-2">
+      {/* ── Left: Edit Tools (Compact Group) ─────────────────────────────────── */}
+      <div className="flex items-center gap-0.5">
+        {/* Undo/Redo */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground disabled:opacity-40"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-all duration-150 hover:bg-secondary/50 active:scale-95"
               onClick={undo}
               disabled={!canUndo}
             >
-              <Undo2Icon className="w-3.5 h-3.5" />
+              <Undo2Icon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Undo (Cmd+Z)</TooltipContent>
+          <TooltipContent side="top" className="text-xs">Undo (Z)</TooltipContent>
         </Tooltip>
 
-        {/* Redo */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground disabled:opacity-40"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-all duration-150 hover:bg-secondary/50 active:scale-95"
               onClick={redo}
               disabled={!canRedo}
             >
-              <Redo2Icon className="w-3.5 h-3.5" />
+              <Redo2Icon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Redo (Shift+Cmd+Z)</TooltipContent>
+          <TooltipContent side="top" className="text-xs">Redo (Shift+Z)</TooltipContent>
         </Tooltip>
 
-        <div className="w-[1px] h-4 bg-border/60 mx-1" />
+        <div className="w-px h-3 bg-border/40 mx-0.5" />
 
-        {/* Pointer / Select Tool */}
+        {/* Tool Selection: Select vs Blade */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant={activeTool === 'select' ? 'secondary' : 'ghost'}
               size="icon"
-              className={`h-7 w-7 ${activeTool === 'select' ? 'text-primary font-bold shadow-sm' : 'text-muted-foreground'}`}
+              className={`h-6 w-6 transition-all duration-200 active:scale-95 ${
+                activeTool === 'select'
+                  ? 'bg-primary/15 text-primary border border-primary/40'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+              }`}
               onClick={() => setActiveTool('select')}
             >
-              <MousePointerIcon className="w-3.5 h-3.5" />
+              <MousePointerIcon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Select Tool (V)</TooltipContent>
+          <TooltipContent side="top" className="text-xs">Select (V)</TooltipContent>
         </Tooltip>
 
-        {/* Split Blade Tool */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant={activeTool === 'blade' ? 'secondary' : 'ghost'}
               size="icon"
-              className={`h-7 w-7 ${activeTool === 'blade' ? 'text-rose-400 font-bold shadow-sm' : 'text-muted-foreground'}`}
+              className={`h-6 w-6 transition-all duration-200 active:scale-95 ${
+                activeTool === 'blade'
+                  ? 'bg-rose-500/15 text-rose-400 border border-rose-500/40'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+              }`}
               onClick={() =>
                 setActiveTool(activeTool === 'blade' ? 'select' : 'blade')
               }
             >
-              <ScissorsIcon className="w-3.5 h-3.5" />
+              <ScissorsIcon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            Razor Blade Tool (C) — Click clip to cut
-          </TooltipContent>
+          <TooltipContent side="top" className="text-xs">Razor Blade (C)</TooltipContent>
         </Tooltip>
 
-        {/* Split at Playhead */}
+        <div className="w-px h-3 bg-border/40 mx-0.5" />
+
+        {/* Clip Operations */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground transition-all duration-150 hover:bg-secondary/50 active:scale-95"
               onClick={splitAtPlayhead}
             >
-              <SplitIcon className="w-3.5 h-3.5" />
+              <SplitIcon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Split at Playhead (Cmd+B)</TooltipContent>
+          <TooltipContent side="top" className="text-xs">Split at Playhead (B)</TooltipContent>
         </Tooltip>
 
-        {/* Delete Selected */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive disabled:opacity-30 transition-all duration-150 hover:bg-destructive/10 active:scale-95"
               onClick={deleteSelectedClip}
               disabled={!selectedClipId}
             >
-              <Trash2Icon className="w-3.5 h-3.5" />
+              <Trash2Icon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Delete Clip (Del)</TooltipContent>
+          <TooltipContent side="top" className="text-xs">Delete (Del)</TooltipContent>
         </Tooltip>
 
-        <div className="w-[1px] h-4 bg-border/60 mx-1" />
+        <div className="w-px h-3 bg-border/40 mx-0.5" />
 
-        {/* Magnetic Snapping Toggle */}
+        {/* Snapping */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant={snappingEnabled ? 'secondary' : 'ghost'}
               size="icon"
-              className={`h-7 w-7 ${snappingEnabled ? 'text-cyan-400' : 'text-muted-foreground/60'}`}
+              className={`h-6 w-6 transition-all duration-200 active:scale-95 ${
+                snappingEnabled
+                  ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/40'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+              }`}
               onClick={toggleSnapping}
             >
-              <MagnetIcon className="w-3.5 h-3.5" />
+              <MagnetIcon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            Magnetic Snapping {snappingEnabled ? '(ON)' : '(OFF)'}
+          <TooltipContent side="top" className="text-xs">
+            Snapping {snappingEnabled ? '(ON)' : '(OFF)'}
           </TooltipContent>
         </Tooltip>
       </div>
 
-      {/* ── Center Transport & Timecode ─────────────────────────────────────── */}
-      <div className="flex items-center gap-3">
+      {/* ── Center: Transport Controls & Timecode ────────────────────────────── */}
+      <div className="flex items-center gap-1.5">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground transition-all duration-150 hover:bg-secondary/50 active:scale-95"
               onClick={onRestartPlayback}
-              aria-label="Restart playback from beginning"
+              aria-label="Restart playback"
             >
-              <RotateCcwIcon className="w-3.5 h-3.5" />
+              <RotateCcwIcon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Restart from beginning</TooltipContent>
+          <TooltipContent side="top" className="text-xs">Restart (Home)</TooltipContent>
         </Tooltip>
+
         <Button
           variant="default"
           size="icon"
-          className="h-7 w-7 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+          className="h-6 w-6 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-200 active:scale-95 shadow-sm hover:shadow-md"
           onClick={onTogglePlay}
         >
           {isPlaying ? (
-            <PauseIcon className="w-3.5 h-3.5 fill-current" />
+            <PauseIcon className="w-2.5 h-2.5 fill-current" />
           ) : (
-            <PlayIcon className="w-3.5 h-3.5 fill-current ml-0.5" />
+            <PlayIcon className="w-2.5 h-2.5 fill-current ml-0.5" />
           )}
         </Button>
 
         <TimelineTimecodeDisplay durationMs={durationMs} />
       </div>
 
-      {/* ── Right Zoom Controls ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2">
-        <ZoomOutIcon className="w-3 h-3 text-muted-foreground" />
-        <div className="w-24">
-          <Slider
-            value={[zoomPxPerMs]}
-            min={0.02}
-            max={0.35}
-            step={0.005}
-            onValueChange={([val]) => setZoomPxPerMs(val)}
-            className="cursor-pointer"
-          />
-        </div>
-        <ZoomInIcon className="w-3 h-3 text-muted-foreground" />
-
+      {/* ── Right: Zoom Controls (Compact) ──────────────────────────────────── */}
+      <div className="flex items-center gap-1">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground transition-all duration-150 hover:bg-secondary/50 active:scale-95"
               onClick={onZoomToFit}
             >
               <Maximize2Icon className="w-3 h-3" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Zoom to Fit Timeline</TooltipContent>
+          <TooltipContent side="top" className="text-xs">Fit Timeline</TooltipContent>
         </Tooltip>
+
+        <div className="flex items-center gap-0.5 px-1 transition-all duration-200">
+          <ZoomOutIcon className="w-2.5 h-2.5 text-muted-foreground opacity-60" />
+          <div className="w-20">
+            <Slider
+              value={[zoomPxPerMs]}
+              min={0.02}
+              max={0.35}
+              step={0.005}
+              onValueChange={([val]) => setZoomPxPerMs(val)}
+              className="cursor-pointer"
+            />
+          </div>
+          <ZoomInIcon className="w-2.5 h-2.5 text-muted-foreground opacity-60" />
+        </div>
       </div>
     </div>
   );

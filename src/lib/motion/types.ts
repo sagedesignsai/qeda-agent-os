@@ -17,7 +17,7 @@
  * independently editable; inlining would duplicate keyframes per interaction.
  */
 
-export const MOTION_SCHEMA_VERSION = 4;
+export const MOTION_SCHEMA_VERSION = 5;
 
 // ── Easing ───────────────────────────────────────────────────────────────────
 

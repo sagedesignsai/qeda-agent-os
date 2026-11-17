@@ -133,6 +133,16 @@ export function motionWorldMatrix(nodes: readonly MotionNode[], nodeId: string):
   );
 }
 
+/** World-space translation of a node, or `null` when it is not in the scene. */
+export function motionWorldPosition(
+  nodes: readonly MotionNode[],
+  nodeId: string,
+): MotionNodeTransform['position'] | null {
+  if (!nodes.some((node) => node.id === nodeId)) return null;
+  const matrix = motionWorldMatrix(nodes, nodeId);
+  return [matrix[3], matrix[7], matrix[11]];
+}
+
 /** The local transform that puts a node at `world` under `parentId`. */
 export function motionLocalTransformForWorld(
   nodes: readonly MotionNode[],

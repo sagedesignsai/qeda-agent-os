@@ -11,7 +11,6 @@ import path from 'node:path';
 import type { BrowserWindow } from 'electron';
 
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
-import { createMotionTemplate } from '@/lib/motion/templates';
 import { MotionRenderHost, MotionExportHostError } from '@/main/motion/render-host';
 import { MotionRenderJobs } from '@/main/motion/render-jobs';
 
@@ -83,9 +82,20 @@ describe('MotionRenderHost', () => {
     return doc;
   }
 
+  /**
+   * A valid document with one unresolvable asset reference: the screen keeps an
+   * asset id the bundle does not contain, which is exactly what preflight blocks.
+   */
+  function documentWithMissingAsset() {
+    const doc = document();
+    const screen = doc.scene.nodes.find((node) => node.id === 'screen_dashboard')!;
+    screen.props = { ...screen.props, assetId: 'asset_missing' };
+    return doc;
+  }
+
   it('refuses to start when preflight finds a blocking issue, before opening output', async () => {
     const render = host();
-    const template = createMotionTemplate('model-reveal');
+    const template = documentWithMissingAsset();
     template.meta.id = 'prj_export';
     await expect(render.start({
       projectId: 'prj_export', document: template, presetId: 'launch-1080p', range: { start: 0, end: 4 }, outputPath,

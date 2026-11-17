@@ -6,6 +6,7 @@ import path from 'node:path';
 import { createBlankMotionDocument, createStarterMotionDocument } from '@/lib/motion/defaults';
 import { createMotionTemplate } from '@/lib/motion/templates';
 import { parseMotionDocument, serializeMotionDocument } from '@/lib/motion/schema';
+import { MOTION_SCHEMA_VERSION } from '@/lib/motion/types';
 import { MotionProjectStore } from '@/main/motion/project-store';
 import type { MotionProjectIndexRow } from '@/main/motion/project-index';
 
@@ -40,7 +41,7 @@ describe('MotionProjectStore', () => {
     const project = await store.createProject({ name: 'Launch film' });
     const canonical = await fs.readFile(path.join(project.path, 'project.json'), 'utf8');
     expect(JSON.parse(canonical)).not.toHaveProperty('scene');
-    expect(JSON.parse(canonical).schemaVersion).toBe(4);
+    expect(JSON.parse(canonical).schemaVersion).toBe(MOTION_SCHEMA_VERSION);
     expect(parseMotionDocument(JSON.parse(canonical)).meta.id).toBe(project.id);
     expect(serializeMotionDocument(parseMotionDocument(JSON.parse(canonical)))).toBe(canonical);
     expect(await fs.access(path.join(project.path, 'project.autosave.json')).then(() => true, () => false)).toBe(false);
@@ -60,14 +61,14 @@ describe('MotionProjectStore', () => {
     expect(opened.document.timeline.duration).toBe(8);
   });
 
-  it('creates and reopens the phone template with its screen parent intact', async () => {
-    const document = createMotionTemplate('app-store-preview');
+  it('round-trips a screen nested under its device through save and reopen', async () => {
+    const document = createStarterMotionDocument('2026-01-01T00:00:00.000Z');
     const project = await store.createProject({ name: 'Phone launch', document });
     const opened = await store.openProject(project.id);
     const phone = opened.document.scene.nodes.find((node) => node.id === 'product');
     const screen = opened.document.scene.nodes.find((node) => node.id === 'screen_dashboard');
 
-    expect(phone?.type).toBe('device.phone');
+    expect(phone?.type).toBe('device.tablet');
     expect(screen?.parentId).toBe('product');
   });
 
@@ -121,13 +122,13 @@ describe('MotionProjectStore', () => {
     await store.saveProject(project.id, opened.document, { forceBackup: opened.dirty });
 
     expect(await fs.readFile(path.join(project.path, 'backups', 'project-0.json'), 'utf8')).toBe(original);
-    expect(JSON.parse(await fs.readFile(canonicalPath, 'utf8')).schemaVersion).toBe(4);
+    expect(JSON.parse(await fs.readFile(canonicalPath, 'utf8')).schemaVersion).toBe(MOTION_SCHEMA_VERSION);
   });
 
   it('refuses a newer schema without changing the canonical or recovery files', async () => {
     const project = await store.createProject({ name: 'Future' });
     const canonicalPath = path.join(project.path, 'project.json');
-    const future = `${JSON.stringify({ ...createStarterMotionDocument(), schemaVersion: 5 }, null, 2)}\n`;
+    const future = `${JSON.stringify({ ...createStarterMotionDocument(), schemaVersion: MOTION_SCHEMA_VERSION + 1 }, null, 2)}\n`;
     const sidecarPath = path.join(project.path, 'project.autosave.json');
     await fs.writeFile(canonicalPath, future);
     await fs.writeFile(sidecarPath, 'inspection copy');
@@ -231,7 +232,7 @@ describe('MotionProjectStore', () => {
     const repair = await repairStore.duplicateForRepair(project.id);
 
     expect(repair.id).toBe('prj_repair12345');
-    expect(JSON.parse(await fs.readFile(path.join(repair.path, 'project.json'), 'utf8')).schemaVersion).toBe(4);
+    expect(JSON.parse(await fs.readFile(path.join(repair.path, 'project.json'), 'utf8')).schemaVersion).toBe(MOTION_SCHEMA_VERSION);
     expect(await fs.readFile(path.join(repair.path, 'assets', 'asset_keep', 'source.png'), 'utf8')).toBe('asset bytes');
     expect(await fs.readFile(canonicalPath, 'utf8')).toBe(original);
   });

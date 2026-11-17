@@ -15,6 +15,11 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { stat } from 'node:fs/promises';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { randomBytes } from 'node:crypto';
+import { app } from 'electron';
 import type { MotionToolContext } from './motion';
 import { planMotionCommand } from '../../lib/motion/engine-contract.js';
 import { describeMotionEngine } from '../../lib/motion/engine-contract.js';
@@ -23,6 +28,7 @@ import { runBlenderJob, runAuthoredBlenderJob, type BlenderReport } from '../ble
 import { getMotionAssetStore } from '../motion/service';
 import { blenderPreviewUrlForPath } from '../../lib/blender-preview.js';
 import type { MotionAsset } from '../../lib/motion/types';
+import { mcpManager } from '../ai/mcp/manager.js';
 
 const nodePlacementSchema = {
   name: z.string().min(1).max(80).optional().describe('Node name (defaults to brief).'),
@@ -649,10 +655,156 @@ export function createBlenderTools(context: MotionToolContext) {
     },
   });
 
+  /**
+   * `blender.session.sync` — export models from a running live Blender session
+   * (connected via MCP for Blender) directly into the Motion document.
+   *
+   * Automates the live session export -> project bundle staging -> document placement
+   * pipeline in a single step, preventing file path hallucinations and export mismatches.
+   */
+  const syncBlenderSession = tool({
+    description:
+      'Export geometry directly from the running live Blender MCP session into the Motion document scene as model.gltf. ' +
+      'Automates running bpy.ops.export_scene.gltf in Blender, staging the GLB into the project bundle, and placing it in the scene.',
+    inputSchema: z.object({
+      ...nodePlacementSchema,
+      objectName: z
+        .string()
+        .optional()
+        .describe('Specific Blender object name to export. When omitted, exports selected objects or active mesh.'),
+      selectedOnly: z
+        .boolean()
+        .default(false)
+        .describe('Whether to only export currently selected objects in Blender.'),
+    }),
+    execute: async ({ name, nodeId, objectName, selectedOnly, transform }) => {
+      try {
+        const baseDir = app?.getPath ? app.getPath('userData') : os.tmpdir();
+        const syncDir = path.join(baseDir, 'blender-mcp-sync');
+        await fs.mkdir(syncDir, { recursive: true });
+        const syncFile = path.join(syncDir, `sync-${Date.now()}-${randomBytes(4).toString('hex')}.glb`);
+
+        const pythonScript = `
+import bpy, os
+
+target_path = ${JSON.stringify(syncFile)}
+obj_name = ${JSON.stringify(objectName ?? null)}
+selected_only = ${selectedOnly ? 'True' : 'False'}
+
+os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+if obj_name:
+    if obj_name in bpy.data.objects:
+        bpy.ops.object.select_all(action='DESELECT')
+        target_obj = bpy.data.objects[obj_name]
+        target_obj.select_set(True)
+        bpy.context.view_layer.objects.active = target_obj
+        selected_only = True
+    else:
+        print(f"WARNING: Object '{obj_name}' not found in scene; exporting active selection")
+
+if selected_only and not bpy.context.selected_objects:
+    if bpy.context.active_object:
+        bpy.context.active_object.select_set(True)
+    else:
+        selected_only = False
+
+bpy.ops.export_scene.gltf(
+    filepath=target_path,
+    export_format='GLB',
+    use_selection=selected_only,
+    export_apply=True,
+    export_yup=True
+)
+
+active_name = bpy.context.active_object.name if bpy.context.active_object else "Blender Model"
+print(f"SYNC_EXPORT_OK:{active_name}")
+`.trim();
+
+        // Execute via live Blender MCP server
+        let mcpResult: unknown;
+        try {
+          mcpResult = await mcpManager.executeTool('blender', 'execute_blender_code', {
+            code: pythonScript,
+          });
+        } catch (mcpErr) {
+          return {
+            success: false,
+            kind: 'blender-asset' as const,
+            error: `Failed to execute export in Blender via MCP: ${mcpErr instanceof Error ? mcpErr.message : String(mcpErr)}. Is Blender running with the MCP add-on connected?`,
+          };
+        }
+
+        const fileStat = await stat(syncFile).catch(() => null);
+        if (!fileStat || !fileStat.isFile() || fileStat.size === 0) {
+          return {
+            success: false,
+            kind: 'blender-asset' as const,
+            error: `Blender export completed but output GLB was not created or empty at ${syncFile}. MCP output: ${JSON.stringify(mcpResult)}`,
+          };
+        }
+
+        const nodeName = name ?? (objectName ? objectName : 'Blender Model');
+        const staged = context.projectId
+          ? await stageModelIntoProject(context.projectId, syncFile)
+          : null;
+        if (context.projectId && !staged) {
+          return {
+            success: false,
+            kind: 'blender-asset' as const,
+            error: `Could not stage exported Blender asset ${syncFile} into project bundle.`,
+          };
+        }
+
+        const placed = placeAsset(context, {
+          path: staged?.path ?? syncFile,
+          nodeName,
+          nodeId,
+          transform,
+          bytes: staged?.byteSize ?? fileStat.size,
+          mimeType: staged?.mimeType ?? 'model/gltf-binary',
+          hash: staged?.hash,
+          assetId: staged?.id,
+          metadata: {
+            importedBy: 'blender-session-sync',
+            sourcePath: syncFile,
+            objectName: objectName ?? undefined,
+          },
+        });
+
+        if (placed.error) {
+          return {
+            success: false,
+            kind: 'blender-asset' as const,
+            error: placed.error,
+          };
+        }
+
+        return {
+          success: true,
+          kind: 'blender-asset' as const,
+          source: 'mcp-sync',
+          assetId: placed.assetId,
+          nodeId,
+          bytes: fileStat.size,
+          manifest: describeMotionEngine(),
+          ...placed.applied,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          kind: 'blender-asset' as const,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  });
+
   return {
     'blender.asset.generate': generateBlenderAsset,
     'blender.asset.import': importBlenderAsset,
     'blender.asset.turntable': turntableAsset,
+    'blender.session.sync': syncBlenderSession,
   };
 }
 

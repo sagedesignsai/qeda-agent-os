@@ -10,7 +10,6 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MotionExportDialog } from '@/components/motion/export/MotionExportDialog';
 import type { MotionExportState } from '@/hooks/use-motion-export';
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
-import { createMotionTemplate } from '@/lib/motion/templates';
 
 function exportState(overrides: Partial<MotionExportState> = {}): MotionExportState {
   return {
@@ -51,7 +50,9 @@ describe('MotionExportDialog', () => {
   });
 
   it('disables export when preflight blocks on a missing asset', () => {
-    const model = createMotionTemplate('model-reveal');
+    const model = createStarterMotionDocument('2026-01-01T00:00:00.000Z');
+    const screenNode = model.scene.nodes.find((node) => node.id === 'screen_dashboard')!;
+    screenNode.props = { ...screenNode.props, assetId: 'asset_missing' };
     render(<MotionExportDialog doc={model} state={exportState()} onClose={() => {}} />);
 
     expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled();

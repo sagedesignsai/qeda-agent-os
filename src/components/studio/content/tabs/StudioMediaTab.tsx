@@ -145,47 +145,23 @@ export function StudioMediaTab({
   );
 
   return (
-    <div className="flex flex-col h-full gap-3 overflow-y-auto overflow-x-hidden pr-1">
-      {/* Search Input */}
+    <div className="flex flex-col h-full gap-2 overflow-y-auto overflow-x-hidden pr-1">
+      {/* Search Input — Prominent with Icon */}
       <div className="relative shrink-0">
-        <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-primary opacity-60 pointer-events-none" />
         <Input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search media..."
-          className="h-8 pl-8 text-xs bg-secondary/30 border-border/40 focus-visible:ring-1"
+          placeholder="Search..."
+          className="h-7 pl-7 pr-2 text-xs bg-primary/5 border border-primary/30 hover:border-primary/50 focus-visible:border-primary focus-visible:ring-0 focus-visible:bg-primary/10 transition-colors"
         />
       </div>
 
-      {/* Quick Action: Record Take */}
-      {onNewRecording && (
-        <button
-          type="button"
-          onClick={onNewRecording}
-          className="flex items-center justify-between px-3 py-2 border border-rose-500/30 hover:border-rose-500/60 rounded-lg bg-rose-500/5 hover:bg-rose-500/10 transition-colors text-left cursor-pointer group shrink-0"
-        >
-          <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
-            <div>
-              <div className="text-xs font-medium text-foreground group-hover:text-rose-400 transition-colors">
-                Record New Take
-              </div>
-              <div className="text-[10px] text-muted-foreground">
-                Capture screen or application window
-              </div>
-            </div>
-          </div>
-          <span className="text-[10px] font-medium text-rose-400 px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20">
-            REC
-          </span>
-        </button>
-      )}
-
-      {/* Import Drop Zone */}
+      {/* Import Drop Zone — Prominent with Animation */}
       <div
         onDragOver={(e) => e.preventDefault()}
         onDrop={handleDropFiles}
-        className="relative flex flex-col items-center justify-center p-4 border border-dashed border-border/70 hover:border-primary/60 rounded-lg bg-card/20 hover:bg-card/40 transition-colors text-center cursor-pointer group"
+        className="relative flex flex-col items-center justify-center p-3 border border-dashed border-primary/50 hover:border-primary hover:bg-primary/8 rounded-md bg-primary/5 transition-all duration-200 text-center cursor-pointer group active:scale-95"
         onClick={handleOpenNativePicker}
         role="button"
         tabIndex={0}
@@ -193,14 +169,14 @@ export function StudioMediaTab({
           if (e.key === 'Enter' || e.key === ' ') handleOpenNativePicker();
         }}
       >
-        <div className="p-2 rounded-full bg-secondary/50 group-hover:bg-primary/20 text-muted-foreground group-hover:text-primary transition-colors mb-1.5">
-          <UploadCloudIcon className="w-5 h-5" />
+        <div className="p-1.5 rounded-lg bg-primary/15 group-hover:bg-primary/25 text-primary transition-all duration-200 mb-1">
+          <UploadCloudIcon className="w-4 h-4" />
         </div>
-        <span className="text-xs font-medium text-foreground">
-          {isImporting ? 'Importing...' : 'Import Media Files'}
+        <span className="text-xs font-semibold text-foreground">
+          {isImporting ? 'Importing…' : 'Import Media'}
         </span>
         <span className="text-[10px] text-muted-foreground mt-0.5">
-          Drop MP4, WebM, MOV, MP3, PNG or click to browse
+          Drop MP4, WebM, MOV, MP3, PNG…
         </span>
       </div>
 
@@ -208,33 +184,33 @@ export function StudioMediaTab({
       <button
         type="button"
         onClick={() => setIsSearchModalOpen(true)}
-        className="flex items-center justify-between px-3 py-2 border border-primary/30 hover:border-primary/60 rounded-lg bg-primary/5 hover:bg-primary/10 transition-colors text-left cursor-pointer group shrink-0"
+        className="flex items-center justify-between px-2.5 py-1.5 border border-secondary/60 hover:border-secondary/80 rounded-md bg-secondary/10 hover:bg-secondary/15 transition-all duration-200 active:scale-95 text-left cursor-pointer group shrink-0"
       >
-        <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-md bg-primary/20 text-primary">
-            <GlobeIcon className="w-4 h-4" />
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-1 rounded bg-primary/20 text-primary transition-colors duration-200">
+            <GlobeIcon className="w-3 h-3" />
           </div>
-          <div>
-            <div className="text-xs font-medium text-foreground group-hover:text-primary transition-colors">
-              Search Web Assets
+          <div className="min-w-0">
+            <div className="text-xs font-semibold text-foreground truncate">
+              Search Web
             </div>
-            <div className="text-[10px] text-muted-foreground">
-              Find transparent PNGs, mockups & SVGs via Serper
+            <div className="text-[10px] text-muted-foreground truncate">
+              PNGs, mockups via Serper
             </div>
           </div>
         </div>
-        <span className="text-[10px] font-medium text-primary px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20">
-          SERPER
+        <span className="text-[9px] font-bold text-primary px-1.5 py-0.5 rounded bg-primary/15 border border-primary/30 shrink-0 ml-1">
+          WEB
         </span>
       </button>
 
       {/* Imported Media Section */}
       {filteredImported.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
-            Imported Files ({filteredImported.length})
+        <div className="flex flex-col gap-1.5">
+          <div className="text-[10px] font-bold tracking-wide uppercase text-foreground/60 px-1">
+            Imported ({filteredImported.length})
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-1.5">
             {filteredImported.map((asset) => (
               <ContentCardItem
                 key={asset.id}
@@ -283,17 +259,17 @@ export function StudioMediaTab({
       )}
 
       {/* Project Recordings / Takes Section */}
-      <div className="flex flex-col gap-2">
-        <div className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">
-          Project Recordings ({filteredTakes.length})
+      <div className="flex flex-col gap-1.5">
+        <div className="text-[10px] font-bold tracking-wide uppercase text-foreground/60 px-1">
+          Recordings ({filteredTakes.length})
         </div>
 
         {filteredTakes.length === 0 ? (
-          <div className="p-4 text-center text-xs text-muted-foreground/60 border border-border/20 rounded-md">
+          <div className="p-2 text-center text-xs text-muted-foreground/50 border border-border/20 rounded-md">
             No recordings found.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-1.5">
             {filteredTakes.map((take) => (
               <ContentCardItem
                 key={take.id}

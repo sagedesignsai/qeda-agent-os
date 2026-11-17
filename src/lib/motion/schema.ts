@@ -517,11 +517,77 @@ function migrateV3ToV4(input: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
+/**
+ * v4 → v5: the camera became a rig and the look stack became nodes.
+ *
+ * Nothing changes shape, so this is deliberately boring:
+ *   - every node of a known type gains any prop its definition has added since
+ *     the document was written (the camera grows `aim`/`targetId`/DOF/shake;
+ *     existing values always win, so an old camera keeps its framing);
+ *   - `scene.cameraId` is backfilled from the first camera when it is missing or
+ *     dangling, so the binding has an unambiguous camera to resolve.
+ */
+function migrateV4ToV5(input: Record<string, unknown>): Record<string, unknown> {
+  const scenes = Array.isArray(input.scenes) ? (input.scenes as Array<Record<string, unknown>>) : [];
+
+  /**
+   * Props added by the v5 camera rig. Only missing keys are filled, so a camera
+   * an artist already framed is untouched, and — unlike a blanket defaults merge
+   * — props an earlier migration deliberately removed (a missing asset id, say)
+   * cannot be resurrected.
+   */
+  const RIG_PROPS = [
+    'aim',
+    'targetId',
+    'targetOffset',
+    'roll',
+    'dofEnabled',
+    'focusDistance',
+    'aperture',
+    'focusRange',
+    'shake',
+    'shakeSpeed',
+  ] as const;
+
+  const withCameraRig = (rawNode: Record<string, unknown>): Record<string, unknown> => {
+    const type = typeof rawNode.type === 'string' ? rawNode.type : '';
+    if (!type.startsWith('camera.')) return rawNode;
+    const definition = getMotionNodeType(type);
+    if (!definition) return rawNode;
+    const props = rawNode.props && typeof rawNode.props === 'object'
+      ? (rawNode.props as Record<string, unknown>)
+      : {};
+    const merged: Record<string, unknown> = { ...props };
+    for (const key of RIG_PROPS) {
+      if (merged[key] === undefined || merged[key] === null) {
+        merged[key] = cloneData(definition.defaultProps[key] ?? null);
+      }
+    }
+    return { ...rawNode, props: merged };
+  };
+
+  const nextScenes = scenes.map((rawScene) => {
+    const nodes = Array.isArray(rawScene.nodes)
+      ? (rawScene.nodes as Array<Record<string, unknown>>).map(withCameraRig)
+      : [];
+    const isCamera = (node: Record<string, unknown>) =>
+      typeof node.type === 'string' && node.type.startsWith('camera.');
+    const declared = typeof rawScene.cameraId === 'string' ? rawScene.cameraId : null;
+    const camera = declared && nodes.some((node) => node.id === declared && isCamera(node))
+      ? declared
+      : nodes.find(isCamera)?.id;
+    return { ...rawScene, nodes, cameraId: camera ?? null };
+  });
+
+  return { ...input, scenes: nextScenes };
+}
+
 /** Ordered `from → migration` map. */
 export const MIGRATIONS: Readonly<Record<number, Migration>> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
   3: migrateV3ToV4,
+  4: migrateV4ToV5,
 };
 
 export function migrateMotionDocument(
@@ -552,9 +618,9 @@ export function migrateMotionDocument(
   return current;
 }
 
-function hydrateV4CompatibilityView(raw: Record<string, unknown>): Record<string, unknown> {
-  if (raw.schemaVersion !== 4) return raw;
-  const scenes = raw.scenes as Array<Record<string, unknown>> | undefined;
+function hydrateCompatibilityView(raw: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(raw.scenes) || raw.scenes.length === 0) return raw;
+  const scenes = raw.scenes as Array<Record<string, unknown>>;
   const activeSceneId = typeof raw.activeSceneId === 'string' ? raw.activeSceneId : '';
   const activeIndex = scenes?.findIndex((scene) => scene.id === activeSceneId) ?? -1;
   const index = activeIndex >= 0 ? activeIndex : 0;
@@ -579,7 +645,7 @@ export function parseMotionDocument(raw: unknown): MotionDocument {
   if (!raw || typeof raw !== 'object') {
     throw new MotionSchemaError('Project file is not a Motion document.');
   }
-  const migrated = hydrateV4CompatibilityView(migrateMotionDocument(raw as Record<string, unknown>));
+  const migrated = hydrateCompatibilityView(migrateMotionDocument(raw as Record<string, unknown>));
   const result = motionDocumentSchema.safeParse(migrated);
   if (!result.success) {
     const first = result.error.issues[0];
@@ -704,7 +770,7 @@ export function serializeMotionDocument(doc: MotionDocument): string {
   };
   const nodes = doc.scene.nodes.map(toV4Node);
   const persisted = {
-    schemaVersion: 4,
+    schemaVersion: MOTION_SCHEMA_VERSION,
     revision: doc.revision,
     meta: doc.meta,
     brand: doc.brand,

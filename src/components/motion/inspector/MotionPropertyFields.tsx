@@ -35,14 +35,20 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import type { MotionPropertyHint } from '@/lib/motion/node-registry';
-import type { MotionAsset, MotionVector3 } from '@/lib/motion/types';
+import type { MotionAsset, MotionNode, MotionVector3 } from '@/lib/motion/types';
 
-type PropertyValue = string | number | boolean | MotionVector3 | undefined;
+type PropertyValue = string | number | boolean | MotionVector3 | null | undefined;
 
 type MotionPropertyFieldsProps = {
   hints: Readonly<Record<string, MotionPropertyHint>>;
   values: Readonly<Record<string, unknown>>;
   assets?: readonly MotionAsset[];
+  /**
+   * Scene nodes a `node` control can point at. Passed in rather than read from a
+   * store so the add-node dialog can render the same control without a document.
+   */
+  nodes?: readonly MotionNode[];
+  excludeNodeId?: string;
   idPrefix?: string;
   mixedProperties?: ReadonlySet<string>;
   disabled?: boolean;
@@ -57,6 +63,8 @@ type MotionPropertyFieldProps = {
   hint: MotionPropertyHint;
   value: unknown;
   assets: readonly MotionAsset[];
+  nodes: readonly MotionNode[];
+  excludeNodeId?: string;
   disabled?: boolean;
   onChange: (value: PropertyValue) => void;
 };
@@ -269,6 +277,8 @@ function MotionPropertyField({
   hint,
   value,
   assets,
+  nodes,
+  excludeNodeId,
   disabled,
   onChange,
 }: MotionPropertyFieldProps) {
@@ -423,6 +433,42 @@ function MotionPropertyField({
     );
   }
 
+  if (hint.control === 'node') {
+    // Empty string is Radix's illegal value; `null` is the document's "no target".
+    const NONE = '__none__';
+    const current = typeof value === 'string' && value.length > 0 ? value : NONE;
+    const options = nodes.filter((node) => node.id !== excludeNodeId);
+    return (
+      <Field className="gap-1">
+        <FieldLabel htmlFor={id} className="text-[10px] text-muted-foreground">
+          {label}
+        </FieldLabel>
+        <Select
+          value={current}
+          disabled={disabled}
+          onValueChange={(next) => onChange(next === NONE ? null : next)}
+        >
+          <SelectTrigger id={id} size="sm" className="h-7 w-full text-xs">
+            <SelectValue placeholder="Scene origin" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>Scene origin</SelectItem>
+            {options.map((node) => (
+              <SelectItem key={node.id} value={node.id}>
+                {node.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {hint.description && (
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            {hint.description}
+          </p>
+        )}
+      </Field>
+    );
+  }
+
   if (hint.control === 'asset') {
     return (
       <AssetPicker
@@ -445,6 +491,8 @@ export function MotionPropertyFields({
   hints,
   values,
   assets = [],
+  nodes = [],
+  excludeNodeId,
   idPrefix = 'motion-property',
   mixedProperties = new Set(),
   disabled = false,
@@ -485,6 +533,8 @@ export function MotionPropertyFields({
                   hint={hint}
                   value={values[property]}
                   assets={assets}
+                  nodes={nodes}
+                  excludeNodeId={excludeNodeId}
                   disabled={disabled}
                   onChange={(next) => onChange(property, next)}
                 />

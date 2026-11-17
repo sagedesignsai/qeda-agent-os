@@ -79,46 +79,51 @@ export function StudioInspector({
   return (
     <aside
       aria-label="Studio Properties Inspector"
-      className="w-full flex flex-col h-full bg-card/40 backdrop-blur-md select-none overflow-y-auto"
+      className="w-full flex flex-col h-full bg-card/40 border-l border-border/30 select-none overflow-y-auto"
     >
-      {/* ── Inspector Master Header ─────────────────────────────────────────── */}
-      <div className="h-10 px-3 border-b border-border/40 flex items-center justify-between sticky top-0 bg-card/90 backdrop-blur-md z-10 shrink-0">
+      {/* ── Dense Inspector Header with Mode Indicator ─────────────────────── */}
+      <div className="h-9 px-2.5 border-b border-border/40 flex items-center justify-between sticky top-0 bg-background/50 backdrop-blur-sm z-10 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <SlidersIcon className="w-4 h-4 text-primary shrink-0" />
-          <h2 className="font-semibold text-xs text-foreground truncate">
-            Studio Inspector
-          </h2>
+          <SlidersIcon className="w-3.5 h-3.5 text-primary shrink-0" />
           {selectedClipData ? (
-            <Badge
-              variant="default"
-              className="h-4 text-[9px] font-mono px-1.5 font-medium bg-primary/90 text-primary-foreground tracking-tight"
-            >
-              CLIP ACTIVE
-            </Badge>
+            <>
+              <h2 className="font-bold text-xs text-foreground truncate">
+                Clip Properties
+              </h2>
+              <Badge
+                variant="default"
+                className="h-5 text-[8px] font-mono px-1.5 font-bold bg-primary text-primary-foreground tracking-tight"
+              >
+                SELECTED
+              </Badge>
+            </>
           ) : (
-            <Badge
-              variant="outline"
-              className="h-4 text-[9px] font-mono px-1 font-normal bg-background/50 border-border/60 text-muted-foreground"
-            >
-              GLOBAL
-            </Badge>
+            <>
+              <h2 className="font-bold text-xs text-foreground">
+                Global Settings
+              </h2>
+              <Badge
+                variant="outline"
+                className="h-5 text-[8px] font-mono px-1.5 font-bold bg-secondary/40 border-secondary/60 text-foreground/70 tracking-tight"
+              >
+                GLOBAL
+              </Badge>
+            </>
           )}
         </div>
 
-        <div className="flex items-center gap-1">
-          {onToggleCollapse && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={onToggleCollapse}
-              className="h-6 w-6 text-muted-foreground hover:text-foreground cursor-pointer"
-              title="Collapse inspector"
-            >
-              <XIcon className="w-3.5 h-3.5" />
-            </Button>
-          )}
-        </div>
+        {onToggleCollapse && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onToggleCollapse}
+            className="h-5 w-5 text-muted-foreground hover:text-foreground"
+            title="Collapse inspector"
+          >
+            <XIcon className="w-3 h-3" />
+          </Button>
+        )}
       </div>
 
       {/* ── Context-Aware Clip Properties Section ────────────────────────────── */}

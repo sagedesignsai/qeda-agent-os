@@ -562,7 +562,28 @@ export function TimelineCanvasViewport({
           ctx.lineWidth = 1;
           ctx.stroke();
         }
-        ctx.restore();
+
+        // ── Clip Border Outline ──────────────────────────────────────────────
+        ctx.restore(); // Exit clip path
+        
+        // Draw clip boundary stroke
+        const borderColor = isSelected
+          ? 'rgba(255, 255, 255, 0.8)'
+          : 'rgba(255, 255, 255, 0.3)';
+        const borderWidth = isSelected ? 2 : 1;
+        
+        ctx.strokeStyle = borderColor;
+        ctx.lineWidth = borderWidth;
+        ctx.beginPath();
+        ctx.roundRect(clipX, clipY, clipW, clipH, radius);
+        ctx.stroke();
+        
+        // Resize handle indicators (top-left & top-right edges)
+        if (isSelected && clipW > 20) {
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx.fillRect(clipX, clipY, 2, 8); // Left edge indicator
+          ctx.fillRect(clipX + clipW - 2, clipY, 2, 8); // Right edge indicator
+        }
       });
     });
 
@@ -599,34 +620,44 @@ export function TimelineCanvasViewport({
 
     ctx.restore(); // Restore tracks area clip
 
-    // 7. Playhead Needle & Scrubber Head (Red / Blue modern needle)
+    // 7. Playhead Needle & Scrubber Head (Enhanced Visibility with Glow)
     const playheadX = currentTimeMs * zoomPxPerMs - scrollX;
     if (playheadX >= -10 && playheadX <= width + 10) {
       ctx.save();
 
-      // Playhead vertical line
-      ctx.strokeStyle = '#ef4444'; // Vibrant red
-      ctx.lineWidth = 1.5;
+      // Playhead glow effect (shadow underneath)
+      ctx.shadowColor = 'rgba(239, 68, 68, 0.4)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Playhead vertical line - bold and vibrant
+      ctx.strokeStyle = '#ff3333'; // Brighter red
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 1;
       ctx.beginPath();
       ctx.moveTo(playheadX, rulerHeight);
       ctx.lineTo(playheadX, height);
       ctx.stroke();
 
-      // Playhead triangular pointer head in ruler
-      ctx.fillStyle = '#ef4444';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0)'; // Clear shadow
+
+      // Playhead triangular pointer head in ruler - more prominent
+      ctx.fillStyle = '#ff3333';
       ctx.beginPath();
-      ctx.moveTo(playheadX - 6, 0);
-      ctx.lineTo(playheadX + 6, 0);
-      ctx.lineTo(playheadX + 6, rulerHeight - 7);
-      ctx.lineTo(playheadX, rulerHeight);
-      ctx.lineTo(playheadX - 6, rulerHeight - 7);
+      ctx.moveTo(playheadX - 7, 0);
+      ctx.lineTo(playheadX + 7, 0);
+      ctx.lineTo(playheadX + 7, rulerHeight - 6);
+      ctx.lineTo(playheadX, rulerHeight + 2);
+      ctx.lineTo(playheadX - 7, rulerHeight - 6);
       ctx.closePath();
       ctx.fill();
 
-      // Center white dot on playhead
+      // Center bright dot on playhead
       ctx.fillStyle = '#ffffff';
+      ctx.globalAlpha = 1;
       ctx.beginPath();
-      ctx.arc(playheadX, (rulerHeight - 7) / 2, 2, 0, Math.PI * 2);
+      ctx.arc(playheadX, rulerHeight - 3, 2.5, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.restore();

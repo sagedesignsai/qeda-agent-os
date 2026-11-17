@@ -105,6 +105,9 @@ export function resolveApiKey(
   providerId: string,
   settings: AppSettings = getSettings(),
 ): string | undefined {
+  if (providerId === 'chatgpt') {
+    return settings.chatgptAuth?.accessToken;
+  }
   const provider = getProvider(providerId);
   const providerSettings = settings.providers?.[providerId];
   const fromEnvironment = provider ? envApiKey(provider) : undefined;

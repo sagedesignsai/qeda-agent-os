@@ -20,14 +20,14 @@ describe('Motion templates', () => {
       const document = createMotionTemplate(template.id);
       expect(() => parseMotionDocument(JSON.parse(JSON.stringify(document)))).not.toThrow();
       expect(document.meta.name).toBe(template.name);
-      expect(document.meta.output).toMatchObject({ width: template.width, height: template.height, fps: 30 });
+      expect(document.meta.output).toMatchObject({ width: template.width, height: template.height, fps: template.fps });
       expect(document.scenes.reduce((sum, scene) => sum + scene.timeline.duration, 0)).toBe(template.duration);
       expect(document.scenes[0].nodes).toEqual(document.scene.nodes);
       expect(document.scene.nodes.some((node) => node.type === 'camera.perspective')).toBe(true);
       expect(document.scenes.length).toBe(template.sceneCount);
       documents.push(document);
     }
-    expect(MOTION_TEMPLATES).toHaveLength(16);
+    expect(MOTION_TEMPLATES).toHaveLength(17);
     expect(documents[0].scene.nodes).not.toBe(documents[1].scene.nodes);
   });
 

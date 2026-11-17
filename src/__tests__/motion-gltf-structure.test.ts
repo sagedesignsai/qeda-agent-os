@@ -126,7 +126,7 @@ describe('parseGltfStructure', () => {
 describe('asset.update-metadata op', () => {
   function createEmptyDoc(): MotionDocument {
     return {
-      schemaVersion: 4,
+      schemaVersion: 5,
       revision: 0,
       meta: { id: 'prj-test', name: 'Test', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', output: { fps: 30, width: 1920, height: 1080 } },
       brand: { name: 'Test', colors: { primary: '#000', secondary: '#000', accent: '#000', background: '#000', foreground: '#fff', muted: '#888' }, fonts: { heading: { family: 'sans-serif' }, body: { family: 'sans-serif' } }, safeArea: { top: 0, bottom: 0, left: 0, right: 0 }, cornerRadius: 8, defaults: { easing: { type: 'linear' }, duration: 1 } },

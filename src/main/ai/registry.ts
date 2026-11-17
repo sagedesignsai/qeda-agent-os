@@ -142,6 +142,14 @@ export const PROVIDERS: ProviderConfig[] = [
     note:
       'Runs locally in the browser via WebGPU. Download models in Settings → Offline Models first.',
   },
+  {
+    id: 'chatgpt',
+    name: 'ChatGPT (subscription, browser sign-in)',
+    baseURL: 'https://chatgpt.com/backend-api/codex',
+    freeModels: ['gpt-5'],
+    note:
+      'Uses your ChatGPT Plus/Pro/Business plan via browser OAuth. No API key required.',
+  },
 ];
 
 /** Look up a registry entry by id. */

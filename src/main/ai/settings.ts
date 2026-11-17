@@ -167,6 +167,13 @@ export interface AppSettings {
    * Populated by the renderer when a download completes.
    */
   downloadedOfflineModels?: string[];
+  chatgptAuth?: {
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    clientId?: string;
+    hostId?: string;
+  };
   providers: ProvidersMap;
   customProviders?: CustomProviderSettings[];
 }

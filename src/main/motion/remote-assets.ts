@@ -139,6 +139,17 @@ const POLYHAVEN_CREDIT = 'Powered by Poly Haven';
 const POLYHAVEN_LICENSE = 'CC0-1.0';
 const SKETCHFAB_API = 'https://sketchfab.com';
 const SKETCHFAB_HOSTS = ['sketchfab.com', 'cdn.sketchfab.com', 'download.sketchfab.com'];
+/**
+ * A host allow-list entry: a bare domain (subdomains allowed) or a pattern for
+ * hosts whose region varies, e.g. Sketchfab's signed S3 archives.
+ */
+export type RemoteHostRule = string | RegExp;
+const SKETCHFAB_MEDIA_HOSTS: RemoteHostRule[] = [
+  ...SKETCHFAB_HOSTS,
+  'media.sketchfab.com',
+  // Signed archive URLs: sketchfab-prod-media.s3[.<region>].amazonaws.com
+  /^sketchfab-prod-media\.s3(?:\.[a-z0-9-]+)?\.amazonaws\.com$/,
+];
 const SKETCHFAB_CREDIT = 'Powered by Sketchfab';
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const FIRST_BYTE_TIMEOUT_MS = 30 * 1000;
@@ -342,6 +353,7 @@ export class MotionRemoteAssetClient {
       for (const file of resolved.files) {
         const destination = path.join(tempDirectory, ...file.relativePath.split('/'));
         received += await this.download(file.url, destination, {
+          hosts: POLYHAVEN_HOSTS,
           maxBytes: limit - received,
           signal: controller.signal,
           onProgress: (bytes) => this.options.onProgress?.({
@@ -523,6 +535,7 @@ export class MotionRemoteAssetClient {
         if (isGlb) {
           const glbPath = path.join(tempDirectory, 'model.glb');
           await this.download(download.url, glbPath, {
+            hosts: SKETCHFAB_MEDIA_HOSTS,
             maxBytes: limit,
             signal: controller.signal,
             onProgress: (bytes) => this.options.onProgress?.({
@@ -577,6 +590,7 @@ export class MotionRemoteAssetClient {
           // glTF is a ZIP archive — download, extract, and pack to GLB
           const zipPath = path.join(tempDirectory, 'model.zip');
           await this.download(download.url, zipPath, {
+            hosts: SKETCHFAB_MEDIA_HOSTS,
             maxBytes: limit,
             signal: controller.signal,
             onProgress: (bytes) => this.options.onProgress?.({
@@ -683,7 +697,7 @@ export class MotionRemoteAssetClient {
     }
   }
 
-  private async sketchfabRequestJson<T>(url: string, hosts: string[], signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
+  private async sketchfabRequestJson<T>(url: string, hosts: RemoteHostRule[], signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
     const response = await this.open(url, hosts, signal, extraHeaders);
     try {
       const text = new TextDecoder().decode(await response.arrayBuffer());
@@ -791,7 +805,7 @@ export class MotionRemoteAssetClient {
     };
   }
 
-  private async requestJson<T>(url: string, hosts: string[], signal?: AbortSignal): Promise<T> {
+  private async requestJson<T>(url: string, hosts: RemoteHostRule[], signal?: AbortSignal): Promise<T> {
     const response = await this.open(url, hosts, signal);
     try {
       const text = new TextDecoder().decode(await response.arrayBuffer());
@@ -801,7 +815,7 @@ export class MotionRemoteAssetClient {
     }
   }
 
-  private async open(url: string, hosts: string[], signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<MotionRemoteResponse> {
+  private async open(url: string, hosts: RemoteHostRule[], signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<MotionRemoteResponse> {
     const fetchImpl = this.options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     const maxRedirects = this.options.maxRedirects ?? 3;
     let current = assertAllowedRemoteUrl(url, hosts).toString();
@@ -853,10 +867,16 @@ export class MotionRemoteAssetClient {
   private async download(
     url: string,
     destination: string,
-    options: { maxBytes: number; signal?: AbortSignal; onProgress?: (bytes: number) => void },
+    options: {
+      /** The calling provider's host rules; a file URL never widens them. */
+      hosts: RemoteHostRule[];
+      maxBytes: number;
+      signal?: AbortSignal;
+      onProgress?: (bytes: number) => void;
+    },
   ): Promise<number> {
     if (options.maxBytes <= 0) throw new MotionRemoteAssetError('This asset exceeds the import size limit.', 'MOTION_REMOTE_TOO_LARGE');
-    const response = await this.open(url, POLYHAVEN_HOSTS, options.signal);
+    const response = await this.open(url, options.hosts, options.signal);
     const contentType = (response.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
     if (!isAllowedAssetContentType(path.extname(destination).toLowerCase(), contentType)) {
       throw new MotionRemoteAssetError(`The provider returned an unexpected content type for ${path.basename(destination)}.`, 'MOTION_REMOTE_CONTENT');
@@ -903,10 +923,12 @@ export class MotionRemoteAssetClient {
 }
 
 /** Rejects anything the provider table did not authorise. */
-export function assertAllowedRemoteUrl(raw: string, hosts: string[]): URL {
+export function assertAllowedRemoteUrl(raw: string, hosts: RemoteHostRule[]): URL {
+  // Sketchfab's signed archive URLs come back without a scheme.
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`;
   let url: URL;
   try {
-    url = new URL(raw);
+    url = new URL(candidate);
   } catch {
     throw new MotionRemoteAssetError(`Invalid asset URL "${raw}".`, 'MOTION_REMOTE_HOST_REJECTED');
   }
@@ -914,7 +936,10 @@ export function assertAllowedRemoteUrl(raw: string, hosts: string[]): URL {
   if (url.username || url.password) throw new MotionRemoteAssetError('Asset URLs may not contain credentials.', 'MOTION_REMOTE_HOST_REJECTED');
   if (url.port && url.port !== '443') throw new MotionRemoteAssetError('Asset URLs may not use a custom port.', 'MOTION_REMOTE_HOST_REJECTED');
   const host = url.hostname.toLowerCase();
-  if (!hosts.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {
+  const allowed = hosts.some((rule) =>
+    typeof rule === 'string' ? host === rule || host.endsWith(`.${rule}`) : rule.test(host),
+  );
+  if (!allowed) {
     throw new MotionRemoteAssetError(`Asset host "${host}" is not allowed.`, 'MOTION_REMOTE_HOST_REJECTED');
   }
   return url;
@@ -1195,6 +1220,8 @@ function isAllowedAssetContentType(extension: string, contentType: string): bool
     '.jpeg': ['image/jpeg'],
     '.webp': ['image/webp'],
     '.ktx2': ['image/ktx2', 'application/octet-stream'],
+    // Sketchfab's glTF archive.
+    '.zip': ['application/zip', 'application/x-zip-compressed'],
   };
   return !!contentType && (expected[extension] ?? []).includes(contentType);
 }

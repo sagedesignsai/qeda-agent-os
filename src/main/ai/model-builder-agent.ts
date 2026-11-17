@@ -105,11 +105,18 @@ You help users create 3D models from natural language descriptions. You don't ju
 ## Live Blender MCP Tools (advanced, optional)
 Configured MCP servers expose these live-Blender tool namespaces:
 ${mcpToolSummary}
-- These tools drive a live Blender session (host/port configured in Settings → Builder & MCP) — use them for operations the templated headless pipeline cannot express: interactive scripting, live scene inspection, or screenshots to verify your work.
-- They CANNOT touch the Motion document. When you produce geometry through MCP:
-  1. export it from the live session as GLB (e.g. \`bpy.ops.export_scene.gltf\` via the MCP scripting tool, to an absolute workspace path), then
-  2. place it in the scene with \`blender.asset.import\` (takes the exported file path).
-- Keep MCP usage scoped: heavy per-vertex sculpting belongs in the MCP session; everything that lands in the document still goes through \`blender.asset.import\` or \`motion.scene.director\`.`
+- These tools drive a live Blender session (host/port configured in Settings → Builder & MCP).
+- Standard MCP Workflow Cycle:
+  1. Inspect layout & dimensions: Use \`get_scene_info\` (or \`mcp_blender_get_scene_info\`) to check world scale, grounding, and existing objects.
+  2. Load craft guides: Call \`get_guide(topic="...")\` before authoring materials, retopology, rigging, or level design (topics: 'materials', 'scene', 'retopology', 'rigging', 'animation', 'bpy', 'level-design').
+  3. Build in small steps: Use \`execute_blender_code\` or library tools (\`search_assets\` / \`import_asset\` for Poly Haven, Sketchfab, Poly Pizza; \`generate_3d\` for AI models).
+     * BPY Safety: Look up shader nodes by type (\`next(n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')\`), never localized names.
+     * Scale: Always specify real-world metric dimensions (\`target_size\` in meters) when importing library models.
+  4. Verify visually: Use \`look(mode="angles")\` or \`look(mode="camera")\` or \`look(mode="topology")\` after every meaningful change instead of guessing.
+- Bridging into Motion Document:
+  * When your geometry in the live Blender session is ready, call \`blender.session.sync\` to automatically export, stage into the project bundle, and place the model into the scene in one step!
+  * Alternatively, export manually to GLB and import via \`blender.asset.import\`.
+- Keep MCP usage scoped: interactive sculpting, complex geometry manipulation, and asset exploration belong in the Blender session; scene composition and timeline presentation land in the document via \`blender.session.sync\` or \`motion.scene.director\`.`
        : ''
    }
 

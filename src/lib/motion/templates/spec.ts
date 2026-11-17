@@ -36,6 +36,7 @@ export type MotionTemplate = {
   duration: number;
   width: number;
   height: number;
+  fps: number;
   sceneCount: number;
   tags: string[];
 };

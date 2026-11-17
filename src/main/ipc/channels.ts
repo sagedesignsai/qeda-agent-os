@@ -778,6 +778,28 @@ export interface IpcChannels {
    */
   'offline-models:list': { req: void; res: string[] };
 
+  /**
+   * Start a ChatGPT OAuth sign-in flow: opens the browser, waits for the
+   * local callback, exchanges the code for tokens, and persists them.
+   */
+  'chatgpt:signin': {
+    req: void;
+    res: {
+      accessToken: string;
+      refreshToken?: string;
+      expiresAt: number;
+      clientId: string;
+      hostId: string;
+    } | null;
+  };
+  /** Whether a ChatGPT session is currently stored, and when it expires. */
+  'chatgpt:status': {
+    req: void;
+    res: { signedIn: boolean; expiresAt?: number; clientId?: string } | null;
+  };
+  /** Drop the stored ChatGPT credentials. */
+  'chatgpt:signout': { req: void; res: void };
+
   // ── MCP server management ─────────────────────────────────────────────────
   /**
    * Return live connection status (connected/connecting/error/disabled) and

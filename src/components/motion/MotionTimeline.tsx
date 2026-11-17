@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, ListTodoIcon, MoreHorizontalIcon, PlusIcon, ScissorsIcon, TableIcon, Trash2Icon } from 'lucide-react';
 
+import { MotionSceneSelector } from '@/components/motion/MotionSceneSelector';
 import { CanvasTimeline } from '@/components/timeline/CanvasTimeline';
 import { TimelineRowHeaders } from '@/components/timeline/TimelineRowHeaders';
 import { TimelineTransport } from '@/components/timeline/TimelineTransport';
@@ -571,6 +572,7 @@ export function MotionTimeline({
           >
             <ChevronUpIcon data-icon />
           </Button>
+          <MotionSceneSelector />
           <TimelineTransport
             clock={motionStore.clock}
             duration={doc.timeline.duration}
@@ -585,7 +587,9 @@ export function MotionTimeline({
               ])
             }
             onToggleSnap={toggleSnap}
-            onToggleAutoKey={() => motionStore.setAutoKeyEnabled(!autoKeyEnabled)}
+            onToggleAutoKey={() =>
+              motionStore.setAutoKeyEnabled(!autoKeyEnabled)
+            }
             onPlayModeChange={(playMode) =>
               motionStore.commit('Change playback mode', [
                 { op: 'timeline.setPlayMode', playMode },
@@ -607,37 +611,43 @@ export function MotionTimeline({
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)}>
       <div className="flex h-10 shrink-0 items-center justify-between gap-1 border-b border-border/60 px-2">
-        {/* Left: Transport controls */}
-        <TimelineTransport
-          clock={motionStore.clock}
-          duration={doc.timeline.duration}
-          fps={fps}
-          loopEnabled={loopEnabled}
-          snapEnabled={snapEnabled}
-          autoKeyEnabled={autoKeyEnabled}
-          playMode={doc.timeline.playMode ?? 'once'}
-          onToggleLoop={() =>
-            motionStore.commit('Toggle work area', [
-              { op: 'timeline.setWorkArea', enabled: !loopEnabled },
-            ])
-          }
-          onToggleSnap={toggleSnap}
-          onToggleAutoKey={() => motionStore.setAutoKeyEnabled(!autoKeyEnabled)}
-          onPlayModeChange={(playMode) =>
-            motionStore.commit('Change playback mode', [
-              { op: 'timeline.setPlayMode', playMode },
-            ])
-          }
-          onStep={stepFrame}
-          onGoToStart={() => motionStore.seek(0)}
-          onGoToEnd={() => motionStore.seek(doc.timeline.duration)}
-          onZoomIn={() => zoomBy(1.3)}
-          onZoomOut={() => zoomBy(1 / 1.3)}
-          onZoomFit={zoomToFit}
-        />
+        {/* Left: scene scope + transport controls */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <MotionSceneSelector />
+          <Separator orientation="vertical" className="h-4" />
+          <TimelineTransport
+            clock={motionStore.clock}
+            duration={doc.timeline.duration}
+            fps={fps}
+            loopEnabled={loopEnabled}
+            snapEnabled={snapEnabled}
+            autoKeyEnabled={autoKeyEnabled}
+            playMode={doc.timeline.playMode ?? 'once'}
+            onToggleLoop={() =>
+              motionStore.commit('Toggle work area', [
+                { op: 'timeline.setWorkArea', enabled: !loopEnabled },
+              ])
+            }
+            onToggleSnap={toggleSnap}
+            onToggleAutoKey={() =>
+              motionStore.setAutoKeyEnabled(!autoKeyEnabled)
+            }
+            onPlayModeChange={(playMode) =>
+              motionStore.commit('Change playback mode', [
+                { op: 'timeline.setPlayMode', playMode },
+              ])
+            }
+            onStep={stepFrame}
+            onGoToStart={() => motionStore.seek(0)}
+            onGoToEnd={() => motionStore.seek(doc.timeline.duration)}
+            onZoomIn={() => zoomBy(1.3)}
+            onZoomOut={() => zoomBy(1 / 1.3)}
+            onZoomFit={zoomToFit}
+          />
+        </div>
 
         {/* Right: Consolidated action menus */}
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {/* Selection badge */}
           {selection && (
             <Badge variant="secondary" className="h-5 text-[10px] px-1.5">

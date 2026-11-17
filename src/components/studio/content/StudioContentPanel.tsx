@@ -112,64 +112,64 @@ export function StudioContentPanel({
   }
 
   return (
-    <div className="w-full bg-card/20 flex flex-col h-full select-none">
-      {/* ── Top Tabs Header ─────────────────────────────────────────────────── */}
-      <div className="h-12 border-b border-border/40 px-3 flex items-center justify-between gap-1 bg-card/30 shrink-0">
-        <div className="flex items-center gap-1">
+    <div className="w-full bg-card/40 border-r border-border/30 flex flex-col h-full select-none">
+      {/* ── Compact Tab Header (Dense Layout with Transitions) ─────────────────── */}
+      <div className="h-9 border-b border-border/40 px-2 flex items-center justify-between gap-0.5 bg-background/20 shrink-0">
+        <div className="flex items-center gap-0.5">
           <Button
             variant={activeTab === 'media' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setActiveTab('media')}
-            className={`h-7 px-2.5 text-xs gap-1.5 font-medium ${
+            className={`h-6 px-2 text-xs gap-1 font-medium transition-all duration-200 ${
               activeTab === 'media'
-                ? 'bg-background shadow-xs text-foreground'
-                : 'text-muted-foreground'
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
             }`}
           >
-            <FilmIcon className="w-3.5 h-3.5" />
-            <span>Media</span>
+            <FilmIcon className="w-3 h-3" />
+            <span className="hidden sm:inline">Media</span>
           </Button>
 
           <Button
             variant={activeTab === 'text' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setActiveTab('text')}
-            className={`h-7 px-2.5 text-xs gap-1.5 font-medium ${
+            className={`h-6 px-2 text-xs gap-1 font-medium transition-all duration-200 ${
               activeTab === 'text'
-                ? 'bg-background shadow-xs text-foreground'
-                : 'text-muted-foreground'
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
             }`}
           >
-            <TypeIcon className="w-3.5 h-3.5" />
-            <span>Text</span>
+            <TypeIcon className="w-3 h-3" />
+            <span className="hidden sm:inline">Text</span>
           </Button>
 
           <Button
             variant={activeTab === 'effects' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setActiveTab('effects')}
-            className={`h-7 px-2.5 text-xs gap-1.5 font-medium ${
+            className={`h-6 px-2 text-xs gap-1 font-medium transition-all duration-200 ${
               activeTab === 'effects'
-                ? 'bg-background shadow-xs text-foreground'
-                : 'text-muted-foreground'
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
             }`}
           >
-            <SparklesIcon className="w-3.5 h-3.5" />
-            <span>Effects</span>
+            <SparklesIcon className="w-3 h-3" />
+            <span className="hidden sm:inline">Effects</span>
           </Button>
 
           <Button
             variant={activeTab === 'audio' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setActiveTab('audio')}
-            className={`h-7 px-2.5 text-xs gap-1.5 font-medium ${
+            className={`h-6 px-2 text-xs gap-1 font-medium transition-all duration-200 ${
               activeTab === 'audio'
-                ? 'bg-background shadow-xs text-foreground'
-                : 'text-muted-foreground'
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
             }`}
           >
-            <MusicIcon className="w-3.5 h-3.5" />
-            <span>Audio</span>
+            <MusicIcon className="w-3 h-3" />
+            <span className="hidden sm:inline">Audio</span>
           </Button>
         </div>
 
@@ -179,16 +179,16 @@ export function StudioContentPanel({
             variant="ghost"
             size="icon"
             onClick={onToggleCollapse}
-            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            className="h-6 w-6 text-muted-foreground hover:text-foreground ml-auto"
             title="Collapse content library"
           >
-            <PanelLeftCloseIcon className="w-3.5 h-3.5" />
+            <PanelLeftCloseIcon className="w-3 h-3" />
           </Button>
         )}
       </div>
 
-      {/* ── Active Tab Content ───────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-hidden p-3 min-h-0">
+      {/* ── Active Tab Content (Compact) ───────────────────────────────────────── */}
+      <div className="flex-1 overflow-hidden p-2 min-h-0">
         {activeTab === 'media' && (
           <StudioMediaTab
             takes={takes}

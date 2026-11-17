@@ -17,7 +17,9 @@ import {
   MissingRenderer,
 } from '@/components/motion/scene/MotionNodeRenderers';
 import { MotionWorldBinding } from '@/components/motion/scene/MotionWorldBinding';
+import { MotionLookComposer } from '@/components/motion/scene/MotionLookComposer';
 import { resolveSceneWorld } from '@/lib/motion/environment';
+import { isMotionLookNode } from '@/lib/motion/look';
 import {
   applyMotionFrame,
   motionNumberProp,
@@ -242,7 +244,13 @@ function DocumentScene({
 }) {
   const groups = useMemo(() => new Map<string, Group>(), []);
   const transformingRef = useRef(false);
-  const childrenByParent = useMemo(() => indexNodes(doc.scene.nodes), [doc.scene.nodes]);
+  // Look nodes are data, not geometry: they feed the composer and must never
+  // reach the renderer lookup (which would draw a "missing node" placeholder).
+  const sceneNodes = useMemo(
+    () => doc.scene.nodes.filter((node) => !isMotionLookNode(node.type)),
+    [doc.scene.nodes],
+  );
+  const childrenByParent = useMemo(() => indexNodes(sceneNodes), [sceneNodes]);
   const rootNodes = childrenByParent.get(null) ?? [];
 
   return (
@@ -303,6 +311,12 @@ export function MotionSceneCanvas({
   const activeScene =
     doc.scenes.find((scene) => scene.id === doc.activeSceneId) ?? doc.scenes[0];
   const world = resolveSceneWorld(activeScene, doc.assets, doc.meta.id);
+  // The composer only mounts when the document actually asks for a look (or a
+  // camera asks for depth of field). Zero-fx documents keep the plain renderer
+  // path, pixel for pixel.
+  const hasLook =
+    doc.scene.nodes.some((node) => isMotionLookNode(node.type)) ||
+    doc.scene.nodes.some((node) => node.type.startsWith('camera.') && node.props.dofEnabled === true);
   return (
     <Canvas
       aria-label="Three-dimensional Motion document scene"
@@ -336,6 +350,7 @@ export function MotionSceneCanvas({
         />
       )}
       <DocumentScene doc={doc} clock={clock} viewMode={viewMode} zoom={zoom} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onTransformNode={onTransformNode} showEditorStage={showEditorStage} />
+      {hasLook && <MotionLookComposer doc={doc} clock={clock} />}
       <MotionReadySignal onReady={onReady} readyCalled={readyCalled} />
     </Canvas>
   );
