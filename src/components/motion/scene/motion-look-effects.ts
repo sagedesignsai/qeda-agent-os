@@ -17,10 +17,11 @@ import {
   BlendFunction,
   ChromaticAberrationEffect,
   Effect,
+  LensDistortionEffect,
   NoiseEffect,
   VignetteEffect,
 } from 'postprocessing';
-import { Uniform } from 'three';
+import { Uniform, Vector2 } from 'three';
 
 import type { MotionLookKind, MotionLookParams } from '@/lib/motion/look';
 
@@ -28,6 +29,8 @@ import type { MotionLookKind, MotionLookParams } from '@/lib/motion/look';
 export type LookEffectFrame = {
   /** Drawing-buffer aspect, used by letterbox to place its bars. */
   frameAspect: number;
+  /** Document playhead time; keeps animated effects identical in preview/export. */
+  time: number;
 };
 
 export type LookEffectInstance = {
@@ -86,6 +89,20 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
     : (uv.x < bar || uv.x > 1.0 - bar);
 
   outputColor = outside ? vec4(0.0, 0.0, 0.0, barOpacity) : inputColor;
+}
+`;
+
+const SCANLINE_FRAGMENT = /* glsl */ `
+uniform float intensity;
+uniform float density;
+uniform float speed;
+uniform float time;
+
+void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+  float phase = (uv.y * density + time * speed) * 6.28318530718;
+  float line = 0.5 + 0.5 * cos(phase);
+  float attenuation = 1.0 - intensity * line;
+  outputColor = vec4(inputColor.rgb * attenuation, inputColor.a);
 }
 `;
 
@@ -210,6 +227,47 @@ export function createLookEffect(kind: MotionLookKind): LookEffectInstance {
           if (target) target.value = number(props.aspect, 2.39);
           if (aspect) aspect.value = Math.max(0.01, frame.frameAspect);
           if (opacity) opacity.value = number(props.opacity, 1);
+        },
+      };
+    }
+
+    case 'scanline': {
+      const uniforms = new Map<string, Uniform>([
+        ['intensity', new Uniform(0.18)],
+        ['density', new Uniform(480)],
+        ['speed', new Uniform(0)],
+        ['time', new Uniform(0)],
+      ]);
+      const effect = new Effect('MotionScanlines', SCANLINE_FRAGMENT, {
+        blendFunction: BlendFunction.NORMAL,
+        uniforms,
+      });
+      return {
+        kind,
+        effect,
+        sync: (props, frame) => {
+          const intensity = uniforms.get('intensity');
+          const density = uniforms.get('density');
+          const speed = uniforms.get('speed');
+          const time = uniforms.get('time');
+          if (intensity) intensity.value = number(props.intensity, 0.18);
+          if (density) density.value = number(props.density, 480);
+          if (speed) speed.value = number(props.speed, 0);
+          if (time) time.value = frame.time;
+        },
+      };
+    }
+
+    case 'lens-distortion': {
+      const effect = new LensDistortionEffect({ distortion: new Vector2() });
+      return {
+        kind,
+        effect,
+        sync: (props) => {
+          effect.distortion.set(
+            number(props.radial1, 0),
+            number(props.radial2, 0),
+          );
         },
       };
     }

@@ -180,6 +180,53 @@ const letterbox: MotionNodeTypeDefinition = {
   },
 };
 
+const scanline: MotionNodeTypeDefinition = {
+  id: 'fx.scanline',
+  label: 'Scanlines',
+  category: 'fx',
+  description: 'Fine, optionally moving scanlines for a restrained analog texture.',
+  defaultName: 'Scanlines',
+  allowedParents: ['fx.stack'],
+  propsSchema: z.object({
+    intensity: z.number().min(0).max(1),
+    density: z.number().min(1).max(1200),
+    speed: z.number().min(-4).max(4),
+  }),
+  defaultProps: { intensity: 0.18, density: 480, speed: 0 },
+  animatableProperties: {
+    intensity: { description: 'Scanline contrast.' },
+    density: { description: 'Number of scanline cycles across the frame.' },
+    speed: { description: 'Vertical scanline drift in cycles per second.' },
+  },
+  propertyHints: {
+    intensity: slider('Intensity', 'Scanlines', 0, 1, 0.01),
+    density: slider('Density', 'Scanlines', 1, 1200, 1),
+    speed: slider('Scroll speed', 'Scanlines', -4, 4, 0.01),
+  },
+};
+
+const lensDistortion: MotionNodeTypeDefinition = {
+  id: 'fx.lens-distortion',
+  label: 'Lens distortion',
+  category: 'fx',
+  description: 'Subtle barrel or pincushion distortion from a real lens.',
+  defaultName: 'Lens distortion',
+  allowedParents: ['fx.stack'],
+  propsSchema: z.object({
+    radial1: z.number().min(-0.5).max(0.5),
+    radial2: z.number().min(-0.5).max(0.5),
+  }),
+  defaultProps: { radial1: 0, radial2: 0 },
+  animatableProperties: {
+    radial1: { description: 'Primary radial lens distortion coefficient.' },
+    radial2: { description: 'Secondary radial lens distortion coefficient.' },
+  },
+  propertyHints: {
+    radial1: slider('Barrel / pincushion', 'Lens', -0.5, 0.5, 0.001),
+    radial2: slider('Secondary distortion', 'Lens', -0.5, 0.5, 0.001),
+  },
+};
+
 export const effectNodes: readonly MotionNodeTypeDefinition[] = [
   lookStack,
   bloom,
@@ -188,4 +235,6 @@ export const effectNodes: readonly MotionNodeTypeDefinition[] = [
   grain,
   chroma,
   letterbox,
+  scanline,
+  lensDistortion,
 ];

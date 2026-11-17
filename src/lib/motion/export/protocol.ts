@@ -9,6 +9,7 @@
 
 import type { MotionDocument } from '../types';
 import type { MotionExportContainer, MotionExportSettings } from './presets';
+import type { MotionRenderRange } from './render-plan';
 
 export type MotionRenderPhase =
   | 'snapshot'
@@ -36,7 +37,7 @@ export type MotionRenderJobPayload = {
     container: MotionExportContainer;
     codecs: readonly string[];
   };
-  range: { start: number; end: number };
+  range: MotionRenderRange;
   frameCount: number;
 };
 

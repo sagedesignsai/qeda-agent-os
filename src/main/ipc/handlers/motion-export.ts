@@ -28,7 +28,7 @@ type ExportStartRequest = {
   projectId: string;
   document: MotionDocument;
   presetId: string;
-  range: { start: number; end: number };
+  range: { start: number; end: number; sequence?: boolean };
   outputPath: string;
 };
 

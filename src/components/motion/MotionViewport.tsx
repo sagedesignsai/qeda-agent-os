@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BoxIcon,
   CameraIcon,
+  ClapperboardIcon,
   Grid2X2Icon,
   Loader2Icon,
   MinusIcon,
@@ -18,6 +19,7 @@ import {
 
 import { MotionWorldPopover } from '@/components/motion/MotionWorldPopover';
 import { MotionLookMenu } from '@/components/motion/MotionLookMenu';
+import { MotionSequencePreview } from '@/components/motion/MotionSequencePreview';
 import { MotionSceneCanvas } from '@/components/motion/scene/MotionSceneCanvas';
 import type {
   MotionCameraView,
@@ -58,6 +60,7 @@ export function MotionViewport() {
   const [gridVisible, setGridVisible] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [sequencePreviewOpen, setSequencePreviewOpen] = useState(false);
   const loadingTimer = useRef<number | null>(null);
   const activeScene =
     doc.scenes.find((scene) => scene.id === doc.activeSceneId) ?? doc.scenes[0];
@@ -153,6 +156,24 @@ export function MotionViewport() {
           </Button>
 
           <MotionLookMenu doc={doc} />
+
+          {doc.scenes.length > 1 && (
+            <Button
+              type="button"
+              variant={sequencePreviewOpen ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-7 gap-1 px-2 text-[11px]"
+              aria-label="Preview full sequence"
+              title="Preview full sequence"
+              onClick={() => {
+                motionStore.pause();
+                setSequencePreviewOpen(true);
+              }}
+            >
+              <ClapperboardIcon data-icon />
+              <span className="hidden sm:inline">Sequence</span>
+            </Button>
+          )}
 
           <MotionWorldPopover
             doc={doc}
@@ -269,6 +290,9 @@ export function MotionViewport() {
               <span className="text-border">/</span>
               <span className="text-muted-foreground">Document scene</span>
             </div>
+            {sequencePreviewOpen && (
+              <MotionSequencePreview doc={doc} onClose={() => setSequencePreviewOpen(false)} />
+            )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44">

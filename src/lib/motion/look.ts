@@ -8,8 +8,9 @@
  * assert ordering, clamping and animation without touching WebGL.
  *
  * Order is fixed rather than user-defined. A post stack is a pipeline, not a
- * pile: DOF has to happen with depth, bloom before the grade, grain last. A
- * reorder control would mostly let people make their own shots look worse.
+ * pile: DOF has to happen with depth, bloom before the grade, texture after
+ * colour, and framing at the end. A reorder control would mostly let people
+ * make their own shots look worse.
  */
 
 import { sampleSceneTimeline } from './sample';
@@ -21,7 +22,9 @@ export type MotionLookKind =
   | 'chroma'
   | 'vignette'
   | 'grain'
-  | 'letterbox';
+  | 'letterbox'
+  | 'scanline'
+  | 'lens-distortion';
 
 const KIND_BY_NODE_TYPE: Readonly<Record<string, MotionLookKind>> = {
   'fx.bloom': 'bloom',
@@ -30,16 +33,20 @@ const KIND_BY_NODE_TYPE: Readonly<Record<string, MotionLookKind>> = {
   'fx.vignette': 'vignette',
   'fx.grain': 'grain',
   'fx.letterbox': 'letterbox',
+  'fx.scanline': 'scanline',
+  'fx.lens-distortion': 'lens-distortion',
 };
 
 /** Pipeline order. Lower runs first; ties fall back to document order. */
 const PIPELINE_ORDER: Readonly<Record<MotionLookKind, number>> = {
+  'lens-distortion': 5,
   bloom: 10,
   grade: 20,
   chroma: 30,
   vignette: 40,
-  grain: 50,
-  letterbox: 60,
+  scanline: 50,
+  grain: 60,
+  letterbox: 70,
 };
 
 export const MOTION_LOOK_KINDS = Object.keys(PIPELINE_ORDER) as MotionLookKind[];
@@ -165,6 +172,23 @@ export function readLookParams(kind: MotionLookKind, raw: Readonly<Record<string
           opacity: numberProp(raw, 'opacity', 1, 0, 1),
         },
       };
+    case 'scanline':
+      return {
+        kind,
+        props: {
+          intensity: numberProp(raw, 'intensity', 0.18, 0, 1),
+          density: numberProp(raw, 'density', 480, 1, 1200),
+          speed: numberProp(raw, 'speed', 0, -4, 4),
+        },
+      };
+    case 'lens-distortion':
+      return {
+        kind,
+        props: {
+          radial1: numberProp(raw, 'radial1', 0, -0.5, 0.5),
+          radial2: numberProp(raw, 'radial2', 0, -0.5, 0.5),
+        },
+      };
   }
 }
 
@@ -247,6 +271,8 @@ export function describeLookStack(looks: readonly MotionResolvedLook[]): string 
     vignette: 'Vignette',
     grain: 'Grain',
     letterbox: 'Letterbox',
+    scanline: 'Scanlines',
+    'lens-distortion': 'Lens distortion',
   };
   return looks.map((look) => labels[look.kind]).join(' · ');
 }

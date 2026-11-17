@@ -20,7 +20,7 @@ import { z } from 'zod';
 
 import { quantizeDocumentToFps } from './quantize';
 import { insertKeyframeSorted } from './sample';
-import { motionEasingSchema } from './schema';
+import { motionEasingSchema, motionSequenceSchema } from './schema';
 import { validateMotionDocument } from './schema';
 import {
   createMotionNode,
@@ -41,6 +41,7 @@ import type {
   MotionNode,
   MotionTimeline,
   MotionTrack,
+  MotionSequence,
 } from './types';
 
 // ── Risk ─────────────────────────────────────────────────────────────────────
@@ -59,6 +60,7 @@ export type MotionOpParams = {
   'document.rename': { name: string };
   'document.setOutput': { fps?: number; width?: number; height?: number };
   'document.setActiveScene': { sceneId: string };
+  'document.setSequence': { sequence: MotionSequence | null };
   'asset.add': MotionAsset;
   'asset.relink': { assetId: string; path: string; hash: string; byteSize: number; mimeType?: string };
   'asset.remove': { assetId: string };
@@ -965,13 +967,20 @@ registerMotionOp<'scene.remove'>({
         end: activeTimeline.workArea?.end ?? activeTimeline.duration,
       },
     };
+    const remainingSequenceItems = doc.sequence?.items.filter((item) => item.sceneId !== sceneId) ?? [];
+    const sequence = remainingSequenceItems.length > 0
+      ? {
+          duration: Math.max(...remainingSequenceItems.map((item) => item.start + item.duration)),
+          items: remainingSequenceItems,
+        }
+      : undefined;
     return {
       ...doc,
       scenes,
       activeSceneId,
       scene: { nodes: active.nodes },
       timeline: legacyTimeline,
-      ...(doc.sequence ? { sequence: { ...doc.sequence, items: doc.sequence.items.filter((item) => item.sceneId !== sceneId) } } : {}),
+      sequence,
     };
   },
 });
@@ -992,6 +1001,20 @@ registerMotionOp<'document.setActiveScene'>({
       end: timeline.workArea?.end ?? timeline.duration,
     };
     return { ...doc, activeSceneId: sceneId, scene: { nodes: scene.nodes }, timeline: { ...timeline, loop } };
+  },
+});
+
+registerMotionOp<'document.setSequence'>({
+  id: 'document.setSequence',
+  summary: 'Set or clear the master shot sequence.',
+  risk: 'mutating',
+  params: z.object({ sequence: motionSequenceSchema.nullable() }).strict(),
+  reduce: (doc, { sequence }) => {
+    if (sequence && sequence.items.some((item) => !doc.scenes.some((scene) => scene.id === item.sceneId))) {
+      throw new MotionOpError('Every sequence shot must reference a scene in this project.');
+    }
+    if (JSON.stringify(doc.sequence ?? null) === JSON.stringify(sequence)) return doc;
+    return { ...doc, sequence: sequence ?? undefined };
   },
 });
 

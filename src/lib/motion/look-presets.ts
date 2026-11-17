@@ -34,6 +34,7 @@ const PRESETS: Record<MotionLookPresetId, MotionLookPreset & { nodes: LookNodeSp
     description: 'Scope framing, gentle bloom, warm grade and a little grain.',
     nodes: [
       { type: 'fx.grade', name: 'Grade', props: { exposure: 0.05, contrast: 0.18, saturation: 0.08, temperature: 0.12, tint: 0.02 } },
+      { type: 'fx.lens-distortion', name: 'Lens distortion', props: { radial1: 0.012, radial2: 0 } },
       { type: 'fx.bloom', name: 'Bloom', props: { intensity: 0.5, threshold: 0.85, smoothing: 0.35 } },
       { type: 'fx.vignette', name: 'Vignette', props: { offset: 0.35, darkness: 0.55 } },
       { type: 'fx.grain', name: 'Grain', props: { amount: 0.18 } },
@@ -57,6 +58,7 @@ const PRESETS: Record<MotionLookPresetId, MotionLookPreset & { nodes: LookNodeSp
     description: 'Golden highlights, soft contrast and visible grain — 35mm-ish.',
     nodes: [
       { type: 'fx.grade', name: 'Grade', props: { exposure: 0.1, contrast: 0.12, saturation: 0.12, temperature: 0.35, tint: 0.05 } },
+      { type: 'fx.lens-distortion', name: 'Lens distortion', props: { radial1: 0.008, radial2: 0 } },
       { type: 'fx.bloom', name: 'Bloom', props: { intensity: 0.35, threshold: 0.8, smoothing: 0.4 } },
       { type: 'fx.vignette', name: 'Vignette', props: { offset: 0.3, darkness: 0.5 } },
       { type: 'fx.grain', name: 'Grain', props: { amount: 0.35 } },
@@ -80,6 +82,7 @@ const PRESETS: Record<MotionLookPresetId, MotionLookPreset & { nodes: LookNodeSp
     description: 'Wide bloom and edge splitting — a lens with character.',
     nodes: [
       { type: 'fx.grade', name: 'Grade', props: { exposure: 0.02, contrast: 0.12, saturation: 0.06, temperature: 0.05, tint: 0 } },
+      { type: 'fx.lens-distortion', name: 'Lens distortion', props: { radial1: 0.025, radial2: -0.004 } },
       { type: 'fx.bloom', name: 'Bloom', props: { intensity: 1.1, threshold: 0.7, smoothing: 0.5 } },
       { type: 'fx.chroma', name: 'Chroma', props: { offset: 0.003, radial: true, modulationOffset: 0.1 } },
       { type: 'fx.grain', name: 'Grain', props: { amount: 0.12 } },
@@ -95,6 +98,7 @@ const PRESETS: Record<MotionLookPresetId, MotionLookPreset & { nodes: LookNodeSp
       { type: 'fx.chroma', name: 'Chroma', props: { offset: 0.006, radial: false, modulationOffset: 0 } },
       { type: 'fx.vignette', name: 'Vignette', props: { offset: 0.25, darkness: 0.45 } },
       { type: 'fx.grain', name: 'Grain', props: { amount: 0.6 } },
+      { type: 'fx.scanline', name: 'Scanlines', props: { intensity: 0.18, density: 480, speed: 0.35 } },
     ],
   },
 };

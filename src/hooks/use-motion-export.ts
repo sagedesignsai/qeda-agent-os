@@ -9,12 +9,13 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import type { MotionRenderProgress } from '@/lib/motion/export/protocol';
+import type { MotionRenderRange } from '@/lib/motion/export/render-plan';
 import type { MotionDocument } from '@/lib/motion/types';
 
 export type MotionExportStartOptions = {
   document: MotionDocument;
   presetId: string;
-  range: { start: number; end: number };
+  range: MotionRenderRange;
 };
 
 export type MotionExportStartResult = {

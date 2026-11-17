@@ -33,6 +33,7 @@ import {
   resolveMotionExportSettings,
 } from '@/lib/motion/export/presets';
 import { preflightMotionExport } from '@/lib/motion/export/preflight';
+import { resolveMotionSequence } from '@/lib/motion/sequence';
 import type { MotionRenderProgress } from '@/lib/motion/export/protocol';
 import type { MotionDocument } from '@/lib/motion/types';
 
@@ -57,21 +58,26 @@ export function MotionExportDialog({
   onClose: () => void;
 }) {
   const [presetId, setPresetId] = useState('launch-1080p');
-  const [useWorkArea, setUseWorkArea] = useState(false);
+  const [rangeMode, setRangeMode] = useState<'scene' | 'work-area' | 'sequence'>(
+    doc.sequence || doc.scenes.length > 1 ? 'sequence' : 'scene',
+  );
   const [outputPath, setOutputPath] = useState<string | null>(null);
 
   const scene = doc.scenes.find((candidate) => candidate.id === doc.activeSceneId);
   const fullEnd = scene?.timeline.duration ?? doc.timeline.duration;
+  const sequence = useMemo(() => resolveMotionSequence(doc), [doc]);
   const workArea = doc.timeline.workArea;
   const workAreaAvailable = Boolean(workArea?.enabled && workArea.end > workArea.start);
-  const range = useWorkArea && workAreaAvailable && workArea
-    ? { start: workArea.start, end: Math.min(workArea.end, fullEnd) }
-    : { start: 0, end: fullEnd };
+  const range = rangeMode === 'sequence'
+    ? { start: 0, end: sequence.duration, sequence: true }
+    : rangeMode === 'work-area' && workAreaAvailable && workArea
+      ? { start: workArea.start, end: Math.min(workArea.end, fullEnd) }
+      : { start: 0, end: fullEnd };
 
   const preset = getMotionExportPreset(presetId);
   const issues = useMemo(
     () => preflightMotionExport(doc, { range, container: preset.container }),
-    [doc, range.start, range.end, preset.container],
+    [doc, range.start, range.end, range.sequence, preset.container],
   );
   const settings = useMemo(
     () => (() => {
@@ -99,7 +105,7 @@ export function MotionExportDialog({
         <DialogHeader>
           <DialogTitle>Export composition</DialogTitle>
           <DialogDescription>
-            Render the active scene from a snapshot; editing this project will not change a running export.
+            Render the selected range from a project snapshot; editing will not change a running export.
           </DialogDescription>
         </DialogHeader>
 
@@ -182,22 +188,34 @@ export function MotionExportDialog({
 
               <div className="space-y-1.5 text-xs font-medium">
                 Range
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    aria-pressed={!useWorkArea}
-                    onClick={() => setUseWorkArea(false)}
-                    className={`rounded-md border p-2 text-left ${!useWorkArea ? 'border-primary bg-primary/5' : 'border-border/60'}`}
+                    aria-pressed={rangeMode === 'sequence'}
+                    disabled={sequence.items.length === 0}
+                    onClick={() => setRangeMode('sequence')}
+                    className={`rounded-md border p-2 text-left disabled:opacity-50 ${rangeMode === 'sequence' ? 'border-primary bg-primary/5' : 'border-border/60'}`}
                   >
-                    <span className="block text-[11px] font-medium">Full scene</span>
+                    <span className="block text-[11px] font-medium">Sequence</span>
+                    <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                      {sequence.items.length} shots · {sequence.duration.toFixed(2)}s
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={rangeMode === 'scene'}
+                    onClick={() => setRangeMode('scene')}
+                    className={`rounded-md border p-2 text-left ${rangeMode === 'scene' ? 'border-primary bg-primary/5' : 'border-border/60'}`}
+                  >
+                    <span className="block text-[11px] font-medium">Scene</span>
                     <span className="mt-0.5 block text-[10px] text-muted-foreground">0.00s – {fullEnd.toFixed(2)}s</span>
                   </button>
                   <button
                     type="button"
-                    aria-pressed={useWorkArea}
+                    aria-pressed={rangeMode === 'work-area'}
                     disabled={!workAreaAvailable}
-                    onClick={() => setUseWorkArea(true)}
-                    className={`rounded-md border p-2 text-left disabled:opacity-50 ${useWorkArea ? 'border-primary bg-primary/5' : 'border-border/60'}`}
+                    onClick={() => setRangeMode('work-area')}
+                    className={`rounded-md border p-2 text-left disabled:opacity-50 ${rangeMode === 'work-area' ? 'border-primary bg-primary/5' : 'border-border/60'}`}
                   >
                     <span className="block text-[11px] font-medium">Work area</span>
                     <span className="mt-0.5 block text-[10px] text-muted-foreground">

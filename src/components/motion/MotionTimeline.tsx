@@ -44,6 +44,7 @@ import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
+import { resolveMotionSequence } from '@/lib/motion/sequence';
 import { countOffFrameKeyframes } from '@/lib/motion/quantize';
 import { sampleChannel } from '@/lib/motion/sample';
 import {
@@ -110,6 +111,7 @@ export function MotionTimeline({
   onExpand?: () => void;
 }) {
   const { doc, selection, view, pendingApproval, autoKeyEnabled } = useMotionSnapshot();
+  const sequence = useMemo(() => resolveMotionSequence(doc), [doc]);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [scrollY, setScrollY] = useState(0);
   const [snapEnabled, setSnapEnabled] = useState(() => {
@@ -138,6 +140,36 @@ export function MotionTimeline({
 
   const model = useMemo(() => toTimelineModel(doc, { dopeSheet }), [doc, dopeSheet]);
   const timelineSelection = useMemo(() => motionSelectionToTimeline(selection), [selection]);
+
+  const updateSequenceTransition = useCallback((itemId: string, type: 'cut' | 'crossfade' | 'dip') => {
+    let cursor = 0;
+    const items = sequence.items.map((item, index) => {
+      const selected = item.id === itemId;
+      const duration = selected
+        ? (item.transitionIn?.duration ?? item.transitionOut?.duration ?? 0.45)
+        : (item.transitionIn?.duration ?? 0.45);
+      const transitionIn = selected
+        ? (type === 'cut' ? undefined : { type, duration, ...(type === 'dip' ? { color: '#000000' } : {}) })
+        : item.transitionIn;
+      const overlap = index > 0 && transitionIn && transitionIn.type !== 'cut'
+        ? Math.min(transitionIn.duration, sequence.items[index - 1].duration)
+        : 0;
+      const start = Math.max(0, cursor - overlap);
+      const next = {
+        ...item,
+        start,
+        transitionIn,
+        transitionOut: undefined,
+      };
+      cursor = start + item.duration;
+      return next;
+    });
+    const nextSequence = {
+      duration: Math.max(...items.map((item) => item.start + item.duration), 0),
+      items,
+    };
+    motionStore.commit('Change shot transition', [{ op: 'document.setSequence', sequence: nextSequence }]);
+  }, [sequence]);
 
   const handlers = useMemo<TimelineEditHandlers>(
     () => ({
@@ -866,6 +898,59 @@ export function MotionTimeline({
               Cancel
             </Button>
           </div>
+        </div>
+      )}
+
+      {doc.scenes.length > 1 && sequence.items.length > 0 && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-2 py-1.5">
+          <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Shots
+          </span>
+          <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+            {sequence.items.map((item, index) => {
+              const scene = doc.scenes.find((candidate) => candidate.id === item.sceneId);
+              if (!scene) return null;
+              const active = scene.id === doc.activeSceneId;
+              const transition = item.transitionIn ?? (index > 0 ? sequence.items[index - 1].transitionOut : undefined);
+              return (
+                <div
+                  key={item.id}
+                  className={cn('flex min-w-32 flex-1 items-center gap-1 rounded border p-1 transition-colors', active ? 'border-primary/70 bg-primary/10' : 'border-border/60 bg-muted/20')}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={active}
+                    title={`Shot ${index + 1}: ${scene.name} · ${item.duration.toFixed(2)}s`}
+                    onClick={() => {
+                      if (scene.id !== motionStore.getDocument().activeSceneId) {
+                        motionStore.commit('Switch shot', [{ op: 'document.setActiveScene', sceneId: scene.id }]);
+                      }
+                    }}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 px-1 text-left text-[10px]"
+                  >
+                    <span className="truncate">{String(index + 1).padStart(2, '0')} · {scene.name}</span>
+                    <span className="shrink-0 tabular-nums">{item.duration.toFixed(1)}s</span>
+                  </button>
+                  {index > 0 && (
+                    <select
+                      aria-label={`Transition into shot ${index + 1}`}
+                      title={transition?.type === 'crossfade' ? 'Crossfade transition' : `${transition?.type ?? 'cut'} transition`}
+                      value={transition?.type ?? 'cut'}
+                      onChange={(event) => updateSequenceTransition(item.id, event.target.value as 'cut' | 'crossfade' | 'dip')}
+                      className="h-5 max-w-20 rounded border-0 bg-transparent px-1 text-[8px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    >
+                      <option value="cut">Cut</option>
+                      <option value="crossfade">Fade</option>
+                      <option value="dip">Dip</option>
+                    </select>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <span className="shrink-0 text-[9px] tabular-nums text-muted-foreground">
+            {sequence.duration.toFixed(1)}s
+          </span>
         </div>
       )}
 

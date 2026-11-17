@@ -156,7 +156,10 @@ export function MotionLookComposer({
       active.dof.bokehScale = bokehScaleForAperture(rig.node.props.aperture);
     }
 
-    const frame = { frameAspect: height > 0 ? width / height : 16 / 9 };
+    const frame = {
+      frameAspect: height > 0 ? width / height : 16 / 9,
+      time,
+    };
     for (let index = 0; index < active.instances.length; index += 1) {
       active.instances[index].sync(looks[index].params.props, frame);
     }

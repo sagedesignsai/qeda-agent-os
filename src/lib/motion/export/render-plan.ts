@@ -5,7 +5,7 @@
  * times are seconds; encoded timestamps are relative to the chosen range.
  */
 
-export type MotionRenderRange = { start: number; end: number };
+export type MotionRenderRange = { start: number; end: number; sequence?: boolean };
 export type MotionRenderFrame = { index: number; sceneTime: number; timestamp: number; duration: number };
 
 const FRAME_EPSILON = 1e-9;

@@ -1,7 +1,7 @@
 import { createEmptyMotionDocument } from '../defaults';
 import { createMotionNode } from '../node-registry';
 import { selectMotionScene } from '../scene-select';
-import type { MotionClip, MotionDocument, MotionNode, MotionTimeline } from '../types';
+import type { MotionClip, MotionDocument, MotionNode, MotionTimeline, MotionTransition } from '../types';
 
 export type TemplateSceneSpec = {
   name: string;
@@ -10,6 +10,7 @@ export type TemplateSceneSpec = {
   clips?: MotionClip[];
   cameraId?: string | null;
   background?: MotionDocument['scenes'][number]['background'];
+  transitionIn?: MotionTransition;
 };
 
 export type TemplateSpec = {
@@ -85,12 +86,25 @@ export function buildTemplate(spec: TemplateSpec): MotionDocument {
   synced.timeline = builtScenes[0].timeline as any;
   synced.scene = { nodes: builtScenes[0].nodes };
   // sequence metadata (forward-compatible; not consumed by export)
+  let sequenceCursor = 0;
+  const sequenceItems = builtScenes.map((scene, index) => {
+    const transitionIn = spec.scenes[index].transitionIn;
+    if (index > 0 && transitionIn && transitionIn.type !== 'cut') {
+      sequenceCursor = Math.max(0, sequenceCursor - transitionIn.duration);
+    }
+    const item = {
+      id: `seq_${index + 1}`,
+      sceneId: scene.id,
+      start: sequenceCursor,
+      duration: scene.timeline.duration,
+      ...(transitionIn ? { transitionIn } : {}),
+    };
+    sequenceCursor += scene.timeline.duration;
+    return item;
+  });
   synced.sequence = {
-    duration: totalDuration,
-    items: builtScenes.map((sc, i) => {
-      const start = builtScenes.slice(0, i).reduce((a, x) => a + (x.timeline.duration ?? 0), 0);
-      return { id: `seq_${i + 1}`, sceneId: sc.id, start, duration: sc.timeline.duration };
-    }),
+    duration: Math.max(...sequenceItems.map((item) => item.start + item.duration), 0),
+    items: sequenceItems,
   };
   return synced;
 }

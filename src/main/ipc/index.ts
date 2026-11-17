@@ -86,6 +86,7 @@ import { registerMusicHandlers } from './handlers/music';
 import { registerMusicCopilotHandlers } from './handlers/music-copilot';
 import { registerTraceCopilotHandlers } from './handlers/trace-copilot';
 import { registerThemeHandlers } from './handlers/theme';
+import { registerAssetReferenceHandlers } from './handlers/asset-references';
 
 /**
  * Register every request/response handler.
@@ -128,4 +129,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMusicCopilotHandlers({ mainWindow });
   registerTraceCopilotHandlers({ mainWindow });
   registerThemeHandlers();
+  registerAssetReferenceHandlers({ mainWindow });
 }

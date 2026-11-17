@@ -450,7 +450,7 @@ export interface IpcChannels {
   };
   'trace:changed': void;
   // Export: the editor starts/cancels; the hidden render window reports chunks.
-  'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
+  'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number; sequence?: boolean }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
   'motion:pick-export-path': { req: { projectName: string; presetId: string }; res: { path: string } | null };
   'motion:reveal-export': { req: { path: string }; res: void };
   'motion:export-cancel': { req: { jobId: string }; res: void };
@@ -2139,6 +2139,62 @@ export interface IpcChannels {
   // Appearance: native chrome tracking (renderer persists tokens in localStorage)
   'theme:get': { req: void; res: { mode: 'light' | 'dark' | 'system'; background: string } | null };
   'theme:save': { req: { mode: 'light' | 'dark' | 'system'; background: string }; res: void };
+
+  // ── Asset References (project file imports/context for any surface) ────────
+  /** Save asset references for a context (chat, document, task, etc.) */
+  'asset-references:save': {
+    req: {
+      contextId: string;
+      references: Array<{
+        id: string;
+        projectId: string;
+        fileName: string;
+        fileKind: string;
+        path: string;
+        mediaUrl: string | null;
+        metadata?: Record<string, unknown>;
+      }>;
+    };
+    res: { success: boolean; count: number; contextId: string; savedAt: number };
+  };
+  /** Load asset references for a context. */
+  'asset-references:load': {
+    req: { contextId: string };
+    res: {
+      contextId: string;
+      references: Array<{
+        id: string;
+        contextId: string;
+        projectId: string;
+        fileName: string;
+        fileKind: string;
+        path: string;
+        mediaUrl: string | null;
+        metadata?: Record<string, unknown>;
+        savedAt: number;
+      }>;
+    };
+  };
+  /** Resolve enriched metadata for multiple files. */
+  'asset-references:resolve-metadata': {
+    req: { projectId: string; fileIds: string[] };
+    res: Array<{ fileId: string; exists: boolean; preview: string | null }>;
+  };
+  /** Export a context snapshot as JSON. */
+  'asset-references:export-context': {
+    req: { contextId: string; references: any[] };
+    res: { contextId: string; exportedAt: string; version: number; references: any[] };
+  };
+  /** Import a context snapshot. */
+  'asset-references:import-context': {
+    req: { snapshot: any };
+    res: { success: boolean; contextId: string; imported: number };
+  };
+  /** Clear all references for a context. */
+  'asset-references:clear-context': {
+    req: { contextId: string };
+    res: { success: boolean; contextId: string };
+  };
 }
 // OpenCode setup types (renderer-facing). Re-exported so the renderer never
 // reaches into the main-process modules directly.

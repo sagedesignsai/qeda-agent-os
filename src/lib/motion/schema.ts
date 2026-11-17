@@ -114,6 +114,24 @@ const assetSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 
+export const motionTransitionSchema = z.object({
+  type: z.enum(['cut', 'crossfade', 'dip']),
+  duration: z.number().nonnegative(),
+  color: z.string().optional(),
+});
+
+export const motionSequenceSchema = z.object({
+  duration: z.number().nonnegative(),
+  items: z.array(z.object({
+    id: z.string().min(1),
+    sceneId: z.string().min(1),
+    start: z.number().nonnegative(),
+    duration: z.number().positive(),
+    transitionIn: motionTransitionSchema.optional(),
+    transitionOut: motionTransitionSchema.optional(),
+  })),
+});
+
 const sceneV4Schema = z.object({
   id: z.string().min(1), name: z.string(), nodes: z.array(nodeSchema),
   timeline: z.object({
@@ -183,6 +201,25 @@ export function validateMotionDocument(doc: MotionDocument): MotionValidationErr
   for (let i = 0; i < doc.scenes.length; i += 1) {
     if (sceneIds.has(doc.scenes[i].id)) errors.push({ code: 'SCENE_ID_DUPLICATE', path: `scenes.${i}.id` });
     sceneIds.add(doc.scenes[i].id);
+  }
+  if (doc.sequence) {
+    const sequenceItemIds = new Set<string>();
+    for (let i = 0; i < doc.sequence.items.length; i += 1) {
+      const item = doc.sequence.items[i];
+      if (sequenceItemIds.has(item.id)) errors.push({ code: 'SEQUENCE_ITEM_ID_DUPLICATE', path: `sequence.items.${i}.id` });
+      sequenceItemIds.add(item.id);
+      if (!doc.scenes.some((scene) => scene.id === item.sceneId)) {
+        errors.push({ code: 'SEQUENCE_SCENE_MISSING', path: `sequence.items.${i}.sceneId` });
+      } else {
+        const scene = doc.scenes.find((candidate) => candidate.id === item.sceneId)!;
+        if (item.duration > scene.timeline.duration + 1e-9) {
+          errors.push({ code: 'SEQUENCE_ITEM_EXCEEDS_SCENE', path: `sequence.items.${i}.duration` });
+        }
+      }
+      if (item.start + item.duration > doc.sequence.duration + 1e-9) {
+        errors.push({ code: 'SEQUENCE_ITEM_RANGE', path: `sequence.items.${i}` });
+      }
+    }
   }
   const nodeIds = new Set<string>();
   for (let i = 0; i < doc.scene.nodes.length; i += 1) {
@@ -353,7 +390,7 @@ export const motionDocumentSchema = z.object({
   }),
   scenes: z.array(sceneV4Schema).min(1),
   activeSceneId: z.string().min(1),
-  sequence: z.unknown().optional(),
+  sequence: motionSequenceSchema.optional(),
   // Compatibility view is populated during parsing; excluded from v4 serialization.
   scene: z.object({
     nodes: z.array(nodeSchema),

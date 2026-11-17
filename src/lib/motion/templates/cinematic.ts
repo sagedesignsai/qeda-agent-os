@@ -18,13 +18,24 @@ const SMOOTH = EASING_PRESETS.smooth.value;
 const EASE_OUT = EASING_PRESETS.easeOut.value;
 const LINEAR = EASING_PRESETS.linear.value;
 
-const cinematicLook = [
-  node('fx.grade', 'grade', { exposure: 0.06, contrast: 0.2, saturation: 0.1, temperature: 0.14, tint: 0.02 }),
-  node('fx.bloom', 'bloom', { intensity: 0.65, threshold: 0.82, smoothing: 0.35 }),
-  node('fx.vignette', 'vignette', { offset: 0.34, darkness: 0.6 }),
-  node('fx.grain', 'grain', { amount: 0.2 }),
-  node('fx.letterbox', 'letterbox', { aspect: 2.39, opacity: 1 }),
+const cinematicLookNodes = [
+  { type: 'fx.grade', id: 'grade', props: { exposure: 0.06, contrast: 0.2, saturation: 0.1, temperature: 0.14, tint: 0.02 } },
+  { type: 'fx.lens-distortion', id: 'lens', props: { radial1: 0.01, radial2: 0 } },
+  { type: 'fx.bloom', id: 'bloom', props: { intensity: 0.65, threshold: 0.82, smoothing: 0.35 } },
+  { type: 'fx.vignette', id: 'vignette', props: { offset: 0.34, darkness: 0.6 } },
+  { type: 'fx.grain', id: 'grain', props: { amount: 0.2 } },
+  { type: 'fx.letterbox', id: 'letterbox', props: { aspect: 2.39, opacity: 1 } },
 ];
+
+function cinematicLook(id = 'look') {
+  const stack = node('fx.stack', `${id}_stack`);
+  const effects = cinematicLookNodes.map(({ type, id: effectId, props }) => {
+    const effect = node(type, `${id}_${effectId}`, props);
+    effect.parentId = stack.id;
+    return effect;
+  });
+  return [stack, ...effects];
+}
 
 export const cinematicTemplates: TemplateSpec[] = [
   {
@@ -58,7 +69,7 @@ export const cinematicTemplates: TemplateSpec[] = [
             shake: 0.12,
             shakeSpeed: 0.9,
           }, { position: [1.1, 1.4, 6.2] }),
-          ...cinematicLook,
+          ...cinematicLook(),
         ],
         clips: [
           showcaseClip('s1_dolly', 'Dolly in', 4.5, 'cam', [
@@ -82,6 +93,7 @@ export const cinematicTemplates: TemplateSpec[] = [
       {
         name: 'Detail',
         duration: 3.5,
+        transitionIn: { type: 'crossfade', duration: 0.45 },
         cameraId: 'cam',
         nodes: [
           node('light.ambient', 'ambient', { intensity: 0.5 }),
@@ -100,7 +112,7 @@ export const cinematicTemplates: TemplateSpec[] = [
             shake: 0.22,
             shakeSpeed: 1.4,
           }, { position: [2.1, 0.9, 3.4] }),
-          ...cinematicLook,
+          ...cinematicLook(),
         ],
         clips: [
           showcaseClip('s2_orbit', 'Orbit', 3.5, 'cam', [
@@ -140,6 +152,7 @@ export const cinematicTemplates: TemplateSpec[] = [
       {
         name: 'End card',
         duration: 3,
+        transitionIn: { type: 'crossfade', duration: 0.45 },
         cameraId: 'cam',
         nodes: [
           node('light.ambient', 'ambient', { intensity: 0.6 }),
@@ -154,11 +167,7 @@ export const cinematicTemplates: TemplateSpec[] = [
             aperture: 2.8,
             focusRange: 2.4,
           }, { position: [0, 0.2, 6.4] }),
-          node('fx.grade', 'grade', { exposure: 0.04, contrast: 0.16, saturation: 0.06, temperature: 0.1, tint: 0 }),
-          node('fx.bloom', 'bloom', { intensity: 0.5, threshold: 0.86, smoothing: 0.4 }),
-          node('fx.vignette', 'vignette', { offset: 0.3, darkness: 0.5 }),
-          node('fx.grain', 'grain', { amount: 0.16 }),
-          node('fx.letterbox', 'letterbox', { aspect: 2.39, opacity: 1 }),
+          ...cinematicLook('end_look'),
         ],
         clips: [
           showcaseClip('s3_push', 'Push in', 3, 'cam', [

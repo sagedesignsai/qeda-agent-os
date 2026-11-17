@@ -225,6 +225,26 @@ export type MotionScene = {
   stateMachines?: unknown[];
 };
 
+export type MotionTransition = {
+  type: 'cut' | 'crossfade' | 'dip';
+  duration: number;
+  color?: string;
+};
+
+export type MotionSequenceItem = {
+  id: string;
+  sceneId: string;
+  start: number;
+  duration: number;
+  transitionIn?: MotionTransition;
+  transitionOut?: MotionTransition;
+};
+
+export type MotionSequence = {
+  duration: number;
+  items: MotionSequenceItem[];
+};
+
 export type MotionMeta = {
   id: string;
   name: string;
@@ -241,7 +261,7 @@ export type MotionDocument = {
   assets: MotionAsset[];
   scenes: MotionScene[];
   activeSceneId: string;
-  sequence?: { duration: number; items: Array<{ id: string; sceneId: string; start: number; duration: number; transitionIn?: unknown; transitionOut?: unknown }> };
+  sequence?: MotionSequence;
   /** In-memory v3 compatibility aliases. The serializer writes only scenes[]. */
   scene: {
     nodes: MotionNode[];
