@@ -33,6 +33,7 @@ export type AnimatableProperty =
   | 'fillOpacity'
   | 'strokeDashoffset'
   | 'strokeDasharray'
+  | 'd'
   | 'strokeWidth'
   | 'fill'
   | 'stroke'

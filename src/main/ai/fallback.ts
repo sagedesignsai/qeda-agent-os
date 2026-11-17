@@ -29,6 +29,8 @@ export interface BuildModelChainOptions {
   isConfigured: (providerId: string) => boolean;
   /** Cap on providers tried per turn (including the primary). */
   maxAttempts?: number;
+  /** Optional: Get installed models for a provider (e.g., for Ollama). */
+  getInstalledModels?: (providerId: string) => Promise<string[]>;
 }
 
 /** Providers tried per turn, primary first. */
@@ -41,13 +43,14 @@ export const DEFAULT_MAX_ATTEMPTS = 3;
  * raise an actionable error instead of inventing a provider the user did not
  * pick. Also honours the user's opt-out of fallback entirely.
  */
-export function resolveChain({
+export async function resolveChain({
   activeProvider,
   activeModel,
   fallbackEnabled,
   isConfigured,
   maxAttempts,
-}: BuildModelChainOptions & { fallbackEnabled: boolean }): ModelTarget[] {
+  getInstalledModels,
+}: BuildModelChainOptions & { fallbackEnabled: boolean }): Promise<ModelTarget[]> {
   if (!activeModel.trim()) return [];
 
   if (!fallbackEnabled) {
@@ -59,6 +62,7 @@ export function resolveChain({
     activeModel,
     isConfigured,
     maxAttempts,
+    getInstalledModels,
   });
 }
 
@@ -70,13 +74,17 @@ export function resolveChain({
  * registry order (free tiers first) that have a curated default model — a
  * provider whose catalog we do not know cannot be used without an extra
  * round-trip, which is too slow for an error path.
+ *
+ * For Ollama (local models), if getInstalledModels is provided, we fetch the
+ * actual installed models to add them to the fallback chain dynamically.
  */
-export function buildModelChain({
+export async function buildModelChain({
   activeProvider,
   activeModel,
   isConfigured,
   maxAttempts = DEFAULT_MAX_ATTEMPTS,
-}: BuildModelChainOptions): ModelTarget[] {
+  getInstalledModels,
+}: BuildModelChainOptions): Promise<ModelTarget[]> {
   const chain: ModelTarget[] = [];
   const used = new Set<string>();
 
@@ -88,9 +96,24 @@ export function buildModelChain({
   for (const provider of PROVIDERS) {
     if (chain.length >= maxAttempts) break;
     if (used.has(provider.id)) continue;
-    if (!provider.freeModels?.length) continue;
     if (!isConfigured(provider.id)) continue;
 
+    // For Ollama, try to get installed models dynamically
+    if (provider.id === 'ollama' && getInstalledModels) {
+      try {
+        const models = await getInstalledModels('ollama');
+        if (models.length > 0) {
+          chain.push({ providerId: 'ollama', modelId: models[0] });
+          used.add('ollama');
+          continue;
+        }
+      } catch {
+        // If dynamic lookup fails, fall back to curated models or skip
+      }
+    }
+
+    // Use curated free models for all other providers
+    if (!provider.freeModels?.length) continue;
     chain.push({ providerId: provider.id, modelId: provider.freeModels[0] });
     used.add(provider.id);
   }

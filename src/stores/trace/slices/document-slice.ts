@@ -279,8 +279,19 @@ export const createDocumentSlice: TraceSliceCreator<
 
   markSaving: () => set({ saveState: 'saving', saveError: null }),
 
-  markSaved: (revision) =>
-    set({ saveState: 'saved', saveError: null, dirty: false, revision }),
+  markSaved: (revision, savedProject) =>
+    set((state) => {
+      // A save may finish after the user has edited the document again. Record
+      // the disk revision, but leave the newer in-memory document dirty.
+      const savedCurrentProject =
+        savedProject === undefined || state.project === savedProject;
+      return {
+        saveState: savedCurrentProject ? 'saved' : 'idle',
+        saveError: null,
+        dirty: !savedCurrentProject,
+        revision,
+      };
+    }),
 
   markSaveFailed: (message) => set({ saveState: 'error', saveError: message }),
 

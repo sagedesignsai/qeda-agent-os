@@ -33,6 +33,7 @@ const ATTRIBUTE_PROPS = new Set([
   'rx',
   'strokeDashoffset',
   'strokeDasharray',
+  'd',
   'strokeWidth',
   'stroke',
   'fill',

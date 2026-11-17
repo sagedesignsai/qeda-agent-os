@@ -12,6 +12,8 @@ import { useEffect, useState } from 'react';
 import { Box3, PerspectiveCamera, Sphere, SRGBColorSpace, Vector3 } from 'three';
 import type { Group, Object3D } from 'three';
 
+import { createMotionGltfLoader } from '@/lib/motion/gltf-loader';
+
 function useGltfScene(url: string) {
   const [scene, setScene] = useState<Group | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -20,10 +22,8 @@ function useGltfScene(url: string) {
     let cancelled = false;
     setScene(null);
     setError(null);
-    // Same loader the document renderer uses; the catalog ships uncompressed
-    // GLBs, so no decoder wiring is needed here.
-    void import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => {
-      new GLTFLoader().load(
+    void createMotionGltfLoader().then((loader) => {
+      loader.load(
         url,
         (gltf) => {
           if (!cancelled) setScene(gltf.scene);

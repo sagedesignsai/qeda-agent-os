@@ -56,6 +56,7 @@ import {
   PlusIcon,
   SearchIcon,
   SendToBackIcon,
+  SparklesIcon,
   SquareIcon,
   Trash2Icon,
   TypeIcon,
@@ -394,6 +395,7 @@ function Row({
   dragEnabled,
   onSelect,
   onToggleCollapse,
+  onAnimateSvg,
 }: {
   row: DisplayRow;
   project: TraceProject;
@@ -408,6 +410,7 @@ function Row({
     options?: { additive?: boolean; range?: boolean },
   ) => void;
   onToggleCollapse: (elementId: string) => void;
+  onAnimateSvg?: (elementId: string) => void;
 }) {
   const { element, depth } = row;
   const dispatch = useTraceStore((state) => state.dispatch);
@@ -660,6 +663,17 @@ function Row({
             <CopyIcon className="size-3" /> Duplicate
           </DropdownMenuItem>
 
+          {onAnimateSvg ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                onSelect(element.id);
+                onAnimateSvg(element.id);
+              }}
+            >
+              <SparklesIcon className="size-3 text-orange-300" /> Animate SVG
+            </DropdownMenuItem>
+          ) : null}
+
           {element.type === 'group' && hasChildren ? (
             <DropdownMenuItem
               onSelect={() =>
@@ -793,6 +807,17 @@ function Row({
             <CopyIcon className="size-3" /> Duplicate
           </DropdownMenuItem>
 
+          {onAnimateSvg ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                onSelect(element.id);
+                onAnimateSvg(element.id);
+              }}
+            >
+              <SparklesIcon className="size-3 text-orange-300" /> Animate SVG
+            </DropdownMenuItem>
+          ) : null}
+
           {element.type === 'group' && hasChildren ? (
             <DropdownMenuItem
               onSelect={() =>
@@ -922,7 +947,11 @@ function RootDropZone({ active }: { active: boolean }) {
   );
 }
 
-export function TraceElementsTree() {
+export function TraceElementsTree({
+  onAnimateSvg,
+}: {
+  onAnimateSvg?: (elementId: string) => void;
+}) {
   const project = useTraceStore((state) => state.project);
   const selection = useTraceStore((state) => state.selection);
   const dispatch = useTraceStore((state) => state.dispatch);
@@ -1236,6 +1265,7 @@ export function TraceElementsTree() {
                     dragEnabled={!query.trim()}
                     onSelect={onSelectRow}
                     onToggleCollapse={toggleCollapseElement}
+                    onAnimateSvg={onAnimateSvg}
                   />
                 ))}
                 {dragState.id ? (

@@ -31,6 +31,7 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import { motionStore } from '@/hooks/use-motion-store';
 import { motionAssetUrl } from '@/lib/motion/assets';
+import { createMotionGltfLoader } from '@/lib/motion/gltf-loader';
 import { parseGltfStructure } from '@/lib/motion/gltf-structure';
 import type { GltfAssetMetadata, MaterialOverride, MotionDocument, MotionNode, PartOverride, SurfaceBinding } from '@/lib/motion/types';
 
@@ -43,10 +44,10 @@ const modelCache = new Map<string, Promise<GLTF>>();
 function loadMotionModel(url: string): Promise<GLTF> {
   const cached = modelCache.get(url);
   if (cached) return cached;
-  const pending = import('three/examples/jsm/loaders/GLTFLoader.js').then(
-    ({ GLTFLoader }) =>
+  const pending = createMotionGltfLoader().then(
+    (loader) =>
       new Promise<GLTF>((resolve, reject) => {
-        new GLTFLoader().load(url, resolve, undefined, (error) => {
+        loader.load(url, resolve, undefined, (error) => {
           reject(error instanceof Error ? error : new Error(String(error)));
         });
       }),

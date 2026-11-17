@@ -80,7 +80,7 @@ export function registerAgentChatHandlers({
         // A declared intent always wins. The heuristic stays as the fallback
         // for free-form chat, where nothing knows the mode but the wording.
         const mode = intent ?? detectMode(messages);
-        const chain = resolveModelChain();
+        const chain = await resolveModelChain();
         if (chain.length === 0) {
           throw new Error(
             'No model configured. Pick a provider and model in Settings.',

@@ -31,6 +31,7 @@ import {
   type ProviderConfig,
 } from './registry';
 import { resolveChain, type ModelTarget } from './fallback';
+import { listOllamaModels } from './ollama';
 
 export { PROVIDERS, type ProviderConfig };
 
@@ -251,10 +252,13 @@ export function resolveEmbeddingModel(
  * Returns an empty list when no model is selected, so the caller can surface an
  * actionable error rather than silently running on a provider the user did not
  * choose.
+ *
+ * For Ollama, dynamically fetches installed models so they can be included in
+ * the fallback chain.
  */
-export function resolveModelChain(
+export async function resolveModelChain(
   settings: AppSettings = getSettings(),
-): ModelTarget[] {
+): Promise<ModelTarget[]> {
   return resolveChain({
     activeProvider: settings.activeProvider,
     activeModel: settings.activeModel ?? '',
@@ -267,6 +271,15 @@ export function resolveModelChain(
       // Keyless providers (a local Ollama) count as configured.
       if (!provider.apiKeyEnvs?.length) return true;
       return Boolean(resolveApiKey(providerId, settings));
+    },
+    // For Ollama, get installed models dynamically
+    getInstalledModels: async (providerId) => {
+      if (providerId !== 'ollama') return [];
+      const baseURL = resolveBaseURL(providerId, settings);
+      if (!baseURL) return [];
+      const ollamaBase = baseURL.replace(/\/v1\/?$/, '');
+      const result = await listOllamaModels(ollamaBase);
+      return result.models || [];
     },
   });
 }
@@ -283,6 +296,10 @@ export interface ProviderModelList {
  *
  * Model catalogs change constantly, so the live list is authoritative and the
  * curated `freeModels` are only a fallback. Free models are sorted first.
+ *
+ * Ollama responses use `models` array format instead of the standard OpenAI
+ * `data` array format, so we handle both. Ollama also supports its native
+ * `/api/tags` endpoint which is more reliable.
  */
 export async function listProviderModels(
   providerId: string,
@@ -320,6 +337,35 @@ export async function listProviderModels(
     return { models: downloaded };
   }
 
+  // Ollama: Use native API endpoint (/api/tags) for more reliable model listing
+  if (providerId === 'ollama') {
+    const baseURL = resolveBaseURL(providerId, getSettings());
+    if (!baseURL) {
+      return { models: suggestions, error: 'Ollama base URL not configured.' };
+    }
+
+    // Strip the /v1 suffix if present, since /api/tags is a direct Ollama endpoint
+    const ollamaBase = baseURL.replace(/\/v1\/?$/, '');
+    const result = await listOllamaModels(ollamaBase);
+
+    if (result.error) {
+      return {
+        models: suggestions,
+        error: result.error,
+      };
+    }
+
+    if (result.models.length === 0) {
+      return {
+        models: [],
+        error:
+          'No models installed. Download one with: ollama pull qwen3.5:0.8b',
+      };
+    }
+
+    return { models: result.models };
+  }
+
   const baseURL = resolveBaseURL(providerId, getSettings());
   if (!baseURL) {
     return { models: suggestions, error: 'Provider has no base URL.' };
@@ -345,33 +391,76 @@ export async function listProviderModels(
 
     const payload = (await response.json()) as {
       data?: Array<{ id?: string }>;
+      models?: Array<{ name?: string; model?: string }>;
     };
-    // Gemini's OpenAI-compatible endpoint expects the bare model name
-    // ("gemini-2.5-flash") while its /models listing prefixes it
-    // ("models/gemini-2.5-flash"), so normalise before surfacing.
-    const normalise = (id: string) =>
-      providerId === 'gemini' ? id.replace(/^models\//, '') : id;
 
-    const ids = (payload.data ?? [])
-      .map((entry) => entry.id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0)
-      .map(normalise);
+    // Extract model IDs: handle both OpenAI format (data array) and Ollama format (models array)
+    let ids: string[] = [];
 
-    if (ids.length === 0) {
+    if (Array.isArray(payload.models)) {
+      // Ollama format: models have 'name' or 'model' field
+      ids = payload.models
+        .map((entry) => entry.name || entry.model)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    } else if (Array.isArray(payload.data)) {
+      // OpenAI-compatible format
+      ids = payload.data
+        .map((entry) => entry.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    }
+
+    // Normalise model IDs for specific providers
+    const normalise = (id: string) => {
+      if (providerId === 'gemini') {
+        // Gemini prefixes models with "models/" in the listing
+        return id.replace(/^models\//, '');
+      }
+      // Keep model names as-is (including tags like "qwen3.5:0.8b")
+      return id;
+    };
+
+    const normalisedIds = ids.map(normalise);
+
+    if (normalisedIds.length === 0) {
+      if (providerId === 'ollama') {
+        return {
+          models: [],
+          error: 'No models found in Ollama. Pull a model with "ollama pull <model-name>".',
+        };
+      }
       return { models: suggestions, error: 'Provider returned no models.' };
     }
 
-    // Surface the curated free models first, then everything else.
-    const free = ids.filter(
+    // Surface the curated free models first, then everything else (reverse for newest-first)
+    const free = normalisedIds.filter(
       (id) => suggestions.includes(id) || id.endsWith(':free'),
     );
-    const rest = ids.filter((id) => !free.includes(id)).sort();
+    const rest = normalisedIds
+      .filter((id) => !free.includes(id))
+      .sort()
+      .reverse();
 
     return { models: [...new Set([...free, ...rest])] };
   } catch (error) {
+    let message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes('ECONNREFUSED') || message.includes('Failed to fetch')) {
+      return {
+        models: suggestions,
+        error: `Cannot connect to provider at ${baseURL}.`,
+      };
+    }
+
+    if (message.includes('timeout')) {
+      return {
+        models: suggestions,
+        error: 'Provider server is not responding (timeout).',
+      };
+    }
+
     return {
       models: suggestions,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     };
   }
 }

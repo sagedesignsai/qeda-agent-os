@@ -22,8 +22,11 @@ import {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export function elementDomId(elementId: string): string {
-  return `trace-elem-${elementId}`;
+export function elementDomId(
+  elementId: string,
+  prefix = 'trace-elem',
+): string {
+  return `${prefix}-${elementId}`;
 }
 
 export function findElementDom(elementId: string): SVGElement | null {
@@ -133,6 +136,9 @@ function applyTrackValue(
       return;
     case 'strokeDasharray':
       node.setAttribute('stroke-dasharray', String(value));
+      return;
+    case 'd':
+      if (tag === 'path') node.setAttribute('d', String(value));
       return;
     case 'width': {
       const width = Number(value);

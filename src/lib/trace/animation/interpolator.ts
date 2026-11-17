@@ -9,6 +9,7 @@
 import type { PropertyTrack } from '../types';
 import { evaluateEasing } from './easing';
 import { lerpNumber, lerpColor } from './color-math';
+import { interpolatePathData } from '../path/model';
 
 /**
  * Returns the exact value of a property track at timeMs using binary search and interpolation.
@@ -67,6 +68,11 @@ export function getValueAtTime(
     // If it's a color property (fill, stroke)
     if (track.property === 'fill' || track.property === 'stroke') {
       return lerpColor(kPrev.value, kNext.value, easedProgress);
+    }
+
+    if (track.property === 'd') {
+      return interpolatePathData(kPrev.value, kNext.value, easedProgress) ??
+        (easedProgress >= 0.5 ? kNext.value : kPrev.value);
     }
 
     // Progressive character slicing for Typewriter / Kinetic Text

@@ -392,6 +392,45 @@ export function serializePathData(model: PathModel): string {
   return parts.join(' ');
 }
 
+/**
+ * True when two path strings share the same editable subpath/anchor topology.
+ * Arc commands are excluded because the current PathModel approximates arcs as
+ * straight segments when parsing them.
+ */
+export function isPathMorphCompatible(from: string, to: string): boolean {
+  if (/[aA]/.test(from) || /[aA]/.test(to)) return false;
+  const fromModel = parsePathData(from);
+  const toModel = parsePathData(to);
+  if (fromModel.subpaths.length === 0 || fromModel.subpaths.length !== toModel.subpaths.length) return false;
+  return fromModel.subpaths.every((subpath, index) => {
+    const target = toModel.subpaths[index];
+    return subpath.closed === target.closed && subpath.nodes.length === target.nodes.length;
+  });
+}
+
+/** Interpolate compatible SVG paths while preserving their editable topology. */
+export function interpolatePathData(from: string, to: string, progress: number): string | null {
+  if (!isPathMorphCompatible(from, to)) return null;
+  const amount = Math.max(0, Math.min(1, progress));
+  const fromModel = parsePathData(from);
+  const toModel = parsePathData(to);
+  const mix = (a: number, b: number) => a + (b - a) * amount;
+  return serializePathData({
+    subpaths: fromModel.subpaths.map((subpath, subpathIndex) => ({
+      closed: subpath.closed,
+      nodes: subpath.nodes.map((node, nodeIndex) => {
+        const target = toModel.subpaths[subpathIndex].nodes[nodeIndex];
+        return {
+          point: { x: mix(node.point.x, target.point.x), y: mix(node.point.y, target.point.y) },
+          handleIn: { x: mix(node.handleIn.x, target.handleIn.x), y: mix(node.handleIn.y, target.handleIn.y) },
+          handleOut: { x: mix(node.handleOut.x, target.handleOut.x), y: mix(node.handleOut.y, target.handleOut.y) },
+          smooth: node.smooth && target.smooth,
+        };
+      }),
+    })),
+  });
+}
+
 /** Serialise only anchor points (polyline/polygon `points` string). */
 export function serializePointsString(model: PathModel): string {
   const subpath = model.subpaths[0];

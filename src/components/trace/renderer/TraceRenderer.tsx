@@ -12,6 +12,7 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
 import { filtersToDefs } from '@/lib/trace/filters/serialize';
+import { scrubDangerousSvgMarkup } from '@/lib/trace/parser/svg-scrub';
 import {
   elementBodyMarkup,
   gradientsToDefs,
@@ -25,6 +26,10 @@ export const TRACE_STAGE_SVG_ID = 'trace-main-svg';
 export type TraceRendererProps = {
   project: TraceProject;
   timeMs: number;
+  /** Unique root ID for embedded previews of the same composition. */
+  svgId?: string;
+  /** Prefix element IDs when rendering an embedded preview. */
+  elementIdPrefix?: string;
   selectedElementId?: string | null;
   onSelectElement?: (
     elementId: string | null,
@@ -60,6 +65,7 @@ function ElementNode({
   project,
   element,
   timeMs,
+  elementIdPrefix,
   selectedElementId,
   onSelectElement,
   onDoubleClickElement,
@@ -89,7 +95,7 @@ function ElementNode({
 
   return (
     <g
-      id={elementDomId(element.id)}
+      id={elementDomId(element.id, elementIdPrefix)}
       data-trace-id={element.id}
       data-trace-type={element.type}
       style={transformStyle(element, timeMs)}
@@ -113,6 +119,7 @@ function ElementNode({
           project={project}
           element={child}
           timeMs={timeMs}
+          elementIdPrefix={elementIdPrefix}
           selectedElementId={selectedElementId}
           onSelectElement={onSelectElement}
           onDoubleClickElement={onDoubleClickElement}
@@ -126,6 +133,8 @@ function ElementNode({
 export function TraceRenderer({
   project,
   timeMs,
+  svgId,
+  elementIdPrefix,
   selectedElementId,
   onSelectElement,
   onDoubleClickElement,
@@ -134,14 +143,14 @@ export function TraceRenderer({
   interactive = true,
   background,
 }: TraceRendererProps) {
-  const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${project.defs ?? ''}`;
+  const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${scrubDangerousSvgMarkup(project.defs ?? '')}`;
   const roots = project.rootElementIds
     .map((elementId) => project.elements[elementId])
     .filter((element): element is TraceElement => Boolean(element));
 
   return (
     <svg
-      id={TRACE_STAGE_SVG_ID}
+      id={svgId ?? TRACE_STAGE_SVG_ID}
       xmlns="http://www.w3.org/2000/svg"
       viewBox={`0 0 ${project.width} ${project.height}`}
       width="100%"
@@ -171,6 +180,7 @@ export function TraceRenderer({
           project={project}
           element={element}
           timeMs={timeMs}
+          elementIdPrefix={elementIdPrefix}
           selectedElementId={selectedElementId}
           onSelectElement={onSelectElement}
           onDoubleClickElement={onDoubleClickElement}

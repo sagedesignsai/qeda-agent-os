@@ -73,6 +73,7 @@ type IndexPort = Pick<
 
 export class TraceProjectStore {
   readonly projectsDirectory: string
+  private readonly saveQueues = new Map<string, Promise<void>>()
 
   constructor(
     readonly traceDirectory: string,
@@ -97,12 +98,40 @@ export class TraceProjectStore {
   /** Reconcile the catalog with what is actually on disk. */
   async rescan(): Promise<void> {
     await this.initialize()
+    const entries = await fs.readdir(this.projectsDirectory, { withFileTypes: true })
+    const discovered = new Set<string>()
+
+    // The bundle folders are authoritative. Rebuild missing catalog rows and
+    // clear stale "missing" flags when a folder returns.
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !isSafeProjectId(entry.name)) continue
+      const directory = path.join(this.projectsDirectory, entry.name)
+      try {
+        const file = await this.readBundle(directory)
+        if (file.project.id !== entry.name) continue
+        const existing = this.index.get(entry.name)
+        const savedAt = file.savedAt
+        const row = toRow(
+          file,
+          directory,
+          existing?.created_at ?? savedAt,
+          savedAt,
+        )
+        row.thumbnail_svg = existing?.thumbnail_svg ?? null
+        row.last_opened_at = existing?.last_opened_at ?? null
+        this.index.upsert(row)
+        discovered.add(entry.name)
+      } catch {
+        // Keep corrupt bundles out of the catalog until they can be repaired.
+      }
+    }
+
     for (const row of this.index.list()) {
-      const exists = await fs
+      const exists = discovered.has(row.id) || await fs
         .access(path.join(row.path, PROJECT_FILENAME))
         .then(() => true)
         .catch(() => false)
-      if (!exists) this.index.markMissing(row.id, true)
+      this.index.markMissing(row.id, !exists)
     }
   }
 
@@ -133,6 +162,7 @@ export class TraceProjectStore {
   }
 
   async openProject(id: string): Promise<TraceOpenResult> {
+    assertSafeProjectId(id)
     const row = this.index.get(id)
     const directory = row?.path ?? this.projectPath(id)
     const file = await this.readBundle(directory)
@@ -147,32 +177,37 @@ export class TraceProjectStore {
     project: TraceProject,
     options: { expectedRevision?: number } = {},
   ): Promise<{ revision: number; savedAt: string }> {
-    const row = this.index.get(id)
-    const directory = row?.path ?? this.projectPath(id)
-    const current = await this.readBundle(directory)
+    assertSafeProjectId(id)
+    return this.withSaveLock(id, async () => {
+      const row = this.index.get(id)
+      const directory = row?.path ?? this.projectPath(id)
+      const current = await this.readBundle(directory)
 
-    if (
-      options.expectedRevision !== undefined &&
-      options.expectedRevision !== current.revision
-    ) {
-      throw new TraceProjectError(
-        `Trace project "${id}" changed on disk (expected revision ${options.expectedRevision}, found ${current.revision}).`,
-        'TRACE_REVISION_CONFLICT',
+      if (
+        options.expectedRevision !== undefined &&
+        options.expectedRevision !== current.revision
+      ) {
+        throw new TraceProjectError(
+          `Trace project "${id}" changed on disk (expected revision ${options.expectedRevision}, found ${current.revision}).`,
+          'TRACE_REVISION_CONFLICT',
+        )
+      }
+
+      const savedAt = this.now().toISOString()
+      const file: ProjectFile = {
+        format: 1,
+        revision: current.revision + 1,
+        savedAt,
+        project: { ...project, id },
+      }
+      await this.writeBundle(directory, file)
+
+      this.index.upsert(
+        toRow(file, directory, row?.created_at ?? savedAt, savedAt),
       )
-    }
 
-    const savedAt = this.now().toISOString()
-    const file: ProjectFile = {
-      format: 1,
-      revision: current.revision + 1,
-      savedAt,
-      project: { ...project, id },
-    }
-    await this.writeBundle(directory, file)
-
-    this.index.upsert(toRow(file, directory, row?.created_at ?? savedAt, savedAt))
-
-    return { revision: file.revision, savedAt }
+      return { revision: file.revision, savedAt }
+    })
   }
 
   async renameProject(id: string, name: string): Promise<TraceProjectSummary> {
@@ -181,7 +216,9 @@ export class TraceProjectStore {
     if (!trimmed) {
       throw new TraceProjectError('A Trace project name cannot be empty.', 'TRACE_INVALID_NAME')
     }
-    await this.saveProject(id, { ...opened.project, name: trimmed })
+    await this.saveProject(id, { ...opened.project, name: trimmed }, {
+      expectedRevision: opened.revision,
+    })
 
     const row = this.index.get(id)
     if (!row) {
@@ -200,7 +237,24 @@ export class TraceProjectStore {
   }
 
   projectPath(id: string): string {
+    assertSafeProjectId(id)
     return path.join(this.projectsDirectory, id)
+  }
+
+  private async withSaveLock<T>(id: string, action: () => Promise<T>): Promise<T> {
+    const previous = this.saveQueues.get(id) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    this.saveQueues.set(id, current)
+    await previous
+    try {
+      return await action()
+    } finally {
+      release()
+      if (this.saveQueues.get(id) === current) this.saveQueues.delete(id)
+    }
   }
 
   private async writeBundle(directory: string, file: ProjectFile): Promise<void> {
@@ -240,6 +294,24 @@ export class TraceProjectStore {
         'TRACE_PROJECT_UNREADABLE',
       )
     }
+  }
+}
+
+function isSafeProjectId(id: string): boolean {
+  return Boolean(
+    id &&
+      id !== '.' &&
+      id !== '..' &&
+      !path.isAbsolute(id) &&
+      path.basename(id) === id &&
+      !id.includes('/') &&
+      !id.includes('\\'),
+  )
+}
+
+function assertSafeProjectId(id: string): void {
+  if (!isSafeProjectId(id)) {
+    throw new TraceProjectError('Invalid Trace project id.', 'TRACE_INVALID_ID')
   }
 }
 

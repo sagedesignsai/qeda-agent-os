@@ -7,7 +7,7 @@
  * interactive experiences, where the host controls the timeline.
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckIcon, CopyIcon, DownloadIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -38,9 +38,14 @@ type Format = 'svg' | 'react' | 'vanilla';
 
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const project = useTraceStore((state) => state.project);
+  const currentLooping = useTraceStore((state) => state.playback.isLooping);
   const [format, setFormat] = useState<Format>('svg');
   const [loop, setLoop] = useState(true);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (open) setLoop(currentLooping);
+  }, [open, currentLooping]);
 
   const code = useMemo(() => {
     if (!project) return '';

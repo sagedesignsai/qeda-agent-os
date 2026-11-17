@@ -20,6 +20,7 @@ import {
   gradientsToDefs,
 } from '../serialize/svg-markup';
 import { filtersToDefs } from '../filters/serialize';
+import { scrubDangerousSvgMarkup } from '../parser/svg-scrub';
 import type {
   EasingType,
   PropertyTrack,
@@ -273,11 +274,22 @@ function animatedElementMarkup(
     : '';
 
   const inherited: string[] = [];
+  const svgAttributeNames: Record<string, string> = {
+    fillOpacity: 'fill-opacity',
+    strokeWidth: 'stroke-width',
+    strokeDashoffset: 'stroke-dashoffset',
+    strokeDasharray: 'stroke-dasharray',
+    fontSize: 'font-size',
+    letterSpacing: 'letter-spacing',
+  };
   for (const property of [
     'opacity',
+    'fillOpacity',
     'fill',
     'stroke',
     'strokeWidth',
+    'strokeDashoffset',
+    'strokeDasharray',
     'fontSize',
     'letterSpacing',
   ]) {
@@ -285,13 +297,7 @@ function animatedElementMarkup(
     if (!track) continue;
     inherited.push(
       animateTag(
-        property === 'strokeWidth'
-          ? 'stroke-width'
-          : property === 'fontSize'
-            ? 'font-size'
-            : property === 'letterSpacing'
-              ? 'letter-spacing'
-              : property,
+        svgAttributeNames[property] ?? property,
         buildSamples(
           [track],
           durationMs,
@@ -325,6 +331,20 @@ function animatedElementMarkup(
     );
   }
 
+  const pathDataTrack = element.type === 'path' ? trackFor(element, 'd') : undefined;
+  if (pathDataTrack) {
+    geometry.push(
+      animateTag(
+        'd',
+        buildSamples([pathDataTrack], durationMs, (at) =>
+          String(getValueAtTime(pathDataTrack, at) ?? element.attributes.d ?? ''),
+        ),
+        durationMs,
+        { loop: options.loop },
+      ),
+    );
+  }
+
   const inheritedXml = inherited.join('');
   const geometryXml = geometry.join('');
   const trimXml =
@@ -335,10 +355,8 @@ function animatedElementMarkup(
   let body = elementBodyMarkup(element, attributes);
   if (element.type === 'path' && trimXml) {
     body = body.replace(/^<path\b/, '<path pathLength="100"');
-    body = injectAnimations(body, trimXml);
-  } else {
-    body = injectAnimations(body, geometryXml);
   }
+  body = injectAnimations(body, `${geometryXml}${trimXml}`);
 
   let clip = '';
 
@@ -387,7 +405,7 @@ export function compileProjectToAnimatedSvg(
     })
     .join('\n');
 
-  const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${project.defs ?? ''}${clips.join('')}`;
+  const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${scrubDangerousSvgMarkup(project.defs ?? '')}${clips.join('')}`;
   const background = options.background
     ? `<rect width="${project.width}" height="${project.height}" fill="${escapeXml(options.background)}" />`
     : '';

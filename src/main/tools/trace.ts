@@ -35,6 +35,7 @@ import {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 let opCounter = 0;
+const projectRevisions = new WeakMap<TraceProject, number>();
 function nextId(prefix: string): string {
   opCounter += 1;
   const random = Math.random().toString(36).slice(2, 6);
@@ -46,6 +47,7 @@ async function resolveProject(projectId?: string): Promise<TraceProject | null> 
   const store = getTraceProjectStore();
   if (projectId) {
     const result = await store.openProject(projectId);
+    projectRevisions.set(result.project, result.revision)
     return result?.project ?? null;
   }
   return null;
@@ -55,12 +57,14 @@ async function resolveProject(projectId?: string): Promise<TraceProject | null> 
 async function persistProject(
   projectId: string,
   project: TraceProject,
-  expectedRevision?: number,
+  basedOn: TraceProject,
 ): Promise<{ projectId: string; revision: number; saved: boolean }> {
   const store = getTraceProjectStore();
+  const expectedRevision = projectRevisions.get(basedOn);
   const result = await store.saveProject(projectId, project, {
-    expectedRevision: expectedRevision ?? 0,
+    ...(expectedRevision !== undefined ? { expectedRevision } : {}),
   });
+  projectRevisions.set(project, result.revision)
   return {
     projectId,
     revision: result?.revision ?? 0,
@@ -276,7 +280,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         };
       }
 
-      const saved = await persistProject(projectId, result.project);
+      const saved = await persistProject(projectId, result.project, project);
       broadcast();
       return {
         addedIds: result.diff.added,
@@ -325,7 +329,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return {
         updatedIds: result.diff.updated,
@@ -348,7 +352,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
             .enum([
               'x', 'y', 'scaleX', 'scaleY', 'rotation', 'opacity',
               'fillOpacity', 'fill', 'stroke', 'strokeWidth', 'strokeDashoffset',
-              'fontSize', 'letterSpacing', 'text', 'width', 'height', 'rx',
+              'strokeDasharray', 'd', 'fontSize', 'letterSpacing', 'text', 'width', 'height', 'rx',
               'pathProgress', 'trimStart', 'trimEnd', 'trimOffset', 'filter',
             ])
             .describe('Property to animate'),
@@ -395,12 +399,35 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return {
         updatedIds: result.diff.updated,
         project: summarizeProject(result.project),
       };
+    },
+  });
+
+  const setTracePlaybackLooping = tool({
+    description: 'Choose whether the active NovaTrace timeline repeats after it reaches its end. Use false for one-shot intros and stingers, true for continuous loops. This changes editor playback state, not project artwork.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      looping: z.boolean(),
+    }),
+    execute: async ({ projectId, looping }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+      try {
+        const { BrowserWindow } = require('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.isDestroyed()) {
+            window.webContents.send('trace:playback-loop', { projectId, looping });
+          }
+        }
+      } catch {
+        return { error: 'The Trace editor is not available to update playback mode.' };
+      }
+      return { projectId, looping, mode: looping ? 'loop' : 'once' };
     },
   });
 
@@ -433,7 +460,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         return { error: 'Failed to update canvas.', diagnostics: result.diagnostics };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return { project: summarizeProject(result.project) };
     },
@@ -466,7 +493,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         return { error: 'Failed to group elements.', diagnostics: result.diagnostics };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return {
         addedIds: result.diff.added,
@@ -498,7 +525,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         return { error: 'Failed to delete elements.', diagnostics: result.diagnostics };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return {
         removedIds: result.diff.removed,
@@ -527,7 +554,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         return { error: 'Failed to set defs.', diagnostics: result.diagnostics };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return { project: summarizeProject(result.project) };
     },
@@ -569,7 +596,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         return { error: 'Failed to apply recipe.', diagnostics: result.diagnostics };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return {
         rootId: result.recipeRootIds[0] ?? null,
@@ -608,7 +635,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         return { error: 'Failed to add scene.', diagnostics: result.diagnostics };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return {
         addedSceneIds: result.diff.scenes.added,
@@ -700,6 +727,18 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
       if (!project) return { error: `Project "${projectId}" not found.` };
 
       const ops = rawOps as TraceOp[];
+      const gatedOps = new Set([
+        'deleteElement',
+        'deleteTrack',
+        'removeScene',
+        'restore',
+      ]);
+      const gatedOp = ops.find((op) => gatedOps.has(op.type));
+      if (gatedOp) {
+        return {
+          error: `The ${gatedOp.type} op is blocked in dispatchOps. Use the explicitly approved destructive action where available.`,
+        };
+      }
       const result = applyOps(project, ops);
       if (!result.ok) {
         return {
@@ -709,7 +748,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         };
       }
 
-      await persistProject(projectId, result.project);
+      await persistProject(projectId, result.project, project);
       broadcast();
       return {
         ok: true,
@@ -728,6 +767,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
     addElements,
     updateElements,
     setTracks,
+    setTracePlaybackLooping,
     setCanvas,
     groupElements,
     deleteElements,

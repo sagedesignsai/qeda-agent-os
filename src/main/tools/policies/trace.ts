@@ -46,6 +46,7 @@ export const traceToolPolicies: ToolPolicyMap = {
 
   // ── Animation (additive — tracks are set, not destroyed) ──────────────────
   setTracks: t('write-local'),
+  setTracePlaybackLooping: t('write-local'),
 
   // ── Hierarchy (additive grouping) ─────────────────────────────────────────
   groupElements: t('write-local'),
@@ -71,14 +72,13 @@ export const traceToolPolicies: ToolPolicyMap = {
   // ── Capability discovery (read-only — loads docs) ──────────────────────────
   getTraceCapability: t('read'),
 
-  // ── Raw ops (write-local — applies atomic ops batch) ───────────────────────
-  // Could contain deleteElement ops, but the ops engine is atomic and the
-  // copilot instructions favor specific tools. Classify as write-local because
-  // the primary use is complex multi-element creation in one batch.
+  // ── Raw ops (write-local — destructive op kinds are rejected in the tool) ──
   dispatchOps: t('write-local'),
 
   // ── Subagent delegation (additive composition) ─────────────────────────────
   buildComposition: t('write-local'),
+  // Generates a plan only; the parent applies returned tracks through setTracks.
+  animateSvg: t('write-local'),
 
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),

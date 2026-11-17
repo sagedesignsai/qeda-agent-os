@@ -38,6 +38,7 @@ const ANIMATABLE_PROPERTIES = new Set<AnimatableProperty>([
   'fillOpacity',
   'strokeDashoffset',
   'strokeDasharray',
+  'd',
   'strokeWidth',
   'fill',
   'stroke',
@@ -63,6 +64,7 @@ const ANIMATABLE_PROPERTIES = new Set<AnimatableProperty>([
 const STRING_PROPERTIES = new Set<AnimatableProperty>([
   'fill',
   'stroke',
+  'd',
   'text',
   'strokeDasharray',
   'points',

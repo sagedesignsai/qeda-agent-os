@@ -12,6 +12,7 @@ import type { Session } from '../db/sessions.js';
 import type { AppSettings } from '../ai/settings.js';
 import type { MotionDocument } from '../../lib/motion/types';
 import type { TraceProject } from '../../lib/trace/types';
+import type { SvgAnimationRequest, TraceAnimationPlan } from '../../lib/trace/animation-plan';
 import type {
   TraceOpenResult,
   TraceProjectSummary,
@@ -448,7 +449,18 @@ export interface IpcChannels {
     req: { templateId: string };
     res: { thumbnailSvg: string | null; error?: string };
   };
+  'trace-svg-animation:chat': {
+    req: { sessionId: string; messages: UIMessage[]; context: SvgAnimationRequest };
+    res: void;
+  };
+  'trace-svg-animation:abort': { req: { sessionId?: string } | void; res: void };
+  'trace-svg-animation:stream-chunk': { data: string };
+  'trace-svg-animation:stream-done': { data: { sessionId: string } };
+  'trace-svg-animation:stream-error': { data: { sessionId: string; error: string } };
+  'trace-svg-animation:stream-fallback': { data: { sessionId: string } };
+  'trace-svg-animation:proposal': { data: { sessionId: string; plan: TraceAnimationPlan } };
   'trace:changed': void;
+  'trace:playback-loop': { data: { projectId: string; looping: boolean } };
   // Export: the editor starts/cancels; the hidden render window reports chunks.
   'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number; sequence?: boolean }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
   'motion:pick-export-path': { req: { projectName: string; presetId: string }; res: { path: string } | null };
@@ -827,6 +839,23 @@ export interface IpcChannels {
   'providers:models': {
     req: { providerId: string };
     res: { models: string[]; error?: string };
+  };
+
+  // ── Ollama Local Models ─────────────────────────────────────────────────────
+  /** Check if Ollama server is running and reachable. */
+  'ollama:check-connection': {
+    req: { baseURL?: string };
+    res: { isRunning: boolean; error?: string };
+  };
+  /** List all locally installed Ollama models. */
+  'ollama:list-models': {
+    req: { baseURL?: string };
+    res: { models: string[]; error?: string };
+  };
+  /** Get setup instructions for Ollama. */
+  'ollama:get-setup-instructions': {
+    req: void;
+    res: string;
   };
 
   // External services (search, scrape, docs, images, speech)

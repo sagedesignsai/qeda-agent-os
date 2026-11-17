@@ -55,7 +55,7 @@ export function registerMusicCopilotHandlers({
 
       try {
         const modelMessages = await prepareModelMessages(messages);
-        const chain = resolveModelChain();
+        const chain = await resolveModelChain();
         if (chain.length === 0) {
           throw new Error(
             'No model configured. Pick a provider and model in Settings.',

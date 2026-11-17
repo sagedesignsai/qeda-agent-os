@@ -92,6 +92,7 @@ export function mapPropertyToGsap(property: AnimatableProperty): string {
     case 'strokeWidth':
     case 'strokeDashoffset':
     case 'strokeDasharray':
+    case 'd':
     case 'fontSize':
     case 'letterSpacing':
     case 'width':
@@ -110,6 +111,7 @@ export const ATTRIBUTE_PROPERTIES: ReadonlySet<string> = new Set([
   'rx',
   'strokeDashoffset',
   'strokeDasharray',
+  'd',
   'strokeWidth',
   'stroke',
   'fill',

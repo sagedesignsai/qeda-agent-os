@@ -23,6 +23,7 @@ import { getSettings } from './settings.js';
 import { resolveModel } from './provider.js';
 import { createTraceTools } from '../tools/trace.js';
 import { createTraceCompositionSubagentTool } from '../tools/trace-composition-subagent.js';
+import { createSvgAnimationSubagentTool } from './svg-animation-agent.js';
 import { createTracePreviewTool } from '../tools/trace-preview-tool.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { traceToolPolicies } from '../tools/policies/trace.js';
@@ -149,6 +150,9 @@ Use \`applyRecipe\` to instantiate pre-built compositions: 'lower-third', 'kinet
 ### Verification
 Always call \`lintProject\` after major changes to catch errors (orphan elements, out-of-bounds keyframes, broken references), then \`renderTracePreview\` to visually verify the frame before summarizing.
 
+### Imported SVG animation
+For a selected layered SVG, flame, logo, or other vector asset, delegate motion design to \`animateSvg\`. Pass the user's actual direction in \`prompt\`; use \`motion\` only as a soft hint, and choose \`playback: "once"\` for an intro/stinger or \`"loop"\` for continuous motion when the user specifies it. The specialist visually inspects the artwork, stages editable tracks, and reviews the proposal. It does not mutate project artwork. If its result lists existing-track conflicts, tell the user exactly which tracks would be replaced and wait for their choice before calling \`setTracks\`. If there are no conflicts, apply the returned tracks in one \`setTracks\` call and call \`setTracePlaybackLooping\` using the returned playback mode, then lint and visually preview the result. If it reports a limitation or failure, explain it and ask before substituting a different effect.
+
 ## Tone & Output
 - Confident, concise, action-oriented.
 - When you execute tools, summarize what was created in clean markdown.
@@ -172,7 +176,7 @@ If you discover the scope has changed, call \`createPlan\` again with a revised 
 /**
  * "Approve only destructive actions", derived from `traceToolPolicies`.
  *
- * Of the 16 tools, only `deleteElements` is gated — it removes elements
+ * Of the tools, only `deleteElements` is gated — it removes elements
  * irrecoverably. All additive operations (create, update, animate, group,
  * recipe, defs, scene) run freely because they are recoverable by hand.
  */
@@ -230,6 +234,9 @@ export function createTraceCopilotAgent(opts?: {
             forSubagent: true,
           }),
       });
+  const svgAnimationSubagent: any = opts?.forSubagent
+    ? null
+    : createSvgAnimationSubagentTool({ target: opts?.target });
   const previewTool = createTracePreviewTool();
 
   return new ToolLoopAgent({
@@ -242,6 +249,7 @@ export function createTraceCopilotAgent(opts?: {
       ...traceTools,
       renderTracePreview: previewTool,
       ...(compositionSubagent ? { buildComposition: compositionSubagent } : {}),
+      ...(svgAnimationSubagent ? { animateSvg: svgAnimationSubagent } : {}),
       ...createPlanTools(planManager),
     },
     ...(opts?.forSubagent ? {} : { toolApproval: traceApproval }),

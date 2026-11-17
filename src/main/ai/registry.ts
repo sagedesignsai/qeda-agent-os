@@ -132,8 +132,8 @@ export const PROVIDERS: ProviderConfig[] = [
     id: 'ollama',
     name: 'Ollama (local, no key)',
     baseURL: 'http://localhost:11434/v1',
-    freeModels: [],
-    note: 'Fully local and free — needs an Ollama server running.',
+    freeModels: ['qwen3.5:0.8b', 'mistral', 'neural-chat', 'dolphin-mixtral'],
+    note: 'Fully local and free. Start with "ollama serve", then list available models in Settings. Pull models with "ollama pull <model-name>".',
   },
   {
     id: 'offline',

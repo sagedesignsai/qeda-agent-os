@@ -25,9 +25,7 @@ export type TemplateSpec = {
   scenes: TemplateSceneSpec[];
 };
 
-export type MotionTemplateCategory =
-  | 'Product' | 'Software' | 'Brand' | 'Data' | 'Editorial'
-  | 'Event' | 'Entertainment' | 'Education' | 'Commerce' | 'Cause' | 'Social';
+export type MotionTemplateCategory = 'Product' | 'Brand';
 
 export type MotionTemplate = {
   id: string;

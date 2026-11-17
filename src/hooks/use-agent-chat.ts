@@ -62,6 +62,8 @@ export interface AgentTransport {
   doneChannel: string;
   errorChannel: string;
   fallbackChannel: string;
+  /** Optional surface-specific cancellation route; defaults to `agent:abort`. */
+  abortChannel?: string;
 }
 
 /** The main chat's transport. Other agents pass their own channel names. */
@@ -215,6 +217,22 @@ export function applyStreamPart(
         () => ({
           type: `tool-${part.toolName ?? 'unknown'}`,
           toolCallId: part.toolCallId,
+          toolName: part.toolName,
+        }),
+      );
+      break;
+
+    case 'tool-input-error':
+      patchToolPart(
+        part.toolCallId ?? part.id,
+        {
+          input: part.input,
+          state: 'output-error',
+          errorText: part.errorText ?? String(part.error ?? 'Tool input was invalid.'),
+        },
+        () => ({
+          type: `tool-${part.toolName ?? 'unknown'}`,
+          toolCallId: part.toolCallId ?? part.id,
           toolName: part.toolName,
         }),
       );
@@ -485,11 +503,11 @@ export function useAgentChat({
   const abortStream = useCallback(() => {
     if (!streamingRef.current) return;
     window.electron.ipc
-      .invoke('agent:abort', { sessionId: sessionIdRef.current })
+      .invoke(transport.abortChannel ?? 'agent:abort', { sessionId: sessionIdRef.current })
       .catch(() => {
         // Ignore errors from abort – the stream may have already completed.
       });
-  }, []);
+  }, [transport.abortChannel]);
 
   // ── Hydrate from the database when the session changes ────────────────────
 

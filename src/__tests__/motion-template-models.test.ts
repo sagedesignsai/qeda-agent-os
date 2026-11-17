@@ -3,8 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Template ↔ bundled-model binding: templates reference catalog GLBs by
  * `local:` id; main-process staging converts those references into real
- * project assets with a fit-baked transform, and retargets keyframes so the
- * animated rest pose matches the baked rest pose.
+ * project assets with a fit-baked transform while keeping shot animation intact.
  */
 
 import { createMotionTemplate } from '@/lib/motion/templates';
@@ -77,21 +76,21 @@ const recorder = { stages: [] as string[][] };
 
 describe('template model staging', () => {
   it('finds model nodes that reference bundled catalog models', () => {
-    const doc = createMotionTemplate('game-showcase');
+    const doc = createMotionTemplate('chronograph-film');
     const hits = findTemplateModelNodes(doc);
-    expect(hits.map((h) => h.node.props.assetId)).toContain('local:khronos/CesiumMan');
+    expect(hits.map((h) => h.node.props.assetId)).toContain('local:khronos/ChronographWatch');
     expect(hits.every((h) => h.node.type === 'model.gltf')).toBe(true);
   });
 
   it('stages, rewrites assetId, bakes the fit transform, and appends the asset record', async () => {
     recorder.stages.length = 0;
-    const doc = createMotionTemplate('game-showcase');
-    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/CesiumMan')]);
+    const doc = createMotionTemplate('chronograph-film');
+    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/ChronographWatch')]);
 
-    expect(result.report.staged).toEqual(['local:khronos/CesiumMan']);
+    expect(result.report.staged).toEqual(['local:khronos/ChronographWatch']);
     expect(result.report.skipped).toEqual([]);
 
-    const model = result.document.scenes[1].nodes.find((n) => n.id === 'model')!;
+    const model = result.document.scenes[1].nodes.find((n) => n.id === 'watch')!;
     expect(model.props.assetId).toBe('asset_model');
     expect(model.props.missingAsset).toBe(false);
     expect(model.props.fitHeight).toBeUndefined();
@@ -106,31 +105,27 @@ describe('template model staging', () => {
     expect(result.document.assets.map((a) => a.id)).toContain('asset_model');
   });
 
-  it('retargets the rise-in position keys so the end pose is the baked rest pose', async () => {
+  it('retains the watch turn animation after baking its fit transform', async () => {
     recorder.stages.length = 0;
-    const doc = createMotionTemplate('game-showcase');
-    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/CesiumMan')]);
+    const doc = createMotionTemplate('chronograph-film');
+    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/ChronographWatch')]);
     const turntable = result.document.scenes[1];
-    const rise = turntable.timeline.clips.find((c) => c.id === 's2_model_in')!;
-    const y = rise.channels.find((c) => c.property === 'position.y')!;
-    const [first, last] = y.keyframes;
-    // Authored rest Y is 0; baked rest Y is 0.25, so keys shift by +0.25.
-    expect(last.value).toBeCloseTo(0.25, 10);
-    expect(first.value).toBeCloseTo(0.45, 10);
-    // The spin channel is untouched.
-    const spin = turntable.timeline.clips.find((c) => c.id === 's2_model')!;
+    const watch = turntable.nodes.find((n) => n.id === 'watch')!;
+    expect(watch.transform.position[1]).toBeCloseTo(0.25, 10);
+    // The spin channel is retained after staging.
+    const spin = turntable.timeline.clips.find((c) => c.id === 's2_watch_turn')!;
     expect(spin.channels[0].property).toBe('rotation.y');
   });
 
   it('evaluates the staged scene without throwing and validates the document', async () => {
     recorder.stages.length = 0;
-    const doc = createMotionTemplate('game-showcase');
-    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/CesiumMan')]);
+    const doc = createMotionTemplate('chronograph-film');
+    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/ChronographWatch')]);
     expect(() => parseMotionDocument(JSON.parse(JSON.stringify(result.document)))).not.toThrow();
     const scene = result.document.scenes[1];
-    for (const t of [0.05, 3, 5.95]) {
+    for (const t of [0.05, 1.8, 3.55]) {
       const frame = evaluateMotionFrame(scene, t);
-      const model = frame.nodes.find((n) => n.id === 'model')!;
+      const model = frame.nodes.find((n) => n.id === 'watch')!;
       // Rest pose reached by the end of the spin+rise.
       expect(model.transform.rotation[1]).toBeGreaterThanOrEqual(0);
     }
@@ -138,22 +133,21 @@ describe('template model staging', () => {
 
   it('keeps the placeholder look when the catalog model is missing and reports the skip', async () => {
     recorder.stages.length = 0;
-    const doc = createMotionTemplate('game-showcase');
+    const doc = createMotionTemplate('chronograph-film');
     const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/Avocado')]);
     expect(result.report.staged).toEqual([]);
-    expect(result.report.skipped[0].modelId).toBe('local:khronos/CesiumMan');
-    const model = result.document.scenes[1].nodes.find((n) => n.id === 'model')!;
-    expect(model.props.assetId).toBe('local:khronos/CesiumMan');
+    expect(result.report.skipped[0].modelId).toBe('local:khronos/ChronographWatch');
+    const model = result.document.scenes[1].nodes.find((n) => n.id === 'watch')!;
+    expect(model.props.assetId).toBe('local:khronos/ChronographWatch');
     // Scratch props survive so a later pass could still bake them.
     expect(model.props.fitHeight).toBe(1.5);
   });
 
-  it('stage calls resolve with one path per unique referenced model', async () => {
+  it('stages one asset for all shots that reuse a bundled model', async () => {
     recorder.stages.length = 0;
-    const doc = createMotionTemplate('mobile-app-trailer');
-    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:khronos/CesiumMan')]);
-    // No local models referenced in this template → nothing staged, doc intact.
-    expect(recorder.stages).toHaveLength(0);
-    expect(result.report.staged).toEqual([]);
+    const doc = createMotionTemplate('nightshift-car-film');
+    const result = await stageTemplateModels('proj_1', doc, fakeStore(), [fakeCatalogEntry('local:threejs/ferrari')]);
+    expect(recorder.stages).toHaveLength(1);
+    expect(result.report.staged).toEqual(['local:threejs/ferrari']);
   });
 });

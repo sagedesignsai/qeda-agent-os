@@ -30,7 +30,7 @@ export default function MotionBrowser() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [mode, setMode] = useState<ProjectMode>('template');
-  const [selectedTemplateId, setSelectedTemplateId] = useState('product-launch');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('nightshift-car-film');
   const [creating, setCreating] = useState(false);
 
   const reload = useCallback(async () => {

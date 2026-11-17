@@ -66,9 +66,11 @@ export default function Trace() {
 
   const saveNow = useCallback(async () => {
     const state = useTraceStore.getState();
-    if (!state.project || !projectId || savingRef.current) return;
+    if (!state.project || !projectId || !state.dirty || savingRef.current) return;
 
     savingRef.current = true;
+    const savedProject = state.project;
+    let saveSucceeded = false;
     state.markSaving();
     try {
       const result = await window.electron.ipc.invoke<{
@@ -76,16 +78,22 @@ export default function Trace() {
         savedAt: string;
       }>('trace:save-project', {
         projectId,
-        project: state.project,
+        project: savedProject,
         expectedRevision: state.revision,
       });
-      useTraceStore.getState().markSaved(result.revision);
+      useTraceStore.getState().markSaved(result.revision, savedProject);
+      saveSucceeded = true;
     } catch (cause) {
       useTraceStore
         .getState()
         .markSaveFailed(cause instanceof Error ? cause.message : String(cause));
     } finally {
       savingRef.current = false;
+      // A debounce can expire while another save is active. Retry after that
+      // save completes so edits made during the request are not stranded.
+      if (saveSucceeded && useTraceStore.getState().dirty) {
+        window.setTimeout(() => void saveNow(), AUTOSAVE_DELAY_MS);
+      }
     }
   }, [projectId]);
 

@@ -93,7 +93,7 @@ export type TraceDocumentActions = {
     fps?: number;
   }) => void;
   markSaving: () => void;
-  markSaved: (revision: number) => void;
+  markSaved: (revision: number, savedProject?: TraceProject) => void;
   markSaveFailed: (message: string) => void;
   markDirty: () => void;
 };

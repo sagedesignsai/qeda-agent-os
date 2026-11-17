@@ -8,7 +8,6 @@
 
 import { createMotionTemplate, MOTION_TEMPLATES } from '@/lib/motion/templates';
 import { evaluateMotionFrame } from '@/lib/motion/evaluate';
-import { preflightMotionExport } from '@/lib/motion/export/preflight';
 import { parseMotionDocument } from '@/lib/motion/schema';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,34 +26,33 @@ describe('Motion templates', () => {
       expect(document.scenes.length).toBe(template.sceneCount);
       documents.push(document);
     }
-    expect(MOTION_TEMPLATES).toHaveLength(17);
+    expect(MOTION_TEMPLATES).toHaveLength(4);
     expect(documents[0].scene.nodes).not.toBe(documents[1].scene.nodes);
   });
 
-  it('specializes mobile, software, game, and brand templates without mutating other projects', () => {
-    const mobile = createMotionTemplate('mobile-app-trailer');
-    const software = createMotionTemplate('saas-demo');
-    const game = createMotionTemplate('game-showcase');
-    const brand = createMotionTemplate('brand-sting');
+  it('curates a cinematic set across landscape, portrait, and brand work', () => {
+    const chronograph = createMotionTemplate('chronograph-film');
+    const solstice = createMotionTemplate('solstice-footwear-film');
+    const afterglow = createMotionTemplate('obscura-camera-ident');
 
-    expect(mobile.scenes.length).toBeGreaterThan(1);
-    expect(software.scenes.some((s) => s.nodes.some((n) => n.type === 'ui.browser'))).toBe(true);
-    expect(game.scenes.some((s) => s.nodes.some((n) => n.type === 'model.gltf'))).toBe(true);
-    expect(brand.scene.nodes.some((n) => n.id === 'product')).toBe(false);
-    expect(mobile.meta.output).toMatchObject({ width: 1080, height: 1920 });
+    expect(chronograph.scenes.some((scene) => scene.nodes.some((node) => node.props.assetId === 'local:khronos/ChronographWatch'))).toBe(true);
+    expect(solstice.scenes.some((scene) => scene.nodes.some((node) => node.props.assetId === 'local:khronos/MaterialsVariantsShoe'))).toBe(true);
+    expect(solstice.meta.output).toMatchObject({ width: 1080, height: 1920 });
+    expect(afterglow.scenes.some((scene) => scene.nodes.some((node) => node.type === 'stage.particles'))).toBe(true);
+    expect(afterglow.scenes.some((scene) => scene.nodes.some((node) => node.props.assetId === 'local:threejs/steampunk_camera'))).toBe(true);
+    const nightshift = createMotionTemplate('nightshift-car-film');
+    expect(nightshift.scenes.some((scene) => scene.nodes.some((node) => node.props.assetId === 'local:threejs/ferrari'))).toBe(true);
   });
 
-  it('composes scenes from the new node families', () => {
-    const data = createMotionTemplate('quarterly-data-story');
-    expect(data.scenes.length).toBe(4);
-    expect(data.scene.nodes.some((n) => n.type === 'data.kpi')).toBe(true);
-
-    const social = createMotionTemplate('social-ad');
-    expect(social.meta.output).toMatchObject({ width: 1080, height: 1080 });
-    expect(social.scenes.some((s) => s.nodes.some((n) => n.type === 'graphic.badge'))).toBe(true);
-
-    const bev = createMotionTemplate('beverage-launch');
-    expect(bev.scenes.some((s) => s.nodes.some((n) => n.type === 'product.can'))).toBe(true);
+  it('ships nested effects and transitions in each cinematic composition', () => {
+    for (const template of MOTION_TEMPLATES) {
+      const document = createMotionTemplate(template.id);
+      expect(document.scenes.every((scene) => scene.nodes.some((node) => node.type === 'fx.stack'))).toBe(true);
+    }
+    const chronograph = createMotionTemplate('chronograph-film');
+    expect(chronograph.sequence?.items.some((item) => item.transitionIn?.type === 'crossfade')).toBe(true);
+    const afterglow = createMotionTemplate('obscura-camera-ident');
+    expect(afterglow.sequence?.items.some((item) => item.transitionIn?.type === 'dip')).toBe(true);
   });
 
   it('rejects unknown template ids', () => {
@@ -63,10 +61,10 @@ describe('Motion templates', () => {
 
   describe('bundled model references', () => {
     const expected = new Map<string, string>([
-      ['product-launch-film', 'local:khronos/ChronographWatch'],
-      ['social-ad', 'local:khronos/MaterialsVariantsShoe'],
-      ['real-estate-tour', 'local:threejs/SheenChair'],
-      ['game-showcase', 'local:khronos/CesiumMan'],
+      ['chronograph-film', 'local:khronos/ChronographWatch'],
+      ['nightshift-car-film', 'local:threejs/ferrari'],
+      ['solstice-footwear-film', 'local:khronos/MaterialsVariantsShoe'],
+      ['obscura-camera-ident', 'local:threejs/steampunk_camera'],
     ]);
 
     it('referenced catalog models exist in assets/models/catalog.json', () => {
@@ -139,59 +137,30 @@ describe('Motion templates', () => {
       }
     });
 
-    it('counts the quarterly KPI up from zero to its rest value', () => {
-      const doc = createMotionTemplate('quarterly-data-story');
-      const kpiOf = (t: number) =>
-        evaluateMotionFrame(doc.scenes[0], t).nodes.find((n) => n.id === 'kpi')!;
-      expect(kpiOf(0.2).props.value).toBe(0);
-      expect(kpiOf(0.2).props.opacity).toBe(0);
-      const settled = kpiOf(4);
-      expect(settled.props.value).toBe(12840);
-      expect(settled.props.opacity).toBe(1);
+    it('moves the chronograph hero during its first shot', () => {
+      const doc = createMotionTemplate('chronograph-film');
+      const rotationAt = (time: number) =>
+        evaluateMotionFrame(doc.scenes[0], time).nodes.find((node) => node.id === 'watch')!.transform.rotation[1] as number;
+      expect(rotationAt(0.1)).toBeLessThan(0);
+      expect(rotationAt(4)).toBeGreaterThan(0);
     });
 
-    it('reveals charts through the progress channel then holds at 1', () => {
-      const doc = createMotionTemplate('quarterly-data-story');
-      const progressAt = (t: number) =>
-        evaluateMotionFrame(doc.scenes[1], t).nodes.find((n) => n.id === 'chart')!.props.progress as number;
-      expect(progressAt(0.2)).toBe(0);
-      expect(progressAt(2)).toBeGreaterThan(0);
-      expect(progressAt(2)).toBeLessThan(1);
-      expect(progressAt(5)).toBe(1);
-
-      const pitch = createMotionTemplate('pitch-intro');
-      const bars = (t: number) =>
-        evaluateMotionFrame(pitch.scenes[1], t).nodes.find((n) => n.id === 'chart')!.props.progress as number;
-      expect(bars(5)).toBe(1);
-    });
-
-    it('spins heroes one full turn and ends at the rest pose', () => {
-      const doc = createMotionTemplate('product-launch-film');
-      const rotAt = (t: number) =>
-        evaluateMotionFrame(doc.scenes[1], t).nodes.find((n) => n.id === 'product')!.transform.rotation[1] as number;
-      expect(rotAt(0.05)).toBeGreaterThan(0);
-      expect(rotAt(0.05)).toBeLessThan(0.2);
-      const half = rotAt(3);
-      expect(half).toBeGreaterThan(2.5);
-      expect(half).toBeLessThan(3.7);
-      expect(rotAt(5.95)).toBeCloseTo(Math.PI * 2, 1);
-    });
-
-    it('pushes cameras from far to the scene rest position', () => {
-      const doc = createMotionTemplate('saas-demo');
+    it('pushes the chronograph camera from its opening position', () => {
+      const doc = createMotionTemplate('chronograph-film');
       const camZ = (t: number) =>
         evaluateMotionFrame(doc.scenes[0], t).nodes.find((n) => n.id === 'cam')!.transform.position[2] as number;
-      expect(camZ(0.05)).toBeGreaterThan(7.9);
-      expect(camZ(3.95)).toBeCloseTo(7, 1);
+      expect(camZ(0.05)).toBeGreaterThan(7);
+      expect(camZ(4.15)).toBeCloseTo(5.7, 1);
     });
 
-    it('staggers credit fades so later credits stay hidden while earlier reveal', () => {
-      const doc = createMotionTemplate('title-sequence');
+    it('reveals the Afterglow title and subtitle in sequence', () => {
+      const doc = createMotionTemplate('obscura-camera-ident');
       const opacityOf = (id: string, t: number) =>
-        evaluateMotionFrame(doc.scenes[1], t).nodes.find((n) => n.id === id)!.props.opacity as number;
-      expect(opacityOf('c1', 5.5)).toBe(1);
-      expect(opacityOf('c3', 1)).toBe(0);
-      expect(opacityOf('c3', 5.5)).toBe(1);
+        evaluateMotionFrame(doc.scenes[1], t).nodes.find((node) => node.id === id)!.props.opacity as number;
+      expect(opacityOf('title', 0.3)).toBe(0);
+      expect(opacityOf('subtitle', 1)).toBe(0);
+      expect(opacityOf('title', 1.5)).toBe(1);
+      expect(opacityOf('subtitle', 2)).toBe(1);
     });
   });
 });

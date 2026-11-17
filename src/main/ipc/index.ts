@@ -85,8 +85,10 @@ import { registerModelBuilderHandlers } from './handlers/model-builder';
 import { registerMusicHandlers } from './handlers/music';
 import { registerMusicCopilotHandlers } from './handlers/music-copilot';
 import { registerTraceCopilotHandlers } from './handlers/trace-copilot';
+import { registerTraceSvgAnimationHandlers } from './handlers/trace-svg-animation';
 import { registerThemeHandlers } from './handlers/theme';
 import { registerAssetReferenceHandlers } from './handlers/asset-references';
+import { registerOllamaHandlers } from './handlers/ollama';
 
 /**
  * Register every request/response handler.
@@ -128,6 +130,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMusicHandlers({ mainWindow });
   registerMusicCopilotHandlers({ mainWindow });
   registerTraceCopilotHandlers({ mainWindow });
+  registerTraceSvgAnimationHandlers({ mainWindow });
   registerThemeHandlers();
   registerAssetReferenceHandlers({ mainWindow });
+  registerOllamaHandlers();
 }

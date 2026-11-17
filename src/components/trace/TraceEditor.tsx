@@ -37,6 +37,8 @@ import { TraceInspector } from '@/components/trace/TraceInspector';
 import { TraceStage } from '@/components/trace/TraceStage';
 import { TraceTimeline } from '@/components/trace/TraceTimeline';
 import { ExportDialog } from '@/components/trace/dialogs/ExportDialog';
+import { AnimateSvgDialog } from '@/components/trace/dialogs/AnimateSvgDialog';
+import { TraceCommandBar } from '@/components/trace/TraceCommandBar';
 import { TraceCopilotSheet } from '@/components/trace/copilot';
 import {
   ensureTraceTimelineMatchesProject,
@@ -57,11 +59,13 @@ import {
   serializePointsString,
 } from '@/lib/trace/path/model';
 import { useTraceStore } from '@/stores/trace-store';
+import { useIpcEvent } from '@/hooks/use-ipc';
 import { parseSvgToFragment } from '@/lib/trace/parser';
 import type {
   ProjectFileSelection,
   ProjectFileTextResult,
 } from '@/lib/project-files';
+import type { TraceAnimationPlan } from '@/lib/trace/animation-plan';
 
 export type TraceEditorProps = {
   onSave: () => void;
@@ -106,13 +110,54 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
   const startPathEdit = useTraceStore((state) => state.startPathEdit);
   const endPathEdit = useTraceStore((state) => state.endPathEdit);
 
+  useIpcEvent('trace:playback-loop', (raw: unknown) => {
+    const payload = raw as { projectId?: string; looping?: boolean };
+    const activeProject = useTraceStore.getState().project;
+    if (activeProject?.id === payload.projectId && typeof payload.looping === 'boolean') {
+      useTraceStore.getState().setLooping(payload.looping);
+    }
+  });
+
   const [exportOpen, setExportOpen] = useState(false);
+  const [animateSvgOpen, setAnimateSvgOpen] = useState(false);
+  const [animateTargetId, setAnimateTargetId] = useState<string | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
     string | null
   >(null);
   const [projectFilesOpen, setProjectFilesOpen] = useState(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  const openAnimateSvg = useCallback(
+    (targetId: string | null = selection.selectedElementId) => {
+      setAnimateTargetId(targetId);
+      setAnimateSvgOpen(true);
+    },
+    [selection.selectedElementId],
+  );
+
+  const applyAnimateSvgPlan = useCallback((plan: TraceAnimationPlan): boolean => {
+    const currentProject = useTraceStore.getState().project;
+    if (!currentProject) return false;
+    const ops = plan.tracks.flatMap((planned) => {
+      const element = currentProject.elements[planned.elementId];
+      if (!element) return [];
+      const existing = element.tracks.find((track) => track.property === planned.property);
+      return [{
+        type: 'setTrack' as const,
+        elementId: planned.elementId,
+        property: planned.property,
+        ...(existing ? { trackId: existing.id } : {}),
+        label: `${planned.property} · Animate SVG`,
+        keyframes: planned.keyframes,
+      }];
+    });
+    if (ops.length !== plan.tracks.length) return false;
+    const result = dispatch(ops);
+    if (!result?.ok) return false;
+    useTraceStore.getState().setLooping(plan.playback === 'loop');
+    return true;
+  }, [dispatch]);
 
   const handleImportSvg = useCallback(() => {
     importFileInputRef.current?.click();
@@ -522,6 +567,14 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           </Button>
         </div>
 
+        <div className="mx-2 flex min-w-0 flex-1 justify-center">
+          <TraceCommandBar
+            onAnimateSvg={() => openAnimateSvg()}
+            onImportSvg={handleImportSvg}
+            onExport={() => setExportOpen(true)}
+          />
+        </div>
+
         <div className="ml-auto flex items-center gap-1">
           <Button
             type="button"
@@ -631,7 +684,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        <TraceElementsTree />
+        <TraceElementsTree onAnimateSvg={openAnimateSvg} />
         <TraceStage
           project={project}
           timeMs={playback.currentTimeMs}
@@ -699,6 +752,15 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
       )}
 
       <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+      <AnimateSvgDialog
+        open={animateSvgOpen}
+        onOpenChange={setAnimateSvgOpen}
+        targetElementId={animateTargetId}
+        targetElementName={
+          animateTargetId ? project.elements[animateTargetId]?.name : null
+        }
+        onApplyAnimation={applyAnimateSvgPlan}
+      />
 
       <ProjectFileBrowserDialog
         open={projectFilesOpen}
