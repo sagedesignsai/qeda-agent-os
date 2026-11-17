@@ -35,6 +35,8 @@ export interface PlanPanelProps {
   className?: string;
   defaultCollapsed?: boolean;
   title?: string;
+  /** Compact mode for narrow/modal contexts */
+  compact?: boolean;
 }
 
 export function PlanPanel({
@@ -43,6 +45,7 @@ export function PlanPanel({
   className,
   defaultCollapsed = false,
   title = 'Agent Plan',
+  compact = false,
 }: PlanPanelProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
@@ -76,8 +79,11 @@ export function PlanPanel({
   return (
     <div
       className={cn(
-        'group relative overflow-hidden rounded-xl border border-border/70 bg-card/85 backdrop-blur-md shadow-xs transition-all duration-200',
-        isRunning && 'ring-1 ring-primary/20',
+        'group relative overflow-hidden rounded-xl border transition-all duration-200',
+        compact
+          ? 'border-border/50 bg-card/60 shadow-sm'
+          : 'border-border/70 bg-card/85 shadow-xs',
+        isRunning && !compact && 'ring-1 ring-primary/20',
         className,
       )}
       aria-label="Agent execution plan"
@@ -88,11 +94,15 @@ export function PlanPanel({
       )}
 
       {/* Header bar */}
-      <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 sm:px-4">
+      <div className={cn(
+        'flex items-center justify-between gap-3 transition-colors',
+        compact ? 'px-3 py-2 sm:px-3' : 'px-3.5 py-2.5 sm:px-4'
+      )}>
         <div className="flex items-center gap-2.5 min-w-0">
           <div
             className={cn(
-              'flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors',
+              'flex shrink-0 items-center justify-center rounded-lg border transition-colors',
+              compact ? 'size-6' : 'size-7',
               stats.allFinished
                 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
                 : isRunning
@@ -103,28 +113,37 @@ export function PlanPanel({
             {stats.allFinished ? (
               <CheckCircle2Icon className="size-4" />
             ) : isRunning ? (
-              <SparklesIcon className="size-4 animate-pulse" />
+              <SparklesIcon className={cn('animate-pulse', compact ? 'size-3.5' : 'size-4')} />
             ) : (
-              <ListTodoIcon className="size-4" />
+              <ListTodoIcon className={cn(compact ? 'size-3.5' : 'size-4')} />
             )}
           </div>
 
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs font-semibold tracking-tight text-foreground truncate">
+            <span className={cn(
+              'font-semibold tracking-tight text-foreground truncate',
+              compact ? 'text-[11px]' : 'text-xs'
+            )}>
               {title}
             </span>
 
             {plan.version > 1 && (
               <Badge
                 variant="outline"
-                className="px-1.5 py-0 text-[10px] font-medium border-primary/30 text-primary bg-primary/5"
+                className={cn(
+                  'font-medium border-primary/30 text-primary bg-primary/5',
+                  compact ? 'px-1 py-0 text-[9px]' : 'px-1.5 py-0 text-[10px]'
+                )}
               >
                 v{plan.version}
               </Badge>
             )}
 
-            <span className="text-[11px] text-muted-foreground">
-              {stats.done}/{stats.total} completed
+            <span className={cn(
+              'text-muted-foreground',
+              compact ? 'text-[10px]' : 'text-[11px]'
+            )}>
+              {stats.done}/{stats.total}
             </span>
           </div>
         </div>
@@ -134,25 +153,34 @@ export function PlanPanel({
           {isRunning ? (
             <Badge
               variant="secondary"
-              className="gap-1.5 px-2 py-0.5 text-[11px] font-medium bg-primary/10 text-primary border-transparent"
+              className={cn(
+                'gap-1.5 font-medium border-transparent bg-primary/10 text-primary',
+                compact ? 'px-1.5 py-0 text-[10px]' : 'gap-1.5 px-2 py-0.5 text-[11px]'
+              )}
             >
-              <Loader2Icon className="size-3 animate-spin" />
-              <span>Executing</span>
+              <Loader2Icon className={cn('animate-spin', compact ? 'size-2.5' : 'size-3')} />
+              <span>{compact ? 'Run' : 'Executing'}</span>
             </Badge>
           ) : stats.allFinished ? (
             <Badge
               variant="secondary"
-              className="gap-1 px-2 py-0.5 text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-transparent"
+              className={cn(
+                'gap-1 font-medium border-transparent bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                compact ? 'px-1.5 py-0 text-[10px]' : 'px-2 py-0.5 text-[11px]'
+              )}
             >
-              <CheckCircle2Icon className="size-3" />
-              <span>Completed</span>
+              <CheckCircle2Icon className={cn(compact ? 'size-2.5' : 'size-3')} />
+              <span>{compact ? 'Done' : 'Completed'}</span>
             </Badge>
           ) : (
             <Badge
               variant="outline"
-              className="px-2 py-0.5 text-[11px] font-normal text-muted-foreground border-border/60"
+              className={cn(
+                'font-normal text-muted-foreground border-border/60',
+                compact ? 'px-1.5 py-0 text-[10px]' : 'px-2 py-0.5 text-[11px]'
+              )}
             >
-              Paused
+              {compact ? 'Wait' : 'Paused'}
             </Badge>
           )}
 
@@ -160,13 +188,16 @@ export function PlanPanel({
           <button
             type="button"
             onClick={() => setCollapsed((c) => !c)}
-            className="flex size-6 items-center justify-center rounded-md text-muted-foreground/80 hover:bg-muted/60 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className={cn(
+              'flex items-center justify-center rounded-md text-muted-foreground/80 hover:bg-muted/60 hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+              compact ? 'size-5' : 'size-6'
+            )}
             aria-label={collapsed ? 'Expand plan' : 'Collapse plan'}
           >
             {collapsed ? (
-              <ChevronDownIcon className="size-3.5" />
+              <ChevronDownIcon className={cn(compact ? 'size-3' : 'size-3.5')} />
             ) : (
-              <ChevronUpIcon className="size-3.5" />
+              <ChevronUpIcon className={cn(compact ? 'size-3' : 'size-3.5')} />
             )}
           </button>
         </div>
@@ -189,9 +220,12 @@ export function PlanPanel({
 
       {/* Items List */}
       {!collapsed && (
-        <div className="divide-y divide-border/40 px-1 py-1 sm:px-2">
+        <div className={cn(
+          'divide-y divide-border/40',
+          compact ? 'divide-border/20 px-0.5 py-0.5 sm:px-1' : 'px-1 py-1 sm:px-2'
+        )}>
           {plan.items.map((item, index) => (
-            <PlanItemRow key={item.id} item={item} index={index} />
+            <PlanItemRow key={item.id} item={item} index={index} compact={compact} />
           ))}
         </div>
       )}
@@ -202,9 +236,10 @@ export function PlanPanel({
 interface PlanItemRowProps {
   item: PlanItem;
   index: number;
+  compact?: boolean;
 }
 
-function PlanItemRow({ item, index }: PlanItemRowProps) {
+function PlanItemRow({ item, index, compact = false }: PlanItemRowProps) {
   const isInProgress = item.status === 'in-progress';
   const isDone = item.status === 'done';
   const isFailed = item.status === 'failed';
@@ -213,7 +248,8 @@ function PlanItemRow({ item, index }: PlanItemRowProps) {
   return (
     <div
       className={cn(
-        'group/item flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 transition-colors',
+        'group/item flex items-center gap-2.5 rounded-lg transition-colors',
+        compact ? 'gap-1.5 px-1.5 py-1' : 'gap-2.5 px-2.5 py-1.5',
         isInProgress && 'bg-primary/5 text-foreground',
         isDone && 'text-muted-foreground/90',
         isPending && 'text-muted-foreground/75',
@@ -222,20 +258,21 @@ function PlanItemRow({ item, index }: PlanItemRowProps) {
     >
       {/* Status icon */}
       <div className="shrink-0 flex items-center justify-center">
-        {isDone && <CheckCircle2Icon className="size-3.5 text-emerald-500" />}
+        {isDone && <CheckCircle2Icon className={cn('text-emerald-500', compact ? 'size-3' : 'size-3.5')} />}
         {isInProgress && (
-          <Loader2Icon className="size-3.5 text-primary animate-spin" />
+          <Loader2Icon className={cn('text-primary animate-spin', compact ? 'size-3' : 'size-3.5')} />
         )}
-        {isFailed && <XCircleIcon className="size-3.5 text-destructive" />}
+        {isFailed && <XCircleIcon className={cn('text-destructive', compact ? 'size-3' : 'size-3.5')} />}
         {isPending && (
-          <CircleDashedIcon className="size-3.5 text-muted-foreground/40" />
+          <CircleDashedIcon className={cn('text-muted-foreground/40', compact ? 'size-3' : 'size-3.5')} />
         )}
       </div>
 
       {/* Step index badge */}
       <span
         className={cn(
-          'text-[10px] font-mono shrink-0 px-1 py-0.5 rounded transition-colors',
+          'font-mono shrink-0 rounded transition-colors',
+          compact ? 'text-[9px] px-0.5 py-0' : 'text-[10px] px-1 py-0.5',
           isInProgress
             ? 'bg-primary/15 text-primary font-semibold'
             : isDone
@@ -249,7 +286,8 @@ function PlanItemRow({ item, index }: PlanItemRowProps) {
       {/* Description */}
       <span
         className={cn(
-          'min-w-0 flex-1 text-xs leading-snug truncate transition-all',
+          'min-w-0 flex-1 leading-snug truncate transition-all',
+          compact ? 'text-[10px]' : 'text-xs',
           isDone && 'line-through text-muted-foreground/60',
           isInProgress && 'font-medium text-foreground',
           isPending && 'text-muted-foreground',
@@ -261,7 +299,8 @@ function PlanItemRow({ item, index }: PlanItemRowProps) {
       {/* Status Pill */}
       <span
         className={cn(
-          'shrink-0 text-[10px] font-medium capitalize transition-colors',
+          'shrink-0 font-medium capitalize transition-colors',
+          compact ? 'text-[9px]' : 'text-[10px]',
           isDone && 'text-emerald-500/80',
           isInProgress && 'text-primary font-semibold',
           isPending && 'text-muted-foreground/40',
@@ -269,11 +308,11 @@ function PlanItemRow({ item, index }: PlanItemRowProps) {
         )}
       >
         {item.status === 'in-progress'
-          ? 'working'
+          ? compact ? 'work' : 'working'
           : item.status === 'done'
             ? 'done'
             : item.status === 'failed'
-              ? 'failed'
+              ? 'fail'
               : 'pending'}
       </span>
     </div>

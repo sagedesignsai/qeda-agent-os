@@ -19,12 +19,12 @@ const EASE_OUT = EASING_PRESETS.easeOut.value;
 const LINEAR = EASING_PRESETS.linear.value;
 
 const cinematicLookNodes = [
-  { type: 'fx.grade', id: 'grade', props: { exposure: 0.06, contrast: 0.2, saturation: 0.1, temperature: 0.14, tint: 0.02 } },
+  { type: 'fx.grade', id: 'grade', props: { exposure: 0.4, contrast: 0.15, saturation: 0.1, temperature: 0.14, tint: 0.02 } },
   { type: 'fx.lens-distortion', id: 'lens', props: { radial1: 0.01, radial2: 0 } },
-  { type: 'fx.bloom', id: 'bloom', props: { intensity: 0.65, threshold: 0.82, smoothing: 0.35 } },
-  { type: 'fx.vignette', id: 'vignette', props: { offset: 0.34, darkness: 0.6 } },
-  { type: 'fx.grain', id: 'grain', props: { amount: 0.2 } },
-  { type: 'fx.letterbox', id: 'letterbox', props: { aspect: 2.39, opacity: 1 } },
+  { type: 'fx.bloom', id: 'bloom', props: { intensity: 0.45, threshold: 0.75, smoothing: 0.35 } },
+  { type: 'fx.vignette', id: 'vignette', props: { offset: 0.4, darkness: 0.4 } },
+  { type: 'fx.grain', id: 'grain', props: { amount: 0.15 } },
+  { type: 'fx.letterbox', id: 'letterbox', props: { aspect: 2.39, opacity: 0.8 } },
 ];
 
 function cinematicLook(id = 'look') {
@@ -64,8 +64,8 @@ export const cinematicTemplates: TemplateSpec[] = [
             targetId: 'product',
             targetOffset: [0, 0.35, 0],
             dofEnabled: true,
-            aperture: 1.8,
-            focusRange: 1.1,
+            aperture: 2.8,
+            focusRange: 3,
             shake: 0.12,
             shakeSpeed: 0.9,
           }, { position: [1.1, 1.4, 6.2] }),
@@ -108,8 +108,8 @@ export const cinematicTemplates: TemplateSpec[] = [
             targetOffset: [0, 0.5, 0],
             roll: -3,
             dofEnabled: true,
-            aperture: 2.2,
-            focusRange: 0.7,
+            aperture: 2.8,
+            focusRange: 2,
             shake: 0.22,
             shakeSpeed: 1.4,
           }, { position: [2.1, 0.9, 3.4] }),
@@ -165,8 +165,8 @@ export const cinematicTemplates: TemplateSpec[] = [
             aim: 'target',
             targetId: 'title',
             dofEnabled: true,
-            aperture: 2.8,
-            focusRange: 2.4,
+            aperture: 3.5,
+            focusRange: 3,
           }, { position: [0, 0.2, 6.4] }),
           ...cinematicLook('end_look'),
         ],
@@ -222,7 +222,7 @@ export const cinematicTemplates: TemplateSpec[] = [
           node('light.point', 'rim', { intensity: 2.4, color: '#e9a85b' }, { position: [-3, 1.8, -2] }),
           node('stage.pedestal', 'pedestal', { color: '#101722', accentColor: '#c69b5d', metalness: 0.55 }, { position: [0, -0.85, 0] }),
           node('model.gltf', 'watch', { assetId: 'local:khronos/ChronographWatch', fitHeight: 1.5, restBottom: -0.5 }, { position: [0, 0, 0] }),
-          node('camera.perspective', 'cam', { fov: 28, aim: 'target', targetId: 'watch', targetOffset: [0, 0.1, 0], dofEnabled: true, aperture: 2.2, focusRange: 0.9 }, { position: [1.2, 1.1, 6.4] }),
+          node('camera.perspective', 'cam', { fov: 28, aim: 'target', targetId: 'watch', targetOffset: [0, 0.1, 0], dofEnabled: true, aperture: 2.8, focusRange: 3 }, { position: [1.2, 1.1, 6.4] }),
           ...cinematicLook('reveal_look'),
         ],
         clips: [
@@ -245,7 +245,7 @@ export const cinematicTemplates: TemplateSpec[] = [
           node('light.directional', 'key', { intensity: 3.8, color: '#ffe0b2' }, { position: [2.4, 3.2, 2.2] }),
           node('light.point', 'rim', { intensity: 2.8, color: '#6b9ce8' }, { position: [-2.5, 1, -2] }),
           node('model.gltf', 'watch', { assetId: 'local:khronos/ChronographWatch', fitHeight: 1.5, restBottom: -0.5 }, { position: [0, 0, 0] }),
-          node('camera.perspective', 'cam', { fov: 23, aim: 'target', targetId: 'watch', targetOffset: [0, 0.05, 0], dofEnabled: true, aperture: 1.8, focusRange: 0.65 }, { position: [2.1, 0.85, 3.6] }),
+          node('camera.perspective', 'cam', { fov: 23, aim: 'target', targetId: 'watch', targetOffset: [0, 0.05, 0], dofEnabled: true, aperture: 2.8, focusRange: 2 }, { position: [2.1, 0.85, 3.6] }),
           ...cinematicLook('detail_look'),
         ],
         clips: [
@@ -269,7 +269,7 @@ export const cinematicTemplates: TemplateSpec[] = [
           node('stage.backdrop', 'backdrop', { topColor: '#182234', bottomColor: '#06090f' }, { position: [0, 0.3, -3.5] }),
           node('text.title', 'title', { text: 'MADE TO LAST', fontSize: 0.3, color: '#f3dfbd' }, { position: [0, 0.18, 0.8] }),
           node('text.body', 'subtitle', { text: 'Precision, in every second.', fontSize: 0.13, color: '#b1bdce' }, { position: [0, -0.25, 0.8] }),
-          node('camera.perspective', 'cam', { fov: 32, aim: 'target', targetId: 'title', dofEnabled: true, aperture: 2.8, focusRange: 2.4 }, { position: [0, 0.2, 6.2] }),
+          node('camera.perspective', 'cam', { fov: 32, aim: 'target', targetId: 'title', dofEnabled: true, aperture: 3.5, focusRange: 3 }, { position: [0, 0.2, 6.2] }),
           ...cinematicLook('signature_look'),
         ],
         clips: [
@@ -307,7 +307,7 @@ export const cinematicTemplates: TemplateSpec[] = [
           node('light.point', 'rim', { intensity: 2.1, color: '#df956d' }, { position: [2.5, 1.8, -2] }),
           node('stage.cyclorama', 'cyclorama', { color: '#9a755a', roughness: 0.82 }, { position: [0, -0.72, 0] }),
           node('model.gltf', 'shoe', { assetId: 'local:khronos/MaterialsVariantsShoe', fitHeight: 1.2, restBottom: -0.72 }, { position: [0, 0, 0] }),
-          node('camera.perspective', 'cam', { fov: 30, aim: 'target', targetId: 'shoe', targetOffset: [0, 0.2, 0], dofEnabled: true, aperture: 2, focusRange: 1 }, { position: [0.8, 1.1, 8] }),
+          node('camera.perspective', 'cam', { fov: 30, aim: 'target', targetId: 'shoe', targetOffset: [0, 0.2, 0], dofEnabled: true, aperture: 2.8, focusRange: 3.5 }, { position: [0.8, 1.1, 8] }),
           ...cinematicLook('first_light_look'),
         ],
         clips: [
@@ -331,7 +331,7 @@ export const cinematicTemplates: TemplateSpec[] = [
           node('stage.cyclorama', 'cyclorama', { color: '#805f4d', roughness: 0.8 }, { position: [0, -0.72, 0] }),
           node('model.gltf', 'shoe', { assetId: 'local:khronos/MaterialsVariantsShoe', fitHeight: 1.2, restBottom: -0.72 }, { position: [0, 0, 0] }),
           node('text.title', 'title', { text: 'Move with ease', fontSize: 0.22, color: '#fff4e8' }, { position: [0, 1.55, 0.4] }),
-          node('camera.perspective', 'cam', { fov: 32, aim: 'target', targetId: 'shoe', dofEnabled: true, aperture: 2.4, focusRange: 1.4 }, { position: [0.6, 0.7, 7.8] }),
+          node('camera.perspective', 'cam', { fov: 32, aim: 'target', targetId: 'shoe', dofEnabled: true, aperture: 2.8, focusRange: 3.5 }, { position: [0.6, 0.7, 7.8] }),
           ...cinematicLook('ritual_look'),
         ],
         clips: [
@@ -391,7 +391,7 @@ export const cinematicTemplates: TemplateSpec[] = [
           node('light.point', 'glow', { intensity: 2.8, color: '#d98a58' }, { position: [-2.2, 1.5, -1.5] }),
           node('stage.particles', 'dust', { count: 420, color: '#f2bd85', radius: 5, size: 0.026, opacity: 0.36, seed: 11 }, { position: [0, 0, -0.4] }),
           node('model.gltf', 'emblem', { assetId: 'local:threejs/steampunk_camera', fitHeight: 1.35, restBottom: -0.7 }, { position: [0, 0, 0] }),
-          node('camera.perspective', 'cam', { fov: 34, aim: 'target', targetId: 'emblem', dofEnabled: true, aperture: 2.4, focusRange: 1.1 }, { position: [0.7, 0.3, 7.2] }),
+          node('camera.perspective', 'cam', { fov: 34, aim: 'target', targetId: 'emblem', dofEnabled: true, aperture: 2.8, focusRange: 3 }, { position: [0.7, 0.3, 7.2] }),
           ...cinematicLook('atmosphere_look'),
         ],
         clips: [
@@ -415,7 +415,7 @@ export const cinematicTemplates: TemplateSpec[] = [
           node('stage.backdrop', 'backdrop', { topColor: '#211811', bottomColor: '#090807' }, { position: [0, 0.2, -3] }),
           node('text.title', 'title', { text: 'OBSCURA', fontSize: 0.52, color: '#f0c99d' }, { position: [0, 0.15, 0.7] }),
           node('text.body', 'subtitle', { text: 'A new point of view', fontSize: 0.14, color: '#c4a989' }, { position: [0, -0.34, 0.7] }),
-          node('camera.perspective', 'cam', { fov: 30, aim: 'target', targetId: 'title', dofEnabled: true, aperture: 2.6, focusRange: 2 }, { position: [0, 0.2, 6.8] }),
+          node('camera.perspective', 'cam', { fov: 30, aim: 'target', targetId: 'title', dofEnabled: true, aperture: 3.5, focusRange: 3 }, { position: [0, 0.2, 6.8] }),
           ...cinematicLook('name_look'),
         ],
         clips: [

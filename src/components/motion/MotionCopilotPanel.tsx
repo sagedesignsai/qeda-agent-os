@@ -192,7 +192,7 @@ export function MotionCopilotPanel({
         <ConversationScrollButton />
         {plan && (
           <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-1 bg-card/80 backdrop-blur-xs">
-            <PlanPanel plan={plan} />
+            <PlanPanel plan={plan} compact />
           </div>
         )}
       </Conversation>

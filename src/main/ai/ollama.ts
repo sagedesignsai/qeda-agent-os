@@ -5,9 +5,12 @@
  *
  * Ollama is a local model runner: users download models with `ollama pull <model>`
  * and serve them via `ollama serve`. This module handles Ollama connectivity,
- * model listing, and helpful error messages specific to the local setup.
+ * model listing, shell execution, and helpful error messages specific to the local setup.
  * ─────────────────────────────────────────────────────────────────────────────
  */
+
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 export interface OllamaModelInfo {
   name: string;
@@ -225,4 +228,222 @@ ollama serve               # Start the API server
 
 **Note**: Models are stored in \`~/.ollama/models\` (Linux/Mac) or \`%USERPROFILE%\\.ollama\\models\` (Windows).
 `.trim();
+}
+
+
+/**
+ * Shell execution utilities for Ollama management.
+ * Allows starting Ollama server and pulling models from within the app.
+ */
+
+const execFileAsync = promisify(execFile);
+
+export interface OllamaStartResult {
+  success: boolean;
+  pid?: number;
+  error?: string;
+  message?: string;
+}
+
+/**
+ * Check if Ollama is installed on the system.
+ */
+export async function isOllamaInstalled(): Promise<boolean> {
+  try {
+    await execFileAsync('ollama', ['--version']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the installed Ollama version.
+ */
+export async function getOllamaVersion(): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync('ollama', ['--version']);
+    // Output format: "ollama version is 0.1.32"
+    const match = stdout.match(/ollama version is ([\d.]+)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Start the Ollama server.
+ * 
+ * On macOS, starts the app which auto-launches the server.
+ * On Linux/Windows, runs `ollama serve` in the background.
+ */
+export async function startOllamaServer(): Promise<OllamaStartResult> {
+  try {
+    const platform = process.platform;
+
+    if (platform === 'darwin') {
+      // macOS: open the Ollama app
+      try {
+        await execFileAsync('open', ['-a', 'Ollama']);
+        return {
+          success: true,
+          message: 'Ollama app opened. Server will start automatically.',
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: `Failed to open Ollama.app. Is it installed? Download from https://ollama.ai`,
+        };
+      }
+    }
+
+    if (platform === 'win32') {
+      // Windows: look for ollama.exe in Program Files
+      try {
+        const programFiles = process.env.PROGRAMFILES || 'C:\\Program Files';
+        const ollamaPath = `${programFiles}\\Ollama\\ollama.exe`;
+
+        // Try to start Ollama
+        const { spawn } = await import('node:child_process');
+        spawn(ollamaPath, [], { detached: true, stdio: 'ignore' });
+
+        return {
+          success: true,
+          message: 'Ollama server starting in background. Wait a few seconds then refresh.',
+        };
+      } catch (err) {
+        return {
+          success: false,
+          error: `Failed to start Ollama. Is it installed? Download from https://ollama.ai`,
+        };
+      }
+    }
+
+    // Linux: run ollama serve
+    try {
+      const { spawn } = await import('node:child_process');
+      const server = spawn('ollama', ['serve'], {
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env },
+      });
+
+      const pid = server.pid;
+      server.unref();
+
+      return {
+        success: true,
+        pid,
+        message: `Ollama server starting (PID: ${pid}). Wait a few seconds then refresh.`,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: `Failed to start Ollama. Is it installed? Run: curl https://ollama.ai/install.sh | sh`,
+      };
+    }
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error starting Ollama',
+    };
+  }
+}
+
+export interface OllamaPullResult {
+  success: boolean;
+  modelId?: string;
+  progress?: string;
+  error?: string;
+}
+
+/**
+ * Pull (download) a model from Ollama registry.
+ * 
+ * This spawns a background process to pull the model.
+ * The process will run in the background even if the app closes.
+ */
+export async function pullOllamaModel(
+  modelId: string,
+  onProgress?: (update: string) => void,
+): Promise<OllamaPullResult> {
+  try {
+    // Validate model ID format
+    if (!modelId.trim() || !/^[\w\-.:]+$/.test(modelId)) {
+      return {
+        success: false,
+        error: `Invalid model ID: "${modelId}". Use format: name or name:tag`,
+      };
+    }
+
+    // Spawn detached process so it continues even if app closes
+    const { spawn } = await import('node:child_process');
+    const pull = spawn('ollama', ['pull', modelId], {
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let output = '';
+    pull.stdout?.on('data', (data) => {
+      output += data.toString();
+      if (onProgress) {
+        onProgress(output);
+      }
+    });
+
+    pull.stderr?.on('data', (data) => {
+      output += data.toString();
+    });
+
+    pull.unref();
+
+    return {
+      success: true,
+      modelId,
+      progress: `Started pulling ${modelId} in background. Run "ollama list" to check progress.`,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Failed to pull model',
+    };
+  }
+}
+
+/**
+ * Get currently running Ollama processes.
+ */
+export async function getRunningOllamaModels(): Promise<string[]> {
+  try {
+    const { stdout } = await execFileAsync('ollama', ['ps']);
+    // Parse output to extract model names
+    const lines = stdout.split('\n').slice(1); // Skip header
+    return lines
+      .filter((line) => line.trim())
+      .map((line) => line.split(/\s+/)[0])
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Stop a running model.
+ */
+export async function stopOllamaModel(modelId: string): Promise<boolean> {
+  try {
+    const { spawn } = await import('node:child_process');
+    const proc = spawn('ollama', ['stop', modelId], {
+      stdio: 'pipe',
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      proc.on('exit', (code) => (code === 0 ? resolve() : reject(code)));
+      proc.on('error', reject);
+    });
+
+    return true;
+  } catch {
+    return false;
+  }
 }

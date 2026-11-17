@@ -559,6 +559,7 @@ export function TerminalTab({
               plan={plan}
               isRunning={status === 'running'}
               title="Terminal Agent Plan"
+              compact
             />
           </div>
         )}

@@ -16,6 +16,8 @@ import {
   PromptInputSubmit,
   type PromptInputMessage,
 } from '@/components/ai-elements/prompt-input';
+import { ListTodoIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface ChatInputProps {
@@ -30,6 +32,9 @@ interface ChatInputProps {
   contextControls?: ReactNode;
   /** Web assets button to render in footer (chat page) */
   assetControls?: ReactNode;
+  /** Plan toggle button */
+  hasPlan?: boolean;
+  onTogglePlan?: () => void;
   /** Taller textarea, for the empty-state hero composer. */
   tall?: boolean;
   className?: string;
@@ -68,6 +73,8 @@ export function ChatInput({
   footerLeft,
   contextControls,
   assetControls,
+  hasPlan = false,
+  onTogglePlan,
   tall = false,
   className,
   value,
@@ -134,6 +141,19 @@ export function ChatInput({
               {footerLeft}
               {contextControls}
               {assetControls}
+              {hasPlan && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={onTogglePlan}
+                  className="h-8 gap-1.5 px-2 text-xs"
+                  title="Toggle execution plan"
+                >
+                  <ListTodoIcon className="size-3.5 shrink-0" />
+                  <span>Plan</span>
+                </Button>
+              )}
             </PromptInputTools>
           )}
           <div className="flex shrink-0 items-center gap-1.5">

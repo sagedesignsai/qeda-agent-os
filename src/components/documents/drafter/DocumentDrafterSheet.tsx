@@ -642,6 +642,7 @@ export function DocumentDrafterSheet({
                 plan={plan}
                 isRunning={status === 'streaming'}
                 title="Drafter Plan"
+                compact
               />
             </div>
           )}

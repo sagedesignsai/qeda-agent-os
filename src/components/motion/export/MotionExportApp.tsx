@@ -162,10 +162,10 @@ export function MotionExportStageView({
       style={{ width: job.settings.width, height: job.settings.height, overflow: 'hidden', position: 'relative' }}
     >
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <MotionSceneCanvas doc={sceneDocs[0]} clock={clockA} viewMode="perspective" stageColor={job.document.brand.colors.background || '#171a22'} gridVisible={false} zoom={1} showEditorStage={false} dpr={1} preserveDrawingBuffer onCanvasReady={onCanvasA} />
+        <MotionSceneCanvas doc={sceneDocs[0]} clock={clockA} viewMode="cinematic" stageColor={job.document.brand.colors.background || '#171a22'} gridVisible={false} zoom={1} showEditorStage={false} dpr={1} preserveDrawingBuffer onCanvasReady={onCanvasA} />
       </div>
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <MotionSceneCanvas doc={sceneDocs[1]} clock={clockB} viewMode="perspective" stageColor={job.document.brand.colors.background || '#171a22'} gridVisible={false} zoom={1} showEditorStage={false} dpr={1} preserveDrawingBuffer onCanvasReady={onCanvasB} />
+        <MotionSceneCanvas doc={sceneDocs[1]} clock={clockB} viewMode="cinematic" stageColor={job.document.brand.colors.background || '#171a22'} gridVisible={false} zoom={1} showEditorStage={false} dpr={1} preserveDrawingBuffer onCanvasReady={onCanvasB} />
       </div>
     </div>
   );

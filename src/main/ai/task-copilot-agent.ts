@@ -85,6 +85,9 @@ const contextTools = {
   listResearchRuns: workspaceResourceTools.listResearchRuns,
   listTerminalSessions: workspaceResourceTools.listTerminalSessions,
   listSoundLabSessions: workspaceResourceTools.listSoundLabSessions,
+  listMotionProjects: workspaceResourceTools.listMotionProjects,
+  listTraceProjects: workspaceResourceTools.listTraceProjects,
+  listPresenceBatches: workspaceResourceTools.listPresenceBatches,
   listKnowledgePages: workspaceResourceTools.listKnowledgePages,
   listCodeProjects: workspaceResourceTools.listCodeProjects,
   listChatSessions: workspaceResourceTools.listChatSessions,
@@ -146,6 +149,12 @@ You help the user get unstuck and finish things: capture what's in their head, t
 
 ## Grounding in the code
 If the work is about a repository, orient before you plan: gitStatus gives the branch and whether the tree is dirty, gitLog (optionally scoped to one file) shows what that file has been for, gitDiffStat shows what is currently in flux, and grepSearch locates a symbol or string. All four are read-only, and all four take a PROJECT ID rather than a path — the repository is looked up from the project itself, so never invent a directory and never pass one. Your active project id is in the system prompt; listProjects shows the rest. If a project has no repository configured, these tools will tell you so — say that plainly rather than guessing at a location or reaching for a substitute. When the task genuinely needs a command RUN, use handToTerminal instead — the user approves each one there.
+
+## Creative & Media Projects
+When planning work that involves creating visual assets or marketing materials:
+- **3D Scenes (Motion):** Use listMotionProjects to see existing 3D projects. A task to "create a product showcase" or "build a 3D scene" is often better suited as a sub-task that delegates to the Motion Copilot system — use handToTerminal or mention in the task description that it requires 3D work.
+- **2D Vector Animation (Trace):** Use listTraceProjects to see existing animations. A task to "animate this concept" or "create a motion graphic" can reference a Trace project. Similar to Motion, complex animation work may be scoped as a sub-task delegating to the Trace Copilot.
+- **Social Presence & Marketing (Presence):** Use listPresenceBatches to see content batches and planned campaigns. A task to "market this feature" or "build a launch campaign" might involve creating Presence batches — suggest the user use the Presence Copilot for strategy and draft generation, then create follow-up tasks for execution.
 
 ## Indexing, and why it pauses
 You can search the document index with searchDocs and see what is already in it with listIndexed. You can also ADD to it with indexFile and indexPage, but both ask the user for approval first, because they spend embedding calls and change an index shared with the chat agent. So propose rather than fire: say what you want indexed and why, then call the tool. Do not index speculatively. If the user declines, do not retry — searchDocs and readFile will get you most of the way there for free.

@@ -263,6 +263,21 @@ function FilterConfigPopover({
       primitives: filter.primitives.filter((_, i) => i !== index),
     });
   };
+
+  const updateInline = (primitive: FilterPrimitive, paramKey: string, val: string | number) => {
+    const next: TraceFilter = {
+      ...filter,
+      primitives: filter.primitives.map((p) =>
+        p.id === primitive.id
+          ? { ...p, params: { ...(p.params ?? {}), [paramKey]: val } }
+          : p,
+      ),
+    };
+    onChange(next);
+  };
+
+  const inlines = inlineParams(filter);
+
   return (
     <PopoverContent
       align="end"
@@ -276,8 +291,43 @@ function FilterConfigPopover({
           <span className="font-mono text-[9px] text-muted-foreground">{filter.id}</span>
         </div>
       </div>
-      <ScrollArea className="max-h-[360px]">
+      <ScrollArea className="max-h-[480px]">
         <div className="space-y-2 p-3">
+          {inlines.length > 0 ? (
+            <div className="space-y-2 border-b border-border/60 pb-3">
+              <p className="text-[10px] font-medium text-muted-foreground">Quick settings</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {inlines.map((entry) => {
+                  const val = entry.primitive.params?.[entry.paramKey];
+                  if (entry.kind === 'color') {
+                    return (
+                      <div key={entry.key} className="col-span-2">
+                        <ColorField
+                          label={entry.label}
+                          value={String(val ?? '#000000')}
+                          onChange={(next) => updateInline(entry.primitive, entry.paramKey, next)}
+                        />
+                      </div>
+                    );
+                  }
+                  const numVal = Number(val ?? 0);
+                  const isOpacity = entry.paramKey.includes('opacity');
+                  return (
+                    <ScrubField
+                      key={entry.key}
+                      label={entry.label}
+                      prefix={entry.label.charAt(0)}
+                      value={Number.isFinite(numVal) ? numVal : 0}
+                      min={isOpacity ? 0 : undefined}
+                      max={isOpacity ? 1 : undefined}
+                      step={isOpacity ? 0.05 : 0.5}
+                      onChange={(next) => updateInline(entry.primitive, entry.paramKey, next)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <p className="mb-1 text-[10px] text-muted-foreground">Region %</p>
@@ -306,7 +356,7 @@ function FilterConfigPopover({
               </Select>
             </div>
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 border-t border-border/60 pt-3">
             <p className="text-[10px] font-medium text-muted-foreground">Primitives</p>
             {filter.primitives.map((p, i) => (
               <PrimitiveCard
@@ -377,58 +427,62 @@ function FilterPickerPopover({
           <PlusIcon className="size-3.5" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" side="bottom" sideOffset={6} className="w-72 p-0">
+      <PopoverContent align="end" side="bottom" sideOffset={6} className="w-80 p-0">
         <div className="border-b border-border/60 px-3 py-2">
           <p className="text-[11px] font-semibold">Add effect</p>
         </div>
-        <ScrollArea className="max-h-[320px]">
-          <div className="p-2">
+        <ScrollArea className="max-h-[360px]">
+          <div className="space-y-2 p-2">
             {projectFilters.length > 0 ? (
-              <div className="mb-2">
-                <p className="mb-1 px-1 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div>
+                <p className="mb-1.5 px-2 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
                   Project filters
                 </p>
-                {projectFilters.map((f) => {
-                  const meta = KIND_META[f.kind] ?? KIND_META.custom;
+                <div className="space-y-1">
+                  {projectFilters.map((f) => {
+                    const meta = KIND_META[f.kind] ?? KIND_META.custom;
+                    const Icon = meta.icon;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => applyExisting(f.id)}
+                        className="flex w-full items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:bg-muted hover:border-border/40"
+                      >
+                        <span className={cn('size-2 rounded-full shrink-0', meta.color)} />
+                        <Icon className="size-3 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate text-[11px] font-medium">{f.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            <div className={projectFilters.length > 0 ? 'border-t border-border/40 pt-2' : ''}>
+              <p className="mb-1.5 px-2 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+                Presets
+              </p>
+              <div className="space-y-1">
+                {FILTER_PRESETS.map((preset) => {
+                  const meta = KIND_META[preset.kind] ?? KIND_META.custom;
                   const Icon = meta.icon;
                   return (
                     <button
-                      key={f.id}
+                      key={preset.id}
                       type="button"
-                      onClick={() => applyExisting(f.id)}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted"
+                      onClick={() => applyPreset(preset)}
+                      className="flex w-full items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-left transition-colors hover:bg-muted hover:border-border/40"
                     >
-                      <span className={cn('size-2 rounded-full', meta.color)} />
-                      <Icon className="size-3 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-[11px]">{f.label}</span>
+                      <span className={cn('mt-1 size-2 shrink-0 rounded-full', meta.color)} />
+                      <Icon className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[11px] font-medium text-foreground">{preset.label}</span>
+                        <span className="block text-[9px] leading-snug text-muted-foreground">{preset.summary}</span>
+                      </span>
                     </button>
                   );
                 })}
               </div>
-            ) : null}
-            <div>
-              <p className="mb-1 px-1 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-                Presets
-              </p>
-              {FILTER_PRESETS.map((preset) => {
-                const meta = KIND_META[preset.kind] ?? KIND_META.custom;
-                const Icon = meta.icon;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => applyPreset(preset)}
-                    className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted"
-                  >
-                    <span className={cn('mt-1.5 size-2 shrink-0 rounded-full', meta.color)} />
-                    <Icon className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0">
-                      <span className="block text-[11px] text-foreground">{preset.label}</span>
-                      <span className="block text-[9px] leading-snug text-muted-foreground">{preset.summary}</span>
-                    </span>
-                  </button>
-                );
-              })}
             </div>
           </div>
         </ScrollArea>
@@ -481,7 +535,6 @@ function EffectRow({
 }) {
   const meta = KIND_META[filter.kind] ?? KIND_META.custom;
   const Icon = meta.icon;
-  const inlines = inlineParams(filter);
   const [disabled, setDisabled] = useState(false);
 
   const updateFilter = useCallback(
@@ -496,21 +549,6 @@ function EffectRow({
     // filter definition from the project because other elements may share it.
     setFilterOnElement(element.id, null);
   }, [element.id]);
-
-  const updateInline = useCallback(
-    (primitive: FilterPrimitive, paramKey: string, val: string | number) => {
-      const next: TraceFilter = {
-        ...filter,
-        primitives: filter.primitives.map((p) =>
-          p.id === primitive.id
-            ? { ...p, params: { ...(p.params ?? {}), [paramKey]: val } }
-            : p,
-        ),
-      };
-      updateFilter(next);
-    },
-    [filter, updateFilter],
-  );
 
   return (
     <div
@@ -555,7 +593,7 @@ function EffectRow({
               size="icon"
               variant="ghost"
               aria-label="Effect settings"
-              title="Additional controls"
+              title="Edit effect"
               className="size-6 text-muted-foreground hover:text-foreground"
             >
               <EllipsisIcon className="size-3.5" />
@@ -563,52 +601,7 @@ function EffectRow({
           </PopoverTrigger>
           <FilterConfigPopover filter={filter} onChange={updateFilter} onRemove={removeFilter} />
         </Popover>
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          aria-label="Remove effect"
-          title="Remove effect"
-          onClick={removeFilter}
-          className="size-6 text-muted-foreground hover:text-rose-400"
-        >
-          <Trash2Icon className="size-3" />
-        </Button>
       </div>
-      {inlines.length > 0 ? (
-        <div className="border-t border-border/40 px-2 pb-2 pt-1.5">
-          <div className="grid grid-cols-2 gap-1.5">
-            {inlines.map((entry) => {
-              const val = entry.primitive.params?.[entry.paramKey];
-              if (entry.kind === 'color') {
-                return (
-                  <div key={entry.key} className="col-span-2">
-                    <ColorField
-                      label={entry.label}
-                      value={String(val ?? '#000000')}
-                      onChange={(next) => updateInline(entry.primitive, entry.paramKey, next)}
-                    />
-                  </div>
-                );
-              }
-              const numVal = Number(val ?? 0);
-              const isOpacity = entry.paramKey.includes('opacity');
-              return (
-                <ScrubField
-                  key={entry.key}
-                  label={entry.label}
-                  prefix={entry.label.charAt(0)}
-                  value={Number.isFinite(numVal) ? numVal : 0}
-                  min={isOpacity ? 0 : undefined}
-                  max={isOpacity ? 1 : undefined}
-                  step={isOpacity ? 0.05 : 0.5}
-                  onChange={(next) => updateInline(entry.primitive, entry.paramKey, next)}
-                />
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

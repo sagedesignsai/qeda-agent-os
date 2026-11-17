@@ -7,9 +7,9 @@
 
 import { useEffect, useMemo, useRef } from 'react';
 import type { MutableRefObject } from 'react';
-import { TransformControls } from '@react-three/drei';
+import { OrbitControls, TransformControls } from '@react-three/drei';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Color, SRGBColorSpace } from 'three';
+import { Color, MOUSE, SRGBColorSpace } from 'three';
 import type { Group } from 'three';
 
 import {
@@ -31,6 +31,7 @@ import type { PlaybackClock } from '@/lib/timeline/clock';
 
 export type { MotionCameraView } from '@/components/motion/scene/motion-frame-binding';
 export type MotionStageColor = string;
+export type MotionTransformMode = 'translate' | 'rotate' | 'scale';
 
 type MotionSceneCanvasProps = {
   doc: MotionDocument;
@@ -45,6 +46,8 @@ type MotionSceneCanvasProps = {
     modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
   ) => void;
   onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
+  /** Transform gizmo mode for selected nodes */
+  transformMode?: MotionTransformMode;
   /** Export renders without the editor floor; the document's own nodes remain. */
   showEditorStage?: boolean;
   dpr?: number;
@@ -76,6 +79,7 @@ function DocumentNode({
   selectedNodeId,
   onSelectNode,
   onTransformNode,
+  transformMode,
   transformingRef,
 }: {
   node: MotionNode;
@@ -91,6 +95,7 @@ function DocumentNode({
     modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
   ) => void;
   onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
+  transformMode: MotionTransformMode;
   transformingRef: MutableRefObject<boolean>;
 }) {
   const Renderer = getMotionThreeRenderer(node.type) ?? MissingRenderer;
@@ -113,6 +118,7 @@ function DocumentNode({
       visible={node.visible}
       onPointerDown={(event) => {
         event.stopPropagation();
+        if (!node.visible) return;
         if (!node.locked) {
           const native = event.nativeEvent;
           onSelectNode?.(node.id, {
@@ -135,15 +141,16 @@ function DocumentNode({
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onTransformNode={onTransformNode}
+          transformMode={transformMode}
           transformingRef={transformingRef}
         />
       ))}
     </group>
   );
-  if (selectedNodeId !== node.id || node.locked || node.type.startsWith('camera.')) return group;
+  if (!node.visible || selectedNodeId !== node.id || node.locked || node.type.startsWith('camera.')) return group;
   return (
     <TransformControls
-      mode="translate"
+      mode={transformMode}
       onMouseDown={() => { transformingRef.current = true; }}
       onMouseUp={() => {
         transformingRef.current = false;
@@ -168,6 +175,7 @@ function MotionFrameDriver({
   zoom,
   groups,
   transformingRef,
+  selectedNodeId,
 }: {
   doc: MotionDocument;
   clock: PlaybackClock;
@@ -175,6 +183,7 @@ function MotionFrameDriver({
   zoom: number;
   groups: Map<string, Group>;
   transformingRef: MutableRefObject<boolean>;
+  selectedNodeId?: string;
 }) {
   const invalidate = useThree((state) => state.invalidate);
   const camera = useThree((state) => state.camera);
@@ -213,6 +222,7 @@ function MotionFrameDriver({
       viewMode,
       zoom,
       writeTransforms: !transformingRef.current,
+      selectedNodeId,
       cachedProjection: lastProjection,
     });
   });
@@ -228,6 +238,7 @@ function DocumentScene({
   selectedNodeId,
   onSelectNode,
   onTransformNode,
+  transformMode = 'translate',
   showEditorStage = true,
 }: {
   doc: MotionDocument;
@@ -240,6 +251,7 @@ function DocumentScene({
     modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
   ) => void;
   onTransformNode?: (nodeId: string, transform: MotionNode['transform']) => void;
+  transformMode?: MotionTransformMode;
   showEditorStage?: boolean;
 }) {
   const groups = useMemo(() => new Map<string, Group>(), []);
@@ -275,6 +287,7 @@ function DocumentScene({
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
           onTransformNode={onTransformNode}
+          transformMode={transformMode}
           transformingRef={transformingRef}
         />
       ))}
@@ -286,6 +299,7 @@ function DocumentScene({
         zoom={zoom}
         groups={groups}
         transformingRef={transformingRef}
+        selectedNodeId={selectedNodeId}
       />
     </>
   );
@@ -301,6 +315,7 @@ export function MotionSceneCanvas({
   selectedNodeId,
   onSelectNode,
   onTransformNode,
+  transformMode = 'translate',
   showEditorStage = true,
   dpr = 1.75,
   preserveDrawingBuffer = false,
@@ -319,6 +334,9 @@ export function MotionSceneCanvas({
   const hasLook =
     doc.scene.nodes.some((node) => isMotionLookNode(node.type)) ||
     doc.scene.nodes.some((node) => node.type.startsWith('camera.') && node.props.dofEnabled === true);
+  // OrbitControls is enabled in editorial mode so the user can freely orbit,
+  // zoom, and pan. In cinematic mode the animated camera rig drives the view.
+  const isEditorialView = viewMode === 'editorial';
   return (
     <Canvas
       aria-label="Three-dimensional Motion document scene"
@@ -344,6 +362,20 @@ export function MotionSceneCanvas({
       }}
       onPointerMissed={() => onSelectNode?.(null)}
     >
+      {isEditorialView && (
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.08}
+          minDistance={1}
+          maxDistance={30}
+          target={[0, 0, 0]}
+          mouseButtons={{
+            MIDDLE: MOUSE.ROTATE,
+            RIGHT: MOUSE.PAN,
+          }}
+        />
+      )}
       <MotionWorldBinding world={world} fallbackColor={stageColor} />
       {gridVisible && (
         <gridHelper
@@ -351,7 +383,7 @@ export function MotionSceneCanvas({
           position={[0, -1.54, 0]}
         />
       )}
-      <DocumentScene doc={doc} clock={clock} viewMode={viewMode} zoom={zoom} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onTransformNode={onTransformNode} showEditorStage={showEditorStage} />
+      <DocumentScene doc={doc} clock={clock} viewMode={viewMode} zoom={zoom} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onTransformNode={onTransformNode} transformMode={transformMode} showEditorStage={showEditorStage} />
       {hasLook && <MotionLookComposer doc={doc} clock={clock} />}
       <MotionReadySignal onReady={onReady} readyCalled={readyCalled} />
     </Canvas>

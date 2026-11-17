@@ -312,6 +312,7 @@ export function ModelBuilderDialog({
                     <PlanPanel
                       plan={plan}
                       isRunning={status === 'streaming'}
+                      compact
                     />
                   </div>
                 )}

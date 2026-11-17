@@ -36,7 +36,7 @@ export function PanelSection({
             <button
               type="button"
               aria-expanded={open}
-              className="flex min-w-0 flex-1 items-center gap-1 rounded text-left text-[11px] font-semibold tracking-tight text-foreground outline-none hover:text-foreground/80 focus-visible:ring-2 focus-visible:ring-ring"
+              className="flex min-w-0 flex-1 items-center gap-1 rounded text-left text-[11px] font-semibold tracking-tight text-foreground outline-none hover:text-foreground/80 focus-visible:ring-2 focus-visible:ring-ring no-underline"
             >
               <ChevronDownIcon
                 className={cn(
@@ -44,7 +44,7 @@ export function PanelSection({
                   !open && '-rotate-90',
                 )}
               />
-              <span className="truncate">{title}</span>
+              <span className="truncate no-underline">{title}</span>
             </button>
           </CollapsibleTrigger>
           {action ? (

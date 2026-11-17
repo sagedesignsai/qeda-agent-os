@@ -97,6 +97,7 @@ export default function Chat() {
   const [chatContext, setChatContext] = useState<ChatContext | undefined>(
     undefined,
   );
+  const [isPlanPanelOpen, setIsPlanPanelOpen] = useState(false);
 
   // Where "Chat" points and where "New chat" goes — the blank start screen with
   // the project scope carried along. Computed once so the breadcrumb and the
@@ -543,68 +544,76 @@ export default function Chat() {
         }
       />
 
-      {/* Middle Message / Welcome Area. On an empty conversation the welcome
+      {/* Middle Message / Welcome Area + Plan Panel. On an empty conversation the welcome
           view owns the composer, so the docked bar below is suppressed. */}
-      <div className="relative flex-1">
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto pb-20"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            stickToBottomRef.current =
-              el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-          }}
-        >
-          {messages.length === 0 ? (
-            <ChatWelcome
-              onSend={handleSend}
-              onStop={abortStream}
-              disabled={creating}
-              isStreaming={status === 'streaming'}
-              contextControls={
-                <ChatContextPicker
-                  value={chatContext}
-                  onChange={(ctx) =>
-                    setChatContext((prev) => {
-                      const merged = { projectId: prev?.projectId, ...ctx };
-                      return Object.values(merged).some(Boolean)
-                        ? (merged as ChatContext)
-                        : undefined;
-                    })
-                  }
+      <div className="flex-1 flex min-h-0 gap-0">
+        {/* Messages Column */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto"
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              stickToBottomRef.current =
+                el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            }}
+          >
+            {messages.length === 0 ? (
+              <ChatWelcome
+                onSend={handleSend}
+                onStop={abortStream}
+                disabled={creating}
+                isStreaming={status === 'streaming'}
+                contextControls={
+                  <ChatContextPicker
+                    value={chatContext}
+                    onChange={(ctx) =>
+                      setChatContext((prev) => {
+                        const merged = { projectId: prev?.projectId, ...ctx };
+                        return Object.values(merged).some(Boolean)
+                          ? (merged as ChatContext)
+                          : undefined;
+                      })
+                    }
+                  />
+                }
+                assetControls={
+                  <button
+                    type="button"
+                    onClick={() => setIsAssetModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 hover:text-foreground"
+                    title="Download web assets"
+                  >
+                    <GlobeIcon className="size-3.5 shrink-0 text-primary/70" />
+                    <span>Web assets</span>
+                  </button>
+                }
+              />
+            ) : (
+              <div className="mx-auto max-w-4xl space-y-3 p-4">
+                <MessageList
+                  messages={messages}
+                  status={status}
+                  error={error}
+                  onApproval={respondToApproval}
+                  onRetry={handleSend}
                 />
-              }
-              assetControls={
-                <button
-                  type="button"
-                  onClick={() => setIsAssetModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/40 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent/40 hover:text-foreground"
-                  title="Download web assets"
-                >
-                  <GlobeIcon className="size-3.5 shrink-0 text-primary/70" />
-                  <span>Web assets</span>
-                </button>
-              }
-            />
-          ) : (
-            <div className="mx-auto max-w-4xl space-y-3 p-4">
-              <MessageList
-                messages={messages}
-                status={status}
-                error={error}
-                onApproval={respondToApproval}
-                onRetry={handleSend}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Plan Panel Side Column */}
+        {plan && isPlanPanelOpen && (
+          <div className="w-80 shrink-0 overflow-hidden border-l border-border/40 bg-card/40 flex flex-col">
+            <div className="flex-1 overflow-y-auto p-3">
+              <PlanPanel
+                plan={plan}
+                isRunning={status === 'streaming'}
+                title="Execution Plan"
+                className="border-0 bg-transparent shadow-none"
               />
             </div>
-          )}
-        </div>
-        {plan && (
-          <div className="absolute bottom-0 left-0 right-0 z-20 p-4 bg-background/80 backdrop-blur-xs">
-            <PlanPanel
-              plan={plan}
-              isRunning={status === 'streaming'}
-              title="Execution Plan"
-            />
           </div>
         )}
       </div>
@@ -646,6 +655,8 @@ export default function Chat() {
               onStop={abortStream}
               disabled={creating || status === 'streaming'}
               isStreaming={status === 'streaming'}
+              hasPlan={!!plan}
+              onTogglePlan={() => setIsPlanPanelOpen((p) => !p)}
               contextControls={
                 <ChatContextPicker
                   value={chatContext}

@@ -93,6 +93,7 @@ export function PresenceChatThread({ chat }: PresenceChatThreadProps) {
               plan={plan}
               isRunning={status === 'streaming'}
               title="Coach plan"
+              compact
             />
           </div>
         )}

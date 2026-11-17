@@ -182,6 +182,7 @@ export function CopilotPanel({
                 plan={plan}
                 isRunning={status === 'streaming'}
                 title="Copilot Plan"
+                compact
               />
             </div>
           )}

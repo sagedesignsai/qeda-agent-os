@@ -46,11 +46,13 @@ import { EmbeddingsView } from './views/EmbeddingsView';
 import { AppearanceView } from './views/AppearanceView';
 import { ComputerUseView } from './views/ComputerUseView';
 import { OfflineModelsView } from './views/OfflineModelsView';
+import { OllamaView } from './views/OllamaView';
 import { cn } from '@/lib/utils';
-import { BotIcon, BoxesIcon, CpuIcon, HardDriveIcon, PaletteIcon, MousePointerIcon } from 'lucide-react';
+import { BotIcon, BoxesIcon, CpuIcon, HardDriveIcon, PaletteIcon, MousePointerIcon, CircleIcon } from 'lucide-react';
 
 const SECTIONS = [
   { id: 'models', label: 'AI & Models', icon: BotIcon },
+  { id: 'ollama', label: 'Ollama Local', icon: CircleIcon },
   { id: 'offline', label: 'Offline Models', icon: HardDriveIcon },
   { id: 'builder', label: 'Builder & MCP', icon: CpuIcon },
   { id: 'embeddings', label: 'Embeddings', icon: BoxesIcon },
@@ -126,6 +128,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                     and e2e a stable handle to scope to a single section. */}
                 <div id="settings-panel-models" hidden={section !== 'models'}>
                   <ModelsView />
+                </div>
+                <div id="settings-panel-ollama" hidden={section !== 'ollama'}>
+                  <OllamaView />
                 </div>
                 <div id="settings-panel-offline" hidden={section !== 'offline'}>
                   <OfflineModelsView />

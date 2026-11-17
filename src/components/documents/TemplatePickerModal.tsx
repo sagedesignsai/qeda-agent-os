@@ -19,6 +19,7 @@ import {
   TerminalIcon,
   PlusIcon,
   SparklesIcon,
+  Loader2Icon,
 } from 'lucide-react';
 import { DOCUMENT_TEMPLATES } from '@/lib/pdf-studio/templates';
 
@@ -26,12 +27,14 @@ interface TemplatePickerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectTemplate: (templateId: string) => void;
+  isCreating?: boolean;
 }
 
 export function TemplatePickerModal({
   open,
   onOpenChange,
   onSelectTemplate,
+  isCreating = false,
 }: TemplatePickerModalProps) {
   const getTemplateIcon = (id: string) => {
     switch (id) {
@@ -69,14 +72,19 @@ export function TemplatePickerModal({
               <button
                 key={tmpl.id}
                 type="button"
+                disabled={isCreating}
                 onClick={() => {
                   onSelectTemplate(tmpl.id);
                   onOpenChange(false);
                 }}
-                className="group flex flex-col items-start rounded-xl border border-border/60 bg-card p-4 text-left transition-all hover:border-primary hover:bg-muted/30 hover:shadow-md"
+                className="group flex flex-col items-start rounded-xl border border-border/60 bg-card p-4 text-left transition-all hover:border-primary hover:bg-muted/30 hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary mb-2.5 group-hover:scale-105 transition-transform">
-                  <Icon className="h-5 w-5" />
+                  {isCreating ? (
+                    <Loader2Icon className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Icon className="h-5 w-5" />
+                  )}
                 </div>
                 <h4 className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
                   {tmpl.name}

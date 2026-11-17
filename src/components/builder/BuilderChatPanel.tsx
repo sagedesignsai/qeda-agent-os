@@ -394,6 +394,7 @@ export function BuilderChatPanel({
               plan={plan}
               isRunning={running}
               title="Builder Plan"
+              compact
             />
           </div>
         )}

@@ -95,6 +95,7 @@ export function applyMotionFrame({
   viewMode,
   zoom,
   writeTransforms = true,
+  selectedNodeId,
   cachedProjection,
 }: {
   doc: MotionDocument;
@@ -105,6 +106,8 @@ export function applyMotionFrame({
   viewMode: MotionCameraView;
   zoom: number;
   writeTransforms?: boolean;
+  /** Node being edited in the viewport; skip its animated transform in editorial mode. */
+  selectedNodeId?: string;
   /** Editor memo so camera projection is only rebuilt when fov/near/far change. */
   cachedProjection?: { current: string | null };
 }): void {
@@ -124,7 +127,10 @@ export function applyMotionFrame({
     const group = groups.get(node.id);
     if (!group) continue;
 
-    if (writeTransforms) {
+    // In editorial mode, skip writing animated transforms for the selected node
+    // so the user's gizmo changes persist instead of being overwritten by animation.
+    const skipTransform = viewMode === 'editorial' && selectedNodeId === node.id;
+    if (writeTransforms && !skipTransform) {
       group.position.set(...node.transform.position);
       group.rotation.set(...node.transform.rotation);
       group.scale.set(...node.transform.scale);

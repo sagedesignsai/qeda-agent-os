@@ -142,7 +142,7 @@ describe('camera rig', () => {
     applyCameraPose({
       camera,
       node: cameraNode({ aim: 'origin' }, [1, 2, 3]),
-      viewMode: 'perspective',
+      viewMode: 'cinematic',
       zoom: 1,
       time: 0,
     });
@@ -169,7 +169,7 @@ describe('camera rig', () => {
     applyCameraPose({
       camera,
       node,
-      viewMode: 'perspective',
+      viewMode: 'cinematic',
       zoom: 1,
       time: 0,
       aimTarget: { x: 0, y: 1, z: 0 } as never,
@@ -188,7 +188,7 @@ describe('camera rig', () => {
     applyCameraPose({
       camera,
       node: cameraNode({ aim: 'target', targetId: 'missing' }),
-      viewMode: 'perspective',
+      viewMode: 'cinematic',
       zoom: 1,
       time: 0,
       aimTarget: null,
@@ -203,7 +203,7 @@ describe('camera rig', () => {
     applyCameraPose({
       camera,
       node,
-      viewMode: 'perspective',
+      viewMode: 'cinematic',
       zoom: 2,
       time: 0,
     });
@@ -211,17 +211,17 @@ describe('camera rig', () => {
     expect((camera as unknown as { position: { z: number } }).position.z).toBe(2.5);
   });
 
-  it('ignores the rig in the front inspection view', () => {
+  it('skips camera pose in editorial mode so OrbitControls can own the camera', () => {
     const { camera, calls } = cameraStub();
     applyCameraPose({
       camera,
       node: cameraNode({ roll: 45 }, [9, 9, 9]),
-      viewMode: 'front',
+      viewMode: 'editorial',
       zoom: 2,
       time: 0,
     });
-    expect(calls).toEqual([['lookAt', 0, 0, 0]]);
-    expect((camera as unknown as { position: { z: number } }).position.z).toBe(3.05);
+    // In editorial mode, applyCameraPose returns early — OrbitControls owns the camera
+    expect(calls).toEqual([]);
   });
 
   it('adds a deterministic handheld offset without moving at zero strength', () => {

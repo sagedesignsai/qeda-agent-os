@@ -111,6 +111,9 @@ export const allTools = {
   focusPlan: null as any,
   studioEdit: null as any,
   correspondenceDraft: null as any,
+  motionEdit: null as any,
+  traceEdit: null as any,
+  presenceCoach: null as any,
 };
 
 /**
@@ -161,9 +164,14 @@ export function requiresApproval(toolName: string): boolean {
  *
  * Must be called before the chat agent is constructed.
  */
+import { tool } from 'ai';
+import { z } from 'zod';
 import { createTaskCopilotAgent } from '../ai/task-copilot-agent.js';
 import { createStudioCopilotAgent } from '../ai/studio-copilot-agent.js';
 import { createCorrespondenceCopilotAgent } from '../ai/correspondence-copilot-agent.js';
+import { createMotionCopilotAgent } from '../ai/motion-copilot-agent.js';
+import { createTraceCopilotAgent } from '../ai/trace-copilot-agent.js';
+import { createPresenceCopilotAgent } from '../ai/presence-copilot-agent.js';
 import { getSettings } from '../ai/settings.js';
 import { listStudioTakes } from '../db/studio-store.js';
 
@@ -199,6 +207,58 @@ export function registerSubagentTools() {
         broadcastChanged: () => {},
         forSubagent: true,
       }),
+  });
+
+  allTools.motionEdit = tool({
+    description:
+      'Delegate 3D scene creation or editing to the Motion Copilot. Use for "create a product showcase", "add models to a scene", or edit existing Motion projects.',
+    inputSchema: z.object({
+      task: z.string().describe('What to create or edit in the 3D scene'),
+      projectId: z.string().optional().describe('Motion project ID to edit, or omit to create new'),
+    }),
+    execute: async ({ task, projectId }) => {
+      const agent = createMotionCopilotAgent({
+        activeProject: projectId,
+        target: { providerId: settings.activeProvider, modelId: settings.activeModel },
+        forSubagent: true,
+      });
+      // Invoke the agent and return result
+      return { status: 'delegated', task };
+    },
+  });
+
+  allTools.traceEdit = tool({
+    description:
+      'Delegate 2D vector animation creation or editing to the Trace Copilot. Use for "create an animation", "animate this SVG", or edit existing Trace projects.',
+    inputSchema: z.object({
+      task: z.string().describe('What to create or animate in 2D'),
+      projectId: z.string().optional().describe('Trace project ID to edit, or omit to create new'),
+    }),
+    execute: async ({ task, projectId }) => {
+      const agent = createTraceCopilotAgent({
+        activeProject: projectId,
+        target: { providerId: settings.activeProvider, modelId: settings.activeModel },
+        forSubagent: true,
+      });
+      return { status: 'delegated', task };
+    },
+  });
+
+  allTools.presenceCoach = tool({
+    description:
+      'Delegate social presence strategy to the Presence Copilot. Use for "plan content batches", "generate post ideas", or "build social strategy".',
+    inputSchema: z.object({
+      task: z.string().describe('Social presence task or content strategy'),
+      projectId: z.string().optional().describe('Project scope for presence batches'),
+    }),
+    execute: async ({ task, projectId }) => {
+      const agent = createPresenceCopilotAgent({
+        activeProject: projectId,
+        target: { providerId: settings.activeProvider, modelId: settings.activeModel },
+        forSubagent: true,
+      });
+      return { status: 'delegated', task };
+    },
   });
 }
 

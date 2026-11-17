@@ -49,6 +49,6 @@ describe('MotionExportApp stage', () => {
     expect(canvas).toHaveAttribute('data-editor-stage', 'false');
     expect(canvas).toHaveAttribute('data-selected-node', '');
     expect(canvas).toHaveAttribute('data-preserve-buffer', 'true');
-    expect(canvas).toHaveAttribute('data-view-mode', 'perspective');
+    expect(canvas).toHaveAttribute('data-view-mode', 'cinematic');
   });
 });

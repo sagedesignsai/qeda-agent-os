@@ -54,6 +54,47 @@ export function registerDocumentsHandlers({
     },
   );
 
+  // ── Create ────────────────────────────────────────────────────────────────
+
+  ipcMain.handle(
+    'documents:create',
+    (
+      _e,
+      req: {
+        id: string;
+        title: string;
+        description: string;
+        projectId?: string | null;
+        templateId?: string;
+        blocks: unknown[];
+        settings: unknown;
+        createdAt: number;
+        updatedAt: number;
+      },
+    ): PdfDocumentRecord => {
+      const record = saveDocument({
+        id: req.id,
+        projectId: req.projectId ?? null,
+        title: req.title,
+        description: req.description,
+        templateId: req.templateId ?? '',
+        dataJson: JSON.stringify({
+          id: req.id,
+          title: req.title,
+          description: req.description,
+          projectId: req.projectId ?? null,
+          templateId: req.templateId ?? '',
+          settings: req.settings,
+          blocks: req.blocks,
+          createdAt: req.createdAt,
+          updatedAt: req.updatedAt,
+        }),
+      });
+      broadcastChanged();
+      return record;
+    },
+  );
+
   // ── Save & Delete ─────────────────────────────────────────────────────────
 
   ipcMain.handle(

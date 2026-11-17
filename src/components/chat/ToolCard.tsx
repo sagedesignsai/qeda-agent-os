@@ -299,13 +299,13 @@ export function ToolCard({
         className="group flex w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-xs"
         onClick={() => setExpanded((v) => !v)}
       >
-        <div className="flex min-w-0 items-center gap-2 truncate">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {isRunning ? (
             <Loader2Icon className="size-3.5 shrink-0 animate-spin text-primary" />
           ) : isError ? (
             <AlertCircleIcon className="size-3.5 shrink-0 text-destructive" />
           ) : (
-            <span className="text-muted-foreground/70 group-hover:text-foreground">
+            <span className="text-muted-foreground/70 group-hover:text-foreground shrink-0">
               ⚡
             </span>
           )}
@@ -314,7 +314,7 @@ export function ToolCard({
           </span>
           <span
             className={cn(
-              'text-[11px] select-none',
+              'text-[11px] select-none shrink-0 whitespace-nowrap',
               isError
                 ? 'font-medium text-destructive'
                 : isRunning
@@ -400,7 +400,7 @@ export function ToolCard({
             <p className="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground/70 uppercase">
               Input
             </p>
-            <pre className="max-h-40 overflow-x-auto rounded-lg bg-background/60 p-2 text-[11px] text-muted-foreground">
+            <pre className="max-h-40 overflow-x-auto break-words rounded-lg bg-background/60 p-2 text-[11px] text-muted-foreground whitespace-pre-wrap word-break">
               {JSON.stringify(input, null, 2)}
             </pre>
           </div>
@@ -411,7 +411,7 @@ export function ToolCard({
               <p className="mb-1 text-[10px] font-semibold tracking-wider text-destructive uppercase">
                 Error
               </p>
-              <pre className="overflow-x-auto rounded-lg bg-destructive/10 p-2 text-[11px] text-destructive">
+              <pre className="overflow-auto break-words rounded-lg bg-destructive/10 p-2 text-[11px] text-destructive whitespace-pre-wrap word-break max-h-40">
                 {errorText}
               </pre>
             </div>
@@ -423,7 +423,7 @@ export function ToolCard({
               <p className="mb-1 text-[10px] font-semibold tracking-wider text-muted-foreground/70 uppercase">
                 Output
               </p>
-              <pre className="max-h-48 overflow-x-auto rounded-lg bg-background/60 p-2 text-[11px] text-muted-foreground">
+              <pre className="max-h-48 overflow-auto break-words rounded-lg bg-background/60 p-2 text-[11px] text-muted-foreground whitespace-pre-wrap word-break">
                 {JSON.stringify(output, null, 2)}
               </pre>
             </div>

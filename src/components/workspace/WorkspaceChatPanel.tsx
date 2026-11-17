@@ -256,6 +256,7 @@ export function WorkspaceChatPanel({
                 isRunning={status === 'streaming'}
                 title="Agent plan"
                 defaultCollapsed
+                compact
               />
             </div>
           )}

@@ -18,7 +18,7 @@ import type { Group } from 'three';
 
 import type { MotionNode } from '@/lib/motion/types';
 
-export type MotionCameraView = 'perspective' | 'front';
+export type MotionCameraView = 'cinematic' | 'editorial';
 export type MotionCameraAim = 'origin' | 'target' | 'free';
 
 /**
@@ -141,9 +141,9 @@ export function applyCameraPose({
 }: ApplyCameraPoseOptions): void {
   const safeZoom = finite(zoom, 1) || 1;
 
-  if (viewMode === 'front') {
-    camera.position.set(0, 0, 6.1 / safeZoom);
-    camera.lookAt(0, 0, 0);
+  // In editorial mode, OrbitControls owns the camera. Skip pose updates
+  // so the user can freely orbit, zoom, and pan without being overridden.
+  if (viewMode === 'editorial') {
     return;
   }
 

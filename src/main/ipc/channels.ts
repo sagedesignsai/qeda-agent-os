@@ -857,6 +857,36 @@ export interface IpcChannels {
     req: void;
     res: string;
   };
+  /** Check if Ollama is installed on the system. */
+  'ollama:is-installed': {
+    req: void;
+    res: boolean;
+  };
+  /** Get the installed Ollama version. */
+  'ollama:get-version': {
+    req: void;
+    res: string | null;
+  };
+  /** Start the Ollama server. */
+  'ollama:start-server': {
+    req: void;
+    res: { success: boolean; pid?: number; error?: string; message?: string };
+  };
+  /** Pull (download) a model from Ollama registry. */
+  'ollama:pull-model': {
+    req: { modelId: string };
+    res: { success: boolean; modelId?: string; progress?: string; error?: string };
+  };
+  /** Get currently running Ollama models. */
+  'ollama:get-running': {
+    req: void;
+    res: string[];
+  };
+  /** Stop a running Ollama model. */
+  'ollama:stop-model': {
+    req: { modelId: string };
+    res: boolean;
+  };
 
   // External services (search, scrape, docs, images, speech)
   /** Status of each registered external service, including whether a key is set. */
@@ -1540,6 +1570,21 @@ export interface IpcChannels {
   'documents:get': {
     req: { id: string };
     res: PdfDocumentRecord | null;
+  };
+  /** Create a new document directly from a template. */
+  'documents:create': {
+    req: {
+      id: string;
+      title: string;
+      description: string;
+      projectId?: string | null;
+      templateId?: string;
+      blocks: unknown[];
+      settings: unknown;
+      createdAt: number;
+      updatedAt: number;
+    };
+    res: PdfDocumentRecord;
   };
   /** Save or update a document record. */
   'documents:save': {

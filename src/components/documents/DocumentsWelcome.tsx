@@ -37,12 +37,11 @@ import {
   UserCheckIcon,
   PlusIcon,
 } from 'lucide-react';
-import { ChatInput } from '@/components/chat/ChatInput';
 import { DOCUMENT_TEMPLATES } from '@/lib/pdf-studio/templates';
 
 interface DocumentsWelcomeProps {
-  /** Called with the user's prompt (or a template-seeded prompt) to draft. */
-  onDraft: (prompt: string) => void;
+  /** Called when a template is selected to create a document. */
+  onSelectTemplate: (templateId: string) => void;
   loading: boolean;
   /** True when the fetch has settled and there genuinely are no documents. */
   isEmpty: boolean;
@@ -72,55 +71,31 @@ function getTemplateIcon(id: string) {
   }
 }
 
-/**
- * Seed a prompt from a template. The template fixes the *shape*; the user
- * still supplies the substance, which is what makes the result useful rather
- * than a generic form letter.
- */
-function promptForTemplate(name: string, category: string): string {
-  return `Draft a ${name.toLowerCase()} (${category}). Ask me for any details you need, then write it out as a complete document.`;
-}
-
 export function DocumentsWelcome({
-  onDraft,
+  onSelectTemplate,
   loading,
   isEmpty,
 }: DocumentsWelcomeProps) {
   return (
-    <div className="flex min-h-full w-full flex-col items-center justify-center px-4 pb-16">
+    <div className="flex flex-col items-center justify-center px-4 py-8 min-h-screen">
       <h2 className="text-balance text-center text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-        What would you like written?
+        Start with a template
       </h2>
       <p className="mt-2 max-w-md text-center text-sm text-muted-foreground">
-        Describe the document and Qeda will draft it. You review every word
-        before it goes anywhere.
+        Choose a professionally designed document template. Open it in the editor
+        to customize.
       </p>
 
-      {/* Composer — the single primary action, mirroring ChatWelcome. */}
-      <div className="mt-6 w-full max-w-2xl">
-        <ChatInput
-          onSend={onDraft}
-          tall
-          placeholder="Draft a letter of demand, a proposal, a client memo…"
-        />
-      </div>
-
-      {/* Templates seed the composer instead of creating a document outright,
-          so nothing is produced until you ask for it. */}
+      {/* Templates create documents directly — no intermediary AI step. */}
       <div className="mt-8 w-full max-w-5xl">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Start from a template
-        </h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {DOCUMENT_TEMPLATES.map((tmpl) => {
             const Icon = getTemplateIcon(tmpl.id);
             return (
               <button
                 key={tmpl.id}
                 type="button"
-                onClick={() =>
-                  onDraft(promptForTemplate(tmpl.name, tmpl.category))
-                }
+                onClick={() => onSelectTemplate(tmpl.id)}
                 className="group flex flex-col items-start rounded-xl border border-border/60 bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 cursor-pointer"
               >
                 <div className="mb-2.5 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary transition-transform group-hover:scale-105">
@@ -143,10 +118,6 @@ export function DocumentsWelcome({
         </div>
       </div>
 
-      {/* Loading and empty are told apart deliberately. Previously `loading` was
-          never read, so "fetching", "IPC failed" and "you have none" all
-          rendered the same confident marketing hero — a user whose fetch broke
-          was told they had no documents. */}
       {loading && (
         <div className="mt-8 flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2Icon className="size-4 animate-spin" />
@@ -156,8 +127,8 @@ export function DocumentsWelcome({
 
       {!loading && isEmpty && (
         <p className="mt-8 max-w-sm text-center text-xs text-muted-foreground">
-          No documents yet. Describe one above, or pick a template — your drafts
-          appear in the sidebar as you work.
+          No documents yet. Pick a template above to get started — your
+          documents appear in the sidebar as you create them.
         </p>
       )}
     </div>

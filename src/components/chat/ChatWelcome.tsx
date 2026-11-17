@@ -87,7 +87,7 @@ export function ChatWelcome({
   const { open: openGenerateNotebook } = useGenerateNotebook();
 
   return (
-    <div className="flex min-h-full w-full flex-col items-center justify-center px-4 pb-20">
+    <div className="flex flex-col items-center justify-center px-4 py-8 min-h-screen">
       <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-card border border-border/80 shadow-sm text-foreground">
         <QedaLogomark
           size="md"

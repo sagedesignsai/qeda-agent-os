@@ -234,6 +234,116 @@ export const listChatSessionsTool = tool({
 
 // ─── Export ────────────────────────────────────────────────────────────────────
 
+// ─── listMotionProjects ───────────────────────────────────────────────────────
+
+export const listMotionProjectsTool = tool({
+  description:
+    'List 3D Motion projects. Returns project name, scene count, dimensions, and preview. Defaults to the active project scope.',
+  inputSchema: z.object({
+    projectId: z
+      .string()
+      .optional()
+      .describe('Project ID. If omitted, lists all Motion projects in the workspace.'),
+  }),
+  execute: ({ projectId }) => {
+    try {
+      const { MotionProjectIndex } = require('../motion/project-index.js') as typeof import('../motion/project-index.js');
+      const index = new MotionProjectIndex();
+      const projects = index.list();
+      
+      // If projectId provided, filter to connected projects
+      // For now, return all Motion projects (Motion uses filesystem not relational)
+      return {
+        projects: projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          sceneCount: p.scene_count,
+          width: p.width,
+          height: p.height,
+          fps: p.fps,
+          duration: p.duration,
+          updatedAt: p.updated_at,
+        })),
+        count: projects.length,
+      };
+    } catch {
+      return { projects: [], count: 0 };
+    }
+  },
+});
+
+// ─── listTraceProjects ────────────────────────────────────────────────────────
+
+export const listTraceProjectsTool = tool({
+  description:
+    'List 2D vector animation (Nova Trace) projects. Returns project name, dimensions, element count, and duration. Defaults to the active project scope.',
+  inputSchema: z.object({
+    projectId: z
+      .string()
+      .optional()
+      .describe('Project ID. If omitted, lists all Trace projects in the workspace.'),
+  }),
+  execute: ({ projectId }) => {
+    try {
+      const { TraceProjectIndex } = require('../trace/trace-project-index.js') as typeof import('../trace/trace-project-index.js');
+      const traceDir = require('electron').app.getPath('userData');
+      const index = new TraceProjectIndex(traceDir);
+      const projects = index.list();
+      
+      // If projectId provided, filter to connected projects
+      // For now, return all Trace projects
+      return {
+        projects: projects.map((p) => ({
+          id: p.id,
+          name: p.name,
+          width: p.width,
+          height: p.height,
+          elementCount: p.element_count,
+          durationMs: p.duration_ms,
+          fps: p.fps,
+          updatedAt: p.updated_at,
+        })),
+        count: projects.length,
+      };
+    } catch {
+      return { projects: [], count: 0 };
+    }
+  },
+});
+
+// ─── listPresenceBatches ──────────────────────────────────────────────────────
+
+export const listPresenceBatchesTool = tool({
+  description:
+    'List social presence content batches (post drafts, connection ideas, platform suggestions). Returns batch title, status, and item count. Defaults to the active project scope.',
+  inputSchema: z.object({
+    projectId: z
+      .string()
+      .optional()
+      .describe('Project ID. If omitted, lists all Presence batches in the workspace.'),
+  }),
+  execute: ({ projectId }) => {
+    try {
+      const { listBatches } = require('../db/presence.js') as typeof import('../db/presence.js');
+      const batches = listBatches(projectId ?? null);
+      
+      return {
+        batches: batches.map((b) => ({
+          id: b.id,
+          title: b.title,
+          status: b.status,
+          itemCount: b.item_count,
+          createdAt: b.created_at,
+          updatedAt: b.updated_at,
+        })),
+        count: batches.length,
+      };
+    } catch {
+      return { batches: [], count: 0 };
+    }
+  },
+});
+
 export const workspaceResourceTools = {
   listStudioTakes: listStudioTakesTool,
   listDocuments: listDocumentsTool,
@@ -243,4 +353,7 @@ export const workspaceResourceTools = {
   listKnowledgePages: listKnowledgePagesTool,
   listCodeProjects: listCodeProjectsTool,
   listChatSessions: listChatSessionsTool,
+  listMotionProjects: listMotionProjectsTool,
+  listTraceProjects: listTraceProjectsTool,
+  listPresenceBatches: listPresenceBatchesTool,
 };

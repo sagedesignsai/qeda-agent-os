@@ -13,8 +13,10 @@ import {
   Loader2Icon,
   MinusIcon,
   MonitorIcon,
+  MoveIcon,
   PlusIcon,
   Rotate3DIcon,
+  ScaleIcon,
 } from 'lucide-react';
 
 import { MotionWorldPopover } from '@/components/motion/MotionWorldPopover';
@@ -24,6 +26,7 @@ import { MotionSceneCanvas } from '@/components/motion/scene/MotionSceneCanvas';
 import type {
   MotionCameraView,
   MotionStageColor,
+  MotionTransformMode,
 } from '@/components/motion/scene/MotionSceneCanvas';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,12 +58,13 @@ const STAGE_COLORS: Record<StageTone, MotionStageColor> = {
 
 export function MotionViewport() {
   const { doc, selection } = useMotionSnapshot();
-  const [viewMode, setViewMode] = useState<MotionCameraView>('perspective');
+  const [viewMode, setViewMode] = useState<MotionCameraView>('editorial');
   const [stageTone, setStageTone] = useState<StageTone>('graphite');
   const [gridVisible, setGridVisible] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [loading, setLoading] = useState(true);
   const [sequencePreviewOpen, setSequencePreviewOpen] = useState(false);
+  const [transformMode, setTransformMode] = useState<MotionTransformMode>('translate');
   const loadingTimer = useRef<number | null>(null);
   const activeScene =
     doc.scenes.find((scene) => scene.id === doc.activeSceneId) ?? doc.scenes[0];
@@ -94,6 +98,44 @@ export function MotionViewport() {
     setLoading(true);
   }, [doc.meta.id]);
 
+  // Keyboard shortcuts for viewport switching and transform mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is in an input field
+      const target = e.target;
+      const isInput = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+      if (isInput) return;
+
+      switch (e.key) {
+        case '1':
+          e.preventDefault();
+          setViewMode('cinematic');
+          break;
+        case '2':
+          e.preventDefault();
+          setViewMode('editorial');
+          break;
+        case 'w':
+        case 'W':
+          e.preventDefault();
+          setTransformMode('translate');
+          break;
+        case 'r':
+        case 'R':
+          e.preventDefault();
+          setTransformMode('rotate');
+          break;
+        case 'e':
+        case 'E':
+          e.preventDefault();
+          setTransformMode('scale');
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
     <section
       aria-label="Motion preview"
@@ -116,31 +158,70 @@ export function MotionViewport() {
             type="single"
             value={viewMode}
             onValueChange={(value) => {
-              if (value === 'perspective' || value === 'front') {
+              if (value === 'cinematic' || value === 'editorial') {
                 setViewMode(value);
               }
             }}
             variant="outline"
             size="sm"
             spacing={0}
-            aria-label="Preview camera view"
+            aria-label="Viewport camera view"
             className="h-7"
           >
             <ToggleGroupItem
-              value="perspective"
-              aria-label="Perspective view"
-              title="Perspective view"
+              value="cinematic"
+              aria-label="Cinematic view"
+              title="Cinematic view (1)"
             >
               <Rotate3DIcon />
             </ToggleGroupItem>
             <ToggleGroupItem
-              value="front"
-              aria-label="Front view"
-              title="Front view"
+              value="editorial"
+              aria-label="Editorial view"
+              title="Editorial view (2)"
             >
               <MonitorIcon />
             </ToggleGroupItem>
           </ToggleGroup>
+
+          {viewMode === 'editorial' && selection?.kind === 'node' && (
+            <ToggleGroup
+              type="single"
+              value={transformMode}
+              onValueChange={(value) => {
+                if (value === 'translate' || value === 'rotate' || value === 'scale') {
+                  setTransformMode(value);
+                }
+              }}
+              variant="outline"
+              size="sm"
+              spacing={0}
+              aria-label="Transform gizmo mode"
+              className="h-7"
+            >
+              <ToggleGroupItem
+                value="translate"
+                aria-label="Translate mode"
+                title="Translate (W)"
+              >
+                <MoveIcon />
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="rotate"
+                aria-label="Rotate mode"
+                title="Rotate (R)"
+              >
+                <Rotate3DIcon />
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="scale"
+                aria-label="Scale mode"
+                title="Scale (E)"
+              >
+                <ScaleIcon />
+              </ToggleGroupItem>
+            </ToggleGroup>
+          )}
 
           <Button
             type="button"
@@ -251,6 +332,7 @@ export function MotionViewport() {
               stageColor={STAGE_COLORS[stageTone]}
               gridVisible={gridVisible}
               zoom={zoom}
+              transformMode={transformMode}
               selectedNodeId={selection?.kind === 'node' ? selection.nodeId : undefined}
               onSelectNode={(nodeId, modifiers) => {
                 if (!nodeId) {
@@ -290,18 +372,54 @@ export function MotionViewport() {
               <span className="text-border">/</span>
               <span className="text-muted-foreground">Document scene</span>
             </div>
+            {viewMode === 'editorial' && (
+              <div className="pointer-events-none absolute bottom-3 right-3 z-10 flex items-center gap-2 rounded-md border border-border/70 bg-background/85 px-2 py-1 text-[10px] backdrop-blur">
+                <span className="size-1.5 rounded-full bg-chart-3" />
+                <span className="text-muted-foreground">Free orbit</span>
+              </div>
+            )}
             {sequencePreviewOpen && (
               <MotionSequencePreview doc={doc} onClose={() => setSequencePreviewOpen(false)} />
             )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44">
-          <ContextMenuItem onSelect={() => {
-            setViewMode('perspective');
-            setZoom(1);
-          }}>
-            Reset Camera
-          </ContextMenuItem>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>Viewport</ContextMenuSubTrigger>
+            <ContextMenuSubContent className="w-36">
+              <ContextMenuItem onSelect={() => setViewMode('cinematic')}>
+                Cinematic (1)
+              </ContextMenuItem>
+              <ContextMenuItem onSelect={() => setViewMode('editorial')}>
+                Editorial (2)
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => {
+                setViewMode('cinematic');
+                setZoom(1);
+              }}>
+                Reset View
+              </ContextMenuItem>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+          {selection?.kind === 'node' && viewMode === 'editorial' && (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                Transform
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-32">
+                <ContextMenuItem onSelect={() => setTransformMode('translate')}>
+                  Translate (W)
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => setTransformMode('rotate')}>
+                  Rotate (R)
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => setTransformMode('scale')}>
+                  Scale (E)
+                </ContextMenuItem>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
           <ContextMenuSeparator />
           <ContextMenuCheckboxItem
             checked={gridVisible}
