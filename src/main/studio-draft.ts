@@ -23,15 +23,36 @@ export async function processStudioDraft(takeId: string): Promise<StudioTake> {
   const take = getStudioTake(takeId);
   if (!take) throw new Error(`Take ${takeId} not found`);
 
+  const eventsPath =
+    take.mouseEventsPath ||
+    path.join(app.getPath('userData'), 'studio', takeId, 'mouse_events.json');
+
   let mouseEvents: any[] = [];
   try {
-    const eventsPath =
-      take.mouseEventsPath ||
-      path.join(app.getPath('userData'), 'studio', takeId, 'mouse_events.json');
     const data = await fs.readFile(eventsPath, 'utf-8');
     mouseEvents = JSON.parse(data);
   } catch {
     // Fallback if no mouse log
+  }
+
+  // Agent captures store telemetry relative to the recorded frame, which may be
+  // a window rather than the display. The sidecar records that frame; legacy
+  // (manual) takes have no sidecar and fall back to the primary display.
+  let captureWidth: number | undefined;
+  let captureHeight: number | undefined;
+  try {
+    const raw = JSON.parse(
+      await fs.readFile(
+        path.join(path.dirname(eventsPath), 'capture.json'),
+        'utf-8',
+      ),
+    ) as { width?: number; height?: number };
+    if ((raw.width ?? 0) > 0 && (raw.height ?? 0) > 0) {
+      captureWidth = raw.width;
+      captureHeight = raw.height;
+    }
+  } catch {
+    // No sidecar: the take predates window-scoped capture.
   }
 
   const zooms: StudioZoom[] = [];
@@ -39,8 +60,8 @@ export async function processStudioDraft(takeId: string): Promise<StudioTake> {
 
   if (mouseEvents.length > 10) {
     const primaryDisplay = screen.getPrimaryDisplay();
-    const screenW = primaryDisplay.bounds.width || 1920;
-    const screenH = primaryDisplay.bounds.height || 1080;
+    const screenW = captureWidth ?? primaryDisplay.bounds.width ?? 1920;
+    const screenH = captureHeight ?? primaryDisplay.bounds.height ?? 1080;
 
     const windowSizeMs = 1800;
     const windowStrideMs = windowSizeMs + 1200;

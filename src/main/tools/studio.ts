@@ -37,6 +37,8 @@ import type { StudioHighlight } from '../studio-recorder.js';
 import { getProject } from '../db/projects.js';
 import { repoTools } from './repo.js';
 import { filesystemTools } from './filesystem.js';
+import { createStudioProjectPreviewTools } from './studio-project-preview.js';
+import type { StudioSignInOutcome } from '../../lib/studio/types.js';
 
 export function getStudioStorageDir(takeId?: string): string {
   const base = path.join(app.getPath('userData'), 'studio');
@@ -62,8 +64,24 @@ export function broadcastStudioChanged(): void {
 }
 
 export interface CreateStudioToolsOptions {
+  /** Project the Studio Copilot is scoped to, if any. */
+  projectId?: string;
+  /** Expose project execution tools only on the interactive Studio surface. */
+  includeProjectPreviewTools?: boolean;
+  /** User-mediated authentication handoff for project demo preparation. */
+  requestUserSignIn?: (
+    browserId: string,
+  ) => Promise<StudioSignInOutcome>;
   /** Take a call acts on when it omits `takeId`. Absent on the chat surface. */
   activeTakeId?: string;
+  /**
+   * Resolve the active take at call time rather than agent-construction time.
+   *
+   * The Studio Copilot needs this: a turn can record a new take, and every
+   * follow-up edit should target the take that just landed instead of the one
+   * that was open when the turn began.
+   */
+  resolveActiveTakeId?: () => string | undefined;
   /** Resolve to the newest take when no id is given (the chat surface). */
   defaultToLatestTake?: boolean;
   /** Include git/grep/file context tools; the copilot wants them, chat has its own. */
@@ -72,13 +90,17 @@ export interface CreateStudioToolsOptions {
 }
 
 export function createStudioTools({
+  projectId,
+  includeProjectPreviewTools = false,
+  requestUserSignIn,
   activeTakeId,
+  resolveActiveTakeId,
   defaultToLatestTake = false,
   includeContextTools = true,
   broadcastChanged,
 }: CreateStudioToolsOptions) {
   const resolveTake = (id?: string): StudioTake | null => {
-    const target = id || activeTakeId;
+    const target = id || resolveActiveTakeId?.() || activeTakeId;
     if (target) return getStudioTake(target);
     if (!defaultToLatestTake) return null;
     const latest = listStudioTakes(null, 1, 0)[0];
@@ -106,6 +128,9 @@ export function createStudioTools({
   };
 
   return {
+    ...(includeProjectPreviewTools
+      ? createStudioProjectPreviewTools(projectId, undefined, requestUserSignIn)
+      : {}),
     // ─── 1. Take & Telemetry Inspection ───────────────────────────────────────
 
     getTakeDetails: tool({

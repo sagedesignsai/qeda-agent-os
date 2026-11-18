@@ -48,6 +48,10 @@ import { getSettings } from '../../ai/settings.js';
 import { resolveModel } from '../../ai/provider.js';
 import { transcodeStudioVideo } from '../../studio-export.js';
 import { processStudioDraft } from '../../studio-draft.js';
+import {
+  getActiveStudioRecordingState,
+  stopStudioRecording,
+} from '../../studio-recorder.js';
 import { probeTake, ensureOptimizedMedia } from '../../studio-media-prep.js';
 import {
   generateFilmstrip,
@@ -194,6 +198,45 @@ export function registerStudioHandlers({
         })();
       }
       return take;
+    },
+  );
+
+  // ── Agent-Driven Recording ────────────────────────────────────────────────
+  // The recorder lives in main and outlives the tool call that started it, so
+  // the renderer needs a way to observe and stop it independently of the agent.
+
+  ipcMain.handle('studio:get-active-recording', () => ({
+    active: getActiveStudioRecordingState(),
+  }));
+
+  ipcMain.handle(
+    'studio:stop-agent-recording',
+    async (_e, req?: { sessionId?: string }) => {
+      const active = getActiveStudioRecordingState();
+      const sessionId = req?.sessionId ?? active?.sessionId;
+      if (!sessionId) {
+        return { stopped: false, error: 'No agent recording is running.' };
+      }
+      try {
+        const result = await stopStudioRecording(sessionId);
+        // The recorder broadcasts studio:changed with the new take id, so the
+        // Studio page selects it without the caller navigating.
+        return {
+          stopped: true,
+          sessionId,
+          takeId: result.take.id,
+          durationMs: result.durationMs,
+          highlightCount: result.highlightCount,
+          captionCount: result.captionCount,
+          zoomCount: result.zoomCount,
+        };
+      } catch (err) {
+        return {
+          stopped: false,
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     },
   );
 

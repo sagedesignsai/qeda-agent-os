@@ -164,6 +164,85 @@ export interface MouseTrackerEvent {
   type: 'move' | 'mousedown' | 'mouseup' | 'click' | 'dblclick' | 'wheel';
 }
 
+/** A rectangle in device-independent screen coordinates (DIP). */
+export interface StudioCaptureRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * What an agent-driven capture should record.
+ *
+ * `windowId` is an Electron window id — the value `openBrowser` returns — not a
+ * `desktopCapturer` source id. Electron-owned windows are the only ones whose
+ * bounds we can read and whose stacking we can control, so they are the only
+ * ones a take can be cropped to.
+ */
+export interface StudioCaptureRequest {
+  windowId?: string;
+  /** Native (non-Electron) window title; resolved through the OS window list. */
+  windowTitle?: string;
+  displayId?: string;
+  rect?: StudioCaptureRect;
+  /**
+   * Set when a rect came from a real window rather than a user-drawn region,
+   * so the take is still filed as a window capture.
+   */
+  kindHint?: 'window';
+  /** Human label for a rect capture, e.g. the native window title. */
+  label?: string;
+}
+
+/** Renderer-facing description of what the running capture is recording. */
+export interface StudioCaptureSummary {
+  kind: 'display' | 'window' | 'region';
+  /** Human label, e.g. the window title or "Display 1". */
+  label: string;
+  /** Size of the visible frame, in DIP. */
+  width: number;
+  height: number;
+}
+
+/**
+ * Live, renderer-facing view of an agent-driven screen capture.
+ *
+ * Sent over `studio:recording-state` so the Studio pill can show what is being
+ * recorded while ffmpeg owns the capture in main. Deliberately metadata only:
+ * the renderer derives elapsed time from `startedAt` instead of receiving a
+ * tick every second.
+ */
+export interface StudioRecordingSnapshot {
+  sessionId: string;
+  takeId: string;
+  title: string;
+  sourceName: string;
+  /** Epoch milliseconds. */
+  startedAt: number;
+  maxDurationMs: number;
+  fps: number;
+  highlightCount: number;
+  cursorSampleCount: number;
+  /** What the frame actually contains — screen, a window, or an explicit region. */
+  capture: StudioCaptureSummary;
+}
+
+/** Push payload for `studio:recording-state`; `active: null` means it ended. */
+export interface StudioRecordingStateEvent {
+  active: StudioRecordingSnapshot | null;
+}
+
+/** Request sent to Studio while the copilot waits for a user to sign in. */
+export interface StudioSignInRequest {
+  requestId: string;
+  browserId: string;
+  expiresAt: number;
+}
+
+export type StudioSignInDecision = 'continue' | 'cancel';
+export type StudioSignInOutcome = 'confirmed' | 'cancelled' | 'expired';
+
 // ── Video region crop ─────────────────────────────────────────────────────────
 
 /** Normalized sub-region (0..1) of a take's source video to render/export. */

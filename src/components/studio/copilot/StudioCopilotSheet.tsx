@@ -11,7 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   SparklesIcon,
   PlusIcon,
@@ -21,6 +21,7 @@ import {
   Share2Icon,
   TypeIcon,
   VideoIcon,
+  ShieldCheckIcon,
 } from 'lucide-react';
 
 import {
@@ -49,8 +50,12 @@ import { MessageList } from '@/components/chat/MessageList';
 import { PlanPanel } from '@/components/plan/PlanPanel';
 import { ActiveProjectNotice } from '@/components/projects/ActiveProjectNotice';
 import { useStudioCopilot } from '@/hooks/use-studio-copilot';
-import { useIpcEvent } from '@/hooks/use-ipc';
+import { useIpcEvent, useIpcInvoke } from '@/hooks/use-ipc';
 import type { StudioTake } from '@/lib/studio-types';
+import type {
+  StudioSignInDecision,
+  StudioSignInRequest,
+} from '@/lib/studio/types';
 
 const SUGGESTIONS = [
   {
@@ -83,20 +88,20 @@ export interface StudioCopilotSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeTake: StudioTake;
+  projectId?: string;
   currentTimeMs?: number;
   initialPrompt?: string | null;
   onInitialPromptHandled?: () => void;
-  onChanged?: () => void;
 }
 
 export function StudioCopilotSheet({
   open,
   onOpenChange,
   activeTake,
+  projectId,
   currentTimeMs = 0,
   initialPrompt,
   onInitialPromptHandled,
-  onChanged,
 }: StudioCopilotSheetProps) {
   const {
     messages,
@@ -111,9 +116,83 @@ export function StudioCopilotSheet({
     clearPlan,
   } = useStudioCopilot({
     takeId: activeTake.id,
-    projectId: activeTake.projectId ?? undefined,
+    projectId: activeTake.projectId ?? projectId,
     currentTimeMs,
   });
+  const ipcInvoke = useIpcInvoke();
+  const [signInRequest, setSignInRequest] =
+    useState<StudioSignInRequest | null>(null);
+  const [signInNotice, setSignInNotice] = useState<string | null>(null);
+  const [replyingToSignIn, setReplyingToSignIn] = useState(false);
+
+  useIpcEvent(
+    'studio-copilot:sign-in-request',
+    (payload) => {
+      const request = payload as StudioSignInRequest;
+      if (!open) {
+        void ipcInvoke('studio-copilot:sign-in-reply', {
+          requestId: request.requestId,
+          decision: 'cancel',
+        }).catch((error: unknown) => {
+          setSignInNotice(
+            error instanceof Error
+              ? error.message
+              : 'Could not cancel the sign-in request.',
+          );
+        });
+        return;
+      }
+      setSignInNotice(null);
+      setSignInRequest(request);
+    },
+    [open, ipcInvoke],
+  );
+
+  useIpcEvent(
+    'studio-copilot:sign-in-expired',
+    (payload) => {
+      const { requestId } = payload as { requestId: string };
+      if (signInRequest?.requestId === requestId) {
+        setSignInRequest(null);
+        setSignInNotice('Sign-in timed out. Ask Copilot to try again.');
+      }
+    },
+    [signInRequest],
+  );
+
+  const respondToSignIn = async (decision: StudioSignInDecision) => {
+    if (!signInRequest) return;
+    const requestId = signInRequest.requestId;
+    setReplyingToSignIn(true);
+    setSignInNotice(null);
+    try {
+      const result = await ipcInvoke<{ accepted: boolean }>(
+        'studio-copilot:sign-in-reply',
+        { requestId, decision },
+      );
+      if (!result.accepted) {
+        throw new Error('This sign-in request is no longer active.');
+      }
+      setSignInRequest((current) =>
+        current?.requestId === requestId ? null : current,
+      );
+    } catch (error) {
+      setSignInNotice(
+        error instanceof Error
+          ? error.message
+          : 'Could not submit the sign-in confirmation.',
+      );
+    } finally {
+      setReplyingToSignIn(false);
+    }
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && signInRequest) {
+      void respondToSignIn('cancel');
+    }
+    onOpenChange(nextOpen);
+  };
 
   const handleClear = () => {
     clearPlan();
@@ -128,8 +207,8 @@ export function StudioCopilotSheet({
     }
   }, [open, initialPrompt, sendMessage, onInitialPromptHandled]);
 
-  // Refresh take/timeline on changes
-  useIpcEvent('studio:changed', () => onChanged?.());
+  // Take/timeline refresh is centralized in useStudio, which owns the active
+  // take. A second listener here raced it and could reload the previous take.
 
   const emptyState = (
     <div className="flex h-full flex-col items-center justify-center gap-5 p-6 text-center select-none">
@@ -170,7 +249,7 @@ export function StudioCopilotSheet({
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="right"
         className="flex w-full flex-col gap-0 p-0 sm:max-w-lg bg-card/95 backdrop-blur-md border-l border-border/50"
@@ -216,6 +295,57 @@ export function StudioCopilotSheet({
             compact
           />
         </SheetHeader>
+
+        {signInRequest && (
+          <div
+            role="alert"
+            aria-label="Sign-in confirmation"
+            className="mx-3 mt-3 rounded-lg border border-amber-500/35 bg-amber-500/8 p-3"
+          >
+            <div className="flex items-start gap-2.5">
+              <ShieldCheckIcon className="mt-0.5 size-4 shrink-0 text-amber-500" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-foreground">
+                  Sign in before recording
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                  Finish login or MFA in the focused browser window. Keep
+                  credentials in the browser, not in chat. Recording stays
+                  stopped until you confirm.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px]"
+                disabled={replyingToSignIn}
+                onClick={() => void respondToSignIn('cancel')}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 text-[11px]"
+                disabled={replyingToSignIn}
+                onClick={() => void respondToSignIn('continue')}
+              >
+                I’m signed in
+              </Button>
+            </div>
+          </div>
+        )}
+        {signInNotice && (
+          <p
+            role="status"
+            className="mx-3 mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive"
+          >
+            {signInNotice}
+          </p>
+        )}
 
         {/* ── Conversation Stream ─────────────────────────────────────────────── */}
         <Conversation className="flex-1 overflow-hidden">

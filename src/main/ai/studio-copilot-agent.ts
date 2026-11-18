@@ -20,13 +20,20 @@ import { getStudioTake, type StudioTake } from '../db/studio-store.js';
 import { createPlanTools } from '../tools/plan.js';
 import { computerUseTools } from '../tools/computer-use.js';
 import { browserUseTools } from '../tools/browser-use.js';
+import { getLastCompletedStudioRecording } from '../studio-recorder.js';
 import { studioCopilotApprovalPolicy } from '../tools/index.js';
+import { createStudioSignInTool } from '../tools/studio-sign-in.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
+import type { StudioSignInOutcome } from '../../lib/studio/types.js';
 
 export interface StudioCopilotAgentOptions {
   activeTakeId: string;
+  projectId?: string;
   activeProject?: string;
+  requestUserSignIn?: (
+    browserId: string,
+  ) => Promise<StudioSignInOutcome>;
   currentTimeMs?: number;
   target?: ModelTarget;
   broadcastChanged?: () => void;
@@ -115,13 +122,24 @@ You help developers turn raw screen recordings and software demos into stunning,
    - When asked for marketing material or release kit, use \`generateSocialKit\` to write high-converting launch copy (engaging headline, 2-3 sentence overview, viral Twitter/X thread starter with hashtags, changelog markdown, and LinkedIn update).
 
 6. **Autonomous Demo Recording**:
-   - When asked to record a demo, use \`startDemoRecording\` to begin capturing the screen.
-   - Use \`openBrowser\` with \`visible: true\` to open the app or product being demoed in a visible browser window.
+   - When asked to record a demo, open the app first, then start the capture.
+   - Use \`openBrowser\` with \`visible: true\` to open the app or product being demoed. It returns a window id and its bounds.
+   - Pass that id as \`windowId\` to \`startDemoRecording\`. Recording a window crops the take to the app and keeps it in front; recording the screen captures every notification, dock, and overlapping window as well. Only omit \`windowId\` when the demo genuinely spans the whole desktop.
+   - If the app is a native window rather than a browser, call \`listCaptureTargets\` and pass the matching window id. Verify what will be captured in the \`capture\` field of the result before driving the flow.
    - Drive the app using computer-use tools: \`moveMouse\`, \`click\`, \`typeText\`, \`scroll\` to navigate through the demo flow.
    - Call \`markHighlight\` at each moment worth showing — its label becomes a timed caption and kinetic zoom on the finished take.
    - Use \`screenshotBrowser\` or \`captureScreenshot\` to verify the visual state before marking highlights.
-   - Call \`stopDemoRecording\` to finish. The resulting take is automatically loaded with captions and zooms.
+   - Call \`stopDemoRecording\` to finish. The new take becomes the active take, and the studio editing tools target it automatically — no need to thread its id through later calls.
    - Note: Computer Use must be enabled in Settings, and the target window must be on the allowlist.
+
+7. **Starting a Project for a Demo**:
+   - Use \`getProjectRunOptions\` to inspect linked codebases when needed. If there are multiple, choose the codebase relevant to the requested demo.
+   - Prefer \`prepareProjectDemo\` to start the selected package script, wait for a ready URL, open a visible browser, and return a recordable \`windowId\`. For an already-running/external app, pass its HTTP(S) URL instead.
+   - Choose a script shown in \`getProjectRunOptions\`; never invent or pass a shell command. Starting project code requires user approval. Do not work around a rejected or denied approval.
+   - If login or MFA is expected, set \`signInRequired: true\`; the tool waits for the user to finish authentication before returning. If a login screen appears unexpectedly, use \`requestUserSignIn\` before recording. Never ask for credentials in chat.
+   - Use the returned \`windowId\` for \`startDemoRecording\`. Do not guess a URL or record before the browser is ready.
+   - If an unexpected login screen appears during recording, stop the take before the user enters credentials. Treat the captured login frames as private and remove them before sharing; then use \`requestUserSignIn\` and start a fresh take after confirmation.
+   - Stop a preview with \`stopProjectPreview\` only when the user asks or when the demo workflow clearly owns and is finished with it; stopping also requires approval.
 
 ## Tone & Output
 - Confident, creative, and action-oriented.
@@ -147,11 +165,31 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
 
   const take = getStudioTake(opts.activeTakeId);
   const planManager = opts.planManager ?? new PlanManager();
+  const agentStartedAt = Date.now();
 
   const tools = createStudioTools({
+    projectId: opts.projectId,
+    includeProjectPreviewTools: !opts.forSubagent,
+    requestUserSignIn: opts.requestUserSignIn,
     activeTakeId: opts.activeTakeId,
+    // A recording started during this turn finishes mid-turn; from then on
+    // "the active take" means the one that just landed.
+    resolveActiveTakeId: () => {
+      const recorded = getLastCompletedStudioRecording();
+      return recorded && recorded.completedAt >= agentStartedAt
+        ? recorded.takeId
+        : opts.activeTakeId;
+    },
     broadcastChanged: opts.broadcastChanged,
   });
+  const signInTools =
+    !opts.forSubagent && opts.requestUserSignIn
+      ? {
+          requestUserSignIn: createStudioSignInTool(
+            opts.requestUserSignIn,
+          ),
+        }
+      : {};
 
   return new ToolLoopAgent({
     model: model as any,
@@ -165,10 +203,10 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
       getStudioCapability,
       ...computerUseTools,
       ...browserUseTools,
+      ...signInTools,
       ...createPlanTools(planManager),
     },
     ...(opts.forSubagent ? {} : { toolApproval: studioCopilotApprovalPolicy }),
     stopWhen: [isStepCount(25), planManager.stopCondition()],
   });
 }
-

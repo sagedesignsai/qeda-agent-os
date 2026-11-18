@@ -10,7 +10,7 @@
 
 import '@testing-library/jest-dom';
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { StudioCopilotSheet } from '../components/studio/copilot/StudioCopilotSheet';
 import type { StudioTake } from '../lib/studio-types';
@@ -19,6 +19,8 @@ import { DEFAULT_STUDIO_STYLING } from '../lib/studio-types';
 const mockSendMessage = jest.fn();
 const mockClearMessages = jest.fn();
 const mockRespondToApproval = jest.fn();
+const mockIpcInvoke = jest.fn();
+const mockIpcListeners = new Map<string, (...args: unknown[]) => void>();
 
 jest.mock('../hooks/use-studio-copilot', () => ({
   useStudioCopilot: jest.fn(() => ({
@@ -34,7 +36,10 @@ jest.mock('../hooks/use-studio-copilot', () => ({
 }));
 
 jest.mock('../hooks/use-ipc', () => ({
-  useIpcEvent: jest.fn(),
+  useIpcInvoke: () => mockIpcInvoke,
+  useIpcEvent: jest.fn((channel: string, listener: (...args: unknown[]) => void) => {
+    mockIpcListeners.set(channel, listener);
+  }),
 }));
 
 beforeAll(() => {
@@ -69,6 +74,8 @@ describe('StudioCopilotSheet UI Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIpcListeners.clear();
+    mockIpcInvoke.mockResolvedValue({ accepted: true });
   });
 
   const renderWithRouter = (ui: React.ReactElement) => {
@@ -131,5 +138,35 @@ describe('StudioCopilotSheet UI Component', () => {
       'Analyze key moments and apply smart kinetic zooms'
     );
     expect(handlePromptHandled).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a clear sign-in handoff and confirms only through the IPC reply', async () => {
+    renderWithRouter(
+      <StudioCopilotSheet
+        open={true}
+        onOpenChange={jest.fn()}
+        activeTake={sampleTake}
+      />,
+    );
+
+    act(() => {
+      mockIpcListeners.get('studio-copilot:sign-in-request')?.({
+        requestId: 'signin-1',
+        browserId: 'browser-1',
+        expiresAt: Date.now() + 60_000,
+      });
+    });
+
+    expect(screen.getByText('Sign in before recording')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Keep credentials in the browser, not in chat/),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'I’m signed in' }));
+
+    expect(mockIpcInvoke).toHaveBeenCalledWith(
+      'studio-copilot:sign-in-reply',
+      { requestId: 'signin-1', decision: 'continue' },
+    );
   });
 });

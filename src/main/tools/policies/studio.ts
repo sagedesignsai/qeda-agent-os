@@ -53,10 +53,18 @@ export const studioToolPolicies: ToolPolicyMap = {
 
   // ── Capability discovery ───────────────────────────────────────────────────
   getStudioCapability: t('read'),
+  getProjectRunOptions: t('read'),
+  // Starting or stopping a project server can execute code or interrupt a
+  // running app, so keep both actions behind an explicit user decision.
+  startProjectPreview: t('destructive'),
+  prepareProjectDemo: t('destructive'),
+  getProjectPreviewStatus: t('read'),
+  stopProjectPreview: t('destructive'),
 
   // ── Computer Use (tools/computer-use.ts) ────────────────────────────────────
   // Observation tools — read-only, no approval needed.
   listWindows: t('read'),
+  listCaptureTargets: t('read'),
   captureScreenshot: t('read'),
   getActiveWindow: t('read'),
   getCursorPosition: t('read'),
@@ -91,6 +99,7 @@ export const studioToolPolicies: ToolPolicyMap = {
   evaluateBrowser: t('write-local'),
   screenshotBrowser: t('read'),
   closeBrowser: t('write-local'),
+  requestUserSignIn: t('write-local'),
 
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),

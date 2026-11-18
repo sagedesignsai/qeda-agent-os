@@ -58,12 +58,14 @@ Complete inventory of 28 tool files and 47+ tools. Shows which agents can access
 | `project-files.ts` | `listProjectFiles`, `readProjectFile` | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ |
 | `resources.ts` | (helper; no user-facing tools) | — | — | — | — | — | — | — | — | — |
 
-### System Integration (3 files)
+### System Integration (4 files)
 
 | File | Tools | Chat | Terminal | Task | Studio | Motion | Music | Correspondence | Drafter | ModelBuilder |
 |------|-------|------|----------|------|--------|--------|-------|-----------------|---------|--------------|
-| `computer-use.ts` | `screenshot`, `click`, `doubleClick`, `type`, `moveMouse`, `scroll` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
-| `browser-use.ts` | `navigate`, `clickSelector`, `typeSelector`, `evaluate`, `listBrowsers`, `openBrowser` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `computer-use.ts` | `listWindows`, `listCaptureTargets`, `captureScreenshot`, `getActiveWindow`, `getCursorPosition`, `moveMouse`, `click`, `doubleClick`, `typeText`, `pressKey`, `scroll`, `wait`, `startDemoRecording`, `markHighlight`, `stopDemoRecording` | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `browser-use.ts` | `openBrowser`, `navigateBrowser`, `clickSelector`, `typeSelector`, `evaluateBrowser`, `screenshotBrowser`, `closeBrowser` | ✓ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `studio-project-preview.ts` | `getProjectRunOptions`, `startProjectPreview` (a), `prepareProjectDemo` (a), `getProjectPreviewStatus`, `stopProjectPreview` (a) | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
+| `studio-sign-in.ts` | `requestUserSignIn` | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `capability.ts` | (policy derivation; no tools) | — | — | — | — | — | — | — | — | — |
 
 ### Policies (4 files)
@@ -101,7 +103,11 @@ Complete inventory of 28 tool files and 47+ tools. Shows which agents can access
 - Strict approval on cost tools (`indexFile`, `indexPage`)
 
 ### Studio Copilot
-- **8 tools**: Studio editing + git/file context for caption accuracy + planning
+- **Studio editing (10)**: take/telemetry inspection, zooms, cuts, captions, effects, styling, social kit
+- **Plus**: `getStudioCapability`, git/file context for caption accuracy, planning, computer-use, and browser-use
+- Project-scoped preview discovery and managed server start/stop; executing or stopping a project script requires approval
+- The only copilot with computer-use and browser-use: it can record a demo (`startDemoRecording` → drive → `markHighlight` → `stopDemoRecording`) and then edit the resulting take
+- Authentication handoff pauses for the user to sign in directly in the browser; it never asks for credentials in chat
 - Read-only filesystem access (orientation, not mutation)
 
 ### Motion Copilot

@@ -10,8 +10,21 @@ import { Button } from '@/components/ui/button';
 
 interface StudioRecordingBarProps {
   seconds: number;
+  /** Manual takes use MediaRecorder; agent takes are captured by ffmpeg in main. */
+  mode?: 'manual' | 'agent';
+  /** What the agent is recording, e.g. "Qeda Builder". */
+  sourceName?: string;
+  /** Whether the frame is the whole screen, a single window, or a region. */
+  captureKind?: 'display' | 'window' | 'region';
+  highlightCount?: number;
   onStop: () => void;
 }
+
+const CAPTURE_KIND_LABEL = {
+  display: 'Screen',
+  window: 'Window',
+  region: 'Region',
+} as const;
 
 function formatTimer(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -21,6 +34,10 @@ function formatTimer(sec: number): string {
 
 export function StudioRecordingBar({
   seconds,
+  mode = 'manual',
+  sourceName,
+  captureKind = 'display',
+  highlightCount,
   onStop,
 }: StudioRecordingBarProps) {
   return (
@@ -42,6 +59,22 @@ export function StudioRecordingBar({
           {formatTimer(seconds)}
         </span>
 
+        {mode === 'agent' && (
+          <>
+            <div className="w-[1px] h-4 bg-border/60" />
+            <span
+              className="max-w-[220px] truncate text-[10px] font-medium text-muted-foreground"
+              title={sourceName}
+            >
+              Agent · {CAPTURE_KIND_LABEL[captureKind]}
+              {sourceName ? ` · ${sourceName}` : ''}
+              {highlightCount
+                ? ` · ${highlightCount} highlight${highlightCount === 1 ? '' : 's'}`
+                : ''}
+            </span>
+          </>
+        )}
+
         <div className="w-[1px] h-4 bg-border/60" />
 
         {/* Finish Take Button */}
@@ -52,7 +85,7 @@ export function StudioRecordingBar({
           onClick={onStop}
         >
           <SquareIcon className="w-3 h-3 fill-current" />
-          Finish Take
+          {mode === 'agent' ? 'Stop & Save' : 'Finish Take'}
         </Button>
       </div>
     </div>

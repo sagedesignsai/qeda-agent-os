@@ -50,11 +50,21 @@ Autonomous video director. Edits screen recordings: cuts dead air, adds zooms, g
 
 ### Tools
 From `createStudioTools`:
-- **Timeline**: `createZoom`, `createCut`, `createCaption`, `moveCut`, `deleteCut`, `moveCaption`
-- **Styling**: `updateStudioStyling`
-- **Marketing**: `createMarketing` (generates tweets, LinkedIn, release notes)
-- **Context**: `gitStatus`, `gitLog`, `grepSearch` (for caption accuracy & release note grounding)
+- **Timeline**: `getTakeDetails`, `getMouseTelemetry`, `addKineticZoom`, `removeKineticZoom`, `cutSilenceOrRange`, `setCaptions`, `addCanvasEffect`, `removeCanvasEffect`
+- **Styling**: `updateStyling`
+- **Marketing**: `generateSocialKit` (generates tweets, LinkedIn, release notes)
+- **Context**: `gitStatus`, `gitLog`, `gitDiffStat`, `grepSearch`, `readFile`, `listDir` (for caption accuracy & release note grounding)
+- **Recording** (`computer-use.ts`): `listCaptureTargets`, `startDemoRecording`, `markHighlight`, `stopDemoRecording`
+- **Browser** (`browser-use.ts`): `openBrowser`, `navigateBrowser`, `clickSelector`, `typeSelector`, `evaluateBrowser`, `screenshotBrowser`, `closeBrowser`
 - **Planning**: `createPlan`, `updatePlanItem`
+
+### Demo recording
+The agent records through ffmpeg in main, not the renderer's `MediaRecorder`:
+
+- `startDemoRecording` takes a `windowId` (from `openBrowser` or `listCaptureTargets`) and crops the grabber to that window. Omit it only when the demo really spans the desktop; the fallback is the primary display.
+- The recorded Electron window is pinned always-on-top for the session and restored on stop, so a click on another app cannot displace it mid-take.
+- Cursor telemetry is stored relative to the captured frame, and window takes on macOS carry a normalized `videoCrop`, so zoom targets land on the right pixel either way.
+- One session per take, 5-minute watchdog. `markHighlight` records timestamps; captions and zooms are composed on stop.
 
 ### Grounding
 - Active take metadata (duration, aspect, styling)

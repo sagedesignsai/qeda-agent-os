@@ -23,6 +23,8 @@ import {
   markStudioHighlight,
   stopStudioRecording,
   hasActiveStudioRecording,
+  getActiveStudioRecordingState,
+  getLastCompletedStudioRecording,
   __studioRecorderTesting,
   type StudioRecorderDeps,
 } from '../main/studio-recorder';
@@ -198,6 +200,7 @@ describe('studio recording sessions', () => {
   let db: Database.Database;
   let clock: number;
   const broadcast = jest.fn();
+  const emitState = jest.fn();
   const stopCapture = jest.fn(async () => undefined);
   const capturedArgs: string[][] = [];
   const startCapture = jest.fn(async (args: string[]) => {
@@ -223,6 +226,7 @@ describe('studio recording sessions', () => {
     ensureDir: async () => undefined,
     applyDraft,
     broadcast,
+    emitState,
     ...overrides,
   });
 
@@ -233,6 +237,7 @@ describe('studio recording sessions', () => {
     useTestDatabase(db);
     clock = 1_000_000;
     broadcast.mockClear();
+    emitState.mockClear();
     startCapture.mockClear();
     capturedArgs.length = 0;
     stopCapture.mockClear();
@@ -283,6 +288,19 @@ describe('studio recording sessions', () => {
     // The capture is live: the process was handed a grabber with a region.
     expect(capturedArgs[0]).toContain('x11grab');
 
+    // The renderer can see what is being recorded without polling.
+    expect(getActiveStudioRecordingState()).toMatchObject({
+      sessionId: started.sessionId,
+      takeId: started.takeId,
+      title: 'Builder Walkthrough',
+      sourceName: 'Builder',
+      highlightCount: 0,
+      fps: 30,
+    });
+    expect(emitState).toHaveBeenLastCalledWith({
+      active: expect.objectContaining({ takeId: started.takeId }),
+    });
+
     clock += 2400;
     const mark = markStudioHighlight(
       started.sessionId,
@@ -290,6 +308,7 @@ describe('studio recording sessions', () => {
       deps,
     );
     expect(mark.tMs).toBe(2400);
+    expect(getActiveStudioRecordingState()?.highlightCount).toBe(1);
 
     clock += 4600; // stop at 7000ms
     // The cursor sampler runs on a real 20ms interval, so give it a tick.
@@ -302,6 +321,12 @@ describe('studio recording sessions', () => {
     expect(stopCapture).toHaveBeenCalledTimes(1);
     expect(applyDraft).toHaveBeenCalledWith(started.takeId);
     expect(broadcast).toHaveBeenCalledTimes(1);
+    // The finished take is named so the Studio page selects it, and the live
+    // pill is told the capture ended.
+    expect(broadcast).toHaveBeenCalledWith(started.takeId);
+    expect(emitState).toHaveBeenLastCalledWith({ active: null });
+    expect(getActiveStudioRecordingState()).toBeNull();
+    expect(getLastCompletedStudioRecording()?.takeId).toBe(started.takeId);
 
     // Both observation streams were persisted beside the video.
     const mousePath = Object.keys(written).find((f) =>
@@ -326,6 +351,157 @@ describe('studio recording sessions', () => {
     expect(take.captions[0].text).toBe('Live preview updates');
     expect(take.zooms.length).toBeGreaterThan(0);
     expect(take.styling.showCaptions).toBe(true);
+  });
+
+  it('crops the capture to the selected window and keeps telemetry frame-relative', async () => {
+    const written: Record<string, string> = {};
+    const unpin = jest.fn();
+    const pinWindow = jest.fn(() => unpin);
+    const deps = makeDeps({
+      resolveCapture: () => ({
+        kind: 'window',
+        label: 'Qeda Builder',
+        captureRect: { x: 400, y: 200, width: 800, height: 600 },
+        regionRect: { x: 400, y: 200, width: 800, height: 600 },
+        display: {
+          id: '1',
+          bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+          scaleFactor: 1,
+          primary: true,
+        },
+        windowId: 7,
+      }),
+      pinWindow,
+      sampleCursor: () => ({ x: 500, y: 300 }),
+      writeFile: async (file, contents) => {
+        written[file] = contents;
+      },
+    });
+
+    const started = await startStudioRecording({ title: 'Window demo' }, deps);
+
+    // The window is pinned before the first frame, so the opening seconds are
+    // not a recording of whatever was covering it.
+    expect(pinWindow).toHaveBeenCalledWith(7);
+    // The grabber is cropped to the window, not the display.
+    expect(capturedArgs[0]).toContain('800x600');
+    expect(capturedArgs[0]).toContain(':0.0+400,200');
+    expect(started.capture).toEqual({
+      kind: 'window',
+      label: 'Qeda Builder',
+      width: 800,
+      height: 600,
+    });
+    expect(getActiveStudioRecordingState()?.capture.kind).toBe('window');
+
+    clock += 1000;
+    // The sampler runs on a real interval, so give it a tick.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const stopped = await stopStudioRecording(started.sessionId, deps);
+
+    expect(unpin).toHaveBeenCalledTimes(1);
+
+    // Telemetry is relative to the frame: the cursor at (500,300) on screen is
+    // at (100,100) inside the window's recording.
+    const mousePath = Object.keys(written).find((f) =>
+      f.endsWith('mouse_events.json'),
+    )!;
+    const samples = JSON.parse(written[mousePath]);
+    expect(samples.length).toBeGreaterThan(0);
+    expect(samples[0]).toMatchObject({ x: 100, y: 100 });
+
+    const capturePath = Object.keys(written).find((f) =>
+      f.endsWith('capture.json'),
+    )!;
+    expect(JSON.parse(written[capturePath])).toMatchObject({
+      kind: 'window',
+      label: 'Qeda Builder',
+      width: 800,
+      height: 600,
+    });
+
+    const take = getStudioTake(started.takeId)!;
+    expect(take.sourceType).toBe('window');
+    expect(take.sourceName).toBe('Qeda Builder');
+    expect(stopped.highlightCount).toBe(0);
+  });
+
+  it('persists a display-level crop supplied by the resolver', async () => {
+    const written: Record<string, string> = {};
+    const deps = makeDeps({
+      sampleCursor: () => ({ x: 500, y: 300 }),
+      writeFile: async (file, contents) => {
+        written[file] = contents;
+      },
+      resolveCapture: () => ({
+        kind: 'window',
+        label: 'Qeda Builder',
+        // macOS captures the display and crops at render time.
+        captureRect: { x: 0, y: 0, width: 1920, height: 1080 },
+        regionRect: { x: 480, y: 270, width: 960, height: 540 },
+        display: {
+          id: '1',
+          bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+          scaleFactor: 1,
+          primary: true,
+        },
+        videoCrop: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 },
+      }),
+    });
+
+    const started = await startStudioRecording({}, deps);
+    // The grabber still takes the whole display...
+    expect(capturedArgs[0]).toContain('1920x1080');
+    // ...but the reported frame is the crop, so telemetry is normalized to it.
+    expect(started.capture).toMatchObject({ width: 960, height: 540 });
+
+    clock += 1000;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await stopStudioRecording(started.sessionId, deps);
+
+    // The take knows to crop to the window when rendering.
+    expect(getStudioTake(started.takeId)!.videoCrop).toEqual({
+      x: 0.25,
+      y: 0.25,
+      width: 0.5,
+      height: 0.5,
+    });
+
+    const capturePath = Object.keys(written).find((f) =>
+      f.endsWith('capture.json'),
+    )!;
+    expect(JSON.parse(written[capturePath])).toMatchObject({
+      width: 960,
+      height: 540,
+    });
+  });
+
+  it('releases the window pin when the capture cannot start', async () => {
+    const unpin = jest.fn();
+    const deps = makeDeps({
+      resolveCapture: () => ({
+        kind: 'window',
+        label: 'Qeda Builder',
+        captureRect: { x: 0, y: 0, width: 800, height: 600 },
+        regionRect: { x: 0, y: 0, width: 800, height: 600 },
+        display: {
+          id: '1',
+          bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+          scaleFactor: 1,
+          primary: true,
+        },
+        windowId: 7,
+      }),
+      pinWindow: () => unpin,
+      startCapture: jest.fn(async () => {
+        throw new Error('ffmpeg screen capture failed: no DISPLAY');
+      }),
+    });
+
+    await expect(startStudioRecording({}, deps)).rejects.toThrow(/DISPLAY/);
+
+    expect(unpin).toHaveBeenCalledTimes(1);
+    expect(hasActiveStudioRecording()).toBe(false);
   });
 
   it('still saves a take when the agent marked nothing', async () => {

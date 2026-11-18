@@ -1,6 +1,7 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import * as bu from '../browser-use.js';
+import { hasActiveStudioRecording } from '../studio-recorder.js';
 
 function blocked(err: string) {
   return { success: false as const, error: err };
@@ -9,7 +10,7 @@ function blocked(err: string) {
 export const browserUseTools = {
   openBrowser: tool({
     description:
-      'Open a browser window and navigate to a URL. Set visible=true to let the user pre-authenticate (SSO).',
+      'Open a browser window and navigate to a URL. Set visible=true to let the user pre-authenticate (SSO). Always visible while a demo recording is running, because a hidden window would not appear in the capture.',
     inputSchema: z.object({
       url: z.string(),
       visible: z.boolean().optional().default(false),
@@ -20,8 +21,17 @@ export const browserUseTools = {
     }),
     execute: async ({ url, visible, partition }) => {
       try {
-        const r = bu.openBrowser(url, { visible, partition });
-        return { success: true, ...r };
+        // Model compliance is not a guarantee: during a screen take a hidden
+        // browser produces a recording of whatever else is on screen.
+        const shouldShow = hasActiveStudioRecording()
+          ? true
+          : (visible ?? false);
+        const r = bu.openBrowser(url, {
+          visible: shouldShow,
+          partition,
+        });
+        // `id` doubles as the `windowId` for startDemoRecording.
+        return { success: true, ...r, windowId: r.id, visible: shouldShow };
       } catch (e) {
         return blocked((e as Error).message);
       }

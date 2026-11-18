@@ -27,6 +27,7 @@ import type {
   StudioCaption,
   StudioEffect,
   StudioOverlay,
+  StudioRecordingSnapshot,
 } from '@/main/ipc/channels';
 import { DEFAULT_STUDIO_STYLING } from '@/main/ipc/channels';
 
@@ -74,6 +75,10 @@ export function useStudio(
   // Recording state
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [recordingSeconds, setRecordingSeconds] = useState<number>(0);
+  // Agent-driven capture lives in main; this is its renderer-side mirror.
+  const [agentRecording, setAgentRecording] =
+    useState<StudioRecordingSnapshot | null>(null);
+  const [agentRecordingSeconds, setAgentRecordingSeconds] = useState<number>(0);
   const [activeRecordingTakeId, setActiveRecordingTakeId] = useState<
     string | null
   >(null);
@@ -162,13 +167,60 @@ export function useStudio(
     };
   }, [activeTakeId, refreshTakes, loadTake]);
 
-  // Listen for studio:changed events
-  useIpcEvent('studio:changed', () => {
-    refreshTakes();
-    if (activeTake?.id) {
-      loadTake(activeTake.id);
-    }
+  // Restore an in-flight agent capture after a renderer reload.
+  useEffect(() => {
+    let cancelled = false;
+    window.electron.ipc
+      .invoke<{ active: StudioRecordingSnapshot | null }>(
+        'studio:get-active-recording',
+      )
+      .then((res) => {
+        if (!cancelled) setAgentRecording(res?.active ?? null);
+        return undefined;
+      })
+      .catch(() => {
+        // The recorder event below still drives the pill if this is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Live agent-capture state: started, each highlight, and stop.
+  useIpcEvent('studio:recording-state', (payload) => {
+    const state = payload as { active: StudioRecordingSnapshot | null } | null;
+    setAgentRecording(state?.active ?? null);
   });
+
+  // Derive elapsed time locally; the recorder only sends state transitions.
+  useEffect(() => {
+    if (!agentRecording) {
+      setAgentRecordingSeconds(0);
+      return;
+    }
+    const update = () =>
+      setAgentRecordingSeconds(
+        Math.max(0, Math.floor((Date.now() - agentRecording.startedAt) / 1000)),
+      );
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [agentRecording]);
+
+  // Listen for studio:changed events
+  useIpcEvent(
+    'studio:changed',
+    (payload) => {
+      refreshTakes();
+      const changed = payload as { takeId?: string } | undefined;
+      // A named take was just recorded; the Studio page navigates to it, which
+      // reloads it through the route. Otherwise refresh the open take.
+      if (!changed?.takeId && activeTake?.id) {
+        loadTake(activeTake.id);
+      }
+    },
+    [activeTake?.id],
+  );
 
   // Listen for native media prep progress events
   useIpcEvent('studio:media-progress', (payload: unknown) => {
@@ -419,6 +471,28 @@ export function useStudio(
       recorder.stop();
     });
   }, [activeRecordingTakeId, recordingSeconds, refreshTakes]);
+
+  // ── Stop an Agent Capture ─────────────────────────────────────────────────
+  // The user can always take the wheel back, instead of waiting for the agent
+  // or the five-minute watchdog.
+
+  const stopAgentRecording = useCallback(async () => {
+    try {
+      const res = await window.electron.ipc.invoke<{
+        stopped: boolean;
+        sessionId?: string;
+        takeId?: string;
+        error?: string;
+      }>('studio:stop-agent-recording', {});
+      if (!res.stopped) {
+        toast.error(res.error ?? 'No agent recording is running.');
+      }
+      return res;
+    } catch (err) {
+      toast.error('Failed to stop agent recording: ' + (err as Error).message);
+      return { stopped: false as const };
+    }
+  }, []);
 
   // ── Update Styling / Dials ────────────────────────────────────────────────
 
@@ -681,6 +755,9 @@ export function useStudio(
     loading,
     isRecording,
     recordingSeconds,
+    agentRecording,
+    agentRecordingSeconds,
+    stopAgentRecording,
     isProcessingDraft,
     isGeneratingSocialKit,
     exportProgress,

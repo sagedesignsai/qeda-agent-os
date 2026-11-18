@@ -37,6 +37,7 @@ import {
   shutdownOsIntegration,
 } from './os-integration';
 import { createSplashWindow, closeSplashWindow } from './splash';
+import { disposeStudioProjectPreview } from './tools/studio-project-preview';
 
 let mainWindow: BrowserWindow | null = null;
 /** A deep link that arrived before the window existed; flushed after first paint. */
@@ -218,6 +219,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  disposeStudioProjectPreview();
   shutdownOsIntegration();
   destroyTray();
   // Best-effort: stops the OpenCode service only when Builder started it, so an

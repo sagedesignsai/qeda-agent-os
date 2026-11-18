@@ -10,7 +10,7 @@
  */
 
 import { type UIMessage } from 'ai';
-import { ipcMain, type BrowserWindow } from 'electron';
+import { ipcMain, Notification, type BrowserWindow } from 'electron';
 import {
   describeFallbackReason,
   isOutputChunk,
@@ -21,13 +21,80 @@ import { renderProjectContext, resolveActiveProjectId } from '../../ai/project-c
 import { resolveModelChain } from '../../ai/provider.js';
 import { createStudioCopilotAgent } from '../../ai/studio-copilot-agent.js';
 import { PlanManager } from '../../ai/plan-manager.js';
+import { StudioSignInHandoff } from '../../studio-sign-in-handoff.js';
 import type { AgentPlanEvent } from '../../../lib/agent-plan.js';
+import type {
+  StudioSignInDecision,
+  StudioSignInRequest,
+} from '../../../lib/studio/types.js';
 
 export function registerStudioCopilotHandlers({
   mainWindow,
 }: {
   mainWindow: BrowserWindow;
 }): void {
+  const signInHandoff = new StudioSignInHandoff({
+    sendRequest: (request: StudioSignInRequest) => {
+      if (
+        mainWindow.isDestroyed() ||
+        mainWindow.webContents.isDestroyed()
+      ) {
+        throw new Error('Studio closed before sign-in could be requested.');
+      }
+      if (Notification.isSupported()) {
+        const notification = new Notification({
+          title: 'Sign in to continue',
+          body: 'Finish signing in in the browser, then return to Studio to confirm.',
+        });
+        notification.on('click', () => {
+          if (mainWindow.isDestroyed()) return;
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        });
+        notification.show();
+      }
+      mainWindow.webContents.send(
+        'studio-copilot:sign-in-request',
+        request,
+      );
+    },
+    sendExpired: (requestId) => {
+      if (
+        !mainWindow.isDestroyed() &&
+        !mainWindow.webContents.isDestroyed()
+      ) {
+        mainWindow.webContents.send(
+          'studio-copilot:sign-in-expired',
+          { requestId },
+        );
+      }
+    },
+  });
+  mainWindow.once('closed', () => signInHandoff.cancelAll());
+
+  ipcMain.handle(
+    'studio-copilot:sign-in-reply',
+    (
+      event,
+      reply: { requestId?: unknown; decision?: unknown },
+    ): { accepted: boolean } => {
+      if (event.sender !== mainWindow.webContents) {
+        throw new Error('Sign-in confirmation came from an unexpected window.');
+      }
+      if (
+        typeof reply?.requestId !== 'string' ||
+        (reply.decision !== 'continue' && reply.decision !== 'cancel')
+      ) {
+        throw new Error('Invalid Studio sign-in confirmation.');
+      }
+      return signInHandoff.reply(
+        reply.requestId,
+        reply.decision as StudioSignInDecision,
+      );
+    },
+  );
+
   ipcMain.handle(
     'studio-copilot:chat',
     async (
@@ -46,7 +113,10 @@ export function registerStudioCopilotHandlers({
     ) => {
       const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const fail = (err: unknown) => {
-        if (mainWindow.isDestroyed()) return;
+        if (
+          mainWindow.isDestroyed() ||
+          mainWindow.webContents.isDestroyed()
+        ) return;
         mainWindow.webContents.send('studio-copilot:stream-error', {
           error: err instanceof Error ? err.message : String(err),
         });
@@ -57,6 +127,8 @@ export function registerStudioCopilotHandlers({
           mainWindow.webContents.send('studio:changed');
         }
       };
+      const abortController = new AbortController();
+      let signInInterrupted = false;
 
       try {
         const modelMessages = await prepareModelMessages(messages);
@@ -88,14 +160,32 @@ export function registerStudioCopilotHandlers({
           try {
             const agent = createStudioCopilotAgent({
               activeTakeId: context.takeId,
+              projectId: projectId ?? undefined,
               activeProject,
+              requestUserSignIn: async (browserId) => {
+                try {
+                  const outcome = await signInHandoff.request(browserId);
+                  if (outcome !== 'confirmed') {
+                    signInInterrupted = true;
+                    abortController.abort();
+                  }
+                  return outcome;
+                } catch (error) {
+                  signInInterrupted = true;
+                  abortController.abort();
+                  throw error;
+                }
+              },
               currentTimeMs: context.currentTimeMs,
               target,
               broadcastChanged,
               planManager,
             });
 
-            const result = await agent.stream({ messages: modelMessages });
+            const result = await agent.stream({
+              messages: modelMessages,
+              abortSignal: abortController.signal,
+            });
 
             let streamError: unknown;
             for await (const chunk of result.fullStream) {
@@ -111,6 +201,11 @@ export function registerStudioCopilotHandlers({
               );
             }
 
+            if (signInInterrupted) {
+              throw new Error(
+                'Sign-in was cancelled or expired. No demo recording was started.',
+              );
+            }
             if (streamError) throw streamError;
 
             if (mainWindow.isDestroyed()) return;
@@ -124,7 +219,10 @@ export function registerStudioCopilotHandlers({
 
             const isLast = attempt === chain.length - 1;
             const canFallback =
-              !emitted && !isLast && isRetryableProviderError(err);
+              !signInInterrupted &&
+              !emitted &&
+              !isLast &&
+              isRetryableProviderError(err);
 
             if (!canFallback) break;
 

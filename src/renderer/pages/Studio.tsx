@@ -44,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useStudio } from '@/hooks/use-studio';
+import { useIpcEvent } from '@/hooks/use-ipc';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { StudioProjectsView } from '@/components/studio/projects/StudioProjectsView';
 import { StudioCanvas } from '@/components/studio/StudioCanvas';
@@ -90,6 +91,9 @@ export default function Studio() {
     activeTake,
     isRecording,
     recordingSeconds,
+    agentRecording,
+    agentRecordingSeconds,
+    stopAgentRecording,
     isProcessingDraft,
     isGeneratingSocialKit,
     exportProgress,
@@ -109,6 +113,19 @@ export default function Studio() {
     exportVideo,
     deleteTake,
   } = useStudio(takeId, projectId);
+
+  // A named take means one was just recorded (agent or manual). Keep the route
+  // in sync so a refresh reopens that take, and let `useStudio` reload it.
+  useIpcEvent(
+    'studio:changed',
+    (payload) => {
+      const changed = payload as { takeId?: string } | undefined;
+      if (changed?.takeId && changed.takeId !== takeId) {
+        navigate(`/studio/${changed.takeId}`);
+      }
+    },
+    [takeId, navigate],
+  );
 
   const [quickExportProgress, setQuickExportProgress] = useState<{
     isExporting: boolean;
@@ -642,10 +659,19 @@ export default function Studio() {
   return (
     <div className="flex flex-col h-screen w-full bg-background overflow-hidden select-none">
       {/* ── Active Recording Floating Pill ─────────────────────────────────── */}
-      {isRecording && (
+      {(isRecording || agentRecording) && (
         <StudioRecordingBar
-          seconds={recordingSeconds}
+          seconds={agentRecording ? agentRecordingSeconds : recordingSeconds}
+          mode={agentRecording ? 'agent' : 'manual'}
+          sourceName={agentRecording?.sourceName}
+          captureKind={agentRecording?.capture?.kind}
+          highlightCount={agentRecording?.highlightCount}
           onStop={async () => {
+            if (agentRecording) {
+              const res = await stopAgentRecording();
+              if (res.stopped && res.takeId) navigate(`/studio/${res.takeId}`);
+              return;
+            }
             const take = await stopRecording();
             if (take) navigate(`/studio/${take.id}`);
           }}
@@ -1102,10 +1128,10 @@ export default function Studio() {
           open={copilotOpen}
           onOpenChange={setCopilotOpen}
           activeTake={activeTake}
+          projectId={projectId ?? undefined}
           currentTimeMs={timelineStore.getState().currentTimeMs}
           initialPrompt={copilotInitialPrompt}
           onInitialPromptHandled={() => setCopilotInitialPrompt(null)}
-          onChanged={() => loadTake(activeTake.id)}
         />
       )}
 

@@ -13,6 +13,11 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import * as cu from '../computer-use.js';
 import {
+  listCaptureDisplays,
+  listNativeWindows,
+  listRecordableWindows,
+} from '../capture-targets.js';
+import {
   startStudioRecording,
   markStudioHighlight,
   stopStudioRecording,
@@ -41,6 +46,26 @@ export const computerUseTools = {
         return {
           success: true,
           windows: sources.map((s: any) => ({ id: s.id, name: s.name })),
+        };
+      } catch (e) {
+        return blocked((e as Error).message);
+      }
+    },
+  }),
+
+  listCaptureTargets: tool({
+    description:
+      'List what a demo recording can capture: every display (with bounds) and every app window Qeda owns (with bounds and id). Prefer recording a window over the full screen. The ids returned here — and by openBrowser — are what startDemoRecording accepts as windowId.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        return {
+          success: true,
+          displays: listCaptureDisplays(),
+          windows: listRecordableWindows(),
+          // Native (non-Electron) windows: resolvable by title fragment through
+          // startDemoRecording's windowTitle, but not pinnable like a window we own.
+          nativeWindows: await listNativeWindows(),
         };
       } catch (e) {
         return blocked((e as Error).message);
@@ -202,7 +227,7 @@ export const computerUseTools = {
 
   startDemoRecording: tool({
     description:
-      'Begin recording the screen into a new Showcase Studio take. Recording runs in the background while you drive the app with the other computer-use and browser-use tools; call markHighlight at each moment worth showing, then stopDemoRecording. Requires Computer Use to be enabled in Settings.',
+      'Begin recording into a new Showcase Studio take. Prefer passing windowId so the take contains only the app being demonstrated instead of the whole desktop. Recording runs in the background while you drive the app with the other computer-use and browser-use tools; call markHighlight at each moment worth showing, then stopDemoRecording. Requires Computer Use to be enabled in Settings.',
     inputSchema: z.object({
       projectId: z
         .string()
@@ -217,21 +242,60 @@ export const computerUseTools = {
         .optional()
         .describe('What is being demonstrated, e.g. "Qeda Builder".'),
       fps: z.number().min(10).max(60).optional(),
+      windowId: z
+        .string()
+        .optional()
+        .describe(
+          'Electron window id to record — from openBrowser or listCaptureTargets. Records just that window and keeps it in front. Strongly preferred over the full screen.',
+        ),
+      displayId: z
+        .string()
+        .optional()
+        .describe(
+          'Display id from listCaptureTargets, to record a full screen.',
+        ),
+      rect: z
+        .object({
+          x: z.number(),
+          y: z.number(),
+          width: z.number(),
+          height: z.number(),
+        })
+        .optional()
+        .describe('Explicit screen region, in DIP. Rarely needed.'),
+      windowTitle: z
+        .string()
+        .optional()
+        .describe(
+          'Native (non-Electron) window title fragment — from listCaptureTargets. Matches the first open window whose title includes it, and records that window. Prefer windowId for windows Qeda owns.',
+        ),
     }),
-    execute: async ({ projectId, title, sourceName, fps }) => {
+    execute: async ({
+      projectId,
+      title,
+      sourceName,
+      fps,
+      windowId,
+      displayId,
+      rect,
+      windowTitle,
+    }) => {
       try {
         const result = await startStudioRecording({
           projectId: projectId ?? null,
           title,
           sourceName,
           fps,
+          target: { windowId, displayId, rect, windowTitle },
         });
         return {
           success: true,
           sessionId: result.sessionId,
           takeId: result.takeId,
+          fps: result.fps,
           maxDurationMs: result.maxDurationMs,
-          next: 'Drive the app, call markHighlight for each moment worth showing, then call stopDemoRecording with this sessionId.',
+          capture: result.capture,
+          next: `Drive the app, call markHighlight for each moment worth showing, then call stopDemoRecording with this sessionId. Capturing: ${result.capture.label} (${result.capture.width}x${result.capture.height}).`,
         };
       } catch (e) {
         return blocked((e as Error).message);

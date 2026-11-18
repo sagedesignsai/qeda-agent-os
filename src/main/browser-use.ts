@@ -13,7 +13,10 @@ const sessions = new Map<string, BrowserWindow>();
 export function openBrowser(
   url: string,
   options?: { visible?: boolean; partition?: string },
-): { id: string } {
+): {
+  id: string;
+  bounds: { x: number; y: number; width: number; height: number };
+} {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -30,11 +33,30 @@ export function openBrowser(
   sessions.set(id, win);
   void win.loadURL(url);
   win.on('closed', () => sessions.delete(id));
-  return { id };
+  // The bounds let a caller record this exact window instead of the desktop.
+  const bounds = win.getBounds();
+  return {
+    id,
+    bounds: {
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+    },
+  };
 }
 
 export function listBrowsers(): string[] {
   return Array.from(sessions.keys());
+}
+
+export function focusBrowser(id: string): void {
+  const win = sessions.get(id);
+  if (!win || win.isDestroyed()) {
+    throw new Error(`Browser session ${id} is not available`);
+  }
+  if (!win.isVisible()) win.show();
+  win.focus();
 }
 
 export async function navigate(id: string, url: string): Promise<void> {

@@ -46,6 +46,20 @@ import {
   type StudioCaptionWord,
   type MouseTrackerEvent,
 } from './db/studio-store.js';
+import type {
+  StudioCaptureRect,
+  StudioCaptureRequest,
+  StudioRecordingSnapshot,
+  StudioRecordingStateEvent,
+} from '../lib/studio/types.js';
+import {
+  pinCaptureWindow,
+  resolveCaptureRequest,
+  resolveNativeWindowRect,
+  toCaptureGeometry,
+  type CaptureDisplay,
+  type ResolvedCapture,
+} from './capture-targets.js';
 
 /** A recording cannot outlive this, so a lost session cannot leak a process. */
 const MAX_RECORDING_MS = 5 * 60_000;
@@ -393,6 +407,9 @@ interface RecordingSession {
   takeDir: string;
   videoPath: string;
   geometry: CaptureGeometry;
+  capture: ResolvedCapture;
+  fps: number;
+  maxDurationMs: number;
   displaySize: { width: number; height: number };
   startedAt: number;
   cursorSamples: MouseTrackerEvent[];
@@ -400,10 +417,87 @@ interface RecordingSession {
   sampler: NodeJS.Timeout | null;
   watchdog: NodeJS.Timeout | null;
   handle: CaptureHandle;
+  /** Restores the recorded window's stacking; idempotent. */
+  unpin: () => void;
   stopping: Promise<StopRecordingResult> | null;
 }
 
 const sessions = new Map<string, RecordingSession>();
+
+/**
+ * The most recent finished capture, used by the Studio Copilot to resolve
+ * "the demo we just recorded" without threading an id through every tool call.
+ */
+let lastCompleted: { takeId: string; completedAt: number } | null = null;
+
+function toSnapshot(session: RecordingSession): StudioRecordingSnapshot {
+  return {
+    sessionId: session.id,
+    takeId: session.takeId,
+    title: session.title,
+    sourceName: session.sourceName,
+    startedAt: session.startedAt,
+    maxDurationMs: session.maxDurationMs,
+    fps: session.fps,
+    highlightCount: session.highlights.length,
+    cursorSampleCount: session.cursorSamples.length,
+    capture: {
+      kind: session.capture.kind,
+      label: session.capture.label,
+      width: session.displaySize.width,
+      height: session.displaySize.height,
+    },
+  };
+}
+
+const noop = () => undefined;
+
+/** Release the window pin at most once, whichever stop path runs. */
+function releasePin(session: RecordingSession): void {
+  const unpin = session.unpin ?? noop;
+  session.unpin = noop;
+  try {
+    unpin();
+  } catch {
+    // A window that closed mid-recording has nothing to restore.
+  }
+}
+
+/** Late-bound so the tool registry can be imported by tests without Electron. */
+function broadcastRecordingState(state: StudioRecordingStateEvent): void {
+  try {
+    const { BrowserWindow } = require('electron');
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send('studio:recording-state', state);
+      }
+    }
+  } catch {
+    // No window is listening; the state is still queryable in main.
+  }
+}
+
+function emitRecordingState(
+  deps: StudioRecorderDeps,
+  active: StudioRecordingSnapshot | null,
+): void {
+  (deps.emitState ?? broadcastRecordingState)({ active });
+}
+
+/** Snapshot of the running capture, or null. Survives renderer reloads. */
+export function getActiveStudioRecordingState(): StudioRecordingSnapshot | null {
+  const session = sessions.values().next().value as
+    RecordingSession | undefined;
+  return session ? toSnapshot(session) : null;
+}
+
+/** The last capture that finished, for "the take we just recorded" lookups. */
+export function getLastCompletedStudioRecording(): {
+  takeId: string;
+  completedAt: number;
+} | null {
+  return lastCompleted;
+}
 
 export interface StudioRecorderDeps {
   now?: () => number;
@@ -423,7 +517,15 @@ export interface StudioRecorderDeps {
   getTake?: typeof getStudioTake;
   applyDraft?: (takeId: string) => Promise<StudioTake>;
   writeFile?: (file: string, contents: string) => Promise<void>;
-  broadcast?: () => void;
+  /** Resolve a capture target to a region; injectable for tests. */
+  resolveCapture?: (target?: StudioCaptureRequest) => ResolvedCapture;
+  /** Resolve a native window title to a DIP rect; injectable for tests. */
+  resolveNativeWindow?: (title: string) => Promise<StudioCaptureRect | null>;
+  /** Pin the recorded window above others; injectable for tests. */
+  pinWindow?: (windowId?: number) => () => void;
+  broadcast?: (takeId?: string) => void;
+  /** Push a live recording snapshot; defaults to a BrowserWindow broadcast. */
+  emitState?: (state: StudioRecordingStateEvent) => void;
   /** Watchdog period; overridable so the safety net can be tested in real time. */
   maxDurationMs?: number;
 }
@@ -432,13 +534,20 @@ function takeDirectory(takeId: string): string {
   return path.join(app.getPath('userData'), 'studio', takeId);
 }
 
-function broadcastStudioChanged(): void {
+function broadcastStudioChanged(takeId?: string): void {
   try {
     // Deliberately late-bound: this module is imported by the tool registry,
     // which is imported by tests that never mock BrowserWindow.
     const { BrowserWindow } = require('electron');
     for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send('studio:changed');
+      if (!window.isDestroyed()) {
+        // The id lets the Studio page select a freshly recorded take instead
+        // of reloading whichever take happened to be open.
+        window.webContents.send(
+          'studio:changed',
+          takeId ? { takeId } : undefined,
+        );
+      }
     }
   } catch {
     // No window to notify; the take is on disk either way.
@@ -450,6 +559,8 @@ export interface StartRecordingInput {
   title?: string;
   sourceName?: string;
   fps?: number;
+  /** What to capture; defaults to the primary display. */
+  target?: StudioCaptureRequest;
 }
 
 export interface StartRecordingResult {
@@ -458,6 +569,13 @@ export interface StartRecordingResult {
   fps: number;
   /** Wall-clock stop is enforced, so the caller knows the ceiling. */
   maxDurationMs: number;
+  /** What the take will contain, so the agent can confirm its target. */
+  capture: {
+    kind: 'display' | 'window' | 'region';
+    label: string;
+    width: number;
+    height: number;
+  };
 }
 
 export async function startStudioRecording(
@@ -487,52 +605,111 @@ export async function startStudioRecording(
     ((target: string) => fs.mkdir(target, { recursive: true }))
   )(dir);
 
-  const display = (
-    deps.primaryDisplay ??
-    (() => {
-      const primary = screen.getPrimaryDisplay();
-      return { ...primary.bounds, scaleFactor: primary.scaleFactor };
-    })
-  )();
+  // Tests supply one fake display; production asks Electron for all of them.
+  let displays: CaptureDisplay[] | undefined;
+  if (deps.primaryDisplay) {
+    const display = deps.primaryDisplay();
+    displays = [
+      {
+        id: 'primary',
+        bounds: {
+          x: display.x,
+          y: display.y,
+          width: display.width,
+          height: display.height,
+        },
+        scaleFactor: display.scaleFactor || 1,
+        primary: true,
+      },
+    ];
+  }
+
+  // A native window has no Electron handle, so it is measured first and then
+  // travels as a rect, with the original title kept as the take's label.
+  let target = input.target;
+  if (target?.windowTitle && !target.windowId && !target.rect) {
+    const resolveNative = deps.resolveNativeWindow ?? resolveNativeWindowRect;
+    const rect = await resolveNative(target.windowTitle);
+    if (!rect) {
+      throw new Error(
+        `No open window matches "${target.windowTitle}". Call listCaptureTargets to see recordable windows.`,
+      );
+    }
+    target = {
+      rect,
+      kindHint: 'window',
+      label: target.windowTitle,
+    };
+  }
+
+  const capture = deps.resolveCapture
+    ? deps.resolveCapture(target)
+    : resolveCaptureRequest(target, displays);
   const fps = input.fps ?? 30;
   // The grabber captures physical pixels; cursor telemetry is in DIP, so the
-  // display bounds are kept separately for normalizing highlight targets.
-  const geometry: CaptureGeometry = {
-    x: Math.round((display.x ?? 0) * (display.scaleFactor ?? 1)),
-    y: Math.round((display.y ?? 0) * (display.scaleFactor ?? 1)),
-    width: Math.round(display.width * (display.scaleFactor ?? 1)),
-    height: Math.round(display.height * (display.scaleFactor ?? 1)),
+  // two are kept in separate spaces and normalized at the end.
+  const geometry: CaptureGeometry = toCaptureGeometry(
+    capture.captureRect,
+    capture.display.scaleFactor,
     fps,
-  };
+  );
+  // Telemetry is normalized against the frame the viewer sees. When the
+  // grabber itself is cropped, that is the (possibly even-rounded) region.
+  // When the crop happens at render time — macOS, where the display is
+  // captured whole — it is the crop region, not the display.
+  const frameScale = capture.display.scaleFactor || 1;
+  const frameSize = capture.videoCrop
+    ? {
+        width: capture.regionRect.width,
+        height: capture.regionRect.height,
+      }
+    : {
+        width: geometry.width / frameScale,
+        height: geometry.height / frameScale,
+      };
 
   const maxDurationMs = deps.maxDurationMs ?? MAX_RECORDING_MS;
   const startCapture = deps.startCapture ?? startFfmpegCapture;
-  const handle = await startCapture(
-    buildCaptureArgs(process.platform, geometry, videoPath),
-    videoPath,
-  );
+  // Pin before the first frame: if the window is behind something, the opening
+  // seconds of the take are of the wrong app.
+  const unpin = (deps.pinWindow ?? pinCaptureWindow)(capture.windowId);
+  let handle: CaptureHandle;
+  try {
+    handle = await startCapture(
+      buildCaptureArgs(process.platform, geometry, videoPath),
+      videoPath,
+    );
+  } catch (error) {
+    unpin();
+    throw error;
+  }
 
   const session: RecordingSession = {
     id: sessionId,
     takeId,
     projectId: input.projectId ?? null,
     title: input.title?.trim() || 'Agent Recorded Demo',
-    sourceName: input.sourceName?.trim() || 'Screen',
+    sourceName: input.sourceName?.trim() || capture.label,
     takeDir: dir,
     videoPath,
     geometry,
-    displaySize: { width: display.width, height: display.height },
+    capture,
+    fps,
+    maxDurationMs,
+    displaySize: frameSize,
     startedAt: now(),
     cursorSamples: [],
     highlights: [],
     sampler: null,
     watchdog: null,
     handle,
+    unpin,
     stopping: null,
   };
 
   const sampleCursor =
     deps.sampleCursor ?? (() => screen.getCursorScreenPoint());
+  const region = capture.regionRect;
   let lastX = Number.NaN;
   let lastY = Number.NaN;
   session.sampler = setInterval(() => {
@@ -541,11 +718,17 @@ export async function startStudioRecording(
       if (point.x === lastX && point.y === lastY) return;
       lastX = point.x;
       lastY = point.y;
+      // Telemetry is stored relative to the recorded frame, not the desktop:
+      // zoom targets are normalized against the frame, so an absolute point
+      // would aim a window-scoped crop at the wrong pixel.
+      const x = point.x - region.x;
+      const y = point.y - region.y;
+      if (x < 0 || y < 0 || x > region.width || y > region.height) return;
       if (session.cursorSamples.length < MAX_CURSOR_SAMPLES) {
         session.cursorSamples.push({
           t: now() - session.startedAt,
-          x: point.x,
-          y: point.y,
+          x,
+          y,
           type: 'move',
         });
       }
@@ -561,8 +744,20 @@ export async function startStudioRecording(
   }, maxDurationMs);
 
   sessions.set(sessionId, session);
+  emitRecordingState(deps, toSnapshot(session));
 
-  return { sessionId, takeId, fps, maxDurationMs };
+  return {
+    sessionId,
+    takeId,
+    fps,
+    maxDurationMs,
+    capture: {
+      kind: capture.kind,
+      label: capture.label,
+      width: frameSize.width,
+      height: frameSize.height,
+    },
+  };
 }
 
 export function markStudioHighlight(
@@ -580,6 +775,8 @@ export function markStudioHighlight(
     label: label.trim() || `Highlight ${session.highlights.length + 1}`,
   };
   session.highlights.push(highlight);
+  // Each mark is a progress beat the pill can show without a timer channel.
+  emitRecordingState(deps, toSnapshot(session));
   return highlight;
 }
 
@@ -606,11 +803,16 @@ async function finalizeSession(
   try {
     await session.handle.stop();
   } catch (error) {
+    releasePin(session);
     sessions.delete(session.id);
+    emitRecordingState(deps, null);
     throw error instanceof Error
       ? error
       : new Error(`Capture stop failed: ${String(error)}`);
   }
+
+  // The sink is closed; the app no longer needs to sit on top of everything.
+  releasePin(session);
 
   const writeFile =
     deps.writeFile ??
@@ -621,6 +823,17 @@ async function finalizeSession(
     path.join(session.takeDir, 'highlights.json'),
     JSON.stringify(session.highlights),
   );
+  // Telemetry is frame-relative, so the draft pass needs the frame size. Kept
+  // beside the events rather than in the DB so old takes stay valid.
+  await writeFile(
+    path.join(session.takeDir, 'capture.json'),
+    JSON.stringify({
+      kind: session.capture.kind,
+      label: session.capture.label,
+      width: session.displaySize.width,
+      height: session.displaySize.height,
+    }),
+  );
 
   const saveTake = deps.saveTake ?? saveStudioTake;
   const getTake = deps.getTake ?? getStudioTake;
@@ -629,11 +842,14 @@ async function finalizeSession(
     id: session.takeId,
     projectId: session.projectId,
     title: session.title,
-    sourceType: 'screen',
+    sourceType: session.capture.kind === 'window' ? 'window' : 'screen',
     sourceName: session.sourceName,
     videoPath: session.videoPath,
     durationMs,
     mouseEventsPath,
+    // macOS captures the display and crops at render time; the rest crop in
+    // the grabber and must not double-crop here.
+    videoCrop: session.capture.videoCrop,
     styling: DEFAULT_STUDIO_STYLING,
   });
 
@@ -648,7 +864,9 @@ async function finalizeSession(
 
   let take = getTake(session.takeId);
   if (!take) {
+    releasePin(session);
     sessions.delete(session.id);
+    emitRecordingState(deps, null);
     throw new Error(
       `The recording was written to ${session.videoPath}, but its take record could not be reloaded.`,
     );
@@ -670,9 +888,12 @@ async function finalizeSession(
   }
 
   sessions.delete(session.id);
+  lastCompleted = { takeId: session.takeId, completedAt: now() };
+  emitRecordingState(deps, null);
 
   const broadcast = deps.broadcast ?? broadcastStudioChanged;
-  broadcast();
+  // Name the take so the Studio page can select it rather than reload the old one.
+  broadcast(session.takeId);
 
   return {
     take,
@@ -710,7 +931,9 @@ export const __studioRecorderTesting = {
     for (const session of sessions.values()) {
       if (session.sampler) clearInterval(session.sampler);
       if (session.watchdog) clearTimeout(session.watchdog);
+      releasePin(session);
     }
     sessions.clear();
+    lastCompleted = null;
   },
 };

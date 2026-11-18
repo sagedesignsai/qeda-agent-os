@@ -31,6 +31,7 @@ import {
   allTools,
 } from '../main/tools/index';
 import { documentDrafterToolPolicies } from '../main/tools/policies/drafter';
+import { studioToolPolicies } from '../main/tools/policies/studio';
 import { copilotTools } from '../main/ai/task-copilot-agent';
 
 /**
@@ -104,6 +105,31 @@ describe('approval policy behaviour', () => {
     expect(policy({ toolCall: { toolName: 'nukeThing' } })).toBe(
       'user-approval',
     );
+  });
+});
+
+describe('Studio project execution approvals', () => {
+  it('requires explicit approval before starting or stopping a project server', () => {
+    const policy = createApprovalPolicy(studioToolPolicies);
+
+    expect(
+      policy({ toolCall: { toolName: 'getProjectRunOptions' } }),
+    ).toBe('not-applicable');
+    expect(
+      policy({ toolCall: { toolName: 'startProjectPreview' } }),
+    ).toBe('user-approval');
+    expect(
+      policy({ toolCall: { toolName: 'prepareProjectDemo' } }),
+    ).toBe('user-approval');
+    expect(
+      policy({ toolCall: { toolName: 'getProjectPreviewStatus' } }),
+    ).toBe('not-applicable');
+    expect(
+      policy({ toolCall: { toolName: 'stopProjectPreview' } }),
+    ).toBe('user-approval');
+    expect(
+      policy({ toolCall: { toolName: 'requestUserSignIn' } }),
+    ).toBe('not-applicable');
   });
 });
 

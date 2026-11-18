@@ -162,6 +162,7 @@ export const chatToolPolicies: ToolPolicyMap = {
 
   // ── Computer Use (tools/computer-use.ts) ────────────────────────────────────
   listWindows: t('read'),
+  listCaptureTargets: t('read'),
   captureScreenshot: t('read'),
   getActiveWindow: t('read'),
   getCursorPosition: t('read'),

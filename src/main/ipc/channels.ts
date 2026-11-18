@@ -88,6 +88,9 @@ import type {
   StudioVideoCrop,
   MouseTrackerEvent,
   StudioMediaProbe,
+  StudioRecordingSnapshot,
+  StudioSignInRequest,
+  StudioSignInDecision,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
 import type {
@@ -208,6 +211,9 @@ export type {
   StudioVideoCrop,
   MouseTrackerEvent,
   StudioMediaProbe,
+  StudioRecordingSnapshot,
+  StudioSignInRequest,
+  StudioSignInDecision,
 };
 export type {
   StudioEffectType,
@@ -1805,7 +1811,30 @@ export interface IpcChannels {
     };
   };
   /** Broadcast when any take changes, created, updated or deleted. */
-  'studio:changed': void;
+  'studio:changed': { takeId?: string } | undefined;
+  /** Live state of an agent-driven capture; `active: null` means it ended. */
+  'studio:recording-state': {
+    active: StudioRecordingSnapshot | null;
+  };
+  /** Read the running agent capture, so the pill survives a renderer reload. */
+  'studio:get-active-recording': {
+    req: void;
+    res: { active: StudioRecordingSnapshot | null };
+  };
+  /** Stop an in-flight agent capture at the user's request. */
+  'studio:stop-agent-recording': {
+    req: { sessionId?: string } | void;
+    res: {
+      stopped: boolean;
+      sessionId?: string;
+      takeId?: string;
+      durationMs?: number;
+      highlightCount?: number;
+      captionCount?: number;
+      zoomCount?: number;
+      error?: string;
+    };
+  };
 
   // ── Computer Use (screen capture + input) ──────────────────────────────────
   'computer-use:get-screen-size': { req: void; res: { width: number; height: number } };
@@ -1860,6 +1889,13 @@ export interface IpcChannels {
     toProvider: string;
     toModel: string;
     reason: string;
+  };
+  /** Sign-in handoff: the agent waits until the user continues or cancels. */
+  'studio-copilot:sign-in-request': StudioSignInRequest;
+  'studio-copilot:sign-in-expired': { requestId: string };
+  'studio-copilot:sign-in-reply': {
+    req: { requestId: string; decision: StudioSignInDecision };
+    res: { accepted: boolean };
   };
   /** Pushed when the studio copilot creates or updates its plan. */
   'studio-copilot:plan-event': { data: AgentPlanEvent };

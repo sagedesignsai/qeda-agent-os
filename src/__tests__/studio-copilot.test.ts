@@ -101,6 +101,31 @@ describe('Studio Copilot AI Tools & Agent', () => {
   });
 
   describe('Autonomous Studio Tools Suite', () => {
+    it('resolves the active take at call time so a just-recorded take wins', async () => {
+      const recorded: StudioTake = {
+        ...sampleTake,
+        id: 'take-copilot-test-recorded',
+        title: 'Just Recorded',
+      };
+      saveStudioTake(recorded);
+
+      let activeTakeId = sampleTake.id;
+      const tools = createStudioTools({
+        activeTakeId: sampleTake.id,
+        resolveActiveTakeId: () => activeTakeId,
+        broadcastChanged: mockBroadcast,
+      });
+
+      const before = await (tools.getTakeDetails as any).execute({}, {} as any);
+      expect(before.take.id).toBe(sampleTake.id);
+
+      // The turn records mid-flight; later calls follow the new take.
+      activeTakeId = recorded.id;
+      const after = await (tools.getTakeDetails as any).execute({}, {} as any);
+      expect(after.take.id).toBe(recorded.id);
+      expect(after.take.title).toBe('Just Recorded');
+    });
+
     it('getTakeDetails returns take overview and styling', async () => {
       const tools = createStudioTools({
         activeTakeId: sampleTake.id,
@@ -298,6 +323,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
     it('creates ToolLoopAgent with dynamic instructions and studio tools', () => {
       const agent = createStudioCopilotAgent({
         activeTakeId: sampleTake.id,
+        projectId: 'project-alpha',
         activeProject: 'Project Alpha: Desktop Agent OS',
         currentTimeMs: 4200,
         broadcastChanged: mockBroadcast,
@@ -310,6 +336,41 @@ describe('Studio Copilot AI Tools & Agent', () => {
       expect(agent.tools.cutSilenceOrRange).toBeDefined();
       expect(agent.tools.updateStyling).toBeDefined();
       expect(agent.tools.generateSocialKit).toBeDefined();
+      expect(agent.tools.getProjectRunOptions).toBeDefined();
+      expect(agent.tools.startProjectPreview).toBeDefined();
+      expect(agent.tools.prepareProjectDemo).toBeDefined();
+      expect(agent.tools.getProjectPreviewStatus).toBeDefined();
+      expect(agent.tools.stopProjectPreview).toBeDefined();
+    });
+
+    it('does not expose project execution to Studio subagents', () => {
+      const agent = createStudioCopilotAgent({
+        activeTakeId: sampleTake.id,
+        projectId: 'project-alpha',
+        forSubagent: true,
+      });
+
+      expect(agent.tools.getProjectRunOptions).toBeUndefined();
+      expect(agent.tools.startProjectPreview).toBeUndefined();
+      expect(agent.tools.prepareProjectDemo).toBeUndefined();
+      expect(agent.tools.stopProjectPreview).toBeUndefined();
+    });
+
+    it('exposes sign-in handoff only when the interactive Studio handler supplies it', () => {
+      const requestUserSignIn = jest.fn().mockResolvedValue('confirmed');
+      const agent = createStudioCopilotAgent({
+        activeTakeId: sampleTake.id,
+        requestUserSignIn,
+      });
+
+      expect(agent.tools.requestUserSignIn).toBeDefined();
+
+      const subagent = createStudioCopilotAgent({
+        activeTakeId: sampleTake.id,
+        requestUserSignIn,
+        forSubagent: true,
+      });
+      expect(subagent.tools.requestUserSignIn).toBeUndefined();
     });
   });
 });
