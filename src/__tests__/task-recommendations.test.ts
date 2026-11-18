@@ -34,7 +34,7 @@ describe('getNextBestMove', () => {
     const res = getNextBestMove({ tasks: [] });
     expect(res.task).toBeNull();
     expect(res.totalCandidates).toBe(0);
-    expect(res.rationale).toMatch(/backlog is empty/i);
+    expect(res.rationale).toMatch(/nothing waiting/i);
   });
 
   it('ignores active or done tasks, focusing only on backlog candidates', () => {
@@ -45,6 +45,18 @@ describe('getNextBestMove', () => {
     const res = getNextBestMove({ tasks });
     expect(res.task).toBeNull();
     expect(res.totalCandidates).toBe(0);
+  });
+
+  it('can resume an abandoned active task when ignition asks for it', () => {
+    const tasks: Task[] = [makeTask({ id: 'active-1', status: 'active' })];
+
+    const res = getNextBestMove({
+      tasks,
+      statuses: ['backlog', 'active'],
+    });
+
+    expect(res.task?.id).toBe('active-1');
+    expect(res.totalCandidates).toBe(1);
   });
 
   it('prioritizes P1 tasks over P2 and P3 tasks', () => {

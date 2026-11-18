@@ -49,13 +49,15 @@ export const routes: RouteObject[] = [
       /**
        * The app's starting point is conditional:
        *
-       *   1. No projects at all        → start on /onboarding (create the first
-       *      project before anything else makes sense).
-       *   2. Otherwise                 → start on /tasks (the work dashboard).
-       *
-       * Tasks is the landing page because it shows what needs attention right
-       * now — today's blocks, overdue items, and active work — giving immediate
-       * orientation before the user navigates to a specific tool.
+       *   1. No projects at all        → /onboarding (create the first project
+       *      before anything else makes sense).
+       *   2. A persisted active project → that project's page. The landing
+       *      screen is the first push in the product: opening the project the
+       *      user is mid-plan on puts the plan in front of them, and the rail's
+       *      ignition card offers its next move without a trip to /tasks.
+       *   3. No active project         → /tasks (today's blocks, overdue items,
+       *      active work), because with nothing scoped there is no project page
+       *      to land on that would mean anything.
        *
        * This is the first render decision; the conditional redirect itself is
        * computed inside the route element so it can read the current project
@@ -192,7 +194,17 @@ function ProjectsHome() {
           return;
         }
 
-        if (!cancelled) navigate('/tasks', { replace: true });
+        // Land where the work is. A persisted active project means the user is
+        // mid-plan, and that project's page is the surface where the plan (and
+        // the rail's next-move card) lives — so starting there is a push to
+        // begin rather than a dashboard to orient in. A default that no longer
+        // resolves to a row falls back to Tasks instead of a dead scope.
+        const landsOnProject = projects.some((p) => p.id === activeProjectId);
+        if (!cancelled) {
+          navigate(landsOnProject ? `/projects/${activeProjectId}` : '/tasks', {
+            replace: true,
+          });
+        }
       } catch {
         // On error, still hide the overlay and fall back to tasks
         if (!cancelled) setLoading(false);

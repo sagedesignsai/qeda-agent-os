@@ -18,6 +18,7 @@ import { forgetPages } from './knowledge-index.js';
 import {
   parseMarkdownToBlocks,
   serializeBlocksToMarkdown,
+  normalizeBlocks,
   extractDocLinks,
   extractDocTags,
   CONTAINER_BLOCK_TYPES,
@@ -444,8 +445,10 @@ export function loadBlocks(pageId: string): BlockRow[] {
 
 /** Blocks as the pure-library shape the renderer edits. */
 export function loadPageBlocks(pageId: string): Block[] {
-  return loadBlocks(pageId).map(
-    ({ page_id: _p, position: _pos, ...block }) => block,
+  return normalizeBlocks(
+    loadBlocks(pageId).map(
+      ({ page_id: _p, position: _pos, ...block }) => block,
+    ),
   );
 }
 

@@ -62,7 +62,10 @@ export const BUILTIN_SCENES: MusicScene[] = [
         noiseVolume: 0.22,
         layers: layer('rain', 0.22),
       },
-      music: null,
+      // Bound to the library so a session has something to play once the
+      // user has indexed music. An empty library yields no tracks and the
+      // ritual simply skips — silence is not an error.
+      music: { source: 'library', shuffle: true },
       crossfadeSec: 4,
       duckDb: -9,
     },
@@ -78,7 +81,10 @@ export const BUILTIN_SCENES: MusicScene[] = [
         ...emptySoundscape(),
         layers: { rain: { volume: 0.4 }, thunder: { volume: 0.16 } },
       },
-      music: null,
+      // Bound to the library so a session has something to play once the
+      // user has indexed music. An empty library yields no tracks and the
+      // ritual simply skips — silence is not an error.
+      music: { source: 'library', shuffle: true },
       crossfadeSec: 5,
       duckDb: -7,
     },
@@ -94,7 +100,10 @@ export const BUILTIN_SCENES: MusicScene[] = [
         ...emptySoundscape(),
         layers: { forest: { volume: 0.36 }, stream: { volume: 0.2 } },
       },
-      music: null,
+      // Bound to the library so a session has something to play once the
+      // user has indexed music. An empty library yields no tracks and the
+      // ritual simply skips — silence is not an error.
+      music: { source: 'library', shuffle: true },
       crossfadeSec: 4,
       duckDb: -8,
     },
@@ -112,7 +121,10 @@ export const BUILTIN_SCENES: MusicScene[] = [
         noise: 'pink',
         noiseVolume: 0.1,
       },
-      music: null,
+      // Bound to the library so a session has something to play once the
+      // user has indexed music. An empty library yields no tracks and the
+      // ritual simply skips — silence is not an error.
+      music: { source: 'library', shuffle: true },
       crossfadeSec: 6,
       duckDb: -10,
     },

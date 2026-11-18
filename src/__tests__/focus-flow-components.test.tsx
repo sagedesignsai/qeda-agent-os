@@ -18,6 +18,7 @@ import { SingleTaskLens } from '../components/tasks/SingleTaskLens';
 import { SidebarFocusPlayer } from '../components/focus/SidebarFocusPlayer';
 import { SidebarProvider } from '../components/ui/sidebar';
 import { useFocusStore } from '../stores/focus-store';
+import { presetAt } from '../lib/focus/presets';
 import type { Task } from '../main/ipc/channels';
 import type { FocusTimerState } from '../lib/focus/timer';
 
@@ -267,5 +268,122 @@ describe('SidebarFocusPlayer', () => {
     await waitFor(() =>
       expect(useFocusStore.getState().focusedTask).toBeNull(),
     );
+  });
+});
+
+describe('SidebarFocusPlayer · ignition', () => {
+  const TASK: Task = {
+    id: 'task-ignite',
+    project_id: 'p1',
+    title: 'Draft the Sonic Genius positioning statement',
+    description: '',
+    status: 'backlog',
+    priority: 1,
+    position: 0,
+    estimate_mins: 15,
+    due_at: null,
+    pomodoro_count: 0,
+    created_at: 1000,
+    updated_at: 1000,
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    Object.defineProperty(window, 'electron', {
+      writable: true,
+      value: {
+        ipc: {
+          invoke: jest.fn((channel: string) => {
+            if (channel === 'projects:get') {
+              return Promise.resolve({ id: 'p1', name: 'Sonic Genius' });
+            }
+            if (channel === 'settings:get') {
+              return Promise.resolve({ activeProjectId: '' });
+            }
+            if (channel === 'tasks:list') {
+              return Promise.resolve([TASK]);
+            }
+            if (channel === 'tasks:steps-list') {
+              return Promise.resolve([
+                {
+                  id: 'step-1',
+                  task_id: TASK.id,
+                  title: 'Write one sentence',
+                  done: 0,
+                  position: 0,
+                  created_at: 1,
+                },
+              ]);
+            }
+            if (channel === 'gamification:award-xp') {
+              return Promise.resolve({ awarded: true, leveledUp: false });
+            }
+            return Promise.resolve(undefined);
+          }),
+          on: () => () => {},
+        },
+      },
+    });
+    act(() => useFocusStore.getState().clearFocus());
+  });
+
+  afterEach(() => {
+    act(() => useFocusStore.getState().clearFocus());
+  });
+
+  const renderPlayer = () =>
+    render(
+      <MemoryRouter initialEntries={['/projects/p1']}>
+        <SidebarProvider>
+          <SidebarFocusPlayer />
+        </SidebarProvider>
+      </MemoryRouter>,
+    );
+
+  it('offers the next move instead of rendering nothing', async () => {
+    renderPlayer();
+
+    expect(await screen.findByText('Next up')).toBeInTheDocument();
+    // The step title arrives in a second read; it must replace the task title
+    // as the first move, because the whole task is what feels unstartable.
+    expect(await screen.findByText('Write one sentence')).toBeInTheDocument();
+    expect(screen.getByText(/Sonic Genius · 10 min/)).toBeInTheDocument();
+    expect(window.electron.ipc.invoke).toHaveBeenCalledWith('tasks:list', {
+      projectId: 'p1',
+    });
+  });
+
+  it('starts a running ten-minute session in place, without navigating', async () => {
+    renderPlayer();
+
+    fireEvent.click(await screen.findByText('Start flow'));
+
+    await waitFor(() =>
+      expect(window.electron.ipc.invoke).toHaveBeenCalledWith('tasks:update', {
+        id: TASK.id,
+        status: 'active',
+      }),
+    );
+
+    const state = useFocusStore.getState();
+    expect(state.focusedTask?.id).toBe(TASK.id);
+    // The overlay only exists on /tasks, so igniting elsewhere must land in
+    // the rail — a `modal` displayMode here would render nothing at all.
+    expect(state.displayMode).toBe('sidebar');
+    expect(state.timer.running).toBe(true);
+    expect(presetAt(state.presetIndex).work).toBe(10);
+  });
+
+  it('snoozes the offer for the rest of the day when declined', async () => {
+    renderPlayer();
+
+    fireEvent.click(await screen.findByText('Not now'));
+
+    await waitFor(() =>
+      expect(screen.queryByText('Next up')).not.toBeInTheDocument(),
+    );
+    expect(
+      window.localStorage.getItem('qeda:ignition:snooze:p1'),
+    ).not.toBeNull();
   });
 });

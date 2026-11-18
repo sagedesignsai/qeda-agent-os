@@ -33,6 +33,16 @@ export const XP_REWARDS = {
   TASK_LOW: 30,
   STEP_COMPLETE: 15,
   DAY_PLAN: 40,
+  /**
+   * Paid for BEGINNING a task, which is the behaviour that actually fails.
+   * Every other task reward lands at completion, hours after the hard moment,
+   * so a plan can sit untouched without the user ever seeing a payout.
+   * Idempotent per task per day: restarting is not a fresh win, switching
+   * tasks is.
+   */
+  FLOW_START: 15,
+  /** The first ignition of the day, once per local day. */
+  FIRST_LIGHT: 25,
 } as const;
 
 /** Total cumulative XP required to reach a specific level. */

@@ -20,6 +20,7 @@ import {
   ChevronUpIcon,
   HeadphonesIcon,
   ListMusicIcon,
+  MessageSquareIcon,
   PauseIcon,
   PlayIcon,
   SkipBackIcon,
@@ -51,6 +52,7 @@ import { formatDuration } from '@/lib/music/format';
 import { useMusicPlayer } from '@/hooks/use-music-player';
 import { useSoundscape } from '@/hooks/use-soundscape';
 import { MusicArtwork } from './MusicArtwork';
+import { MusicCopilotSheet } from './MusicCopilotSheet';
 import { NowPlaying, type NowPlayingTab } from './NowPlaying';
 import { PlayerTransport } from './PlayerTransport';
 
@@ -81,6 +83,7 @@ export function SidebarMusicPlayer() {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetTab, setSheetTab] = useState<NowPlayingTab>('queue');
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const location = useLocation();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
@@ -268,6 +271,18 @@ export function SidebarMusicPlayer() {
               size="icon"
               variant="ghost"
               className="size-6 shrink-0 rounded-full text-muted-foreground"
+              onClick={() => {
+                setCopilotOpen(true);
+                setPopoverOpen(false);
+              }}
+              aria-label="Open Music Copilot"
+            >
+              <MessageSquareIcon className="size-3" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-6 shrink-0 rounded-full text-muted-foreground"
               onClick={() => openSheet('queue')}
               aria-label="Open queue"
             >
@@ -345,6 +360,18 @@ export function SidebarMusicPlayer() {
                   size="sm"
                   variant="ghost"
                   className="h-7 rounded-md px-2 text-[11px]"
+                  onClick={() => {
+                    setCopilotOpen(true);
+                    setPopoverOpen(false);
+                  }}
+                >
+                  <MessageSquareIcon className="mr-1 size-3" />
+                  Copilot
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 rounded-md px-2 text-[11px]"
                   asChild
                 >
                   <Link to="/music" onClick={() => setPopoverOpen(false)}>
@@ -380,6 +407,8 @@ export function SidebarMusicPlayer() {
           />
         </SheetContent>
       </Sheet>
+
+      <MusicCopilotSheet open={copilotOpen} onOpenChange={setCopilotOpen} />
     </>
   );
 }

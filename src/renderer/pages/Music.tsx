@@ -45,6 +45,12 @@ import type { MusicTrack } from '@/lib/music/types';
 export default function Music() {
   const navigate = useNavigate();
   const player = useMusicPlayerSlim();
+  // `player` is rebuilt on every render; the store actions are stable
+  // references, so close over them directly instead of the volatile object.
+  // This is what keeps the callbacks handed to `TrackList` referentially
+  // stable and stops every visible row from re-rendering on each playback /
+  // UI change.
+  const { playTracks, enqueue, toggle, next: nextTrack, previous } = player;
   const {
     playlistId,
     folders,
@@ -126,10 +132,10 @@ export default function Music() {
     searchInputRef,
     currentTrack: player.current,
     visibleTracks,
-    toggle: player.toggle,
-    playTracks: (tracks, index) => player.playTracks(tracks, index),
-    next: player.next,
-    previous: player.previous,
+    toggle,
+    playTracks,
+    next: nextTrack,
+    previous,
   });
 
   const openArtist = useCallback(
@@ -217,8 +223,8 @@ export default function Music() {
   );
 
   const handlePlayAll = useCallback(
-    () => void player.playTracks(visibleTracks, 0),
-    [player, visibleTracks],
+    () => void playTracks(visibleTracks, 0),
+    [playTracks, visibleTracks],
   );
 
   const handleDeletePlaylist = useCallback(() => {
@@ -228,13 +234,13 @@ export default function Music() {
   }, [playlistId, activePlaylist, deletePlaylistInLibrary]);
 
   const handlePlayTrack = useCallback(
-    (track: any, index: number) => void player.playTracks(visibleTracks, index),
-    [player, visibleTracks],
+    (track: any, index: number) => void playTracks(visibleTracks, index),
+    [playTracks, visibleTracks],
   );
 
   const handleEnqueue = useCallback(
-    (track: any, mode: any) => player.enqueue(track, mode),
-    [player],
+    (track: any, mode: any) => enqueue(track, mode),
+    [enqueue],
   );
 
   const handlePlaylistClick = useCallback(

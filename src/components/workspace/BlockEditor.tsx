@@ -4,7 +4,8 @@
  * The block editor: a custom markdown-backed editor where every block is a
  * typed row (paragraph, headings, lists, todo, quote, code, divider).
  *
- * Editing model: each block renders a textarea styled to look like rich text;
+ * Pages open in a reading view that renders markdown. Editing is opt-in; in
+ * edit mode each block renders a textarea styled to look like rich text, and
  * markdown markers are typed literally and re-classified on change, which keeps
  * the model honest and the implementation dependency-free.
  *
@@ -33,9 +34,14 @@ import {
   parseImageMarkdown,
   isBlockLevelMarkdown,
   insertParsedBlocksAt,
+  emptyTableMarkdown,
+  normalizeBlocks,
   type Block,
   type BlockType,
 } from '../../lib/markdown-blocks';
+import { BlockRenderer } from './renderers/BlockRenderer';
+import { TableBlockEditor } from './editors/TableBlockEditor';
+import { ImageBlockEditor } from './editors/ImageBlockEditor';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -63,6 +69,8 @@ import {
   CheckIcon,
   PlusIcon,
   MoreHorizontalIcon,
+  TableIcon,
+  EyeIcon,
   CopyIcon,
   Trash2Icon,
 } from 'lucide-react';
@@ -96,6 +104,7 @@ const BLOCK_TYPE_ITEMS: {
   { type: 'quote', label: 'Quote', icon: QuoteIcon, marker: '> ' },
   { type: 'code', label: 'Code', icon: CodeIcon, marker: '```' },
   { type: 'image', label: 'Image', icon: ImageIcon, marker: '![' },
+  { type: 'table', label: 'Table', icon: TableIcon, marker: '| ' },
   { type: 'divider', label: 'Divider', icon: MinusIcon, marker: '---' },
 ];
 
@@ -106,6 +115,8 @@ interface BlockEditorProps {
   initialBlocks: Block[];
   onTitleChange?: (title: string) => void;
   onSaved?: () => void;
+  previewMode?: boolean;
+  onPreviewModeChange?: (mode: boolean) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 800;
@@ -117,18 +128,24 @@ export function BlockEditor({
   initialBlocks,
   onTitleChange,
   onSaved,
+  previewMode = false,
+  onPreviewModeChange,
 }: BlockEditorProps) {
-  const [blocks, setBlocks] = useState<Block[]>(initialBlocks);
-  const [localTitle, setLocalTitle] = useState(title);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>(
-    'idle',
+  const [blocks, setBlocks] = useState<Block[]>(() =>
+    normalizeBlocks(initialBlocks),
   );
+  const [localTitle, setLocalTitle] = useState(title);
+  const [saveState, setSaveState] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusedBlockRef = useRef<string | null>(null);
   const textareaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
+  /** Block to focus after leaving preview mode via a click. */
+  const pendingFocusRef = useRef<string | null>(null);
 
   // ── [[ wiki-link autocomplete ─────────────────────────────────────────
   const { pages: notebookPages } = usePages(notebookId ?? null);
@@ -143,9 +160,10 @@ export function BlockEditor({
 
   const closeLinkComposer = () => setLinkComposer(null);
 
-  // Re-bind when switching pages.
+  // Re-bind when switching pages. Legacy table rows are folded into a table
+  // block here as well, so the renderer never sees a half-table.
   useEffect(() => {
-    setBlocks(initialBlocks);
+    setBlocks(normalizeBlocks(initialBlocks));
     setLocalTitle(title);
   }, [pageId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -171,9 +189,7 @@ export function BlockEditor({
           })
           .catch((err) => {
             setSaveState('error');
-            setSaveError(
-              err instanceof Error ? err.message : 'Save failed.',
-            );
+            setSaveError(err instanceof Error ? err.message : 'Save failed.');
           });
       }, SAVE_DEBOUNCE_MS);
     },
@@ -200,9 +216,7 @@ export function BlockEditor({
       })
       .catch((err) => {
         setSaveState('error');
-        setSaveError(
-          err instanceof Error ? err.message : 'Save failed.',
-        );
+        setSaveError(err instanceof Error ? err.message : 'Save failed.');
       });
   };
 
@@ -212,6 +226,18 @@ export function BlockEditor({
     },
     [],
   );
+
+  // A click in preview mode switches back to editing and focuses the block
+  // that was clicked. The textareas only exist after the mode prop flips.
+  useEffect(() => {
+    if (previewMode) return;
+    const id = pendingFocusRef.current;
+    if (!id) return;
+    pendingFocusRef.current = null;
+    requestAnimationFrame(() => {
+      textareaRefs.current.get(id)?.focus();
+    });
+  }, [previewMode]);
 
   // ── Mutations ───────────────────────────────────────────────────────────
 
@@ -304,9 +330,7 @@ export function BlockEditor({
         // Unclosed [[ — offer page suggestions scoped to this notebook.
         const query = afterTrigger;
         const suggestions = notebookPages
-          .filter((p) =>
-            p.title.toLowerCase().includes(query.toLowerCase()),
-          )
+          .filter((p) => p.title.toLowerCase().includes(query.toLowerCase()))
           .slice(0, 8)
           .map((p) => ({ id: p.id, title: p.title }));
         setLinkComposer({
@@ -329,13 +353,18 @@ export function BlockEditor({
     const block = blocks.find((b) => b.id === linkComposer.blockId);
     if (!block) return;
     const before = block.text.slice(0, linkComposer.triggerPos);
-    const after = block.text.slice(linkComposer.triggerPos + 2 + linkComposer.query.length);
+    const after = block.text.slice(
+      linkComposer.triggerPos + 2 + linkComposer.query.length,
+    );
     const next = updateBlock(blocks, linkComposer.blockId, {
       text: `${before}[[${pageTitle}]]${after}`,
     });
     applyBlocks(next);
     closeLinkComposer();
-    focusBlock(linkComposer.blockId, linkComposer.triggerPos + 2 + pageTitle.length + 2);
+    focusBlock(
+      linkComposer.blockId,
+      linkComposer.triggerPos + 2 + pageTitle.length + 2,
+    );
   };
 
   /** Create a new page with the query as its title and link to it. */
@@ -437,7 +466,8 @@ export function BlockEditor({
           prev
             ? {
                 ...prev,
-                selectedIndex: (prev.selectedIndex + 1) % prev.suggestions.length,
+                selectedIndex:
+                  (prev.selectedIndex + 1) % prev.suggestions.length,
               }
             : null,
         );
@@ -559,7 +589,54 @@ export function BlockEditor({
     else textareaRefs.current.delete(id);
   };
 
+  /** Leave preview mode and put the caret in the clicked block. */
+  const editBlockFromPreview = (id: string) => {
+    pendingFocusRef.current = id;
+    onPreviewModeChange?.(false);
+  };
+
   const renderBlock = (block: Block, index: number) => {
+    // In preview mode, use BlockRenderer instead of textarea.
+    if (previewMode) {
+      return (
+        <div
+          key={block.id}
+          role="button"
+          tabIndex={0}
+          aria-label={`Edit ${block.type} block`}
+          className={cn(
+            'group relative -mx-2 cursor-text rounded-md px-2 py-0.5',
+            'transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
+          )}
+          onClick={(event) => {
+            // Links, copy buttons and other controls keep their own behaviour.
+            if (
+              (event.target as HTMLElement).closest(
+                'button, a, input, textarea',
+              )
+            ) {
+              return;
+            }
+            editBlockFromPreview(block.id);
+          }}
+          onKeyDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              editBlockFromPreview(block.id);
+            }
+          }}
+          title="Click to edit"
+        >
+          <BlockRenderer
+            block={block}
+            listNumber={listNumberFor(blocks, index)}
+          />
+        </div>
+      );
+    }
+
+    // Edit mode: render textareas as before
     const common = {
       ref: registerRef(block.id),
       value: block.text,
@@ -576,7 +653,8 @@ export function BlockEditor({
         handlePaste(e, block.id),
       rows: Math.max(1, block.text.split('\n').length),
       spellCheck: false,
-      className: 'w-full resize-none bg-transparent outline-none',
+      className:
+        'field-sizing-content w-full resize-none bg-transparent outline-none',
     };
 
     return (
@@ -748,32 +826,20 @@ export function BlockEditor({
             </div>
           )}
           {block.type === 'image' && (
-            <div className="space-y-1.5 py-1">
-              {(() => {
-                const image = parseImageMarkdown(block.text);
-                return image && image.url ? (
-                  <img
-                    src={image.url}
-                    alt={image.alt}
-                    loading="lazy"
-                    className="max-h-80 w-auto rounded-md border object-contain"
-                  />
-                ) : (
-                  <div className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
-                    Paste an image as <code>![alt](https://…)</code>
-                  </div>
-                );
-              })()}
-              <textarea
-                {...common}
-                rows={1}
-                placeholder="![alt](https://…)"
-                className={cn(
-                  common.className,
-                  'font-mono text-xs text-muted-foreground',
-                )}
-              />
-            </div>
+            <ImageBlockEditor
+              block={block}
+              onChange={(text) =>
+                applyBlocks(updateBlock(blocks, block.id, { text }))
+              }
+            />
+          )}
+          {block.type === 'table' && (
+            <TableBlockEditor
+              block={block}
+              onChange={(text) =>
+                applyBlocks(updateBlock(blocks, block.id, { text }))
+              }
+            />
           )}
           {block.type === 'divider' && <hr className="my-2 border-border" />}
         </div>
@@ -839,166 +905,314 @@ export function BlockEditor({
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-y bg-card/20 px-4 py-1.5">
-        {/* Block type buttons */}
-        <div className="flex items-center gap-0.5 border-r border-border pr-1">
+      {/* Toolbar — editing controls are meaningless while previewing. */}
+      {previewMode ? (
+        <div className="flex shrink-0 items-center gap-3 border-y bg-card/20 px-4 py-1.5 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <EyeIcon className="h-3.5 w-3.5" />
+            Reading view — click any block to edit it.
+          </span>
           <Button
-            variant={blocks.some((b) => b.type === 'heading1' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
+            variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'heading1'));
-              }
-            }}
-            title="Heading 1"
+            className="ml-auto h-6 px-2 text-xs"
+            onClick={() => onPreviewModeChange?.(false)}
           >
-            <Heading1Icon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={blocks.some((b) => b.type === 'heading2' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'heading2'));
-              }
-            }}
-            title="Heading 2"
-          >
-            <Heading2Icon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={blocks.some((b) => b.type === 'heading3' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'heading3'));
-              }
-            }}
-            title="Heading 3"
-          >
-            <Heading3Icon className="h-4 w-4" />
+            Edit page
           </Button>
         </div>
+      ) : (
+        <div className="flex shrink-0 flex-wrap items-center gap-0.5 border-y bg-card/20 px-4 py-1.5">
+          {/* Block type buttons */}
+          <div className="flex items-center gap-0.5 border-r border-border pr-1">
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'heading1' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
+              }
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'heading1'),
+                  );
+                }
+              }}
+              title="Heading 1"
+            >
+              <Heading1Icon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'heading2' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
+              }
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'heading2'),
+                  );
+                }
+              }}
+              title="Heading 2"
+            >
+              <Heading2Icon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'heading3' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
+              }
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'heading3'),
+                  );
+                }
+              }}
+              title="Heading 3"
+            >
+              <Heading3Icon className="h-4 w-4" />
+            </Button>
+          </div>
 
-        {/* List and formatting buttons */}
-        <div className="flex items-center gap-0.5 border-r border-border pr-1">
-          <Button
-            variant={blocks.some((b) => b.type === 'bulleted-list' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'bulleted-list'));
+          {/* List and formatting buttons */}
+          <div className="flex items-center gap-0.5 border-r border-border pr-1">
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'bulleted-list' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
               }
-            }}
-            title="Bulleted list"
-          >
-            <ListIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={blocks.some((b) => b.type === 'numbered-list' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'numbered-list'));
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(
+                      blocks,
+                      focusedBlockRef.current,
+                      'bulleted-list',
+                    ),
+                  );
+                }
+              }}
+              title="Bulleted list"
+            >
+              <ListIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'numbered-list' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
               }
-            }}
-            title="Numbered list"
-          >
-            <ListOrderedIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={blocks.some((b) => b.type === 'todo' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'todo'));
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(
+                      blocks,
+                      focusedBlockRef.current,
+                      'numbered-list',
+                    ),
+                  );
+                }
+              }}
+              title="Numbered list"
+            >
+              <ListOrderedIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'todo' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
               }
-            }}
-            title="To-do"
-          >
-            <CheckSquareIcon className="h-4 w-4" />
-          </Button>
-        </div>
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'todo'),
+                  );
+                }
+              }}
+              title="To-do"
+            >
+              <CheckSquareIcon className="h-4 w-4" />
+            </Button>
+          </div>
 
-        {/* Quote, code, and other blocks */}
-        <div className="flex items-center gap-0.5 border-r border-border pr-1">
-          <Button
-            variant={blocks.some((b) => b.type === 'quote' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'quote'));
+          {/* Quote, code, and other blocks */}
+          <div className="flex items-center gap-0.5 border-r border-border pr-1">
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'quote' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
               }
-            }}
-            title="Quote"
-          >
-            <QuoteIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={blocks.some((b) => b.type === 'code' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'code'));
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'quote'),
+                  );
+                }
+              }}
+              title="Quote"
+            >
+              <QuoteIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'code' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
               }
-            }}
-            title="Code block"
-          >
-            <CodeIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={blocks.some((b) => b.type === 'image' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'image'));
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'code'),
+                  );
+                }
+              }}
+              title="Code block"
+            >
+              <CodeIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'image' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
               }
-            }}
-            title="Image"
-          >
-            <ImageIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={blocks.some((b) => b.type === 'divider' && b === blocks.find((b) => b.id === focusedId)) ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              if (focusedBlockRef.current) {
-                applyBlocks(setBlockType(blocks, focusedBlockRef.current, 'divider'));
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'image'),
+                  );
+                }
+              }}
+              title="Image"
+            >
+              <ImageIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'table' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
               }
-            }}
-            title="Divider"
-          >
-            <MinusIcon className="h-4 w-4" />
-          </Button>
-        </div>
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'table'),
+                  );
+                }
+              }}
+              title="Table"
+            >
+              <TableIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={
+                blocks.some(
+                  (b) =>
+                    b.type === 'divider' &&
+                    b === blocks.find((b) => b.id === focusedId),
+                )
+                  ? 'secondary'
+                  : 'ghost'
+              }
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                if (focusedBlockRef.current) {
+                  applyBlocks(
+                    setBlockType(blocks, focusedBlockRef.current, 'divider'),
+                  );
+                }
+              }}
+              title="Divider"
+            >
+              <MinusIcon className="h-4 w-4" />
+            </Button>
+          </div>
 
-        {/* Add block button */}
-        <div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-                title="Add new block"
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              {BLOCK_TYPE_ITEMS.filter((item) => item.type !== 'paragraph').map(
-                ({ type, label, icon: Icon }) => (
+          {/* Add block button */}
+          <div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+                  title="Add new block"
+                >
+                  <PlusIcon className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                {BLOCK_TYPE_ITEMS.filter(
+                  (item) => item.type !== 'paragraph',
+                ).map(({ type, label, icon: Icon }) => (
                   <DropdownMenuItem
                     key={type}
                     onSelect={() => {
@@ -1008,7 +1222,7 @@ export function BlockEditor({
                         {
                           id: newBlockId(),
                           type,
-                          text: '',
+                          text: type === 'table' ? emptyTableMarkdown() : '',
                         },
                       );
                       applyBlocks(next);
@@ -1017,20 +1231,20 @@ export function BlockEditor({
                   >
                     <Icon className="h-3.5 w-3.5" /> {label}
                   </DropdownMenuItem>
-                ),
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">
-          {blocks.length} {blocks.length === 1 ? 'block' : 'blocks'}
-        </span>
-      </div>
+          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">
+            {blocks.length} {blocks.length === 1 ? 'block' : 'blocks'}
+          </span>
+        </div>
+      )}
 
       {/* Blocks */}
       <div className="flex-1 overflow-y-auto px-8 py-4">
-        <div className="mx-auto max-w-3xl space-y-0.5 pb-24">
+        <div className="mx-auto max-w-5xl space-y-0.5 pb-24">
           {blocks.map(renderBlock)}
         </div>
       </div>

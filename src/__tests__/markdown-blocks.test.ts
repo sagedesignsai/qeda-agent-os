@@ -16,6 +16,10 @@ import {
   parseImageMarkdown,
   isBlockLevelMarkdown,
   insertParsedBlocksAt,
+  parseTableMarkdown,
+  serializeTableMarkdown,
+  emptyTableMarkdown,
+  normalizeBlocks,
 } from '../main/../lib/markdown-blocks';
 
 describe('parseMarkdownToBlocks', () => {
@@ -251,6 +255,106 @@ describe('image blocks', () => {
     const blocks = parseMarkdownToBlocks('![Cover](https://img.example/a.png)');
     expect(extractDocLinks(blocks)).toHaveLength(0);
     expect(extractDocTags(blocks)).toHaveLength(0);
+  });
+});
+
+describe('table blocks', () => {
+  const doc = [
+    '# Plan',
+    '',
+    '| Audience | Angle |',
+    '| --- | :---: |',
+    '| Developers | Craft |',
+    '| Clients | Proof |',
+    '',
+    'After.',
+  ].join('\n');
+
+  it('parses a pipe table as one table block', () => {
+    const blocks = parseMarkdownToBlocks(doc);
+    expect(blocks.map((b) => b.type)).toEqual([
+      'heading1',
+      'table',
+      'paragraph',
+    ]);
+    expect(blocks[1].text).toContain('| Developers | Craft |');
+  });
+
+  it('round-trips a table document stably', () => {
+    const once = serializeBlocksToMarkdown(parseMarkdownToBlocks(doc));
+    const twice = serializeBlocksToMarkdown(parseMarkdownToBlocks(once));
+    expect(twice).toBe(once);
+    expect(once).toContain('| --- | :---: |');
+  });
+
+  it('leaves prose with a pipe as a paragraph', () => {
+    const blocks = parseMarkdownToBlocks('either | or');
+    expect(blocks[0].type).toBe('paragraph');
+  });
+
+  it('parses, normalises and serialises table cells', () => {
+    const table = parseTableMarkdown(
+      '| A | B |\n| --- | --- |\n| 1 |\n| 2 | 3 | extra |',
+    );
+    expect(table).toEqual({
+      header: ['A', 'B'],
+      rows: [
+        ['1', ''],
+        ['2', '3'],
+      ],
+    });
+
+    const md = serializeTableMarkdown({
+      header: ['A', 'B'],
+      rows: [
+        ['x|y', ''],
+        ['2', '3'],
+      ],
+    });
+    expect(md).toContain('x\\|y');
+    expect(parseTableMarkdown(md)?.rows[0][0]).toBe('x|y');
+  });
+
+  it('folds legacy paragraph rows into one table block', () => {
+    const legacy = parseMarkdownToBlocks(
+      'Before\n\n| A | B |\n\n| --- | --- |\n\n| 1 | 2 |\n\nAfter',
+    );
+    const firstRowId = legacy[1].id;
+
+    const normalized = normalizeBlocks(legacy);
+    expect(normalized.map((b) => b.type)).toEqual([
+      'paragraph',
+      'table',
+      'paragraph',
+    ]);
+    expect(normalized[1].id).toBe(firstRowId);
+    expect(parseTableMarkdown(normalized[1].text)?.rows).toEqual([['1', '2']]);
+  });
+
+  it('does not fold paragraphs that merely contain a pipe', () => {
+    const blocks = parseMarkdownToBlocks('Before\n\n| not a table\n\nAfter');
+    expect(normalizeBlocks(blocks).map((b) => b.type)).toEqual([
+      'paragraph',
+      'paragraph',
+      'paragraph',
+    ]);
+  });
+
+  it('seeds a valid table when converting an empty paragraph', () => {
+    const blocks = parseMarkdownToBlocks('');
+    const next = setBlockType(blocks, blocks[0].id, 'table');
+    expect(next[0].type).toBe('table');
+    expect(parseTableMarkdown(next[0].text)).not.toBeNull();
+    expect(parseTableMarkdown(emptyTableMarkdown())).not.toBeNull();
+  });
+
+  it('keeps existing text when a non-empty block becomes a table', () => {
+    const blocks = parseMarkdownToBlocks('important prose');
+    const next = setBlockType(blocks, blocks[0].id, 'table');
+    expect(next[0].text).toBe('important prose');
+    // Converting back loses nothing.
+    const back = setBlockType(next, next[0].id, 'paragraph');
+    expect(back[0].text).toBe('important prose');
   });
 });
 

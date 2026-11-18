@@ -37,6 +37,7 @@ import { toast } from 'sonner';
 import { useProjectScope } from '@/hooks/use-project-scope';
 
 import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
+import { ProjectLaunchCard } from '@/components/projects/ProjectLaunchCard';
 import { useAppStore } from '@/stores/app-store';
 import type {
   ChatContext,
@@ -372,6 +373,22 @@ export default function Chat() {
     sessionId,
   );
 
+  // The last turn created tasks: the reply's final beat is a Start button
+  // rather than a summary, so the user can begin without leaving chat.
+  const lastAssistant = [...messages]
+    .reverse()
+    .find((m) => m.role === 'assistant');
+  const turnCreatedTasks =
+    status === 'ready' &&
+    !!lastAssistant &&
+    lastAssistant.parts.some((part) => {
+      if (!part.type.startsWith('tool-')) return false;
+      const tp = part as { toolName?: string; state?: string };
+      const name = tp.toolName ?? part.type.replace(/^tool-/, '');
+      if (name !== 'createTask' && name !== 'createTasks') return false;
+      return tp.state === 'output-available' || tp.state === 'result';
+    });
+
   const clearMessages = () => {
     clearPlan();
     rawClearMessages();
@@ -598,6 +615,9 @@ export default function Chat() {
                   onApproval={respondToApproval}
                   onRetry={handleSend}
                 />
+                {turnCreatedTasks && projectId && (
+                  <ProjectLaunchCard projectId={projectId} />
+                )}
               </div>
             )}
           </div>

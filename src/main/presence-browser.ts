@@ -18,10 +18,11 @@
  * SECURITY POSTURE
  * A tab can hold a real session cookie for LinkedIn or X. So:
  *   • no preload, no node integration, sandboxed, context isolated;
- *   • top-level navigation restricted to the social allowlist (plus the handful
- *     of identity-provider hosts social logins actually redirect through);
- *   • `window.open` never creates a new Electron window: allowlisted targets
- *     navigate in place, everything else goes to the user's real browser;
+ *   • top-level navigation restricted to the social allowlist; OAuth providers
+ *     (accounts.google.com, etc.) are handled via temporary popup windows so
+ *     the postMessage-based OAuth flow can complete;
+ *   • `window.open` for social URLs navigates in place; OAuth popups get a
+ *     temporary BrowserWindow; everything else goes to the system browser;
  *   • all permission requests (camera, mic, notifications, geolocation, …) are
  *     denied. The tab is for reading and typing a post, not for granting access.
  *
@@ -57,17 +58,91 @@ const ALLOWED_DOMAINS = [
 ] as const;
 
 /**
- * Identity providers social sign-in redirects through. Restricted to the exact
- * hosts the platforms use; this is deliberately NOT a general `google.com`
- * allowance, which would turn the tab into a browser.
+ * Known OAuth identity-provider hosts. These are NOT loaded inside the embedded
+ * WebContentsView because Google and others detect embedded browsers and show
+ * "This browser or app may not be secure". Instead, when a social site triggers
+ * a popup (window.open) to one of these hosts, we create a temporary Electron
+ * BrowserWindow so the postMessage-based OAuth flow can complete.
  */
 const AUTH_HOSTS = new Set([
   'accounts.google.com',
+  'gsi.google.com',
   'appleid.apple.com',
   'login.microsoftonline.com',
   'login.live.com',
   'github.com',
 ]);
+
+/** True when the URL points to a known OAuth identity provider. */
+export function isAuthUrl(raw: string): boolean {
+  const host = hostnameOf(raw);
+  return host !== null && AUTH_HOSTS.has(host);
+}
+
+// ─── OAuth popup windows ──────────────────────────────────────────────────────
+
+/**
+ * Create a temporary BrowserWindow for an OAuth popup.
+ *
+ * Social platforms like LinkedIn use window.open() to launch Google Sign-In
+ * in popup mode (ux_mode=popup). This popup communicates back to the opener
+ * via postMessage, which requires both windows to exist in the same process.
+ * Opening it in the system browser (shell.openExternal) breaks this flow
+ * because there's no opener window.
+ *
+ * The popup is auto-closed when navigation leaves the OAuth domain,
+ * indicating the flow has completed.
+ */
+function createOAuthPopup(target: string): void {
+  if (!owner || owner.isDestroyed()) return;
+
+  const popup = new BrowserWindow({
+    width: 450,
+    height: 600,
+    show: true,
+    modal: false,
+    parent: owner,
+    webPreferences: {
+      partition: PARTITION,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+    },
+  });
+
+  const contents = popup.webContents;
+  contents.setUserAgent(chromeUserAgent(contents));
+
+  // Auto-close when navigation leaves the OAuth domain (flow complete/failed)
+  contents.on('will-navigate', (event, url) => {
+    if (!isAuthUrl(url) && !isPresenceUrlAllowed(url)) {
+      event.preventDefault();
+      popup.close();
+    }
+  });
+
+  // If the popup tries to open another window, handle it safely
+  contents.setWindowOpenHandler(({ url: urlTarget }) => {
+    if (isAuthUrl(urlTarget)) {
+      createOAuthPopup(urlTarget);
+    } else if (isPresenceUrlAllowed(urlTarget)) {
+      // Navigate in place for social URLs
+      void contents.loadURL(urlTarget);
+    } else if (/^https?:/i.test(urlTarget)) {
+      void shell.openExternal(urlTarget);
+    }
+    return { action: 'deny' };
+  });
+
+  // Deny all permission requests
+  contents.session.setPermissionRequestHandler((_, __, callback) => {
+    callback(false);
+  });
+  contents.session.setPermissionCheckHandler(() => false);
+
+  void contents.loadURL(target);
+}
 
 interface ViewEntry {
   id: string;
@@ -106,12 +181,6 @@ export function isPresenceUrlAllowed(raw: string): boolean {
   } catch {
     return false;
   }
-}
-
-/** Identity-provider redirects get one hop in the same tab, never a new window. */
-function isAuthUrl(raw: string): boolean {
-  const host = hostnameOf(raw);
-  return host !== null && AUTH_HOSTS.has(host);
 }
 
 // ─── Session hardening ────────────────────────────────────────────────────────
@@ -171,8 +240,13 @@ function ensureView(id: string, url: string): ViewEntry {
 
   // Top-level navigation policy. This runs for both link clicks and redirects;
   // without the redirect hook an allowlisted page could 302 into anywhere.
+  //
+  // OAuth providers (accounts.google.com, appleid.apple.com, etc.) are blocked
+  // by Google and others when loaded inside an embedded webview — they show
+  // "This browser or app may not be secure". So we open them in the system
+  // browser instead, where the login flow completes normally.
   const guardNavigation = (event: Electron.Event, target: string): void => {
-    if (isPresenceUrlAllowed(target) || isAuthUrl(target)) return;
+    if (isPresenceUrlAllowed(target)) return;
     event.preventDefault();
     if (/^https?:/i.test(target)) void shell.openExternal(target);
   };
@@ -229,11 +303,16 @@ function ensureView(id: string, url: string): ViewEntry {
     }
   });
 
-  // Popups are common on social sites (compose windows, OAuth). Never let one
-  // create a bare Electron window; navigate in place when it is safe.
+  // Popups are common on social sites (compose windows, OAuth flows).
+  // Allowlisted social URLs navigate in place within the embedded view.
+  // OAuth provider popups (accounts.google.com, etc.) get a temporary
+  // BrowserWindow so the postMessage-based OAuth flow can complete.
+  // Everything else opens in the system browser.
   contents.setWindowOpenHandler(({ url: target }) => {
-    if (isPresenceUrlAllowed(target) || isAuthUrl(target)) {
+    if (isPresenceUrlAllowed(target)) {
       void contents.loadURL(target);
+    } else if (isAuthUrl(target)) {
+      createOAuthPopup(target);
     } else if (/^https?:/i.test(target)) {
       void shell.openExternal(target);
     }

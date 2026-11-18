@@ -45,6 +45,8 @@ import { ScheduleBlockDialog } from './ScheduleBlockDialog';
 import { MorningKickoffDialog } from './MorningKickoffDialog';
 import { TodayEmptyHero } from './TodayEmptyHero';
 import { ActiveLaunchpad } from './ActiveLaunchpad';
+import { FocusStage } from './FocusStage';
+import { useFocusStore } from '@/stores/focus-store';
 import { getNextBestMove } from '@/lib/task-recommendations';
 import type {
   FocusStats,
@@ -105,6 +107,10 @@ export interface TodayTimelineProps {
   onOpenSteps?: (task: Task) => void;
   onSendPrompt?: (prompt: string) => void;
   onOpenBrainDump?: () => void;
+  /** Pull the session hero into the full-screen focus overlay. */
+  onExpandFocus?: () => void;
+  onCompleteTask?: (task: Task, event: React.MouseEvent) => void;
+  onOpenCopilot?: (task: Task) => void;
 }
 
 export function TodayTimeline({
@@ -117,6 +123,9 @@ export function TodayTimeline({
   onOpenSteps,
   onSendPrompt,
   onOpenBrainDump,
+  onExpandFocus,
+  onCompleteTask,
+  onOpenCopilot,
 }: TodayTimelineProps) {
   const [blocks, setBlocks] = useState<TaskBlockWithTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,6 +135,9 @@ export function TodayTimeline({
   const [presetTaskId, setPresetTaskId] = useState<string | null>(null);
   const [shuffleIndex, setShuffleIndex] = useState(0);
   const gamification = useGamification();
+  // Only the focused task identity, not the per-second timer: this page must
+  // not re-render every tick just because a session is running.
+  const activeTask = useFocusStore((s) => s.focusedTask);
 
   const recommendation = useMemo(
     () => getNextBestMove({ tasks, stepProgress, shuffleIndex }),
@@ -250,6 +262,17 @@ export function TodayTimeline({
   );
   const doneCount = blocks.filter((b) => b.status === 'done').length;
 
+  // The session hero takes the left column while a task is in focus; the
+  // launchpad and kickoff copy belong to the idle state and step aside.
+  const sessionStage =
+    activeTask && onExpandFocus && onCompleteTask ? (
+      <FocusStage
+        onExpand={onExpandFocus}
+        onComplete={onCompleteTask}
+        onOpenCopilot={onOpenCopilot}
+      />
+    ) : null;
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-4 lg:overflow-hidden">
      
@@ -264,22 +287,26 @@ export function TodayTimeline({
           {/* Left: kickoff hero */}
           <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
             <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pr-1">
-              <TodayEmptyHero
-                recommendation={recommendation}
-                openTasksCount={openTasks.length}
-                streakDays={stats?.streakDays ?? gamification.state?.streakDays ?? 0}
-                onStartFlow={(task, e) => {
-                  triggerParticleBurst(e.clientX, e.clientY);
-                  onFocusTask(task);
-                }}
-                onOpenSteps={onOpenSteps}
-                onShuffle={() => setShuffleIndex((prev) => prev + 1)}
-                onOpenKickoff={() => setKickoffOpen(true)}
-                onAutoPlan={() => void planMyDay()}
-                onSendPrompt={onSendPrompt}
-                onOpenBrainDump={onOpenBrainDump}
-                planning={planning}
-              />
+              {sessionStage ?? (
+                <TodayEmptyHero
+                  recommendation={recommendation}
+                  openTasksCount={openTasks.length}
+                  streakDays={
+                    stats?.streakDays ?? gamification.state?.streakDays ?? 0
+                  }
+                  onStartFlow={(task, e) => {
+                    triggerParticleBurst(e.clientX, e.clientY);
+                    onFocusTask(task);
+                  }}
+                  onOpenSteps={onOpenSteps}
+                  onShuffle={() => setShuffleIndex((prev) => prev + 1)}
+                  onOpenKickoff={() => setKickoffOpen(true)}
+                  onAutoPlan={() => void planMyDay()}
+                  onSendPrompt={onSendPrompt}
+                  onOpenBrainDump={onOpenBrainDump}
+                  planning={planning}
+                />
+              )}
             </div>
           </section>
 
@@ -291,7 +318,7 @@ export function TodayTimeline({
               <header className="flex shrink-0 items-center justify-between px-3 pt-2.5 pb-1.5">
                 <h3 className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
                   <ListTodoIcon className="size-3.5" />
-                  Up next
+                  {activeTask ? 'Parked while you focus' : 'Up next'}
                 </h3>
                 <span className="text-[11px] tabular-nums text-muted-foreground">
                   {queue.length} open
@@ -363,30 +390,33 @@ export function TodayTimeline({
               )}
             </section>
 
-            <section className="shrink-0 rounded-lg border border-dashed border-border/60 bg-card/30 px-3 py-3">
-              <p className="text-xs font-medium">No blocks yet</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                Schedule time for what matters most. Blocks turn open tasks
-                into a real plan.
-              </p>
-              <Button
-                size="sm"
-                className="mt-2 h-7 gap-1.5 text-xs"
-                onClick={() => {
-                  setPresetTaskId(null);
-                  setScheduleOpen(true);
-                }}
-              >
-                <CalendarPlusIcon className="size-3" />
-                Block time
-              </Button>
-            </section>
+            {activeTask ? null : (
+              <section className="shrink-0 rounded-lg border border-dashed border-border/60 bg-card/30 px-3 py-3">
+                <p className="text-xs font-medium">No blocks yet</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Schedule time for what matters most. Blocks turn open tasks
+                  into a real plan.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-2 h-7 gap-1.5 text-xs"
+                  onClick={() => {
+                    setPresetTaskId(null);
+                    setScheduleOpen(true);
+                  }}
+                >
+                  <CalendarPlusIcon className="size-3" />
+                  Block time
+                </Button>
+              </section>
+            )}
           </aside>
         </div>
       ) : (
         <div className="flex min-h-0 flex-col gap-3 lg:flex-1 lg:flex-row">
           {/* Left: schedule */}
           <section className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
+            {sessionStage ? <div className="pb-2">{sessionStage}</div> : null}
             <header className="flex items-center justify-between px-1 pb-2">
               <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
                 Schedule
@@ -505,39 +535,43 @@ export function TodayTimeline({
           {/* Right: focus queue — next move + open tasks that are not
               already on the schedule. Scrolls internally; the page does not. */}
           <aside className="flex w-full shrink-0 flex-col gap-3 pr-1 lg:min-h-0 lg:w-[340px] lg:overflow-y-auto">
-            <button
-              type="button"
-              onClick={() =>
-                onSendPrompt?.(
-                  'Review my current schedule for today, suggest optimizations, or help adjust my plan.',
-                )
-              }
-              className="group flex w-full shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3.5 py-2 text-left text-xs text-muted-foreground transition-all hover:border-amber-500/40 hover:bg-card hover:text-foreground"
-            >
-              <SparklesIcon className="size-3.5 shrink-0 text-amber-500 transition-transform group-hover:scale-110" />
-              <span className="min-w-0 flex-1 truncate">
-                Ask Copilot to re-balance today…
-              </span>
-              <span className="shrink-0 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                Copilot
-              </span>
-            </button>
+            {activeTask ? null : (
+              <button
+                type="button"
+                onClick={() =>
+                  onSendPrompt?.(
+                    'Review my current schedule for today, suggest optimizations, or help adjust my plan.',
+                  )
+                }
+                className="group flex w-full shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3.5 py-2 text-left text-xs text-muted-foreground transition-all hover:border-amber-500/40 hover:bg-card hover:text-foreground"
+              >
+                <SparklesIcon className="size-3.5 shrink-0 text-amber-500 transition-transform group-hover:scale-110" />
+                <span className="min-w-0 flex-1 truncate">
+                  Ask Copilot to re-balance today…
+                </span>
+                <span className="shrink-0 rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  Copilot
+                </span>
+              </button>
+            )}
 
-            <ActiveLaunchpad
-              recommendation={recommendation}
-              onStartFlow={(task, e) => {
-                triggerParticleBurst(e.clientX, e.clientY);
-                onFocusTask(task);
-              }}
-              onOpenSteps={onOpenSteps ?? (() => undefined)}
-              onShuffle={() => setShuffleIndex((prev) => prev + 1)}
-            />
+            {activeTask ? null : (
+              <ActiveLaunchpad
+                recommendation={recommendation}
+                onStartFlow={(task, e) => {
+                  triggerParticleBurst(e.clientX, e.clientY);
+                  onFocusTask(task);
+                }}
+                onOpenSteps={onOpenSteps ?? (() => undefined)}
+                onShuffle={() => setShuffleIndex((prev) => prev + 1)}
+              />
+            )}
 
             <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/60 bg-card/40">
               <header className="flex shrink-0 items-center justify-between px-3 pt-2.5 pb-1.5">
                 <h3 className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
                   <ListTodoIcon className="size-3.5" />
-                  Up next
+                  {activeTask ? 'Parked while you focus' : 'Up next'}
                 </h3>
                 <span className="text-[11px] tabular-nums text-muted-foreground">
                   {queue.length} open

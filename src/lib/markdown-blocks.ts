@@ -25,6 +25,7 @@ export type BlockType =
   | 'quote'
   | 'code'
   | 'image'
+  | 'table'
   | 'divider';
 
 /** Every valid BlockType, for runtime validation of untrusted input. */
@@ -39,6 +40,7 @@ export const BLOCK_TYPES: readonly BlockType[] = [
   'quote',
   'code',
   'image',
+  'table',
   'divider',
 ];
 
@@ -70,6 +72,7 @@ export const CONTAINER_BLOCK_TYPES: ReadonlySet<BlockType> = new Set([
   'numbered-list',
   'todo',
   'quote',
+  'table',
 ]);
 
 // ─── Ids ──────────────────────────────────────────────────────────────────────
@@ -94,6 +97,151 @@ const FENCE_RE = /^```(\S*)\s*$/;
 const TODO_RE = /^(?:[-*+]\s+)?\[( |x|X)\]\s*(.*)$/;
 /** A whole line that is a single markdown image: `![alt](url)` (optional title). */
 export const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/;
+
+/** A markdown table cell delimiter such as `---`, `:---` or `---:`. */
+const TABLE_DELIMITER_CELL_RE = /^:?-{2,}:?$/;
+
+/** Split a pipe-table row into trimmed cells, honouring `\|` escapes. */
+function splitTableRow(line: string): string[] {
+  let value = line.trim();
+  if (value.startsWith('|')) value = value.slice(1);
+  if (value.endsWith('|') && !value.endsWith('\\|')) value = value.slice(0, -1);
+
+  const cells: string[] = [];
+  let current = '';
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+    if (char === '\\' && value[i + 1] === '|') {
+      current += '|';
+      i += 1;
+      continue;
+    }
+    if (char === '|') {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+/** True when `line` is the `| --- | :---: |` row under a table header. */
+function isTableDelimiterRow(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|')) return false;
+  const cells = splitTableRow(trimmed);
+  return (
+    cells.length > 0 &&
+    cells.every((cell) => TABLE_DELIMITER_CELL_RE.test(cell))
+  );
+}
+
+export interface MarkdownTable {
+  header: string[];
+  rows: string[][];
+}
+
+/**
+ * Parse a pipe-table block's text. Returns null when the text is not a table
+ * (for example a paragraph that merely contains a pipe).
+ */
+export function parseTableMarkdown(text: string): MarkdownTable | null {
+  const lines = text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .filter((line) => line.trim() !== '');
+
+  if (lines.length < 2 || !lines[0].includes('|')) return null;
+  if (!isTableDelimiterRow(lines[1])) return null;
+
+  const header = splitTableRow(lines[0]);
+  if (header.length === 0) return null;
+
+  const rows = lines.slice(2).map((line) => {
+    const cells = splitTableRow(line);
+    return header.map((_, index) => cells[index] ?? '');
+  });
+
+  return { header, rows };
+}
+
+/** Serialize a table grid back to canonical pipe-table markdown. */
+export function serializeTableMarkdown(table: MarkdownTable): string {
+  const escapeCell = (cell: string) =>
+    cell.replace(/\r?\n/g, ' ').replace(/\|/g, '\\|').trim();
+  const row = (cells: string[]) => `| ${cells.map(escapeCell).join(' | ')} |`;
+
+  return [
+    row(table.header),
+    row(table.header.map(() => '---')),
+    ...table.rows.map(row),
+  ].join('\n');
+}
+
+/** Starter grid used when a paragraph is converted into a table. */
+export function emptyTableMarkdown(columns = 2): string {
+  const width = Math.max(1, columns);
+  return serializeTableMarkdown({
+    header: Array.from({ length: width }, (_, index) => `Column ${index + 1}`),
+    rows: [Array.from({ length: width }, () => '')],
+  });
+}
+
+/** Format alt text and a URL as a standalone markdown image. */
+export function formatImageMarkdown(alt: string, url: string): string {
+  return `![${alt.replace(/\]/g, '\\]')}](${url.trim()})`;
+}
+
+/**
+ * Fold table rows that were stored as separate paragraph blocks into a single
+ * table block.
+ *
+ * Older pages (and pages saved before tables existed) hold each pipe-table row
+ * as its own paragraph. Normalising on read upgrades them without a database
+ * migration or a rewrite: the first row's id is kept, so the rows simply merge
+ * the next time the page is saved.
+ */
+export function normalizeBlocks(blocks: Block[]): Block[] {
+  const out: Block[] = [];
+  let i = 0;
+
+  while (i < blocks.length) {
+    const block = blocks[i];
+
+    // Only paragraphs can be table rows; a real table block is already fine.
+    if (block.type === 'paragraph' && block.text.includes('|')) {
+      const bordered = block.text.trim().startsWith('|');
+      let end = i + 1;
+      while (
+        end < blocks.length &&
+        blocks[end].type === 'paragraph' &&
+        (bordered
+          ? blocks[end].text.trim().startsWith('|')
+          : blocks[end].text.includes('|'))
+      ) {
+        end += 1;
+      }
+
+      const text = blocks
+        .slice(i, end)
+        .map((row) => row.text)
+        .join('\n');
+
+      if (parseTableMarkdown(text)) {
+        out.push({ ...block, type: 'table', text });
+        i = end;
+        continue;
+      }
+    }
+
+    out.push(block);
+    i += 1;
+  }
+
+  return out;
+}
 
 function classify(line: string): {
   type: BlockType;
@@ -186,6 +334,34 @@ export function parseMarkdownToBlocks(markdown: string): Block[] {
       continue;
     }
 
+    // A pipe table: header row + delimiter row, followed by body rows.
+    if (
+      i + 1 < lines.length &&
+      lines[i].includes('|') &&
+      isTableDelimiterRow(lines[i + 1])
+    ) {
+      const tableLines = [lines[i], lines[i + 1]];
+      const bordered = lines[i].trim().startsWith('|');
+      i += 2;
+      while (i < lines.length) {
+        const candidate = lines[i];
+        if (candidate.trim() === '') break;
+        const looksLikeRow = bordered
+          ? candidate.trim().startsWith('|')
+          : candidate.includes('|');
+        if (!looksLikeRow) break;
+        tableLines.push(candidate);
+        i += 1;
+      }
+      // Keep the raw row text so a parse → serialize round trip is a no-op.
+      blocks.push({
+        id: newBlockId(),
+        type: 'table',
+        text: tableLines.join('\n'),
+      });
+      continue;
+    }
+
     const info = classify(line);
     if (!info) {
       i += 1;
@@ -213,7 +389,10 @@ export function parseMarkdownToBlocks(markdown: string): Block[] {
     blocks.push({ id: newBlockId(), type: 'paragraph', text: '' });
   }
 
-  return blocks;
+  // Blank-line-separated table rows (the legacy storage shape) are folded
+  // here as well, so restored versions and imported reports behave the same
+  // as pages loaded from the block table.
+  return normalizeBlocks(blocks);
 }
 
 // ─── Serialize: blocks → markdown ────────────────────────────────────────────
@@ -243,6 +422,9 @@ function serializeBlock(block: Block): string {
     case 'image':
       // The block text already holds the full markdown image.
       return block.text.trim();
+    case 'table':
+      // The block text already holds the whole pipe table.
+      return block.text.trim();
     case 'divider':
       return '---';
     case 'paragraph':
@@ -263,7 +445,6 @@ export function serializeBlocksToMarkdown(blocks: Block[]): string {
 
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
-    const prev = blocks[i - 1];
 
     out.push(serializeBlock(block));
 
@@ -355,6 +536,7 @@ export function indentBlock(
       b.id !== id ||
       b.type === 'code' ||
       b.type === 'image' ||
+      b.type === 'table' ||
       b.type === 'divider'
     )
       return b;
@@ -393,6 +575,12 @@ export function setBlockType(
     if (b.id !== id) return b;
     const next: Block = { ...b, type };
     if (type === 'todo' && next.checked === undefined) next.checked = false;
+    // An empty block converted to a table needs a real grid to edit. A block
+    // with content keeps its text until the table editor rewrites it, so an
+    // accidental conversion cannot silently discard writing.
+    if (type === 'table' && next.text.trim() === '') {
+      next.text = emptyTableMarkdown();
+    }
     return next;
   });
 }

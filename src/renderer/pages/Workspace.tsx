@@ -44,6 +44,8 @@ import {
   FlaskConicalIcon,
   FolderKanbanIcon,
   SearchIcon,
+  CheckIcon,
+  PencilIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -86,6 +88,11 @@ export default function Workspace() {
   const { projectId, withScope } = useProjectScope();
   const [infoOpen, setInfoOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
+  // Pages open in reading view. Edit mode is tied to the page that was
+  // explicitly put into edit mode, so navigating away always shows the new
+  // page rendered instead of flashing an edit surface.
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const previewMode = editingPageId !== detail?.page.id;
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -160,7 +167,12 @@ export default function Workspace() {
   const crumbs: PageCrumb[] = [
     { label: 'Notebooks', to: withScope('/workspace') },
     ...(activeNotebook
-      ? [{ label: activeNotebook.title, to: withScope(`/workspace/${activeNotebook.id}`) }]
+      ? [
+          {
+            label: activeNotebook.title,
+            to: withScope(`/workspace/${activeNotebook.id}`),
+          },
+        ]
       : []),
     ...(detail ? [{ label: detail.page.title || 'Untitled' }] : []),
   ];
@@ -300,7 +312,9 @@ export default function Workspace() {
         chatContext: {
           pageId: detail.page.id,
           notebookId: detail.page.notebook_id,
-          ...(detail.page.project_id ? { projectId: detail.page.project_id } : {}),
+          ...(detail.page.project_id
+            ? { projectId: detail.page.project_id }
+            : {}),
         },
       },
     });
@@ -343,7 +357,9 @@ export default function Workspace() {
                         <Select
                           value={detail.page.id}
                           onValueChange={(pageId) =>
-                            navigate(withScope(`/workspace/${notebookId}/${pageId}`))
+                            navigate(
+                              withScope(`/workspace/${notebookId}/${pageId}`),
+                            )
                           }
                         >
                           <SelectTrigger className="h-6 w-[160px] shrink-0 gap-1 rounded-md border-0 bg-transparent px-2 text-xs text-foreground shadow-none hover:bg-secondary/50">
@@ -381,18 +397,60 @@ export default function Workspace() {
                             onSelect: handleResearchPage,
                           },
                           {
-                            label: chatOpen ? 'Hide docked chat' : 'Show docked chat',
-                            icon: <LayoutPanelLeftIcon className="h-3.5 w-3.5" />,
+                            label: chatOpen
+                              ? 'Hide docked chat'
+                              : 'Show docked chat',
+                            icon: (
+                              <LayoutPanelLeftIcon className="h-3.5 w-3.5" />
+                            ),
                             onSelect: () => {
                               setInfoOpen(false);
                               setChatOpen((v) => !v);
                             },
                           },
-                          { separatorBefore: true, label: 'New page', icon: <PlusIcon className="h-3.5 w-3.5" />, onSelect: () => notebookId && void handleCreatePage(notebookId) },
+                          {
+                            separatorBefore: true,
+                            label: 'New page',
+                            icon: <PlusIcon className="h-3.5 w-3.5" />,
+                            onSelect: () =>
+                              notebookId && void handleCreatePage(notebookId),
+                          },
                         ]}
                       />
 
-                      {/* Panel toggle — always visible */}
+                      {/* Read/edit toggle — labelled so the mode is never
+                          ambiguous. Reading is the default state. */}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant={previewMode ? 'default' : 'secondary'}
+                            size="sm"
+                            className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                            onClick={() =>
+                              setEditingPageId(
+                                previewMode ? detail.page.id : null,
+                              )
+                            }
+                            aria-label={
+                              previewMode ? 'Edit page' : 'Finish editing'
+                            }
+                          >
+                            {previewMode ? (
+                              <PencilIcon className="h-3.5 w-3.5" />
+                            ) : (
+                              <CheckIcon className="h-3.5 w-3.5" />
+                            )}
+                            {previewMode ? 'Edit' : 'Done'}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          {previewMode
+                            ? 'Edit this page'
+                            : 'Back to reading view'}
+                        </TooltipContent>
+                      </Tooltip>
+
+                      {/* Info panel toggle — always visible */}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -428,6 +486,10 @@ export default function Workspace() {
                   title={detail.page.title}
                   initialBlocks={detail.blocks}
                   onSaved={pageId ? () => void reloadDetail(pageId) : undefined}
+                  previewMode={previewMode}
+                  onPreviewModeChange={(readMode) =>
+                    setEditingPageId(readMode ? null : detail.page.id)
+                  }
                 />
               ) : notebookId ? (
                 // Notebook is selected but navigating to first page
@@ -446,8 +508,12 @@ export default function Workspace() {
                   onOpenPage={(id, nbId) =>
                     navigate(withScope(`/workspace/${nbId}/${id}`))
                   }
-                  onOpenNotebook={(nbId) => navigate(withScope(`/workspace/${nbId}`))}
-                  onOpenProject={(projectId) => navigate(`/projects/${projectId}`)}
+                  onOpenNotebook={(nbId) =>
+                    navigate(withScope(`/workspace/${nbId}`))
+                  }
+                  onOpenProject={(projectId) =>
+                    navigate(`/projects/${projectId}`)
+                  }
                   onResearchNotebook={handleResearchNotebook}
                   onNotebookUpdated={() => void reloadNotebooks()}
                 />
@@ -471,7 +537,9 @@ export default function Workspace() {
                 detail={detail}
                 onNavigate={(id) => {
                   if (contextNotebookId) {
-                    navigate(withScope(`/workspace/${contextNotebookId}/${id}`));
+                    navigate(
+                      withScope(`/workspace/${contextNotebookId}/${id}`),
+                    );
                   }
                 }}
                 onChatWithContext={(id) =>
@@ -723,8 +791,9 @@ function NotebooksHome({
                               className="text-xs hover:underline text-primary"
                               aria-label={`Go to project`}
                             >
-                              {projects.find((p) => p.id === notebook.project_id)?.name ||
-                                'Project'}
+                              {projects.find(
+                                (p) => p.id === notebook.project_id,
+                              )?.name || 'Project'}
                             </button>
                           ) : (
                             <span className="text-xs text-muted-foreground">
@@ -738,7 +807,7 @@ function NotebooksHome({
                             void changeNotebookProject(notebook.id, value)
                           }
                         >
-                          <SelectTrigger 
+                          <SelectTrigger
                             className="h-6 w-auto border-0 px-1 text-[10px] shadow-none"
                             onClick={(e) => e.stopPropagation()}
                           >

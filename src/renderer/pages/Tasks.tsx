@@ -54,6 +54,7 @@ import {
   Minimize2Icon,
   PauseIcon,
   PenLineIcon,
+  PenToolIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
@@ -62,6 +63,7 @@ import {
   TerminalSquareIcon,
   Trash2Icon,
   UndoIcon,
+  UsersIcon,
   WavesIcon,
   XIcon,
 } from 'lucide-react';
@@ -427,6 +429,8 @@ interface FocusModeProps {
   onComplete: (task: Task, event: React.MouseEvent) => void;
   /** Hand this task to the Document Drafter. */
   onDraftDocument: () => void;
+  /** Open the Focus Copilot scoped to this task. */
+  onOpenCopilot?: (task: Task) => void;
 }
 
 function FocusMode({
@@ -437,6 +441,7 @@ function FocusMode({
   onClose,
   onComplete,
   onDraftDocument,
+  onOpenCopilot,
 }: FocusModeProps) {
   const navigate = useNavigate();
   const [showAudio, setShowAudio] = useState(false);
@@ -781,6 +786,82 @@ function FocusMode({
             </Button>
           </div>
         </div>
+
+        {/*
+          Copilots, offered without leaving focus. Each chip parks the pomodoro
+          in the sidebar (timer keeps running) and opens the tool scoped to
+          this task's project — the same hand-off contract as "Hand to Agent",
+          just pointed at a specific surface instead of the generic terminal.
+        */}
+        {(() => {
+          // Always offered (secondary, subordinate to the primary action row)
+          // so the copilots are discoverable from the focus surface — the
+          // previous gating hid them for most tasks and defeated the purpose.
+          const chips: Array<{
+            label: string;
+            icon: React.ComponentType<{ className?: string }>;
+            onClick: () => void;
+          }> = [
+            ...(onOpenCopilot
+              ? [
+                  {
+                    label: 'Copilot',
+                    icon: BotIcon,
+                    onClick: () => {
+                      onMinimize();
+                      onOpenCopilot(task);
+                    },
+                  },
+                ]
+              : []),
+            {
+              label: 'Presence',
+              icon: UsersIcon,
+              onClick: () => {
+                onMinimize();
+                const q = task.project_id
+                  ? `?project=${encodeURIComponent(task.project_id)}`
+                  : '';
+                navigate(`/presence${q}`);
+              },
+            },
+            {
+              label: 'NovaTrace',
+              icon: PenToolIcon,
+              onClick: () => {
+                onMinimize();
+                if (task.project_id) {
+                  navigate(`/trace/${encodeURIComponent(task.project_id)}`);
+                } else {
+                  navigate('/trace');
+                }
+              },
+            },
+          ];
+
+          return (
+            <div className="flex w-full flex-wrap items-center gap-1.5 border-t border-zinc-900 pt-3">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-600">
+                Tools
+              </span>
+              {chips.map((chip) => {
+                const Icon = chip.icon;
+                return (
+                  <Button
+                    key={chip.label}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1.5 border-zinc-700 text-xs text-zinc-300 hover:border-primary/60 hover:bg-primary/10 hover:text-primary"
+                    onClick={chip.onClick}
+                  >
+                    <Icon className="size-3.5" />
+                    {chip.label}
+                  </Button>
+                );
+              })}
+            </div>
+          );
+        })()}
       </motion.div>
     </motion.div>
   );
@@ -958,6 +1039,8 @@ export default function Tasks() {
     }
   }, [captureRequested, setSearchParams]);
 
+  const copilotRequested = searchParams.get('copilot') === '1';
+
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
     string | null
@@ -968,6 +1051,14 @@ export default function Tasks() {
 
   const handleSendCopilotPrompt = useCallback((prompt: string) => {
     setCopilotInitialPrompt(prompt);
+    setCopilotOpen(true);
+  }, []);
+
+  const handleOpenTaskCopilot = useCallback((task: Task) => {
+    const parts = [task.title, task.description].filter(Boolean).join(' — ');
+    setCopilotInitialPrompt(
+      `Help me with this task: "${parts}". Break it into small steps and suggest what to do next.`,
+    );
     setCopilotOpen(true);
   }, []);
 
@@ -991,6 +1082,27 @@ export default function Tasks() {
 
   const gamification = useGamification();
   const focus = useFocusSession();
+
+  // /tasks?copilot=1 opens the Focus Copilot (used by the sidebar focus
+  // player's "Chat" affordance). Strip the param once consumed.
+  useEffect(() => {
+    if (!copilotRequested) return;
+    const ft = focus.focusedTask;
+    if (ft) {
+      const parts = [ft.title, ft.description].filter(Boolean).join(' — ');
+      setCopilotInitialPrompt(
+        `Help me with this task: "${parts}". Break it into small steps and suggest what to do next.`,
+      );
+    }
+    setCopilotOpen(true);
+    setSearchParams(
+      (prev) => {
+        prev.delete('copilot');
+        return prev;
+      },
+      { replace: true },
+    );
+  }, [copilotRequested, focus.focusedTask, setSearchParams]);
 
   // Coarse clock for overdue/due labels: ticks once a minute so an idle
   // board flips to "overdue" across midnight without a mutation. The 1s
@@ -1225,9 +1337,11 @@ export default function Tasks() {
   const handleComplete = useCallback(
     (task: Task, e: React.MouseEvent) => {
       triggerParticleBurst(e.clientX, e.clientY);
+      // Finishing the task you are focused on ends the session with it.
+      if (focus.focusedTask?.id === task.id) focus.clearFocus();
       void handleMove(task.id, 'done');
     },
-    [handleMove],
+    [handleMove, focus.focusedTask, focus.clearFocus],
   );
 
   const handlePrioritize = async () => {
@@ -1445,6 +1559,9 @@ export default function Tasks() {
             onOpenSteps={openSteps}
             onSendPrompt={handleSendCopilotPrompt}
             onOpenBrainDump={() => setBrainDumpOpen(true)}
+            onExpandFocus={() => focus.setDisplayMode('modal')}
+            onCompleteTask={handleComplete}
+            onOpenCopilot={handleOpenTaskCopilot}
           />
         </TabsContent>
 
@@ -1602,6 +1719,7 @@ export default function Tasks() {
             onDraftDocument={() =>
               focus.focusedTask && openDrafter(focus.focusedTask)
             }
+            onOpenCopilot={handleOpenTaskCopilot}
           />
         )}
       </AnimatePresence>

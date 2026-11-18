@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ListEndIcon,
@@ -45,7 +45,7 @@ export interface TrackListProps {
   onPreview?: (track: MusicTrack) => void;
 }
 
-function Equaliser() {
+const Equaliser = memo(function Equaliser() {
   const bars = [
     { height: '60%', delay: '0ms' },
     { height: '100%', delay: '150ms' },
@@ -62,7 +62,7 @@ function Equaliser() {
       ))}
     </span>
   );
-}
+});
 
 function TrackRowImpl({
   track,
@@ -236,10 +236,15 @@ const TrackListImpl = function TrackList({
   onPreview,
 }: TrackListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
+  // Stabilized so `useVirtualizer` doesn't see new option identities on every
+  // render (which forces setOptions + observer churn for no reason).
+  const getScrollElement = useCallback(() => parentRef.current, []);
+  const estimateSize = useCallback(() => 56, []); // Row height: py-2 (16px) + 40px track height
+
   const virtualizer = useVirtualizer({
     count: tracks.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 56, // Row height: py-2 (16px) + 40px track height
+    getScrollElement,
+    estimateSize,
     overscan: 5, // Render 5 extra rows outside viewport for smoother scrolling
   });
 

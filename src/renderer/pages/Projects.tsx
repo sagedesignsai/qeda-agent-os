@@ -48,6 +48,7 @@ import {
 import { ProjectDeleteDialog } from '@/components/projects/ProjectDeleteDialog';
 import { ProjectDialog } from '@/components/projects/ProjectDialog';
 import { ProjectFileBrowserDialog } from '@/components/projects/ProjectFileBrowserDialog';
+import { ProjectLaunchCard } from '@/components/projects/ProjectLaunchCard';
 import { ProjectListRow } from '@/components/projects/ProjectListRow';
 import { ProjectOverviewPanel } from '@/components/projects/ProjectOverviewPanel';
 import {
@@ -297,6 +298,11 @@ export default function Projects() {
                 </Badge>
               )}
             </div>
+
+            {/* The next move leads; the rollup follows it. This card renders
+                only while there is something to start, so a finished project
+                is not nagged and an unstarted one is not charted. */}
+            <ProjectLaunchCard projectId={project.id} />
 
             {/* Rollup */}
             <div className="rounded-xl border bg-card/40 p-4">

@@ -24,20 +24,30 @@ export interface GetRecommendationOptions {
   tasks: Task[];
   stepProgress?: Record<string, StepProgress>;
   shuffleIndex?: number;
+  /**
+   * Which statuses are worth recommending. Defaults to `['backlog']`, which is
+   * the Today launchpad's long-standing behaviour.
+   *
+   * Ignition passes `['backlog', 'active']`: a task that was started and
+   * abandoned is the BEST thing to resume, and the backlog-only filter hid it
+   * — so a plan whose tasks had already been opened could not be recommended
+   * anywhere in the app.
+   */
+  statuses?: Task['status'][];
 }
 
 export function getNextBestMove({
   tasks,
   stepProgress = {},
   shuffleIndex = 0,
+  statuses = ['backlog'],
 }: GetRecommendationOptions): TaskRecommendation {
-  // Only recommend tasks currently sitting unstarted in the backlog
-  const backlogTasks = tasks.filter((t) => t.status === 'backlog');
+  const candidates = tasks.filter((t) => statuses.includes(t.status));
 
-  if (backlogTasks.length === 0) {
+  if (candidates.length === 0) {
     return {
       task: null,
-      rationale: 'Backlog is empty. Brain dump or add a task to get started.',
+      rationale: 'Nothing waiting. Brain dump or add a task to get started.',
       totalCandidates: 0,
     };
   }
@@ -45,7 +55,7 @@ export function getNextBestMove({
   const nowSec = Math.floor(Date.now() / 1000);
 
   // Score each candidate task
-  const scored = backlogTasks.map((task) => {
+  const scored = candidates.map((task) => {
     let score = 0;
 
     // 1. Priority weighting

@@ -18,12 +18,22 @@
  * there *with the current project scope* (the old bar dropped `?project=`), and
  * `FocusRuntime` parks an open overlay back in the rail when the route leaves
  * `/tasks` so a hidden `modal` state cannot reopen later.
+ *
+ * WITH NO SESSION IT IS NOT EMPTY
+ * ───────────────────────────────
+ * This is the only slot in the app that exists on every route, so its idle
+ * state offers the next move (`IgnitionCard`) instead of rendering nothing:
+ * one task, its first physical step, and a button that starts the clock in
+ * place. Starting no longer requires a trip to `/tasks`, which is where the
+ * intention to start was previously lost. `/tasks` is excluded because that
+ * page already carries a full launchpad.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import {
+  BotIcon,
   CheckIcon,
   ChevronUpIcon,
   Maximize2Icon,
@@ -57,11 +67,20 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import { XP_REWARDS } from '@/lib/gamification';
-import { DURATION_PRESETS } from '@/lib/focus/presets';
+import { DURATION_PRESETS, IGNITION_PRESET_MINUTES } from '@/lib/focus/presets';
 import { useFocusSession } from '@/hooks/use-focus-session';
 import { useProjectScope } from '@/hooks/use-project-scope';
 import { useIpcEvent } from '@/hooks/use-ipc';
 import { completeTask } from '@/lib/focus/task-actions';
+import {
+  igniteTask,
+  isIgnitionSnoozed,
+  snoozeIgnition,
+} from '@/lib/focus/ignite';
+import { celebrationAudio } from '@/lib/celebration-audio';
+import { triggerParticleBurst } from '@/components/gamification/ParticleCanvas';
+import { useIgnitionCandidate } from '@/hooks/use-ignition-candidate';
+import { IgnitionCard } from './IgnitionCard';
 import type { TaskStep } from '@/main/ipc/channels';
 
 function formatClock(secondsLeft: number): string {
@@ -145,9 +164,18 @@ function FocusClock({
 export function SidebarFocusPlayer() {
   const focus = useFocusSession();
   const navigate = useNavigate();
-  const { withScope } = useProjectScope();
+  const location = useLocation();
+  const { withScope, activeProjectId, activeProjectName } = useProjectScope();
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
+
+  // `/tasks` has its own launchpad and next-move card; two competing Start
+  // buttons on one screen is the noise this design exists to avoid. Onboarding
+  // is excluded too: the user is still creating the project, so there is
+  // nothing to start yet.
+  const offersIgnition =
+    !location.pathname.startsWith('/tasks') &&
+    !location.pathname.startsWith('/onboarding');
 
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -184,7 +212,49 @@ export function SidebarFocusPlayer() {
     [],
   );
 
-  if (!task) return null;
+  // ── The invitation ────────────────────────────────────────────────────────
+  // With no session running, the rail is the one slot present on every route,
+  // so it offers the next move rather than rendering nothing. The candidate
+  // selection (and the first physical step inside it) lives in the shared hook
+  // because the project page offers the same thing and the two must agree.
+  const [dismissed, setDismissed] = useState(false);
+  const snoozed =
+    dismissed || isIgnitionSnoozed(activeProjectId ?? 'global');
+  const { candidate: ignition, firstMove } = useIgnitionCandidate(
+    activeProjectId,
+    { enabled: offersIgnition && !taskId && !snoozed },
+  );
+
+  const startIgnition = (event: React.MouseEvent) => {
+    const next = ignition?.task;
+    if (!next) return;
+    triggerParticleBurst(event.clientX, event.clientY);
+    // Ignition owns the session, the status write and the XP. The rail only
+    // supplies the reward sound — the store swap is synchronous, so the card
+    // is replaced by the live countdown in the same frame.
+    void igniteTask(next).then(() => celebrationAudio.playCompletionChime());
+  };
+
+  const dismissIgnition = () => {
+    snoozeIgnition(activeProjectId ?? 'global');
+    setDismissed(true);
+  };
+
+  if (!task) {
+    if (!ignition?.task) return null;
+    return (
+      <IgnitionCard
+        firstMove={firstMove ?? ignition.task.title}
+        taskTitle={ignition.task.title}
+        rationale={ignition.rationale}
+        meta={`${activeProjectName ?? 'Any project'} · ${IGNITION_PRESET_MINUTES} min`}
+        minutes={IGNITION_PRESET_MINUTES}
+        collapsed={collapsed}
+        onStart={startIgnition}
+        onDismiss={dismissIgnition}
+      />
+    );
+  }
 
   const { timer, progress } = focus;
   const isBreak = timer.phase === 'break';
@@ -694,6 +764,18 @@ export function SidebarFocusPlayer() {
               <Button variant="outline" className="w-full gap-2" onClick={expand}>
                 <Maximize2Icon className="size-4" />
                 Open focus mode
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                onClick={() => {
+                  setSheetOpen(false);
+                  setPopoverOpen(false);
+                  navigate(withScope('/tasks?copilot=1'));
+                }}
+              >
+                <BotIcon className="size-4 text-primary" />
+                Chat about this task
               </Button>
               <Button
                 variant="ghost"
