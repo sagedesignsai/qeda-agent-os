@@ -85,6 +85,7 @@ export function StudioCompositionCreateDialog({
   open,
   takes,
   templates,
+  initialTakeId = null,
   onOpenChange,
   onCreate,
   onDeleteTemplate,
@@ -92,6 +93,7 @@ export function StudioCompositionCreateDialog({
   open: boolean;
   takes: StudioTakeSummary[];
   templates: StudioCompositionTemplateSummary[];
+  initialTakeId?: string | null;
   onOpenChange: (open: boolean) => void;
   onCreate: (
     sceneId: StudioCompositionSceneId,
@@ -101,11 +103,16 @@ export function StudioCompositionCreateDialog({
   ) => Promise<void>;
   onDeleteTemplate: (templateId: string) => Promise<boolean>;
 }) {
+  const initialSourceTake = takes.find((take) => take.id === initialTakeId);
   const [mode, setMode] = useState<'scene' | 'template'>('scene');
   const [sceneId, setSceneId] =
     useState<StudioCompositionSceneId>('app-spotlight');
   const [templateId, setTemplateId] = useState('');
-  const [title, setTitle] = useState('App spotlight');
+  const [title, setTitle] = useState(
+    initialSourceTake
+      ? `${initialSourceTake.title} composition`
+      : 'App spotlight',
+  );
   const [sourceTakeIds, setSourceTakeIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [templatePendingDelete, setTemplatePendingDelete] =
@@ -117,7 +124,7 @@ export function StudioCompositionCreateDialog({
   const scene = SCENES.find((option) => option.id === sceneId) ?? SCENES[0];
   const requiredTakes =
     mode === 'template'
-      ? selectedTemplate?.videoLayers ?? []
+      ? (selectedTemplate?.videoLayers ?? [])
       : Array.from({ length: scene.takes }, (_, index) => ({
           id: String(index),
           name:
@@ -127,9 +134,14 @@ export function StudioCompositionCreateDialog({
                 ? 'Desktop recording'
                 : 'Mobile recording',
         }));
-  const selectedTakeIds = requiredTakes.map(
-    (_, index) => sourceTakeIds[index] ?? takes[index]?.id ?? '',
-  );
+  const selectedTakeIds = requiredTakes.map((_, index) => {
+    if (sourceTakeIds[index]) return sourceTakeIds[index];
+    if (mode === 'scene' && index === 0 && initialTakeId) return initialTakeId;
+    if (mode === 'scene' && index === 1 && initialTakeId) {
+      return takes.find((take) => take.id !== initialTakeId)?.id ?? '';
+    }
+    return takes[index]?.id ?? '';
+  });
   const canCreate =
     (mode === 'scene' || !!selectedTemplate) &&
     new Set(selectedTakeIds.filter(Boolean)).size ===
@@ -272,10 +284,7 @@ export function StudioCompositionCreateDialog({
             </label>
             {selectedTemplate && (
               <div className="flex items-start gap-3 rounded-md border border-border/50 bg-muted/20 p-3">
-                <SceneThumbnail
-                  sceneId={selectedTemplate.sceneId}
-                  compact
-                />
+                <SceneThumbnail sceneId={selectedTemplate.sceneId} compact />
                 <div className="min-w-0 flex-1 text-[11px] text-muted-foreground">
                   <p className="font-medium text-foreground">
                     {selectedTemplate.sceneId === 'desktop-mobile-comparison'

@@ -93,6 +93,7 @@ export default function Studio() {
     StudioCompositionTemplateSummary[]
   >([]);
   const [compositionCreateOpen, setCompositionCreateOpen] = useState(false);
+  const [compositionSourceTakeId, setCompositionSourceTakeId] = useState<string | null>(null);
 
   const refreshCompositions = useCallback(async () => {
     try {
@@ -816,14 +817,17 @@ export default function Studio() {
         <StudioProjectsView
           takes={takes}
           compositions={compositions}
-          onNewComposition={() => setCompositionCreateOpen(true)}
+          onNewComposition={() => {
+            setCompositionSourceTakeId(null);
+            setCompositionCreateOpen(true);
+          }}
           onOpenComposition={(id) => navigate(`/studio/compositions/${id}`)}
           hasMoreTakes={hasMoreTakes}
           loadingMoreTakes={loadingMoreTakes}
           onLoadMore={loadMoreTakes}
           onOpenTake={(id) => {
-            loadTake(id);
-            navigate(`/studio/${id}`);
+            setCompositionSourceTakeId(id);
+            setCompositionCreateOpen(true);
           }}
           onNewRecording={() => setSourcePickerOpen(true)}
           onRenameTake={handleRenameTake}
@@ -1188,10 +1192,15 @@ export default function Studio() {
       />
 
       <StudioCompositionCreateDialog
+        key={compositionSourceTakeId ?? 'new-composition'}
         open={compositionCreateOpen}
         takes={takes}
+        initialTakeId={compositionSourceTakeId}
         templates={compositionTemplates}
-        onOpenChange={setCompositionCreateOpen}
+        onOpenChange={(open) => {
+          setCompositionCreateOpen(open);
+          if (!open) setCompositionSourceTakeId(null);
+        }}
         onCreate={handleCreateComposition}
         onDeleteTemplate={handleDeleteCompositionTemplate}
       />
