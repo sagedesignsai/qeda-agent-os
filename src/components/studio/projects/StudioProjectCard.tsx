@@ -177,7 +177,7 @@ export const StudioProjectCard = memo(function StudioProjectCard({
       <div
         role="button"
         tabIndex={0}
-        aria-label={`Create composition from recording ${take.title}`}
+        aria-label={`Open showcase take ${take.title}`}
         className="relative aspect-video w-full bg-slate-950 overflow-hidden cursor-pointer flex items-center justify-center focus:outline-hidden focus:ring-1 focus:ring-primary"
         onClick={() => onOpen(take.id)}
         onKeyDown={(e) => {

@@ -155,7 +155,7 @@ export const StudioProjectRow = memo(function StudioProjectRow({
         <div
           role="button"
           tabIndex={0}
-          aria-label={`Create composition from recording ${take.title}`}
+          aria-label={`Open showcase take ${take.title}`}
           onClick={() => onOpen(take.id)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {

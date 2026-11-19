@@ -15,7 +15,6 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { SidebarProvider } from '../components/ui/sidebar';
 import { TooltipProvider } from '../components/ui/tooltip';
 import { StudioProjectsView } from '../components/studio/projects/StudioProjectsView';
-import { StudioCompositionCreateDialog } from '../components/studio/StudioCompositionCreateDialog';
 import { StudioProjectCard } from '../components/studio/projects/StudioProjectCard';
 import { StudioProjectRow } from '../components/studio/projects/StudioProjectRow';
 import type { StudioTakeSummary } from '../lib/studio-types';
@@ -57,19 +56,16 @@ describe('StudioProjectsView & Components', () => {
   ];
 
   beforeAll(() => {
-    window.matchMedia = jest.fn().mockImplementation(
-      (query: string) =>
-        ({
-          matches: false,
-          media: query,
-          onchange: null,
-          addListener: jest.fn(),
-          removeListener: jest.fn(),
-          addEventListener: jest.fn(),
-          removeEventListener: jest.fn(),
-          dispatchEvent: jest.fn(),
-        }) as MediaQueryList,
-    );
+    window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    }) as MediaQueryList);
 
     window.HTMLMediaElement.prototype.play = jest
       .fn()
@@ -130,35 +126,6 @@ describe('StudioProjectsView & Components', () => {
     // Clicking card opens take
     fireEvent.click(screen.getByText('Demo Release v1.0'));
     expect(onOpenTake).toHaveBeenCalledWith('take-1');
-  });
-
-  it('seeds a composition from the selected recording', async () => {
-    const onCreate = jest.fn().mockResolvedValue(undefined);
-    render(
-      <StudioCompositionCreateDialog
-        open
-        takes={mockTakes}
-        templates={[]}
-        initialTakeId="take-2"
-        onOpenChange={jest.fn()}
-        onCreate={onCreate}
-        onDeleteTemplate={jest.fn().mockResolvedValue(true)}
-      />,
-    );
-
-    expect(screen.getByLabelText('Recording')).toHaveValue('take-2');
-    expect(screen.getByLabelText('Composition name')).toHaveValue(
-      'Terminal Showcase Walkthrough composition',
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Create composition' }));
-    await act(async () => {});
-    expect(onCreate).toHaveBeenCalledWith(
-      'app-spotlight',
-      'Terminal Showcase Walkthrough composition',
-      ['take-2'],
-      undefined,
-    );
   });
 
   it('switches to List view mode on toggle and persists in localStorage', () => {
@@ -269,7 +236,7 @@ describe('StudioProjectsView & Components', () => {
 
     // Hover triggers IPC read video
     const cardPoster = screen.getByRole('button', {
-      name: /Create composition from recording/i,
+      name: /Open showcase take/i,
     });
     await act(async () => {
       fireEvent.mouseEnter(cardPoster);
