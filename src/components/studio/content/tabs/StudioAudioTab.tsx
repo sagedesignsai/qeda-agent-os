@@ -9,17 +9,37 @@
  */
 
 import React, { useState } from 'react';
-import { SearchIcon, Volume2Icon, UploadCloudIcon } from 'lucide-react';
+import {
+  SearchIcon,
+  Volume2Icon,
+  UploadCloudIcon,
+  FolderSearchIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ProjectFileBrowserDialog } from '@/components/projects/ProjectFileBrowserDialog';
 import {
   ContentCardItem,
   type ContentItemPayload,
 } from '../items/ContentCardItem';
+import type { ProjectFileSelection } from '@/main/ipc/channels';
 import { toast } from 'sonner';
+
+const PROJECT_AUDIO_EXTENSIONS = [
+  'mp3',
+  'wav',
+  'm4a',
+  'm4b',
+  'aac',
+  'ogg',
+  'oga',
+  'flac',
+  'opus',
+];
 
 interface StudioAudioTabProps {
   onAddClip: (clip: ContentItemPayload) => void;
+  projectId?: string | null;
 }
 
 interface SfxPreset {
@@ -157,9 +177,31 @@ const SFX_PRESETS: SfxPreset[] = [
   },
 ];
 
-export function StudioAudioTab({ onAddClip }: StudioAudioTabProps) {
+export function StudioAudioTab({
+  onAddClip,
+  projectId,
+}: StudioAudioTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [projectFilesOpen, setProjectFilesOpen] = useState(false);
+
+  const handleProjectAudioSelected = (files: ProjectFileSelection[]) => {
+    const file = files[0];
+    if (!file || file.kind !== 'audio') return;
+
+    onAddClip({
+      trackType: 'audio',
+      name: file.name,
+      durationMs: 10000,
+      color: '#0f766e',
+      payload: {
+        filePath: file.path,
+        mediaUrl: file.path,
+        volume: 1.0,
+      },
+    });
+    toast.success(`Added ${file.name} to Audio track`);
+  };
 
   const handlePreview = (sfx: SfxPreset) => {
     setPreviewingId(sfx.id);
@@ -230,6 +272,15 @@ export function StudioAudioTab({ onAddClip }: StudioAudioTabProps) {
         <UploadCloudIcon className="w-3.5 h-3.5 text-muted-foreground" />
         <span>Import Custom Soundtrack / Voiceover</span>
       </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setProjectFilesOpen(true)}
+        className="w-full h-8 text-xs gap-1.5 border-border/60 hover:bg-card/60"
+      >
+        <FolderSearchIcon className="w-3.5 h-3.5 text-muted-foreground" />
+        <span>Browse project audio</span>
+      </Button>
 
       {/* SFX Presets Grid */}
       <div className="flex flex-col gap-2">
@@ -261,6 +312,19 @@ export function StudioAudioTab({ onAddClip }: StudioAudioTabProps) {
           ))}
         </div>
       </div>
+      {projectFilesOpen && (
+        <ProjectFileBrowserDialog
+          open={projectFilesOpen}
+          onOpenChange={setProjectFilesOpen}
+          projectId={projectId}
+          mode="select"
+          accept={['audio']}
+          acceptExtensions={PROJECT_AUDIO_EXTENSIONS}
+          title="Add audio from project files"
+          confirmLabel="Add audio"
+          onSelect={handleProjectAudioSelected}
+        />
+      )}
     </div>
   );
 }

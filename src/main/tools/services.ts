@@ -36,6 +36,7 @@ import {
   deepgramTranscribe,
   TTS_PROVIDERS,
 } from '../services/speech.js';
+import { generateTtsAsset, getTtsAssetPath } from '../tts/index.js';
 
 /** The message every search tool shares when the user has no key at all. */
 const NO_SEARCH_PROVIDER =
@@ -286,6 +287,41 @@ export const textToSpeechTool = tool({
       const resolved = resolveService(provider);
       if (!resolved.ok) return { success: false, error: resolved.error };
 
+      // Deepgram goes through the TTS core so chat gets long-text chunking,
+      // persisted assets, duration metadata and reuse. The other two providers
+      // keep the legacy single-shot path until their adapters land.
+      if (provider === 'deepgram') {
+        const asset = await generateTtsAsset({
+          provider: 'deepgram',
+          text,
+          ...(voice ? { voiceId: voice } : {}),
+          format: 'mp3',
+          origin: 'chat',
+        });
+
+        const output: Record<string, unknown> = {
+          success: true,
+          assetId: asset.id,
+          url: asset.url,
+          provider: asset.provider,
+          contentType: asset.mimeType,
+          bytes: asset.bytes,
+          durationMs: asset.durationMs,
+        };
+
+        // Keep the old inline-data shape for renderers that have not learned
+        // about `url` yet, but only for small clips: a full narration would
+        // otherwise cross IPC as several megabytes of base64.
+        if (asset.bytes <= 1_500_000) {
+          const assetPath = getTtsAssetPath(asset.id);
+          if (assetPath) {
+            const data = await fs.readFile(assetPath);
+            output.dataUrl = `data:${asset.mimeType};base64,${data.toString('base64')}`;
+          }
+        }
+        return output;
+      }
+
       const audio = await synthesizeSpeech({
         provider: provider as (typeof TTS_PROVIDERS)[number],
         text,
@@ -302,7 +338,13 @@ export const textToSpeechTool = tool({
         dataUrl: `data:${audio.contentType};base64,${base64}`,
       };
     } catch (err) {
-      return { success: false, error: errorMessage(err) };
+      return {
+        success: false,
+        error: errorMessage(err),
+        ...(typeof (err as { code?: string }).code === 'string'
+          ? { code: (err as { code: string }).code }
+          : {}),
+      };
     }
   },
 });

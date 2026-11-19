@@ -507,6 +507,43 @@ CREATE INDEX IF NOT EXISTS idx_studio_takes_project ON studio_takes(project_id);
 CREATE INDEX IF NOT EXISTS idx_studio_takes_created ON studio_takes(created_at DESC);
 `;
 
+export const CREATE_STUDIO_COMPOSITIONS = `
+CREATE TABLE IF NOT EXISTS studio_compositions (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  title       TEXT NOT NULL,
+  data_json   TEXT NOT NULL,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_studio_compositions_project
+  ON studio_compositions(project_id, updated_at DESC);
+`;
+
+export const CREATE_STUDIO_COMPOSITION_ASSETS = `
+CREATE TABLE IF NOT EXISTS studio_composition_assets (
+  id             TEXT PRIMARY KEY,
+  composition_id TEXT NOT NULL REFERENCES studio_compositions(id) ON DELETE CASCADE,
+  name           TEXT NOT NULL,
+  path           TEXT NOT NULL,
+  created_at     INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_studio_composition_assets_composition
+  ON studio_composition_assets(composition_id);
+`;
+
+export const CREATE_STUDIO_COMPOSITION_TEMPLATES = `
+CREATE TABLE IF NOT EXISTS studio_composition_templates (
+  id          TEXT PRIMARY KEY,
+  title       TEXT NOT NULL,
+  data_json   TEXT NOT NULL,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_studio_composition_templates_updated
+  ON studio_composition_templates(updated_at DESC);
+`;
+
 export const CREATE_SOUNDLAB_SESSIONS = `
 CREATE TABLE IF NOT EXISTS soundlab_sessions (
   id              TEXT PRIMARY KEY,
@@ -1174,6 +1211,57 @@ CREATE TABLE IF NOT EXISTS music_state (
 `;
 
 /**
+ * tts_assets – every generated speech clip, plus audition previews.
+ *
+ * The file on disk is the payload; this row is the metadata that makes it
+ * addressable. `path` and `cache_key` never leave the main process — the
+ * renderer receives `qeda-media://tts/<id>` instead.
+ *
+ * Deletion is soft: the row disappears from listings immediately while the
+ * file remains until a future purge pass, so a Studio timeline referencing the
+ * clip does not break mid-session.
+ */
+export const CREATE_TTS_ASSETS = `
+CREATE TABLE IF NOT EXISTS tts_assets (
+  id                   TEXT PRIMARY KEY,
+  kind                 TEXT NOT NULL DEFAULT 'speech',
+  provider             TEXT NOT NULL,
+  model                TEXT NOT NULL,
+  voice_id             TEXT NOT NULL,
+  voice_name           TEXT,
+  text                 TEXT NOT NULL DEFAULT '',
+  char_count           INTEGER NOT NULL DEFAULT 0,
+  format               TEXT NOT NULL,
+  mime_type            TEXT NOT NULL,
+  path                 TEXT NOT NULL,
+  bytes                INTEGER NOT NULL,
+  duration_ms          INTEGER,
+  sample_rate          INTEGER,
+  bitrate              INTEGER,
+  speed                REAL,
+  pronunciations_json  TEXT,
+  warnings_json        TEXT,
+  request_id           TEXT,
+  cache_key            TEXT NOT NULL,
+  label                TEXT,
+  project_id           TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  origin               TEXT NOT NULL DEFAULT 'library',
+  origin_id            TEXT,
+  created_at           INTEGER NOT NULL DEFAULT (unixepoch()),
+  accessed_at          INTEGER,
+  deleted_at           INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_tts_assets_created
+  ON tts_assets(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tts_assets_provider
+  ON tts_assets(provider, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tts_assets_project
+  ON tts_assets(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tts_assets_cache
+  ON tts_assets(cache_key) WHERE deleted_at IS NULL;
+`;
+
+/**
  * focus_session_tracks – the music heard during a focus phase.
  *
  * One row per distinct track, in first-play order. The composite primary key
@@ -1362,6 +1450,9 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_XP_LEDGER,
   CREATE_DOCUMENTS,
   CREATE_STUDIO_TAKES,
+  CREATE_STUDIO_COMPOSITIONS,
+  CREATE_STUDIO_COMPOSITION_ASSETS,
+  CREATE_STUDIO_COMPOSITION_TEMPLATES,
   CREATE_SOUNDLAB_SESSIONS,
   CREATE_SOUNDLAB_TRACKS,
   CREATE_MUSIC_FOLDERS,
@@ -1370,6 +1461,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_MUSIC_PLAYLIST_TRACKS,
   CREATE_MUSIC_SCENES,
   CREATE_MUSIC_STATE,
+  CREATE_TTS_ASSETS,
   CREATE_FOCUS_SESSION_TRACKS,
   CREATE_BUILDER_SESSIONS,
   CREATE_BUILDER_SESSION_HISTORY,

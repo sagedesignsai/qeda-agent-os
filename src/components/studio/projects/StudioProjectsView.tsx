@@ -19,6 +19,7 @@ import {
   PlusIcon,
   VideoIcon,
   XIcon,
+  Layers3Icon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -37,6 +38,7 @@ import {
 import { StudioProjectsGrid } from './StudioProjectsGrid';
 import { StudioProjectsList } from './StudioProjectsList';
 import type { StudioTakeSummary } from '@/lib/studio-types';
+import type { StudioCompositionSummary } from '@/lib/studio/types';
 
 interface StudioProjectsViewProps {
   takes: StudioTakeSummary[];
@@ -45,6 +47,9 @@ interface StudioProjectsViewProps {
   onLoadMore?: () => void;
   onOpenTake: (id: string) => void;
   onNewRecording: () => void;
+  compositions?: StudioCompositionSummary[];
+  onNewComposition?: () => void;
+  onOpenComposition?: (id: string) => void;
   onNewBlankProject?: () => void;
   onRenameTake: (id: string, newTitle: string) => Promise<void>;
   onQuickExport: (id: string) => Promise<void>;
@@ -60,6 +65,9 @@ export function StudioProjectsView({
   onLoadMore = () => {},
   onOpenTake,
   onNewRecording,
+  compositions = [],
+  onNewComposition,
+  onOpenComposition,
   onNewBlankProject,
   onRenameTake,
   onQuickExport,
@@ -183,6 +191,17 @@ export function StudioProjectsView({
 
             {/* Secondary CTA: Blank Project */}
             <div className="flex flex-wrap items-center gap-2.5">
+              {onNewComposition && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onNewComposition}
+                  className="h-9 gap-2 px-3 text-xs font-medium border-primary/40 text-primary hover:bg-primary/10"
+                >
+                  <Layers3Icon className="size-3.5" />
+                  <span>New composition</span>
+                </Button>
+              )}
               {onNewBlankProject && (
                 <Button
                   variant="outline"
@@ -210,6 +229,53 @@ export function StudioProjectsView({
 
         {/* ── Main Scrollable Content Area ────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-6">
+          {compositions.length > 0 && (
+            <section className="mb-8">
+              <div className="mb-3 flex items-end justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Compositions</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Layered scenes built from your recordings.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {compositions.map((composition) => (
+                  <button
+                    key={composition.id}
+                    type="button"
+                    onClick={() => onOpenComposition?.(composition.id)}
+                    className="group flex min-h-24 items-center gap-4 rounded-lg border border-border/60 bg-card/40 p-4 text-left transition-colors hover:border-primary/40 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <div className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/70 bg-[#12151b]">
+                      <div
+                        className="flex h-8 w-12 items-center justify-center rounded border border-primary/60 bg-primary/10"
+                        aria-hidden="true"
+                      >
+                        <Layers3Icon className="size-4 text-primary" />
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium group-hover:text-primary">
+                        {composition.title}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {composition.sceneId === 'desktop-mobile-comparison'
+                          ? 'Desktop + mobile'
+                          : 'App spotlight'}
+                        {' · '}
+                        {composition.layerCount} layers
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {composition.aspectRatio} ·{' '}
+                        {(composition.durationMs / 1000).toFixed(1)} sec
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           {takes.length === 0 ? (
             /* Empty State: Zero Takes in Entire Library */
             <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto animate-in fade-in duration-500 py-12">

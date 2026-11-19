@@ -12,6 +12,7 @@
  */
 
 import { requestBinary, requestJson } from './http.js';
+import { deepgramSynthesize } from '../tts/providers/deepgram.js';
 
 export type TtsProvider = 'elevenlabs' | 'deepgram' | 'cartesia';
 
@@ -62,17 +63,21 @@ export async function synthesizeSpeech(req: TtsRequest): Promise<SpeechAudio> {
       };
     }
     case 'deepgram': {
-      const { bytes, contentType } = await requestBinary({
-        service: 'Deepgram',
-        url: `https://api.deepgram.com/v1/speak?model=${encodeURIComponent(voice)}`,
-        headers: { Authorization: `Token ${req.apiKey}`, Accept: 'audio/mpeg' },
-        body: { text: req.text },
-        fetchImpl: req.fetchImpl,
+      // The Aura adapter owns query construction (explicit `encoding`) and
+      // response metadata. Long-form chunking lives in the TTS engine; this
+      // legacy single-shot entry point keeps its existing contract for callers
+      // that have not migrated yet.
+      const audio = await deepgramSynthesize({
+        apiKey: req.apiKey,
+        text: req.text,
+        voiceId: voice,
+        format: { format: 'mp3' },
+        ...(req.fetchImpl ? { fetchImpl: req.fetchImpl } : {}),
       });
       return {
         provider: 'deepgram',
-        contentType: contentType || 'audio/mpeg',
-        bytes,
+        contentType: audio.mimeType || 'audio/mpeg',
+        bytes: audio.bytes,
       };
     }
     case 'cartesia': {

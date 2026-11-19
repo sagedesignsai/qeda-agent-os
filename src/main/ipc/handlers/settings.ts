@@ -88,9 +88,11 @@ export function registerSettingsHandlers({
       // Whether an encrypted GitHub PAT is stored for cloning private repos
       // into the E2B sandbox. The value itself never leaves the main process.
       githubPatSet: Boolean(s.githubPat),
+      // Text-to-speech selection and per-provider defaults. Contains no keys —
+      // keys live in `serviceKeys` and are only ever reported as booleans.
+      tts: s.tts ?? null,
       // MCP servers: strip secret env and header values, expose only presence.
-      mcpServers: (s.mcpServers ?? []).map((srv) => ({
-        id: srv.id,
+      mcpServers: (s.mcpServers ?? []).map((srv) => ({        id: srv.id,
         name: srv.name,
         enabled: srv.enabled,
         transport: srv.transport,
@@ -205,6 +207,30 @@ export function registerSettingsHandlers({
       }
     } else {
       merged.downloadedOfflineModels = current.downloadedOfflineModels;
+    }
+    // TTS: merge defaults per provider. Saving the Deepgram tab must not erase
+    // an ElevenLabs default configured earlier.
+    if (incoming.tts) {
+      const currentTts = current.tts ?? {};
+      const mergedDefaults: NonNullable<
+        NonNullable<AppSettings['tts']>['defaults']
+      > = { ...(currentTts.defaults ?? {}) };
+      for (const [providerId, patch] of Object.entries(
+        incoming.tts.defaults ?? {},
+      )) {
+        const key = providerId as keyof typeof mergedDefaults;
+        mergedDefaults[key] = {
+          ...(mergedDefaults[key] ?? {}),
+          ...(patch ?? {}),
+        };
+      }
+      merged.tts = {
+        ...currentTts,
+        ...incoming.tts,
+        defaults: mergedDefaults,
+      };
+    } else {
+      merged.tts = current.tts;
     }
     saveSettings(merged);
     resetAgents();

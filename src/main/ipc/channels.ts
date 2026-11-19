@@ -46,6 +46,20 @@ import type {
   ResearchSourceWithEvidence,
 } from '../db/research.js';
 import type { ServiceStatus } from '../services/keys.js';
+import type {
+  TtsAsset,
+  TtsAssetPage,
+  TtsAssetQuery,
+  TtsCapabilities,
+  TtsEstimate,
+  TtsExportRequest,
+  TtsExportResult,
+  TtsGenerateRequest,
+  TtsProgress,
+  TtsResult,
+  TtsVoiceCatalog,
+  TtsVoiceQuery,
+} from '../../lib/tts/types';
 import type { TerminalSession, TerminalBlock } from '../db/terminal.js';
 import type { Task } from '../db/tasks.js';
 import type { TaskStep, StepProgress } from '../db/task-steps.js';
@@ -91,6 +105,13 @@ import type {
   StudioRecordingSnapshot,
   StudioSignInRequest,
   StudioSignInDecision,
+  StudioComposition,
+  StudioCompositionDocument,
+  StudioCompositionImageAsset,
+  StudioCompositionSceneId,
+  StudioCompositionSummary,
+  StudioCompositionTemplate,
+  StudioCompositionTemplateSummary,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
 import type {
@@ -1835,6 +1856,87 @@ export interface IpcChannels {
       error?: string;
     };
   };
+  /** List saved layer-based compositions. */
+  'studio:composition-list': {
+    req: { projectId?: string | null } | void;
+    res: StudioCompositionSummary[];
+  };
+  /** Retrieve a composition and its validated document. */
+  'studio:composition-get': {
+    req: { id: string };
+    res: StudioComposition | null;
+  };
+  /** Create a composition from a scene and existing take IDs. */
+  'studio:composition-create': {
+    req: {
+      projectId?: string | null;
+      title: string;
+      sceneId: StudioCompositionSceneId;
+      sourceTakeIds: string[];
+    };
+    res: StudioComposition;
+  };
+  /** Create a composition using a saved reusable template. */
+  'studio:composition-create-from-template': {
+    req: {
+      projectId?: string | null;
+      title: string;
+      templateId: string;
+      sourceTakeIds: string[];
+    };
+    res: StudioComposition;
+  };
+  /** List reusable composition templates. */
+  'studio:composition-template-list': {
+    req: void;
+    res: StudioCompositionTemplateSummary[];
+  };
+  /** Save a composition's layout and motion as a reusable template. */
+  'studio:composition-template-save': {
+    req: { compositionId: string; title: string };
+    res: StudioCompositionTemplate;
+  };
+  /** Delete a reusable template without affecting existing compositions. */
+  'studio:composition-template-delete': {
+    req: { id: string };
+    res: boolean;
+  };
+  /** Save a full validated composition document. */
+  'studio:composition-save': {
+    req: {
+      id: string;
+      title: string;
+      document: StudioCompositionDocument;
+    };
+    res: StudioComposition;
+  };
+  /** Add a native-picker-selected image to a composition. */
+  'studio:composition-import-image': {
+    req: { id: string };
+    res: StudioCompositionImageAsset | null;
+  };
+  /** Persist a streamed frame-by-frame WebM composition render. */
+  'studio:composition-save-rendered-chunk': {
+    req: {
+      compositionId: string;
+      chunkBase64?: string;
+      chunk?: ArrayBuffer | Uint8Array;
+      isFirst?: boolean;
+      isLast: boolean;
+    };
+    res: { ok: boolean; filePath: string };
+  };
+  /** Prompt for an output location and transcode the latest composition render. */
+  'studio:composition-export': {
+    req: { id: string; format: 'mp4' | 'gif' | 'webm' };
+    res: { ok: boolean; filePath?: string; error?: string; canceled?: boolean };
+  };
+  /** Delete a composition without deleting its source takes or imported files. */
+  'studio:composition-delete': {
+    req: { id: string };
+    res: boolean;
+  };
+  'studio:composition-changed': void;
 
   // ── Computer Use (screen capture + input) ──────────────────────────────────
   'computer-use:get-screen-size': { req: void; res: { width: number; height: number } };
@@ -2235,6 +2337,32 @@ export interface IpcChannels {
   };
   /** Playback/ambience commands emitted by the copilot's tools. */
   'music:copilot-command': MusicCopilotCommand;
+
+  // ── Text-to-speech ──────────────────────────────────────────────────────────
+  /** Providers the core can actually run today (Deepgram in M1). */
+  'tts:capabilities': { req: void; res: TtsResult<TtsCapabilities[]> };
+  /** Voice catalog for a provider. Cached for 24h; `refresh` bypasses it. */
+  'tts:voices': {
+    req: TtsVoiceQuery | void;
+    res: TtsResult<TtsVoiceCatalog>;
+  };
+  /** Character/chunk/format preview before spending a provider request. */
+  'tts:estimate': { req: TtsGenerateRequest; res: TtsResult<TtsEstimate> };
+  /** Generate speech. Progress arrives on `tts:progress`. */
+  'tts:generate': { req: TtsGenerateRequest; res: TtsResult<TtsAsset> };
+  /** Synthesize a short audition clip and persist it as a voice-preview. */
+  'tts:preview': { req: TtsGenerateRequest; res: TtsResult<TtsAsset> };
+  'tts:cancel': { req: { requestId: string }; res: { ok: boolean } };
+  /** Persisted clips, newest first. Voice previews are excluded unless asked for. */
+  'tts:list': { req: TtsAssetQuery | void; res: TtsAssetPage };
+  'tts:get': { req: { id: string }; res: TtsAsset | null };
+  /** Soft-delete: the row disappears from listings; the file is reclaimed later. */
+  'tts:delete': { req: { id: string }; res: { ok: boolean } };
+  /** Native save dialog, then copy the clip to the chosen path. */
+  'tts:export': { req: TtsExportRequest; res: TtsExportResult };
+  /** Reveal the clip in the OS file manager. */
+  'tts:reveal': { req: { id: string }; res: void };
+  'tts:progress': TtsProgress;
 
   // ── Native shell integration ────────────────────────────────────────────────
   /** Navigate the app router to a path. Sent by tray, menu, notifications, deep links. */

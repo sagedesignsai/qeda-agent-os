@@ -59,7 +59,7 @@
  *   export function AppShell() {
  *     return (
  *       <AssetReferenceProvider>
- *         {/* Your router and pages */}
+ *         {/* Your router and pages *\/}
  *       </AssetReferenceProvider>
  *     );
  *   }

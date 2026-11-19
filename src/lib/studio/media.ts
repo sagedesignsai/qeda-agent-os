@@ -15,7 +15,18 @@ export const STUDIO_OVERLAY_HOST = 'overlay';
 /** Host segment that addresses a primary take recording. */
 export const STUDIO_TAKE_HOST = 'studio';
 
+/** Host segment that addresses image assets attached to a composition. */
+export const STUDIO_COMPOSITION_ASSET_HOST = 'studio-asset';
+
 /** URL the renderer loads an overlay's pixels from. */
 export function studioOverlayMediaUrl(overlayId: string): string {
   return `qeda-media://${STUDIO_OVERLAY_HOST}/${encodeURIComponent(overlayId)}`;
+}
+
+export function studioCompositionAssetMediaUrl(assetId: string): string {
+  return `qeda-media://${STUDIO_COMPOSITION_ASSET_HOST}/${encodeURIComponent(assetId)}`;
+}
+
+export function studioTakeMediaUrl(takeId: string): string {
+  return `qeda-media://${STUDIO_TAKE_HOST}/${encodeURIComponent(takeId)}`;
 }

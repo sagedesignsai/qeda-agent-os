@@ -316,6 +316,161 @@ export interface StudioTakeSummary {
   updatedAt: number;
 }
 
+// ── Layer-based showcase compositions ────────────────────────────────────────
+
+export type StudioCompositionSceneId =
+  | 'app-spotlight'
+  | 'desktop-mobile-comparison';
+
+export interface StudioLayerLayout {
+  /** Normalized canvas coordinates. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fit: 'cover' | 'contain';
+  cornerRadius: number;
+}
+
+export type StudioCompositionTransitionType =
+  | 'none'
+  | 'fade'
+  | 'slide-left'
+  | 'slide-right'
+  | 'slide-up'
+  | 'slide-down'
+  | 'scale';
+
+export interface StudioCompositionTransition {
+  type: StudioCompositionTransitionType;
+  durationMs: number;
+}
+
+export interface StudioCompositionLayerBase {
+  id: string;
+  name: string;
+  startMs: number;
+  endMs: number;
+  zIndex: number;
+  opacity: number;
+  transitionIn: StudioCompositionTransition;
+  transitionOut: StudioCompositionTransition;
+  layouts: Record<StudioAspectRatio, StudioLayerLayout>;
+}
+
+export interface StudioCompositionVideoLayer
+  extends StudioCompositionLayerBase {
+  kind: 'video';
+  /** References a Studio take; the main process resolves its media path. */
+  sourceId: string;
+  sourceDurationMs: number;
+  sourceInMs: number;
+}
+
+export interface StudioCompositionImageLayer
+  extends StudioCompositionLayerBase {
+  kind: 'image';
+  /** References an image imported into this composition. */
+  sourceId: string;
+}
+
+export type StudioCompositionLayer =
+  | StudioCompositionVideoLayer
+  | StudioCompositionImageLayer;
+
+/** JSON document stored separately from source takes. Bump version when its shape changes. */
+export interface StudioCompositionDocument {
+  version: 1;
+  sceneId: StudioCompositionSceneId;
+  aspectRatio: StudioAspectRatio;
+  durationMs: number;
+  background: string;
+  audioSourceLayerId: string | null;
+  layers: StudioCompositionLayer[];
+  effects?: StudioEffect[];
+}
+
+export interface StudioComposition {
+  id: string;
+  projectId: string | null;
+  title: string;
+  document: StudioCompositionDocument;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StudioCompositionTemplateLayerBase {
+  id: string;
+  name: string;
+  startMs: number;
+  endMs: number;
+  zIndex: number;
+  opacity: number;
+  transitionIn: StudioCompositionTransition;
+  transitionOut: StudioCompositionTransition;
+  layouts: Record<StudioAspectRatio, StudioLayerLayout>;
+}
+
+export interface StudioCompositionTemplateVideoLayer
+  extends StudioCompositionTemplateLayerBase {
+  kind: 'video';
+  sourceInMs: number;
+}
+
+export interface StudioCompositionTemplateImageLayer
+  extends StudioCompositionTemplateLayerBase {
+  kind: 'image';
+  assetPath: string;
+}
+
+export type StudioCompositionTemplateLayer =
+  | StudioCompositionTemplateVideoLayer
+  | StudioCompositionTemplateImageLayer;
+
+export interface StudioCompositionTemplate {
+  version: 1;
+  id: string;
+  title: string;
+  sceneId: StudioCompositionSceneId;
+  aspectRatio: StudioAspectRatio;
+  durationMs: number;
+  background: string;
+  audioSourceLayerId: string | null;
+  layers: StudioCompositionTemplateLayer[];
+  effects: StudioEffect[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StudioCompositionTemplateSummary {
+  id: string;
+  title: string;
+  sceneId: StudioCompositionSceneId;
+  aspectRatio: StudioAspectRatio;
+  videoLayers: Array<{ id: string; name: string }>;
+  imageLayerCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StudioCompositionSummary {
+  id: string;
+  projectId: string | null;
+  projectName?: string | null;
+  title: string;
+  sceneId: StudioCompositionSceneId;
+  aspectRatio: StudioAspectRatio;
+  layerCount: number;
+  durationMs: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface StudioCompositionImageAsset {
+  id: string;
+  name: string;
+}
+
 // ── Timeline projection ───────────────────────────────────────────────────────
 
 export type TrackType = 'effects' | 'captions' | 'video' | 'audio' | 'overlays';

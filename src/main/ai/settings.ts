@@ -18,6 +18,7 @@ import {
   type BuilderEngine,
   type McpServerSettings,
 } from '../../lib/builder-engine';
+import type { TtsSettings } from '../../lib/tts/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,12 @@ export interface AppSettings {
    * environment is used as a fallback at resolution time (see services/keys.ts).
    */
   serviceKeys?: Record<string, string>;
+  /**
+   * Text-to-speech preferences. Only the selected provider and its per-provider
+   * defaults are stored; resolving a generation falls back to the hard defaults
+   * in `lib/tts/types.ts` when a field is unset.
+   */
+  tts?: TtsSettings;
   /**
    * Encrypted GitHub personal access token used by the E2B sandbox engine to
    * clone private repositories. Stored encrypted at rest.

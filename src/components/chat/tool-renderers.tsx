@@ -43,6 +43,7 @@ import {
   Source,
 } from '@/components/ai-elements/sources';
 import { cn } from '@/lib/utils';
+import { ttsClient } from '@/lib/tts';
 
 type Output = Record<string, unknown>;
 
@@ -52,6 +53,13 @@ const asString = (value: unknown): string =>
   typeof value === 'string' ? value : '';
 const asNumber = (value: unknown): number | undefined =>
   typeof value === 'number' ? value : undefined;
+
+function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
 
 const isFailed = (output: Output): boolean => output.success === false;
 
@@ -367,8 +375,23 @@ export function ImageGridCard({ output }: { output: Output }) {
 
 export function AudioCard({ output }: { output: Output }) {
   const dataUrl = asString(output.dataUrl);
+  const assetId = asString(output.assetId);
+  const url = asString(output.url);
   const provider = asString(output.provider) || 'speech';
   const bytes = asNumber(output.bytes);
+  const durationMs = asNumber(output.durationMs);
+  const [exporting, setExporting] = useState(false);
+  const src = url || dataUrl;
+
+  const save = async () => {
+    if (!assetId || exporting) return;
+    setExporting(true);
+    try {
+      await ttsClient.exportAsset({ id: assetId });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <CardShell>
@@ -380,6 +403,11 @@ export function AudioCard({ output }: { output: Output }) {
             <Badge variant="secondary" className="text-xs">
               {provider}
             </Badge>
+            {durationMs !== undefined && (
+              <Badge variant="outline" className="text-xs">
+                {formatDuration(durationMs)}
+              </Badge>
+            )}
             {bytes !== undefined && (
               <Badge variant="outline" className="text-xs">
                 {Math.round(bytes / 1024)} KB
@@ -388,11 +416,23 @@ export function AudioCard({ output }: { output: Output }) {
           </>
         }
       />
-      <div className="px-3 py-2">
-        {dataUrl ? (
-          <audio controls src={dataUrl} className="h-8 w-full" />
+      <div className="flex items-center gap-2 px-3 py-2">
+        {src ? (
+          <audio controls src={src} className="h-8 min-w-0 flex-1" />
         ) : (
           <p className="text-xs text-muted-foreground">No audio returned.</p>
+        )}
+        {assetId && (
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={exporting}
+            title="Save audio"
+            aria-label="Save audio"
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <DownloadIcon className="h-4 w-4" />
+          </button>
         )}
       </div>
     </CardShell>

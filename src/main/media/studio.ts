@@ -10,6 +10,7 @@
  */
 
 import { promises as fs } from 'node:fs';
+import { getStudioCompositionImagePath } from '../db/studio-compositions.js';
 import {
   getStudioOverlaySource,
   getStudioVideoPath,
@@ -58,6 +59,16 @@ export async function serveOverlay(request: Request): Promise<Response> {
   const id = idFromUrl(request);
   if (!id) return new Response(null, { status: 404 });
   const filePath = getStudioOverlaySource(id);
+  if (!filePath) return new Response(null, { status: 404 });
+  return serveFileRequest(request, filePath);
+}
+
+export async function serveStudioCompositionAsset(
+  request: Request,
+): Promise<Response> {
+  const id = idFromUrl(request);
+  if (!id) return new Response(null, { status: 404 });
+  const filePath = getStudioCompositionImagePath(id);
   if (!filePath) return new Response(null, { status: 404 });
   return serveFileRequest(request, filePath);
 }

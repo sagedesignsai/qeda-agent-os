@@ -33,16 +33,16 @@
  *     return (
  *       <Sheet open={open} onOpenChange={onOpenChange}>
  *         <SheetContent>
- *           {/* ... existing message list ... */}
+ *           {/* ... existing message list ... *\/}
  *
- *           {/* NEW: Chat input with asset picker */}
+ *           {/* NEW: Chat input with asset picker *\/}
  *           <PromptInput onSubmit={(msg) => handleSendMessage(msg.text)}>
  *             <PromptInputBody>
  *               <PromptInputTextarea />
  *             </PromptInputBody>
  *             <PromptInputFooter>
  *               <PromptInputTools>
- *                 {/* NEW: Asset picker button */}
+ *                 {/* NEW: Asset picker button *\/}
  *                 <AssetInput
  *                   contextId={`copilot-${props.contextId}`}
  *                   projectId={projectId}

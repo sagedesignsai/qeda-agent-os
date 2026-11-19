@@ -84,7 +84,7 @@ describe('Studio Content Panel & Blank Project Flow', () => {
           }
           return Promise.resolve(null);
         }),
-        on: jest.fn(),
+        on: jest.fn(() => jest.fn()),
       },
     } as unknown as typeof window.electron;
   });
@@ -108,7 +108,7 @@ describe('Studio Content Panel & Blank Project Flow', () => {
     ).toBeInTheDocument();
 
     // In Media tab, we see import button and project recordings
-    expect(screen.getByText('Import Media Files')).toBeInTheDocument();
+    expect(screen.getByText('Import Media')).toBeInTheDocument();
     expect(screen.getByText('Demo Release v1.0')).toBeInTheDocument();
   });
 
@@ -210,7 +210,7 @@ describe('Studio Content Panel & Blank Project Flow', () => {
     );
 
     const importZone = screen.getByRole('button', {
-      name: /Import Media Files/i,
+      name: /Import Media/i,
     });
     await act(async () => {
       fireEvent.click(importZone);
@@ -221,6 +221,99 @@ describe('Studio Content Panel & Blank Project Flow', () => {
       { types: ['video', 'audio', 'image'] },
     );
     expect(await screen.findByText('promo.mp4')).toBeInTheDocument();
+  });
+
+  it('adds media selected from the project file browser to the media library', async () => {
+    const onAddClip = jest.fn();
+    const invoke = window.electron.ipc.invoke as jest.Mock;
+    invoke.mockImplementation((channel: string) => {
+      if (channel === 'projects:rollups') {
+        return Promise.resolve([
+          {
+            project: { id: 'docugent', name: 'Docugent' },
+            taskTotal: 0,
+            taskDone: 0,
+            overdueCount: 0,
+            focusSeconds: 0,
+          },
+        ]);
+      }
+      if (channel === 'project-files:roots') {
+        return Promise.resolve({
+          roots: [],
+          totals: {
+            repo: 0,
+            'code-project': 0,
+            assets: 1,
+            'studio-take': 0,
+            attachment: 0,
+            'research-file': 0,
+            indexed: 0,
+          },
+          scannedAt: null,
+          stale: false,
+          truncated: false,
+        });
+      }
+      if (channel === 'project-files:list') {
+        return Promise.resolve({
+          files: [
+            {
+              id: 'brand-image',
+              projectId: 'docugent',
+              name: 'brand.png',
+              path: '/project/assets/brand.png',
+              relativePath: 'brand.png',
+              rootKey: 'assets',
+              kind: 'image',
+              mimeType: 'image/png',
+              sizeBytes: 512,
+              mtimeMs: 1,
+              sources: ['assets'],
+              primarySource: 'assets',
+              missing: false,
+              mediaUrl: null,
+              thumbnailUrl: null,
+              meta: {},
+            },
+          ],
+          directories: [],
+          total: 1,
+          truncated: false,
+          scannedAt: null,
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    render(
+      <TooltipProvider>
+        <StudioContentPanel
+          takes={mockTakes}
+          onAddClip={onAddClip}
+          projectId="docugent"
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Browse project files/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /brand\.png/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add media' }));
+
+    const addToTimeline = (await screen.findAllByRole('button', {
+      name: /Add to timeline at playhead/i,
+    }))[0];
+    fireEvent.click(addToTimeline);
+
+    expect(onAddClip).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackType: 'overlays',
+        name: 'brand.png',
+        payload: expect.objectContaining({
+          filePath: '/project/assets/brand.png',
+        }),
+      }),
+    );
   });
 
   it('renders Blank Project button in StudioProjectsView and invokes callback', () => {

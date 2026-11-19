@@ -35,6 +35,8 @@ interface RequestOptions {
   contentType?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Caller-owned cancellation, combined with the per-request timeout. */
+  signal?: AbortSignal;
 }
 
 /** Pull the most useful message out of an error response body. */
@@ -87,11 +89,16 @@ async function send(options: RequestOptions): Promise<Response> {
     contentType,
     fetchImpl = fetch,
     timeoutMs = 30_000,
+    signal,
   } = options;
 
   const hasBody = binaryBody !== undefined || body !== undefined;
   const resolvedContentType =
     contentType ?? (body !== undefined ? 'application/json' : undefined);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const requestSignal = signal
+    ? AbortSignal.any([timeoutSignal, signal])
+    : timeoutSignal;
 
   let response: Response;
   try {
@@ -105,7 +112,7 @@ async function send(options: RequestOptions): Promise<Response> {
       ...(hasBody
         ? { body: (binaryBody ?? JSON.stringify(body)) as BodyInit }
         : {}),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: requestSignal,
     });
   } catch (err) {
     throw new ServiceHttpError(
@@ -143,8 +150,12 @@ export async function requestJson<T = unknown>(
 /** Perform a request and return the raw bytes plus content type (for audio). */
 export async function requestBinary(
   options: RequestOptions,
-): Promise<{ bytes: Uint8Array; contentType: string }> {
+): Promise<{ bytes: Uint8Array; contentType: string; headers: Headers }> {
   const response = await send({ timeoutMs: 60_000, ...options });
   const bytes = new Uint8Array(await response.arrayBuffer());
-  return { bytes, contentType: response.headers.get('content-type') ?? '' };
+  return {
+    bytes,
+    contentType: response.headers.get('content-type') ?? '',
+    headers: response.headers,
+  };
 }

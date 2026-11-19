@@ -15,7 +15,7 @@
  *   export function AppLayout() {
  *     return (
  *       <AssetReferenceProvider>
- *         {/* Your app */}
+ *         {/* Your app *\/}
  *       </AssetReferenceProvider>
  *     );
  *   }
@@ -40,13 +40,13 @@
  *
  *     return (
  *       <div className="space-y-4">
- *         {/* Show what's referenced */}
+ *         {/* Show what's referenced *\/}
  *         <AssetReferencesPanel
  *           contextId={sessionId}
  *           onAddClick={assetPicker.open}
  *         />
  *
- *         {/* Dialog for picking files */}
+ *         {/* Dialog for picking files *\/}
  *         <AssetPicker
  *           open={assetPicker.isOpen}
  *           onOpenChange={assetPicker.toggle}

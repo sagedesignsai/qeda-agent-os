@@ -53,6 +53,7 @@
     "test:smoke": "node .erb/scripts/smoke-test.cjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "models:catalog": "bun run scripts/build-model-catalog.ts",
+    "tts:voices:deepgram": "node scripts/refresh-deepgram-voices.mjs",
     "preview": "electron-vite preview"
   },
   "browserslist": [

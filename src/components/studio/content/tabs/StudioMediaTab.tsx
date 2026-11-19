@@ -17,8 +17,11 @@ import {
   SearchIcon,
   FilmIcon,
   GlobeIcon,
+  FolderSearchIcon,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { ProjectFileBrowserDialog } from '@/components/projects/ProjectFileBrowserDialog';
 import {
   ContentCardItem,
   type ContentItemPayload,
@@ -26,12 +29,44 @@ import {
 import type { StudioTakeSummary } from '@/lib/studio-types';
 import { toast } from 'sonner';
 import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
-import type { DownloadResourceResult } from '@/main/ipc/channels';
+import type {
+  DownloadResourceResult,
+  ProjectFileSelection,
+} from '@/main/ipc/channels';
+
+const PROJECT_MEDIA_EXTENSIONS = [
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+  'svg',
+  'avif',
+  'bmp',
+  'ico',
+  'heic',
+  'mp4',
+  'm4v',
+  'webm',
+  'mov',
+  'mkv',
+  'avi',
+  'mp3',
+  'wav',
+  'm4a',
+  'm4b',
+  'aac',
+  'ogg',
+  'oga',
+  'flac',
+  'opus',
+];
 
 interface StudioMediaTabProps {
   takes: StudioTakeSummary[];
   onAddClip: (clip: ContentItemPayload) => void;
   onNewRecording?: () => void;
+  projectId?: string | null;
 }
 
 interface ImportedAsset {
@@ -54,11 +89,40 @@ export function StudioMediaTab({
   takes,
   onAddClip,
   onNewRecording,
+  projectId,
 }: StudioMediaTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [importedAssets, setImportedAssets] = useState<ImportedAsset[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [projectFilesOpen, setProjectFilesOpen] = useState(false);
+
+  const handleProjectFilesSelected = (files: ProjectFileSelection[]) => {
+    const newAssets = files.flatMap((file): ImportedAsset[] => {
+      if (
+        file.kind !== 'video' &&
+        file.kind !== 'audio' &&
+        file.kind !== 'image'
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          id: Math.random().toString(36).slice(2, 9),
+          name: file.name,
+          path: file.path,
+          type: file.kind,
+          sizeBytes: file.sizeBytes ?? 0,
+          durationMs: file.kind === 'image' ? 5000 : 15000,
+        },
+      ];
+    });
+
+    if (newAssets.length === 0) return;
+    setImportedAssets((prev) => [...newAssets, ...prev]);
+    toast.success(`Added ${newAssets.length} project media file(s)`);
+  };
 
   const handleAssetDownloaded = (res: DownloadResourceResult) => {
     if (!res.filePath || !res.fileName) return;
@@ -179,6 +243,16 @@ export function StudioMediaTab({
           Drop MP4, WebM, MOV, MP3, PNG…
         </span>
       </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-7 w-full justify-start gap-1.5 text-xs"
+        onClick={() => setProjectFilesOpen(true)}
+      >
+        <FolderSearchIcon className="size-3.5" />
+        Browse project files
+      </Button>
 
       {/* Online Resource Search (Serper) */}
       <button
@@ -300,6 +374,20 @@ export function StudioMediaTab({
         onOpenChange={setIsSearchModalOpen}
         onAssetDownloaded={handleAssetDownloaded}
       />
+      {projectFilesOpen && (
+        <ProjectFileBrowserDialog
+          open={projectFilesOpen}
+          onOpenChange={setProjectFilesOpen}
+          projectId={projectId}
+          mode="select"
+          multiple
+          accept={['image', 'video', 'audio']}
+          acceptExtensions={PROJECT_MEDIA_EXTENSIONS}
+          title="Add media from project files"
+          confirmLabel="Add media"
+          onSelect={handleProjectFilesSelected}
+        />
+      )}
     </div>
   );
 }

@@ -99,8 +99,32 @@ export interface StudioExportCut {
   endMs: number;
 }
 
+export interface StudioAudioTiming {
+  sourceInMs: number;
+  delayMs: number;
+  durationMs: number;
+}
+
 function seconds(ms: number): string {
   return (ms / 1000).toFixed(3);
+}
+
+export function buildAudioTimingFilter(timing: StudioAudioTiming): string {
+  if (
+    !Number.isFinite(timing.sourceInMs) ||
+    timing.sourceInMs < 0 ||
+    !Number.isFinite(timing.delayMs) ||
+    timing.delayMs < 0 ||
+    !Number.isFinite(timing.durationMs) ||
+    timing.durationMs <= 0
+  ) {
+    throw new Error('Audio source timing must be finite and valid.');
+  }
+  const sourceIn = timing.sourceInMs;
+  const delay = Math.round(timing.delayMs);
+  return `[1:a]atrim=start=${seconds(sourceIn)}:duration=${seconds(timing.durationMs)},asetpts=PTS-STARTPTS${
+    delay > 0 ? `,adelay=delays=${delay}:all=1` : ''
+  }[a]`;
 }
 
 /**
@@ -148,6 +172,8 @@ export function buildMp4Args(
   quality: StudioExportQuality,
   audioInputPath?: string,
   cuts?: readonly StudioExportCut[],
+  durationMs?: number,
+  audioTiming?: StudioAudioTiming,
 ): string[] {
   const crf = quality === 'medium' ? '24' : '18';
   const base: string[] = [
@@ -162,7 +188,11 @@ export function buildMp4Args(
   if (audioInputPath) {
     base.push('-i', audioInputPath);
   }
-  const audioFilter = audioInputPath ? buildCutAudioFilter(cuts) : null;
+  const audioFilter = audioInputPath
+    ? audioTiming
+      ? buildAudioTimingFilter(audioTiming)
+      : buildCutAudioFilter(cuts)
+    : null;
   return [
     ...base,
     ...(audioInputPath
@@ -170,7 +200,7 @@ export function buildMp4Args(
         ? ['-filter_complex', audioFilter, '-map', '0:v:0', '-map', '[a]']
         : ['-map', '0:v:0', '-map', '1:a:0?']
       : []),
-    ...(audioFilter ? ['-shortest'] : []),
+    ...(audioFilter && !audioTiming ? ['-shortest'] : []),
     '-c:v',
     'libx264',
     '-preset',
@@ -185,6 +215,9 @@ export function buildMp4Args(
     '192k',
     '-movflags',
     '+faststart',
+    ...(durationMs && Number.isFinite(durationMs) && durationMs > 0
+      ? ['-t', seconds(durationMs)]
+      : []),
     outputPath,
   ];
 }
@@ -199,6 +232,8 @@ export function buildWebmArgs(
   quality: StudioExportQuality,
   audioInputPath?: string,
   cuts?: readonly StudioExportCut[],
+  durationMs?: number,
+  audioTiming?: StudioAudioTiming,
 ): string[] {
   const crf = quality === 'medium' ? '38' : '32';
   const base: string[] = [
@@ -213,7 +248,11 @@ export function buildWebmArgs(
   if (audioInputPath) {
     base.push('-i', audioInputPath);
   }
-  const audioFilter = audioInputPath ? buildCutAudioFilter(cuts) : null;
+  const audioFilter = audioInputPath
+    ? audioTiming
+      ? buildAudioTimingFilter(audioTiming)
+      : buildCutAudioFilter(cuts)
+    : null;
   return [
     ...base,
     ...(audioInputPath
@@ -221,7 +260,7 @@ export function buildWebmArgs(
         ? ['-filter_complex', audioFilter, '-map', '0:v:0', '-map', '[a]']
         : ['-map', '0:v:0', '-map', '1:a:0?']
       : []),
-    ...(audioFilter ? ['-shortest'] : []),
+    ...(audioFilter && !audioTiming ? ['-shortest'] : []),
     '-c:v',
     'libvpx-vp9',
     '-crf',
@@ -234,6 +273,9 @@ export function buildWebmArgs(
     'libopus',
     '-b:a',
     '128k',
+    ...(durationMs && Number.isFinite(durationMs) && durationMs > 0
+      ? ['-t', seconds(durationMs)]
+      : []),
     outputPath,
   ];
 }
@@ -331,6 +373,10 @@ export interface TranscodeStudioVideoOptions {
   audioInputPath?: string;
   /** Source ranges already excised from the composed video, in ms. */
   cuts?: readonly StudioExportCut[];
+  /** Optional maximum output duration; prevents a separate audio input extending the video. */
+  durationMs?: number;
+  /** Source trim and timeline offset for composition audio. */
+  audioTiming?: StudioAudioTiming;
 }
 
 /**
@@ -351,12 +397,18 @@ export async function transcodeStudioVideo(
 
   // Only filter audio that actually exists; a silent recording has nothing to
   // excise and must keep the optional `-map` behaviour.
+  const hasAudio =
+    audioInputPath && (options.cuts?.length || options.audioTiming)
+      ? await probeAudio(audioInputPath)
+      : false;
   const cuts =
     options.cuts && options.cuts.length > 0 && audioInputPath
-      ? (await probeAudio(audioInputPath))
+      ? hasAudio
         ? options.cuts
         : undefined
       : undefined;
+  const audioTiming =
+    hasAudio && audioInputPath ? options.audioTiming : undefined;
 
   // If no audio needs merging, a WebM→WebM export with the same codec is a
   // straight copy (re-encoding would only lose quality).
@@ -371,14 +423,30 @@ export async function transcodeStudioVideo(
 
   if (options.format === 'mp4') {
     await run(
-      buildMp4Args(inputPath, outputPath, quality, audioInputPath, cuts),
+      buildMp4Args(
+        inputPath,
+        outputPath,
+        quality,
+        audioInputPath,
+        cuts,
+        options.durationMs,
+        audioTiming,
+      ),
     );
     return;
   }
 
   if (options.format === 'webm') {
     await run(
-      buildWebmArgs(inputPath, outputPath, quality, audioInputPath, cuts),
+      buildWebmArgs(
+        inputPath,
+        outputPath,
+        quality,
+        audioInputPath,
+        cuts,
+        options.durationMs,
+        audioTiming,
+      ),
     );
     return;
   }

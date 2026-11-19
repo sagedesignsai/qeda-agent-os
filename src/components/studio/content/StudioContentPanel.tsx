@@ -31,6 +31,7 @@ interface StudioContentPanelProps {
   takes: StudioTakeSummary[];
   onAddClip: (clip: ContentItemPayload) => void;
   onNewRecording?: () => void;
+  projectId?: string | null;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }
@@ -39,6 +40,7 @@ export function StudioContentPanel({
   takes,
   onAddClip,
   onNewRecording,
+  projectId,
   isCollapsed = false,
   onToggleCollapse,
 }: StudioContentPanelProps) {
@@ -194,11 +196,14 @@ export function StudioContentPanel({
             takes={takes}
             onAddClip={onAddClip}
             onNewRecording={onNewRecording}
+            projectId={projectId}
           />
         )}
         {activeTab === 'text' && <StudioTextTab onAddClip={onAddClip} />}
         {activeTab === 'effects' && <StudioEffectsTab onAddClip={onAddClip} />}
-        {activeTab === 'audio' && <StudioAudioTab onAddClip={onAddClip} />}
+        {activeTab === 'audio' && (
+          <StudioAudioTab onAddClip={onAddClip} projectId={projectId} />
+        )}
       </div>
     </div>
   );

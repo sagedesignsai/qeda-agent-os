@@ -15,6 +15,7 @@ import path from 'node:path';
 import {
   buildGifArgs,
   buildGifPaletteArgs,
+  buildAudioTimingFilter,
   buildMp4Args,
   buildWebmArgs,
   describeFfmpegFailure,
@@ -40,6 +41,51 @@ describe('studio export ffmpeg args', () => {
     expect(args).toContain('libvpx-vp9');
     expect(args).toContain('libopus');
     expect(args[args.length - 1]).toBe('/out/clip.webm');
+  });
+
+  it('bounds a composition export when it merges a longer source audio track', () => {
+    const args = buildMp4Args(
+      '/in/composition.webm',
+      '/out/composition.mp4',
+      'high',
+      '/in/source.webm',
+      undefined,
+      8500,
+    );
+
+    expect(args[args.indexOf('-t') + 1]).toBe('8.500');
+    expect(args[args.length - 1]).toBe('/out/composition.mp4');
+  });
+
+  it('trims and delays composition audio to match its layer timing', () => {
+    const args = buildMp4Args(
+      '/in/composition.webm',
+      '/out/composition.mp4',
+      'high',
+      '/in/source.webm',
+      undefined,
+      12000,
+      { sourceInMs: 2500, delayMs: 1000, durationMs: 6000 },
+    );
+
+    expect(args[args.indexOf('-filter_complex') + 1]).toContain(
+      'atrim=start=2.500:duration=6.000',
+    );
+    expect(args[args.indexOf('-filter_complex') + 1]).toContain(
+      'adelay=delays=1000:all=1',
+    );
+    expect(args[args.indexOf('-t') + 1]).toBe('12.000');
+    expect(args).not.toContain('-shortest');
+  });
+
+  it('rejects invalid composition audio timing', () => {
+    expect(() =>
+      buildAudioTimingFilter({
+        sourceInMs: -1,
+        delayMs: 0,
+        durationMs: 1000,
+      }),
+    ).toThrow(/finite and valid/);
   });
 
   it('builds a two-pass GIF palette pair that shares the palette path', () => {

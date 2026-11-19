@@ -58,6 +58,7 @@ import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
 import { StudioContentPanel } from '@/components/studio/content/StudioContentPanel';
 import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
 import { StudioCommandBar } from '@/components/studio/StudioCommandBar';
+import { StudioCompositionCreateDialog } from '@/components/studio/StudioCompositionCreateDialog';
 import type { ContentItemPayload } from '@/components/studio/content/items/ContentCardItem';
 import {
   compositionDurationMs,
@@ -74,6 +75,10 @@ import {
   type StudioEffectType,
   type StudioOverlay,
   type StudioVideoCrop,
+  type StudioComposition,
+  type StudioCompositionSceneId,
+  type StudioCompositionSummary,
+  type StudioCompositionTemplateSummary,
   type TimelineTrack,
 } from '@/lib/studio-types';
 import { renderComposedStudioVideo } from '@/lib/studio/render/export-renderer';
@@ -83,6 +88,38 @@ export default function Studio() {
   const { takeId } = useParams<{ takeId?: string }>();
   const navigate = useNavigate();
   const { projectId, projectName } = useProjectScope();
+  const [compositions, setCompositions] = useState<StudioCompositionSummary[]>([]);
+  const [compositionTemplates, setCompositionTemplates] = useState<
+    StudioCompositionTemplateSummary[]
+  >([]);
+  const [compositionCreateOpen, setCompositionCreateOpen] = useState(false);
+
+  const refreshCompositions = useCallback(async () => {
+    try {
+      const list = await window.electron.ipc.invoke<StudioCompositionSummary[]>(
+        'studio:composition-list',
+        { projectId },
+      );
+      setCompositions(list);
+      const templates =
+        await window.electron.ipc.invoke<StudioCompositionTemplateSummary[]>(
+          'studio:composition-template-list',
+        );
+      setCompositionTemplates(templates);
+    } catch (error) {
+      console.error('[Studio] Failed to list compositions.', error);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void refreshCompositions();
+  }, [refreshCompositions]);
+
+  useIpcEvent(
+    'studio:composition-changed',
+    () => void refreshCompositions(),
+    [refreshCompositions],
+  );
 
   const {
     takes,
@@ -558,6 +595,57 @@ export default function Studio() {
     }
   };
 
+  const handleCreateComposition = async (
+    sceneId: StudioCompositionSceneId,
+    title: string,
+    sourceTakeIds: string[],
+    templateId?: string,
+  ) => {
+    try {
+      const composition = templateId
+        ? await window.electron.ipc.invoke<StudioComposition>(
+            'studio:composition-create-from-template',
+            { projectId, title, templateId, sourceTakeIds },
+          )
+        : await window.electron.ipc.invoke<StudioComposition>(
+            'studio:composition-create',
+            { projectId, title, sceneId, sourceTakeIds },
+          );
+      toast.success('Composition created.');
+      navigate(`/studio/compositions/${composition.id}`);
+    } catch (error) {
+      console.error('[Studio] Failed to create composition.', error);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not create composition.',
+      );
+      throw error;
+    }
+  };
+
+  const handleDeleteCompositionTemplate = async (
+    templateId: string,
+  ): Promise<boolean> => {
+    try {
+      const deleted = await window.electron.ipc.invoke<boolean>(
+        'studio:composition-template-delete',
+        { id: templateId },
+      );
+      if (!deleted) {
+        toast.error('This template was already removed.');
+        return false;
+      }
+      await refreshCompositions();
+      toast.success('Template deleted.');
+      return true;
+    } catch (error) {
+      console.error('[Studio] Failed to delete composition template.', error);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not delete template.',
+      );
+      return false;
+    }
+  };
+
   const handleInsertClip = async (clipPayload: ContentItemPayload) => {
     const newClip = timelineStore.addClip(clipPayload.trackType, clipPayload);
 
@@ -740,6 +828,9 @@ export default function Studio() {
         /* ── Studio Projects Library (Grid / List view) ─────────────────────── */
         <StudioProjectsView
           takes={takes}
+          compositions={compositions}
+          onNewComposition={() => setCompositionCreateOpen(true)}
+          onOpenComposition={(id) => navigate(`/studio/compositions/${id}`)}
           hasMoreTakes={hasMoreTakes}
           loadingMoreTakes={loadingMoreTakes}
           onLoadMore={loadMoreTakes}
@@ -941,6 +1032,7 @@ export default function Studio() {
                     takes={takes}
                     onAddClip={handleInsertClip}
                     onNewRecording={() => setSourcePickerOpen(true)}
+                    projectId={projectId}
                     isCollapsed={contentPanelCollapsed}
                     onToggleCollapse={toggleLeftPanel}
                   />
@@ -1107,6 +1199,15 @@ export default function Studio() {
         onOpenChange={setSourcePickerOpen}
         onListSources={listSources}
         onSelectSource={handleStartCapture}
+      />
+
+      <StudioCompositionCreateDialog
+        open={compositionCreateOpen}
+        takes={takes}
+        templates={compositionTemplates}
+        onOpenChange={setCompositionCreateOpen}
+        onCreate={handleCreateComposition}
+        onDeleteTemplate={handleDeleteCompositionTemplate}
       />
 
       <StudioSocialKitModal
