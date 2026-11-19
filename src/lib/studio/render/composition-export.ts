@@ -1,8 +1,4 @@
-import {
-  studioCompositionAssetMediaUrl,
-  studioOverlayMediaUrl,
-  studioTakeMediaUrl,
-} from '../media';
+import { studioCompositionAssetMediaUrl, studioTakeMediaUrl } from '../media';
 import type {
   StudioComposition,
   StudioCompositionLayer,
@@ -13,13 +9,6 @@ import {
   type StudioCompositionMedia,
 } from './composition';
 import { WebMMuxer } from './webm-muxer';
-import {
-  advanceStudioTakeCamera,
-  drawStudioTakeFrame,
-  sourceTimeForTakeLayer,
-} from './take-frame';
-import { IDLE_CAMERA, type StudioCameraState } from './camera';
-import type { StudioOverlayAsset } from './overlays';
 
 export interface StudioCompositionExportOptions {
   onProgress?: (progress: number, status: string) => void;
@@ -31,24 +20,14 @@ interface LoadedLayer {
   layer: StudioCompositionLayer;
   video?: HTMLVideoElement;
   image?: HTMLImageElement;
-  takeOverlayAssets?: Map<string, StudioOverlayAsset>;
-  frameCanvas?: HTMLCanvasElement;
-  camera?: StudioCameraState;
 }
 
 function releaseLayers(layers: LoadedLayer[]): void {
-  for (const layer of layers) {
-    const videos = [
-      ...(layer.video ? [layer.video] : []),
-      ...[...(layer.takeOverlayAssets?.values() ?? [])]
-        .map((asset) => asset.element)
-        .filter((element): element is HTMLVideoElement => element instanceof HTMLVideoElement),
-    ];
-    for (const video of videos) {
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-    }
+  for (const { video } of layers) {
+    if (!video) continue;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
   }
 }
 
@@ -73,85 +52,11 @@ function seekTo(video: HTMLVideoElement, timeSeconds: number): Promise<void> {
   });
 }
 
-async function loadTakeOverlayAssets(
-  layer: Extract<StudioCompositionLayer, { kind: 'video' }>,
-  signal?: AbortSignal,
-): Promise<Map<string, StudioOverlayAsset>> {
-  const assets = new Map<string, StudioOverlayAsset>();
-  for (const overlay of layer.takePresentation?.overlays ?? []) {
-    if (signal?.aborted) throw new Error('Export cancelled.');
-    const src = studioOverlayMediaUrl(overlay.id);
-    if (overlay.kind === 'image') {
-      const image = new Image();
-      image.crossOrigin = 'anonymous';
-      image.src = src;
-      try {
-        await image.decode();
-        if (image.naturalWidth > 0) {
-          assets.set(overlay.id, {
-            element: image,
-            width: image.naturalWidth,
-            height: image.naturalHeight,
-          });
-        }
-      } catch {
-        image.removeAttribute('src');
-      }
-      continue;
-    }
-
-    const video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
-    video.preload = 'auto';
-    video.muted = true;
-    video.playsInline = true;
-    video.src = src;
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          video.removeEventListener('loadedmetadata', onLoaded);
-          video.removeEventListener('error', onError);
-          signal?.removeEventListener('abort', onAbort);
-        };
-        const onLoaded = () => {
-          cleanup();
-          resolve();
-        };
-        const onError = () => {
-          cleanup();
-          reject(new Error(`Could not load overlay "${overlay.id}".`));
-        };
-        const onAbort = () => {
-          cleanup();
-          reject(new Error('Export cancelled.'));
-        };
-        video.addEventListener('loadedmetadata', onLoaded, { once: true });
-        video.addEventListener('error', onError, { once: true });
-        signal?.addEventListener('abort', onAbort, { once: true });
-      });
-      if (video.videoWidth > 0) {
-        assets.set(overlay.id, {
-          element: video,
-          width: video.videoWidth,
-          height: video.videoHeight,
-        });
-      }
-    } catch {
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-      if (signal?.aborted) throw new Error('Export cancelled.');
-    }
-  }
-  return assets;
-}
-
 async function loadLayer(
   layer: StudioCompositionLayer,
   signal?: AbortSignal,
 ): Promise<LoadedLayer> {
   if (signal?.aborted) throw new Error('Export cancelled.');
-  if (layer.kind === 'text') return { layer };
   const src =
     layer.kind === 'video'
       ? studioTakeMediaUrl(layer.sourceId)
@@ -202,15 +107,7 @@ async function loadLayer(
     if (!Number.isFinite(video.duration) || video.duration <= 0) {
       throw new Error(`Recording "${layer.name}" has no usable duration.`);
     }
-    const takeOverlayAssets = layer.takePresentation
-      ? await loadTakeOverlayAssets(layer, signal)
-      : undefined;
-    return {
-      layer,
-      video,
-      takeOverlayAssets,
-      camera: { ...IDLE_CAMERA },
-    };
+    return { layer, video };
   } catch (error) {
     video.pause();
     video.removeAttribute('src');
@@ -378,66 +275,21 @@ export async function renderStudioCompositionVideo(
         const { layer, video, image } = loaded;
         if (video) {
           if (timeMs >= layer.startMs && timeMs <= layer.endMs) {
-            const sourceMs = sourceTimeForTakeLayer(layer, timeMs);
+            const durationMs = Math.min(
+              layer.sourceDurationMs,
+              video.duration * 1000,
+            );
+            const sourceMs = Math.min(
+              durationMs - 1,
+              Math.max(0, layer.sourceInMs + timeMs - layer.startMs),
+            );
             await seekTo(video, sourceMs / 1000);
             if (video.readyState >= 2) {
-              if (layer.kind === 'video' && layer.takePresentation) {
-                for (const overlay of layer.takePresentation.overlays) {
-                  const overlayAsset = loaded.takeOverlayAssets?.get(overlay.id);
-                  if (!(overlayAsset?.element instanceof HTMLVideoElement)) continue;
-                  const offsetMs = sourceMs - overlay.startMs;
-                  if (offsetMs < 0) continue;
-                  const overlayDurationMs = overlayAsset.element.duration * 1000;
-                  const overlaySourceMs = Math.min(
-                    Math.max(0, overlayDurationMs - 50),
-                    offsetMs,
-                  );
-                  await seekTo(overlayAsset.element, overlaySourceMs / 1000);
-                }
-
-                const frameCanvas = loaded.frameCanvas ?? document.createElement('canvas');
-                loaded.frameCanvas = frameCanvas;
-                if (frameCanvas.width !== dims.width || frameCanvas.height !== dims.height) {
-                  frameCanvas.width = dims.width;
-                  frameCanvas.height = dims.height;
-                }
-                const frameContext = frameCanvas.getContext('2d');
-                if (!frameContext) {
-                  throw new Error('Could not create the Take layer render context.');
-                }
-                const presentation = layer.takePresentation;
-                loaded.camera = presentation.videoCrop
-                  ? { ...IDLE_CAMERA }
-                  : advanceStudioTakeCamera(
-                      loaded.camera ?? { ...IDLE_CAMERA },
-                      presentation,
-                      sourceMs,
-                      fps,
-                    );
-                drawStudioTakeFrame(frameContext, {
-                  width: dims.width,
-                  height: dims.height,
-                  timeMs: sourceMs,
-                  compositionTimeMs: Math.max(0, timeMs - layer.startMs),
-                  durationMs: layer.endMs - layer.startMs,
-                  video,
-                  videoReady: true,
-                  camera: loaded.camera,
-                  presentation,
-                  overlayAssets: loaded.takeOverlayAssets ?? new Map(),
-                });
-                media.set(layer.id, {
-                  element: frameCanvas,
-                  width: frameCanvas.width,
-                  height: frameCanvas.height,
-                });
-              } else {
-                media.set(layer.id, {
-                  element: video,
-                  width: video.videoWidth,
-                  height: video.videoHeight,
-                });
-              }
+              media.set(layer.id, {
+                element: video,
+                width: video.videoWidth,
+                height: video.videoHeight,
+              });
             }
           }
         } else if (image) {

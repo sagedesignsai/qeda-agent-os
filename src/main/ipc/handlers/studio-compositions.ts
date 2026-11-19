@@ -1,33 +1,25 @@
 import path from 'node:path';
-import { createWriteStream, promises as fs, type WriteStream } from 'node:fs';
+import {
+  createWriteStream,
+  promises as fs,
+  type WriteStream,
+} from 'node:fs';
 import { finished } from 'node:stream/promises';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { nanoid } from 'nanoid';
-import {
-  applyStudioCompositionOperation,
-  createStudioCompositionDocumentFromTakes,
-  parseStudioCompositionOperation,
-  studioTakePresentationFromTake,
-} from '../../../lib/studio/composition.js';
+import { createStudioCompositionDocument } from '../../../lib/studio/composition.js';
 import {
   createStudioCompositionFromTemplate,
   deleteStudioComposition,
   deleteStudioCompositionTemplate,
   getStudioComposition,
-  getStudioCompositionImagePath,
-  getDefaultStudioCompositionIdForTake,
-  getOrCreateDefaultStudioCompositionForTake,
   importStudioCompositionImageAsset,
   listStudioCompositions,
   listStudioCompositionTemplates,
   saveStudioComposition,
   saveStudioCompositionAsTemplate,
 } from '../../db/studio-compositions.js';
-import {
-  getStudioOverlaySource,
-  getStudioTake,
-  getStudioVideoPath,
-} from '../../db/studio-store.js';
+import { getStudioTake, getStudioVideoPath } from '../../db/studio-store.js';
 import { transcodeStudioVideo } from '../../studio-export.js';
 
 const activeCompositionStreams = new Map<
@@ -67,18 +59,6 @@ export function registerStudioCompositionHandlers({
   );
 
   ipcMain.handle(
-    'studio:composition-default-for-take',
-    (_event, { takeId }: { takeId: string }) => {
-      const take = getStudioTake(takeId);
-      if (!take) throw new Error(`Studio take ${takeId} was not found.`);
-      const hadDefault = getDefaultStudioCompositionIdForTake(takeId) !== null;
-      const composition = getOrCreateDefaultStudioCompositionForTake(take);
-      if (!hadDefault) broadcastChanged();
-      return composition;
-    },
-  );
-
-  ipcMain.handle(
     'studio:composition-create',
     (
       _event,
@@ -95,25 +75,30 @@ export function registerStudioCompositionHandlers({
         if (!take.videoPath) {
           throw new Error(`Studio take "${take.title}" has no video source.`);
         }
-        return take;
+        return {
+          id: take.id,
+          title: take.title,
+          durationMs: take.durationMs,
+        };
       });
 
       const composition = saveStudioComposition({
         id: nanoid(),
         projectId: request.projectId ?? null,
         title: request.title,
-        document: createStudioCompositionDocumentFromTakes(
-          request.sceneId,
+        document: createStudioCompositionDocument({
+          sceneId: request.sceneId,
           takes,
-        ),
+        }),
       });
       broadcastChanged();
       return composition;
     },
   );
 
-  ipcMain.handle('studio:composition-template-list', () =>
-    listStudioCompositionTemplates(),
+  ipcMain.handle(
+    'studio:composition-template-list',
+    () => listStudioCompositionTemplates(),
   );
 
   ipcMain.handle(
@@ -173,7 +158,6 @@ export function registerStudioCompositionHandlers({
         id: string;
         title: string;
         document: Parameters<typeof saveStudioComposition>[0]['document'];
-        expectedRevision?: number;
       },
     ) => {
       const existing = getStudioComposition(request.id);
@@ -185,62 +169,6 @@ export function registerStudioCompositionHandlers({
         projectId: existing.projectId,
         title: request.title,
         document: request.document,
-        expectedRevision: request.expectedRevision ?? existing.revision,
-      });
-      broadcastChanged();
-      return saved;
-    },
-  );
-
-  ipcMain.handle(
-    'studio:composition-apply-operation',
-    (
-      _event,
-      request: {
-        id: string;
-        expectedRevision: number;
-        operation: Parameters<typeof applyStudioCompositionOperation>[1];
-      },
-    ) => {
-      const current = getStudioComposition(request.id);
-      if (!current) {
-        throw new Error(`Studio composition ${request.id} was not found.`);
-      }
-      let operation = parseStudioCompositionOperation(request.operation);
-      if (operation.type === 'layer.addVideo') {
-        const take = getStudioTake(operation.take.id);
-        if (!take?.videoPath) {
-          throw new Error('The selected recording is no longer available.');
-        }
-        operation = {
-          ...operation,
-          take: { id: take.id, title: take.title, durationMs: take.durationMs },
-          takePresentation:
-            operation.takePresentation ?? studioTakePresentationFromTake(take),
-        };
-      }
-      if (
-        operation.type === 'layer.addImage' &&
-        !getStudioCompositionImagePath(operation.asset.id)
-      ) {
-        throw new Error('Image layers must reference an imported composition asset.');
-      }
-      if (
-        operation.type === 'layer.patch' &&
-        operation.patch.takePresentation?.overlays
-      ) {
-        for (const overlay of operation.patch.takePresentation.overlays) {
-          if (!getStudioOverlaySource(overlay.id)) {
-            throw new Error(`Overlay ${overlay.id} is not a persisted source asset.`);
-          }
-        }
-      }
-      const saved = saveStudioComposition({
-        id: current.id,
-        projectId: current.projectId,
-        title: current.title,
-        document: applyStudioCompositionOperation(current.document, operation),
-        expectedRevision: request.expectedRevision,
       });
       broadcastChanged();
       return saved;

@@ -114,7 +114,6 @@ import type {
   StudioCompositionTemplateSummary,
 } from '../../lib/studio-types.js';
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
-import type { StudioCompositionOperation } from '../../lib/studio/composition.js';
 import type {
   BuilderEngine,
   McpServerSettings,
@@ -1867,11 +1866,6 @@ export interface IpcChannels {
     req: { id: string };
     res: StudioComposition | null;
   };
-  /** Resolve or create the stable default composition associated with a take. */
-  'studio:composition-default-for-take': {
-    req: { takeId: string };
-    res: StudioComposition;
-  };
   /** Create a composition from a scene; takes are optional for a blank start. */
   'studio:composition-create': {
     req: {
@@ -1907,22 +1901,12 @@ export interface IpcChannels {
     req: { id: string };
     res: boolean;
   };
-  /** Apply one validated document operation and persist the resulting composition. */
-  'studio:composition-apply-operation': {
-    req: {
-      id: string;
-      expectedRevision: number;
-      operation: StudioCompositionOperation;
-    };
-    res: StudioComposition;
-  };
   /** Save a full validated composition document. */
   'studio:composition-save': {
     req: {
       id: string;
       title: string;
       document: StudioCompositionDocument;
-      expectedRevision?: number;
     };
     res: StudioComposition;
   };
@@ -1991,10 +1975,8 @@ export interface IpcChannels {
     req: {
       messages: UIMessage[];
       context: {
-  takeId: string;
-  compositionId?: string;
-  projectId?: string;
-
+        takeId: string;
+        projectId?: string;
         currentTimeMs?: number;
       };
     };

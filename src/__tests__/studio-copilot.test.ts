@@ -55,10 +55,6 @@ import {
   DEFAULT_STUDIO_STYLING,
 } from '../main/db/studio-store';
 import { createStudioTools } from '../main/tools/studio';
-import {
-  getOrCreateDefaultStudioCompositionForTake,
-  getStudioComposition,
-} from '../main/db/studio-compositions';
 import { createStudioCopilotAgent } from '../main/ai/studio-copilot-agent';
 
 describe('Studio Copilot AI Tools & Agent', () => {
@@ -130,62 +126,7 @@ describe('Studio Copilot AI Tools & Agent', () => {
       expect(after.take.title).toBe('Just Recorded');
     });
 
-    it('edits the active composition through validated operations without mutating its Take', async () => {
-    const composition = getOrCreateDefaultStudioCompositionForTake(sampleTake);
-    const tools = createStudioTools({
-      activeTakeId: sampleTake.id,
-      activeCompositionId: composition.id,
-      broadcastChanged: mockBroadcast,
-    });
-
-    const details = await (tools.getCompositionDetails as any).execute(
-      {},
-      {} as any,
-    );
-    expect(details).toMatchObject({
-      success: true,
-      compositionId: composition.id,
-      revision: composition.revision,
-    });
-
-    const takeLayer = composition.document.layers[0];
-    const edited = await (tools.applyCompositionOperation as any).execute(
-      {
-        expectedRevision: details.revision,
-        operation: {
-          type: 'layer.patch',
-          layerId: takeLayer.id,
-          patch: {
-            takePresentation: {
-              styling: {
-                ...takeLayer.takePresentation!.styling,
-                background: '#111111',
-              },
-            },
-          },
-        },
-      },
-      {} as any,
-    );
-
-    expect(edited.success).toBe(true);
-    expect(
-      getStudioComposition(composition.id)?.document.layers[0],
-    ).toMatchObject({
-      takePresentation: { styling: { background: '#111111' } },
-    });
-    expect(getStudioTake(sampleTake.id)?.styling.background).toBe(
-      sampleTake.styling.background,
-    );
-
-    const blockedTakeEdit = await (tools.addKineticZoom as any).execute(
-      { startMs: 1000, endMs: 2000, scale: 1.5, targetX: 0.5, targetY: 0.5 },
-      {} as any,
-    );
-    expect(blockedTakeEdit.error).toMatch(/applyCompositionOperation/);
-  });
-
-  it('getTakeDetails returns take overview and styling', async () => {
+    it('getTakeDetails returns take overview and styling', async () => {
       const tools = createStudioTools({
         activeTakeId: sampleTake.id,
         broadcastChanged: mockBroadcast,

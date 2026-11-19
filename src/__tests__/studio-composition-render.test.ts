@@ -1,6 +1,5 @@
 import {
   addStudioCompositionEffect,
-  addStudioCompositionTextLayer,
   createStudioCompositionDocument,
   updateStudioCompositionLayer,
 } from '../lib/studio/composition';
@@ -61,41 +60,6 @@ describe('Studio composition frame rendering', () => {
     expect(gradient.addColorStop).toHaveBeenCalledTimes(2);
     expect(drawImage.mock.invocationCallOrder[0]).toBeLessThan(
       createRadialGradient.mock.invocationCallOrder[0],
-    );
-  });
-
-  it('renders text layers on the same ordered composition canvas', () => {
-    const document = addStudioCompositionTextLayer(
-      createStudioCompositionDocument({ sceneId: 'app-spotlight' }),
-      'Launch day',
-    );
-    const fillText = jest.fn();
-    const ctx = {
-      clearRect: jest.fn(),
-      fillRect: jest.fn(),
-      save: jest.fn(),
-      beginPath: jest.fn(),
-      roundRect: jest.fn(),
-      fill: jest.fn(),
-      fillText,
-      measureText: jest.fn(() => ({ width: 50 })),
-      restore: jest.fn(),
-    } as unknown as CanvasRenderingContext2D;
-
-    drawStudioCompositionFrame({
-      ctx,
-      document,
-      width: 1920,
-      height: 1080,
-      timeMs: 100,
-      media: new Map(),
-    });
-
-    expect(fillText).toHaveBeenCalledWith(
-      'Launch day',
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
     );
   });
 

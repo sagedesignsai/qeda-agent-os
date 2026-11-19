@@ -1,5 +1,3 @@
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
 import type {
   StudioAspectRatio,
   StudioCompositionLayer,
@@ -138,81 +136,6 @@ export function StudioCompositionInspector({
           {layer.kind} · {aspectRatio} layout
         </p>
       </div>
-
-      {layer.kind === 'text' && (
-        <section aria-label="Text content" className="flex flex-col gap-2">
-          <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-            Text
-            <Textarea
-              key={`${layer.id}-${layer.text}`}
-              defaultValue={layer.text}
-              maxLength={4000}
-              disabled={disabled}
-              className="min-h-20 resize-y text-xs"
-              onBlur={(event) => {
-                if (event.currentTarget.value !== layer.text) {
-                  void onCommit({ text: event.currentTarget.value });
-                }
-              }}
-            />
-          </label>
-          <div className="grid grid-cols-2 gap-2">
-            <NumberField
-              label="Font size"
-              value={layer.fontSize}
-              min={8}
-              max={240}
-              step={1}
-              suffix="px"
-              disabled={disabled}
-              onCommit={(value) => void onCommit({ fontSize: value })}
-            />
-            <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-              Alignment
-              <select
-                value={layer.textAlign}
-                disabled={disabled}
-                onChange={(event) =>
-                  void onCommit({
-                    textAlign: event.currentTarget.value as typeof layer.textAlign,
-                  })
-                }
-                className="h-8 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground"
-              >
-                <option value="left">Left</option>
-                <option value="center">Center</option>
-                <option value="right">Right</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-              Weight
-              <select
-                value={layer.fontWeight}
-                disabled={disabled}
-                onChange={(event) =>
-                  void onCommit({
-                    fontWeight: event.currentTarget.value as typeof layer.fontWeight,
-                  })
-                }
-                className="h-8 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground"
-              >
-                <option value="normal">Regular</option>
-                <option value="bold">Bold</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-              Text color
-              <Input
-                type="color"
-                value={layer.color}
-                disabled={disabled}
-                onChange={(event) => void onCommit({ color: event.currentTarget.value })}
-                className="h-8 w-full p-1"
-              />
-            </label>
-          </div>
-        </section>
-      )}
 
       <section aria-label="Layer layout">
         <h3 className="mb-2 text-[11px] font-medium text-muted-foreground">

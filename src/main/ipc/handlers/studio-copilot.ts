@@ -104,11 +104,9 @@ export function registerStudioCopilotHandlers({
         context,
       }: {
         messages: UIMessage[];
-  context: {
-    takeId: string;
-    compositionId?: string;
-    projectId?: string;
-
+        context: {
+          takeId: string;
+          projectId?: string;
           currentTimeMs?: number;
         };
       },
@@ -162,7 +160,6 @@ export function registerStudioCopilotHandlers({
           try {
             const agent = createStudioCopilotAgent({
               activeTakeId: context.takeId,
-              activeCompositionId: context.compositionId,
               projectId: projectId ?? undefined,
               activeProject,
               requestUserSignIn: async (browserId) => {

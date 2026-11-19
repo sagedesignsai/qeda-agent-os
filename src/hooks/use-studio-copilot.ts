@@ -27,7 +27,6 @@ const STUDIO_COPILOT_TRANSPORT: AgentTransport = {
 
 export interface UseStudioCopilotOptions {
   takeId: string;
-  compositionId?: string;
   projectId?: string;
   currentTimeMs?: number;
 }
@@ -39,16 +38,14 @@ export interface UseStudioCopilotReturn extends UseAgentChatReturn {
 
 export function useStudioCopilot({
   takeId,
-  compositionId,
   projectId,
   currentTimeMs,
 }: UseStudioCopilotOptions): UseStudioCopilotReturn {
   const agent = useAgentChat({
-    sessionId: `studio-copilot-${compositionId ?? takeId}`,
+    sessionId: `studio-copilot-${takeId}`,
     transport: STUDIO_COPILOT_TRANSPORT,
     context: {
       takeId,
-      compositionId,
       projectId,
       currentTimeMs,
     },

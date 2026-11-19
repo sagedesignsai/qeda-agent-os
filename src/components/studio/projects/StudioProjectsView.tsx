@@ -263,17 +263,6 @@ export function StudioProjectsView({
               </div>
             </section>
           )}
-          {takes.length > 0 && (
-            <section aria-label="Recordings" className="mb-3 flex items-end justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-semibold">Recordings</h2>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Original captures. Open one to continue editing its default composition.
-                </p>
-              </div>
-              <span className="text-[11px] text-muted-foreground">{takes.length}{hasMoreTakes ? '+' : ''}</span>
-            </section>
-          )}
           {takes.length === 0 ? (
             /* Empty State: Zero Takes in Entire Library */
             <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto animate-in fade-in duration-500 py-12">

@@ -31,7 +31,6 @@ import Projects from './pages/Projects';
 import Documents from './pages/Documents';
 import Studio from './pages/Studio';
 import StudioComposition from './pages/StudioComposition';
-import StudioTakeCompositionEntry from './pages/StudioTakeCompositionEntry';
 import Music from './pages/Music';
 import Motion from './pages/Motion';
 import MotionBrowser from './pages/MotionBrowser';
@@ -123,7 +122,7 @@ export const routes: RouteObject[] = [
             path: 'compositions/:compositionId',
             element: <StudioComposition />,
           },
-          { path: ':takeId', element: <StudioTakeCompositionEntry /> },
+          { path: ':takeId', element: <Studio /> },
         ],
       },
 

@@ -24,7 +24,6 @@ import path from 'node:path';
 import { app } from 'electron';
 import {
   getStudioTake,
-  getStudioOverlaySource,
   listStudioTakes,
   saveStudioTake,
   type StudioTake,
@@ -40,19 +39,6 @@ import { repoTools } from './repo.js';
 import { filesystemTools } from './filesystem.js';
 import { createStudioProjectPreviewTools } from './studio-project-preview.js';
 import type { StudioSignInOutcome } from '../../lib/studio/types.js';
-import {
-  applyStudioCompositionOperation,
-  parseStudioCompositionOperation,
-  studioTakePresentationFromTake,
-} from '../../lib/studio/composition.js';
-import type { StudioCompositionOperation } from '../../lib/studio/composition.js';
-import {
-  getDefaultStudioCompositionForTake,
-  getOrCreateDefaultStudioCompositionForTake,
-  getStudioCompositionImagePath,
-  getStudioComposition,
-  saveStudioComposition,
-} from '../db/studio-compositions.js';
 
 export function getStudioStorageDir(takeId?: string): string {
   const base = path.join(app.getPath('userData'), 'studio');
@@ -88,8 +74,6 @@ export interface CreateStudioToolsOptions {
   ) => Promise<StudioSignInOutcome>;
   /** Take a call acts on when it omits `takeId`. Absent on the chat surface. */
   activeTakeId?: string;
-  /** Composition that is the active Studio document, when the editor is open. */
-  activeCompositionId?: string;
   /**
    * Resolve the active take at call time rather than agent-construction time.
    *
@@ -110,7 +94,6 @@ export function createStudioTools({
   includeProjectPreviewTools = false,
   requestUserSignIn,
   activeTakeId,
-  activeCompositionId,
   resolveActiveTakeId,
   defaultToLatestTake = false,
   includeContextTools = true,
@@ -129,9 +112,6 @@ export function createStudioTools({
    * directory. They are the agent's timing anchors: the label is the caption it
    * already chose, so re-reading them beats re-deriving the narrative.
    */
-  const resolveTakeForEdit = (id?: string): StudioTake | null =>
-    activeCompositionId || defaultToLatestTake ? null : resolveTake(id);
-
   const readHighlights = async (
     take: StudioTake,
   ): Promise<StudioHighlight[]> => {
@@ -147,143 +127,7 @@ export function createStudioTools({
     (broadcastChanged ?? broadcastStudioChanged)();
   };
 
-  const resolveComposition = (
-    compositionId?: string,
-    takeId?: string,
-  ) => {
-    if (activeCompositionId) {
-      if (compositionId && compositionId !== activeCompositionId) return null;
-      return getStudioComposition(activeCompositionId);
-    }
-    if (compositionId) return getStudioComposition(compositionId);
-    const take = resolveTake(takeId);
-    if (!take) return null;
-    return getDefaultStudioCompositionForTake(take.id) ??
-      getOrCreateDefaultStudioCompositionForTake(take);
-  };
-
-  const notifyCompositionChanged = () => {
-    try {
-      const { BrowserWindow } = require('electron');
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.isDestroyed()) {
-          window.webContents.send('studio:composition-changed');
-        }
-      }
-    } catch {
-      // The document remains persisted when no renderer is listening.
-    }
-  };
-
   return {
-    getCompositionDetails: tool({
-      description:
-        'Inspect the active composition document, its output settings, ordered layers, source timing, Take presentation, and effects before proposing edits.',
-      inputSchema: z.object({
-        compositionId: z.string().optional(),
-        takeId: z.string().optional().describe('Find the stable default composition for this recording.'),
-      }),
-      execute: async ({ compositionId, takeId }) => {
-        const composition = resolveComposition(compositionId, takeId);
-        if (!composition) {
-          return { success: false, error: 'No active composition was found.' };
-        }
-        return {
-          success: true,
-          compositionId: composition.id,
-          revision: composition.revision ?? 1,
-          title: composition.title,
-          document: composition.document,
-        };
-      },
-    }),
-
-    applyCompositionOperation: tool({
-      description:
-        'Apply one validated, non-destructive operation to the active composition document. Inspect it first and pass the returned revision; if another edit happened, re-inspect before retrying.',
-      inputSchema: z.object({
-        compositionId: z.string().optional(),
-        takeId: z.string().optional().describe('Find the stable default composition for this recording.'),
-        expectedRevision: z.number().int().positive(),
-        operation: z.unknown(),
-      }),
-      execute: async ({ compositionId, takeId, expectedRevision, operation }) => {
-        const composition = resolveComposition(compositionId, takeId);
-        if (!composition) {
-          return { success: false, error: 'No active composition was found.' };
-        }
-        const revision = composition.revision ?? 1;
-        if (revision !== expectedRevision) {
-          return {
-            success: false,
-            conflict: true,
-            expectedRevision,
-            currentRevision: revision,
-            error: 'The composition changed. Re-inspect it and retry against the current revision.',
-          };
-        }
-        try {
-          let parsedOperation = parseStudioCompositionOperation(operation);
-          if (parsedOperation.type === 'layer.addVideo') {
-            const sourceTake = getStudioTake(parsedOperation.take.id);
-            if (!sourceTake?.videoPath) {
-              throw new Error('The selected recording is no longer available.');
-            }
-            parsedOperation = {
-              ...parsedOperation,
-              take: {
-                id: sourceTake.id,
-                title: sourceTake.title,
-                durationMs: sourceTake.durationMs,
-              },
-              takePresentation:
-                parsedOperation.takePresentation ??
-                studioTakePresentationFromTake(sourceTake),
-            };
-          }
-          if (
-            parsedOperation.type === 'layer.patch' &&
-            parsedOperation.patch.takePresentation?.overlays
-          ) {
-            for (const overlay of parsedOperation.patch.takePresentation.overlays) {
-              if (!getStudioOverlaySource(overlay.id)) {
-                throw new Error(`Overlay ${overlay.id} is not a persisted source asset.`);
-              }
-            }
-          }
-          if (
-            parsedOperation.type === 'layer.addImage' &&
-            !getStudioCompositionImagePath(parsedOperation.asset.id)
-          ) {
-            throw new Error('Image layers must reference an imported composition asset.');
-          }
-          const saved = saveStudioComposition({
-            id: composition.id,
-            projectId: composition.projectId,
-            title: composition.title,
-            document: applyStudioCompositionOperation(
-              composition.document,
-              parsedOperation,
-            ),
-            expectedRevision,
-          });
-          notifyCompositionChanged();
-          return {
-            success: true,
-            compositionId: saved.id,
-            revision: saved.revision ?? expectedRevision + 1,
-            operation: parsedOperation,
-            note: 'Composition updated. Preview it before exporting.',
-          };
-        } catch (error) {
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-      },
-    }),
-
     ...(includeProjectPreviewTools
       ? createStudioProjectPreviewTools(projectId, undefined, requestUserSignIn)
       : {}),
@@ -485,10 +329,8 @@ export function createStudioTools({
         reason,
         takeId,
       }) => {
-        const take = resolveTakeForEdit(takeId);
-        if (!take) {
-          return { success: false, error: 'Use applyCompositionOperation while editing a composition.' };
-        }
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
 
         if (endMs <= startMs) {
           return {
@@ -537,10 +379,8 @@ export function createStudioTools({
         takeId: z.string().optional(),
       }),
       execute: async ({ zoomId, clearAll, takeId }) => {
-        const take = resolveTakeForEdit(takeId);
-        if (!take) {
-          return { success: false, error: 'Use applyCompositionOperation while editing a composition.' };
-        }
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
 
         let updatedZooms: StudioZoom[];
         if (clearAll) {
@@ -597,10 +437,8 @@ export function createStudioTools({
         takeId: z.string().optional(),
       }),
       execute: async ({ type, startMs, endMs, intensity, takeId }) => {
-        const take = resolveTakeForEdit(takeId);
-        if (!take) {
-          return { success: false, error: 'Use applyCompositionOperation while editing a composition.' };
-        }
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
         if (endMs <= startMs) {
           return {
             success: false,
@@ -642,10 +480,8 @@ export function createStudioTools({
         takeId: z.string().optional(),
       }),
       execute: async ({ effectId, clearAll, takeId }) => {
-        const take = resolveTakeForEdit(takeId);
-        if (!take) {
-          return { success: false, error: 'Use applyCompositionOperation while editing a composition.' };
-        }
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
         if (!clearAll && !effectId) {
           return {
             success: false,
@@ -686,10 +522,8 @@ export function createStudioTools({
         takeId: z.string().optional(),
       }),
       execute: async ({ startMs, endMs, reason, takeId }) => {
-        const take = resolveTakeForEdit(takeId);
-        if (!take) {
-          return { success: false, error: 'Use applyCompositionOperation while editing a composition.' };
-        }
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
 
         if (endMs <= startMs) {
           return {
@@ -757,10 +591,8 @@ export function createStudioTools({
         takeId: z.string().optional(),
       }),
       execute: async ({ captions, takeId }) => {
-        const take = resolveTakeForEdit(takeId);
-        if (!take) {
-          return { success: false, error: 'Use applyCompositionOperation while editing a composition.' };
-        }
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
 
         const formattedCaptions: StudioCaption[] = captions.map((c) => ({
           id: nanoid(),
@@ -855,10 +687,8 @@ export function createStudioTools({
         shadow,
         takeId,
       }) => {
-        const take = resolveTakeForEdit(takeId);
-        if (!take) {
-          return { success: false, error: 'Use applyCompositionOperation while editing a composition.' };
-        }
+        const take = resolveTake(takeId);
+        if (!take) return { success: false, error: 'Take not found' };
 
         const updatedStyling = {
           ...take.styling,

@@ -59,19 +59,7 @@ export function drawStudioCompositionFrame({
 
   const layers = [...document.layers].sort((a, b) => a.zIndex - b.zIndex);
   for (const layer of layers) {
-    if (layer.visible === false) continue;
     if (timeMs < layer.startMs || timeMs > layer.endMs) continue;
-    if (layer.kind === 'text') {
-      drawStudioCompositionTextLayer({
-        ctx,
-        layer,
-        aspectRatio: document.aspectRatio,
-        width,
-        height,
-        timeMs,
-      });
-      continue;
-    }
     const source = media.get(layer.id);
     if (!source) continue;
 
@@ -103,70 +91,6 @@ export function drawStudioCompositionFrame({
     },
     timeMs,
   );
-}
-
-export function drawStudioCompositionTextLayer({
-  ctx,
-  layer,
-  aspectRatio,
-  width,
-  height,
-  timeMs,
-}: {
-  ctx: CanvasRenderingContext2D;
-  layer: Extract<StudioCompositionLayer, { kind: 'text' }>;
-  aspectRatio: StudioCompositionDocument['aspectRatio'];
-  width: number;
-  height: number;
-  timeMs: number;
-}): void {
-  const frame = evaluateStudioCompositionLayerFrame(layer, aspectRatio, timeMs);
-  const { layout } = frame;
-  const x = layout.x * width;
-  const y = layout.y * height;
-  const boxWidth = layout.width * width;
-  const boxHeight = layout.height * height;
-  const fontSize = Math.max(12, layer.fontSize * (width / 1920));
-
-  ctx.save();
-  ctx.globalAlpha = frame.opacity;
-  if (layer.backgroundColor) {
-    ctx.fillStyle = layer.backgroundColor;
-    ctx.beginPath();
-    ctx.roundRect(x, y, boxWidth, boxHeight, layout.cornerRadius);
-    ctx.fill();
-  }
-  ctx.font = `${layer.fontWeight} ${fontSize}px ${layer.fontFamily}`;
-  ctx.textAlign = layer.textAlign;
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = layer.color;
-
-  const lines: string[] = [];
-  let line = '';
-  for (const word of layer.text.split(/\s+/)) {
-    const next = line ? `${line} ${word}` : word;
-    if (line && ctx.measureText(next).width > boxWidth) {
-      lines.push(line);
-      line = word;
-    } else {
-      line = next;
-    }
-  }
-  if (line) lines.push(line);
-  const lineHeight = fontSize * 1.2;
-  const visibleLineCount = Math.max(1, Math.floor(boxHeight / lineHeight));
-  const visibleLines = lines.slice(0, visibleLineCount);
-  const firstBaseline = y + (boxHeight - visibleLines.length * lineHeight) / 2 + lineHeight / 2;
-  const textX =
-    layer.textAlign === 'left'
-      ? x + fontSize * 0.35
-      : layer.textAlign === 'right'
-        ? x + boxWidth - fontSize * 0.35
-        : x + boxWidth / 2;
-  visibleLines.forEach((textLine, index) => {
-    ctx.fillText(textLine, textX, firstBaseline + index * lineHeight, boxWidth);
-  });
-  ctx.restore();
 }
 
 export function drawStudioCompositionLayer({

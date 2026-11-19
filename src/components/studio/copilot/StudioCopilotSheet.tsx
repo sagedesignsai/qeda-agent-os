@@ -88,7 +88,6 @@ export interface StudioCopilotSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeTake: StudioTake;
-  compositionId?: string;
   projectId?: string;
   currentTimeMs?: number;
   initialPrompt?: string | null;
@@ -99,7 +98,6 @@ export function StudioCopilotSheet({
   open,
   onOpenChange,
   activeTake,
-  compositionId,
   projectId,
   currentTimeMs = 0,
   initialPrompt,
@@ -118,7 +116,6 @@ export function StudioCopilotSheet({
     clearPlan,
   } = useStudioCopilot({
     takeId: activeTake.id,
-    compositionId,
     projectId: activeTake.projectId ?? projectId,
     currentTimeMs,
   });

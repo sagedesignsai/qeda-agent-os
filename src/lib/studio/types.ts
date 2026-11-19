@@ -353,22 +353,9 @@ export interface StudioCompositionLayerBase {
   endMs: number;
   zIndex: number;
   opacity: number;
-  visible?: boolean;
-  locked?: boolean;
   transitionIn: StudioCompositionTransition;
   transitionOut: StudioCompositionTransition;
   layouts: Record<StudioAspectRatio, StudioLayerLayout>;
-}
-
-export interface StudioTakePresentation {
-  /** Legacy Take-editor settings retained as non-destructive layer presentation data. */
-  styling: StudioStyling;
-  cuts: StudioCut[];
-  zooms: StudioZoom[];
-  captions: StudioCaption[];
-  effects: StudioEffect[];
-  overlays: StudioOverlay[];
-  videoCrop?: StudioVideoCrop;
 }
 
 export interface StudioCompositionVideoLayer
@@ -378,8 +365,6 @@ export interface StudioCompositionVideoLayer
   sourceId: string;
   sourceDurationMs: number;
   sourceInMs: number;
-  /** Preserve Take-editor treatments while the shared compositor is integrated. */
-  takePresentation?: StudioTakePresentation;
 }
 
 export interface StudioCompositionImageLayer
@@ -389,25 +374,13 @@ export interface StudioCompositionImageLayer
   sourceId: string;
 }
 
-export interface StudioCompositionTextLayer extends StudioCompositionLayerBase {
-  kind: 'text';
-  text: string;
-  fontSize: number;
-  fontFamily: string;
-  fontWeight: 'normal' | 'bold';
-  textAlign: 'left' | 'center' | 'right';
-  color: string;
-  backgroundColor: string | null;
-}
-
 export type StudioCompositionLayer =
   | StudioCompositionVideoLayer
-  | StudioCompositionImageLayer
-  | StudioCompositionTextLayer;
+  | StudioCompositionImageLayer;
 
 /** JSON document stored separately from source takes. Bump version when its shape changes. */
 export interface StudioCompositionDocument {
-  version: 2;
+  version: 1;
   sceneId: StudioCompositionSceneId;
   aspectRatio: StudioAspectRatio;
   durationMs: number;
@@ -422,7 +395,6 @@ export interface StudioComposition {
   projectId: string | null;
   title: string;
   document: StudioCompositionDocument;
-  revision?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -434,8 +406,6 @@ export interface StudioCompositionTemplateLayerBase {
   endMs: number;
   zIndex: number;
   opacity: number;
-  visible?: boolean;
-  locked?: boolean;
   transitionIn: StudioCompositionTransition;
   transitionOut: StudioCompositionTransition;
   layouts: Record<StudioAspectRatio, StudioLayerLayout>;
@@ -445,7 +415,6 @@ export interface StudioCompositionTemplateVideoLayer
   extends StudioCompositionTemplateLayerBase {
   kind: 'video';
   sourceInMs: number;
-  takePresentation?: StudioTakePresentation;
 }
 
 export interface StudioCompositionTemplateImageLayer
@@ -454,22 +423,9 @@ export interface StudioCompositionTemplateImageLayer
   assetPath: string;
 }
 
-export interface StudioCompositionTemplateTextLayer
-  extends StudioCompositionTemplateLayerBase {
-  kind: 'text';
-  text: string;
-  fontSize: number;
-  fontFamily: string;
-  fontWeight: 'normal' | 'bold';
-  textAlign: 'left' | 'center' | 'right';
-  color: string;
-  backgroundColor: string | null;
-}
-
 export type StudioCompositionTemplateLayer =
   | StudioCompositionTemplateVideoLayer
-  | StudioCompositionTemplateImageLayer
-  | StudioCompositionTemplateTextLayer;
+  | StudioCompositionTemplateImageLayer;
 
 export interface StudioCompositionTemplate {
   version: 1;
@@ -550,8 +506,6 @@ export interface StudioClipPayload {
   opacity?: number;
   rotation?: number;
   cornerRadius?: number;
-  sourceId?: string;
-  compositionLayerId?: string;
 }
 
 export interface TimelineClip {
