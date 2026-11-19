@@ -16,6 +16,7 @@ import {
   MoreVerticalIcon,
   PlayIcon,
   PencilIcon,
+  SettingsIcon,
   DownloadIcon,
   Trash2Icon,
   MonitorIcon,
@@ -42,6 +43,7 @@ import type { StudioTakeSummary } from '@/lib/studio-types';
 interface StudioProjectRowProps {
   take: StudioTakeSummary;
   onOpen: (id: string) => void;
+  onEdit?: (take: StudioTakeSummary) => void;
   onRename: (id: string, newTitle: string) => Promise<void>;
   onQuickExport: (id: string) => Promise<void>;
   onDelete: (take: StudioTakeSummary) => void;
@@ -57,6 +59,7 @@ function formatDuration(ms: number): string {
 export const StudioProjectRow = memo(function StudioProjectRow({
   take,
   onOpen,
+  onEdit,
   onRename,
   onQuickExport,
   onDelete,
@@ -304,6 +307,15 @@ export const StudioProjectRow = memo(function StudioProjectRow({
               <PlayIcon className="w-3.5 h-3.5" />
               Open in Editor
             </DropdownMenuItem>
+            {onEdit && (
+              <DropdownMenuItem
+                onClick={() => onEdit(take)}
+                className="text-xs gap-2"
+              >
+                <SettingsIcon className="w-3.5 h-3.5" />
+                Edit Project
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={() => setIsRenaming(true)}
               className="text-xs gap-2"

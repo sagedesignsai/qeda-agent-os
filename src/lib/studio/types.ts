@@ -263,6 +263,212 @@ export interface StudioMediaProbe {
   keyframeIntervalMs?: number;
 }
 
+// ── Media pool & multi-track clips ────────────────────────────────────────────
+
+/**
+ * A media asset added to a Showcase project's media pool.
+ *
+ * This is the source material — a recording, an imported video, or an image —
+ * that can be placed on the timeline as one or more clips.  Unlike `StudioTake`,
+ * which is a single-recording record, the media pool holds *all* source files
+ * for a multi-track project.
+ */
+export interface StudioMediaAsset {
+  id: string;
+  /** Human-readable label shown in the media pool panel. */
+  name: string;
+  /** Absolute path on disk. */
+  path: string;
+  /** Asset kind determines how it can be placed on the timeline. */
+  kind: 'video' | 'audio' | 'image';
+  /** Duration in milliseconds (0 for images). */
+  durationMs: number;
+  /** Video dimensions; absent for audio-only assets. */
+  width?: number;
+  height?: number;
+  /** Probed metadata (fps, rotation, etc.). */
+  probe?: StudioMediaProbe | null;
+  addedAt: number;
+}
+
+// ── Clip visual property sub-objects ─────────────────────────────────────────
+
+/**
+ * Spatial transform applied to a single clip on the canvas.
+ *
+ * All values are optional so a partial patch from the inspector can update
+ * just one property without wiping the rest.  Defaults when absent:
+ * position (0, 0), scale (1, 1), rotation 0°, anchor (0.5, 0.5).
+ */
+export interface ClipTransform {
+  /** Pixel offset from the clip's default track position. */
+  position?: { x: number; y: number };
+  /** Scale multiplier; 1 = original size. */
+  scale?: { x: number; y: number };
+  /** Rotation in degrees (clockwise). */
+  rotation?: number;
+  /** Normalized pivot point for scale/rotation (0-1). */
+  anchorPoint?: { x: number; y: number };
+}
+
+/**
+ * Animatable properties for clip keyframe animations.
+ */
+export type ClipAnimatableProperty =
+  | 'x'
+  | 'y'
+  | 'scale'
+  | 'rotation'
+  | 'opacity';
+
+/**
+ * Easing curves available for clip animations.
+ *
+ * Mirrors Trace's `EasingType` so the same evaluation functions can be
+ * reused.  Custom cubic-bezier strings are also accepted.
+ */
+export type StudioAnimationEasing =
+  | 'linear'
+  | 'ease-out'
+  | 'ease-in'
+  | 'ease-in-out'
+  | 'power2.out'
+  | 'power2.in'
+  | 'power2.inOut'
+  | 'power3.out'
+  | 'power3.in'
+  | 'back.out'
+  | 'elastic.out'
+  | 'bounce.out'
+  | 'expo.out'
+  | 'sine.out'
+  | string; // custom cubic-bezier: cubic-bezier(x1, y1, x2, y2)
+
+/**
+ * A single keyframe in a clip animation.
+ *
+ * Keyframe times are stored as offsets from the clip's start (for enter)
+ * or end (for exit), in milliseconds.  This makes animations portable when
+ * clips are moved on the timeline.
+ */
+export interface ClipKeyframe {
+  id: string;
+  /** Time offset from clip start (enter) or clip end (exit), in ms. */
+  timeMs: number;
+  /** Property being animated. */
+  property: ClipAnimatableProperty;
+  /** Target value at this keyframe. */
+  value: number;
+  /** Easing curve from this keyframe to the next. */
+  easing: StudioAnimationEasing;
+}
+
+/**
+ * Preset-based enter or exit animation for a clip.
+ *
+ * Supports both legacy preset mode (type + duration + easing) and the new
+ * keyframe-based mode (presetId + keyframes).  Presets generate keyframe
+ * data automatically, while custom keyframes allow fine-grained control.
+ */
+export interface ClipAnimation {
+  type: StudioCompositionTransitionType;
+  durationMs: number;
+  /** CSS easing name, e.g. "ease-out", "ease-in-out". Defaults to "ease-out". */
+  easing?: string;
+  /** Reference to a pre-built animation preset. */
+  presetId?: string;
+  /** Custom or preset-generated keyframes for fine-grained animation. */
+  keyframes?: ClipKeyframe[];
+}
+
+/**
+ * Optional device mockup frame overlay for a single clip.
+ *
+ * Reuses `DeviceFrameType` from the global styling so the same frame
+ * renderer can handle both project-level and per-clip frames.
+ */
+export interface ClipDeviceFrame {
+  type: DeviceFrameType;
+  /** Frame border color. */
+  color?: string;
+  /** Gap between the clip content and the frame edge in px. */
+  padding?: number;
+}
+
+/**
+ * A clip on the timeline — the fundamental editable building block.
+ *
+ * Unlike the legacy model where clips were *derived* from a single `StudioTake`
+ * on every load, `StudioClip` is stored directly and references any
+ * `StudioMediaAsset` in the project's media pool.  This enables:
+ *
+ *   - Multiple recordings on the same timeline
+ *   - The same source segment appearing at multiple positions
+ *   - Non-contiguous tracks with gaps between clips
+ *   - Per-clip transforms (speed, volume, opacity)
+ *
+ * Time model:
+ *   - `startMs` / `durationMs` → composition time (where it plays on the timeline)
+ *   - `sourceInMs` → where inside the referenced media asset this clip begins
+ */
+export interface StudioClip {
+  id: string;
+  /** The track this clip belongs to. */
+  trackId: string;
+  /** Human label (e.g. "Screen recording [1]"). */
+  name: string;
+  /** Composition-time start position on the timeline (ms). */
+  startMs: number;
+  /** Duration of this clip on the timeline (ms). */
+  durationMs: number;
+  /** Offset into the source media asset (ms). */
+  sourceInMs: number;
+  /** Reference to the media asset in the project's pool. */
+  mediaAssetId: string;
+  /** Playback speed multiplier (1 = normal, 0.5 = half speed, 2 = double). */
+  speed?: number;
+  /** Volume multiplier for audio clips (0..2, default 1). */
+  volume?: number;
+  /** Opacity for video/image clips (0..1, default 1). */
+  opacity?: number;
+  /** Visual color for the clip block in the timeline UI. */
+  color?: string;
+
+  // ── Visual properties ──────────────────────────────────────────────────────
+  // Per-clip spatial transform, enter/exit animations, and optional device
+  // frame overlay.  These are editable in the inspector and passed through
+  // to the timeline store via `StudioClipPayload`.
+
+  /** Spatial transform: position, scale, rotation, anchor point. */
+  transform?: ClipTransform;
+  /** How this clip appears at its start time. */
+  enterAnimation?: ClipAnimation;
+  /** How this clip disappears at its end time. */
+  exitAnimation?: ClipAnimation;
+  /** Optional device mockup frame overlay for this clip. */
+  deviceFrame?: ClipDeviceFrame;
+}
+
+/**
+ * A named track within a Showcase project timeline.
+ *
+ * Each track holds an ordered set of `StudioClip` instances.  Video tracks
+ * composite from bottom to top by `zIndex`; audio tracks mix together.
+ */
+export type StudioTrackType = 'video' | 'audio';
+
+export interface StudioTrack {
+  id: string;
+  name: string;
+  type: StudioTrackType;
+  /** Stack order for compositing (higher = on top). */
+  zIndex: number;
+  locked: boolean;
+  visible: boolean;
+  muted?: boolean;
+  clips: StudioClip[];
+}
+
 export interface StudioTake {
   id: string;
   projectId: string | null;
@@ -295,6 +501,17 @@ export interface StudioTake {
   mediaReadyAt?: number | null;
   createdAt: number;
   updatedAt: number;
+
+  // ── Multi-track project fields ─────────────────────────────────────────────
+  // These fields enable the new multi-track editing model.  When present, the
+  // timeline is built from `tracks` (which hold `StudioClip` instances) instead
+  // of being derived from `cuts`/`zooms`/`captions`.  A blank project has
+  // empty arrays here and an empty `videoPath`.
+
+  /** Media pool — all source recordings and imported assets for this project. */
+  mediaAssets?: StudioMediaAsset[];
+  /** Named tracks (video/audio) holding the project's clips. */
+  tracks?: StudioTrack[];
 }
 
 export interface StudioTakeSummary {
@@ -314,6 +531,8 @@ export interface StudioTakeSummary {
   fileSizeBytes?: number;
   createdAt: number;
   updatedAt: number;
+  /** True when the take uses the multi-track model (tracks_json is valid JSON). */
+  isMultiTrack: boolean;
 }
 
 // ── Layer-based showcase compositions ────────────────────────────────────────
@@ -339,7 +558,8 @@ export type StudioCompositionTransitionType =
   | 'slide-right'
   | 'slide-up'
   | 'slide-down'
-  | 'scale';
+  | 'scale'
+  | 'blur';
 
 export interface StudioCompositionTransition {
   type: StudioCompositionTransitionType;
@@ -506,6 +726,11 @@ export interface StudioClipPayload {
   opacity?: number;
   rotation?: number;
   cornerRadius?: number;
+  // Per-clip visual properties (multi-track model)
+  transform?: ClipTransform;
+  enterAnimation?: ClipAnimation;
+  exitAnimation?: ClipAnimation;
+  deviceFrame?: ClipDeviceFrame;
 }
 
 export interface TimelineClip {

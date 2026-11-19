@@ -100,7 +100,16 @@ function documentWith(tracks: MotionDocument['timeline']['tracks']): MotionDocum
 }
 
 describe('timeline sampling', () => {
-  const row = (id: string, placements: { id: string; clipId: string; start: number }[]) => ({
+  const row = (
+    id: string,
+    placements: {
+      id: string;
+      clipId: string;
+      start: number;
+      trimIn?: number;
+      duration?: number;
+    }[],
+  ) => ({
     id,
     name: id,
     targetId: null,
@@ -118,6 +127,34 @@ describe('timeline sampling', () => {
   it('stops sampling past the clip end', () => {
     const doc = documentWith([row('track', [{ id: 'p', clipId: 'clip', start: 2 }])]);
     expect(sampleTimeline(doc, 6.5).get(channelKey('node', 'opacity'))).toBeUndefined();
+  });
+
+  it('resumes a trimmed placement at its source offset', () => {
+    const doc = documentWith([
+      row('track', [{ id: 'p', clipId: 'clip', start: 2, trimIn: 1, duration: 2 }]),
+    ]);
+    // Clip keys run 0→4 with values 0→1, so source time 1 is value 0.25.
+    expect(sampleTimeline(doc, 2).get(channelKey('node', 'opacity'))).toBeCloseTo(0.25, 6);
+    expect(sampleTimeline(doc, 3).get(channelKey('node', 'opacity'))).toBeCloseTo(0.5, 6);
+  });
+
+  it('stops sampling at the trimmed placement end rather than the clip end', () => {
+    const doc = documentWith([
+      row('track', [{ id: 'p', clipId: 'clip', start: 2, trimIn: 1, duration: 2 }]),
+    ]);
+    expect(sampleTimeline(doc, 3.9).get(channelKey('node', 'opacity'))).toBeCloseTo(0.725, 6);
+    expect(sampleTimeline(doc, 4.1).get(channelKey('node', 'opacity'))).toBeUndefined();
+  });
+
+  it('samples both halves of a split placement at their own source offsets', () => {
+    const doc = documentWith([
+      row('track', [
+        { id: 'first', clipId: 'clip', start: 2, trimIn: 0, duration: 1 },
+        { id: 'second', clipId: 'clip', start: 3, trimIn: 1, duration: 1 },
+      ]),
+    ]);
+    expect(sampleTimeline(doc, 2.5).get(channelKey('node', 'opacity'))).toBeCloseTo(0.125, 6);
+    expect(sampleTimeline(doc, 3.5).get(channelKey('node', 'opacity'))).toBeCloseTo(0.375, 6);
   });
 
   it('lets a later placement win when two overlap', () => {

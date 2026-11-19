@@ -117,6 +117,11 @@ export type ActivePlacement = {
  * it is observable behaviour, not an implementation detail. Overlaps are allowed
  * on purpose (a transition can be authored by stacking two clips); the resolver
  * is the single place that decides who wins.
+ *
+ * The visible window is the placement's own `[start, start + duration)`, and the
+ * returned `localTime` is offset by `trimIn`. Trimming moves the window without
+ * moving the keys, so a trimmed or split placement must resume the clip at the
+ * source offset it was trimmed to — not at source time zero.
  */
 export function activePlacement(
   track: MotionTrack,
@@ -127,9 +132,12 @@ export function activePlacement(
     const placement = track.placements[i];
     const clip = clipsById.get(placement.clipId);
     if (!clip) continue;
-    const localTime = time - placement.start;
-    if (localTime >= 0 && localTime < clip.duration) {
-      return { placement, clip, localTime };
+    const trimIn = placement.trimIn ?? 0;
+    const duration = placement.duration ?? clip.duration - trimIn;
+    if (duration <= 0) continue;
+    const elapsed = time - placement.start;
+    if (elapsed >= 0 && elapsed < duration) {
+      return { placement, clip, localTime: trimIn + elapsed };
     }
   }
   return undefined;

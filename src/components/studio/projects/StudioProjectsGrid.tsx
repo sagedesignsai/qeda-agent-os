@@ -11,6 +11,7 @@ import type { StudioTakeSummary } from '@/lib/studio-types';
 interface StudioProjectsGridProps {
   takes: StudioTakeSummary[];
   onOpen: (id: string) => void;
+  onEdit?: (take: StudioTakeSummary) => void;
   onRename: (id: string, newTitle: string) => Promise<void>;
   onQuickExport: (id: string) => Promise<void>;
   onDelete: (take: StudioTakeSummary) => void;
@@ -19,6 +20,7 @@ interface StudioProjectsGridProps {
 export function StudioProjectsGrid({
   takes,
   onOpen,
+  onEdit,
   onRename,
   onQuickExport,
   onDelete,
@@ -30,6 +32,7 @@ export function StudioProjectsGrid({
           key={take.id}
           take={take}
           onOpen={onOpen}
+          onEdit={onEdit}
           onRename={onRename}
           onQuickExport={onQuickExport}
           onDelete={onDelete}

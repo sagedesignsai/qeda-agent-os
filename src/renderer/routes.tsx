@@ -50,15 +50,16 @@ export const routes: RouteObject[] = [
       /**
        * The app's starting point is conditional:
        *
-       *   1. No projects at all        → /onboarding (create the first project
-       *      before anything else makes sense).
-       *   2. A persisted active project → that project's page. The landing
-       *      screen is the first push in the product: opening the project the
-       *      user is mid-plan on puts the plan in front of them, and the rail's
-       *      ignition card offers its next move without a trip to /tasks.
-       *   3. No active project         → /tasks (today's blocks, overdue items,
-       *      active work), because with nothing scoped there is no project page
-       *      to land on that would mean anything.
+       *   1. No projects at all → /onboarding (create the first project before
+       *      anything else makes sense).
+       *   2. Otherwise           → /tasks (today's blocks and the next move).
+       *
+       * Tasks is the landing page because it is a *doing* surface: one finite
+       * list, one recommended start. The project detail page is for planning
+       * and review — opening the app onto a rollup, shortcuts and linked work
+       * put all of that in front of the user before they had chosen to look at
+       * it. A remembered active project is still one click away in the rail and
+       * still scopes agent work; it just no longer decides the first screen.
        *
        * This is the first render decision; the conditional redirect itself is
        * computed inside the route element so it can read the current project
@@ -182,31 +183,15 @@ function ProjectsHome() {
       try {
         const projects =
           await window.electron.ipc.invoke<Project[]>('projects:list');
-        const activeProjectId =
-          (
-            await window.electron.ipc.invoke<{
-              activeProjectId?: string;
-            }>('settings:get')
-          ).activeProjectId ?? '';
 
         // Signal that initial data loading is complete — overlay will fade out
         if (!cancelled) setLoading(false);
 
+        // The Inbox is seeded for every install, so "no projects" means only
+        // the Inbox exists — there is no real workspace to land in yet.
         const anyRealProject = projects.some((p) => p.id !== 'inbox');
-
-        if (!anyRealProject) {
-          if (!cancelled) navigate('/onboarding', { replace: true });
-          return;
-        }
-
-        // Land where the work is. A persisted active project means the user is
-        // mid-plan, and that project's page is the surface where the plan (and
-        // the rail's next-move card) lives — so starting there is a push to
-        // begin rather than a dashboard to orient in. A default that no longer
-        // resolves to a row falls back to Tasks instead of a dead scope.
-        const landsOnProject = projects.some((p) => p.id === activeProjectId);
         if (!cancelled) {
-          navigate(landsOnProject ? `/projects/${activeProjectId}` : '/tasks', {
+          navigate(anyRealProject ? '/tasks' : '/onboarding', {
             replace: true,
           });
         }

@@ -59,9 +59,11 @@ import { StudioContentPanel } from '@/components/studio/content/StudioContentPan
 import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
 import { StudioCommandBar } from '@/components/studio/StudioCommandBar';
 import { StudioCompositionCreateDialog } from '@/components/studio/StudioCompositionCreateDialog';
+import { ShowcaseProjectDialog, type ShowcaseProjectSourceType } from '@/components/studio/ShowcaseProjectDialog';
 import type { ContentItemPayload } from '@/components/studio/content/items/ContentCardItem';
 import {
   compositionDurationMs,
+  extractClipsFromTracks,
   extractZoomsFromTracks,
   extractCaptionsFromTracks,
   extractCutsFromTracks,
@@ -79,6 +81,7 @@ import {
   type StudioCompositionSceneId,
   type StudioCompositionSummary,
   type StudioCompositionTemplateSummary,
+  type StudioTakeSummary,
   type TimelineTrack,
 } from '@/lib/studio-types';
 import { renderComposedStudioVideo } from '@/lib/studio/render/export-renderer';
@@ -87,12 +90,17 @@ import { toast } from 'sonner';
 export default function Studio() {
   const { takeId } = useParams<{ takeId?: string }>();
   const navigate = useNavigate();
-  const { projectId, projectName } = useProjectScope();
+  const { projectId, projectName, withScope } = useProjectScope();
   const [compositions, setCompositions] = useState<StudioCompositionSummary[]>([]);
   const [compositionTemplates, setCompositionTemplates] = useState<
     StudioCompositionTemplateSummary[]
   >([]);
   const [compositionCreateOpen, setCompositionCreateOpen] = useState(false);
+
+  // Showcase Project Dialog state
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectDialogMode, setProjectDialogMode] = useState<'new' | 'edit'>('new');
+  const [editingTake, setEditingTake] = useState<StudioTakeSummary | null>(null);
 
   const refreshCompositions = useCallback(async () => {
     try {
@@ -146,6 +154,7 @@ export default function Studio() {
     updateEffects,
     updateOverlays,
     updateTimelineData,
+    updateTracks,
     generateSocialKit,
     exportVideo,
     deleteTake,
@@ -158,10 +167,10 @@ export default function Studio() {
     (payload) => {
       const changed = payload as { takeId?: string } | undefined;
       if (changed?.takeId && changed.takeId !== takeId) {
-        navigate(`/studio/${changed.takeId}`);
+        navigate(withScope(`/studio/${changed.takeId}`));
       }
     },
-    [takeId, navigate],
+    [takeId, navigate, withScope],
   );
 
   const [quickExportProgress, setQuickExportProgress] = useState<{
@@ -318,10 +327,22 @@ export default function Studio() {
     };
   }, [activeTake?.id, activeTake?.videoPath]);
 
-  // Synchronize timeline track structural edits (zooms, captions, cuts) back to active take
+  // Synchronize timeline track structural edits back to active take
   const handleTimelineTracksChange = useCallback(
     (tracks: TimelineTrack[]) => {
       if (!activeTake) return;
+
+      // Multi-track model: extract clips directly from tracks
+      const isMultiTrack = activeTake.tracks !== undefined;
+      if (isMultiTrack) {
+        const extracted = extractClipsFromTracks(tracks);
+        if (extracted) {
+          void updateTracks(extracted.tracks);
+        }
+        return;
+      }
+
+      // Legacy single-recording model: derive zooms, captions, cuts, etc.
       // The timeline speaks composition time; the model is authored in source
       // time, so every derived span is mapped back through the current cuts.
       const updatedZooms = extractZoomsFromTracks(tracks, cuts);
@@ -340,7 +361,7 @@ export default function Studio() {
         overlays: updatedOverlays,
       });
     },
-    [activeTake, cuts, updateTimelineData],
+    [activeTake, cuts, updateTimelineData, updateTracks],
   );
 
   const handleTitleSubmit = async () => {
@@ -371,7 +392,7 @@ export default function Studio() {
       takeProjectId: projectId,
     });
     if (newTakeId) {
-      navigate(`/studio/${newTakeId}`);
+      navigate(withScope(`/studio/${newTakeId}`));
     }
   };
 
@@ -498,6 +519,86 @@ export default function Studio() {
     }
   };
 
+  // ── Showcase Project Dialog Handlers ──────────────────────────────────────
+
+  const handleCreateProject = async (
+    title: string,
+    sourceType: ShowcaseProjectSourceType,
+  ) => {
+    try {
+      const take = await window.electron.ipc.invoke<StudioTake>(
+        'studio:create-blank-take',
+        { projectId, title },
+      );
+      toast.success('Project created');
+
+      if (sourceType === 'screen-record') {
+        // Open the source picker to start recording
+        setSourcePickerOpen(true);
+      } else if (sourceType === 'import-video') {
+        // Open file import dialog for video selection
+        const result = await window.electron.ipc.invoke<{
+          canceled: boolean;
+          files: Array<{
+            name: string;
+            path: string;
+            sizeBytes: number;
+            type: 'video' | 'audio' | 'image';
+          }>;
+        }>('studio:import-media', { types: ['video'] });
+
+        if (!result.canceled && result.files.length > 0) {
+          const videoFile = result.files.find((f) => f.type === 'video') ?? result.files[0];
+          // Set the video path on the take
+          await window.electron.ipc.invoke('studio:save-take', {
+            id: take.id,
+            videoPath: videoFile.path,
+          });
+          // Navigate to the editor with the imported video
+          navigate(withScope(`/studio/${take.id}`));
+        }
+      } else if (sourceType === 'blank') {
+        // Navigate directly to the editor with a blank project
+        navigate(withScope(`/studio/${take.id}`));
+      }
+    } catch (err) {
+      toast.error('Failed to create project');
+      console.error(err);
+    }
+  };
+
+  const handleEditProject = async (
+    id: string,
+    title: string,
+    description: string | null,
+  ) => {
+    try {
+      await window.electron.ipc.invoke('studio:save-take', {
+        id,
+        title,
+        description,
+      });
+      toast.success('Project updated');
+      if (activeTake && activeTake.id === id) {
+        await loadTake(id);
+      }
+    } catch {
+      toast.error('Failed to update project');
+    }
+  };
+
+  const handleOpenNewProjectDialog = () => {
+    setProjectDialogMode('new');
+    setEditingTake(null);
+    setProjectDialogOpen(true);
+  };
+
+  const handleOpenEditProjectDialog = (take: StudioTakeSummary) => {
+    setProjectDialogMode('edit');
+    setEditingTake(take);
+    setProjectDialogOpen(true);
+  };
+
   const handleQuickExport = async (id: string) => {
     if (activeTake && activeTake.id === id) {
       await exportVideo('mp4');
@@ -599,7 +700,7 @@ export default function Studio() {
             { projectId, title, sceneId, sourceTakeIds },
           );
       toast.success('Composition created.');
-      navigate(`/studio/compositions/${composition.id}`);
+      navigate(withScope(`/studio/compositions/${composition.id}`));
     } catch (error) {
       console.error('[Studio] Failed to create composition.', error);
       toast.error(
@@ -744,11 +845,11 @@ export default function Studio() {
           onStop={async () => {
             if (agentRecording) {
               const res = await stopAgentRecording();
-              if (res.stopped && res.takeId) navigate(`/studio/${res.takeId}`);
+              if (res.stopped && res.takeId) navigate(withScope(`/studio/${res.takeId}`));
               return;
             }
             const take = await stopRecording();
-            if (take) navigate(`/studio/${take.id}`);
+            if (take) navigate(withScope(`/studio/${take.id}`));
           }}
         />
       )}
@@ -817,15 +918,16 @@ export default function Studio() {
           takes={takes}
           compositions={compositions}
           onNewComposition={() => setCompositionCreateOpen(true)}
-          onOpenComposition={(id) => navigate(`/studio/compositions/${id}`)}
+          onOpenComposition={(id) => navigate(withScope(`/studio/compositions/${id}`))}
           hasMoreTakes={hasMoreTakes}
           loadingMoreTakes={loadingMoreTakes}
           onLoadMore={loadMoreTakes}
           onOpenTake={(id) => {
             loadTake(id);
-            navigate(`/studio/${id}`);
+            navigate(withScope(`/studio/${id}`));
           }}
-          onNewRecording={() => setSourcePickerOpen(true)}
+          onNewRecording={handleOpenNewProjectDialog}
+          onEditProject={handleOpenEditProjectDialog}
           onRenameTake={handleRenameTake}
           onQuickExport={handleQuickExport}
           onDeleteTake={handleDeleteTake}
@@ -1017,7 +1119,7 @@ export default function Studio() {
                   <StudioContentPanel
                     takes={takes}
                     onAddClip={handleInsertClip}
-                    onNewRecording={() => setSourcePickerOpen(true)}
+                    onNewRecording={handleOpenNewProjectDialog}
                     projectId={projectId}
                     isCollapsed={contentPanelCollapsed}
                     onToggleCollapse={toggleLeftPanel}
@@ -1185,6 +1287,15 @@ export default function Studio() {
         onOpenChange={setSourcePickerOpen}
         onListSources={listSources}
         onSelectSource={handleStartCapture}
+      />
+
+      <ShowcaseProjectDialog
+        open={projectDialogOpen}
+        onOpenChange={setProjectDialogOpen}
+        mode={projectDialogMode}
+        editingTake={editingTake}
+        onCreate={handleCreateProject}
+        onEdit={handleEditProject}
       />
 
       <StudioCompositionCreateDialog

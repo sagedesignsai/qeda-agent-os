@@ -56,6 +56,58 @@ describe('motion op registry', () => {
     expect(isKeyframesSorted(channel?.keyframes ?? [])).toBe(true);
   });
 
+  it('replaces a key added at an existing time instead of stacking a duplicate', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const channelBefore = findClip(doc, 'clip_product_spin')?.channels.find(
+      (candidate) => candidate.id === 'chn_product_spin',
+    );
+    const existing = channelBefore?.keyframes[0];
+    if (!existing) throw new Error('starter channel is missing its first keyframe');
+
+    const updated = applyMotionOp(doc, {
+      op: 'keyframe.add',
+      clipId: 'clip_product_spin',
+      channelId: 'chn_product_spin',
+      keyframeId: 'kf_duplicate_attempt',
+      time: existing.time,
+      value: 0.42,
+      easing: { type: 'cubic', x1: 0.1, y1: 0, x2: 0.2, y2: 1 },
+    });
+    const channel = findClip(updated, 'clip_product_spin')?.channels.find(
+      (candidate) => candidate.id === 'chn_product_spin',
+    );
+
+    expect(channel?.keyframes).toHaveLength(channelBefore.keyframes.length);
+    const replaced = channel?.keyframes.find((key) => key.id === existing.id);
+    expect(replaced?.value).toBeCloseTo(0.42);
+    expect(replaced?.easing).toEqual({ type: 'cubic', x1: 0.1, y1: 0, x2: 0.2, y2: 1 });
+    expect(channel?.keyframes.some((key) => key.id === 'kf_duplicate_attempt')).toBe(false);
+  });
+
+  it('defaults to linear when an add at an existing time omits easing', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const channelBefore = findClip(doc, 'clip_product_spin')?.channels.find(
+      (candidate) => candidate.id === 'chn_product_spin',
+    );
+    const existing = channelBefore?.keyframes[0];
+    if (!existing) throw new Error('starter channel is missing its first keyframe');
+
+    const updated = applyMotionOp(doc, {
+      op: 'keyframe.add',
+      clipId: 'clip_product_spin',
+      channelId: 'chn_product_spin',
+      keyframeId: 'kf_value_only',
+      time: existing.time,
+      value: 0.17,
+    });
+    const replaced = findClip(updated, 'clip_product_spin')
+      ?.channels.find((candidate) => candidate.id === 'chn_product_spin')
+      ?.keyframes.find((key) => key.id === existing.id);
+
+    expect(replaced?.value).toBeCloseTo(0.17);
+    expect(replaced?.easing).toEqual({ type: 'linear' });
+  });
+
   it('clamps a moved keyframe inside its clip', () => {
     const doc = createStarterMotionDocument(NOW);
     const moved = applyMotionOp(doc, {

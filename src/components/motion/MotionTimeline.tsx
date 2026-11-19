@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, CopyIcon, ListTodoIcon, MoreHorizontalIcon, PlusIcon, ScissorsIcon, TableIcon, Trash2Icon } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { MotionSceneSelector } from '@/components/motion/MotionSceneSelector';
 import { CanvasTimeline } from '@/components/timeline/CanvasTimeline';
@@ -71,31 +72,32 @@ const MAX_PX_PER_SECOND = 4000;
  * `layoutDopeSheet` in `dopesheet.ts`.
  */
 function computeDopeSheetContentHeight(model: TimelineModel, collapsedGroups: Set<string>): number {
-  // Group items by row (track), then count channels with keys per group
-  const groupChannelCounts = new Map<string, number>();
+  // One row per (group, property), matching `layoutDopeSheet`. Counting channel
+  // entries instead would over-count a track that places the same clip twice.
+  const propertiesByGroup = new Map<string, Set<string>>();
   for (const row of model.rows) {
-    const itemsInRow = model.items.filter((item) => item.rowId === row.id);
-    let channelCount = 0;
-    for (const item of itemsInRow) {
-      const channels = item.channels ?? [];
-      for (const channel of channels) {
-        if (channel.keys.length > 0) {
-          channelCount += 1;
+    const groupId = row.groupId ?? row.id;
+    for (const item of model.items) {
+      if (item.rowId !== row.id) continue;
+      for (const channel of item.channels ?? []) {
+        if (channel.keys.length === 0) continue;
+        let properties = propertiesByGroup.get(groupId);
+        if (!properties) {
+          properties = new Set();
+          propertiesByGroup.set(groupId, properties);
         }
+        properties.add(channel.label);
       }
-    }
-    if (channelCount > 0) {
-      groupChannelCounts.set(row.id, channelCount);
     }
   }
 
   let height = 0;
-  for (const [groupId, channelCount] of groupChannelCounts) {
+  for (const [groupId, properties] of propertiesByGroup) {
     // Group header row
     height += DOPE_GROUP_HEIGHT;
     // Property rows (only if group is not collapsed)
     if (!collapsedGroups.has(groupId)) {
-      height += channelCount * DOPE_ROW_HEIGHT;
+      height += properties.size * DOPE_ROW_HEIGHT;
     }
   }
   return height;
@@ -387,11 +389,19 @@ export function MotionTimeline({
     const playhead = motionStore.clock.getTime();
     const trimIn = placementRef.placement.trimIn ?? 0;
     const visibleEnd = placementRef.placement.start + (placementRef.placement.duration ?? clip.duration - trimIn);
+    let skippedProperty = 0;
+    let skippedRange = 0;
     const ops = keyClipboard.flatMap((copied) => {
       const channel = clip.channels.find((candidate) => candidate.property === copied.property);
-      if (!channel) return [];
+      if (!channel) {
+        skippedProperty += 1;
+        return [];
+      }
       const sceneTime = playhead + copied.offset;
-      if (sceneTime < placementRef.placement.start || sceneTime > visibleEnd) return [];
+      if (sceneTime < placementRef.placement.start || sceneTime > visibleEnd) {
+        skippedRange += 1;
+        return [];
+      }
       const time = trimIn + sceneTime - placementRef.placement.start;
       return [{
         op: 'keyframe.add' as const,
@@ -404,6 +414,26 @@ export function MotionTimeline({
       }];
     });
     if (ops.length) motionStore.commit('Paste keyframes', ops);
+
+    const skipped = skippedProperty + skippedRange;
+    if (skipped > 0) {
+      const reasons = [
+        skippedProperty > 0
+          ? `${skippedProperty} for a property this clip does not animate`
+          : '',
+        skippedRange > 0
+          ? `${skippedRange} outside the clip's visible range`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' and ');
+      const total = keyClipboard.length;
+      toast.warning(
+        ops.length > 0
+          ? `Pasted ${ops.length} of ${total} keyframes — skipped ${reasons}.`
+          : `Nothing pasted — skipped ${reasons}.`,
+      );
+    }
   }, [doc, keyClipboard, selection]);
 
   const toggleSnap = useCallback(() => {
@@ -1058,10 +1088,6 @@ export function MotionTimeline({
                     Trim Out
                   </ContextMenuItem>
                   <ContextMenuSeparator />
-                  <ContextMenuItem onSelect={copyKeyframes}>
-                    Copy
-                    <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
-                  </ContextMenuItem>
                   <ContextMenuItem variant="destructive" onSelect={deleteSelection}>
                     Delete
                     <ContextMenuShortcut>Del</ContextMenuShortcut>

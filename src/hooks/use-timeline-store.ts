@@ -32,6 +32,7 @@ export interface TimelineState {
   selectedClipId: string | null;
   snapLineMs: number | null; // Active magnetic guide indicator
   tracks: TimelineTrack[];
+  isMultiTrack: boolean; // true when take.tracks is defined (multi-track model)
 }
 
 export type TimelineListener = () => void;
@@ -49,6 +50,7 @@ class TimelineStore {
     selectedClipId: null,
     snapLineMs: null,
     tracks: [],
+    isMultiTrack: false,
   };
 
   private listeners = new Set<TimelineListener>();
@@ -237,11 +239,13 @@ class TimelineStore {
     tracks: TimelineTrack[],
     durationMs: number,
     resetHistory = true,
+    isMultiTrack = false,
   ) => {
     this.state = {
       ...this.state,
       tracks,
       durationMs: Math.max(durationMs, 1000),
+      isMultiTrack,
     };
     if (resetHistory) {
       this.undoStack = [];
@@ -412,11 +416,11 @@ class TimelineStore {
     const track = this.state.tracks.find((t) => t.id === trackId);
     if (!track || track.locked) return;
 
-    // The video track is the timeline's spine: its clips are laid out
-    // back-to-back so that "no clip here" means "this recording range was cut".
-    // Sliding one would leave a gap the model cannot express, so the editor
-    // only allows trimming it.
-    if (track.type === 'video') return;
+    // In the legacy single-recording model, the video track is the timeline's
+    // spine: clips are contiguous so "no clip here" means a cut. Sliding one
+    // would leave a gap the model cannot express, so only trimming is allowed.
+    // In multi-track mode, clips are independent — free movement is fine.
+    if (!this.state.isMultiTrack && track.type === 'video') return;
 
     const clampedStart = Math.max(0, newStartMs);
 

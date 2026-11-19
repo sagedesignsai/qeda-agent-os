@@ -188,6 +188,16 @@ export function createStudioTools({
             overlays: take.overlays ?? [],
             socialKit: take.socialKit,
             project: projectInfo,
+            // Multi-track project fields
+            isMultiTrack: take.tracks !== undefined,
+            trackCount: (take.tracks ?? []).length,
+            clipCount: (take.tracks ?? []).reduce(
+              (sum, t) => sum + t.clips.length,
+              0,
+            ),
+            mediaAssetCount: (take.mediaAssets ?? []).length,
+            tracks: take.tracks,
+            mediaAssets: take.mediaAssets,
           },
         };
       },

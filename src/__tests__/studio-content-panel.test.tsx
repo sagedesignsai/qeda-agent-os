@@ -316,16 +316,15 @@ describe('Studio Content Panel & Blank Project Flow', () => {
     );
   });
 
-  it('renders Blank Project button in StudioProjectsView and invokes callback', () => {
-    const onNewBlankProject = jest.fn();
+  it('renders New Recording button in StudioProjectsView and invokes callback', () => {
+    const onNewRecording = jest.fn();
 
     render(
       <SidebarProvider>
         <StudioProjectsView
           takes={mockTakes}
           onOpenTake={jest.fn()}
-          onNewRecording={jest.fn()}
-          onNewBlankProject={onNewBlankProject}
+          onNewRecording={onNewRecording}
           onRenameTake={jest.fn()}
           onQuickExport={jest.fn()}
           onDeleteTake={jest.fn()}
@@ -333,11 +332,11 @@ describe('Studio Content Panel & Blank Project Flow', () => {
       </SidebarProvider>,
     );
 
-    const blankBtn = screen.getByRole('button', { name: /Blank Project/i });
-    expect(blankBtn).toBeInTheDocument();
+    const newRecordingBtn = screen.getByRole('button', { name: /New Recording/i });
+    expect(newRecordingBtn).toBeInTheDocument();
 
-    fireEvent.click(blankBtn);
-    expect(onNewBlankProject).toHaveBeenCalledTimes(1);
+    fireEvent.click(newRecordingBtn);
+    expect(onNewRecording).toHaveBeenCalledTimes(1);
   });
 
   it('TimelineStore.addClip inserts clip onto track and updates store duration', () => {

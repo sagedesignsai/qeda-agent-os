@@ -1,16 +1,16 @@
 /**
  * components/studio/inspector/sections/ClipPropertiesSection.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Context-aware clip inspector section:
- *   - Automatically docks at the top when a clip is selected on the timeline
- *   - Dedicated controls for Kinetic Zooms (2D coordinate pad, scale dial)
- *   - Subtitle text editing & timing for captions
- *   - Video clip properties (speed, trim offsets) & Audio volume gain
- *   - Millisecond precision start time and duration nudge inputs
+ * Context-aware clip inspector section with modern scrub-field controls:
+ *   - Compact StudioPanelSection shells replace the old InspectorSection
+ *   - StudioScrubField + StudioFieldRow/PairRow for all numeric properties
+ *   - Axis color coding (X=red, Y=green) for transform position and scale
+ *   - Link toggle for uniform scale X/Y
+ *   - Dedicated controls for zooms, captions, overlays, audio, and timing
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   CameraIcon,
   SubtitlesIcon,
@@ -22,18 +22,42 @@ import {
   GaugeIcon,
   SparklesIcon,
   ImageIcon,
+  MoveIcon,
+  Maximize2Icon,
+  KeyRoundIcon,
+  ZapIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import type { TimelineClip, TimelineTrack } from '@/lib/studio-types';
 import {
-  InspectorSection,
-  InspectorSliderInput,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type {
+  ClipAnimation,
+  ClipTransform,
+  StudioAnimationEasing,
+  StudioCompositionTransitionType,
+  TimelineClip,
+  TimelineTrack,
+} from '@/lib/studio-types';
+import {
+  ANIMATION_PRESETS,
+  transitionTypeToPresetId,
+} from '@/lib/studio/animation-presets';
+import {
   InspectorSegmentedGroup,
   InspectorCoordinatePad,
   TimecodeNudgeInput,
-  InspectorFieldRow,
+  StudioScrubField,
+  StudioFieldRow,
+  StudioPairRow,
+  StudioLinkToggle,
+  StudioPanelSection,
 } from '../components';
 
 interface ClipPropertiesSectionProps {
@@ -100,14 +124,251 @@ export function ClipPropertiesSection({
   const targetX = clip.payload?.targetX ?? 0.5;
   const targetY = clip.payload?.targetY ?? 0.5;
 
+  // Per-clip visual transform (multi-track model)
+  const transform = clip.payload?.transform ?? null;
+  const pos = transform?.position ?? { x: 0, y: 0 };
+  const scl = transform?.scale ?? { x: 1, y: 1 };
+  const rot = transform?.rotation ?? 0;
+  const anchor = transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
+
+  const isVisualTrack = track.type === 'video' || track.type === 'overlays';
+
+  // Accordion state: only one section open at a time
+  // The first visible section (by render order) is open by default
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+
+  // Set the default open section on mount based on track type
+  useState(() => {
+    if (track.type === 'effects') setActiveSection('Zoom');
+    else if (track.type === 'overlays') setActiveSection('Overlay');
+    else if (track.type === 'captions') setActiveSection('Caption');
+    else if (track.type === 'video') setActiveSection('Video');
+    else if (track.type === 'audio') setActiveSection('Audio');
+    else if (isVisualTrack) setActiveSection('Transform');
+  });
+
+  const handleSectionToggle = useCallback(
+    (section: string) => (open: boolean) => {
+      if (open) setActiveSection(section);
+      else setActiveSection(null);
+    },
+    [],
+  );
+
+  /** Merge a partial transform patch into the existing payload.transform */
+  const setTransform = (partial: Partial<ClipTransform>) => {
+    const next = { ...(transform ?? {}), ...partial };
+    onUpdateClip(clip.id, { payload: { transform: next } });
+  };
+
+  // Per-clip enter/exit animations
+  const enterAnim = clip.payload?.enterAnimation ?? null;
+  const exitAnim = clip.payload?.exitAnimation ?? null;
+
+  const EASING_OPTIONS: { value: StudioAnimationEasing; label: string }[] = [
+    { value: 'ease-out', label: 'Ease Out' },
+    { value: 'ease-in', label: 'Ease In' },
+    { value: 'ease-in-out', label: 'Ease In-Out' },
+    { value: 'power2.out', label: 'Power 2 Out' },
+    { value: 'power2.in', label: 'Power 2 In' },
+    { value: 'power3.out', label: 'Power 3 Out' },
+    { value: 'back.out', label: 'Back Out' },
+    { value: 'elastic.out', label: 'Elastic Out' },
+    { value: 'bounce.out', label: 'Bounce Out' },
+    { value: 'expo.out', label: 'Expo Out' },
+    { value: 'sine.out', label: 'Sine Out' },
+    { value: 'linear', label: 'Linear' },
+  ];
+
+  const setAnimation = (
+    key: 'enterAnimation' | 'exitAnimation',
+    patch: Partial<ClipAnimation>,
+  ) => {
+    const existing = key === 'enterAnimation' ? enterAnim : exitAnim;
+    const next: ClipAnimation = {
+      type: existing?.type ?? 'none',
+      durationMs: existing?.durationMs ?? 300,
+      ...patch,
+    };
+    onUpdateClip(clip.id, { payload: { [key]: next } });
+  };
+
+  /** Set animation from a preset selection */
+  const setAnimationPreset = (
+    key: 'enterAnimation' | 'exitAnimation',
+    presetId: string | null,
+  ) => {
+    if (!presetId) {
+      // Clear animation
+      onUpdateClip(clip.id, { payload: { [key]: undefined } });
+      return;
+    }
+    const preset = ANIMATION_PRESETS[presetId];
+    if (!preset) return;
+
+    // Map preset back to legacy type for compatibility
+    const legacyType: StudioCompositionTransitionType = 'fade';
+    const next: ClipAnimation = {
+      type: legacyType,
+      durationMs: preset.defaultDurationMs,
+      easing: preset.defaultEasing,
+      presetId,
+    };
+    onUpdateClip(clip.id, { payload: { [key]: next } });
+  };
+
+  /** Get the current preset id for an animation */
+  const getPresetId = (anim: ClipAnimation | null | undefined): string | null => {
+    if (!anim) return null;
+    if (anim.presetId) return anim.presetId;
+    return transitionTypeToPresetId(anim.type);
+  };
+
+  /** Count keyframes for an animation */
+  const keyframeCount = (anim: ClipAnimation | null | undefined): number => {
+    if (!anim) return 0;
+    if (anim.keyframes) return anim.keyframes.length;
+    if (anim.presetId && ANIMATION_PRESETS[anim.presetId]) {
+      const kfs = ANIMATION_PRESETS[anim.presetId].generateKeyframes(
+        'enter',
+        anim.durationMs,
+      );
+      return kfs.length;
+    }
+    return 0;
+  };
+
+  /** Visible phase duration (hold between enter and exit) */
+  const visiblePhaseMs = useMemo(() => {
+    const enterDur = enterAnim?.durationMs ?? 0;
+    const exitDur = exitAnim?.durationMs ?? 0;
+    const visible = clip.durationMs - enterDur - exitDur;
+    return Math.max(0, visible);
+  }, [clip.durationMs, enterAnim?.durationMs, exitAnim?.durationMs]);
+
+  /** Render a preset selector grid for enter or exit */
+  const renderPresetGrid = (
+    key: 'enterAnimation' | 'exitAnimation',
+    anim: ClipAnimation | null | undefined,
+  ) => {
+    const currentPreset = getPresetId(anim);
+    const presets = Object.values(ANIMATION_PRESETS);
+
+    return (
+      <div className="grid grid-cols-3 gap-1">
+        <Button
+          type="button"
+          variant={currentPreset === null ? 'default' : 'outline'}
+          size="sm"
+          className="h-7 text-[10px]"
+          onClick={() => setAnimationPreset(key, null)}
+        >
+          None
+        </Button>
+        {presets.map((p) => (
+          <Button
+            key={p.id}
+            type="button"
+            variant={currentPreset === p.id ? 'default' : 'outline'}
+            size="sm"
+            className="h-7 text-[10px]"
+            onClick={() => setAnimationPreset(key, p.id)}
+            title={p.name}
+          >
+            {p.name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+          </Button>
+        ))}
+      </div>
+    );
+  };
+
+  /** Render easing + duration controls for an active animation */
+  const renderAnimationControls = (
+    key: 'enterAnimation' | 'exitAnimation',
+    anim: ClipAnimation | null | undefined,
+    label: string,
+  ) => {
+    if (!anim || (!anim.presetId && anim.type === 'none')) return null;
+
+    return (
+      <>
+        <StudioFieldRow label="Duration">
+          <StudioScrubField
+            label={`${label} Duration`}
+            value={anim.durationMs}
+            min={100}
+            max={1000}
+            step={50}
+            suffix="ms"
+            onChange={(durationMs) => setAnimation(key, { durationMs })}
+          />
+        </StudioFieldRow>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-muted-foreground w-14 shrink-0">Easing</span>
+          <Select
+            value={anim.easing ?? 'ease-out'}
+            onValueChange={(easing) => setAnimation(key, { easing })}
+          >
+            <SelectTrigger className="h-7 flex-1 text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EASING_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {keyframeCount(anim) > 0 && (
+            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground ml-auto">
+              <KeyRoundIcon className="w-3 h-3" />
+              {keyframeCount(anim)}
+            </span>
+          )}
+        </div>
+      </>
+    );
+  };
+
+  // Scale link state — uniform scaling for X/Y
+  const scaleLinked = Math.abs(scl.x - scl.y) < 0.01;
+  const [scaleLink, setScaleLink] = useState(scaleLinked);
+  const handleScaleLinkToggle = () => {
+    const next = !scaleLink;
+    setScaleLink(next);
+    if (next) {
+      // Uniform: set both to the larger value
+      const uniform = Math.max(scl.x, scl.y);
+      setTransform({ scale: { x: uniform, y: uniform } });
+    }
+  };
+  const handleScaleX = (x: number) => {
+    if (scaleLink) {
+      setTransform({ scale: { x, y: x } });
+    } else {
+      setTransform({ scale: { ...scl, x } });
+    }
+  };
+  const handleScaleY = (y: number) => {
+    if (scaleLink) {
+      setTransform({ scale: { x: y, y } });
+    } else {
+      setTransform({ scale: { ...scl, y } });
+    }
+  };
+
   return (
-    <InspectorSection
-      title={`Clip: ${clip.name}`}
-      icon={getTrackIcon()}
-      badge={getBadgeText()}
-      defaultOpen={true}
-      className="bg-primary/5 border-primary/20"
-      headerAction={
+    <div className="border-b border-border/60">
+      {/* ── Clip Header ──────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1.5 px-3 py-2">
+        {getTrackIcon()}
+        <span className="flex-1 truncate text-[11px] font-semibold text-foreground">
+          {clip.name}
+        </span>
+        <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
+          {getBadgeText()}
+        </span>
         <Button
           type="button"
           variant="ghost"
@@ -121,30 +382,27 @@ export function ClipPropertiesSection({
         >
           <XIcon className="w-3 h-3" />
         </Button>
-      }
-    >
-      {/* ── Type-Specific Properties ────────────────────────────────────────── */}
-      {track.type === 'effects' && isZoomClip && (
-        <>
-          {/* Zoom scale slider */}
-          <InspectorSliderInput
-            label="Zoom Scale"
-            icon={<CameraIcon className="w-3.5 h-3.5" />}
-            value={currentScale}
-            min={1.1}
-            max={3.0}
-            step={0.1}
-            unit="x"
-            formatValue={(val) => `${val.toFixed(1)}x`}
-            onChange={(scale) => {
-              onUpdateClip(clip.id, {
-                name: `Zoom ${scale.toFixed(1)}x`,
-                payload: { scale },
-              });
-            }}
-          />
+      </div>
 
-          {/* 2D Focal Center Coordinate Pad */}
+      {/* ── Effects: Zoom ─────────────────────────────────────────────────── */}
+      {track.type === 'effects' && isZoomClip && (
+        <StudioPanelSection title="Zoom" open={activeSection === 'Zoom'} onOpenChange={handleSectionToggle('Zoom')}>
+          <StudioFieldRow label="Zoom Scale">
+            <StudioScrubField
+              label="Zoom Scale"
+              value={currentScale}
+              min={1.1}
+              max={3.0}
+              step={0.1}
+              suffix="x"
+              onChange={(scale) => {
+                onUpdateClip(clip.id, {
+                  name: `Zoom ${scale.toFixed(1)}x`,
+                  payload: { scale },
+                });
+              }}
+            />
+          </StudioFieldRow>
           <InspectorCoordinatePad
             targetX={targetX}
             targetY={targetY}
@@ -154,74 +412,83 @@ export function ClipPropertiesSection({
               });
             }}
           />
-        </>
+        </StudioPanelSection>
       )}
 
+      {/* ── Effects: Non-Zoom ─────────────────────────────────────────────── */}
       {track.type === 'effects' && !isZoomClip && (
-        <InspectorSliderInput
-          label="Effect Intensity"
-          icon={<SparklesIcon className="w-3.5 h-3.5" />}
-          value={Math.round((clip.payload?.intensity ?? 0.6) * 100)}
-          min={0}
-          max={100}
-          step={5}
-          unit="%"
-          onChange={(percent) =>
-            onUpdateClip(clip.id, { payload: { intensity: percent / 100 } })
-          }
-        />
+        <StudioPanelSection title="Effect" open={activeSection === 'Effect'} onOpenChange={handleSectionToggle('Effect')}>
+          <StudioFieldRow label="Intensity">
+            <StudioScrubField
+              label="Effect Intensity"
+              value={Math.round((clip.payload?.intensity ?? 0.6) * 100)}
+              min={0}
+              max={100}
+              step={5}
+              suffix="%"
+              onChange={(percent) =>
+                onUpdateClip(clip.id, { payload: { intensity: percent / 100 } })
+              }
+            />
+          </StudioFieldRow>
+        </StudioPanelSection>
       )}
 
+      {/* ── Overlays ──────────────────────────────────────────────────────── */}
       {track.type === 'overlays' && (
-        <>
-          <InspectorSliderInput
-            label="Overlay Width"
-            icon={<ImageIcon className="w-3.5 h-3.5" />}
-            value={Math.round((clip.payload?.widthPct ?? 0.42) * 100)}
-            min={10}
-            max={100}
-            step={1}
-            unit="%"
-            onChange={(percent) =>
-              onUpdateClip(clip.id, { payload: { widthPct: percent / 100 } })
-            }
-          />
-          <InspectorSliderInput
-            label="Opacity"
-            icon={<SparklesIcon className="w-3.5 h-3.5" />}
-            value={Math.round((clip.payload?.opacity ?? 1) * 100)}
-            min={0}
-            max={100}
-            step={5}
-            unit="%"
-            onChange={(percent) =>
-              onUpdateClip(clip.id, { payload: { opacity: percent / 100 } })
-            }
-          />
-          <InspectorSliderInput
-            label="Rotation"
-            icon={<CameraIcon className="w-3.5 h-3.5" />}
-            value={clip.payload?.rotation ?? 0}
-            min={-180}
-            max={180}
-            step={5}
-            unit="°"
-            onChange={(rotation) =>
-              onUpdateClip(clip.id, { payload: { rotation } })
-            }
-          />
-          <InspectorSliderInput
-            label="Corner Radius"
-            icon={<ImageIcon className="w-3.5 h-3.5" />}
-            value={clip.payload?.cornerRadius ?? 12}
-            min={0}
-            max={48}
-            step={2}
-            unit="px"
-            onChange={(cornerRadius) =>
-              onUpdateClip(clip.id, { payload: { cornerRadius } })
-            }
-          />
+        <StudioPanelSection title="Overlay" open={activeSection === 'Overlay'} onOpenChange={handleSectionToggle('Overlay')}>
+          <StudioFieldRow label="Width">
+            <StudioScrubField
+              label="Overlay Width"
+              value={Math.round((clip.payload?.widthPct ?? 0.42) * 100)}
+              min={10}
+              max={100}
+              step={1}
+              suffix="%"
+              onChange={(percent) =>
+                onUpdateClip(clip.id, { payload: { widthPct: percent / 100 } })
+              }
+            />
+          </StudioFieldRow>
+          <StudioFieldRow label="Opacity">
+            <StudioScrubField
+              label="Opacity"
+              value={Math.round((clip.payload?.opacity ?? 1) * 100)}
+              min={0}
+              max={100}
+              step={5}
+              suffix="%"
+              onChange={(percent) =>
+                onUpdateClip(clip.id, { payload: { opacity: percent / 100 } })
+              }
+            />
+          </StudioFieldRow>
+          <StudioFieldRow label="Rotation">
+            <StudioScrubField
+              label="Rotation"
+              value={clip.payload?.rotation ?? 0}
+              min={-180}
+              max={180}
+              step={5}
+              suffix="°"
+              onChange={(rotation) =>
+                onUpdateClip(clip.id, { payload: { rotation } })
+              }
+            />
+          </StudioFieldRow>
+          <StudioFieldRow label="Corner Radius">
+            <StudioScrubField
+              label="Corner Radius"
+              value={clip.payload?.cornerRadius ?? 12}
+              min={0}
+              max={48}
+              step={2}
+              suffix="px"
+              onChange={(cornerRadius) =>
+                onUpdateClip(clip.id, { payload: { cornerRadius } })
+              }
+            />
+          </StudioFieldRow>
           <InspectorCoordinatePad
             targetX={clip.payload?.x ?? 0.5}
             targetY={clip.payload?.y ?? 0.5}
@@ -229,46 +496,42 @@ export function ClipPropertiesSection({
               onUpdateClip(clip.id, { payload: { x, y } })
             }
           />
-        </>
+        </StudioPanelSection>
       )}
 
+      {/* ── Captions ──────────────────────────────────────────────────────── */}
       {track.type === 'captions' && (
-        <InspectorFieldRow
-          label="Subtitle Text"
-          icon={<TypeIcon className="w-3.5 h-3.5" />}
-        >
-          <Textarea
-            value={clip.payload?.text ?? clip.name}
-            onChange={(e) => {
-              const text = e.target.value;
-              onUpdateClip(clip.id, {
-                name: text,
-                payload: { text },
-              });
-            }}
-            placeholder="Type subtitle text..."
-            className="min-h-16 text-xs resize-none bg-background font-sans"
-          />
-        </InspectorFieldRow>
+        <StudioPanelSection title="Caption" open={activeSection === 'Caption'} onOpenChange={handleSectionToggle('Caption')}>
+          <div className="space-y-1.5">
+            <span className="text-[11px] text-muted-foreground">Subtitle Text</span>
+            <Textarea
+              value={clip.payload?.text ?? clip.name}
+              onChange={(e) => {
+                const text = e.target.value;
+                onUpdateClip(clip.id, {
+                  name: text,
+                  payload: { text },
+                });
+              }}
+              placeholder="Type subtitle text..."
+              className="min-h-16 text-xs resize-none bg-background font-sans"
+            />
+          </div>
+        </StudioPanelSection>
       )}
 
+      {/* ── Video ─────────────────────────────────────────────────────────── */}
       {track.type === 'video' && (
-        <>
-          <InspectorFieldRow
-            label="Clip Name"
-            icon={<VideoIcon className="w-3.5 h-3.5" />}
-          >
+        <StudioPanelSection title="Video" open={activeSection === 'Video'} onOpenChange={handleSectionToggle('Video')}>
+          <StudioFieldRow label="Name" wide>
             <Input
               value={clip.name}
               onChange={(e) => onUpdateClip(clip.id, { name: e.target.value })}
               className="h-7 text-xs bg-background"
             />
-          </InspectorFieldRow>
-
-          <InspectorFieldRow
-            label="Playback Speed"
-            icon={<GaugeIcon className="w-3.5 h-3.5" />}
-          >
+          </StudioFieldRow>
+          <div className="space-y-1.5">
+            <span className="text-[11px] text-muted-foreground">Speed</span>
             <InspectorSegmentedGroup
               value="1.0x"
               onChange={() => {}}
@@ -279,50 +542,180 @@ export function ClipPropertiesSection({
                 { value: '2.0x', label: '2.0x' },
               ]}
             />
-          </InspectorFieldRow>
-        </>
+          </div>
+        </StudioPanelSection>
       )}
 
+      {/* ── Animations (all tracks) ───────────────────────────────────────── */}
+      <StudioPanelSection title="Animations" open={activeSection === 'Animations'} onOpenChange={handleSectionToggle('Animations')}>
+        <div className="space-y-2">
+          {/* Enter Animation */}
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              <ZapIcon className="w-3 h-3 text-purple-400" />
+              <span className="text-[11px] font-medium text-foreground">Enter</span>
+            </div>
+            {renderPresetGrid('enterAnimation', enterAnim)}
+          </div>
+          {renderAnimationControls('enterAnimation', enterAnim, 'Enter')}
+
+          {/* Visible Phase Indicator */}
+          {(enterAnim || exitAnim) && (
+            <div className="flex items-center gap-2 px-1 py-1 rounded bg-muted/40">
+              <span className="text-[10px] text-muted-foreground">Visible hold</span>
+              <span className="text-[10px] font-mono text-foreground ml-auto">
+                {(visiblePhaseMs / 1000).toFixed(1)}s
+              </span>
+            </div>
+          )}
+
+          {/* Exit Animation */}
+          <div>
+            <div className="flex items-center gap-1 mb-1">
+              <ZapIcon className="w-3 h-3 text-orange-400" />
+              <span className="text-[11px] font-medium text-foreground">Exit</span>
+            </div>
+            {renderPresetGrid('exitAnimation', exitAnim)}
+          </div>
+          {renderAnimationControls('exitAnimation', exitAnim, 'Exit')}
+        </div>
+      </StudioPanelSection>
+
+      {/* ── Transform (video & overlays) ──────────────────────────────────── */}
+      {isVisualTrack && (
+        <StudioPanelSection title="Transform" open={activeSection === 'Transform'} onOpenChange={handleSectionToggle('Transform')}>
+          <StudioFieldRow label="Position">
+            <StudioPairRow
+              left={
+                <StudioScrubField
+                  label="Position X"
+                  value={pos.x}
+                  prefix="X"
+                  tone="x"
+                  min={-500}
+                  max={500}
+                  step={5}
+                  suffix="px"
+                  onChange={(x) => setTransform({ position: { ...pos, x } })}
+                />
+              }
+              right={
+                <StudioScrubField
+                  label="Position Y"
+                  value={pos.y}
+                  prefix="Y"
+                  tone="y"
+                  min={-500}
+                  max={500}
+                  step={5}
+                  suffix="px"
+                  onChange={(y) => setTransform({ position: { ...pos, y } })}
+                />
+              }
+            />
+          </StudioFieldRow>
+          <StudioFieldRow label="Scale">
+            <StudioPairRow
+              left={
+                <StudioScrubField
+                  label="Scale X"
+                  value={scl.x}
+                  prefix="X"
+                  tone="x"
+                  min={0.1}
+                  max={3}
+                  step={0.1}
+                  suffix="x"
+                  onChange={handleScaleX}
+                />
+              }
+              right={
+                <StudioScrubField
+                  label="Scale Y"
+                  value={scl.y}
+                  prefix="Y"
+                  tone="y"
+                  min={0.1}
+                  max={3}
+                  step={0.1}
+                  suffix="x"
+                  onChange={handleScaleY}
+                />
+              }
+              link={
+                <StudioLinkToggle
+                  linked={scaleLink}
+                  onToggle={handleScaleLinkToggle}
+                  label="Scale"
+                />
+              }
+            />
+          </StudioFieldRow>
+          <StudioFieldRow label="Rotation">
+            <StudioScrubField
+              label="Rotation"
+              value={rot}
+              min={-180}
+              max={180}
+              step={1}
+              suffix="°"
+              onChange={(r) => setTransform({ rotation: r })}
+            />
+          </StudioFieldRow>
+          <InspectorCoordinatePad
+            label="Anchor Point"
+            targetX={anchor.x}
+            targetY={anchor.y}
+            onChange={(x, y) => setTransform({ anchorPoint: { x, y } })}
+          />
+        </StudioPanelSection>
+      )}
+
+      {/* ── Audio ─────────────────────────────────────────────────────────── */}
       {track.type === 'audio' && (
-        <InspectorSliderInput
-          label="Volume Gain"
-          icon={<Volume2Icon className="w-3.5 h-3.5" />}
-          value={
-            clip.payload?.volume !== undefined
-              ? Math.round(clip.payload.volume * 100)
-              : 100
-          }
-          min={0}
-          max={200}
-          step={5}
-          unit="%"
-          onChange={(volPercent) => {
-            onUpdateClip(clip.id, {
-              payload: { volume: volPercent / 100 },
-            });
-          }}
-        />
+        <StudioPanelSection title="Audio" open={activeSection === 'Audio'} onOpenChange={handleSectionToggle('Audio')}>
+          <StudioFieldRow label="Volume">
+            <StudioScrubField
+              label="Volume Gain"
+              value={
+                clip.payload?.volume !== undefined
+                  ? Math.round(clip.payload.volume * 100)
+                  : 100
+              }
+              min={0}
+              max={200}
+              step={5}
+              suffix="%"
+              onChange={(volPercent) => {
+                onUpdateClip(clip.id, {
+                  payload: { volume: volPercent / 100 },
+                });
+              }}
+            />
+          </StudioFieldRow>
+        </StudioPanelSection>
       )}
 
-      {/* ── Timing Nudge Controls ───────────────────────────────────────────── */}
-      <TimecodeNudgeInput
-        label="Start Time"
-        timeMs={clip.startMs}
-        min={0}
-        max={maxDurationMs}
-        onChange={(startMs) => onUpdateClip(clip.id, { startMs })}
-      />
+      {/* ── Timing ────────────────────────────────────────────────────────── */}
+      <StudioPanelSection title="Timing" open={activeSection === 'Timing'} onOpenChange={handleSectionToggle('Timing')}>
+        <TimecodeNudgeInput
+          label="Start Time"
+          timeMs={clip.startMs}
+          min={0}
+          max={maxDurationMs}
+          onChange={(startMs) => onUpdateClip(clip.id, { startMs })}
+        />
+        <TimecodeNudgeInput
+          label="Duration"
+          timeMs={clip.durationMs}
+          min={200}
+          max={maxDurationMs}
+          onChange={(durationMs) => onUpdateClip(clip.id, { durationMs })}
+        />
+      </StudioPanelSection>
 
-      <TimecodeNudgeInput
-        label="Duration"
-        timeMs={clip.durationMs}
-        min={200}
-        max={maxDurationMs}
-        onChange={(durationMs) => onUpdateClip(clip.id, { durationMs })}
-      />
-
-      {/* ── Delete Clip Action ──────────────────────────────────────────────── */}
-      <div className="pt-1 flex justify-end">
+      {/* ── Delete Clip Action ────────────────────────────────────────────── */}
+      <div className="px-3 py-2 flex justify-end">
         <Button
           type="button"
           variant="ghost"
@@ -334,6 +727,6 @@ export function ClipPropertiesSection({
           <span>Delete Clip</span>
         </Button>
       </div>
-    </InspectorSection>
+    </div>
   );
 }

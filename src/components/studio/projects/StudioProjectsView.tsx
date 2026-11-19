@@ -4,7 +4,8 @@
  * Master Studio Projects Library Dashboard.
  *
  * Implements:
- *   - Minimalist top toolbar: live search, Grid/List toggle, and New Recording CTA
+ *   - Dense PageHeader matching system-wide pattern: live search, Grid/List
+ *     toggle, and New Recording CTA in a single compact row
  *   - Video-first Grid view (CapCut/Loom hover preview) vs compact List view
  *   - Inline renaming, quick MP4 export, and delete confirmation dialog
  *   - Filtered results and empty states
@@ -23,7 +24,6 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { SidebarTrigger } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   AlertDialog,
@@ -35,6 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { PageHeader } from '@/components/PageHeader';
 import { StudioProjectsGrid } from './StudioProjectsGrid';
 import { StudioProjectsList } from './StudioProjectsList';
 import type { StudioTakeSummary } from '@/lib/studio-types';
@@ -50,6 +51,7 @@ interface StudioProjectsViewProps {
   compositions?: StudioCompositionSummary[];
   onNewComposition?: () => void;
   onOpenComposition?: (id: string) => void;
+  onEditProject?: (take: StudioTakeSummary) => void;
   onRenameTake: (id: string, newTitle: string) => Promise<void>;
   onQuickExport: (id: string) => Promise<void>;
   onDeleteTake: (id: string) => Promise<void>;
@@ -67,6 +69,7 @@ export function StudioProjectsView({
   compositions = [],
   onNewComposition,
   onOpenComposition,
+  onEditProject,
   onRenameTake,
   onQuickExport,
   onDeleteTake,
@@ -113,106 +116,80 @@ export function StudioProjectsView({
   return (
     <TooltipProvider>
       <div className="flex flex-col h-full w-full bg-background overflow-hidden select-none">
-        {/* ── Minimalist Top Toolbar ─────────────────────────────────────────── */}
-        <div className="border-b border-border/40 bg-card/30 px-6 py-4 backdrop-blur-md shrink-0">
-          {/* Left: Section Title & Count Badge */}
-          <div className="flex items-center gap-4">
-            <SidebarTrigger className="-ml-1 shrink-0 text-muted-foreground" />
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
-                <VideoIcon className="w-4 h-4" />
-              </div>
-              <h1 className="font-semibold text-sm tracking-tight text-foreground">
-                Studio Projects
-              </h1>
-            </div>
-
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-secondary/60 text-muted-foreground font-mono">
-              {takes.length}
-              {hasMoreTakes ? '+' : ''}{' '}
-              {takes.length === 1 && !hasMoreTakes ? 'project' : 'projects'}
-            </span>
-          </div>
-
-          {/* Right: Search, Grid/List Switcher & New Recording Button */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-4">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Live Search Input */}
-              <div className="relative w-full sm:w-64">
-                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search projects..."
-                  className="h-8 pl-8 pr-7 text-xs bg-secondary/30 border-border/40 focus:bg-background"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <XIcon className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              {/* Segmented View Mode Toggle: Grid vs List */}
-              <div className="flex items-center p-0.5 rounded-lg border border-border/40 bg-secondary/30 text-muted-foreground">
+        {/* ── Dense PageHeader (matches system-wide pattern) ──────────────────── */}
+        <PageHeader
+          crumbs={[{ label: 'Showcase Studio' }]}
+          subtitle={
+            takes.length > 0
+              ? `${takes.length}${hasMoreTakes ? '+' : ''} project${takes.length === 1 && !hasMoreTakes ? '' : 's'}`
+              : undefined
+          }
+          nav={
+            <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+              {(
+                [
+                  { id: 'grid', icon: LayoutGridIcon, label: 'Grid view' },
+                  { id: 'list', icon: ListIcon, label: 'List view' },
+                ] as const
+              ).map(({ id, icon: Icon, label }) => (
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-7 w-7 rounded-md ${
-                    viewMode === 'grid'
-                      ? 'bg-background text-foreground shadow-xs font-medium'
-                      : 'hover:text-foreground'
-                  }`}
-                  onClick={() => handleToggleViewMode('grid')}
-                  title="Grid view"
+                  key={id}
+                  size="sm"
+                  variant={viewMode === id ? 'secondary' : 'ghost'}
+                  className="size-6 p-0"
+                  aria-label={label}
+                  aria-pressed={viewMode === id}
+                  title={label}
+                  onClick={() => handleToggleViewMode(id)}
                 >
-                  <LayoutGridIcon className="w-3.5 h-3.5" />
+                  <Icon className="size-3.5" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-7 w-7 rounded-md ${
-                    viewMode === 'list'
-                      ? 'bg-background text-foreground shadow-xs font-medium'
-                      : 'hover:text-foreground'
-                  }`}
-                  onClick={() => handleToggleViewMode('list')}
-                  title="List view"
-                >
-                  <ListIcon className="w-3.5 h-3.5" />
-                </Button>
-              </div>
+              ))}
             </div>
-
-            {/* Secondary CTA: Blank Project */}
-            <div className="flex flex-wrap items-center gap-2.5">
+          }
+          center={
+            <div className="relative w-64">
+              <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search projects..."
+                className="h-7 pl-8 pr-7 text-xs bg-secondary/30 border-border/40 focus:bg-background"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <XIcon className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          }
+          actions={
+            <>
               {onNewComposition && (
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={onNewComposition}
-                  className="h-9 gap-2 px-3 text-xs font-medium border-primary/40 text-primary hover:bg-primary/10"
+                  className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
                 >
                   <Layers3Icon className="size-3.5" />
-                  <span>New composition</span>
+                  New composition
                 </Button>
               )}
-
-              {/* Primary CTA: New Recording */}
               <Button
                 size="sm"
                 onClick={onNewRecording}
-                className="h-9 gap-2 px-3 text-xs font-medium bg-gradient-to-r from-indigo-500 to-primary hover:from-indigo-600 hover:to-primary/90 text-white shadow-sm"
+                className="h-7 shrink-0 gap-1.5 text-xs"
               >
-                <VideoIcon className="w-3.5 h-3.5" />
-                <span>New Recording</span>
+                <PlusIcon className="size-3" />
+                New Recording
               </Button>
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* ── Main Scrollable Content Area ────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-6">
@@ -313,6 +290,7 @@ export function StudioProjectsView({
             <StudioProjectsGrid
               takes={filteredTakes}
               onOpen={onOpenTake}
+              onEdit={onEditProject}
               onRename={onRenameTake}
               onQuickExport={onQuickExport}
               onDelete={(take) => setTakePendingDelete(take)}
@@ -323,6 +301,7 @@ export function StudioProjectsView({
               <StudioProjectsList
                 takes={filteredTakes}
                 onOpen={onOpenTake}
+                onEdit={onEditProject}
                 onRename={onRenameTake}
                 onQuickExport={onQuickExport}
                 onDelete={(take) => setTakePendingDelete(take)}

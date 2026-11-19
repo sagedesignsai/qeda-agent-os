@@ -824,6 +824,7 @@ export function registerStudioHandlers({
         cuts: [],
         zooms: [],
         captions: [],
+        tracks: [],
       });
 
       broadcastChanged();

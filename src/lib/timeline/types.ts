@@ -6,9 +6,10 @@
  * The timeline UI is a **reusable kit**, not a Motion feature. It knows about
  * rows, items and keys — never about Motion documents, tracks, clips or
  * keyframe easing. Any feature that needs a scrubbable, zoomable, editable time
- * canvas (Showcase Studio's edit lane, a future automation editor) supplies an
+ * canvas (Motion today; a future automation or curve editor) supplies an
  * adapter that projects its own document into
- * this model and handles the edit intents the kit emits.
+ * this model and handles the edit intents the kit emits. Showcase Studio's
+ * timeline predates this kit and still has its own clip/transport store.
  *
  * Two consequences worth keeping:
  *   - The kit never stores document state. It paints a model and calls back.
@@ -32,6 +33,13 @@ export type TimelineRow = {
   name: string;
   muted?: boolean;
   locked?: boolean;
+  /**
+   * Optional grouping for dope-sheet mode. Motion groups rows by scene node, so
+   * several tracks animating one node collapse into one group. Falls back to
+   * `id`/`name` when absent.
+   */
+  groupId?: string;
+  groupName?: string;
 };
 
 /** Visual tone, mapped to design tokens by the painter. */

@@ -15,12 +15,15 @@
 
 import { getDb } from './client.js';
 import type {
+  StudioClip,
   StudioCut,
   StudioZoom,
   StudioCaption,
   StudioCaptionWord,
   StudioEffect,
+  StudioMediaAsset,
   StudioOverlay,
+  StudioTrack,
   StudioVideoCrop,
   StudioStyling,
   StudioSocialKit,
@@ -32,12 +35,15 @@ import type {
 import { DEFAULT_STUDIO_STYLING } from '../../lib/studio-types.js';
 
 export type {
+  StudioClip,
   StudioCut,
   StudioZoom,
   StudioCaption,
   StudioCaptionWord,
   StudioEffect,
+  StudioMediaAsset,
   StudioOverlay,
+  StudioTrack,
   StudioVideoCrop,
   StudioStyling,
   StudioSocialKit,
@@ -75,6 +81,9 @@ interface StudioTakeRow {
   media_ready_at: number | null;
   created_at: number;
   updated_at: number;
+  // Multi-track project fields
+  media_assets_json: string | null;
+  tracks_json: string | null;
 }
 
 function parseJsonSafe<T>(json: string | null, fallback: T): T {
@@ -121,6 +130,14 @@ function rowToTake(row: StudioTakeRow): StudioTake {
     mediaReadyAt: row.media_ready_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    mediaAssets: parseJsonSafe<StudioMediaAsset[] | undefined>(
+      row.media_assets_json,
+      undefined,
+    ),
+    tracks: parseJsonSafe<StudioTrack[] | undefined>(
+      row.tracks_json,
+      undefined,
+    ),
   };
 }
 
@@ -146,6 +163,7 @@ export function listStudioTakes(
             ELSE 0 END AS effect_count,
        CASE WHEN json_valid(t.overlays_json) THEN json_array_length(t.overlays_json)
             ELSE 0 END AS overlay_count,
+       CASE WHEN json_valid(t.tracks_json) THEN 1 ELSE 0 END AS is_multi_track,
        t.created_at, t.updated_at
        FROM studio_takes t LEFT JOIN projects p ON p.id = t.project_id`;
   let rows: Array<{
@@ -161,6 +179,7 @@ export function listStudioTakes(
     zoom_count: number;
     effect_count: number;
     overlay_count: number;
+    is_multi_track: number;
     created_at: number;
     updated_at: number;
   }>;
@@ -192,6 +211,7 @@ export function listStudioTakes(
     zoomCount: r.zoom_count,
     effectCount: r.effect_count,
     overlayCount: r.overlay_count,
+    isMultiTrack: r.is_multi_track === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
@@ -323,6 +343,8 @@ export function saveStudioTake(take: {
   videoCrop?: StudioVideoCrop;
   styling?: StudioStyling;
   socialKit?: StudioSocialKit | null;
+  mediaAssets?: StudioMediaAsset[];
+  tracks?: StudioTrack[];
 }): StudioTake {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
@@ -350,6 +372,8 @@ export function saveStudioTake(take: {
       videoCrop: 'video_crop_json',
       styling: 'styling_json',
       socialKit: 'social_kit_json',
+      mediaAssets: 'media_assets_json',
+      tracks: 'tracks_json',
     };
     const jsonFields = new Set([
       'cuts',
@@ -360,6 +384,8 @@ export function saveStudioTake(take: {
       'videoCrop',
       'styling',
       'socialKit',
+      'mediaAssets',
+      'tracks',
     ]);
     const updates = Object.entries(columns).filter(
       ([key]) =>
@@ -401,6 +427,8 @@ export function saveStudioTake(take: {
     videoCrop: take.videoCrop ?? null,
     styling: take.styling ?? DEFAULT_STUDIO_STYLING,
     socialKit: take.socialKit ?? null,
+    mediaAssets: take.mediaAssets ?? [],
+    tracks: take.tracks ?? [],
   };
 
   db.prepare(
@@ -410,8 +438,9 @@ export function saveStudioTake(take: {
         cuts_json, zooms_json, captions_json, effects_json, overlays_json,
         video_crop_json,
         styling_json, social_kit_json,
+        media_assets_json, tracks_json,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         project_id        = excluded.project_id,
         title             = excluded.title,
@@ -430,6 +459,8 @@ export function saveStudioTake(take: {
         video_crop_json   = excluded.video_crop_json,
         styling_json      = excluded.styling_json,
         social_kit_json   = excluded.social_kit_json,
+        media_assets_json = excluded.media_assets_json,
+        tracks_json       = excluded.tracks_json,
         updated_at        = excluded.updated_at`,
   ).run(
     take.id,
@@ -450,6 +481,8 @@ export function saveStudioTake(take: {
     merged.videoCrop ? JSON.stringify(merged.videoCrop) : null,
     JSON.stringify(merged.styling),
     merged.socialKit ? JSON.stringify(merged.socialKit) : null,
+    JSON.stringify(merged.mediaAssets),
+    JSON.stringify(merged.tracks),
     now,
     now,
   );

@@ -27,7 +27,6 @@ import {
   KEY_HIT_RADIUS_Y,
   KEY_RADIUS,
   LOOP_HANDLE_HIT_PX,
-  OVERSCAN_PX,
   RULER_HEIGHT,
   type LaidOutItem,
   type LaidOutKey,
@@ -109,9 +108,6 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
   const collapsedGroups = input.collapsedGroups ?? new Set();
 
   const { start: startTime, end: endTime } = visibleTimeRange(view, width);
-  const padSeconds = OVERSCAN_PX / Math.max(1e-6, view.pxPerSecond);
-  const minTime = startTime - padSeconds;
-  const maxTime = endTime + padSeconds;
 
   // ── Ruler ticks ────────────────────────────────────────────────────────────
   const majorStep = chooseTickStep(view.pxPerSecond);
@@ -137,10 +133,11 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
   }
 
   // ── Flatten channels into dope sheet rows ──────────────────────────────────
-  // Group items by row, then extract channels with their keys
+  // A row is one animated property of one group. Row structure is deliberately
+  // viewport-independent: scrolling must not add or remove rows, or the header
+  // column and the canvas drift out of alignment.
   type ChannelEntry = {
     rowId: string;
-    rowName: string;
     groupId: string;
     groupName: string;
     property: string;
@@ -157,25 +154,19 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
   const channelEntries: ChannelEntry[] = [];
 
   for (const row of model.rows) {
+    const groupId = row.groupId ?? row.id;
+    const groupName = row.groupName ?? row.name;
     const itemsInRow = model.items.filter((item) => item.rowId === row.id);
     for (const item of itemsInRow) {
-      const itemEnd = item.start + item.duration;
-      if (itemEnd < minTime || item.start > maxTime) continue;
-
       const channels = item.channels ?? [];
       for (const channel of channels) {
-        const visibleKeys = channel.keys.filter((key) => key.time >= minTime && key.time <= maxTime);
-        if (visibleKeys.length === 0) continue;
+        if (channel.keys.length === 0) continue;
 
-        // Use row's targetId as group, fall back to row.id
-        const groupId = row.id;
-        const groupName = row.name;
         const barStart = Math.min(...channel.keys.map((k) => k.time));
         const barEnd = Math.max(...channel.keys.map((k) => k.time));
 
         channelEntries.push({
           rowId: row.id,
-          rowName: row.name,
           groupId,
           groupName,
           property: channel.label,
@@ -184,7 +175,7 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
           itemTone: item.tone ?? 'primary',
           itemMuted: row.muted ?? false,
           itemLocked: (row.locked ?? false) || (item.locked ?? false),
-          keys: visibleKeys.map((k) => ({ id: k.id, time: k.time, channelId: channel.id })),
+          keys: channel.keys.map((k) => ({ id: k.id, time: k.time, channelId: channel.id })),
           barStart,
           barEnd,
         });
@@ -193,59 +184,56 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
   }
 
   // ── Build row index with group headers ─────────────────────────────────────
-  // Unique groups in order of appearance
-  const groupOrder = new Map<string, number>();
-  let groupIndex = 0;
+  // Several placements of one clip on a track produce several entries for the
+  // same property. They share a property row and keep separate bars, so a
+  // duplicated clip does not duplicate the row.
+  // Group first, then properties within the group, so one group's rows can
+  // never be interleaved with another's when items arrive out of order.
+  const groups = new Map<
+    string,
+    { groupName: string; properties: Map<string, ChannelEntry[]> }
+  >();
   for (const entry of channelEntries) {
-    if (!groupOrder.has(entry.groupId)) {
-      groupOrder.set(entry.groupId, groupIndex++);
+    let group = groups.get(entry.groupId);
+    if (!group) {
+      group = { groupName: entry.groupName, properties: new Map() };
+      groups.set(entry.groupId, group);
     }
+    const entries = group.properties.get(entry.property) ?? [];
+    entries.push(entry);
+    group.properties.set(entry.property, entries);
   }
 
-  // Build the flat row list: group header + property rows per group
   type RowSlot = {
     index: number;
     isGroupHeader: boolean;
     groupId: string;
     groupName: string;
     property: string | null;
-    entry?: ChannelEntry;
+    entries: ChannelEntry[];
   };
 
   const rowSlots: RowSlot[] = [];
-  let rowIndex = 0;
 
-  // Sort groups by first appearance order
-  const sortedGroups = [...groupOrder.entries()].sort((a, b) => a[1] - b[1]);
-
-  for (const [groupId] of sortedGroups) {
-    const groupEntries = channelEntries.filter((e) => e.groupId === groupId);
-    const groupName = groupEntries[0]?.groupName ?? groupId;
-    const isCollapsed = collapsedGroups.has(groupId);
-
-    // Group header row
+  for (const [groupId, group] of groups) {
     rowSlots.push({
-      index: rowIndex,
+      index: rowSlots.length,
       isGroupHeader: true,
       groupId,
-      groupName,
+      groupName: group.groupName,
       property: null,
+      entries: [],
     });
-    rowIndex += 1;
-
-    // Property rows (only if group is not collapsed)
-    if (!isCollapsed) {
-      for (const entry of groupEntries) {
-        rowSlots.push({
-          index: rowIndex,
-          isGroupHeader: false,
-          groupId,
-          groupName,
-          property: entry.property,
-          entry,
-        });
-        rowIndex += 1;
-      }
+    if (collapsedGroups.has(groupId)) continue;
+    for (const [property, entries] of group.properties) {
+      rowSlots.push({
+        index: rowSlots.length,
+        isGroupHeader: false,
+        groupId,
+        groupName: group.groupName,
+        property,
+        entries,
+      });
     }
   }
 
@@ -258,7 +246,6 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
 
   for (const slot of rowSlots) {
     const rowHeight = slot.isGroupHeader ? DOPE_GROUP_HEIGHT : DOPE_ROW_HEIGHT;
-    const y = RULER_HEIGHT + slot.index * (slot.isGroupHeader ? DOPE_GROUP_HEIGHT : DOPE_ROW_HEIGHT) - scrollY;
 
     // Accurate Y calculation: sum actual heights of all preceding rows
     let actualY = RULER_HEIGHT;
@@ -272,7 +259,7 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
     if (finalY + rowHeight < RULER_HEIGHT || finalY > height) continue;
 
     const row: DopeSheetRow = {
-      id: slot.isGroupHeader ? `${slot.groupId}:group` : `${slot.groupId}:${slot.property}`,
+      id: slot.isGroupHeader ? `${slot.groupId}:group` : `${slot.groupId}::${slot.property}`,
       name: slot.isGroupHeader ? slot.groupName : slot.property ?? '',
       index: slot.index,
       y: finalY,
@@ -286,55 +273,55 @@ export function layoutDopeSheet(input: TimelineLayoutInput): DopeSheetLayout {
     };
     rows.push(row);
 
-    // For property rows, create items (thin bars) and keys
-    if (!slot.isGroupHeader && slot.entry) {
-      const entry = slot.entry;
+    // For each placement entry on this property row, draw its bar and keys.
+    if (!slot.isGroupHeader) {
       const barY = finalY + rowHeight / 2;
 
-      // Thin bar item
-      const barStartX = timeToX(entry.barStart, view);
-      const barEndX = timeToX(entry.barEnd, view);
-      const barWidth = Math.max(2, barEndX - barStartX);
+      for (const entry of slot.entries) {
+        const barStartX = timeToX(entry.barStart, view);
+        const barEndX = timeToX(entry.barEnd, view);
+        const barWidth = Math.max(2, barEndX - barStartX);
 
-      const laidOutItem: DopeSheetItem = {
-        rowId: row.id,
-        rowIndex: slot.index,
-        itemId: entry.itemId,
-        label: entry.itemLabel,
-        trimmedKeyCount: 0,
-        trimIn: 0,
-        start: entry.barStart,
-        end: entry.barEnd,
-        x: barStartX,
-        width: barWidth,
-        y: barY - DOPE_BAR_HEIGHT / 2,
-        height: DOPE_BAR_HEIGHT,
-        tone: entry.itemTone,
-        selected: isSelected(selection, entry.itemId),
-        muted: entry.itemMuted,
-        locked: entry.itemLocked,
-        barStart: entry.barStart,
-        barEnd: entry.barEnd,
-      };
-      items.push(laidOutItem);
-      itemsById.set(entry.itemId, laidOutItem);
-
-      // Keys on the bar center line
-      for (const key of entry.keys) {
-        const laidOutKey: DopeSheetKey = {
+        const laidOutItem: DopeSheetItem = {
           rowId: row.id,
           rowIndex: slot.index,
           itemId: entry.itemId,
-          channelId: key.channelId,
-          keyId: key.id,
-          time: key.time,
-          x: timeToX(key.time, view),
-          y: barY,
-          selected: isSelected(selection, entry.itemId, key.id),
-          barY: barY,
+          label: entry.itemLabel,
+          trimmedKeyCount: 0,
+          trimIn: 0,
+          start: entry.barStart,
+          end: entry.barEnd,
+          x: barStartX,
+          width: barWidth,
+          y: barY - DOPE_BAR_HEIGHT / 2,
+          height: DOPE_BAR_HEIGHT,
+          tone: entry.itemTone,
+          selected: isSelected(selection, entry.itemId),
+          muted: entry.itemMuted,
+          locked: entry.itemLocked,
+          barStart: entry.barStart,
+          barEnd: entry.barEnd,
         };
-        keys.push(laidOutKey);
-        keysById.set(key.id, laidOutKey);
+        items.push(laidOutItem);
+        itemsById.set(entry.itemId, laidOutItem);
+
+        // Keys on the bar center line
+        for (const key of entry.keys) {
+          const laidOutKey: DopeSheetKey = {
+            rowId: row.id,
+            rowIndex: slot.index,
+            itemId: entry.itemId,
+            channelId: key.channelId,
+            keyId: key.id,
+            time: key.time,
+            x: timeToX(key.time, view),
+            y: barY,
+            selected: isSelected(selection, entry.itemId, key.id),
+            barY: barY,
+          };
+          keys.push(laidOutKey);
+          keysById.set(key.id, laidOutKey);
+        }
       }
     }
   }

@@ -321,6 +321,29 @@ export function TimelineCanvasViewport({
           ctx.fillStyle = grad;
           ctx.fillRect(clipX, clipY, clipW, clipH);
 
+          // Apply transform visual feedback (position offset + rotation)
+          const oTransform = clip.payload?.transform;
+          if (oTransform) {
+            const oRot = oTransform.rotation ?? 0;
+            const oPos = oTransform.position;
+            if (oRot !== 0 || oPos) {
+              const badgeX = clipX + clipW - 28;
+              const badgeY = clipY + 4;
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+              ctx.beginPath();
+              ctx.roundRect(badgeX, badgeY, 22, 16, 4);
+              ctx.fill();
+              ctx.fillStyle = '#fffbeb';
+              ctx.font = 'bold 10px sans-serif';
+              ctx.textBaseline = 'middle';
+              if (oRot !== 0) {
+                ctx.fillText('↻', badgeX + 11, badgeY + 8);
+              } else if (oPos) {
+                ctx.fillText('✢', badgeX + 11, badgeY + 8);
+              }
+            }
+          }
+
           ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
           ctx.fillRect(clipX, clipY, clipW, 2);
 
@@ -400,6 +423,30 @@ export function TimelineCanvasViewport({
           // Track 3: Video Recording Filmstrip
           ctx.fillStyle = '#1e293b'; // Slate 800
           ctx.fillRect(clipX, clipY, clipW, clipH);
+
+          // Apply transform visual feedback (position offset + rotation)
+          const vTransform = clip.payload?.transform;
+          if (vTransform) {
+            const vRot = vTransform.rotation ?? 0;
+            const vPos = vTransform.position;
+            if (vRot !== 0 || vPos) {
+              // Draw a subtle rotation/position indicator badge
+              const badgeX = clipX + clipW - 28;
+              const badgeY = clipY + 4;
+              ctx.fillStyle = 'rgba(15, 23, 42, 0.75)';
+              ctx.beginPath();
+              ctx.roundRect(badgeX, badgeY, 22, 16, 4);
+              ctx.fill();
+              ctx.fillStyle = '#fbbf24'; // Amber indicator
+              ctx.font = 'bold 10px sans-serif';
+              ctx.textBaseline = 'middle';
+              if (vRot !== 0) {
+                ctx.fillText('↻', badgeX + 11, badgeY + 8);
+              } else if (vPos) {
+                ctx.fillText('✢', badgeX + 11, badgeY + 8);
+              }
+            }
+          }
 
           // Filmstrip frame tiles with viewport frustum culling
           const tileWidth = 64; // ~64px wide thumbnail cells
@@ -530,6 +577,39 @@ export function TimelineCanvasViewport({
         }
 
         ctx.restore();
+
+        // ── Animation Keyframe Diamonds ─────────────────────────────────────
+        // Small diamond markers on clip edges for clips with enter/exit animations
+        const hasEnter = clip.payload?.enterAnimation && clip.payload.enterAnimation.type !== 'none';
+        const hasExit = clip.payload?.exitAnimation && clip.payload.exitAnimation.type !== 'none';
+        if (hasEnter || hasExit) {
+          const diamondSize = 4;
+          const diamondY = clipY + clipH / 2;
+
+          if (hasEnter) {
+            // Purple diamond at clip start edge
+            ctx.fillStyle = '#a855f7'; // Purple-500
+            ctx.beginPath();
+            ctx.moveTo(clipX, diamondY - diamondSize);
+            ctx.lineTo(clipX + diamondSize, diamondY);
+            ctx.lineTo(clipX, diamondY + diamondSize);
+            ctx.lineTo(clipX - diamondSize, diamondY);
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          if (hasExit) {
+            // Orange diamond at clip end edge
+            ctx.fillStyle = '#f97316'; // Orange-500
+            ctx.beginPath();
+            ctx.moveTo(clipX + clipW, diamondY - diamondSize);
+            ctx.lineTo(clipX + clipW + diamondSize, diamondY);
+            ctx.lineTo(clipX + clipW, diamondY + diamondSize);
+            ctx.lineTo(clipX + clipW - diamondSize, diamondY);
+            ctx.closePath();
+            ctx.fill();
+          }
+        }
 
         // ── Clip Outer Border & Trim Handles ────────────────────────────────
         ctx.save();

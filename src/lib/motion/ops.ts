@@ -175,6 +175,9 @@ type RegisteredOp = {
   run: (doc: MotionDocument, params: AnyParams) => MotionDocument;
 };
 
+/** Keys closer than this are the same instant; an add replaces rather than stacks. */
+const KEYFRAME_TIME_EPSILON = 1e-6;
+
 const registry = new Map<string, RegisteredOp>();
 const cloneMotionData = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -1515,15 +1518,33 @@ registerMotionOp<'keyframe.add'>({
       throw new MotionOpError(`Keyframe time ${time} exceeds clip duration ${clip.duration}.`);
     }
     requireChannel(clip, channelId);
-    return mapChannel(doc, clipId, channelId, (channel) => ({
-      ...channel,
-      keyframes: insertKeyframeSorted(channel.keyframes, {
-        id: keyframeId,
-        time,
-        value,
-        easing: easing ?? { type: 'linear' },
-      }),
-    }));
+    return mapChannel(doc, clipId, channelId, (channel) => {
+      // Two keys at one instant have no interpolated meaning, so an add at an
+      // existing time replaces that key instead of stacking a duplicate. The
+      // existing id is kept, which keeps selection and undo stable.
+      const existing = channel.keyframes.find(
+        (candidate) => Math.abs(candidate.time - time) < KEYFRAME_TIME_EPSILON,
+      );
+      if (existing) {
+        return {
+          ...channel,
+          keyframes: channel.keyframes.map((candidate) =>
+            candidate.id === existing.id
+              ? { ...candidate, value, easing: easing ?? { type: 'linear' } }
+              : candidate,
+          ),
+        };
+      }
+      return {
+        ...channel,
+        keyframes: insertKeyframeSorted(channel.keyframes, {
+          id: keyframeId,
+          time,
+          value,
+          easing: easing ?? { type: 'linear' },
+        }),
+      };
+    });
   },
 });
 

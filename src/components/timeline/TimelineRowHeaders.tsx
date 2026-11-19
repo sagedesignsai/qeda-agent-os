@@ -151,27 +151,30 @@ function renderDopeSheetHeaders(
   collapsedGroups: Set<string> | undefined,
   onToggleGroup: ((groupId: string) => void) | undefined,
 ) {
-  // Group rows by their track (which maps to a node in Motion)
-  const groups = new Map<string, { row: typeof model.rows[0]; properties: string[] }>();
+  // Group by the row's group (a scene node in Motion), falling back to the row
+  // itself. Property labels are deduplicated so this column matches the
+  // one-row-per-property layout built by `layoutDopeSheet`.
+  const groups = new Map<string, { name: string; properties: string[] }>();
 
-  for (const item of model.items) {
-    const channels = item.channels ?? [];
-    for (const channel of channels) {
-      const row = model.rows.find((r) => r.id === item.rowId);
-      if (!row) continue;
-      let group = groups.get(item.rowId);
-      if (!group) {
-        group = { row, properties: [] };
-        groups.set(item.rowId, group);
-      }
-      if (!group.properties.includes(channel.label)) {
-        group.properties.push(channel.label);
+  for (const row of model.rows) {
+    const groupId = row.groupId ?? row.id;
+    for (const item of model.items) {
+      if (item.rowId !== row.id) continue;
+      for (const channel of item.channels ?? []) {
+        if (channel.keys.length === 0) continue;
+        let group = groups.get(groupId);
+        if (!group) {
+          group = { name: row.groupName ?? row.name, properties: [] };
+          groups.set(groupId, group);
+        }
+        if (!group.properties.includes(channel.label)) {
+          group.properties.push(channel.label);
+        }
       }
     }
   }
 
   const elements: JSX.Element[] = [];
-  let index = 0;
 
   for (const [groupId, group] of groups) {
     const isCollapsed = collapsedGroups?.has(groupId) ?? false;
@@ -187,7 +190,7 @@ function renderDopeSheetHeaders(
           type="button"
           className="shrink-0 text-muted-foreground hover:text-foreground"
           onClick={() => onToggleGroup?.(groupId)}
-          aria-label={isCollapsed ? `Expand ${group.row.name}` : `Collapse ${group.row.name}`}
+          aria-label={isCollapsed ? `Expand ${group.name}` : `Collapse ${group.name}`}
         >
           {isCollapsed ? (
             <ChevronRightIcon className="size-3" />
@@ -195,13 +198,12 @@ function renderDopeSheetHeaders(
             <ChevronDownIcon className="size-3" />
           )}
         </button>
-        <span className="truncate text-foreground">{group.row.name}</span>
+        <span className="truncate text-foreground">{group.name}</span>
         <span className="ml-auto text-[9px] text-muted-foreground/70">
           {group.properties.length} prop{group.properties.length !== 1 ? 's' : ''}
         </span>
       </div>,
     );
-    index += 1;
 
     // Property rows
     if (!isCollapsed) {
@@ -215,7 +217,6 @@ function renderDopeSheetHeaders(
             <span className="truncate">{property}</span>
           </div>,
         );
-        index += 1;
       }
     }
   }

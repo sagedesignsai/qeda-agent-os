@@ -29,10 +29,13 @@
 
 import type {
   StudioCaption,
+  StudioClip,
   StudioCut,
   StudioEffect,
+  StudioMediaAsset,
   StudioOverlay,
   StudioTake,
+  StudioTrack,
   StudioZoom,
   TimelineClip,
   TimelineTrack,
@@ -459,4 +462,171 @@ export function extractOverlaysFromTracks(
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+// ── Multi-track project conversion ────────────────────────────────────────────
+
+/**
+ * Convert a stored `StudioClip` (multi-track model) into a `TimelineClip`
+ * compatible with the existing timeline store.
+ *
+ * The timeline store still uses `TimelineClip` with `sourceStartMs` /
+ * `sourceDurationMs` semantics, so we map:
+ *   - `sourceInMs` → `sourceStartMs`
+ *   - `durationMs` → `sourceDurationMs`
+ */
+export function studioClipToTimelineClip(
+  clip: StudioClip,
+  asset: StudioMediaAsset | undefined,
+): TimelineClip {
+  // For video/audio assets, the source duration equals the clip duration
+  // (the clip was trimmed at creation time). For images, source duration is 0.
+  const sourceDurationMs =
+    asset?.kind === 'image' ? 0 : clip.durationMs;
+
+  return {
+    id: clip.id,
+    trackId: clip.trackId,
+    name: clip.name,
+    startMs: clip.startMs,
+    durationMs: clip.durationMs,
+    sourceStartMs: clip.sourceInMs,
+    sourceDurationMs,
+    color: clip.color,
+    payload: {
+      speed: clip.speed,
+      volume: clip.volume,
+      opacity: clip.opacity,
+      // Per-clip visual properties
+      transform: clip.transform,
+      enterAnimation: clip.enterAnimation,
+      exitAnimation: clip.exitAnimation,
+      deviceFrame: clip.deviceFrame,
+    },
+  };
+}
+
+/**
+ * Build `TimelineTrack[]` for the timeline store from the new multi-track
+ * project model (`StudioTrack[]` + `StudioMediaAsset[]`).
+ *
+ * If the take has no `tracks` field (legacy single-recording take), returns
+ * `null` so the caller falls back to `convertTakeToTracks`.
+ *
+ * The returned tracks use the legacy `TrackType` enum so the existing timeline
+ * store and UI components work unchanged:
+ *   - `StudioTrack.type === 'video'` → `TrackType 'video'`
+ *   - `StudioTrack.type === 'audio'` → `TrackType 'audio'`
+ */
+export function convertProjectToTracks(
+  take: StudioTake,
+): TimelineTrack[] | null {
+  const tracks = take.tracks;
+  const assets = take.mediaAssets ?? [];
+  const assetMap = new Map<string, StudioMediaAsset>();
+  for (const asset of assets) {
+    assetMap.set(asset.id, asset);
+  }
+
+  // Empty project — no tracks at all — is valid; return empty array.
+  if (tracks === undefined) return null;
+
+  const timelineTracks: TimelineTrack[] = [];
+
+  for (const track of tracks) {
+    const trackType: 'video' | 'audio' = track.type;
+    const clips: TimelineClip[] = track.clips.map((clip) =>
+      studioClipToTimelineClip(clip, assetMap.get(clip.mediaAssetId)),
+    );
+
+    timelineTracks.push({
+      id: track.id,
+      type: trackType,
+      name: track.name,
+      locked: track.locked,
+      visible: track.visible,
+      muted: track.muted,
+      clips,
+    });
+  }
+
+  return timelineTracks;
+}
+
+/**
+ * Convert `TimelineTrack[]` back to `StudioTrack[]` for the multi-track model.
+ *
+ * This is the reverse of `convertProjectToTracks()`: it reads every timeline
+ * clip's properties — including the new visual properties (transform,
+ * enter/exit animations, device frame) stored in `payload` — and maps them
+ * back to `StudioClip` fields so edits survive a reload.
+ *
+ * Returns `null` when the tracks array is empty, signaling the caller to
+ * fall back to the legacy extract functions.
+ */
+export function extractClipsFromTracks(
+  tracks: TimelineTrack[],
+): { tracks: StudioTrack[] } | null {
+  if (tracks.length === 0) return null;
+
+  const studioTracks: StudioTrack[] = [];
+
+  for (const track of tracks) {
+    // Skip legacy track IDs that come from the single-recording model
+    // (track-effects, track-captions, track-video, track-audio, track-overlays).
+    // Multi-track projects use UUIDs generated when tracks are created.
+    const isLegacyTrack = track.id.startsWith('track-');
+    if (isLegacyTrack) continue;
+
+    const clips: StudioClip[] = track.clips.map((clip) => {
+      const payload = clip.payload;
+      return {
+        id: clip.id,
+        trackId: clip.trackId,
+        name: clip.name,
+        startMs: clip.startMs,
+        durationMs: clip.durationMs,
+        sourceInMs: clip.sourceStartMs,
+        mediaAssetId: '',
+        speed: payload?.speed ?? 1,
+        volume: payload?.volume ?? 1,
+        opacity: payload?.opacity,
+        color: clip.color,
+        // Per-clip visual properties from payload
+        transform: payload?.transform,
+        enterAnimation: payload?.enterAnimation,
+        exitAnimation: payload?.exitAnimation,
+        deviceFrame: payload?.deviceFrame,
+      };
+    });
+
+    studioTracks.push({
+      id: track.id,
+      type: track.type === 'audio' ? 'audio' : 'video',
+      name: track.name,
+      zIndex: studioTracks.length,
+      clips,
+      locked: track.locked ?? false,
+      visible: track.visible ?? true,
+      muted: track.muted ?? false,
+    });
+  }
+
+  // If all tracks were legacy tracks, fall back to the legacy extract path
+  if (studioTracks.length === 0) return null;
+
+  return { tracks: studioTracks };
+}
+
+/**
+ * Convert a `StudioTake` to timeline tracks, preferring the new multi-track
+ * model when available and falling back to the legacy single-recording model.
+ *
+ * Callers should use this instead of `convertTakeToTracks` directly so that
+ * both blank projects (empty tracks) and legacy takes work transparently.
+ */
+export function convertTakeToTimeline(take: StudioTake): TimelineTrack[] {
+  const multiTrack = convertProjectToTracks(take);
+  if (multiTrack !== null) return multiTrack;
+  return convertTakeToTracks(take);
 }

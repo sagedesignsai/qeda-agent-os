@@ -88,12 +88,21 @@ export function toTimelineModel(doc: MotionDocument, options?: { dopeSheet?: boo
     loop: doc.timeline.loop.enabled
       ? { start: doc.timeline.loop.start, end: doc.timeline.loop.end }
       : null,
-    rows: doc.timeline.tracks.map((track) => ({
-      id: track.id,
-      name: track.name,
-      muted: track.muted,
-      locked: track.locked,
-    })),
+    rows: doc.timeline.tracks.map((track) => {
+      // Dope-sheet grouping is by node, not by track: a node may legitimately
+      // own more than one track, and they should share one collapsed group.
+      const target = track.targetId
+        ? doc.scene.nodes.find((node) => node.id === track.targetId)
+        : undefined;
+      return {
+        id: track.id,
+        name: track.name,
+        muted: track.muted,
+        locked: track.locked,
+        groupId: target?.id ?? track.id,
+        groupName: target?.name ?? track.name,
+      };
+    }),
     items,
     dopeSheet: options?.dopeSheet,
   };

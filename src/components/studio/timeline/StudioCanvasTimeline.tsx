@@ -18,7 +18,7 @@ import { TimelineTrackHeaders } from './TimelineTrackHeaders';
 import { TimelineCanvasViewport } from './TimelineCanvasViewport';
 import {
   compositionDurationMs,
-  convertTakeToTracks,
+  convertTakeToTimeline,
   normalizeCuts,
   type StudioTake,
   type TimelineTrack,
@@ -116,12 +116,14 @@ export function StudioCanvasTimeline({
     if (isNewTake || isExternalUpdate) {
       currentTakeIdRef.current = activeTake.id;
       lastSyncTimestampRef.current = activeTake.updatedAt || Date.now();
-      const tracks = convertTakeToTracks(activeTake);
+      const tracks = convertTakeToTimeline(activeTake);
       const cuts = normalizeCuts(activeTake.cuts ?? [], activeTake.durationMs);
+      const isMultiTrack = activeTake.tracks !== undefined;
       timelineStore.setTracksAndDuration(
         tracks,
         compositionDurationMs(activeTake.durationMs, cuts),
         isNewTake,
+        isMultiTrack,
       );
     }
   }, [activeTake]);
