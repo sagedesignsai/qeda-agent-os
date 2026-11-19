@@ -151,45 +151,18 @@ export default function Studio() {
     exportVideo,
     deleteTake,
   } = useStudio(takeId, projectId);
-  const compositionOpeningTakeIds = useRef(new Set<string>());
 
-  const openTakeAsComposition = useCallback(async (id: string) => {
-    if (compositionOpeningTakeIds.current.has(id)) return;
-    compositionOpeningTakeIds.current.add(id);
-    try {
-      const takeTitle = takes.find((take) => take.id === id)?.title;
-      const composition = await window.electron.ipc.invoke<StudioComposition>(
-        'studio:composition-create',
-        {
-          projectId,
-          title: `${takeTitle || 'Showcase'} composition`,
-          sceneId: 'app-spotlight',
-          sourceTakeIds: [id],
-        },
-      );
-      navigate(`/studio/compositions/${composition.id}`);
-    } catch (error) {
-      compositionOpeningTakeIds.current.delete(id);
-      console.error('[Studio] Could not open recording as a composition.', error);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : 'Could not create a composition from this recording.',
-      );
-      navigate('/studio');
-    }
-  }, [navigate, projectId, takes]);
-
-  // Newly completed captures enter the layered composition editor as source media.
+  // A named take means one was just recorded (agent or manual). Keep the route
+  // in sync so a refresh reopens that take, and let `useStudio` reload it.
   useIpcEvent(
     'studio:changed',
     (payload) => {
       const changed = payload as { takeId?: string } | undefined;
       if (changed?.takeId && changed.takeId !== takeId) {
-        void openTakeAsComposition(changed.takeId);
+        navigate(`/studio/${changed.takeId}`);
       }
     },
-    [takeId, navigate, openTakeAsComposition],
+    [takeId, navigate],
   );
 
   const [quickExportProgress, setQuickExportProgress] = useState<{
@@ -398,7 +371,9 @@ export default function Studio() {
       includeMic: source.includeMic,
       takeProjectId: projectId,
     });
-    if (newTakeId) await openTakeAsComposition(newTakeId);
+    if (newTakeId) {
+      navigate(`/studio/${newTakeId}`);
+    }
   };
 
   const handleAddZoomAtPlayhead = () => {
@@ -770,13 +745,11 @@ export default function Studio() {
           onStop={async () => {
             if (agentRecording) {
               const res = await stopAgentRecording();
-              if (res.stopped && res.takeId) {
-                await openTakeAsComposition(res.takeId);
-              }
+              if (res.stopped && res.takeId) navigate(`/studio/${res.takeId}`);
               return;
             }
             const take = await stopRecording();
-            if (take) await openTakeAsComposition(take.id);
+            if (take) navigate(`/studio/${take.id}`);
           }}
         />
       )}
