@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import {
   ArrowLeftIcon,
@@ -11,6 +11,9 @@ import {
   Music2Icon,
   PlusIcon,
   Trash2Icon,
+  TypeIcon,
+  Undo2Icon,
+  Redo2Icon,
   VideoIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,28 +29,38 @@ import {
 import { StudioCompositionPreview } from '@/components/studio/StudioCompositionPreview';
 import { StudioCompositionInspector } from '@/components/studio/StudioCompositionInspector';
 import { StudioCompositionEffectsPanel } from '@/components/studio/StudioCompositionEffectsPanel';
-import { StudioCompositionTimeline } from '@/components/studio/StudioCompositionTimeline';
+import { StudioCompositionTakeStylePanel } from '@/components/studio/StudioCompositionTakeStylePanel';
+import { StudioCompositionTakeTracksPanel } from '@/components/studio/StudioCompositionTakeTracksPanel';
+import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
+import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
+import { StudioCanvasTimeline } from '@/components/studio/timeline/StudioCanvasTimeline';
 import { renderStudioCompositionVideo } from '@/lib/studio/render/composition-export';
+import { studioTakeMediaUrl } from '@/lib/studio/media';
+import { sourceTimeForTakeLayer } from '@/lib/studio/render/take-frame';
+import { timelineStore } from '@/hooks/use-timeline-store';
+import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
+import { updateStudioCompositionFromTracks } from '@/lib/studio/timeline/composition';
+import { compositionDurationMs, normalizeCuts } from '@/lib/studio/timeline/ripple';
 import {
-  addCompositionVideoLayer,
-  addStudioCompositionEffect,
+  applyStudioCompositionOperation,
+  createDefaultStudioTakePresentation,
   parseStudioCompositionDocument,
-  removeStudioCompositionEffect,
-  reorderStudioCompositionLayer,
-  removeCompositionLayer,
   setCompositionAspectRatio,
-  updateStudioCompositionEffect,
-  updateStudioCompositionLayer,
+  studioTakePresentationFromTake,
 } from '@/lib/studio/composition';
 import type {
   StudioAspectRatio,
   StudioComposition,
   StudioCompositionDocument,
-  StudioCompositionLayer,
+  StudioCompositionLayerPatch,
+  StudioCompositionOperation,
   StudioEffect,
   StudioEffectType,
   StudioLayerLayout,
+  StudioTake,
+  StudioTakePresentation,
   StudioTakeSummary,
+  TimelineTrack,
 } from '@/lib/studio/types';
 import { toast } from 'sonner';
 
@@ -64,10 +77,18 @@ export default function StudioCompositionPage() {
   const [composition, setComposition] = useState<StudioComposition | null>(
     null,
   );
+  const undoDocumentsRef = useRef<StudioCompositionDocument[]>([]);
+  const redoDocumentsRef = useRef<StudioCompositionDocument[]>([]);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [copilotTake, setCopilotTake] = useState<StudioTake | null>(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [releaseKitOpen, setReleaseKitOpen] = useState(false);
+  const [generatingReleaseKit, setGeneratingReleaseKit] = useState(false);
   const [takes, setTakes] = useState<StudioTakeSummary[]>([]);
   const [selectedTakeId, setSelectedTakeId] = useState('');
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [playheadMs, setPlayheadMs] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [titleInput, setTitleInput] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -76,6 +97,11 @@ export default function StudioCompositionPage() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
+
+  useEffect(() => {
+    undoDocumentsRef.current = [];
+    redoDocumentsRef.current = [];
+  }, [compositionId]);
 
   const fetchComposition = useCallback(async () => {
     if (!compositionId) return null;
@@ -88,7 +114,16 @@ export default function StudioCompositionPage() {
       'studio:list-takes',
       { projectId: loaded.projectId },
     );
-    return { composition: loaded, takes: sourceTakes };
+    const sourceTakeId = loaded.document.layers.find(
+      (layer) => layer.kind === 'video',
+    )?.sourceId;
+    const sourceTake = sourceTakeId
+      ? await window.electron.ipc.invoke<StudioTake | null>(
+          'studio:get-take',
+          { id: sourceTakeId },
+        )
+      : null;
+    return { composition: loaded, takes: sourceTakes, sourceTake };
   }, [compositionId]);
 
   useEffect(() => {
@@ -101,6 +136,7 @@ export default function StudioCompositionPage() {
           return null;
         }
         setComposition(result.composition);
+        setCopilotTake(result.sourceTake);
         setSelectedLayerId(result.composition.document.layers[0]?.id ?? null);
         setTitleInput(result.composition.title);
         setTakes(result.takes);
@@ -130,6 +166,22 @@ export default function StudioCompositionPage() {
     };
   }, [fetchComposition]);
 
+  useEffect(() => {
+    return window.electron.ipc.on('studio:composition-changed', () => {
+      void fetchComposition()
+        .then((result) => {
+          if (!result) return;
+          setComposition(result.composition);
+          setCopilotTake(result.sourceTake);
+          setTakes(result.takes);
+          setTitleInput(result.composition.title);
+        })
+        .catch((error: unknown) => {
+          console.error('[Studio composition] Refresh after agent edit failed.', error);
+        });
+    });
+  }, [fetchComposition]);
+
   const availableTakes = takes.filter(
     (take) =>
       !composition?.document.layers.some(
@@ -137,11 +189,12 @@ export default function StudioCompositionPage() {
       ),
   );
 
-  const persist = async (
+  const persist = useCallback(async (
     document: StudioCompositionDocument,
     title = composition?.title ?? '',
   ) => {
     if (!composition) return;
+    const documentChanged = composition.document !== document;
     setSaving(true);
     try {
       const saved = await window.electron.ipc.invoke<StudioComposition>(
@@ -150,10 +203,16 @@ export default function StudioCompositionPage() {
           id: composition.id,
           title,
           document: parseStudioCompositionDocument(document),
+          expectedRevision: composition.revision ?? 1,
         },
       );
       setComposition(saved);
       setTitleInput(saved.title);
+      if (documentChanged) {
+        undoDocumentsRef.current.push(composition.document);
+        redoDocumentsRef.current = [];
+        setHistoryVersion((version) => version + 1);
+      }
       return saved;
     } catch (error) {
       console.error('[Studio composition] Failed to save composition.', error);
@@ -161,6 +220,64 @@ export default function StudioCompositionPage() {
         error instanceof Error ? error.message : 'Could not save composition.',
       );
       return null;
+    } finally {
+      setSaving(false);
+    }
+  }, [composition]);
+
+  const undoComposition = async () => {
+    if (!composition || saving || exporting) return;
+    const previousDocument = undoDocumentsRef.current.pop();
+    if (!previousDocument) return;
+    setSaving(true);
+    try {
+      const saved = await window.electron.ipc.invoke<StudioComposition>(
+        'studio:composition-save',
+        {
+          id: composition.id,
+          title: composition.title,
+          document: previousDocument,
+          expectedRevision: composition.revision ?? 1,
+        },
+      );
+      redoDocumentsRef.current.push(composition.document);
+      setComposition(saved);
+      setTitleInput(saved.title);
+      setHistoryVersion((version) => version + 1);
+    } catch (error) {
+      undoDocumentsRef.current.push(previousDocument);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not undo that edit.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const redoComposition = async () => {
+    if (!composition || saving || exporting) return;
+    const nextDocument = redoDocumentsRef.current.pop();
+    if (!nextDocument) return;
+    setSaving(true);
+    try {
+      const saved = await window.electron.ipc.invoke<StudioComposition>(
+        'studio:composition-save',
+        {
+          id: composition.id,
+          title: composition.title,
+          document: nextDocument,
+          expectedRevision: composition.revision ?? 1,
+        },
+      );
+      undoDocumentsRef.current.push(composition.document);
+      setComposition(saved);
+      setTitleInput(saved.title);
+      setHistoryVersion((version) => version + 1);
+    } catch (error) {
+      redoDocumentsRef.current.push(nextDocument);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not redo that edit.',
+      );
     } finally {
       setSaving(false);
     }
@@ -172,13 +289,23 @@ export default function StudioCompositionPage() {
       toast.error('A composition can contain up to 12 layers.');
       return;
     }
-    const take = availableTakes.find((item) => item.id === selectedTakeId);
-    if (!take) return;
+    const takeSummary = availableTakes.find((item) => item.id === selectedTakeId);
+    if (!takeSummary) return;
     try {
+      const take = await window.electron.ipc.invoke<StudioTake | null>(
+        'studio:get-take',
+        { id: takeSummary.id },
+      );
+      if (!take) throw new Error('The selected recording is no longer available.');
       const saved = await persist(
-        addCompositionVideoLayer(composition.document, take),
+        applyStudioCompositionOperation(composition.document, {
+          type: 'layer.addVideo',
+          take: takeSummary,
+          takePresentation: studioTakePresentationFromTake(take),
+        }),
       );
       if (saved) {
+        setCopilotTake((current) => current ?? take);
         setSelectedLayerId(
           saved.document.layers.find(
             (layer) => layer.kind === 'video' && layer.sourceId === take.id,
@@ -219,6 +346,28 @@ export default function StudioCompositionPage() {
       console.error('[Studio composition] Image import failed.', error);
       toast.error(
         error instanceof Error ? error.message : 'Could not add that image.',
+      );
+    }
+  };
+
+  const handleAddText = async () => {
+    if (!composition) return;
+    if (composition.document.layers.length >= 12) {
+      toast.error('A composition can contain up to 12 layers.');
+      return;
+    }
+    try {
+      const document = applyStudioCompositionOperation(composition.document, {
+        type: 'layer.addText',
+        text: 'Your headline',
+      });
+      const saved = await persist(document);
+      if (saved) {
+        setSelectedLayerId(saved.document.layers.at(-1)?.id ?? null);
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not add a text layer.',
       );
     }
   };
@@ -277,7 +426,10 @@ export default function StudioCompositionPage() {
   const handleRemoveLayer = async (layerId: string) => {
     if (!composition) return;
     const saved = await persist(
-      removeCompositionLayer(composition.document, layerId),
+      applyStudioCompositionOperation(composition.document, {
+        type: 'layer.remove',
+        layerId,
+      }),
     );
     if (saved) {
       if (selectedLayerId === layerId) {
@@ -294,11 +446,11 @@ export default function StudioCompositionPage() {
     if (!composition) return;
     try {
       await persist(
-        reorderStudioCompositionLayer(
-          composition.document,
+        applyStudioCompositionOperation(composition.document, {
+          type: 'layer.reorder',
           layerId,
           direction,
-        ),
+        }),
       );
     } catch (error) {
       console.error('[Studio composition] Could not reorder layer.', error);
@@ -311,7 +463,13 @@ export default function StudioCompositionPage() {
   const handleAddEffect = (type: StudioEffectType, startMs: number) => {
     if (!composition) return;
     try {
-      void persist(addStudioCompositionEffect(composition.document, type, startMs));
+      void persist(
+      applyStudioCompositionOperation(composition.document, {
+        type: 'effect.add',
+        effectType: type,
+        startMs,
+      }),
+    );
     } catch (error) {
       console.error('[Studio composition] Could not add canvas effect.', error);
       toast.error(
@@ -327,7 +485,11 @@ export default function StudioCompositionPage() {
     if (!composition) return;
     try {
       void persist(
-        updateStudioCompositionEffect(composition.document, effectId, patch),
+        applyStudioCompositionOperation(composition.document, {
+        type: 'effect.patch',
+        effectId,
+        patch,
+      }),
       );
     } catch (error) {
       console.error('[Studio composition] Could not update canvas effect.', error);
@@ -340,7 +502,12 @@ export default function StudioCompositionPage() {
   const handleRemoveEffect = (effectId: string) => {
     if (!composition) return;
     try {
-      void persist(removeStudioCompositionEffect(composition.document, effectId));
+      void persist(
+      applyStudioCompositionOperation(composition.document, {
+        type: 'effect.remove',
+        effectId,
+      }),
+    );
     } catch (error) {
       console.error('[Studio composition] Could not remove canvas effect.', error);
       toast.error(
@@ -351,12 +518,17 @@ export default function StudioCompositionPage() {
 
   const handleLayerPatch = async (
     layerId: string,
-    patch: Parameters<typeof updateStudioCompositionLayer>[2],
+    patch: StudioCompositionLayerPatch,
   ): Promise<boolean> => {
     if (!composition) return false;
     try {
+      const operation: StudioCompositionOperation = {
+        type: 'layer.patch',
+        layerId,
+        patch,
+      };
       const saved = await persist(
-        updateStudioCompositionLayer(composition.document, layerId, patch),
+        applyStudioCompositionOperation(composition.document, operation),
       );
       return Boolean(saved);
     } catch (error) {
@@ -378,6 +550,190 @@ export default function StudioCompositionPage() {
     startMs: number,
     endMs: number,
   ) => handleLayerPatch(layerId, { startMs, endMs });
+
+  const handleCompositionTracksChange = useCallback(async (tracks: TimelineTrack[]) => {
+    if (!composition || saving || exporting) return;
+    try {
+      const document = updateStudioCompositionFromTracks(composition, tracks);
+      const saved = await persist(document);
+      if (saved) {
+        setPlayheadMs((timeMs) => Math.min(timeMs, saved.document.durationMs));
+      }
+    } catch (error) {
+      console.error('[Studio composition] Timeline edit failed.', error);
+      toast.error(
+        error instanceof Error ? error.message : 'Could not save timeline changes.',
+      );
+    }
+  }, [composition, exporting, persist, saving]);
+
+  const updateTakePresentation = async (
+    layerId: string,
+    patch: Partial<StudioTakePresentation>,
+  ) => {
+    const layer = composition?.document.layers.find(
+      (candidate) => candidate.id === layerId,
+    );
+    if (!layer || layer.kind !== 'video') return false;
+    const presentation =
+      layer.takePresentation ?? createDefaultStudioTakePresentation();
+    return handleLayerPatch(layerId, {
+      takePresentation: { ...presentation, ...patch },
+    });
+  };
+
+  const handleAddTakeCut = (layerId: string) => {
+    const layer = composition?.document.layers.find(
+      (candidate) => candidate.id === layerId,
+    );
+    if (!layer || layer.kind !== 'video') return;
+    const presentation =
+      layer.takePresentation ?? createDefaultStudioTakePresentation();
+    const sourceTimeMs = sourceTimeForTakeLayer(layer, playheadMs);
+    const cuts = normalizeCuts(
+      [
+        ...presentation.cuts,
+        {
+          id: crypto.randomUUID(),
+          startMs: Math.max(0, sourceTimeMs - 250),
+          endMs: Math.min(layer.sourceDurationMs, sourceTimeMs + 250),
+          reason: 'manual' as const,
+        },
+      ],
+      layer.sourceDurationMs,
+    );
+    if (compositionDurationMs(layer.sourceDurationMs, cuts) <= 0) return;
+    void updateTakePresentation(layerId, { cuts });
+  };
+
+  const handleAddTakeCaption = (layerId: string) => {
+    const layer = composition?.document.layers.find(
+      (candidate) => candidate.id === layerId,
+    );
+    if (!layer || layer.kind !== 'video') return;
+    const presentation =
+      layer.takePresentation ?? createDefaultStudioTakePresentation();
+    const startMs = sourceTimeForTakeLayer(layer, playheadMs);
+    const endMs = Math.min(layer.sourceDurationMs, startMs + 2500);
+    if (endMs <= startMs) return;
+    void updateTakePresentation(layerId, {
+      captions: [
+        ...presentation.captions,
+        {
+          id: crypto.randomUUID(),
+          startMs,
+          endMs,
+          text: 'New caption',
+        },
+      ],
+    });
+  };
+
+  const handleAddTakeZoom = (layerId: string) => {
+    const layer = composition?.document.layers.find(
+      (candidate) => candidate.id === layerId,
+    );
+    if (!layer || layer.kind !== 'video') return;
+    const presentation =
+      layer.takePresentation ?? createDefaultStudioTakePresentation();
+    const sourceTimeMs = sourceTimeForTakeLayer(layer, playheadMs);
+    const startMs = Math.max(0, sourceTimeMs - 200);
+    const endMs = Math.min(layer.sourceDurationMs, sourceTimeMs + 2000);
+    if (endMs <= startMs) return;
+    void updateTakePresentation(layerId, {
+      zooms: [
+        ...presentation.zooms,
+        {
+          id: crypto.randomUUID(),
+          startMs,
+          endMs,
+          targetX: 0.5,
+          targetY: 0.5,
+          scale: 1.6,
+        },
+      ],
+    });
+  };
+
+  const handleAddTakeEffect = (layerId: string, type: StudioEffectType, timeMs: number) => {
+    const layer = composition?.document.layers.find(
+      (candidate) => candidate.id === layerId,
+    );
+    if (!layer || layer.kind !== 'video') return;
+    const presentation =
+      layer.takePresentation ?? createDefaultStudioTakePresentation();
+    const definition = STUDIO_EFFECTS.find((effect) => effect.type === type);
+    if (!definition || presentation.effects.length >= 24) return;
+    const startMs = Math.max(0, Math.min(layer.sourceDurationMs - 1, timeMs));
+    void updateTakePresentation(layerId, {
+      effects: [
+        ...presentation.effects,
+        {
+          id: crypto.randomUUID(),
+          type,
+          startMs,
+          endMs: Math.min(layer.sourceDurationMs, startMs + definition.defaultDurationMs),
+          intensity: definition.defaultIntensity,
+        },
+      ],
+    });
+  };
+
+  const handleUpdateTakeEffect = (
+    layerId: string,
+    effectId: string,
+    patch: Partial<Pick<StudioEffect, 'startMs' | 'endMs' | 'intensity'>>,
+  ) => {
+    const layer = composition?.document.layers.find(
+      (candidate) => candidate.id === layerId,
+    );
+  if (!layer || layer.kind !== 'video') return;
+  const presentation =
+    layer.takePresentation ?? createDefaultStudioTakePresentation();
+  void updateTakePresentation(layerId, {
+    effects: presentation.effects.map((effect) =>
+      effect.id === effectId ? { ...effect, ...patch } : effect,
+    ),
+  });
+
+  };
+
+  const handleRemoveTakeEffect = (layerId: string, effectId: string) => {
+    const layer = composition?.document.layers.find(
+      (candidate) => candidate.id === layerId,
+    );
+  if (!layer || layer.kind !== 'video') return;
+  const presentation =
+    layer.takePresentation ?? createDefaultStudioTakePresentation();
+  void updateTakePresentation(layerId, {
+    effects: presentation.effects.filter((effect) => effect.id !== effectId),
+  });
+
+  };
+
+  const handleOpenReleaseKit = async () => {
+    if (!copilotTake) return;
+    if (copilotTake.socialKit) {
+      setReleaseKitOpen(true);
+      return;
+    }
+    setGeneratingReleaseKit(true);
+    try {
+      const socialKit = await window.electron.ipc.invoke<NonNullable<StudioTake['socialKit']>>(
+        'studio:generate-social-kit',
+        { takeId: copilotTake.id },
+      );
+      setCopilotTake((take) => take ? { ...take, socialKit } : take);
+      setReleaseKitOpen(true);
+      toast.success('Release kit generated.');
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : 'Could not generate a release kit.',
+      );
+    } finally {
+      setGeneratingReleaseKit(false);
+    }
+  };
 
   const handleSaveTitle = async () => {
     if (!composition || !titleInput.trim()) {
@@ -439,9 +795,27 @@ export default function StudioCompositionPage() {
   const selectedLayer =
     composition.document.layers.find((layer) => layer.id === selectedLayerId) ??
     null;
+  const selectedTakePresentation =
+    selectedLayer?.kind === 'video'
+      ? selectedLayer.takePresentation ?? createDefaultStudioTakePresentation()
+      : null;
+  const primaryVideoLayer = composition.document.layers.find(
+    (layer) => layer.kind === 'video',
+  );
   const frontToBackLayers = [...composition.document.layers].sort(
     (a, b) => b.zIndex - a.zIndex,
   );
+  const handleSelectLayer = (layerId: string | null) => {
+    setSelectedLayerId(layerId);
+    const clip = timelineStore
+      .getState()
+      .tracks.flatMap((track) => track.clips)
+      .find(
+        (item) =>
+          item.payload?.compositionLayerId === layerId || item.id === layerId,
+      );
+    timelineStore.setSelectedClipId(clip?.id ?? null);
+  };
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
@@ -494,6 +868,53 @@ export default function StudioCompositionPage() {
             ))}
           </select>
         </label>
+        <div data-history-version={historyVersion} className="flex items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Undo composition edit"
+            title="Undo"
+            disabled={saving || exporting || undoDocumentsRef.current.length === 0}
+            onClick={() => void undoComposition()}
+          >
+            <Undo2Icon className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Redo composition edit"
+            title="Redo"
+            disabled={saving || exporting || redoDocumentsRef.current.length === 0}
+            onClick={() => void redoComposition()}
+          >
+            <Redo2Icon className="size-4" />
+          </Button>
+        </div>
+        {copilotTake && (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={saving || exporting}
+              onClick={() => setCopilotOpen(true)}
+            >
+              Copilot
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={generatingReleaseKit || saving || exporting}
+              onClick={() => void handleOpenReleaseKit()}
+            >
+              {generatingReleaseKit ? 'Generating…' : 'Release kit'}
+            </Button>
+          </>
+        )}
         <Button
           type="button"
           variant="outline"
@@ -529,8 +950,10 @@ export default function StudioCompositionPage() {
               composition={composition}
               selectedLayerId={selectedLayerId}
               playheadMs={playheadMs}
+              isPlaying={isPlaying}
               disabled={saving || exporting}
-              onSelectLayer={setSelectedLayerId}
+              onIsPlayingChange={setIsPlaying}
+              onSelectLayer={handleSelectLayer}
               onPlayheadChange={setPlayheadMs}
               onLayoutChange={handleLayoutChange}
             />
@@ -566,13 +989,15 @@ export default function StudioCompositionPage() {
                     <button
                       type="button"
                       aria-pressed={layer.id === selectedLayerId}
-                      onClick={() => setSelectedLayerId(layer.id)}
+                      onClick={() => handleSelectLayer(layer.id)}
                       className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {layer.kind === 'video' ? (
                         <VideoIcon className="size-4 shrink-0 text-primary" />
-                      ) : (
+                      ) : layer.kind === 'image' ? (
                         <ImagePlusIcon className="size-4 shrink-0 text-primary" />
+                      ) : (
+                        <TypeIcon className="size-4 shrink-0 text-primary" />
                       )}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-xs font-medium">
@@ -590,7 +1015,7 @@ export default function StudioCompositionPage() {
                       className="size-7 shrink-0 text-muted-foreground"
                       aria-label={`Move ${layer.name} forward`}
                       title="Move forward"
-                      disabled={saving || exporting || index === 0}
+                      disabled={saving || exporting || layer.locked === true || index === 0}
                       onClick={() =>
                         void handleReorderLayer(layer.id, 'forward')
                       }
@@ -607,6 +1032,7 @@ export default function StudioCompositionPage() {
                       disabled={
                         saving ||
                         exporting ||
+                        layer.locked === true ||
                         index === frontToBackLayers.length - 1
                       }
                       onClick={() =>
@@ -621,7 +1047,7 @@ export default function StudioCompositionPage() {
                       size="icon"
                       className="size-7 shrink-0 text-muted-foreground hover:text-destructive"
                       aria-label={`Remove ${layer.name}`}
-                      disabled={saving || exporting}
+                      disabled={saving || exporting || layer.locked === true}
                       onClick={() => void handleRemoveLayer(layer.id)}
                     >
                       <Trash2Icon className="size-3.5" />
@@ -635,13 +1061,80 @@ export default function StudioCompositionPage() {
               layer={selectedLayer}
               aspectRatio={composition.document.aspectRatio}
               durationMs={composition.document.durationMs}
-              disabled={saving || exporting}
+              disabled={saving || exporting || selectedLayer?.locked === true}
               onCommit={(patch) =>
                 selectedLayerId
                   ? handleLayerPatch(selectedLayerId, patch)
                   : Promise.resolve(false)
               }
             />
+            {selectedLayer?.kind === 'video' && selectedTakePresentation && (
+              <>
+              <StudioCompositionTakeStylePanel
+                styling={selectedTakePresentation.styling}
+                onUpdateStyling={(updates) => {
+                  if (selectedLayer.locked) return;
+                  const document = updates.aspectRatio
+                    ? setCompositionAspectRatio(
+                        composition.document,
+                        updates.aspectRatio,
+                      )
+                    : composition.document;
+                  void persist(
+                    applyStudioCompositionOperation(document, {
+                      type: 'layer.patch',
+                      layerId: selectedLayer.id,
+                      patch: {
+                        takePresentation: {
+                          ...selectedTakePresentation,
+                          styling: {
+                            ...selectedTakePresentation.styling,
+                            ...updates,
+                          },
+                        },
+                      },
+                    }),
+                  );
+                }}
+              />
+              <StudioCompositionTakeTracksPanel
+                presentation={selectedTakePresentation}
+                durationMs={selectedLayer.sourceDurationMs}
+                playheadSourceMs={sourceTimeForTakeLayer(
+                  selectedLayer,
+                  playheadMs,
+                )}
+                disabled={saving || exporting || selectedLayer.locked === true}
+                onUpdate={(patch) =>
+                  void updateTakePresentation(selectedLayer.id, patch)
+                }
+                onAddCut={() => handleAddTakeCut(selectedLayer.id)}
+                onAddCaption={() => handleAddTakeCaption(selectedLayer.id)}
+                onAddZoom={() => handleAddTakeZoom(selectedLayer.id)}
+              />
+              <StudioCompositionEffectsPanel
+                ariaLabel="Take layer effects"
+                title="Take layer effects"
+                description="Apply within this recording layer."
+                effects={selectedTakePresentation.effects}
+                durationMs={selectedLayer.sourceDurationMs}
+                playheadMs={sourceTimeForTakeLayer(
+                  selectedLayer,
+                  playheadMs,
+                )}
+                disabled={saving || exporting || selectedLayer.locked === true}
+                onAdd={(type, startMs) =>
+                  handleAddTakeEffect(selectedLayer.id, type, startMs)
+                }
+                onUpdate={(effectId, patch) =>
+                  handleUpdateTakeEffect(selectedLayer.id, effectId, patch)
+                }
+                onRemove={(effectId) =>
+                  handleRemoveTakeEffect(selectedLayer.id, effectId)
+                }
+              />
+              </>
+            )}
 
             <StudioCompositionEffectsPanel
               effects={composition.document.effects ?? []}
@@ -725,6 +1218,16 @@ export default function StudioCompositionPage() {
                 <ImagePlusIcon className="size-4" />
                 Add an image layer
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start gap-2"
+                disabled={saving || exporting || composition.document.layers.length >= 12}
+                onClick={() => void handleAddText()}
+              >
+                <TypeIcon className="size-4" />
+                Add a text layer
+              </Button>
               {saving && (
                 <p role="status" className="text-[11px] text-muted-foreground">
                   Saving changes…
@@ -738,15 +1241,42 @@ export default function StudioCompositionPage() {
             </div>
           </aside>
         </div>
-        <StudioCompositionTimeline
-          composition={composition}
-          effects={composition.document.effects ?? []}
-          selectedLayerId={selectedLayerId}
-          playheadMs={playheadMs}
-          disabled={saving || exporting}
-          onSelectLayer={setSelectedLayerId}
-          onCommitTiming={handleTimingChange}
-        />
+        <div className="h-64 min-h-0 shrink-0">
+          <StudioCanvasTimeline
+            activeTake={null}
+            activeComposition={composition}
+            videoUrl={
+              primaryVideoLayer?.kind === 'video'
+                ? studioTakeMediaUrl(primaryVideoLayer.sourceId)
+                : null
+            }
+            durationMs={composition.document.durationMs}
+            isPlaying={isPlaying}
+            onSeek={setPlayheadMs}
+            onTogglePlay={() => setIsPlaying((playing) => !playing)}
+            onRestartPlayback={() => setPlayheadMs(0)}
+            onCompositionTracksChange={handleCompositionTracksChange}
+            onCompositionLayerSelect={setSelectedLayerId}
+            onOpenVideoCrop={() => {
+              if (selectedLayer?.kind === 'video') {
+                const presentation =
+                  selectedLayer.takePresentation ??
+                  createDefaultStudioTakePresentation();
+                void handleLayerPatch(selectedLayer.id, {
+                  takePresentation: {
+                    ...presentation,
+                    videoCrop: presentation.videoCrop ? undefined : {
+                      x: 0.05,
+                      y: 0.05,
+                      width: 0.9,
+                      height: 0.9,
+                    },
+                  },
+                });
+              }
+            }}
+          />
+        </div>
       </div>
       <Dialog
         open={saveTemplateOpen}
@@ -792,6 +1322,23 @@ export default function StudioCompositionPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {copilotTake && (
+        <>
+          <StudioCopilotSheet
+            open={copilotOpen}
+            onOpenChange={setCopilotOpen}
+            activeTake={copilotTake}
+            compositionId={composition.id}
+            projectId={composition.projectId ?? undefined}
+            currentTimeMs={playheadMs}
+          />
+          <StudioSocialKitModal
+            open={releaseKitOpen}
+            onOpenChange={setReleaseKitOpen}
+            socialKit={copilotTake.socialKit}
+          />
+        </>
+      )}
     </div>
   );
 }

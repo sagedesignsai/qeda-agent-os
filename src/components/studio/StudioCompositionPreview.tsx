@@ -10,9 +10,17 @@ import { Button } from '@/components/ui/button';
 import { studioCanvasDims } from '@/lib/studio/render/geometry';
 import {
   studioCompositionAssetMediaUrl,
+  studioOverlayMediaUrl,
   studioTakeMediaUrl,
 } from '@/lib/studio/media';
 import { drawStudioCompositionFrame } from '@/lib/studio/render/composition';
+import {
+  advanceStudioTakeCamera,
+  drawStudioTakeFrame,
+  sourceTimeForTakeLayer,
+} from '@/lib/studio/render/take-frame';
+import { IDLE_CAMERA, type StudioCameraState } from '@/lib/studio/render/camera';
+import type { StudioOverlayAsset } from '@/lib/studio/render/overlays';
 import { evaluateStudioCompositionLayerFrame } from '@/lib/studio/composition-motion';
 import {
   getCompositionHandlePoint,
@@ -54,16 +62,20 @@ export function StudioCompositionPreview({
   composition,
   selectedLayerId,
   playheadMs,
+  isPlaying,
   disabled = false,
   onSelectLayer,
+  onIsPlayingChange,
   onPlayheadChange,
   onLayoutChange,
 }: {
   composition: StudioComposition;
   selectedLayerId: string | null;
   playheadMs: number;
+  isPlaying: boolean;
   disabled?: boolean;
   onSelectLayer: (layerId: string | null) => void;
+  onIsPlayingChange: (isPlaying: boolean) => void;
   onPlayheadChange: (timeMs: number) => void;
   onLayoutChange: (
     layerId: string,
@@ -73,8 +85,13 @@ export function StudioCompositionPreview({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRefs = useRef(new Map<string, HTMLVideoElement>());
   const imageRefs = useRef(new Map<string, HTMLImageElement>());
+  const takeOverlayMediaRefs = useRef(
+    new Map<string, HTMLImageElement | HTMLVideoElement>(),
+  );
+  const takeOverlayAssetsRef = useRef(new Map<string, StudioOverlayAsset>());
+  const takeRenderCanvasesRef = useRef(new Map<string, HTMLCanvasElement>());
+  const takeCameraStatesRef = useRef(new Map<string, StudioCameraState>());
   const [imagesVersion, setImagesVersion] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const playheadRef = useRef(playheadMs);
   const lastPublishedPlayheadRef = useRef(0);
@@ -129,36 +146,135 @@ export function StudioCompositionPreview({
   }, [composition.document.layers]);
 
   useEffect(() => {
+    const overlays = composition.document.layers.flatMap((layer) =>
+      layer.kind === 'video' ? layer.takePresentation?.overlays ?? [] : [],
+    );
+    const activeIds = new Set(overlays.map((overlay) => overlay.id));
+    for (const [id, media] of takeOverlayMediaRefs.current) {
+      if (activeIds.has(id)) continue;
+      if (media instanceof HTMLVideoElement) {
+        media.pause();
+        media.removeAttribute('src');
+        media.load();
+      } else {
+        media.removeAttribute('src');
+      }
+      takeOverlayMediaRefs.current.delete(id);
+      takeOverlayAssetsRef.current.delete(id);
+    }
+
+    for (const overlay of overlays) {
+      if (takeOverlayMediaRefs.current.has(overlay.id)) continue;
+      if (overlay.kind === 'image') {
+        const image = new Image();
+        image.onload = () => {
+          if (image.naturalWidth > 0) {
+            takeOverlayAssetsRef.current.set(overlay.id, {
+              element: image,
+              width: image.naturalWidth,
+              height: image.naturalHeight,
+            });
+            setImagesVersion((version) => version + 1);
+          }
+        };
+        image.onerror = () => {
+          console.error(`Studio overlay failed to load: ${overlay.id}`);
+        };
+        image.src = studioOverlayMediaUrl(overlay.id);
+        takeOverlayMediaRefs.current.set(overlay.id, image);
+      } else {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.onloadedmetadata = () => {
+          if (video.videoWidth > 0) {
+            takeOverlayAssetsRef.current.set(overlay.id, {
+              element: video,
+              width: video.videoWidth,
+              height: video.videoHeight,
+            });
+            setImagesVersion((version) => version + 1);
+          }
+        };
+        video.onerror = () => {
+          console.error(`Studio overlay failed to load: ${overlay.id}`);
+        };
+        video.src = studioOverlayMediaUrl(overlay.id);
+        takeOverlayMediaRefs.current.set(overlay.id, video);
+      }
+    }
+
+    return () => {
+      for (const media of takeOverlayMediaRefs.current.values()) {
+        if (media instanceof HTMLVideoElement) {
+          media.pause();
+          media.removeAttribute('src');
+          media.load();
+        } else {
+          media.removeAttribute('src');
+        }
+      }
+      takeOverlayMediaRefs.current.clear();
+      takeOverlayAssetsRef.current.clear();
+    };
+  }, [composition.document.layers]);
+
+  useEffect(() => {
     for (const layer of composition.document.layers) {
       if (layer.kind !== 'video') continue;
       const video = videoRefs.current.get(layer.id);
       if (!video || video.readyState < 1) continue;
-      const relativeMs = Math.max(0, playheadMs - layer.startMs);
-      const sourceDurationMs = Number.isFinite(video.duration)
-        ? Math.min(layer.sourceDurationMs, video.duration * 1000)
-        : layer.sourceDurationMs;
-      const sourceMs = Math.min(
-        Math.max(0, sourceDurationMs - 20),
-        layer.sourceInMs + relativeMs,
-      );
+      const sourceMs = sourceTimeForTakeLayer(layer, playheadMs);
       if (Math.abs(video.currentTime * 1000 - sourceMs) > 160) {
         video.currentTime = Math.max(0, sourceMs / 1000);
+      }
+      for (const overlay of layer.takePresentation?.overlays ?? []) {
+        const overlayVideo = takeOverlayMediaRefs.current.get(overlay.id);
+        if (!(overlayVideo instanceof HTMLVideoElement)) continue;
+        const offsetMs = sourceMs - overlay.startMs;
+        if (offsetMs < 0) {
+          overlayVideo.pause();
+          continue;
+        }
+        const targetSeconds = Number.isFinite(overlayVideo.duration)
+          ? Math.min(offsetMs / 1000, Math.max(0, overlayVideo.duration - 0.05))
+          : offsetMs / 1000;
+        if (Math.abs(overlayVideo.currentTime - targetSeconds) > 0.16) {
+          try {
+            overlayVideo.currentTime = targetSeconds;
+          } catch {
+            // The overlay may not be seekable yet; the next playhead update retries.
+          }
+        }
       }
     }
   }, [composition.document.layers, playheadMs]);
 
   useEffect(() => {
-    for (const video of videoRefs.current.values()) {
+    const videos = [
+      ...videoRefs.current.values(),
+      ...[...takeOverlayMediaRefs.current.values()].filter(
+        (media): media is HTMLVideoElement => media instanceof HTMLVideoElement,
+      ),
+    ];
+    for (const video of videos) {
       if (isPlaying) {
         void video.play().catch((error: unknown) => {
           console.error('[Studio composition] Video playback failed.', error);
-          setIsPlaying(false);
+          onIsPlayingChange(false);
         });
       } else {
         video.pause();
       }
     }
-  }, [isPlaying, composition.document.layers]);
+  }, [
+    isPlaying,
+    composition.document.layers,
+    imagesVersion,
+    onIsPlayingChange,
+  ]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -185,22 +301,30 @@ export function StudioCompositionPreview({
             if (layer.kind !== 'video') continue;
             const video = videoRefs.current.get(layer.id);
             if (!video || video.readyState < 1 || video.seeking) continue;
-            const relativeMs = Math.max(0, nextTime - layer.startMs);
-            const sourceDurationMs = Number.isFinite(video.duration)
-              ? Math.min(layer.sourceDurationMs, video.duration * 1000)
-              : layer.sourceDurationMs;
-            const sourceMs = Math.min(
-              Math.max(0, sourceDurationMs - 20),
-              layer.sourceInMs + relativeMs,
-            );
+            const sourceMs = sourceTimeForTakeLayer(layer, nextTime);
             if (Math.abs(video.currentTime * 1000 - sourceMs) > 350) {
               video.currentTime = Math.max(0, sourceMs / 1000);
+            }
+            for (const overlay of layer.takePresentation?.overlays ?? []) {
+              const overlayVideo = takeOverlayMediaRefs.current.get(overlay.id);
+              if (!(overlayVideo instanceof HTMLVideoElement)) continue;
+              const offsetMs = sourceMs - overlay.startMs;
+              if (offsetMs < 0) {
+                overlayVideo.pause();
+                continue;
+              }
+              const targetSeconds = Number.isFinite(overlayVideo.duration)
+                ? Math.min(offsetMs / 1000, Math.max(0, overlayVideo.duration - 0.05))
+                : offsetMs / 1000;
+              if (Math.abs(overlayVideo.currentTime - targetSeconds) > 0.35) {
+                overlayVideo.currentTime = targetSeconds;
+              }
             }
           }
           lastSeekTimestamp = timestamp;
         }
         if (nextTime >= composition.document.durationMs) {
-          setIsPlaying(false);
+          onIsPlayingChange(false);
           return;
         }
       }
@@ -214,6 +338,7 @@ export function StudioCompositionPreview({
     composition.document.layers,
     isPlaying,
     onPlayheadChange,
+    onIsPlayingChange,
   ]);
 
   useEffect(() => {
@@ -231,13 +356,67 @@ export function StudioCompositionPreview({
         if (layer.kind === 'video') {
           const video = videoRefs.current.get(layer.id);
           if (video && video.readyState >= 2) {
-            media.set(layer.id, {
-              element: video,
-              width: video.videoWidth,
-              height: video.videoHeight,
-            });
+            const presentation = layer.takePresentation;
+            if (presentation) {
+              let frameCanvas = takeRenderCanvasesRef.current.get(layer.id);
+              if (!frameCanvas) {
+                frameCanvas = document.createElement('canvas');
+                takeRenderCanvasesRef.current.set(layer.id, frameCanvas);
+              }
+              if (frameCanvas.width !== dims.width || frameCanvas.height !== dims.height) {
+                frameCanvas.width = dims.width;
+                frameCanvas.height = dims.height;
+              }
+              const frameContext = frameCanvas.getContext('2d');
+              if (!frameContext) continue;
+              const sourceTimeMs = sourceTimeForTakeLayer(
+                layer,
+                playheadRef.current,
+              );
+              const camera = presentation.videoCrop
+                ? { ...IDLE_CAMERA }
+                : advanceStudioTakeCamera(
+                    takeCameraStatesRef.current.get(layer.id) ?? {
+                      ...IDLE_CAMERA,
+                    },
+                    presentation,
+                    sourceTimeMs,
+                  );
+              takeCameraStatesRef.current.set(layer.id, camera);
+              const overlayAssets = new Map<string, StudioOverlayAsset>();
+              for (const overlay of presentation.overlays) {
+                const asset = takeOverlayAssetsRef.current.get(overlay.id);
+                if (asset) overlayAssets.set(overlay.id, asset);
+              }
+              drawStudioTakeFrame(frameContext, {
+                width: dims.width,
+                height: dims.height,
+                timeMs: sourceTimeMs,
+                compositionTimeMs: Math.max(
+                  0,
+                  playheadRef.current - layer.startMs,
+                ),
+                durationMs: layer.endMs - layer.startMs,
+                video,
+                videoReady: true,
+                camera,
+                presentation,
+                overlayAssets,
+              });
+              media.set(layer.id, {
+                element: frameCanvas,
+                width: frameCanvas.width,
+                height: frameCanvas.height,
+              });
+            } else {
+              media.set(layer.id, {
+                element: video,
+                width: video.videoWidth,
+                height: video.videoHeight,
+              });
+            }
           }
-        } else {
+        } else if (layer.kind === 'image') {
           const image = imageRefs.current.get(layer.sourceId);
           if (image?.complete && image.naturalWidth > 0) {
             media.set(layer.id, {
@@ -278,6 +457,7 @@ export function StudioCompositionPreview({
       );
       if (
         selectedLayer &&
+        selectedLayer.visible !== false &&
         playheadRef.current >= selectedLayer.startMs &&
         playheadRef.current <= selectedLayer.endMs
       ) {
@@ -349,6 +529,7 @@ export function StudioCompositionPreview({
       .sort((a, b) => b.zIndex - a.zIndex)
       .find((layer) => {
         if (
+          layer.visible === false ||
           playheadRef.current < layer.startMs ||
           playheadRef.current > layer.endMs
         ) {
@@ -369,6 +550,11 @@ export function StudioCompositionPreview({
     const layer = resizeHandle ? selected : hit;
     if (!layer) {
       onSelectLayer(null);
+      return;
+    }
+    if (layer.locked) {
+      onSelectLayer(layer.id);
+      selectedLayerIdRef.current = layer.id;
       return;
     }
 
@@ -517,7 +703,7 @@ export function StudioCompositionPreview({
             const selected = composition.document.layers.find(
               (layer) => layer.id === selectedLayerId,
             );
-            if (!selected) return;
+            if (!selected || selected.locked) return;
             event.preventDefault();
             const layout = selected.layouts[composition.document.aspectRatio];
             const distance = event.shiftKey ? 0.02 : 0.005;
@@ -547,7 +733,7 @@ export function StudioCompositionPreview({
           size="icon"
           className="size-8 shrink-0"
           aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
-          onClick={() => setIsPlaying((playing) => !playing)}
+          onClick={() => onIsPlayingChange(!isPlaying)}
         >
           {isPlaying ? (
             <PauseIcon className="size-4" />
@@ -562,7 +748,7 @@ export function StudioCompositionPreview({
           className="size-8 shrink-0"
           aria-label="Restart preview"
           onClick={() => {
-            setIsPlaying(false);
+            onIsPlayingChange(false);
             playheadRef.current = 0;
             onPlayheadChange(0);
           }}
@@ -580,7 +766,7 @@ export function StudioCompositionPreview({
           step={50}
           value={Math.min(playheadMs, composition.document.durationMs)}
           onChange={(event) => {
-            setIsPlaying(false);
+            onIsPlayingChange(false);
             const nextTime = Number(event.target.value);
             playheadRef.current = nextTime;
             onPlayheadChange(nextTime);

@@ -58,6 +58,9 @@ export function StudioCompositionEffectsPanel({
   onAdd,
   onUpdate,
   onRemove,
+  title = 'Canvas effects',
+  description = 'Apply over the full composition.',
+  ariaLabel = 'Composition effects',
 }: {
   effects: readonly StudioEffect[];
   durationMs: number;
@@ -69,21 +72,22 @@ export function StudioCompositionEffectsPanel({
     patch: Partial<Pick<StudioEffect, 'startMs' | 'endMs' | 'intensity'>>,
   ) => void;
   onRemove: (effectId: string) => void;
+  title?: string;
+  description?: string;
+  ariaLabel?: string;
 }) {
   const [newEffectType, setNewEffectType] =
     useState<StudioEffectType>('spotlight');
 
   return (
     <section
-      aria-label="Composition effects"
+      aria-label={ariaLabel}
       className="space-y-2 border-t border-border/50 p-3"
     >
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xs font-medium">Canvas effects</h3>
-          <p className="text-[10px] text-muted-foreground">
-            Apply over the full composition.
-          </p>
+          <h3 className="text-xs font-medium">{title}</h3>
+          <p className="text-[10px] text-muted-foreground">{description}</p>
         </div>
         <span className="text-[10px] tabular-nums text-muted-foreground">
           {effects.length}/24

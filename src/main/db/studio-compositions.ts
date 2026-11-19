@@ -2,6 +2,7 @@ import { getDb } from './client.js';
 import { nanoid } from 'nanoid';
 import {
   addCompositionImageLayer,
+  createStudioCompositionDocumentFromTake,
   createStudioCompositionTemplate,
   instantiateStudioCompositionTemplate,
   parseStudioCompositionDocument,
@@ -14,6 +15,7 @@ import type {
   StudioCompositionSummary,
   StudioCompositionTemplate,
   StudioCompositionTemplateSummary,
+  StudioTake,
   StudioTakeSummary,
 } from '../../lib/studio/types.js';
 
@@ -23,6 +25,7 @@ interface CompositionRow {
   project_name?: string | null;
   title: string;
   data_json: string;
+  revision?: number;
   created_at: number;
   updated_at: number;
 }
@@ -33,6 +36,7 @@ function rowToComposition(row: CompositionRow): StudioComposition {
     projectId: row.project_id,
     title: row.title,
     document: parseStudioCompositionDocument(JSON.parse(row.data_json)),
+    revision: row.revision ?? 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -45,7 +49,7 @@ export function listStudioCompositions(
     ? (getDb()
         .prepare(
           `SELECT c.id, c.project_id, p.name AS project_name, c.title,
-                  c.data_json, c.created_at, c.updated_at
+                  c.data_json, c.revision, c.created_at, c.updated_at
              FROM studio_compositions c
         LEFT JOIN projects p ON p.id = c.project_id
             WHERE c.project_id = ?
@@ -55,7 +59,7 @@ export function listStudioCompositions(
     : (getDb()
         .prepare(
           `SELECT c.id, c.project_id, p.name AS project_name, c.title,
-                  c.data_json, c.created_at, c.updated_at
+                  c.data_json, c.revision, c.created_at, c.updated_at
              FROM studio_compositions c
         LEFT JOIN projects p ON p.id = c.project_id
          ORDER BY c.updated_at DESC, c.rowid DESC`,
@@ -82,7 +86,7 @@ export function listStudioCompositions(
 export function getStudioComposition(id: string): StudioComposition | null {
   const row = getDb()
     .prepare(
-      `SELECT id, project_id, title, data_json, created_at, updated_at
+      `SELECT id, project_id, title, data_json, revision, created_at, updated_at
          FROM studio_compositions
         WHERE id = ?`,
     )
@@ -90,36 +94,157 @@ export function getStudioComposition(id: string): StudioComposition | null {
   return row ? rowToComposition(row) : null;
 }
 
+export function getDefaultStudioCompositionIdForTake(
+  takeId: string,
+): string | null {
+  const row = getDb()
+    .prepare(
+      `SELECT composition_id
+         FROM studio_take_default_compositions
+        WHERE take_id = ?`,
+    )
+    .get(takeId) as { composition_id: string } | undefined;
+  return row?.composition_id ?? null;
+}
+
+export function getDefaultStudioCompositionForTake(
+  takeId: string,
+): StudioComposition | null {
+  const compositionId = getDefaultStudioCompositionIdForTake(takeId);
+  return compositionId ? getStudioComposition(compositionId) : null;
+}
+
+export function getOrCreateDefaultStudioCompositionForTake(
+  take: StudioTake,
+): StudioComposition {
+  const db = getDb();
+  const existing = getDefaultStudioCompositionForTake(take.id);
+  if (existing) return existing;
+  if (!take.videoPath) {
+    throw new Error(`Recording "${take.title}" has no video source.`);
+  }
+
+  const id = nanoid();
+  const document = createStudioCompositionDocumentFromTake(take);
+  const now = Math.floor(Date.now() / 1000);
+  const resolveOrCreate = db.transaction(() => {
+    const mapped = db
+      .prepare(
+        `SELECT composition_id
+           FROM studio_take_default_compositions
+          WHERE take_id = ?`,
+      )
+      .get(take.id) as { composition_id: string } | undefined;
+    if (mapped) return mapped.composition_id;
+
+    const prototypeRows = db
+      .prepare(
+        `SELECT id, data_json
+           FROM studio_compositions
+          WHERE project_id IS ? AND title = ?
+          ORDER BY updated_at DESC, rowid DESC`,
+      )
+      .all(take.projectId, `${take.title} composition`) as Array<{
+      id: string;
+      data_json: string;
+    }>;
+    for (const row of prototypeRows) {
+      try {
+        const candidate = parseStudioCompositionDocument(
+          JSON.parse(row.data_json),
+        );
+        const onlyLayer = candidate.layers[0];
+        if (
+          candidate.layers.length === 1 &&
+          onlyLayer?.kind === 'video' &&
+          onlyLayer.sourceId === take.id
+        ) {
+          db.prepare(
+            `INSERT INTO studio_take_default_compositions (take_id, composition_id)
+             VALUES (?, ?)`,
+          ).run(take.id, row.id);
+          return row.id;
+        }
+      } catch {
+        // Ignore malformed/obsolete compositions; the Take importer below is recoverable.
+      }
+    }
+
+    db.prepare(
+      `INSERT INTO studio_compositions
+         (id, project_id, title, data_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(id, take.projectId, take.title, JSON.stringify(document), now, now);
+    db.prepare(
+      `INSERT INTO studio_take_default_compositions (take_id, composition_id)
+       VALUES (?, ?)`,
+    ).run(take.id, id);
+    return id;
+  });
+
+  const compositionId = resolveOrCreate();
+  const composition = getStudioComposition(compositionId);
+  if (!composition) {
+    throw new Error(
+      `Failed to create a default composition for take ${take.id}.`,
+    );
+  }
+  return composition;
+}
+
 export function saveStudioComposition(input: {
   id: string;
   projectId?: string | null;
   title: string;
   document: StudioCompositionDocument;
+  expectedRevision?: number;
 }): StudioComposition {
   const document = parseStudioCompositionDocument(input.document);
   const title = input.title.trim();
   if (!title) throw new Error('A composition title is required.');
 
+  const db = getDb();
   const now = Math.floor(Date.now() / 1000);
-  getDb()
-    .prepare(
+  const dataJson = JSON.stringify(document);
+  if (input.expectedRevision !== undefined) {
+    const result = db
+      .prepare(
+        `UPDATE studio_compositions
+            SET project_id = ?, title = ?, data_json = ?,
+                revision = revision + 1, updated_at = ?
+          WHERE id = ? AND revision = ?`,
+      )
+      .run(
+        input.projectId ?? null,
+        title,
+        dataJson,
+        now,
+        input.id,
+        input.expectedRevision,
+      );
+    if (result.changes === 0) {
+      throw new Error('This composition changed elsewhere. Reload and retry your edit.');
+    }
+  } else {
+    db.prepare(
       `INSERT INTO studio_compositions
-         (id, project_id, title, data_json, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
+         (id, project_id, title, data_json, revision, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          project_id = excluded.project_id,
          title = excluded.title,
          data_json = excluded.data_json,
+         revision = studio_compositions.revision + 1,
          updated_at = excluded.updated_at`,
-    )
-    .run(
+    ).run(
       input.id,
       input.projectId ?? null,
       title,
-      JSON.stringify(document),
+      dataJson,
       now,
       now,
     );
+  }
 
   const saved = getStudioComposition(input.id);
   if (!saved) throw new Error(`Failed to save Studio composition ${input.id}.`);
@@ -155,7 +280,7 @@ export function importStudioCompositionImageAsset(input: {
     ).run(input.id, input.compositionId, input.name, input.path);
     db.prepare(
       `UPDATE studio_compositions
-          SET data_json = ?, updated_at = ?
+          SET data_json = ?, revision = revision + 1, updated_at = ?
         WHERE id = ?`,
     ).run(
       JSON.stringify(document),
@@ -177,8 +302,7 @@ export function getStudioCompositionImagePath(assetId: string): string | null {
   return row?.path ?? null;
 }
 
-export function listStudioCompositionTemplates():
-  StudioCompositionTemplateSummary[] {
+export function listStudioCompositionTemplates(): StudioCompositionTemplateSummary[] {
   const rows = getDb()
     .prepare(
       `SELECT id, data_json, created_at, updated_at
@@ -201,9 +325,8 @@ export function listStudioCompositionTemplates():
       videoLayers: template.layers
         .filter((layer) => layer.kind === 'video')
         .map((layer) => ({ id: layer.id, name: layer.name })),
-      imageLayerCount: template.layers.filter(
-        (layer) => layer.kind === 'image',
-      ).length,
+      imageLayerCount: template.layers.filter((layer) => layer.kind === 'image')
+        .length,
       createdAt: template.createdAt,
       updatedAt: template.updatedAt,
     };
@@ -214,13 +337,9 @@ export function getStudioCompositionTemplate(
   id: string,
 ): StudioCompositionTemplate | null {
   const row = getDb()
-    .prepare(
-      `SELECT data_json FROM studio_composition_templates WHERE id = ?`,
-    )
+    .prepare(`SELECT data_json FROM studio_composition_templates WHERE id = ?`)
     .get(id) as { data_json: string } | undefined;
-  return row
-    ? parseStudioCompositionTemplate(JSON.parse(row.data_json))
-    : null;
+  return row ? parseStudioCompositionTemplate(JSON.parse(row.data_json)) : null;
 }
 
 export function saveStudioCompositionAsTemplate(input: {
@@ -331,4 +450,3 @@ export function deleteStudioCompositionTemplate(id: string): boolean {
       .run(id).changes > 0
   );
 }
-

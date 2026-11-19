@@ -17,6 +17,8 @@ import { resolveModel } from './provider.js';
 import { createStudioTools } from '../tools/studio.js';
 import { getStudioCapability } from '../tools/capability-simple-tools.js';
 import { getStudioTake, type StudioTake } from '../db/studio-store.js';
+import { getStudioComposition } from '../db/studio-compositions.js';
+import type { StudioComposition } from '../../lib/studio/types.js';
 import { createPlanTools } from '../tools/plan.js';
 import { computerUseTools } from '../tools/computer-use.js';
 import { browserUseTools } from '../tools/browser-use.js';
@@ -29,6 +31,7 @@ import type { StudioSignInOutcome } from '../../lib/studio/types.js';
 
 export interface StudioCopilotAgentOptions {
   activeTakeId: string;
+  activeCompositionId?: string;
   projectId?: string;
   activeProject?: string;
   requestUserSignIn?: (
@@ -54,6 +57,7 @@ function buildStudioInstructions(
   take: StudioTake | null,
   activeProject?: string,
   currentTimeMs?: number,
+  composition?: StudioComposition | null,
 ): string {
   const now = new Date();
   const timeContext = [
@@ -87,10 +91,14 @@ function buildStudioInstructions(
   const projectContext = activeProject
     ? `\n## Project Context\n${activeProject}\nUse this context to accurately summarize features, understand code paths, and write relevant captions and release notes.`
     : '';
+  const compositionContext = composition
+    ? `\n## Active Composition\nID: ${composition.id}\nTitle: ${composition.title}\nRevision: ${composition.revision ?? 1}\nLayers: ${composition.document.layers.map((layer) => `${layer.name} (${layer.kind}, ${layer.startMs}-${layer.endMs}ms)`).join('; ')}\nThis composition is the editable source of truth. Keep the source Take unchanged. Use getCompositionDetails, then applyCompositionOperation with the inspected revision. Do not use Take-mutating tools while this composition is active.`
+    : '';
 
   return `You are the Studio Copilot — an expert autonomous video director and screen-recording editor inside Qeda Studio.
 
 ${timeContext}
+${compositionContext}
 ${projectContext}
 
 ## Your Mission
@@ -164,6 +172,9 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
   const model = resolveModel(providerId, modelId);
 
   const take = getStudioTake(opts.activeTakeId);
+  const composition = opts.activeCompositionId
+    ? getStudioComposition(opts.activeCompositionId)
+    : null;
   const planManager = opts.planManager ?? new PlanManager();
   const agentStartedAt = Date.now();
 
@@ -171,8 +182,10 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
     projectId: opts.projectId,
     includeProjectPreviewTools: !opts.forSubagent,
     requestUserSignIn: opts.requestUserSignIn,
-    activeTakeId: opts.activeTakeId,
-    // A recording started during this turn finishes mid-turn; from then on
+  activeTakeId: opts.activeTakeId,
+  activeCompositionId: opts.activeCompositionId,
+  // A recording started during this turn finishes mid-turn; from then on
+
     // "the active take" means the one that just landed.
     resolveActiveTakeId: () => {
       const recorded = getLastCompletedStudioRecording();
@@ -197,6 +210,7 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
       take,
       opts.activeProject,
       opts.currentTimeMs,
+      composition,
     ),
     tools: {
       ...tools,

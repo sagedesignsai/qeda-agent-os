@@ -47,14 +47,8 @@ import {
   IDLE_CAMERA,
   type StudioCameraState,
 } from './camera';
-import { drawStudioFrame, type StudioComposeInput } from './compose';
+import { drawStudioTakeFrame } from './take-frame';
 import { studioOverlayMediaUrl, type StudioOverlayAsset } from './overlays';
-import { drawStudioWindowChrome } from './frame';
-import {
-  drawDeviceFrameHeader,
-  drawDeviceFrameFooter,
-} from '@/components/studio/renderers/device-frames';
-import { drawMotionCard } from '@/components/studio/renderers/motion-cards';
 import type { StudioTake } from '../types';
 import {
   compositionDurationMs,
@@ -466,75 +460,29 @@ export async function renderComposedStudioVideo(
         });
     camera = stepCameraWithAlpha(camera, target, alphaAtFps);
 
-    // Draw the full composition
-    const input: StudioComposeInput = {
+    // Preview and export use the same Take frame compositor.
+    const tDraw0 = profileTimings ? performance.now() : 0;
+    drawStudioTakeFrame(ctx, {
       width: dims.width,
       height: dims.height,
-      styling: take.styling,
       timeMs: sourceMs,
+      compositionTimeMs: currentTimeMs,
+      durationMs: compositionDuration,
       video: video || null,
       videoReady: Boolean(video && video.readyState >= 2),
       camera,
-      effects: take.effects ?? [],
-      captions: take.captions ?? [],
-      overlays: take.overlays ?? [],
-      overlayAssets,
-      videoCrop: take.videoCrop,
-      glowGradient: radialGlow,
-      drawWindowChrome: (chromeCtx, frame) => {
-        if (
-          take.styling.deviceFrame &&
-          take.styling.deviceFrame.type !== 'none'
-        ) {
-          drawDeviceFrameHeader(chromeCtx, {
-            frame: take.styling.deviceFrame,
-            winX: frame.x,
-            winY: frame.y,
-            winW: frame.width,
-            winH: frame.height,
-            headerH: frame.headerHeight,
-            radius: frame.radius,
-          });
-          drawDeviceFrameFooter(chromeCtx, {
-            frame: take.styling.deviceFrame,
-            winX: frame.x,
-            winY: frame.y,
-            winW: frame.width,
-            winH: frame.height,
-            headerH: frame.headerHeight,
-            radius: frame.radius,
-          });
-        } else {
-          drawStudioWindowChrome(chromeCtx, frame);
-        }
+      presentation: {
+        styling: take.styling,
+        cuts,
+        zooms: take.zooms ?? [],
+        captions: take.captions ?? [],
+        effects: take.effects ?? [],
+        overlays: take.overlays ?? [],
+        videoCrop: take.videoCrop,
       },
-    };
-
-    const tDraw0 = profileTimings ? performance.now() : 0;
-    drawStudioFrame(ctx, input);
-
-    // Intro & Outro Motion Cards
-    if (take.styling.introCard?.enabled) {
-      drawMotionCard(ctx, {
-        card: take.styling.introCard,
-        cardType: 'intro',
-        currentTimeMs,
-        totalDurationMs: compositionDuration,
-        cw: dims.width,
-        ch: dims.height,
-      });
-    }
-
-    if (take.styling.outroCard?.enabled) {
-      drawMotionCard(ctx, {
-        card: take.styling.outroCard,
-        cardType: 'outro',
-        currentTimeMs,
-        totalDurationMs: compositionDuration,
-        cw: dims.width,
-        ch: dims.height,
-      });
-    }
+      overlayAssets,
+      glowGradient: radialGlow,
+    });
     if (profileTimings) {
       profileTimings.drawMs.push(performance.now() - tDraw0);
     }
