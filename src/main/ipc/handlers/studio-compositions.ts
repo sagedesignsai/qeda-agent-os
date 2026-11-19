@@ -66,10 +66,10 @@ export function registerStudioCompositionHandlers({
         projectId?: string | null;
         title: string;
         sceneId: 'app-spotlight' | 'desktop-mobile-comparison';
-        sourceTakeIds: string[];
+        sourceTakeIds?: string[];
       },
     ) => {
-      const takes = request.sourceTakeIds.map((id) => {
+      const takes = (request.sourceTakeIds ?? []).map((id) => {
         const take = getStudioTake(id);
         if (!take) throw new Error(`Studio take ${id} was not found.`);
         if (!take.videoPath) {

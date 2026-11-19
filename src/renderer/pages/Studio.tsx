@@ -582,19 +582,6 @@ export default function Studio() {
     }
   };
 
-  const handleCreateBlankProject = async () => {
-    try {
-      const blankTake = await window.electron.ipc.invoke<StudioTake>(
-        'studio:create-blank-take',
-        { projectId },
-      );
-      toast.success('Created new blank showcase project');
-      navigate(`/studio/${blankTake.id}`);
-    } catch {
-      toast.error('Failed to create blank project');
-    }
-  };
-
   const handleCreateComposition = async (
     sceneId: StudioCompositionSceneId,
     title: string,
@@ -839,7 +826,6 @@ export default function Studio() {
             navigate(`/studio/${id}`);
           }}
           onNewRecording={() => setSourcePickerOpen(true)}
-          onNewBlankProject={handleCreateBlankProject}
           onRenameTake={handleRenameTake}
           onQuickExport={handleQuickExport}
           onDeleteTake={handleDeleteTake}

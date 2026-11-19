@@ -132,19 +132,19 @@ export function StudioCompositionCreateDialog({
   );
   const canCreate =
     (mode === 'scene' || !!selectedTemplate) &&
-    selectedTakeIds.length === requiredTakes.length &&
-    selectedTakeIds.every(Boolean) &&
-    new Set(selectedTakeIds).size === selectedTakeIds.length &&
+    new Set(selectedTakeIds.filter(Boolean)).size ===
+      selectedTakeIds.filter(Boolean).length &&
     !!title.trim();
 
   const handleCreate = async () => {
     if (!canCreate) return;
     setCreating(true);
     try {
+      const takeIds = selectedTakeIds.filter(Boolean);
       await onCreate(
         mode === 'template' ? selectedTemplate!.sceneId : sceneId,
         title.trim(),
-        selectedTakeIds,
+        takeIds.length > 0 ? takeIds : [],
         mode === 'template' ? selectedTemplate!.id : undefined,
       );
       onOpenChange(false);
@@ -364,8 +364,7 @@ export function StudioCompositionCreateDialog({
 
         {takes.length === 0 && (
           <p className="rounded-md border border-border/50 bg-muted/30 p-3 text-xs text-muted-foreground">
-            Record or import a take first. Your source recordings remain
-            unchanged when you create a composition.
+            You can add recordings as layers after creating the composition.
           </p>
         )}
 

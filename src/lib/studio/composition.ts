@@ -472,31 +472,33 @@ export function createStudioCompositionDocument({
   takes,
 }: {
   sceneId: StudioCompositionSceneId;
-  takes: CompositionTake[];
+  takes?: CompositionTake[];
 }): StudioCompositionDocument {
   const scene = STUDIO_COMPOSITION_SCENES.find((item) => item.id === sceneId);
   if (!scene) throw new Error(`Unknown Studio scene: ${sceneId}`);
-  if (takes.length < scene.requiredTakes) {
-    throw new Error(
-      `${scene.title} needs at least ${scene.requiredTakes} recording${scene.requiredTakes === 1 ? '' : 's'}.`,
-    );
+
+  const providedTakes = takes ?? [];
+  if (providedTakes.length < scene.requiredTakes) {
+    // Allow creating a blank composition without takes.
   }
   if (
     sceneId === 'desktop-mobile-comparison' &&
-    takes[0]?.id === takes[1]?.id
+    providedTakes[0]?.id === providedTakes[1]?.id
   ) {
     throw new Error('Choose two different recordings for the comparison scene.');
   }
 
-  const selectedTakes = takes.slice(0, sceneId === 'app-spotlight' ? 1 : 2);
+  const selectedTakes = providedTakes.slice(0, sceneId === 'app-spotlight' ? 1 : 2);
   for (const take of selectedTakes) {
     if (!Number.isFinite(take.durationMs) || take.durationMs <= 0) {
       throw new Error(`Recording "${take.title}" has no usable duration.`);
     }
   }
-  const durationMs = Math.max(
-    ...selectedTakes.map((take) => take.durationMs),
-  );
+  const durationMs =
+    selectedTakes.length > 0
+      ? Math.max(...selectedTakes.map((take) => take.durationMs))
+      : 10000;
+
   const layers: StudioCompositionLayer[] = selectedTakes.map((take, index) => ({
     id: nanoid(),
     kind: 'video',

@@ -1866,13 +1866,13 @@ export interface IpcChannels {
     req: { id: string };
     res: StudioComposition | null;
   };
-  /** Create a composition from a scene and existing take IDs. */
+  /** Create a composition from a scene; takes are optional for a blank start. */
   'studio:composition-create': {
     req: {
       projectId?: string | null;
       title: string;
       sceneId: StudioCompositionSceneId;
-      sourceTakeIds: string[];
+      sourceTakeIds?: string[];
     };
     res: StudioComposition;
   };

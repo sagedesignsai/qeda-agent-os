@@ -50,7 +50,6 @@ interface StudioProjectsViewProps {
   compositions?: StudioCompositionSummary[];
   onNewComposition?: () => void;
   onOpenComposition?: (id: string) => void;
-  onNewBlankProject?: () => void;
   onRenameTake: (id: string, newTitle: string) => Promise<void>;
   onQuickExport: (id: string) => Promise<void>;
   onDeleteTake: (id: string) => Promise<void>;
@@ -68,7 +67,6 @@ export function StudioProjectsView({
   compositions = [],
   onNewComposition,
   onOpenComposition,
-  onNewBlankProject,
   onRenameTake,
   onQuickExport,
   onDeleteTake,
@@ -200,17 +198,6 @@ export function StudioProjectsView({
                 >
                   <Layers3Icon className="size-3.5" />
                   <span>New composition</span>
-                </Button>
-              )}
-              {onNewBlankProject && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={onNewBlankProject}
-                  className="h-9 gap-2 px-3 text-xs font-medium border-border/60 hover:bg-accent/40"
-                >
-                  <PlusIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                  <span>Blank Project</span>
                 </Button>
               )}
 
