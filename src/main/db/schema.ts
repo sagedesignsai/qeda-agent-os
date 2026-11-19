@@ -513,11 +513,22 @@ CREATE TABLE IF NOT EXISTS studio_compositions (
   project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
   title       TEXT NOT NULL,
   data_json   TEXT NOT NULL,
+  revision    INTEGER NOT NULL DEFAULT 1,
   created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
 CREATE INDEX IF NOT EXISTS idx_studio_compositions_project
   ON studio_compositions(project_id, updated_at DESC);
+`;
+
+export const CREATE_STUDIO_TAKE_DEFAULT_COMPOSITIONS = `
+CREATE TABLE IF NOT EXISTS studio_take_default_compositions (
+  take_id        TEXT PRIMARY KEY REFERENCES studio_takes(id) ON DELETE CASCADE,
+  composition_id TEXT NOT NULL UNIQUE REFERENCES studio_compositions(id) ON DELETE CASCADE,
+  created_at     INTEGER NOT NULL DEFAULT (unixepoch())
+);
+CREATE INDEX IF NOT EXISTS idx_studio_take_defaults_composition
+  ON studio_take_default_compositions(composition_id);
 `;
 
 export const CREATE_STUDIO_COMPOSITION_ASSETS = `
@@ -1451,6 +1462,7 @@ export const MIGRATION_STATEMENTS: readonly string[] = [
   CREATE_DOCUMENTS,
   CREATE_STUDIO_TAKES,
   CREATE_STUDIO_COMPOSITIONS,
+  CREATE_STUDIO_TAKE_DEFAULT_COMPOSITIONS,
   CREATE_STUDIO_COMPOSITION_ASSETS,
   CREATE_STUDIO_COMPOSITION_TEMPLATES,
   CREATE_SOUNDLAB_SESSIONS,
@@ -1637,6 +1649,7 @@ export function applyMigrations(db: {
     addColumn('studio_takes', 'filmstrip_path', 'TEXT');
     addColumn('studio_takes', 'waveform_path', 'TEXT');
     addColumn('studio_takes', 'media_ready_at', 'INTEGER');
+    addColumn('studio_compositions', 'revision', 'INTEGER NOT NULL DEFAULT 1');
 
     // `code_project_id` references code_projects, which is created in
     // MIGRATION_STATEMENTS above. On a legacy database that table does not

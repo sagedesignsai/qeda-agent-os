@@ -260,6 +260,7 @@ class TimelineStore {
       ),
     };
     this.notify();
+    this.notifyTracks(this.state.tracks);
   };
 
   toggleTrackVisibility = (trackId: string) => {
@@ -270,6 +271,7 @@ class TimelineStore {
       ),
     };
     this.notify();
+    this.notifyTracks(this.state.tracks);
   };
 
   toggleTrackMute = (trackId: string) => {
@@ -280,6 +282,7 @@ class TimelineStore {
       ),
     };
     this.notify();
+    this.notifyTracks(this.state.tracks);
   };
 
   // ── Clip Operations (Slicing, Trimming, Moving) ────────────────────────────

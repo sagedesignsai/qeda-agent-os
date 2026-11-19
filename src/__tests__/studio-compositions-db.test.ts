@@ -6,6 +6,8 @@ import {
   deleteStudioCompositionTemplate,
   createStudioCompositionFromTemplate,
   getStudioComposition,
+  getDefaultStudioCompositionForTake,
+  getOrCreateDefaultStudioCompositionForTake,
   getStudioCompositionTemplate,
   getStudioCompositionImagePath,
   importStudioCompositionImageAsset,
@@ -62,6 +64,145 @@ describe('Studio composition persistence', () => {
     ).toEqual({
       count: 0,
     });
+  });
+
+  it('creates one stable default composition and imports legacy Take edits', () => {
+    const take = saveStudioTake({
+      id: 'take-default',
+      title: 'Feature walkthrough',
+      videoPath: '/tmp/feature.webm',
+      durationMs: 12000,
+      cuts: [{ id: 'cut-1', startMs: 4000, endMs: 6000, reason: 'silence' }],
+      zooms: [
+        {
+          id: 'zoom-1',
+          startMs: 1000,
+          endMs: 3000,
+          targetX: 0.6,
+          targetY: 0.4,
+          scale: 1.7,
+        },
+      ],
+      captions: [
+        {
+          id: 'caption-1',
+          startMs: 500,
+          endMs: 2500,
+          text: 'A polished product tour',
+          words: [{ word: 'polished', startMs: 1000, endMs: 1500 }],
+        },
+      ],
+      videoCrop: { x: 0.1, y: 0.05, width: 0.8, height: 0.9 },
+    });
+
+    const first = getOrCreateDefaultStudioCompositionForTake(take);
+    const second = getOrCreateDefaultStudioCompositionForTake(take);
+
+    expect(second.id).toBe(first.id);
+    expect(getDefaultStudioCompositionForTake(take.id)?.id).toBe(first.id);
+    expect(first.projectId).toBeNull();
+    expect(first.document).toMatchObject({ version: 2, durationMs: 10000 });
+    expect(first.document.layers[0]).toMatchObject({
+      kind: 'video',
+      sourceId: take.id,
+      endMs: 10000,
+      takePresentation: {
+        cuts: [{ id: 'cut-1', startMs: 4000, endMs: 6000 }],
+        zooms: [{ id: 'zoom-1', scale: 1.7 }],
+        captions: [
+          {
+            id: 'caption-1',
+            text: 'A polished product tour',
+            words: [{ word: 'polished', startMs: 1000, endMs: 1500 }],
+          },
+        ],
+        videoCrop: { x: 0.1, y: 0.05, width: 0.8, height: 0.9 },
+      },
+    });
+    expect(
+      db.prepare('SELECT COUNT(*) AS count FROM studio_compositions').get(),
+    ).toEqual({ count: 1 });
+    expect(
+      db
+        .prepare(
+          'SELECT COUNT(*) AS count FROM studio_take_default_compositions',
+        )
+        .get(),
+    ).toEqual({ count: 1 });
+    expect(getStudioTake(take.id)?.videoPath).toBe('/tmp/feature.webm');
+  });
+
+  it('rejects stale composition revisions instead of overwriting newer edits', () => {
+    const first = saveStudioComposition({
+      id: 'revision-composition',
+      title: 'Revision test',
+      document: createStudioCompositionDocument({
+        sceneId: 'app-spotlight',
+        takes: [{ id: 'revision-take', title: 'Revision take', durationMs: 9000 }],
+      }),
+    });
+    const second = saveStudioComposition({
+      id: first.id,
+      title: first.title,
+      document: first.document,
+      expectedRevision: first.revision,
+    });
+
+    expect(second.revision).toBe((first.revision ?? 1) + 1);
+    expect(() =>
+      saveStudioComposition({
+        id: first.id,
+        title: first.title,
+        document: first.document,
+        expectedRevision: first.revision,
+      }),
+    ).toThrow(/changed elsewhere/);
+  });
+
+  it('adopts the matching one-layer prototype as the stable default', () => {
+    const take = saveStudioTake({
+      id: 'take-prototype',
+      title: 'Prototype recording',
+      videoPath: '/tmp/prototype.webm',
+      durationMs: 9000,
+    });
+    const prototype = saveStudioComposition({
+      id: 'prototype-composition',
+      title: `${take.title} composition`,
+      document: createStudioCompositionDocument({
+        sceneId: 'app-spotlight',
+        takes: [{ id: take.id, title: take.title, durationMs: take.durationMs }],
+      }),
+    });
+
+    const defaultComposition = getOrCreateDefaultStudioCompositionForTake(take);
+    expect(defaultComposition.id).toBe(prototype.id);
+    expect(getDefaultStudioCompositionForTake(take.id)?.id).toBe(prototype.id);
+    expect(listStudioCompositions()).toHaveLength(1);
+  });
+
+  it('increments composition revisions and rejects stale writes', () => {
+    const first = saveStudioComposition({
+      id: 'revision-source',
+      title: 'Revision source',
+      document: createStudioCompositionDocument({ sceneId: 'app-spotlight' }),
+    });
+    const second = saveStudioComposition({
+      id: first.id,
+      title: first.title,
+      document: first.document,
+      expectedRevision: first.revision,
+    });
+
+    expect(second.revision).toBe((first.revision ?? 1) + 1);
+    expect(() =>
+      saveStudioComposition({
+        id: first.id,
+        title: first.title,
+        document: first.document,
+        expectedRevision: first.revision,
+      }),
+    ).toThrow(/changed elsewhere/);
   });
 
   it('persists image assets and composition layers atomically', () => {
@@ -153,7 +294,11 @@ describe('Studio composition persistence', () => {
         sourceInMs: 350,
       },
     );
-    const withEffect = addStudioCompositionEffect(withMotion, 'scanlines', 1000);
+    const withEffect = addStudioCompositionEffect(
+      withMotion,
+      'scanlines',
+      1000,
+    );
     saveStudioComposition({
       id: updated.id,
       title: updated.title,

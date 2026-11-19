@@ -38,21 +38,12 @@ import {
   stepCamera,
   type StudioCameraState,
 } from '@/lib/studio/render/camera';
-import {
-  drawStudioFrame,
-  type StudioComposeInput,
-} from '@/lib/studio/render/compose';
+import { drawStudioTakeFrame } from '@/lib/studio/render/take-frame';
 import {
   studioOverlayMediaUrl,
   type StudioOverlayAsset,
 } from '@/lib/studio/render/overlays';
 import { timelineStore } from '@/hooks/use-timeline-store';
-import {
-  drawDeviceFrameHeader,
-  drawDeviceFrameFooter,
-} from './renderers/device-frames';
-import { drawMotionCard } from './renderers/motion-cards';
-import { drawStudioWindowChrome } from '@/lib/studio/render/frame';
 
 interface StudioCanvasProps {
   videoUrl: string | null;
@@ -401,74 +392,29 @@ export function StudioCanvas({
         glowRef.current = glow;
       }
 
-      const input: StudioComposeInput = {
-        width: canvas.width,
-        height: canvas.height,
-        styling: style,
-        // Composition children (captions, effects, overlays, zooms) are authored
-        // in source time, so that is the axis the compose pass receives.
-        timeMs: sourceMs,
-        video: video,
-        videoReady: ready,
-        camera: cameraRef.current,
-        effects: fx,
-        captions: c,
-        overlays: ov,
-        overlayAssets: overlayAssetsRef.current,
-        videoCrop: vc,
-        glowGradient: glow.value,
-        drawWindowChrome: (chromeCtx, frame) => {
-          if (style.deviceFrame && style.deviceFrame.type !== 'none') {
-            drawDeviceFrameHeader(chromeCtx, {
-              frame: style.deviceFrame,
-              winX: frame.x,
-              winY: frame.y,
-              winW: frame.width,
-              winH: frame.height,
-              headerH: frame.headerHeight,
-              radius: frame.radius,
-            });
-            drawDeviceFrameFooter(chromeCtx, {
-              frame: style.deviceFrame,
-              winX: frame.x,
-              winY: frame.y,
-              winW: frame.width,
-              winH: frame.height,
-              headerH: frame.headerHeight,
-              radius: frame.radius,
-            });
-          } else {
-            drawStudioWindowChrome(chromeCtx, frame);
-          }
-        },
-      };
-      drawStudioFrame(ctx, input);
-
-      // ── 7. Intro & Outro Motion Cards Rendering ──────────────────────────────
       const totalDur =
         durationMs || (video && video.duration ? video.duration * 1000 : 30000);
-
-      if (style.introCard?.enabled) {
-        drawMotionCard(ctx, {
-          card: style.introCard,
-          cardType: 'intro',
-          currentTimeMs: compMs,
-          totalDurationMs: totalDur,
-          cw: canvas.width,
-          ch: canvas.height,
-        });
-      }
-
-      if (style.outroCard?.enabled) {
-        drawMotionCard(ctx, {
-          card: style.outroCard,
-          cardType: 'outro',
-          currentTimeMs: compMs,
-          totalDurationMs: totalDur,
-          cw: canvas.width,
-          ch: canvas.height,
-        });
-      }
+      drawStudioTakeFrame(ctx, {
+        width: canvas.width,
+        height: canvas.height,
+        timeMs: sourceMs,
+        compositionTimeMs: compMs,
+        durationMs: totalDur,
+        video,
+        videoReady: ready,
+        camera: cameraRef.current,
+        presentation: {
+          styling: style,
+          cuts: activeCuts,
+          zooms: z,
+          captions: c,
+          effects: fx,
+          overlays: ov,
+          videoCrop: vc,
+        },
+        overlayAssets: overlayAssetsRef.current,
+        glowGradient: glow.value,
+      });
 
       animId = requestAnimationFrame(render);
     };

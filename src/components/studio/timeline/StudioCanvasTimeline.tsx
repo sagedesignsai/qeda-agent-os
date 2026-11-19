@@ -23,10 +23,13 @@ import {
   type StudioTake,
   type TimelineTrack,
 } from '@/lib/studio-types';
+import type { StudioComposition } from '@/lib/studio/types';
+import { convertStudioCompositionToTracks } from '@/lib/studio/timeline/composition';
 import { toast } from 'sonner';
 
 interface StudioCanvasTimelineProps {
   activeTake: StudioTake | null;
+  activeComposition?: StudioComposition | null;
   videoUrl: string | null;
   durationMs: number;
   isPlaying: boolean;
@@ -34,6 +37,8 @@ interface StudioCanvasTimelineProps {
   onTogglePlay: () => void;
   onRestartPlayback: () => void;
   onTracksChange?: (tracks: TimelineTrack[]) => void;
+  onCompositionTracksChange?: (tracks: TimelineTrack[]) => void;
+  onCompositionLayerSelect?: (layerId: string) => void;
   onOpenVideoCrop?: () => void;
 }
 
@@ -42,6 +47,7 @@ const RULER_HEIGHT = 28;
 
 export function StudioCanvasTimeline({
   activeTake,
+  activeComposition = null,
   videoUrl,
   durationMs,
   isPlaying,
@@ -49,6 +55,8 @@ export function StudioCanvasTimeline({
   onTogglePlay,
   onRestartPlayback,
   onTracksChange,
+  onCompositionTracksChange,
+  onCompositionLayerSelect,
   onOpenVideoCrop,
 }: StudioCanvasTimelineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -64,6 +72,8 @@ export function StudioCanvasTimeline({
 
   // Take sync tracking to prevent feedback loops between timeline edits and parent state
   const currentTakeIdRef = useRef<string | null>(null);
+  const currentCompositionDocumentRef = useRef<StudioComposition['document'] | null>(null);
+  const selectedClipIdRef = useRef<string | null>(null);
   const lastSyncTimestampRef = useRef<number>(0);
 
   const handleTrackHeadersWheel = (e: React.WheelEvent) => {
@@ -105,8 +115,25 @@ export function StudioCanvasTimeline({
     timelineStore.setPlaying(isPlaying);
   }, [isPlaying]);
 
-  // Sync active take tracks to timeline store when activeTake changes externally or takeId changes
+  // Project either editor document into the same multi-track editing surface.
   useEffect(() => {
+    if (activeComposition) {
+      const documentKey = `composition:${activeComposition.id}`;
+      const isNewDocument = documentKey !== currentTakeIdRef.current;
+      const isExternalUpdate =
+        currentCompositionDocumentRef.current !== activeComposition.document;
+      if (isNewDocument || isExternalUpdate) {
+        currentTakeIdRef.current = documentKey;
+        currentCompositionDocumentRef.current = activeComposition.document;
+        lastSyncTimestampRef.current = Date.now();
+        timelineStore.setTracksAndDuration(
+          convertStudioCompositionToTracks(activeComposition),
+          activeComposition.document.durationMs,
+          isNewDocument,
+        );
+      }
+      return;
+    }
     if (!activeTake) return;
     const isNewTake = activeTake.id !== currentTakeIdRef.current;
     const isExternalUpdate =
@@ -124,15 +151,38 @@ export function StudioCanvasTimeline({
         isNewTake,
       );
     }
-  }, [activeTake]);
+  }, [activeComposition, activeTake]);
 
-  // Subscribe to track changes from timelineStore and notify parent for domain persistence
+  // Track edits are committed to whichever document owns the projection.
   useEffect(() => {
     return timelineStore.subscribeTracks((tracks) => {
       lastSyncTimestampRef.current = Date.now();
-      onTracksChange?.(tracks);
+      if (activeComposition) onCompositionTracksChange?.(tracks);
+      else onTracksChange?.(tracks);
     });
-  }, [onTracksChange]);
+  }, [
+    activeComposition?.id,
+    onCompositionTracksChange,
+    onTracksChange,
+  ]);
+
+  useEffect(() => {
+    if (!activeComposition || !onCompositionLayerSelect) return;
+    selectedClipIdRef.current = timelineStore.getState().selectedClipId;
+    return timelineStore.subscribe(() => {
+      const selectedClipId = timelineStore.getState().selectedClipId;
+      if (selectedClipId === selectedClipIdRef.current) return;
+      selectedClipIdRef.current = selectedClipId;
+      if (!selectedClipId) return;
+      const clip = timelineStore
+        .getState()
+        .tracks.flatMap((track) => track.clips)
+        .find((candidate) => candidate.id === selectedClipId);
+      const layerId = clip?.payload?.compositionLayerId ??
+        activeComposition.document.layers.find((layer) => layer.id === selectedClipId)?.id;
+      if (layerId) onCompositionLayerSelect(layerId);
+    });
+  }, [activeComposition, onCompositionLayerSelect]);
 
   // Zoom to Fit calculation
   const handleZoomToFit = useCallback(() => {
