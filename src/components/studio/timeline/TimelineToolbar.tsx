@@ -223,7 +223,7 @@ export function TimelineToolbar({
               variant="ghost"
               size="icon"
               className="h-6 w-6 text-muted-foreground hover:text-destructive disabled:opacity-30 transition-all duration-150 hover:bg-destructive/10 active:scale-95"
-              onClick={deleteSelectedClip}
+              onClick={() => deleteSelectedClip(false)}
               disabled={!selectedClipId}
             >
               <Trash2Icon className="w-3 h-3" />

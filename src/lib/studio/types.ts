@@ -734,6 +734,10 @@ export interface StudioClipPayload {
   text?: string;
   // Audio
   volume?: number;
+  /** Runtime-only: decoded audio buffer for preview/export mixing. Not serialized. */
+  audioBuffer?: AudioBuffer;
+  /** Runtime-only: pre-computed waveform peaks (RMS amplitude 0-1) for timeline rendering. Not serialized. */
+  waveformPeaks?: Float32Array;
   // Shared
   reason?: string;
   speed?: number;
@@ -742,6 +746,9 @@ export interface StudioClipPayload {
   intensity?: number;
   transitionType?: StudioCompositionTransitionType;
   transitionSide?: 'in' | 'out';
+  /** Video clips joined by an Editor cut transition. */
+  fromClipId?: string;
+  toClipId?: string;
   targetClipId?: string;
   // Media overlay
   kind?: StudioOverlayKind;
@@ -782,5 +789,7 @@ export interface TimelineTrack {
   locked: boolean;
   visible: boolean;
   muted?: boolean;
+  /** Track volume 0-1 (default 1). */
+  volume?: number;
   clips: TimelineClip[];
 }

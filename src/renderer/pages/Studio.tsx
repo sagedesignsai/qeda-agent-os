@@ -34,7 +34,6 @@ import { useDefaultLayout } from 'react-resizable-panels';
 import { OverflowMenu } from '@/components/OverflowMenu';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
@@ -256,17 +255,6 @@ export default function Studio() {
     }
   };
 
-  // Editable title
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleInput, setTitleInput] = useState('');
-  const titleInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isEditingTitle) {
-      titleInputRef.current?.focus();
-      titleInputRef.current?.select();
-    }
-  }, [isEditingTitle]);
 
   // ── Keyboard Shortcuts ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -379,21 +367,6 @@ export default function Studio() {
     [activeTake, cuts, updateTimelineData, updateTracks],
   );
 
-  const handleTitleSubmit = async () => {
-    setIsEditingTitle(false);
-    if (!activeTake || !titleInput.trim() || titleInput === activeTake.title)
-      return;
-
-    try {
-      await window.electron.ipc.invoke('studio:save-take', {
-        id: activeTake.id,
-        title: titleInput.trim(),
-      });
-      toast.success('Title updated');
-    } catch {
-      toast.error('Failed to update title');
-    }
-  };
 
   const handleStartCapture = async (source: {
     sourceId: string;
@@ -753,6 +726,8 @@ export default function Studio() {
   };
 
   const handleInsertClip = async (clipPayload: ContentItemPayload, startMs?: number, targetTrackId?: string) => {
+    const transitionAnchorMs = startMs ?? timelineStore.getState().currentTimeMs;
+    const preferredTransitionClipId = timelineStore.getState().selectedClipId ?? undefined;
     if (clipPayload.mediaAsset && activeTake) {
       const currentAssets = activeTake.mediaAssets ?? [];
       const exists = currentAssets.some((asset) => asset.id === clipPayload.mediaAsset?.id);
@@ -776,18 +751,33 @@ export default function Studio() {
         true,
       );
     }
-    const newClip = timelineStore.addClip(clipPayload.trackType, {
-      ...clipPayload,
-      itemType:
-        clipPayload.itemType ??
-        inferTimelineItemType(
-          clipPayload.trackType,
-          clipPayload.payload,
-          clipPayload.mediaAsset?.kind,
-        ),
-      startMs: startMs ?? 0,
-      targetTrackId,
-    });
+    const newClip = clipPayload.trackType === 'transitions'
+      ? timelineStore.addTransitionClip({
+          transitionType: clipPayload.payload?.transitionType ?? 'fade',
+          durationMs: clipPayload.durationMs,
+          startMs: transitionAnchorMs,
+          name: clipPayload.name,
+          color: clipPayload.color,
+          preferredClipId: preferredTransitionClipId,
+          targetTrackId,
+        })
+      : timelineStore.addClip(clipPayload.trackType, {
+          ...clipPayload,
+          itemType:
+            clipPayload.itemType ??
+            inferTimelineItemType(
+              clipPayload.trackType,
+              clipPayload.payload,
+              clipPayload.mediaAsset?.kind,
+            ),
+          startMs: startMs ?? 0,
+          targetTrackId,
+        });
+
+    if (!newClip) {
+      toast.error('Place a transition at a cut between adjacent clips on one video track.');
+      return;
+    }
 
     // If it's a zoom effect, sync to activeTake.zooms
     if (
@@ -1189,54 +1179,9 @@ export default function Studio() {
                   maxSize="80%"
                   className="flex flex-col overflow-hidden min-w-0"
                 >
-                  <main className="flex-1 flex flex-col p-2 md:p-3 overflow-hidden items-center justify-between gap-1.5 h-full w-full">
-                    {/* Canvas Header: Title + Source Info (Dense Layout) */}
-                    <div className="w-full flex items-center justify-between px-2 shrink-0 py-1.5 rounded-md bg-background/40 border border-border/30 hover:border-border/50 transition-all duration-200">
-                      {isEditingTitle ? (
-                        <Input
-                          ref={titleInputRef}
-                          value={titleInput}
-                          onChange={(e) => setTitleInput(e.target.value)}
-                          onBlur={handleTitleSubmit}
-                          onKeyDown={(e) =>
-                            e.key === 'Enter' && handleTitleSubmit()
-                          }
-                          className="h-7 text-sm font-semibold max-w-xs px-2 py-1 bg-primary/5 border-primary/30 focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors"
-                          placeholder="Take title..."
-                          autoFocus
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTitleInput(activeTake.title);
-                            setIsEditingTitle(true);
-                          }}
-                          className="flex-1 text-left flex items-center gap-2 px-2 py-1 rounded transition-all duration-150 hover:bg-primary/5 group"
-                          title="Click to edit take title"
-                        >
-                          <span className="text-sm font-semibold text-foreground truncate">
-                            {activeTake.title}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200 shrink-0">
-                            edit
-                          </span>
-                        </button>
-                      )}
-
-                      <div className="flex items-center gap-2 ml-auto pl-2 text-xs text-muted-foreground shrink-0 font-mono transition-colors duration-200">
-                        <span className="hidden sm:inline capitalize opacity-75">
-                          {activeTake.sourceType}
-                        </span>
-                        <span className="text-border/50">•</span>
-                        <span className="font-medium">
-                          {(activeTake.durationMs / 1000).toFixed(1)}s
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* 60fps Real-Time Video Preview Canvas */}
-                    <div className="flex-1 w-full flex items-center justify-center min-h-0 overflow-hidden">
+                  <main className="flex-1 flex flex-col overflow-hidden h-full w-full">
+                    {/* 60fps Real-Time Video Preview Canvas — full container, no padding */}
+                    <div className="flex-1 w-full h-full flex items-center justify-center min-h-0 overflow-hidden">
                       <StudioCanvas
                         videoUrl={videoUrl}
                         styling={activeTake.styling}

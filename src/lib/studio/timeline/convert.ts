@@ -236,7 +236,16 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     });
   }
 
-  return tracks.filter((track) => track.clips.length > 0);
+  // Always keep the core tracks (effects, captions, video, audio) even when
+  // empty, so the timeline structure is stable. Filter out optional tracks
+  // like overlays that are only added when they have content.
+  const coreTrackIds = new Set([
+    EFFECTS_TRACK_ID,
+    CAPTIONS_TRACK_ID,
+    VIDEO_TRACK_ID,
+    AUDIO_TRACK_ID,
+  ]);
+  return tracks.filter((track) => coreTrackIds.has(track.id) || track.clips.length > 0);
 }
 
 function segmentTitle(title: string, index: number): string {

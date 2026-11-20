@@ -46,6 +46,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from '@/lib/studio-types';
+import { timelineStore } from '@/hooks/use-timeline-store';
 import {
   ANIMATION_PRESETS,
   transitionTypeToPresetId,
@@ -136,6 +137,26 @@ export function ClipPropertiesSection({
   const anchor = transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
 
   const isVisualTrack = track.type === 'video' || track.type === 'overlays';
+  const transitionFrom = clip.payload?.fromClipId
+    ? timelineStore.findClip(clip.payload.fromClipId)
+    : null;
+  const transitionTo = clip.payload?.toClipId
+    ? timelineStore.findClip(clip.payload.toClipId)
+    : null;
+  const legacyTransitionTarget = clip.payload?.targetClipId
+    ? timelineStore.findClip(clip.payload.targetClipId)
+    : null;
+  const transitionCutMs = clip.startMs + clip.durationMs / 2;
+  const transitionMaxDurationMs = Math.max(100, Math.floor(Math.min(
+    maxDurationMs,
+    2000,
+    transitionCutMs * 2,
+    transitionFrom?.clip.durationMs ?? Infinity,
+    transitionTo?.clip.durationMs ?? Infinity,
+    legacyTransitionTarget?.clip.durationMs
+      ? legacyTransitionTarget.clip.durationMs * 2
+      : Infinity,
+  )));
   const isSpeedEditable =
     (clip.itemType === 'video' || clip.itemType === 'audio') &&
     !track.id.startsWith('track-') &&
@@ -450,6 +471,11 @@ export function ClipPropertiesSection({
 
       {track.type === 'transitions' && (
         <StudioPanelSection title="Transition" open={activeSection === 'Transition'} onOpenChange={handleSectionToggle('Transition')}>
+          {transitionFrom && transitionTo && (
+            <p className="mb-2 text-[10px] text-muted-foreground truncate">
+              {transitionFrom.clip.name} → {transitionTo.clip.name}
+            </p>
+          )}
           <StudioFieldRow label="Style">
             <Select
               value={clip.payload?.transitionType ?? 'fade'}
@@ -467,6 +493,34 @@ export function ClipPropertiesSection({
                 ))}
               </SelectContent>
             </Select>
+          </StudioFieldRow>
+          <StudioFieldRow label="Duration">
+            <StudioScrubField
+              label="Transition Duration"
+              value={clip.durationMs}
+              min={100}
+              max={transitionMaxDurationMs}
+              step={50}
+              suffix="ms"
+              onChange={(requestedDurationMs) => {
+                const durationMs = Math.max(
+                  100,
+                  Math.min(requestedDurationMs, transitionMaxDurationMs),
+                );
+                let startMs = clip.startMs;
+                if (transitionFrom && transitionTo) {
+                  startMs = transitionCutMs - durationMs / 2;
+                } else if (legacyTransitionTarget) {
+                  startMs = clip.payload?.transitionSide === 'out'
+                    ? legacyTransitionTarget.clip.startMs + legacyTransitionTarget.clip.durationMs - durationMs
+                    : legacyTransitionTarget.clip.startMs;
+                }
+                onUpdateClip(clip.id, {
+                  startMs: Math.max(0, startMs),
+                  durationMs,
+                });
+              }}
+            />
           </StudioFieldRow>
         </StudioPanelSection>
       )}

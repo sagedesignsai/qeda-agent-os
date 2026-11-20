@@ -4,9 +4,10 @@
  * Minimal streaming WebM muxer for the Studio frame-by-frame export renderer.
  *
  * Produces a valid WebM file from raw VP8/VP9 EncodedVideoChunks (from the
- * WebCodecs VideoEncoder API). Audio is omitted from this muxer — the main
- * process hands the file to ffmpeg, which re-muxes with the original audio
- * track from the source recording.
+ * WebCodecs VideoEncoder API) and optional Opus EncodedAudioChunks (from the
+ * WebCodecs AudioEncoder API).  When audio is present the muxer writes a
+ * second track entry and interleaves audio SimpleBlocks inside the same
+ * clusters as video frames.
  *
  * WHY A CUSTOM MUXER
  * ──────────────────
@@ -22,7 +23,7 @@
  *   Segment (unknown size)
  *     SeekHead  (minimal, pointing to Info and Tracks)
  *     Info      (TimestampScale = 1ms)
- *     Tracks    (one video track, VP8 or VP9)
+ *     Tracks    (video track + optional audio track)
  *     Cluster*  (one per second of content, each with absolute timestamps)
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -101,6 +102,10 @@ const ID_PIXEL_HEIGHT = new Uint8Array([0xba]);
 const ID_CLUSTER = new Uint8Array([0x1f, 0x43, 0xb6, 0x75]);
 const ID_TIMESTAMP = new Uint8Array([0xe7]);
 const ID_SIMPLE_BLOCK = new Uint8Array([0xa3]);
+const ID_AUDIO = new Uint8Array([0xe1]);
+const ID_SAMPLING_FREQ = new Uint8Array([0xb5]);
+const ID_OUTPUT_SAMPLING_FREQ = new Uint8Array([0xba]);
+const ID_CHANNELS = new Uint8Array([0x9f]);
 
 function textBytes(s: string): Uint8Array {
   return new TextEncoder().encode(s);
@@ -130,11 +135,15 @@ export interface WebMMuxerOptions {
   fps: number;
   /** Called with each chunk to stream to the main process. */
   onChunk: (chunk: WebMChunk) => void;
+  /** Optional audio configuration for multitrack audio export. */
+  audioSampleRate?: number;
+  /** Number of audio channels (default 2 for stereo). */
+  audioChannels?: number;
 }
 
 /**
  * Streaming WebM muxer. Call `addFrame()` for each encoded video chunk,
- * then `finalize()` when done.
+ * `addAudioBlock()` for encoded audio chunks, then `finalize()` when done.
  */
 export class WebMMuxer {
   private readonly width: number;
@@ -142,12 +151,18 @@ export class WebMMuxer {
   private readonly codec: 'vp8' | 'vp9';
   private readonly fps: number;
   private readonly onChunk: (chunk: WebMChunk) => void;
+  /** Audio sample rate, or 0 if no audio track. */
+  private readonly audioSampleRate: number;
+  /** Number of audio channels. */
+  private readonly audioChannels: number;
 
   private isFirst = true;
   /** Timestamp of the current open cluster (ms). */
   private clusterTimestampMs = -1;
   /** Frames buffered in the current cluster. */
   private clusterFrames: Uint8Array[] = [];
+  /** Audio blocks buffered in the current cluster. */
+  private clusterAudioBlocks: Uint8Array[] = [];
   /** Frames per cluster (one cluster ≈ 1 second). */
   private readonly framesPerCluster: number;
 
@@ -158,6 +173,8 @@ export class WebMMuxer {
     this.fps = options.fps;
     this.onChunk = options.onChunk;
     this.framesPerCluster = Math.max(1, Math.round(options.fps));
+    this.audioSampleRate = options.audioSampleRate ?? 0;
+    this.audioChannels = options.audioChannels ?? 2;
   }
 
   private buildHeader(): Uint8Array {
@@ -178,7 +195,7 @@ export class WebMMuxer {
         elem(ID_PIXEL_HEIGHT, uint(this.height, 4)),
       ),
     );
-    const trackEntry = elem(
+    const videoTrackEntry = elem(
       ID_TRACK_ENTRY,
       concat(
         elem(ID_TRACK_NUMBER, uint(1, 1)),
@@ -188,7 +205,33 @@ export class WebMMuxer {
         videoElem,
       ),
     );
-    const tracks = elem(ID_TRACKS, trackEntry);
+
+    let tracksContent = videoTrackEntry;
+
+    // Add audio track entry if audio is configured
+    if (this.audioSampleRate > 0) {
+      const audioElem = elem(
+        ID_AUDIO,
+        concat(
+          elem(ID_SAMPLING_FREQ, float64(this.audioSampleRate)),
+          elem(ID_OUTPUT_SAMPLING_FREQ, float64(this.audioSampleRate)),
+          elem(ID_CHANNELS, uint(this.audioChannels, 1)),
+        ),
+      );
+      const audioTrackEntry = elem(
+        ID_TRACK_ENTRY,
+        concat(
+          elem(ID_TRACK_NUMBER, uint(2, 1)),
+          elem(ID_TRACK_UID, uint(2, 4)),
+          elem(ID_TRACK_TYPE, uint(2, 1)), // 2 = audio
+          elem(ID_CODEC_ID, textBytes('A_OPUS')),
+          audioElem,
+        ),
+      );
+      tracksContent = concat(tracksContent, audioTrackEntry);
+    }
+
+    const tracks = elem(ID_TRACKS, tracksContent);
 
     const info = elem(
       ID_INFO,
@@ -208,35 +251,45 @@ export class WebMMuxer {
     return concat(ebmlHeader, segmentOpen, info, tracks);
   }
 
-  /** Encode a SimpleBlock for track 1 with the given timestamp offset (ms). */
+  /** Encode a SimpleBlock for the given track with the given timestamp offset (ms). */
   private buildSimpleBlock(
-    frameData: Uint8Array,
+    data: Uint8Array,
     timestampOffsetMs: number,
+    trackNumber: number,
     isKeyframe: boolean,
   ): Uint8Array {
     // SimpleBlock = track number VINT + 2-byte relative timestamp + flags + data
-    const trackVint = vint(1);
+    const trackVint = vint(trackNumber);
     const tsBytes = new Uint8Array(2);
     const ts = Math.max(0, Math.min(0x7fff, Math.round(timestampOffsetMs)));
     tsBytes[0] = (ts >> 8) & 0xff;
     tsBytes[1] = ts & 0xff;
     const flags = isKeyframe ? 0x80 : 0x00;
     const header = concat(trackVint, tsBytes, new Uint8Array([flags]));
-    const blockContent = concat(header, frameData);
+    const blockContent = concat(header, data);
     return elem(ID_SIMPLE_BLOCK, blockContent);
   }
 
   private flushCluster(): void {
-    if (this.clusterFrames.length === 0 || this.clusterTimestampMs < 0) return;
+    if (
+      this.clusterFrames.length === 0 &&
+      this.clusterAudioBlocks.length === 0
+    ) {
+      if (this.clusterTimestampMs < 0) return;
+    }
+    if (this.clusterTimestampMs < 0) return;
+
     const tsElem = elem(
       ID_TIMESTAMP,
       uint(Math.round(this.clusterTimestampMs), 4),
     );
-    const clusterContent = concat(tsElem, ...this.clusterFrames);
+    const allBlocks = [...this.clusterFrames, ...this.clusterAudioBlocks];
+    const clusterContent = concat(tsElem, ...allBlocks);
     const cluster = elem(ID_CLUSTER, clusterContent);
 
     this.onChunk({ data: cluster, isFirst: false });
     this.clusterFrames = [];
+    this.clusterAudioBlocks = [];
   }
 
   /** Add one encoded video frame. `timestampMs` is the absolute presentation time. */
@@ -260,7 +313,7 @@ export class WebMMuxer {
         // Emit header + first cluster open in one chunk
         const tsElem = elem(ID_TIMESTAMP, uint(Math.round(timestampMs), 4));
         const relTs = timestampMs - this.clusterTimestampMs;
-        const block = this.buildSimpleBlock(frameData, relTs, isKeyframe);
+        const block = this.buildSimpleBlock(frameData, relTs, 1, isKeyframe);
         const clusterContent = concat(tsElem, block);
         const cluster = elem(ID_CLUSTER, clusterContent);
         this.onChunk({ data: concat(header, cluster), isFirst: true });
@@ -269,8 +322,29 @@ export class WebMMuxer {
     }
 
     const relTs = timestampMs - this.clusterTimestampMs;
-    const block = this.buildSimpleBlock(frameData, relTs, isKeyframe);
+    const block = this.buildSimpleBlock(frameData, relTs, 1, isKeyframe);
     this.clusterFrames.push(block);
+  }
+
+  /**
+   * Add one encoded audio block (Opus). `timestampMs` is the absolute presentation time.
+   * Audio uses track number 2.
+   */
+  addAudioBlock(
+    audioData: Uint8Array,
+    timestampMs: number,
+  ): void {
+    if (this.audioSampleRate <= 0) return;
+
+    // Audio blocks go into the cluster for the video frame at the nearest boundary
+    if (this.clusterTimestampMs < 0) {
+      // No cluster open yet; defer until the first video frame opens one
+      return;
+    }
+
+    const relTs = timestampMs - this.clusterTimestampMs;
+    const block = this.buildSimpleBlock(audioData, relTs, 2, false);
+    this.clusterAudioBlocks.push(block);
   }
 
   /** Flush any remaining frames and close the muxer. */

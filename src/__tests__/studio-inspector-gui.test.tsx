@@ -229,7 +229,7 @@ describe('Master StudioInspector Component', () => {
   it('renders Global Canvas mode by default when no clip is selected', () => {
     render(<StudioInspector {...defaultProps} />);
 
-    expect(screen.getByText('Studio Inspector')).toBeInTheDocument();
+    expect(screen.getByText('Global Settings')).toBeInTheDocument();
     expect(screen.getByText('GLOBAL')).toBeInTheDocument();
     expect(screen.getByText('Magic Agent & Export')).toBeInTheDocument();
     expect(screen.getByText('Canvas & Framing')).toBeInTheDocument();
@@ -320,11 +320,11 @@ describe('Master StudioInspector Component', () => {
 
     render(<StudioInspector {...defaultProps} />);
 
-    // Header badge changes to CLIP ACTIVE
-    expect(screen.getByText('CLIP ACTIVE')).toBeInTheDocument();
+    // Header badge changes to SELECTED
+    expect(screen.getByText('SELECTED')).toBeInTheDocument();
 
-    // Clip Properties section is visible with Zoom badge
-    expect(screen.getByText('Clip: Zoom 1.8x')).toBeInTheDocument();
+    // Clip Properties section is visible with the clip name and Zoom badge
+    expect(screen.getByText('Zoom 1.8x')).toBeInTheDocument();
     expect(screen.getByText('ZOOM 1.8X')).toBeInTheDocument();
     expect(screen.getByText('Zoom Scale')).toBeInTheDocument();
     expect(screen.getByText('Focal Center (X, Y)')).toBeInTheDocument();
@@ -333,7 +333,7 @@ describe('Master StudioInspector Component', () => {
     const deselectBtn = screen.getByTitle('Deselect clip');
     fireEvent.click(deselectBtn);
 
-    expect(screen.queryByText('CLIP ACTIVE')).not.toBeInTheDocument();
+    expect(screen.queryByText('SELECTED')).not.toBeInTheDocument();
     expect(screen.getByText('GLOBAL')).toBeInTheDocument();
   });
 });

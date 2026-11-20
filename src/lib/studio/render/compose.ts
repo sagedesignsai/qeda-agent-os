@@ -63,6 +63,8 @@ export interface StudioComposeInput {
   /** Ordered editor tracks used to composite the current frame. */
   tracks?: readonly TimelineTrack[];
   clipAssets?: ReadonlyMap<string, StudioOverlayAsset>;
+  /** Independent video elements keyed by timeline clip ID. */
+  clipInstances?: ReadonlyMap<string, StudioOverlayAsset>;
   /** Composition time in ms (for animation evaluation; differs from source time when cuts exist). */
   compTimeMs?: number;
   /** Live transform preview while the canvas gizmo is being dragged. */
@@ -96,7 +98,7 @@ export function drawStudioFrame(
     ? activeVideoItems[activeVideoItems.length - 1].clip
     : undefined;
   const activeVideoAsset = activeVideoClip?.payload?.mediaAssetId
-    ? input.clipAssets?.get(activeVideoClip.payload.mediaAssetId)
+    ? input.clipInstances?.get(activeVideoClip.id) ?? input.clipAssets?.get(activeVideoClip.payload.mediaAssetId)
     : undefined;
   const activeUsesRecordedVideo =
     (!activeVideoClip || activeVideoClip.trackId === 'track-video') &&
@@ -162,6 +164,7 @@ export function drawStudioFrame(
       activeVideoItems,
       timelineFrame?.transitions ?? [],
       input.clipAssets,
+      input.clipInstances,
       frame,
       compTime,
       input.videoReady ? input.video : null,
@@ -232,6 +235,7 @@ function drawMultiTrackClips(
   activeVideoItems: readonly EvaluatedTimelineClip[],
   activeTransitions: readonly EvaluatedTimelineClip[],
   assets: ReadonlyMap<string, StudioOverlayAsset> | undefined,
+  clipInstances: ReadonlyMap<string, StudioOverlayAsset> | undefined,
   frame: import('./geometry').StudioWindowFrame,
   compTimeMs: number,
   recordedVideo: HTMLVideoElement | null,
@@ -242,10 +246,11 @@ function drawMultiTrackClips(
   for (const evaluatedItem of activeVideoItems) {
     const { track, clip, localTimeMs } = evaluatedItem;
     const payload = clip.payload;
-    const asset = payload?.mediaAssetId ? assets?.get(payload.mediaAssetId) : undefined;
+    const asset = clipInstances?.get(clip.id) ?? (payload?.mediaAssetId ? assets?.get(payload.mediaAssetId) : undefined);
     const isRecordedSource = !payload?.mediaAssetId && track.id === 'track-video';
     const source = asset?.element ?? (isRecordedSource ? recordedVideo : null);
     if (!source) continue;
+    if (source instanceof HTMLVideoElement && source.readyState < 2) continue;
 
     const sourceWidth = asset?.width ?? recordedVideo?.videoWidth ?? 0;
     const sourceHeight = asset?.height ?? recordedVideo?.videoHeight ?? 0;
@@ -271,33 +276,67 @@ function drawMultiTrackClips(
       localTimeMs,
     );
 
-    const transition = activeTransitions.find(
-      ({ clip: candidate, itemType }) =>
-        itemType === 'transition' &&
-        candidate.payload?.targetClipId === clip.id,
-    )?.clip;
+    const pairedTransition = evaluatedItem.transition;
+    const legacyTransition = pairedTransition
+      ? undefined
+      : activeTransitions.find(
+          ({ clip: candidate, itemType }) =>
+            itemType === 'transition' &&
+            candidate.payload?.targetClipId === clip.id,
+        )?.clip;
+    const transition = legacyTransition;
     const transitionDuration = Math.max(1, transition?.durationMs ?? 1);
-    const transitionProgress = transition
+    const transitionProgress = pairedTransition?.progress ?? (transition
       ? Math.max(0, Math.min(1, (compTimeMs - transition.startMs) / transitionDuration))
-      : 1;
+      : 1);
     const transitionSide = transition?.payload?.transitionSide ?? 'in';
-    const transitionType = transition?.payload?.transitionType;
-    const transitionAmount = transitionSide === 'out'
-      ? 1 - transitionProgress
-      : transitionProgress;
-    const transitionOpacity = transitionType === 'fade' ? transitionAmount : 1;
-    const transitionX = transitionType === 'slide-left'
-      ? frame.contentWidth * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
-      : transitionType === 'slide-right'
-        ? frame.contentWidth * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
-        : 0;
-    const transitionY = transitionType === 'slide-up'
-      ? frame.contentHeight * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
-      : transitionType === 'slide-down'
-        ? frame.contentHeight * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
-        : 0;
+    const transitionType = pairedTransition?.type ?? transition?.payload?.transitionType;
+    const transitionAmount = pairedTransition
+      ? pairedTransition.role === 'outgoing'
+        ? 1 - transitionProgress
+        : transitionProgress
+      : transitionSide === 'out'
+        ? 1 - transitionProgress
+        : transitionProgress;
+    const transitionOpacity = pairedTransition
+      ? transitionType === 'fade' || transitionType === 'blur'
+        ? pairedTransition.role === 'outgoing'
+          ? 1
+          : transitionProgress
+        : 1
+      : transitionType === 'fade'
+        ? transitionAmount
+        : 1;
+    const transitionX = pairedTransition
+      ? transitionType === 'slide-left'
+        ? frame.contentWidth * (pairedTransition.role === 'outgoing' ? -transitionProgress : 1 - transitionProgress)
+        : transitionType === 'slide-right'
+          ? frame.contentWidth * (pairedTransition.role === 'outgoing' ? transitionProgress : transitionProgress - 1)
+          : 0
+      : transitionType === 'slide-left'
+        ? frame.contentWidth * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
+        : transitionType === 'slide-right'
+          ? frame.contentWidth * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
+          : 0;
+    const transitionY = pairedTransition
+      ? transitionType === 'slide-up'
+        ? frame.contentHeight * (pairedTransition.role === 'outgoing' ? -transitionProgress : 1 - transitionProgress)
+        : transitionType === 'slide-down'
+          ? frame.contentHeight * (pairedTransition.role === 'outgoing' ? transitionProgress : transitionProgress - 1)
+          : 0
+      : transitionType === 'slide-up'
+        ? frame.contentHeight * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
+        : transitionType === 'slide-down'
+          ? frame.contentHeight * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
+          : 0;
     const transitionScale = transitionType === 'scale'
-      ? (transitionSide === 'out' ? 1 - 0.25 * transitionProgress : 0.75 + 0.25 * transitionProgress)
+      ? pairedTransition
+        ? pairedTransition.role === 'outgoing'
+          ? 1 - 0.25 * transitionProgress
+          : 0.75 + 0.25 * transitionProgress
+        : transitionSide === 'out'
+          ? 1 - 0.25 * transitionProgress
+          : 0.75 + 0.25 * transitionProgress
       : 1;
 
     const transform = clipTransformPreview?.clipId === clip.id
@@ -331,6 +370,10 @@ function drawMultiTrackClips(
 
     const radius = Math.max(0, payload?.cornerRadius ?? 0);
     ctx.save();
+    if (pairedTransition && transitionType === 'blur') {
+      const blurPx = Math.sin(transitionProgress * Math.PI) * 12;
+      ctx.filter = `blur(${blurPx}px)`;
+    }
     ctx.beginPath();
     ctx.roundRect(drawX, drawY, width, height, radius);
     ctx.clip();

@@ -72,6 +72,8 @@ export interface TimelineState {
   activeTool: TimelineTool;
   snappingEnabled: boolean;
   selectedClipId: string | null;
+  /** Multi-select set — kept in sync with selectedClipId for backward compat. */
+  selectedClipIds: Set<string>;
   snapLineMs: number | null; // Active magnetic guide indicator
   tracks: TimelineTrack[];
   isMultiTrack: boolean; // true when take.tracks is defined (multi-track model)
@@ -90,6 +92,7 @@ class TimelineStore {
     activeTool: 'select',
     snappingEnabled: true,
     selectedClipId: null,
+    selectedClipIds: new Set(),
     snapLineMs: null,
     tracks: [],
     isMultiTrack: false,
@@ -150,6 +153,67 @@ class TimelineStore {
     this.trackChangeListeners.forEach((l) => l(tracks));
   }
 
+  private alignCutTransitions(tracks: TimelineTrack[]): TimelineTrack[] {
+    const videoClips = new Map<string, { track: TimelineTrack; clip: TimelineClip }>();
+    for (const track of tracks) {
+      if (track.type !== 'video') continue;
+      for (const clip of track.clips) videoClips.set(clip.id, { track, clip });
+    }
+
+    let changed = false;
+    const alignedTracks = tracks.map((track) => {
+      if (track.type !== 'transitions') return track;
+      const clips: TimelineClip[] = [];
+      for (const transition of track.clips) {
+        const fromId = transition.payload?.fromClipId;
+        const toId = transition.payload?.toClipId;
+        if (!fromId && !toId) {
+          clips.push(transition);
+          continue;
+        }
+        const from = fromId ? videoClips.get(fromId) : undefined;
+        const to = toId ? videoClips.get(toId) : undefined;
+        if (!from || !to || from.track.id !== to.track.id) {
+          changed = true;
+          continue;
+        }
+        const orderedClips = [...from.track.clips].sort((a, b) => a.startMs - b.startMs);
+        const fromIndex = orderedClips.findIndex((clip) => clip.id === fromId);
+        const cutMs = from.clip.startMs + from.clip.durationMs;
+        if (
+          fromIndex < 0 ||
+          orderedClips[fromIndex + 1]?.id !== toId ||
+          Math.abs(to.clip.startMs - cutMs) > 1
+        ) {
+          changed = true;
+          continue;
+        }
+
+        const durationMs = Math.floor(Math.min(
+          transition.durationMs,
+          from.clip.durationMs,
+          to.clip.durationMs,
+          cutMs * 2,
+        ));
+        if (durationMs < 100) {
+          changed = true;
+          continue;
+        }
+        const startMs = cutMs - durationMs / 2;
+        if (transition.startMs !== startMs || transition.durationMs !== durationMs) {
+          changed = true;
+          clips.push({ ...transition, startMs, durationMs });
+        } else {
+          clips.push(transition);
+        }
+      }
+      return clips.length === track.clips.length && !changed
+        ? track
+        : { ...track, clips };
+    });
+    return changed ? alignedTracks : tracks;
+  }
+
   // ── Undo / Redo Management ────────────────────────────────────────────────
 
   recordSnapshot = () => {
@@ -173,6 +237,11 @@ class TimelineStore {
   };
 
   commitTrackChange = () => {
+    const tracks = this.alignCutTransitions(this.state.tracks);
+    if (tracks !== this.state.tracks) {
+      this.state = { ...this.state, tracks };
+      this.notify();
+    }
     this.notifyTracks(this.state.tracks);
   };
 
@@ -200,6 +269,7 @@ class TimelineStore {
         currentTimeMs: Math.min(this.state.currentTimeMs, previous.durationMs),
         scrollTimeMs: Math.min(this.state.scrollTimeMs, previous.durationMs),
         selectedClipId: null,
+        selectedClipIds: new Set(),
       };
       this.notify();
       if (this.state.currentTimeMs !== previousTimeMs) {
@@ -232,6 +302,7 @@ class TimelineStore {
         currentTimeMs: Math.min(this.state.currentTimeMs, next.durationMs),
         scrollTimeMs: Math.min(this.state.scrollTimeMs, next.durationMs),
         selectedClipId: null,
+        selectedClipIds: new Set(),
       };
       this.notify();
       if (this.state.currentTimeMs !== previousTimeMs) {
@@ -307,7 +378,29 @@ class TimelineStore {
 
   setSelectedClipId = (selectedClipId: string | null) => {
     if (this.state.selectedClipId === selectedClipId) return;
-    this.state = { ...this.state, selectedClipId };
+    const ids = new Set<string>();
+    if (selectedClipId) ids.add(selectedClipId);
+    this.state = { ...this.state, selectedClipId, selectedClipIds: ids };
+    this.notify();
+  };
+
+  /** Toggle a clip in the multi-select set (Shift+Click behavior). */
+  toggleSelectedClipId = (clipId: string) => {
+    const ids = new Set(this.state.selectedClipIds);
+    if (ids.has(clipId)) {
+      ids.delete(clipId);
+    } else {
+      ids.add(clipId);
+    }
+    const selectedClipId = ids.size === 1 ? [...ids][0] : ids.size > 1 ? null : null;
+    this.state = { ...this.state, selectedClipId, selectedClipIds: ids };
+    this.notify();
+  };
+
+  /** Set the multi-select set directly (drag-select behavior). */
+  setSelectedClipIds = (ids: Set<string>) => {
+    const selectedClipId = ids.size === 1 ? [...ids][0] : null;
+    this.state = { ...this.state, selectedClipId, selectedClipIds: ids };
     this.notify();
   };
 
@@ -319,20 +412,22 @@ class TimelineStore {
     resetHistory = true,
     isMultiTrack = false,
   ) => {
-    const nextDurationMs = Math.max(durationMs, durationForTracks(tracks));
+    const normalizedTracks = this.alignCutTransitions(tracks);
+    const nextDurationMs = Math.max(durationMs, durationForTracks(normalizedTracks));
     const previousTimeMs = this.state.currentTimeMs;
     const currentTimeMs = resetHistory
       ? 0
       : Math.min(previousTimeMs, nextDurationMs);
     this.state = {
       ...this.state,
-      tracks,
+      tracks: normalizedTracks,
       durationMs: nextDurationMs,
       currentTimeMs,
       scrollTimeMs: resetHistory
         ? 0
         : Math.min(this.state.scrollTimeMs, nextDurationMs),
       selectedClipId: resetHistory ? null : this.state.selectedClipId,
+      selectedClipIds: resetHistory ? new Set() : this.state.selectedClipIds,
       isMultiTrack,
     };
     if (resetHistory) {
@@ -378,6 +473,21 @@ class TimelineStore {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
         t.id === trackId ? { ...t, muted: !t.muted } : t,
+      ),
+    };
+    this.notify();
+    this.commitTrackChange();
+  };
+
+  /** Set the volume (0–1) for an audio track. */
+  setTrackVolume = (trackId: string, volume: number) => {
+    if (!this.state.tracks.some((track) => track.id === trackId)) return;
+    this.recordSnapshot();
+    const clamped = Math.max(0, Math.min(1, volume));
+    this.state = {
+      ...this.state,
+      tracks: this.state.tracks.map((t) =>
+        t.id === trackId ? { ...t, volume: clamped } : t,
       ),
     };
     this.notify();
@@ -532,6 +642,7 @@ class TimelineStore {
       };
     }
 
+    this.recordSnapshot();
     const tracks = this.state.tracks.map((t) =>
       t.id === trackId
         ? {
@@ -540,18 +651,20 @@ class TimelineStore {
           }
         : t,
     );
-    const durationMs = durationForTracks(tracks);
+    const alignedTracks = this.alignCutTransitions(tracks);
+    const durationMs = durationForTracks(alignedTracks);
     const previousTimeMs = this.state.currentTimeMs;
     const currentTimeMs = Math.min(previousTimeMs, durationMs);
     this.state = {
       ...this.state,
-      tracks,
+      tracks: alignedTracks,
       durationMs,
       currentTimeMs,
       scrollTimeMs: Math.min(this.state.scrollTimeMs, durationMs),
     };
     this.notify();
     if (currentTimeMs !== previousTimeMs) this.notifyTime(currentTimeMs);
+    this.commitTrackChange();
   };
 
   moveClip = (trackId: string, clipId: string, newStartMs: number) => {
@@ -564,6 +677,7 @@ class TimelineStore {
 
     const clampedStart = Math.max(0, newStartMs);
 
+    this.recordSnapshot();
     const tracks = this.state.tracks.map((t) =>
       t.id === trackId
         ? {
@@ -574,31 +688,242 @@ class TimelineStore {
           }
         : t,
     );
-    const durationMs = Math.max(this.state.durationMs, durationForTracks(tracks));
+    const alignedTracks = this.alignCutTransitions(tracks);
+    const durationMs = Math.max(this.state.durationMs, durationForTracks(alignedTracks));
     this.state = {
       ...this.state,
-      tracks,
+      tracks: alignedTracks,
       durationMs,
     };
     this.notify();
+    this.commitTrackChange();
   };
 
-  deleteSelectedClip = () => {
-    const selectedId = this.state.selectedClipId;
-    if (!selectedId) return;
+  /**
+   * Move a clip from one track to another. Validates track type compatibility.
+   * Returns true if the move succeeded, false if rejected.
+   */
+  moveClipToTrack = (
+    clipId: string,
+    fromTrackId: string,
+    toTrackId: string,
+    newStartMs: number,
+  ): boolean => {
+    if (fromTrackId === toTrackId) {
+      this.moveClip(fromTrackId, clipId, newStartMs);
+      return true;
+    }
+
+    const fromTrack = this.state.tracks.find((t) => t.id === fromTrackId);
+    const toTrack = this.state.tracks.find((t) => t.id === toTrackId);
+    if (!fromTrack || !toTrack || toTrack.locked) return false;
+
+    const clip = fromTrack.clips.find((c) => c.id === clipId);
+    if (!clip) return false;
+
+    // Validate track type compatibility
+    const compatible = this.isTrackTypeCompatible(clip.itemType ?? 'video', toTrack.type);
+    if (!compatible) return false;
+
+    const clampedStart = Math.max(0, newStartMs);
+    const movedClip: TimelineClip = {
+      ...clip,
+      trackId: toTrackId,
+      startMs: clampedStart,
+    };
 
     this.recordSnapshot();
-    const tracks = this.state.tracks.map((t) => ({
-      ...t,
-      clips: t.clips.filter((c) => c.id !== selectedId),
-    }));
+    const tracks = this.state.tracks.map((t) => {
+      if (t.id === fromTrackId) {
+        return { ...t, clips: t.clips.filter((c) => c.id !== clipId) };
+      }
+      if (t.id === toTrackId) {
+        return {
+          ...t,
+          clips: [...t.clips, movedClip].sort((a, b) => a.startMs - b.startMs),
+        };
+      }
+      return t;
+    });
+    const alignedTracks = this.alignCutTransitions(tracks);
+    const durationMs = Math.max(this.state.durationMs, durationForTracks(alignedTracks));
+    this.state = {
+      ...this.state,
+      tracks: alignedTracks,
+      durationMs,
+    };
+    this.notify();
+    this.commitTrackChange();
+    return true;
+  };
+
+  /** Check if a clip item type can be placed on a given track type. */
+  isTrackTypeCompatible = (itemType: string, trackType: TrackType): boolean => {
+    if (trackType === 'video') return itemType === 'video' || itemType === 'image';
+    if (trackType === 'audio') return itemType === 'audio';
+    if (trackType === 'effects') return itemType === 'effect';
+    if (trackType === 'transitions') return itemType === 'transition';
+    if (trackType === 'captions') return itemType === 'text';
+    if (trackType === 'overlays') return itemType === 'overlay' || itemType === 'image';
+    return true;
+  };
+
+  deleteSelectedClip = (ripple: boolean = false) => {
+    const selectedIds = this.state.selectedClipIds;
+    if (selectedIds.size === 0 && this.state.selectedClipId) {
+      // Fallback to single selection for backward compat
+      const id = this.state.selectedClipId;
+      this.recordSnapshot();
+      let tracks: TimelineTrack[];
+      if (ripple) {
+        tracks = this.rippleDeleteClipFromTracks(this.state.tracks, id);
+      } else {
+        tracks = this.state.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.filter((c) => c.id !== id),
+        }));
+      }
+      const durationMs = durationForTracks(tracks);
+      const previousTimeMs = this.state.currentTimeMs;
+      const currentTimeMs = Math.min(previousTimeMs, durationMs);
+      this.state = {
+        ...this.state,
+        selectedClipId: null,
+        selectedClipIds: new Set(),
+        tracks,
+        durationMs,
+        currentTimeMs,
+        scrollTimeMs: Math.min(this.state.scrollTimeMs, durationMs),
+      };
+      this.notify();
+      if (currentTimeMs !== previousTimeMs) this.notifyTime(currentTimeMs);
+      this.commitTrackChange();
+      return;
+    }
+    if (selectedIds.size === 0) return;
+
+    this.recordSnapshot();
+    const ids = Array.from(selectedIds);
+    let tracks = this.state.tracks;
+    for (const id of ids) {
+      if (ripple) {
+        tracks = this.rippleDeleteClipFromTracks(tracks, id);
+      } else {
+        tracks = tracks.map((t) => ({
+          ...t,
+          clips: t.clips.filter((c) => c.id !== id),
+        }));
+      }
+    }
     const durationMs = durationForTracks(tracks);
     const previousTimeMs = this.state.currentTimeMs;
     const currentTimeMs = Math.min(previousTimeMs, durationMs);
     this.state = {
       ...this.state,
       selectedClipId: null,
+      selectedClipIds: new Set(),
       tracks,
+      durationMs,
+      currentTimeMs,
+      scrollTimeMs: Math.min(this.state.scrollTimeMs, durationMs),
+    };
+    this.notify();
+    if (currentTimeMs !== previousTimeMs) this.notifyTime(currentTimeMs);
+    this.commitTrackChange();
+  };
+
+  rippleDeleteClipFromTracks = (tracks: TimelineTrack[], clipId: string): TimelineTrack[] => {
+    return tracks.map((track) => {
+      const clipIndex = track.clips.findIndex((c) => c.id === clipId);
+      if (clipIndex === -1) return track;
+      const deletedClip = track.clips[clipIndex];
+      const gapMs = deletedClip.durationMs;
+      const deletedEnd = deletedClip.startMs + deletedClip.durationMs;
+
+      // Remove the deleted clip and shift all clips that start at or after the deleted clip's end
+      const remainingClips = track.clips
+        .filter((c) => c.id !== clipId)
+        .map((c) => {
+          if (c.startMs >= deletedEnd) {
+            return { ...c, startMs: c.startMs - gapMs };
+          }
+          return c;
+        });
+
+      return {
+        ...track,
+        clips: remainingClips.sort((a, b) => a.startMs - b.startMs),
+      };
+    });
+  };
+
+  rippleTrimClip = (
+    trackId: string,
+    clipId: string,
+    edge: 'start' | 'end',
+    newEdgeMs: number,
+  ) => {
+    const track = this.state.tracks.find((t) => t.id === trackId);
+    if (!track || track.locked) return;
+
+    const clip = track.clips.find((c) => c.id === clipId);
+    if (!clip) return;
+
+    let updatedClip: TimelineClip;
+    let shiftDelta = 0; // How much the clip end moved (negative = shortened from end)
+
+    if (edge === 'start') {
+      const clampedStart = Math.min(
+        newEdgeMs,
+        clip.startMs + clip.durationMs - 300,
+      );
+      const delta = clampedStart - clip.startMs;
+      const sourceRate = sourceUnitsPerTimelineMs(clip);
+      updatedClip = {
+        ...clip,
+        startMs: clampedStart,
+        durationMs: clip.durationMs - delta,
+        sourceStartMs: clip.sourceStartMs + delta * sourceRate,
+        sourceDurationMs: (clip.durationMs - delta) * sourceRate,
+      };
+      // Trimming start inward doesn't shift subsequent clips
+    } else {
+      const clampedEnd = Math.max(newEdgeMs, clip.startMs + 300);
+      const sourceRate = sourceUnitsPerTimelineMs(clip);
+      const oldEnd = clip.startMs + clip.durationMs;
+      shiftDelta = clampedEnd - oldEnd; // negative when shortening from end
+      updatedClip = {
+        ...clip,
+        durationMs: clampedEnd - clip.startMs,
+        sourceDurationMs: (clampedEnd - clip.startMs) * sourceRate,
+      };
+    }
+
+    this.recordSnapshot();
+    const tracks = this.state.tracks.map((t) =>
+      t.id === trackId
+        ? {
+            ...t,
+            clips: t.clips
+              .map((c) => {
+                if (c.id === clipId) return updatedClip;
+                // Shift subsequent clips on the same track when trimming end edge
+                if (edge === 'end' && shiftDelta !== 0 && c.startMs >= clip.startMs + clip.durationMs) {
+                  return { ...c, startMs: c.startMs + shiftDelta };
+                }
+                return c;
+              })
+              .sort((a, b) => a.startMs - b.startMs),
+          }
+        : t,
+    );
+    const alignedTracks = this.alignCutTransitions(tracks);
+    const durationMs = durationForTracks(alignedTracks);
+    const previousTimeMs = this.state.currentTimeMs;
+    const currentTimeMs = Math.min(previousTimeMs, durationMs);
+    this.state = {
+      ...this.state,
+      tracks: alignedTracks,
       durationMs,
       currentTimeMs,
       scrollTimeMs: Math.min(this.state.scrollTimeMs, durationMs),
@@ -713,6 +1038,95 @@ class TimelineStore {
     if (commit) this.commitTrackChange();
   };
 
+  addTransitionClip = (data: {
+    transitionType: NonNullable<TimelineClip['payload']>['transitionType'];
+    durationMs: number;
+    startMs?: number;
+    name?: string;
+    color?: string;
+    preferredClipId?: string;
+    targetTrackId?: string;
+  }): TimelineClip | null => {
+    const anchorMs = data.startMs ?? this.state.currentTimeMs;
+    const selected = data.preferredClipId
+      ? this.findClip(data.preferredClipId)
+      : null;
+    const selectedVideoId = selected?.track.type === 'video'
+      ? selected.clip.id
+      : undefined;
+    const candidates: Array<{
+      track: TimelineTrack;
+      from: TimelineClip;
+      to: TimelineClip;
+      cutMs: number;
+    }> = [];
+
+    for (const track of this.state.tracks) {
+      if (track.type !== 'video' || !track.visible) continue;
+      const clips = [...track.clips].sort((a, b) => a.startMs - b.startMs);
+      for (let index = 0; index < clips.length - 1; index += 1) {
+        const from = clips[index];
+        const to = clips[index + 1];
+        const cutMs = from.startMs + from.durationMs;
+        if (Math.abs(to.startMs - cutMs) > 1) continue;
+        if (selectedVideoId && from.id !== selectedVideoId && to.id !== selectedVideoId) continue;
+        candidates.push({ track, from, to, cutMs });
+      }
+    }
+
+    candidates.sort((a, b) => Math.abs(a.cutMs - anchorMs) - Math.abs(b.cutMs - anchorMs));
+    const candidate = candidates[0];
+    if (!candidate) return null;
+
+    const durationMs = Math.floor(Math.min(
+      data.durationMs,
+      candidate.from.durationMs,
+      candidate.to.durationMs,
+      candidate.cutMs * 2,
+    ));
+    if (durationMs < 100) return null;
+
+    const startMs = candidate.cutMs - durationMs / 2;
+    const transitionPatch = {
+      name: data.name ?? `${data.transitionType ?? 'fade'} transition`,
+      durationMs,
+      startMs,
+      color: data.color ?? '#db2777',
+      itemType: 'transition',
+      payload: {
+        transitionType: data.transitionType ?? 'fade',
+        fromClipId: candidate.from.id,
+        toClipId: candidate.to.id,
+      },
+    } as const;
+    const existingTransition = this.state.tracks
+      .filter((track) => track.type === 'transitions')
+      .map((track) => ({
+        track,
+        clip: track.clips.find(
+          (clip) =>
+            clip.payload?.fromClipId === candidate.from.id &&
+            clip.payload?.toClipId === candidate.to.id,
+        ),
+      }))
+      .find((entry) => entry.clip);
+
+    if (existingTransition?.clip) {
+      if (existingTransition.track.locked) return null;
+      this.updateClip(
+        existingTransition.clip.id,
+        transitionPatch,
+        existingTransition.track.id,
+      );
+      return this.findClip(existingTransition.clip.id)?.clip ?? null;
+    }
+
+    return this.addClip('transitions', {
+      ...transitionPatch,
+      targetTrackId: data.targetTrackId,
+    });
+  };
+
   addClip = (
     trackType: TrackType,
     clipData: {
@@ -756,42 +1170,13 @@ class TimelineStore {
       track = newTrack;
     }
 
-    const selected = this.state.selectedClipId
-      ? this.findClip(this.state.selectedClipId)
-      : null;
-    const transitionTarget = trackType === 'transitions'
-      ? selected?.track.type === 'video'
-        ? selected.clip
-        : this.state.tracks
-            .filter((candidate) => candidate.type === 'video' && candidate.visible)
-            .flatMap((candidate) => candidate.clips)
-            .sort((a, b) => {
-              const distanceToClip = (clip: TimelineClip) =>
-                this.state.currentTimeMs < clip.startMs
-                  ? clip.startMs - this.state.currentTimeMs
-                  : this.state.currentTimeMs >= clip.startMs + clip.durationMs
-                    ? this.state.currentTimeMs - (clip.startMs + clip.durationMs)
-                    : 0;
-              return distanceToClip(a) - distanceToClip(b);
-            })[0]
-      : undefined;
-    const transitionSide = clipData.payload?.transitionSide ?? 'in';
-    const transitionDuration = transitionTarget
-      ? Math.min(clipData.durationMs, transitionTarget.durationMs)
-      : clipData.durationMs;
-    const startMs = transitionTarget
-      ? transitionSide === 'in'
-        ? transitionTarget.startMs
-        : transitionTarget.startMs + transitionTarget.durationMs - transitionDuration
-      : clipData.startMs !== undefined
-        ? clipData.startMs
-        : this.state.currentTimeMs;
+    const startMs = clipData.startMs !== undefined
+      ? clipData.startMs
+      : this.state.currentTimeMs;
 
     const itemType =
       clipData.itemType ?? inferTimelineItemType(trackType, clipData.payload);
-    const durationMs = transitionTarget
-      ? transitionDuration
-      : clipData.durationMs;
+    const durationMs = clipData.durationMs;
     const rawSpeed = clipData.payload?.speed ?? 1;
     const speed = Number.isFinite(rawSpeed) && rawSpeed > 0 ? rawSpeed : 1;
     const newClip: TimelineClip = {
@@ -806,7 +1191,6 @@ class TimelineStore {
       color: clipData.color,
       payload: {
         ...clipData.payload,
-        ...(transitionTarget ? { targetClipId: transitionTarget.id } : {}),
       },
     };
 
@@ -860,6 +1244,7 @@ export function useTimelineTools() {
     snappingEnabled: state.snappingEnabled,
     zoomPxPerMs: state.zoomPxPerMs,
     selectedClipId: state.selectedClipId,
+    selectedClipIds: state.selectedClipIds,
     canUndo: timelineStore.canUndo(),
     canRedo: timelineStore.canRedo(),
     setActiveTool: timelineStore.setActiveTool,
@@ -867,6 +1252,9 @@ export function useTimelineTools() {
     setZoomPxPerMs: timelineStore.setZoomPxPerMs,
     splitAtPlayhead: timelineStore.splitAtPlayhead,
     deleteSelectedClip: timelineStore.deleteSelectedClip,
+    toggleSelectedClipId: timelineStore.toggleSelectedClipId,
+    setSelectedClipIds: timelineStore.setSelectedClipIds,
+    rippleTrimClip: timelineStore.rippleTrimClip,
     duplicateSelectedClip: timelineStore.duplicateSelectedClip,
     updateClip: timelineStore.updateClip,
     undo: timelineStore.undo,

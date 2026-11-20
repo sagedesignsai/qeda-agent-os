@@ -53,6 +53,7 @@ import {
   type StudioComposeInput,
 } from '@/lib/studio/render/compose';
 import { evaluateEditorTimeline } from '@/lib/studio/timeline/evaluate';
+import { StudioAudioMixer } from '@/lib/studio/audio/mixer';
 import {
   studioOverlayMediaUrl,
   type StudioOverlayAsset,
@@ -246,6 +247,9 @@ export function StudioCanvas({
   const overlayAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
   const clipAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
   const clipVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const clipInstanceAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
+  const clipInstanceVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const clipInstanceSourcesRef = useRef<Map<string, string>>(new Map());
   const overlayVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const glowRef = useRef<{
     width: number;
@@ -302,6 +306,16 @@ export function StudioCanvas({
   const tracksRef = useRef<TimelineTrack[]>(tracks ?? []);
   tracksRef.current = tracks ?? [];
   const endedRef = useRef(false);
+  const audioMixerRef = useRef<StudioAudioMixer | null>(null);
+
+  // Clean up audio mixer on unmount
+  useEffect(() => {
+    return () => {
+      audioMixerRef.current?.dispose();
+      audioMixerRef.current = null;
+    };
+  }, []);
+
   const clipTransformPreviewRef = useRef<StudioComposeInput['clipTransformPreview']>(null);
   const selectedGizmoRef = useRef<{
     clip: TimelineTrack['clips'][number];
@@ -448,6 +462,77 @@ export function StudioCanvas({
     }
   }, [mediaAssets]);
 
+  // Give each video placement its own decoder. A transition can need two
+  // frames from the same source at once, and sharing one HTMLVideoElement
+  // would make those clips seek over each other.
+  useEffect(() => {
+    const activeClipIds = new Set<string>();
+    const assetById = new Map<string, StudioMediaAsset>();
+    for (const asset of mediaAssets) assetById.set(asset.id, asset);
+    const transitionParticipantIds = new Set(
+      (tracks ?? [])
+        .filter((track) => track.type === 'transitions')
+        .flatMap((track) => track.clips.flatMap((clip) => [
+          clip.payload?.fromClipId,
+          clip.payload?.toClipId,
+        ]))
+        .filter((clipId): clipId is string => Boolean(clipId)),
+    );
+
+    if (isMultiTrack) {
+      for (const track of tracks ?? []) {
+        if (track.type !== 'video') continue;
+        for (const clip of track.clips) {
+          if (!transitionParticipantIds.has(clip.id)) continue;
+          const assetId = clip.payload?.mediaAssetId;
+          const asset = assetId ? assetById.get(assetId) : undefined;
+          const sourceUrl = asset?.kind === 'video'
+            ? studioMediaAssetUrl(asset.id)
+            : !assetId && track.id === 'track-video'
+              ? videoUrl
+              : null;
+          if (!sourceUrl) continue;
+
+          activeClipIds.add(clip.id);
+          const existing = clipInstanceVideosRef.current.get(clip.id);
+          if (existing && clipInstanceSourcesRef.current.get(clip.id) === sourceUrl) continue;
+          if (existing) {
+            existing.pause();
+            existing.src = '';
+            clipInstanceVideosRef.current.delete(clip.id);
+            clipInstanceAssetsRef.current.delete(clip.id);
+          }
+
+          const video = document.createElement('video');
+          video.muted = true;
+          video.playsInline = true;
+          video.preload = 'auto';
+          video.onloadedmetadata = () => {
+            if (clipInstanceVideosRef.current.get(clip.id) !== video || video.videoWidth <= 0) return;
+            clipInstanceAssetsRef.current.set(clip.id, {
+              element: video,
+              width: video.videoWidth,
+              height: video.videoHeight,
+            });
+            setClipAssetRevision((revision) => revision + 1);
+          };
+          clipInstanceVideosRef.current.set(clip.id, video);
+          clipInstanceSourcesRef.current.set(clip.id, sourceUrl);
+          video.src = sourceUrl;
+        }
+      }
+    }
+
+    for (const [clipId, video] of clipInstanceVideosRef.current) {
+      if (activeClipIds.has(clipId)) continue;
+      video.pause();
+      video.src = '';
+      clipInstanceVideosRef.current.delete(clipId);
+      clipInstanceSourcesRef.current.delete(clipId);
+      clipInstanceAssetsRef.current.delete(clipId);
+    }
+  }, [tracks, mediaAssets, videoUrl, isMultiTrack]);
+
   // ── Play / pause sync for overlay videos ──────────────────────────────────
   useEffect(() => {
     for (const video of overlayVideoRefs.current.values()) {
@@ -494,9 +579,16 @@ export function StudioCanvas({
   }, [isPlaying, videoUrl, isMultiTrack, playbackDurationMs, onTimeUpdate, onEnded]);
 
   // ── Sync the hidden video (and overlay videos) to the playhead ────────────
+  // In multi-track mode the render loop owns all video seeking, so this effect
+  // only handles the legacy (single-track) path.  Skipping multi-track here
+  // prevents two concurrent seek paths from fighting over the same media
+  // elements, which causes visible flicker.
   useEffect(() => {
     const syncVideoTime = (compMs: number) => {
       currentTimeRef.current = compMs;
+      // In multi-track mode the render loop manages all media elements.
+      if (isMultiTrackRef.current) return;
+
       // The store seeks in composition time; the media elements need source
       // time. `sourceFromComp` also guarantees we never land inside a cut.
       const sourceMs = sourceFromComp(compMs, cutsRef.current);
@@ -529,25 +621,7 @@ export function StudioCanvas({
 
       const video = videoRef.current;
       if (!video || !videoLoaded) return;
-      const activeRecordedClip = isMultiTrackRef.current
-        ? evaluateEditorTimeline(tracksRef.current, compMs).video.find(
-            (item) =>
-              item.track.id === 'track-video' &&
-              !item.clip.payload?.mediaAssetId,
-          )
-        : undefined;
-      const videoSourceMs = activeRecordedClip?.sourceTimeMs ?? sourceMs;
-      const videoTargetSec = videoSourceMs / 1000;
-      if (!activeRecordedClip && isMultiTrackRef.current) {
-        video.pause();
-        return;
-      }
-      const diff = Math.abs(video.currentTime * 1000 - videoSourceMs);
-      if (isMultiTrackRef.current) {
-        if (diff > 50) video.currentTime = videoTargetSec;
-        if (!video.paused) video.pause();
-        return;
-      }
+      const diff = Math.abs(video.currentTime * 1000 - sourceMs);
       if (!isPlayingRef.current) {
         if (diff > 50) video.currentTime = targetSec;
         return;
@@ -592,7 +666,7 @@ export function StudioCanvas({
             ? Math.max(0.1, playbackRateRef.current)
             : 1;
           currentTimeRef.current = Math.min(
-            playbackDurationMs,
+            playbackDurationMs ?? Infinity,
             currentTimeRef.current + elapsed * rate,
           );
           frameClockRef.current = now;
@@ -678,35 +752,74 @@ export function StudioCanvas({
       }
 
       const evaluatedTimeline = evaluateEditorTimeline(tracksRef.current, compMs);
+
+      // ── Audio playback ──────────────────────────────────────────────
+      if (isMultiTrackRef.current && evaluatedTimeline.audio.length > 0) {
+        if (!audioMixerRef.current) {
+          audioMixerRef.current = new StudioAudioMixer();
+        }
+        const rate = Number.isFinite(playbackRateRef.current)
+          ? Math.max(0.1, playbackRateRef.current)
+          : 1;
+        audioMixerRef.current.playAt(
+          compMs,
+          evaluatedTimeline.audio,
+          tracksRef.current,
+          isPlayingRef.current ? rate : 0,
+        );
+      } else if (audioMixerRef.current) {
+        audioMixerRef.current.stop();
+      }
+
       const activeVideoAssetIds = new Set<string>();
+      const activeVideoClipIds = new Set<string>();
       for (const item of evaluatedTimeline.video) {
         if (item.itemType !== 'video') continue;
         const assetId = item.clip.payload?.mediaAssetId;
+        activeVideoClipIds.add(item.clip.id);
         if (assetId) activeVideoAssetIds.add(assetId);
         const isRecordedSource = !assetId && item.track.id === 'track-video';
         const media = assetId
-          ? clipAssetsRef.current.get(assetId)?.element
+          ? clipInstanceAssetsRef.current.get(item.clip.id)?.element ?? clipAssetsRef.current.get(assetId)?.element
           : isRecordedSource
-            ? video
+            ? clipInstanceAssetsRef.current.get(item.clip.id)?.element ?? video
             : undefined;
         if (!(media instanceof HTMLVideoElement) || !(media.duration > 0)) continue;
         const sourceRate = item.clip.durationMs > 0 && item.clip.sourceDurationMs > 0
           ? item.clip.sourceDurationMs / item.clip.durationMs
           : item.clip.payload?.speed ?? 1;
-        media.playbackRate = Number.isFinite(sourceRate)
-          ? Math.max(0.0625, Math.min(16, sourceRate))
+        const effectiveRate = sourceRate * playbackRateRef.current * (item.transition ? 0.5 : 1);
+        const clampedRate = Number.isFinite(effectiveRate) && effectiveRate > 0
+          ? Math.max(0.0625, Math.min(16, effectiveRate))
           : 1;
+        // Only update playbackRate when it actually changes. Setting it every
+        // frame forces the decoder to reconfigure, causing visible flicker.
+        if (Math.abs(media.playbackRate - clampedRate) > 0.01) {
+          media.playbackRate = clampedRate;
+        }
         const seekTo = Math.max(
           0,
           Math.min(item.sourceTimeMs / 1000, Math.max(0, media.duration - 0.05)),
         );
-        if (Math.abs(media.currentTime - seekTo) > 0.08) media.currentTime = seekTo;
-        if (isPlayingRef.current && !isRecordedSource && media.paused) void media.play().catch(() => {});
-        if (isMultiTrackRef.current && isRecordedSource && !media.paused) media.pause();
-        if (!isPlayingRef.current && !media.paused) media.pause();
+        // During playback, let the video element advance on its own instead of
+        // seeking every frame. Seeking a playing video forces the decoder to
+        // discard frames, causing visible flicker.  Only seek when paused or
+        // when the drift exceeds a frame budget.
+        const shouldPlay = isPlayingRef.current;
+        const seekDiff = Math.abs(media.currentTime - seekTo);
+        if (!shouldPlay && seekDiff > 0.08) media.currentTime = seekTo;
+        if (shouldPlay && media.paused) {
+          // On initial play or after a pause, seek to the correct position
+          media.currentTime = seekTo;
+          void media.play().catch(() => {});
+        }
+        if (!shouldPlay && !media.paused) media.pause();
       }
       for (const [assetId, media] of clipVideosRef.current) {
-        if (!activeVideoAssetIds.has(assetId) && !media.paused) media.pause();
+        if ((isMultiTrackRef.current || !activeVideoAssetIds.has(assetId)) && !media.paused) media.pause();
+      }
+      for (const [clipId, media] of clipInstanceVideosRef.current) {
+        if (!activeVideoClipIds.has(clipId) && !media.paused) media.pause();
       }
 
       const input: StudioComposeInput = {
@@ -727,6 +840,7 @@ export function StudioCanvas({
         glowGradient: glow.value,
         tracks: tracksRef.current,
         clipAssets: clipAssetsRef.current,
+        clipInstances: clipInstanceAssetsRef.current,
         compTimeMs: compMs,
         clipTransformPreview: clipTransformPreviewRef.current,
         drawWindowChrome: (chromeCtx, frame) => {
@@ -993,28 +1107,50 @@ export function StudioCanvas({
         </video>
       )}
 
-      {/* Render Canvas */}
-      <canvas
-        ref={canvasRef}
-        width={canvasDims.width}
-        height={canvasDims.height}
-        className="w-full h-full object-contain touch-none select-none cursor-crosshair"
-        onPointerDown={handleCanvasPointerDown}
-      />
-
-      {selectedGizmo && (
-        <StudioCanvasTransformGizmo
-          key={selectedGizmo.clip.id}
-          bbox={selectedGizmo.geometry.bbox}
-          transform={selectedGizmo.geometry.transform}
-          origin={selectedGizmo.geometry.origin}
-          zoom={selectedGizmo.zoom}
-          disabled={isPlaying || selectedGizmo.track.locked}
-          getCanvasPoint={getCanvasPoint}
-          onPreview={handleGizmoPreview}
-          onCommit={handleGizmoCommit}
+      {/* Render Canvas + Gizmo overlay */}
+      <div className="relative w-full h-full flex items-center justify-center">
+        <canvas
+          ref={canvasRef}
+          width={canvasDims.width}
+          height={canvasDims.height}
+          className="w-full h-full object-contain touch-none select-none cursor-crosshair"
+          onPointerDown={handleCanvasPointerDown}
         />
-      )}
+
+        {selectedGizmo && (
+          <div
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+            style={{
+              // Match the canvas's object-contain scaling so the gizmo overlay
+              // aligns with the visual canvas content, not the full wrapper.
+              width: '100%',
+              height: '100%',
+            }}
+          >
+            <div
+              className="relative w-full h-full"
+              style={{
+                // Force the same aspect ratio so the inner div matches the
+                // canvas's visual bounds after object-contain letterboxing.
+                aspectRatio: `${canvasDims.width} / ${canvasDims.height}`,
+              }}
+            >
+              <StudioCanvasTransformGizmo
+                key={selectedGizmo.clip.id}
+                bbox={selectedGizmo.geometry.bbox}
+                transform={selectedGizmo.geometry.transform}
+                origin={selectedGizmo.geometry.origin}
+                zoom={selectedGizmo.zoom}
+                disabled={isPlaying || selectedGizmo.track.locked}
+                viewBox={{ width: canvasDims.width, height: canvasDims.height }}
+                getCanvasPoint={getCanvasPoint}
+                onPreview={handleGizmoPreview}
+                onCommit={handleGizmoCommit}
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Placeholder when there is nothing to preview yet. */}
       {showBlankPlaceholder && (

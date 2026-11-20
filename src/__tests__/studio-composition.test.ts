@@ -57,13 +57,14 @@ describe('Studio composition scenes', () => {
     expect(mobile.layouts['9:16'].fit).toBe('contain');
   });
 
-  it('rejects a comparison scene without two recordings', () => {
-    expect(() =>
-      createStudioCompositionDocument({
-        sceneId: 'desktop-mobile-comparison',
-        takes: [takes[0]],
-      }),
-    ).toThrow(/needs at least 2 recordings/);
+  it('allows creating a comparison scene with a single recording (blank compositions allowed)', () => {
+    const composition = createStudioCompositionDocument({
+      sceneId: 'desktop-mobile-comparison',
+      takes: [takes[0]],
+    });
+    // Only one layer since only one take was provided
+    expect(composition.layers).toHaveLength(1);
+    expect(composition.layers[0].sourceId).toBe(takes[0].id);
   });
 
   it('rejects reusing one recording for both comparison surfaces', () => {

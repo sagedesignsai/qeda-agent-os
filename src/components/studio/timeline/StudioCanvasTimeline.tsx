@@ -104,9 +104,27 @@ export function StudioCanvasTimeline({
         if (targetTrack?.type === clipData.trackType) targetTrackId = targetTrack.id;
       }
 
-      if (onInsertClip) onInsertClip(clipData, dropTimeMs, targetTrackId);
-      else timelineStore.addClip(clipData.trackType, { ...clipData, startMs: dropTimeMs, targetTrackId });
-      toast.success(`Added ${clipData.name} to ${clipData.trackType} track`);
+      if (onInsertClip) {
+        onInsertClip(clipData, dropTimeMs, targetTrackId);
+      } else if (clipData.trackType === 'transitions') {
+        const transition = timelineStore.addTransitionClip({
+          transitionType: clipData.payload?.transitionType ?? 'fade',
+          durationMs: clipData.durationMs,
+          startMs: dropTimeMs,
+          name: clipData.name,
+          color: clipData.color,
+          targetTrackId,
+        });
+        if (!transition) {
+          toast.error('Place a transition at a cut between adjacent clips on one video track.');
+          return;
+        }
+      } else {
+        timelineStore.addClip(clipData.trackType, { ...clipData, startMs: dropTimeMs, targetTrackId });
+      }
+      if (!onInsertClip) {
+        toast.success(`Added ${clipData.name} to ${clipData.trackType} track`);
+      }
     } catch {
       // Ignore parse errors
     }

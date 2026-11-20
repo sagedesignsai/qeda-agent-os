@@ -124,7 +124,7 @@ describe('Studio Canvas Enhancements', () => {
         />,
       );
 
-      expect(screen.getByText('Blank Showcase Canvas')).toBeInTheDocument();
+      expect(screen.getByText('Empty Canvas')).toBeInTheDocument();
     });
   });
 

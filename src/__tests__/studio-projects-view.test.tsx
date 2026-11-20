@@ -110,10 +110,8 @@ describe('StudioProjectsView & Components', () => {
       </SidebarProvider>,
     );
 
-    expect(screen.getByText('Studio Projects')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Toggle Sidebar' }),
-    ).toBeInTheDocument();
+    // PageHeader shows 'Showcase Studio' crumb instead of 'Studio Projects' heading
+    expect(screen.getByText('Showcase Studio')).toBeInTheDocument();
     expect(screen.getByText('2 projects')).toBeInTheDocument();
 
     expect(screen.getByText('Demo Release v1.0')).toBeInTheDocument();

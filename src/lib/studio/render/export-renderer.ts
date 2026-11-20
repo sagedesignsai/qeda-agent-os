@@ -55,7 +55,7 @@ import {
   drawDeviceFrameFooter,
 } from '@/components/studio/renderers/device-frames';
 import { drawMotionCard } from '@/components/studio/renderers/motion-cards';
-import type { StudioTake } from '../types';
+import type { StudioMediaAsset, StudioTake, TimelineTrack } from '../types';
 import {
   compositionDurationMs,
   normalizeCuts,
@@ -65,6 +65,7 @@ import { WebMMuxer } from './webm-muxer';
 import { convertTakeToTimeline, extractZoomsFromTracks } from '../timeline/convert';
 import { evaluateEditorTimeline } from '../timeline/evaluate';
 import { studioMediaAssetUrl } from '../media';
+import { computeWaveformPeaks, decodeAudioSource, mixAudioSamples } from '../audio/mixer';
 
 export interface RenderComposedVideoOptions {
   onProgress?: (progressRatio: number, statusText: string) => void;
@@ -314,6 +315,92 @@ export async function renderComposedStudioVideo(
     }
   }
 
+  // A clip placement owns its decoder during export. The same source can be
+  // used on both sides of a transition at different source times, so sharing
+  // one video element by asset ID would make the clips seek over one another.
+  const clipInstances = new Map<string, StudioOverlayAsset>();
+  const mediaAssetById = new Map<string, StudioMediaAsset>();
+  for (const asset of take.mediaAssets ?? []) mediaAssetById.set(asset.id, asset);
+  const transitionParticipantIds = new Set(
+    timelineTracks
+      .filter((track) => track.type === 'transitions')
+      .flatMap((track) => track.clips.flatMap((clip) => [
+        clip.payload?.fromClipId,
+        clip.payload?.toClipId,
+      ]))
+      .filter((clipId): clipId is string => Boolean(clipId)),
+  );
+  const videoClips = timelineTracks
+    .filter((track) => track.type === 'video')
+    .flatMap((track) => track.clips.map((clip) => ({ track, clip })))
+    .filter(({ clip }) => clip.itemType !== 'image' && transitionParticipantIds.has(clip.id));
+  await Promise.all(videoClips.map(async ({ track, clip }) => {
+    const assetId = clip.payload?.mediaAssetId;
+    const asset = assetId ? mediaAssetById.get(assetId) : undefined;
+    const sourceUrl = asset?.kind === 'video'
+      ? studioMediaAssetUrl(asset.id)
+      : !assetId && track.id === 'track-video' && video
+        ? video.src
+        : null;
+    if (!sourceUrl) return;
+
+    await new Promise<void>((resolve) => {
+      const clipVideo = document.createElement('video');
+      clipVideo.crossOrigin = 'anonymous';
+      clipVideo.muted = true;
+      clipVideo.preload = 'auto';
+      clipVideo.onloadedmetadata = () => {
+        if (clipVideo.videoWidth > 0) {
+          clipInstances.set(clip.id, {
+            element: clipVideo,
+            width: clipVideo.videoWidth,
+            height: clipVideo.videoHeight,
+          });
+        }
+        resolve();
+      };
+      clipVideo.onerror = () => resolve();
+      clipVideo.src = sourceUrl;
+    });
+  }));
+
+  // 3.5. Decode audio for all audio clips on the timeline
+  const audioSampleRate = 48000;
+  const audioChannels = 2;
+  let hasAudioClips = timelineTracks.some(
+    (track) => track.type === 'audio' && track.clips.length > 0 && !track.muted,
+  );
+
+  if (hasAudioClips) {
+    options?.onProgress?.(0.08, 'Decoding audio tracks...');
+    const audioDecodePromises: Promise<void>[] = [];
+    for (const track of timelineTracks) {
+      if (track.type !== 'audio' || track.muted) continue;
+      for (const clip of track.clips) {
+        const assetId = clip.payload?.mediaAssetId;
+        if (!assetId || clip.payload?.audioBuffer) continue;
+        const asset = mediaAssetById.get(assetId);
+        if (!asset) continue;
+        const url = studioMediaAssetUrl(asset.id);
+        audioDecodePromises.push(
+          decodeAudioSource(url, audioSampleRate)
+            .then((buffer) => {
+              if (buffer) {
+                clip.payload = clip.payload || {};
+                clip.payload.audioBuffer = buffer;
+                // Pre-compute waveform peaks for timeline visualization
+                clip.payload.waveformPeaks = computeWaveformPeaks(buffer);
+              }
+            })
+            .catch(() => {
+              // Skip clips that fail to decode
+            }),
+        );
+      }
+    }
+    await Promise.all(audioDecodePromises);
+  }
+
   // 4. Detect VideoEncoder codec
   options?.onProgress?.(0.1, 'Initializing video encoder...');
   const { codec: encoderCodec, muxerCodec } = await detectVideoEncoderCodec(
@@ -330,6 +417,8 @@ export async function renderComposedStudioVideo(
     height: dims.height,
     codec: muxerCodec,
     fps,
+    audioSampleRate: hasAudioClips ? audioSampleRate : 0,
+    audioChannels: hasAudioClips ? audioChannels : 0,
     onChunk: (chunk) => {
       const currentIsFirst = isFirstChunk;
       isFirstChunk = false;
@@ -388,6 +477,39 @@ export async function renderComposedStudioVideo(
     framerate: fps,
     latencyMode: 'quality',
   });
+
+  // 6.5. Setup AudioEncoder for multitrack audio mixing
+  let audioEncoder: AudioEncoder | null = null;
+  const encodedAudioChunks: Array<{
+    data: Uint8Array;
+    timestampMs: number;
+  }> = [];
+  let audioEncoderError: Error | null = null;
+
+  if (hasAudioClips && typeof AudioEncoder !== 'undefined') {
+    try {
+      audioEncoder = new AudioEncoder({
+        output: (chunk) => {
+          const data = new Uint8Array(chunk.byteLength);
+          chunk.copyTo(data);
+          const timestampMs = chunk.timestamp / 1000; // μs → ms
+          encodedAudioChunks.push({ data, timestampMs });
+        },
+        error: (err) => {
+          audioEncoderError = err;
+        },
+      });
+      audioEncoder.configure({
+        codec: 'opus',
+        sampleRate: audioSampleRate,
+        numberOfChannels: audioChannels,
+        bitrate: 128_000,
+      });
+    } catch {
+      // AudioEncoder not supported; fall back to video-only export
+      hasAudioClips = false;
+    }
+  }
 
   // 7. Dead-air cuts, pre-mapped from composition time back to source time.
   //    Sorting is done by `normalizeCuts`, which also merges overlaps so a
@@ -504,8 +626,10 @@ export async function renderComposedStudioVideo(
     for (const item of evaluatedTimeline.video) {
       if (item.itemType !== 'video') continue;
       const media = item.clip.payload?.mediaAssetId
-        ? clipAssets.get(item.clip.payload.mediaAssetId)?.element
-        : undefined;
+        ? clipInstances.get(item.clip.id)?.element ?? clipAssets.get(item.clip.payload.mediaAssetId)?.element
+        : item.track.id === 'track-video'
+          ? clipInstances.get(item.clip.id)?.element ?? undefined
+          : undefined;
       if (!(media instanceof HTMLVideoElement) || !(media.duration > 0))
         continue;
       const seekSeconds = item.sourceTimeMs / 1000;
@@ -546,6 +670,7 @@ export async function renderComposedStudioVideo(
       glowGradient: radialGlow,
       tracks: timelineTracks,
       clipAssets,
+      clipInstances,
       compTimeMs: currentTimeMs,
       drawWindowChrome: (chromeCtx, frame) => {
         const deviceFrame = take.styling.deviceFrame;
@@ -620,6 +745,46 @@ export async function renderComposedStudioVideo(
       profileTimings.encodeMs.push(performance.now() - tEnc0);
     }
 
+    // Mix and encode audio for this frame
+    if (hasAudioClips && audioEncoder && !audioEncoderError) {
+      const audioClips = evaluatedTimeline.audio;
+      if (audioClips.length > 0) {
+        const framesPerSample = Math.round(audioSampleRate / fps);
+        const mixedSamples = mixAudioSamples(
+          audioClips,
+          timelineTracks,
+          audioSampleRate,
+          framesPerSample,
+        );
+        if (mixedSamples) {
+          // Convert interleaved Float32Array to s16-planar ArrayBuffer for AudioData.
+          // s16-planar stores each channel in a contiguous plane:
+          //   [ch0_sample0, ch0_sample1, ..., ch1_sample0, ch1_sample1, ...]
+          const numSamples = framesPerSample;
+          const totalBytes = numSamples * audioChannels * 2; // 2 bytes per sample per channel
+          const planeBuffer = new ArrayBuffer(totalBytes);
+          const int16View = new Int16Array(planeBuffer);
+          for (let ch = 0; ch < audioChannels; ch++) {
+            const planeOffset = ch * numSamples;
+            for (let i = 0; i < numSamples; i++) {
+              const sample = Math.max(-1, Math.min(1, mixedSamples[(i * audioChannels) + ch] || 0));
+              int16View[planeOffset + i] = sample < 0 ? Math.floor(sample * 0x8000) : Math.floor(sample * 0x7FFF);
+            }
+          }
+          const audioFrame = new AudioData({
+            format: 's16-planar' as const,
+            sampleRate: audioSampleRate,
+            numberOfChannels: audioChannels,
+            numberOfFrames: numSamples,
+            timestamp: Math.round(currentTimeMs * 1000), // μs
+            data: planeBuffer,
+          });
+          audioEncoder.encode(audioFrame);
+          audioFrame.close();
+        }
+      }
+    }
+
     // Drain encoder and flush muxer every ENCODE_BATCH frames to stream data
     if (frameIndex % ENCODE_BATCH === 0 || frameIndex === totalFrames) {
       const tDrain0 = profileTimings ? performance.now() : 0;
@@ -639,6 +804,12 @@ export async function renderComposedStudioVideo(
       while (encodedFrames.length > 0) {
         const frame = encodedFrames.shift()!;
         muxer.addFrame(frame.data, frame.timestampMs, frame.isKeyframe);
+      }
+
+      // Pass all freshly encoded audio chunks to the muxer
+      while (encodedAudioChunks.length > 0) {
+        const audioChunk = encodedAudioChunks.shift()!;
+        muxer.addAudioBlock(audioChunk.data, audioChunk.timestampMs);
       }
 
       // Wait for any in-flight IPC calls before continuing to avoid
@@ -665,6 +836,12 @@ export async function renderComposedStudioVideo(
 
   // 10. Finalize
   encoder.close();
+  if (audioEncoder) {
+    try {
+      await audioEncoder.flush();
+    } catch { /* ignore */ }
+    audioEncoder.close();
+  }
   muxer.finalize();
 
   // Wait for all IPC writes to land

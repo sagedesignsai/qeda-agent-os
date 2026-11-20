@@ -49,6 +49,7 @@ type DragMode =
       initialClipStartMs: number;
       initialClipDurationMs: number;
       initialPointerX: number;
+      ripple: boolean;
     }
   | {
       type: 'move_clip';
@@ -56,6 +57,7 @@ type DragMode =
       clipId: string;
       grabOffsetMs: number;
       clipDurationMs: number;
+      originalTrackId: string;
     };
 
 export function TimelineCanvasViewport({
@@ -80,6 +82,7 @@ export function TimelineCanvasViewport({
     activeTool,
     snappingEnabled,
     selectedClipId,
+    selectedClipIds,
     isPlaying,
   } = useTimelineState();
 
@@ -94,6 +97,12 @@ export function TimelineCanvasViewport({
   const currentTimeMsRef = useRef(timelineStore.getState().currentTimeMs);
   const snapLineMsRef = useRef<number | null>(null);
   const hoverBladeXRef = useRef<number | null>(null);
+  const hoverCutTransitionRef = useRef<{
+    cutMs: number;
+    trackId: string;
+    fromClipId: string;
+    toClipId: string;
+  } | null>(null);
 
   // Drag interaction state
   const dragModeRef = useRef<DragMode>({ type: 'none' });
@@ -298,7 +307,7 @@ export function TimelineCanvasViewport({
         // Viewport frustum culling
         if (clipX + clipW < -10 || clipX > width + 10) return;
 
-        const isSelected = clip.id === selectedClipId;
+        const isSelected = clip.id === selectedClipId || selectedClipIds.has(clip.id);
         const radius = 5;
 
         // Clip container path (rounded rect)
@@ -528,11 +537,47 @@ export function TimelineCanvasViewport({
           ctx.fillStyle = '#0c4a6e'; // Deep ocean blue
           ctx.fillRect(clipX, clipY, clipW, clipH);
 
-          if (audioPeaks && audioPeaks.length > 0 && durationMs > 0) {
+          const clipPeaks = clip.payload?.waveformPeaks;
+          if (clipPeaks && clipPeaks.length > 0) {
+            // Per-clip waveform from decoded audio buffer
             const centerY = clipY + clipH / 2;
             const maxAmp = clipH / 2 - 3;
 
             // Viewport frustum culling for waveform bars
+            const barWidth = 2;
+            const barGap = 1;
+            const stepPx = barWidth + barGap;
+
+            const startX = Math.max(clipX, 0);
+            const endX = Math.min(clipX + clipW, width);
+
+            if (startX < endX) {
+              ctx.fillStyle = '#38bdf8'; // Sky-400
+              ctx.beginPath();
+
+              const firstOffset = (startX - clipX) % stepPx;
+              const firstBx =
+                startX + (firstOffset === 0 ? 0 : stepPx - firstOffset);
+
+              for (let bx = firstBx; bx < endX; bx += stepPx) {
+                const progressAlongClip = (bx - clipX) / clipW;
+                const peakIdx = Math.floor(
+                  progressAlongClip * clipPeaks.length,
+                );
+                const amp = clipPeaks[Math.min(peakIdx, clipPeaks.length - 1)] ?? 0.1;
+
+                const barH = Math.max(2, amp * maxAmp);
+                ctx.rect(bx, centerY - barH, barWidth, barH * 2);
+              }
+
+              // Single batched draw call for all visible bars
+              ctx.fill();
+            }
+          } else if (audioPeaks && audioPeaks.length > 0 && durationMs > 0) {
+            // Fallback: use global audio peaks from the recording
+            const centerY = clipY + clipH / 2;
+            const maxAmp = clipH / 2 - 3;
+
             const barWidth = 2;
             const barGap = 1;
             const stepPx = barWidth + barGap;
@@ -561,7 +606,6 @@ export function TimelineCanvasViewport({
                 ctx.rect(bx, centerY - barH, barWidth, barH * 2);
               }
 
-              // Single batched draw call for all visible bars
               ctx.fill();
             }
           } else {
@@ -583,7 +627,7 @@ export function TimelineCanvasViewport({
           ctx.fillStyle = '#7dd3fc';
           ctx.font = '500 10px sans-serif';
           ctx.textBaseline = 'middle';
-          ctx.fillText('Voice / Mic', clipX + 10, clipY + 12);
+          ctx.fillText(clip.name || 'Voice / Mic', clipX + 10, clipY + 12);
         }
 
         ctx.restore();
@@ -708,6 +752,43 @@ export function TimelineCanvasViewport({
       }
     }
 
+    // 6.5. Transition Hover Indicator (pink dashed line with icon)
+    const hoverCut = hoverCutTransitionRef.current;
+    if (hoverCut) {
+      const cutX = hoverCut.cutMs * zoomPxPerMs - scrollX;
+      if (cutX >= 0 && cutX <= width) {
+        // Find the track's Y position
+        const track = tracks.find((t) => t.id === hoverCut.trackId);
+        if (track) {
+          const trackIndex = tracks.indexOf(track);
+          const trackY = rulerHeight + trackIndex * trackHeight - scrollYRef.current;
+          ctx.save();
+          // Dashed vertical line
+          ctx.strokeStyle = 'rgba(219, 39, 119, 0.8)'; // Pink-600
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.shadowColor = 'rgba(219, 39, 119, 0.5)';
+          ctx.shadowBlur = 6;
+          ctx.beginPath();
+          ctx.moveTo(cutX, trackY);
+          ctx.lineTo(cutX, trackY + trackHeight);
+          ctx.stroke();
+          // Transition icon (double arrow) at center of track
+          const iconY = trackY + trackHeight / 2;
+          ctx.fillStyle = '#db2777'; // Pink-600
+          ctx.beginPath();
+          ctx.roundRect(cutX - 14, iconY - 10, 28, 20, 4);
+          ctx.fill();
+          ctx.fillStyle = '#fff1f2';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('↔', cutX, iconY);
+          ctx.restore();
+        }
+      }
+    }
+
     ctx.restore(); // Restore tracks area clip
 
     // 7. Playhead Needle & Scrubber Head (Enhanced Visibility with Glow)
@@ -758,6 +839,7 @@ export function TimelineCanvasViewport({
     tracks,
     zoomPxPerMs,
     selectedClipId,
+    selectedClipIds,
     activeTool,
     audioPeaks,
     thumbnails,
@@ -1005,6 +1087,13 @@ export function TimelineCanvasViewport({
         return;
       }
 
+      // Shift+Click toggles multi-select without starting a drag
+      if (e.shiftKey) {
+        timelineStore.toggleSelectedClipId(hit.clip.id);
+        renderCanvas();
+        return;
+      }
+
       // Select clip & record snapshot for undo
       timelineStore.setSelectedClipId(hit.clip.id);
       timelineStore.recordSnapshot();
@@ -1017,6 +1106,7 @@ export function TimelineCanvasViewport({
         clipId: hit.clip.id,
         grabOffsetMs: pointerTimeMs - hit.clip.startMs,
         clipDurationMs: hit.clip.durationMs,
+        originalTrackId: hit.track.id,
       };
       return;
     }
@@ -1034,11 +1124,24 @@ export function TimelineCanvasViewport({
         initialClipStartMs: hit.clip.startMs,
         initialClipDurationMs: hit.clip.durationMs,
         initialPointerX: hit.pointerX,
+        ripple: e.shiftKey,
       };
       return;
     }
 
-    // Clicked empty background
+    // Clicked empty background — check if hovering over a cut for transition insertion
+    if (hoverCutTransitionRef.current) {
+      const cut = hoverCutTransitionRef.current;
+      timelineStore.seek(cut.cutMs, true);
+      onSeek?.(cut.cutMs);
+      timelineStore.addTransitionClip({
+        transitionType: 'fade',
+        durationMs: 500,
+      });
+      hoverCutTransitionRef.current = null;
+      renderCanvas();
+      return;
+    }
     timelineStore.setSelectedClipId(null);
   };
 
@@ -1091,11 +1194,35 @@ export function TimelineCanvasViewport({
         snapLineMsRef.current = null;
       }
 
-      timelineStore.moveClip(
-        currentDrag.trackId,
-        currentDrag.clipId,
-        finalStartMs,
-      );
+      // Detect if dragged over a different track (cross-track move)
+      const hit = hitTest(e.clientX, e.clientY);
+      if (hit && (hit.type === 'track_lane' || hit.type === 'clip_body' || hit.type === 'clip_edge')) {
+        const targetTrackId = hit.track.id;
+        if (targetTrackId !== currentDrag.originalTrackId) {
+          // Cross-track move
+          const success = timelineStore.moveClipToTrack(
+            currentDrag.clipId,
+            currentDrag.originalTrackId,
+            targetTrackId,
+            finalStartMs,
+          );
+          if (success) {
+            currentDrag.trackId = targetTrackId;
+          }
+        } else {
+          timelineStore.moveClip(
+            currentDrag.trackId,
+            currentDrag.clipId,
+            finalStartMs,
+          );
+        }
+      } else {
+        timelineStore.moveClip(
+          currentDrag.trackId,
+          currentDrag.clipId,
+          finalStartMs,
+        );
+      }
       scheduleRender();
       return;
     }
@@ -1105,12 +1232,21 @@ export function TimelineCanvasViewport({
       const { snappedMs, didSnap } = findSnapTarget(rawEdgeMs);
       snapLineMsRef.current = didSnap ? snappedMs : null;
 
-      timelineStore.trimClip(
-        currentDrag.trackId,
-        currentDrag.clipId,
-        currentDrag.edge,
-        snappedMs,
-      );
+      if (currentDrag.ripple) {
+        timelineStore.rippleTrimClip(
+          currentDrag.trackId,
+          currentDrag.clipId,
+          currentDrag.edge,
+          snappedMs,
+        );
+      } else {
+        timelineStore.trimClip(
+          currentDrag.trackId,
+          currentDrag.clipId,
+          currentDrag.edge,
+          snappedMs,
+        );
+      }
       scheduleRender();
       return;
     }
@@ -1127,6 +1263,42 @@ export function TimelineCanvasViewport({
       } else {
         canvas.style.cursor = 'default';
       }
+
+      // ── Transition Hover Detection ────────────────────────────────────────
+      // Detect when hovering near a cut between two adjacent video clips
+      if (hit && hit.type === 'track_lane' && hit.track.type === 'video') {
+        const hoverTimeMs = (pointerX + scrollX) / zoomPxPerMs;
+        const CUT_HOVER_THRESHOLD_MS = 50; // How close to the cut to trigger
+        const clips = hit.track.clips.sort((a, b) => a.startMs - b.startMs);
+        for (let i = 0; i < clips.length - 1; i++) {
+          const fromClip = clips[i];
+          const toClip = clips[i + 1];
+          const cutMs = fromClip.startMs + fromClip.durationMs;
+          // Check if clips are adjacent (within small gap)
+          if (Math.abs(toClip.startMs - cutMs) < 100) {
+            const dist = Math.abs(hoverTimeMs - cutMs);
+            if (dist < CUT_HOVER_THRESHOLD_MS) {
+              hoverCutTransitionRef.current = {
+                cutMs,
+                trackId: hit.track.id,
+                fromClipId: fromClip.id,
+                toClipId: toClip.id,
+              };
+              canvas.style.cursor = 'pointer';
+              scheduleRender();
+              return;
+            }
+          }
+        }
+      }
+
+      // Clear hover cut if not near a cut
+      if (hoverCutTransitionRef.current) {
+        hoverCutTransitionRef.current = null;
+        scheduleRender();
+      }
+    } else {
+      hoverCutTransitionRef.current = null;
     }
   };
 
@@ -1185,7 +1357,8 @@ export function TimelineCanvasViewport({
         e.preventDefault();
         onTogglePlay?.();
       } else if (e.code === 'Delete' || e.code === 'Backspace') {
-        timelineStore.deleteSelectedClip();
+        e.preventDefault();
+        timelineStore.deleteSelectedClip(e.shiftKey);
       } else if ((e.metaKey || e.ctrlKey) && e.code === 'KeyB') {
         e.preventDefault();
         timelineStore.splitAtPlayhead();

@@ -32,6 +32,8 @@ export interface TraceTransformGizmoProps {
   previewTransform?: GizmoTransform | null;
   previewOrigin?: GizmoPoint | null;
   readout?: string | null;
+  /** Canvas/artboard pixel dimensions for the SVG viewBox. */
+  viewBox?: { width: number; height: number };
   onHandlePointerDown?: (
     handle: GizmoHandle,
     event: React.PointerEvent<SVGElement>,
@@ -66,6 +68,7 @@ export function TraceTransformGizmo(props: TraceTransformGizmoProps) {
     previewTransform = null,
     previewOrigin = null,
     readout = null,
+    viewBox,
     onHandlePointerDown,
     onHandlePointerMove,
     onHandlePointerUp,
@@ -116,6 +119,7 @@ export function TraceTransformGizmo(props: TraceTransformGizmoProps) {
     <svg
       data-stage-overlay
       aria-hidden
+      viewBox={viewBox ? `0 0 ${viewBox.width} ${viewBox.height}` : undefined}
       style={{
         position: 'absolute',
         inset: 0,

@@ -24,6 +24,7 @@ import {
   PlusIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -213,6 +214,19 @@ export function TimelineTrackHeaders({
                       {track.muted ? 'Unmute Audio' : 'Mute Audio'}
                     </TooltipContent>
                   </Tooltip>
+                )}
+                {/* Volume Slider (Audio only) */}
+                {track.type === 'audio' && (
+                  <div className="w-10 shrink-0">
+                    <Slider
+                      defaultValue={[track.volume ?? 1]}
+                      max={1}
+                      step={0.01}
+                      value={[(track.volume ?? 1)]}
+                      onValueChange={([v]) => timelineStore.setTrackVolume(track.id, v)}
+                      className="hover:cursor-grab"
+                    />
+                  </div>
                 )}
               </div>
             </div>

@@ -35,6 +35,8 @@ interface StudioCanvasTransformGizmoProps {
   origin: GizmoPoint;
   zoom: number;
   disabled: boolean;
+  /** Canvas/artboard pixel dimensions for the SVG viewBox. */
+  viewBox?: { width: number; height: number };
   getCanvasPoint: (clientX: number, clientY: number) => GizmoPoint;
   onPreview: (preview: { transform: GizmoTransform; origin: GizmoPoint } | null) => void;
   onCommit: (transform: GizmoTransform, origin: GizmoPoint) => void;
@@ -46,6 +48,7 @@ export function StudioCanvasTransformGizmo({
   origin,
   zoom,
   disabled,
+  viewBox,
   getCanvasPoint,
   onPreview,
   onCommit,
@@ -158,6 +161,7 @@ export function StudioCanvasTransformGizmo({
       origin={origin}
       zoom={zoom}
       disabled={disabled}
+      viewBox={viewBox}
       previewTransform={preview?.transform ?? null}
       previewOrigin={preview?.origin ?? null}
       readout={preview?.readout ?? null}

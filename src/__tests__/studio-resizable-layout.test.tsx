@@ -189,8 +189,8 @@ describe('Studio Resizable Panels Layout', () => {
     expect(screen.getByRole('button', { name: 'Effects' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Audio' })).toBeInTheDocument();
 
-    // Verify right inspector
-    expect(screen.getByText('Studio Inspector')).toBeInTheDocument();
+    // Verify right inspector (header shows 'Clip Properties' or 'Global Settings')
+    expect(screen.getByText('Global Settings')).toBeInTheDocument();
 
     // Verify bottom timeline toolbar and track headers
     expect(screen.getByText('Tracks')).toBeInTheDocument();
@@ -230,14 +230,12 @@ describe('Studio Resizable Panels Layout', () => {
   it('renders timeline track badges and controls', () => {
     renderStudioEditor();
 
-    // Track names track what each track now carries: `effects` holds both
-    // kinetic zooms and canvas FX, `captions` holds subtitles and text, and an
-    // `overlays` track appears only once a take actually has media overlays —
-    // this take has none, so it keeps the historical four-track shape.
-    expect(screen.getByText('Effects & Zooms')).toBeInTheDocument();
-    expect(screen.getByText('Subtitles & Text')).toBeInTheDocument();
-    expect(screen.getByText('Primary Video')).toBeInTheDocument();
-    expect(screen.getByText('Audio Waveform')).toBeInTheDocument();
+    // Track names appear in the timeline headers; 'Effects' also appears in
+    // the content panel tab, so we use getAllByText to accept multiple matches.
+    expect(screen.getAllByText('Effects').length).toBeGreaterThan(0);
+    expect(screen.getByText('Text & Captions')).toBeInTheDocument();
+    expect(screen.getByText('Video 1')).toBeInTheDocument();
+    expect(screen.getByText('Audio 1')).toBeInTheDocument();
     expect(screen.queryByText('Media Overlays')).not.toBeInTheDocument();
   });
 });

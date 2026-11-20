@@ -306,12 +306,13 @@ describe('Studio Content Panel & Blank Project Flow', () => {
     }))[0];
     fireEvent.click(addToTimeline);
 
+    // Images are now placed on the video track with mediaAssetId payload
     expect(onAddClip).toHaveBeenCalledWith(
       expect.objectContaining({
-        trackType: 'overlays',
+        trackType: 'video',
         name: 'brand.png',
         payload: expect.objectContaining({
-          filePath: '/project/assets/brand.png',
+          mediaAssetId: expect.any(String),
         }),
       }),
     );

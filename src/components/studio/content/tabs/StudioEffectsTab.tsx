@@ -110,20 +110,21 @@ function buildPresets(): EffectPreset[] {
 
   const transitions: EffectPreset[] = (
     ['fade', 'slide-left', 'slide-right', 'scale'] as StudioCompositionTransitionType[]
-  ).flatMap((transitionType) => (['in', 'out'] as const).map((transitionSide) => ({
-    id: `transition-${transitionType}-${transitionSide}`,
-    title: `${transitionType.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} ${transitionSide}`,
+  ).map((transitionType) => ({
+    id: `transition-${transitionType}`,
+    title: transitionType.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
     category: 'Transitions',
     durationMs: 600,
     preview: <ArrowLeftRightIcon className="w-6 h-6 text-pink-300" />,
     itemData: {
       trackType: 'transitions',
-      name: `${transitionType} ${transitionSide}`,
+      itemType: 'transition',
+      name: `${transitionType} transition`,
       durationMs: 600,
       color: '#db2777',
-      payload: { transitionType, transitionSide },
+      payload: { transitionType },
     },
-  })));
+  }));
 
   return [...zoomPresets, ...canvasEffects, ...transitions];
 }

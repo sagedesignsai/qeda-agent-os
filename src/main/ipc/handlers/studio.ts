@@ -46,13 +46,14 @@ import {
 import { getProject } from '../../db/projects.js';
 import { getSettings } from '../../ai/settings.js';
 import { resolveModel } from '../../ai/provider.js';
-import { transcodeStudioVideo } from '../../studio-export.js';
+import { detectAudioStream, transcodeStudioVideo } from '../../studio-export.js';
 import { processStudioDraft } from '../../studio-draft.js';
 import {
   getActiveStudioRecordingState,
   stopStudioRecording,
 } from '../../studio-recorder.js';
 import { probeTake, ensureOptimizedMedia } from '../../studio-media-prep.js';
+import { compositionDurationMs } from '../../../lib/studio/timeline/ripple.js';
 import {
   generateFilmstrip,
   generateWaveform,
@@ -760,11 +761,17 @@ export function registerStudioHandlers({
         // so ffmpeg merges the audio with the composed video in one pass.
         // If effectiveInputPath IS the original (no composed render), audio is
         // already embedded so no separate merge is needed.
+        // If the composed render already contains audio (multitrack mix), skip
+        // the merge — the rendered audio IS the final mix.
         const hasComposedRender =
           effectiveInputPath === defaultRenderedPath ||
           effectiveInputPath === (renderedVideoPath || '');
+        const renderedHasAudio = hasComposedRender
+          ? await detectAudioStream(effectiveInputPath)
+          : false;
         const audioInputPath =
           hasComposedRender &&
+          !renderedHasAudio &&
           take.videoPath &&
           take.videoPath !== effectiveInputPath
             ? take.videoPath
@@ -779,7 +786,10 @@ export function registerStudioHandlers({
           audioInputPath,
           // The composed render is already cut, so its audio must lose the same
           // ranges. A raw fallback keeps its own length, cuts and all.
-          cuts: hasComposedRender ? take.cuts : undefined,
+          // If the rendered WebM already has audio (multitrack mix), no cuts
+          // are needed — the audio is already mixed at the right length.
+          cuts: hasComposedRender && !renderedHasAudio ? take.cuts : undefined,
+          durationMs: hasComposedRender ? compositionDurationMs(take.durationMs, take.cuts ?? []) : undefined,
         });
 
         // Clean up temporary rendered composition WebM
