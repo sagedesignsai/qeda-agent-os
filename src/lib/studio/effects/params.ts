@@ -311,8 +311,17 @@ export function validateEffectParams(
  */
 export function normalizeEffectParams(
   effectType: StudioEffectType,
-  userParams: Partial<Record<string, number | string | boolean>>,
+  userParams?: Partial<Record<string, number | string | boolean>>,
 ): Record<string, number | string | boolean> {
   const defaults = getDefaultParams(effectType);
-  return { ...defaults, ...userParams };
+  if (!userParams) return defaults;
+  
+  // Filter out undefined values from userParams
+  const filtered: Record<string, number | string | boolean> = {};
+  for (const [key, value] of Object.entries(userParams)) {
+    if (value !== undefined) {
+      filtered[key] = value;
+    }
+  }
+  return { ...defaults, ...filtered };
 }

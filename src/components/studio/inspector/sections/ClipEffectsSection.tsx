@@ -110,8 +110,7 @@ export function ClipEffectsSection({
 
   return (
     <StudioPanelSection
-      title="Effects"
-      icon={<SparklesIcon className="w-3.5 h-3.5" />}
+      title="✦ Effects"
       defaultOpen={false}
     >
       <div className="space-y-2">

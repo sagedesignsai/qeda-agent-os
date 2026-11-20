@@ -855,7 +855,7 @@ export interface ClipEffect {
    *   - Film-Grain: { grainSize: 1.0 }
    *   - Scanlines: { lineSpacing: 2.0 }
    */
-  params: Record<string, number>;
+  params: Record<string, number | string | boolean>;
   /**
    * Render order on this clip (0 = first, 1 = second, etc.).
    * Effects render in ascending order; user can reorder via inspector UI.

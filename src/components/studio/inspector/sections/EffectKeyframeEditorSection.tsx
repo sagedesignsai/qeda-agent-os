@@ -56,6 +56,7 @@ export function EffectKeyframeEditorSection({
       property: keyframeProperty,
       timeMs: localTimeMs,
       value: currentIntensity,
+      easing: 'linear',
     };
 
     const updatedKeyframes = [...(clip.payload?.keyframes ?? []), newKeyframe];
@@ -104,9 +105,8 @@ export function EffectKeyframeEditorSection({
 
   return (
     <StudioPanelSection
-      title={`${effectLabel} Intensity`}
+      title={`⏱ ${effectLabel} Keyframes`}
       defaultOpen={true}
-      collapsible={true}
     >
       <div className="space-y-3">
         {/* Current Value Display */}
