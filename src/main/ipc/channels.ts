@@ -2450,6 +2450,42 @@ export interface IpcChannels {
     req: { contextId: string };
     res: { success: boolean; contextId: string };
   };
+
+  // ── Autonomous Operator ───────────────────────────────────────────────────
+  'autonomous:start-task': {
+    req: { taskId?: string; maxSteps?: number } | void;
+    res: {
+      running: boolean;
+      paused: boolean;
+      currentTaskId: string | null;
+      currentTaskTitle: string | null;
+      stepCount: number;
+      maxSteps: number;
+    };
+  };
+  'autonomous:pause': {
+    req: void;
+    res: {
+      running: boolean;
+      paused: boolean;
+      currentTaskId: string | null;
+      currentTaskTitle: string | null;
+      stepCount: number;
+      maxSteps: number;
+    };
+  };
+  'autonomous:status': {
+    req: void;
+    res: {
+      running: boolean;
+      paused: boolean;
+      currentTaskId: string | null;
+      currentTaskTitle: string | null;
+      stepCount: number;
+      maxSteps: number;
+    };
+  };
+  'autonomous:event': unknown;
 }
 // OpenCode setup types (renderer-facing). Re-exported so the renderer never
 // reaches into the main-process modules directly.

@@ -98,6 +98,11 @@ export const copilotToolPolicies: ToolPolicyMap = {
   listCodeProjects: t('read'),
   listChatSessions: t('read'),
 
+  // ── Motion / Trace / Presence project listing (workspace-resources.ts) ──────
+  listMotionProjects: t('read'),
+  listTraceProjects: t('read'),
+  listPresenceBatches: t('read'),
+
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),
   updatePlanItem: t('write-local'),

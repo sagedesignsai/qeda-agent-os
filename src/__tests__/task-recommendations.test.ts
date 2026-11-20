@@ -22,6 +22,7 @@ function makeTask(overrides: Partial<Task>): Task {
     estimate_mins: 30,
     due_at: null,
     pomodoro_count: 0,
+  autonomous: 0,
     position: 0,
     created_at: 1000,
     updated_at: 1000,

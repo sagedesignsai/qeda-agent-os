@@ -68,6 +68,7 @@ export const studioToolPolicies: ToolPolicyMap = {
   captureScreenshot: t('read'),
   getActiveWindow: t('read'),
   getCursorPosition: t('read'),
+  getAppState: t('read'),
   wait: t('read'),
 
   // Input tools — write-local, auto-approved because the user is present and
@@ -77,7 +78,9 @@ export const studioToolPolicies: ToolPolicyMap = {
   click: t('write-local'),
   doubleClick: t('write-local'),
   typeText: t('write-local'),
+  setValue: t('write-local'),
   pressKey: t('write-local'),
+  hotkey: t('write-local'),
   scroll: t('write-local'),
 
   // ── Professional demo recording (tools/computer-use.ts → studio-recorder) ───

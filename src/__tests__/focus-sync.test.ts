@@ -21,6 +21,7 @@ const TASK: Task = {
   estimate_mins: 25,
   due_at: null,
   pomodoro_count: 0,
+  autonomous: 0,
   created_at: 1000,
   updated_at: 1000,
 };

@@ -40,6 +40,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     estimate_mins: 45,
     project_id: 'proj-1',
     pomodoro_count: 0,
+  autonomous: 0,
     position: 0,
     created_at: 0,
     updated_at: 0,

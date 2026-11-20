@@ -350,6 +350,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   estimate_mins  INTEGER,                      -- rough time estimate, nullable
   project_id     TEXT REFERENCES projects(id) ON DELETE SET NULL,
   pomodoro_count INTEGER NOT NULL DEFAULT 0,   -- completed pomodoros
+  autonomous     INTEGER NOT NULL DEFAULT 0,   -- 1 = eligible for unattended execution
   position       REAL    NOT NULL DEFAULT 0,   -- for manual ordering
   created_at     INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at     INTEGER NOT NULL DEFAULT (unixepoch())
@@ -1602,6 +1603,7 @@ export function applyMigrations(db: {
       'project_id',
       'TEXT REFERENCES projects(id) ON DELETE SET NULL',
     );
+    addColumn('tasks', 'autonomous', 'INTEGER NOT NULL DEFAULT 0');
 
     addColumn(
       'task_blocks',

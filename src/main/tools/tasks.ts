@@ -76,6 +76,7 @@ function serializeTask(task: Task) {
     estimate_mins: task.estimate_mins,
     project_id: task.project_id,
     pomodoro_count: task.pomodoro_count,
+    autonomous: task.autonomous === 1,
     steps: progress.total > 0 ? `${progress.done}/${progress.total}` : null,
   };
 }
@@ -114,6 +115,12 @@ const draftTaskSchema = z.object({
     .describe(
       'Project id from listProjects. Omit to file in the currently active project (the surface scope, else the persisted default); falls back to the Inbox only when there is no active project.',
     ),
+  autonomous: z
+    .boolean()
+    .optional()
+    .describe(
+      'When true, marks the task as eligible for unattended autonomous execution by the Autonomous Operator.',
+    ),
 });
 
 /**
@@ -142,6 +149,7 @@ function createFromDraft(
         ? resolveActiveProjectId()
         : fallbackProjectId),
     status: 'backlog',
+    autonomous: draft.autonomous,
   });
 }
 
@@ -159,10 +167,14 @@ export const listTasksTool = tool({
       .string()
       .optional()
       .describe('Restrict to one project (id from listProjects).'),
+    autonomous: z
+      .boolean()
+      .optional()
+      .describe('When true, only tasks marked for autonomous execution.'),
   }),
-  execute: async ({ status, projectId }) => {
+  execute: async ({ status, projectId, autonomous }) => {
     try {
-      const tasks = listTasks({ status, projectId }).map(serializeTask);
+      const tasks = listTasks({ status, projectId, autonomous }).map(serializeTask);
       return { success: true, count: tasks.length, tasks };
     } catch (err) {
       return { success: false, error: String(err) };
@@ -499,7 +511,7 @@ export const assignTaskToProjectTool = tool({
 
 export const updateTaskTool = tool({
   description:
-    'Change an existing task: title, description, priority, estimate, due date, or status. This modifies work the user already has, so it asks for approval.',
+    'Change an existing task: title, description, priority, estimate, due date, status, or autonomous execution flag. This modifies work the user already has, so it asks for approval.',
   inputSchema: z.object({
     taskId: z.string(),
     title: z.string().optional(),
@@ -514,6 +526,10 @@ export const updateTaskTool = tool({
       .optional()
       .describe('New due date (ISO or unix seconds), or null to clear it.'),
     status: z.enum(['backlog', 'active', 'done']).optional(),
+    autonomous: z
+      .boolean()
+      .optional()
+      .describe('Mark/unmark task as eligible for unattended autonomous execution.'),
   }),
   execute: async ({ taskId, ...patch }) => {
     if (!getTask(taskId)) {
@@ -531,6 +547,8 @@ export const updateTaskTool = tool({
       if (patch.due !== undefined) update.due_at = toEpochSeconds(patch.due);
       if (patch.status !== undefined)
         update.status = patch.status as TaskStatus;
+      if (patch.autonomous !== undefined)
+        update.autonomous = patch.autonomous ? 1 : 0;
 
       updateTask(taskId, update);
       return { success: true, task: serializeTask(getTask(taskId)!) };

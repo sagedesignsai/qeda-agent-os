@@ -1,12 +1,11 @@
 /**
  * tools/computer-use.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * AI tools for computer use: window enumeration, screenshots, mouse/keyboard,
- * and the agent-driven showcase recorder. Input is gated by
- * settings.computerUse (enabled + allowlist) inside the service; the recorder
- * only requires the feature to be enabled, since capturing a screen sends no
- * input anywhere.
- * ─────────────────────────────────────────────────────────────────────────────
+ * AI tools for computer use: semantic inspection, screenshots, mouse/keyboard,
+ * and the agent-driven showcase recorder.
+ *
+ * Phase 1 semantic tools: getAppState, setValue, hotkey, and click accepting
+ * element refs (e.g. "@e3") in addition to screen coordinates.
  */
 
 import { tool } from 'ai';
@@ -119,6 +118,42 @@ export const computerUseTools = {
     },
   }),
 
+  getAppState: tool({
+    description:
+      'Inspect the semantic UI state of an app/window. Returns compact accessibility-tree elements tagged with refs like @e1, @e2 (for use with click/setValue), plus change information when available. Prefer this over pixel guessing for Qeda windows and supported desktop apps.',
+    inputSchema: z.object({
+      app: z
+        .string()
+        .optional()
+        .describe('App name/title hint to inspect (e.g. "qeda" or another app).'),
+      windowId: z
+        .string()
+        .optional()
+        .describe('Optional window id/title hint to target a specific window.'),
+    }),
+    execute: async ({ app, windowId }) => {
+      try {
+        const result = await cu.getAppState({ app, windowId });
+        if (result.error) return blocked(result.error);
+        return {
+          success: true,
+          text: result.text,
+          diff: result.diff,
+          snapshot: result.snapshot
+            ? {
+                app: result.snapshot.app,
+                title: result.snapshot.title,
+                windowId: result.snapshot.windowId,
+                elementCount: Object.keys(result.snapshot.elements || {}).length,
+              }
+            : undefined,
+        };
+      } catch (e) {
+        return blocked((e as Error).message);
+      }
+    },
+  }),
+
   moveMouse: tool({
     description: 'Move the mouse cursor to an absolute screen position.',
     inputSchema: z.object({
@@ -136,15 +171,26 @@ export const computerUseTools = {
   }),
 
   click: tool({
-    description: 'Click at an absolute screen position.',
-    inputSchema: z.object({
-      x: z.number(),
-      y: z.number(),
-      button: z.enum(['left', 'right', 'middle']).optional().default('left'),
-    }),
-    execute: async ({ x, y, button }) => {
+    description:
+      'Click a UI element by semantic ref (preferred, e.g. element "@e3" from getAppState) or by absolute screen coordinates.',
+    inputSchema: z
+      .object({
+        element: z.string().optional().describe('Semantic element ref like "@e3".'),
+        windowId: z.string().optional().describe('Optional window id for element targeting.'),
+        x: z.number().optional(),
+        y: z.number().optional(),
+        button: z.enum(['left', 'right', 'middle']).optional().default('left'),
+      })
+      .refine((v) => !!v.element || (typeof v.x === 'number' && typeof v.y === 'number'), {
+        message: 'Provide either element or both x and y.',
+      }),
+    execute: async ({ element, windowId, x, y, button }) => {
       try {
-        await cu.click(x, y, button as any);
+        if (element) {
+          await cu.click({ element, windowId }, (button as any) ?? 'left');
+        } else {
+          await cu.click({ x: x as number, y: y as number }, (button as any) ?? 'left');
+        }
         return { success: true };
       } catch (e) {
         return blocked((e as Error).message);
@@ -178,6 +224,24 @@ export const computerUseTools = {
     },
   }),
 
+  setValue: tool({
+    description:
+      'Set the value/text of a semantic UI element (preferred over typing when targeting a specific input). Use an element ref from getAppState.',
+    inputSchema: z.object({
+      element: z.string().describe('Semantic element ref like "@e2".'),
+      value: z.string().describe('Value/text to set.'),
+      windowId: z.string().optional().describe('Optional window id for element targeting.'),
+    }),
+    execute: async ({ element, value, windowId }) => {
+      try {
+        await cu.setValue({ element, value, windowId });
+        return { success: true };
+      } catch (e) {
+        return blocked((e as Error).message);
+      }
+    },
+  }),
+
   pressKey: tool({
     description: 'Press a keyboard key with optional modifiers.',
     inputSchema: z.object({
@@ -187,6 +251,22 @@ export const computerUseTools = {
     execute: async ({ key, modifiers }) => {
       try {
         await cu.pressKey(key, modifiers);
+        return { success: true };
+      } catch (e) {
+        return blocked((e as Error).message);
+      }
+    },
+  }),
+
+  hotkey: tool({
+    description:
+      'Trigger a keyboard shortcut/hotkey (e.g. "ctrl+enter", "cmd+c"). Prefer this for app shortcuts over manual key sequences.',
+    inputSchema: z.object({
+      key: z.string().describe('Shortcut string like "ctrl+enter" or "cmd+shift+p".'),
+    }),
+    execute: async ({ key }) => {
+      try {
+        await cu.hotkey(key);
         return { success: true };
       } catch (e) {
         return blocked((e as Error).message);

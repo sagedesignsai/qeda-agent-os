@@ -91,6 +91,7 @@ import { registerTraceSvgAnimationHandlers } from './handlers/trace-svg-animatio
 import { registerThemeHandlers } from './handlers/theme';
 import { registerAssetReferenceHandlers } from './handlers/asset-references';
 import { registerOllamaHandlers } from './handlers/ollama';
+import { registerAutonomousOperatorHandlers } from './handlers/autonomous-operator';
 
 /**
  * Register every request/response handler.
@@ -138,4 +139,5 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerThemeHandlers();
   registerAssetReferenceHandlers({ mainWindow });
   registerOllamaHandlers();
+  registerAutonomousOperatorHandlers({ mainWindow });
 }

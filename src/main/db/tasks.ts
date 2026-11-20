@@ -26,6 +26,8 @@ export interface Task {
   /** Owning project. Defaults to the Inbox so a task always has a home. */
   project_id: string;
   pomodoro_count: number;
+  /** 1 = eligible for unattended autonomous execution. */
+  autonomous: number;
   position: number;
   created_at: number;
   updated_at: number;
@@ -41,6 +43,8 @@ export function listTasks(opts?: {
   status?: TaskStatus;
   /** Narrow to one project; nullish means every project. */
   projectId?: string | null;
+  /** When true, only tasks flagged for autonomous execution. */
+  autonomous?: boolean;
 }): Task[] {
   const where: string[] = [];
   const values: unknown[] = [];
@@ -53,6 +57,9 @@ export function listTasks(opts?: {
     where.push('project_id = ?');
     values.push(opts.projectId);
   }
+  if (opts?.autonomous) {
+    where.push('autonomous = 1');
+  }
 
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
   return getDb()
@@ -60,6 +67,20 @@ export function listTasks(opts?: {
       `SELECT * FROM tasks ${clause} ORDER BY status, position ASC, created_at ASC`,
     )
     .all(...values) as Task[];
+}
+
+/** Next autonomous task eligible for unattended execution. */
+export function getNextAutonomousTask(): Task | null {
+  return (
+    (getDb()
+      .prepare(
+        `SELECT * FROM tasks
+         WHERE autonomous = 1 AND status IN ('backlog', 'active')
+         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, priority ASC, position ASC, created_at ASC
+         LIMIT 1`,
+      )
+      .get() as Task | undefined) ?? null
+  );
 }
 
 /** Get a single task by id. */
@@ -80,6 +101,7 @@ export function createTask(opts: {
   /** Omit to file the task in the Inbox. */
   project_id?: string | null;
   status?: TaskStatus;
+  autonomous?: boolean | number;
 }): Task {
   const id = nanoid();
   const now = Math.floor(Date.now() / 1000);
@@ -95,8 +117,8 @@ export function createTask(opts: {
   getDb()
     .prepare(
       `INSERT INTO tasks
-         (id, title, description, status, priority, due_at, estimate_mins, project_id, position, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, title, description, status, priority, due_at, estimate_mins, project_id, pomodoro_count, autonomous, position, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -107,6 +129,7 @@ export function createTask(opts: {
       opts.due_at ?? null,
       opts.estimate_mins ?? null,
       opts.project_id ?? INBOX_PROJECT_ID,
+      opts.autonomous ? 1 : 0,
       maxPos + 1,
       now,
       now,
@@ -129,6 +152,7 @@ export function updateTask(
       | 'estimate_mins'
       | 'position'
       | 'pomodoro_count'
+      | 'autonomous'
     >
   > & {
     /** `null` un-assigns the task; it is stored as the Inbox. */

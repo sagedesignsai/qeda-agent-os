@@ -31,7 +31,11 @@ export function registerComputerUseHandlers({
     return { ok: true };
   });
   ipcMain.handle('computer-use:click', async (_e, req) => {
-    await cu.click(req.x, req.y, req.button);
+    if (req?.element) {
+      await cu.click({ element: req.element, windowId: req.windowId }, req.button);
+    } else {
+      await cu.click({ x: req.x, y: req.y }, req.button);
+    }
     broadcast();
     return { ok: true };
   });

@@ -166,11 +166,14 @@ export const chatToolPolicies: ToolPolicyMap = {
   captureScreenshot: t('read'),
   getActiveWindow: t('read'),
   getCursorPosition: t('read'),
+  getAppState: t('read'),
   moveMouse: t('write-local'),
   click: t('write-local'),
   doubleClick: t('write-local'),
   typeText: t('write-local'),
+  setValue: t('write-local'),
   pressKey: t('write-local'),
+  hotkey: t('write-local'),
   scroll: t('write-local'),
   wait: t('read'),
 
@@ -218,6 +221,19 @@ export const chatToolPolicies: ToolPolicyMap = {
   listKnowledgePages: t('read'),
   listCodeProjects: t('read'),
   listChatSessions: t('read'),
+
+  // ── Motion / Trace / Presence project listing (workspace-resources.ts) ──────
+  listMotionProjects: t('read'),
+  listTraceProjects: t('read'),
+  listPresenceBatches: t('read'),
+
+  // ── Specialist copilot sub-agents (tools/index.ts) ──────────────────────────
+  // These delegate to domain-specific in-process copilot agents. They are
+  // classified write-local because they produce or modify local project state,
+  // but all changes are within the user's project and are recoverable.
+  motionEdit: t('write-local'),
+  traceEdit: t('write-local'),
+  presenceCoach: t('write-local'),
 
   // ── Planning (tools/plan.ts) ───────────────────────────────────────────────
   createPlan: t('write-local'),

@@ -52,6 +52,7 @@ const MOCK_TASKS: Task[] = [
     estimate_mins: 45,
     due_at: null,
     pomodoro_count: 2,
+    autonomous: 0,
     created_at: 1000,
     updated_at: 1000,
   },
@@ -66,6 +67,7 @@ const MOCK_TASKS: Task[] = [
     estimate_mins: 15,
     due_at: null,
     pomodoro_count: 0,
+    autonomous: 0,
     created_at: 1000,
     updated_at: 1000,
   },
@@ -283,6 +285,7 @@ describe('SidebarFocusPlayer · ignition', () => {
     estimate_mins: 15,
     due_at: null,
     pomodoro_count: 0,
+    autonomous: 0,
     created_at: 1000,
     updated_at: 1000,
   };
