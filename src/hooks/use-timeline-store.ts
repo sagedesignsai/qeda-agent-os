@@ -19,6 +19,10 @@ import type {
   TimelineItemType,
 } from '@/lib/studio-types';
 import { inferTimelineItemType } from '@/lib/studio/timeline/item-type';
+import {
+  moveTrackWithinType,
+  sortTracksForTimeline,
+} from '@/lib/studio/timeline/layers';
 
 export type TimelineTool = 'select' | 'blade';
 
@@ -39,27 +43,6 @@ function durationForTracks(tracks: readonly TimelineTrack[]): number {
     }
   }
   return durationMs;
-}
-
-function sortTracksForTimeline(tracks: TimelineTrack[]): TimelineTrack[] {
-  const rank: Record<TrackType, number> = {
-    effects: 0,
-    captions: 1,
-    transitions: 2,
-    overlays: 3,
-    video: 4,
-    audio: 5,
-  };
-  return [...tracks].sort((a, b) => {
-    const typeOrder = rank[a.type] - rank[b.type];
-    if (typeOrder !== 0) return typeOrder;
-    if (a.type === 'video') {
-      // Project video lanes sit above the legacy recording lane in the UI;
-      // the compositor paints the row order bottom-to-top.
-      return Number(a.id === 'track-video') - Number(b.id === 'track-video');
-    }
-    return 0;
-  });
 }
 
 export interface TimelineState {
@@ -492,6 +475,23 @@ class TimelineStore {
     };
     this.notify();
     this.commitTrackChange();
+  };
+
+  /**
+   * Move a track up (-1) or down (+1) among tracks of the same type.
+   *
+   * Row order is the compositing order (see `timeline/layers.ts`), so this is
+   * the only way stacking changes. Returns false when the move is a no-op or
+   * would cross a lane.
+   */
+  reorderTrack = (trackId: string, delta: number): boolean => {
+    const next = moveTrackWithinType(this.state.tracks, trackId, delta);
+    if (!next) return false;
+    this.recordSnapshot();
+    this.state = { ...this.state, tracks: next };
+    this.notify();
+    this.commitTrackChange();
+    return true;
   };
 
   addTrack = (type: TrackType) => {

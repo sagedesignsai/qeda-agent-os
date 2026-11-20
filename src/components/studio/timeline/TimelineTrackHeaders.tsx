@@ -21,6 +21,8 @@ import {
   MusicIcon,
   ImageIcon,
   ArrowLeftRightIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   PlusIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -129,7 +131,15 @@ export function TimelineTrackHeaders({
           ref={contentRef}
           className="flex flex-col will-change-transform"
         >
-          {tracks.map((track) => (
+          {tracks.map((track) => {
+            // Row order is layer order, so stacking is changed by moving a
+            // track within its own lane. Cross-lane moves are not allowed.
+            const siblings = tracks.filter((t) => t.type === track.type);
+            const position = siblings.findIndex((t) => t.id === track.id);
+            const canMoveUp = position > 0;
+            const canMoveDown = position >= 0 && position < siblings.length - 1;
+
+            return (
             <div
               key={track.id}
               style={{ height: `${trackHeight}px` }}
@@ -147,8 +157,34 @@ export function TimelineTrackHeaders({
                 </span>
               </div>
 
-              {/* Track Control Buttons (Lock, Eye, Mute) */}
+              {/* Track Control Buttons (Reorder, Lock, Eye, Mute) */}
               <div className="flex items-center gap-0.5 shrink-0">
+                {/* Reorder within lane */}
+                <div className="flex flex-col -my-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-3.5 w-5 text-muted-foreground hover:text-foreground disabled:opacity-25"
+                    disabled={!canMoveUp}
+                    onClick={() => timelineStore.reorderTrack(track.id, -1)}
+                    aria-label={`Move ${track.name} up`}
+                    title="Move layer up"
+                  >
+                    <ChevronUpIcon className="w-3 h-3" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-3.5 w-5 text-muted-foreground hover:text-foreground disabled:opacity-25"
+                    disabled={!canMoveDown}
+                    onClick={() => timelineStore.reorderTrack(track.id, 1)}
+                    aria-label={`Move ${track.name} down`}
+                    title="Move layer down"
+                  >
+                    <ChevronDownIcon className="w-3 h-3" />
+                  </Button>
+                </div>
+
                 {/* Lock Toggle */}
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -230,7 +266,8 @@ export function TimelineTrackHeaders({
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

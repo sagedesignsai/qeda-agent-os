@@ -471,12 +471,17 @@ export type StudioTrackType =
   | 'captions'
   | 'overlays';
 
+/**
+ * A persisted track.
+ *
+ * Ordering is positional, not numeric: the array is stored in timeline row
+ * order (top row first), and that order *is* the compositing order. There is
+ * deliberately no `zIndex` — see `timeline/layers.ts` for the invariant.
+ */
 export interface StudioTrack {
   id: string;
   name: string;
   type: StudioTrackType;
-  /** Stack order for compositing (higher = on top). */
-  zIndex: number;
   locked: boolean;
   visible: boolean;
   muted?: boolean;

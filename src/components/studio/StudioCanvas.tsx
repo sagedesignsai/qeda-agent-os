@@ -761,14 +761,15 @@ export function StudioCanvas({
         const rate = Number.isFinite(playbackRateRef.current)
           ? Math.max(0.1, playbackRateRef.current)
           : 1;
-        audioMixerRef.current.playAt(
+        audioMixerRef.current.sync({
+          clips: evaluatedTimeline.audio,
+          tracks: tracksRef.current,
           compMs,
-          evaluatedTimeline.audio,
-          tracksRef.current,
-          isPlayingRef.current ? rate : 0,
-        );
+          playing: isPlayingRef.current,
+          rate,
+        });
       } else if (audioMixerRef.current) {
-        audioMixerRef.current.stop();
+        audioMixerRef.current.pause();
       }
 
       const activeVideoAssetIds = new Set<string>();

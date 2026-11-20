@@ -3,28 +3,35 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Real-time audio mixer for Studio timeline preview playback.
  *
- * Decodes audio assets into AudioBuffers, then mixes the active clips at the
- * current playhead position into a single output bus.  Supports:
- *   - Multiple audio tracks with independent mute/volume
- *   - Per-clip volume overrides
- *   - Audio-only assets and audio extracted from video elements
- *   - Scrubbing (cross-seeks on playhead jumps)
+ * Decodes audio assets into AudioBuffers, then schedules one
+ * `AudioBufferSourceNode` per active audio clip into the shared
+ * `AudioContext` destination. Supports:
+ *   - Multiple audio tracks mixing simultaneously
+ *   - Per-clip volume overrides and per-track mute/volume
+ *   - Correct offsets (trim/speed-aware) via `sourceTimeMs`
+ *   - Scrub: a drift guard resyncs the schedule when the playhead jumps
  *
  * The mixer runs on the shared AudioContext from lib/audio/context.ts and
  * connects to the context destination so audio plays through speakers during
- * preview.
+ * preview. Planning is separated into `schedule.ts` (pure, unit-tested).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { getAudioContext } from '@/lib/audio/context';
-import type { TimelineClip, TimelineTrack } from '@/lib/studio/types';
+import type { TimelineTrack } from '@/lib/studio/types';
 import type { EvaluatedTimelineClip } from '@/lib/studio/timeline/evaluate';
+import { studioMediaAssetUrl } from '../media';
+import {
+  planAudioSchedule,
+  type AudioSchedulePlan,
+  type ScheduledClipStart,
+} from './schedule';
 
-/** Cached decoded audio buffer for a timeline clip. */
-interface AudioClipCache {
-  buffer: AudioBuffer;
-  sampleRate: number;
-}
+/** Sample rate used for decoded preview audio (matches export parity). */
+const AUDIO_SAMPLE_RATE = 48000;
+
+/** Drift tolerance between the playhead and the context-anchored expectation. */
+const RESYNC_MS = 120;
 
 /**
  * Load an audio source URL into an AudioBuffer.
@@ -180,138 +187,216 @@ export function mixAudioSamples(
 }
 
 /**
- * Studio audio mixer for preview playback.
- * Manages AudioBufferSourceNodes for smooth continuous playback.
+ * Preview audio sync parameters, passed every frame.
+ */
+export interface AudioSyncParams {
+  clips: readonly EvaluatedTimelineClip[];
+  tracks: readonly TimelineTrack[];
+  /** Composition time in ms. */
+  compMs: number;
+  playing: boolean;
+  /** Global playback rate multiplier (>= 0.1). */
+  rate: number;
+}
+
+/**
+ * Preview audio mixer.
+ *
+ * Schedules one `AudioBufferSourceNode` per active audio clip into the shared
+ * `AudioContext` destination; the plan is computed by `planAudioSchedule`
+ * (see `schedule.ts`). Buffers are decoded on demand — export decodes into
+ * `payload.audioBuffer` ahead of time, so preview can share the same path.
  */
 export class StudioAudioMixer {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
-  private currentSource: AudioBufferSourceNode | null = null;
-  private currentBuffer: AudioBuffer | null = null;
-  private currentOffset = 0; // Current playback offset in seconds
-  private currentClipId = '';
-  private playbackRate = 1;
-  private scheduledStart = 0; // Context time when current playback started
-
-  /** Cache of decoded audio buffers keyed by clip ID */
-  private bufferCache = new Map<string, AudioBuffer>();
-
-  /** Callback when playback ends */
-  private onEnded?: () => void;
+  /** Playing sources: clipId → scheduled entry. */
+  private sources = new Map<string, { source: AudioBufferSourceNode; gainNode: GainNode }>();
+  /** Buffers decoded on demand for preview playback. */
+  private decodeCache = new Map<string, AudioBuffer>();
+  private inFlight = new Set<string>();
+  private lastParams: AudioSyncParams | null = null;
+  /** Drift guard: comp time vs the context-anchored expectation. */
+  private anchor: { compMs: number; ctxTime: number } | null = null;
 
   constructor() {
     this.ctx = getAudioContext();
     if (this.ctx) {
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = 0.5;
+      this.masterGain.gain.value = 1;
       this.masterGain.connect(this.ctx.destination);
     }
   }
 
+  /** Stop all playback (pause/scrub). Kept as an alias for `pause`. */
+  stop(): void {
+    this.pause();
+  }
+
+  /** Stop all playback. */
+  pause(): void {
+    this.anchor = null;
+    this.stopAll();
+  }
+
   /**
-   * Play or continue audio at the given position.
-   * If the playhead jumped (scrub), stop the current source and start fresh.
+   * Sync to the current playhead. Called every frame; re-invoked by
+   * `apply()` when on-demand decodes land.
    */
-  playAt(
-    timeMs: number,
-    activeClips: EvaluatedTimelineClip[],
-    tracks: readonly TimelineTrack[],
-    playbackRate: number = 1,
-  ) {
+  sync(params: AudioSyncParams): void {
     if (!this.ctx || !this.masterGain) return;
-    if (activeClips.length === 0) return;
+    this.lastParams = params;
 
-    this.playbackRate = playbackRate;
-
-    // Find the active audio clip at this time
-    let activeClip: EvaluatedTimelineClip | null = null;
-    for (const clip of activeClips) {
-      const track = tracks.find((t) => t.id === clip.track.id);
-      if (track?.muted) continue;
-      activeClip = clip;
-      break;
+    if (!params.playing) {
+      this.pause();
+      return;
     }
 
-    if (!activeClip) return;
+    this.startMissingDecodes(params);
 
-    const clipId = activeClip.clip.id;
-    const buffer = activeClip.clip.payload?.audioBuffer;
-    if (!buffer) return;
-
-    // Cache the buffer
-    this.bufferCache.set(clipId, buffer);
-
-    // Check if we need to restart (different clip or big jump)
-    const offsetSec = activeClip.localTimeMs / 1000;
-    const isJump =
-      clipId !== this.currentClipId ||
-      Math.abs(offsetSec - this.currentOffset) > 0.1;
-
-    if (isJump) {
-      this.stopCurrentSource();
-      this.startSource(buffer, offsetSec, clipId);
+    const now = this.ctx.currentTime;
+    if (this.anchor) {
+      const expected =
+        this.anchor.compMs + (now - this.anchor.ctxTime) * 1000 * params.rate;
+      const driftMs = params.compMs - expected;
+      if (Math.abs(driftMs) > RESYNC_MS) {
+        // Real seek/drift: flush everything and re-anchor.
+        this.stopAll();
+        this.anchor = { compMs: params.compMs, ctxTime: now };
+      } else if (Math.abs(driftMs) > 1) {
+        // Small drift (loop lag, GC): re-anchor silently.
+        this.anchor = { compMs: params.compMs, ctxTime: now };
+      }
+    } else {
+      this.anchor = { compMs: params.compMs, ctxTime: now };
     }
 
-    this.currentOffset = offsetSec;
-    this.currentClipId = clipId;
+    this.applyPlan(
+      planAudioSchedule({ ...params, nowSec: this.ctx.currentTime }),
+    );
   }
 
-  /** Stop all audio playback. */
-  stop() {
-    this.stopCurrentSource();
-    this.currentClipId = '';
-    this.currentOffset = 0;
+  /** Re-apply the last plan (used after async decodes finish). */
+  private apply(): void {
+    if (!this.ctx || !this.lastParams?.playing) return;
+    this.applyPlan(
+      planAudioSchedule({ ...this.lastParams, nowSec: this.ctx.currentTime }),
+    );
   }
 
-  /** Set the master output volume (0-1). */
-  setVolume(volume: number) {
-    if (this.masterGain) {
-      this.masterGain.gain.value = Math.max(0, Math.min(1, volume));
+  private bufferFor(clipId: string): AudioBuffer | null {
+    const clip = this.lastParams?.clips.find((c) => c.clip.id === clipId);
+    if (clip?.clip.payload?.audioBuffer) return clip.clip.payload.audioBuffer;
+    return this.decodeCache.get(clipId) ?? null;
+  }
+
+  /** Decode buffers for audible clips that are neither playing nor buffered. */
+  private startMissingDecodes(params: AudioSyncParams): void {
+    for (const clip of params.clips) {
+      const id = clip.clip.id;
+      if (
+        this.sources.has(id) ||
+        this.inFlight.has(id) ||
+        clip.clip.payload?.audioBuffer
+      ) {
+        continue;
+      }
+      const assetId = clip.clip.payload?.mediaAssetId;
+      if (!assetId) continue;
+
+      this.inFlight.add(id);
+      decodeAudioSource(studioMediaAssetUrl(assetId), AUDIO_SAMPLE_RATE)
+        .then((buffer) => {
+          if (!buffer) return;
+          if (clip.clip.payload) {
+            clip.clip.payload.audioBuffer = buffer;
+          } else {
+            clip.clip.payload = { audioBuffer: buffer };
+          }
+          this.decodeCache.set(id, buffer);
+          this.apply();
+        })
+        .catch(() => {
+          // Retry on the next sync; missing clips simply go silent.
+        })
+        .finally(() => {
+          this.inFlight.delete(id);
+        });
     }
+  }
+
+  private applyPlan(plan: AudioSchedulePlan): void {
+    if (!this.ctx || !this.masterGain) return;
+
+    const startable: ScheduledClipStart[] = [];
+    for (const start of plan.starts) {
+      const existing = this.sources.get(start.clipId);
+      if (existing) {
+        // Already playing: adjust gain for volume/mute changes.
+        existing.gainNode.gain.setTargetAtTime(start.gain, this.ctx.currentTime, 0.02);
+        continue;
+      }
+      if (!this.bufferFor(start.clipId)) {
+        // Decode pending — re-sync when it lands.
+        continue;
+      }
+      startable.push(start);
+    }
+
+    for (const start of startable) {
+      const buffer = this.bufferFor(start.clipId)!;
+      const offsetSec = Math.max(
+        0,
+        Math.min(start.offsetSec, Math.max(0, buffer.duration - start.durationSec)),
+      );
+      const source = this.ctx.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = start.playbackRate;
+
+      const gainNode = this.ctx.createGain();
+      gainNode.gain.setTargetAtTime(start.gain, this.ctx.currentTime, 0.01);
+      gainNode.connect(this.masterGain);
+      source.connect(gainNode);
+
+      source.start(start.whenSec, offsetSec, start.durationSec);
+      this.sources.set(start.clipId, { source, gainNode });
+      const entry = this.sources.get(start.clipId)!;
+      source.onended = () => {
+        if (this.sources.get(start.clipId) === entry) {
+          this.sources.delete(start.clipId);
+        }
+      };
+    }
+
+    // Stop anything no longer audible (muted, trimmed away, or loop moved).
+    for (const clipId of [...this.sources.keys()]) {
+      if (!plan.activeIds.has(clipId)) this.stopClip(clipId);
+    }
+  }
+
+  private stopClip(clipId: string): void {
+    const entry = this.sources.get(clipId);
+    if (!entry || !this.ctx) return;
+    this.sources.delete(clipId);
+    const now = this.ctx.currentTime;
+    entry.gainNode.gain.setTargetAtTime(0, now, 0.01);
+    entry.source.stop(now + 0.03);
+  }
+
+  private stopAll(): void {
+    for (const clipId of [...this.sources.keys()]) this.stopClip(clipId);
   }
 
   /** Clean up resources. */
-  dispose() {
-    this.stop();
-    this.bufferCache.clear();
+  dispose(): void {
+    this.pause();
+    this.decodeCache.clear();
+    this.inFlight.clear();
     if (this.masterGain) {
       this.masterGain.disconnect();
       this.masterGain = null;
     }
     this.ctx = null;
-  }
-
-  private stopCurrentSource() {
-    try {
-      this.currentSource?.stop();
-    } catch {
-      // Already stopped
-    }
-    this.currentSource?.disconnect();
-    this.currentSource = null;
-  }
-
-  private startSource(buffer: AudioBuffer, offset: number, clipId: string) {
-    if (!this.ctx || !this.masterGain) return;
-
-    const source = this.ctx.createBufferSource();
-    source.buffer = buffer;
-    source.playbackRate.value = this.playbackRate;
-    source.connect(this.masterGain);
-
-    const ctxTime = this.ctx.currentTime;
-    source.start(ctxTime, offset);
-    this.scheduledStart = ctxTime;
-    this.currentSource = source;
-    this.currentBuffer = buffer;
-    this.currentClipId = clipId;
-
-    source.onended = () => {
-      if (this.currentSource === source) {
-        this.currentClipId = '';
-        this.onEnded?.();
-      }
-    };
   }
 }
 

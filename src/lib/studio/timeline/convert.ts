@@ -53,6 +53,7 @@ import {
   type RippleCut,
 } from './ripple';
 import { resolveTimelineItemType } from './item-type';
+import { sortTracksForTimeline } from './layers';
 
 const EFFECTS_TRACK_ID = 'track-effects';
 const CAPTIONS_TRACK_ID = 'track-captions';
@@ -597,7 +598,7 @@ export function extractClipsFromTracks(
 
   const studioTracks: StudioTrack[] = [];
 
-  for (const [trackIndex, track] of tracks.entries()) {
+  for (const track of tracks) {
     // Legacy video/audio lanes can also receive imported media. Persist those
     // independent placements as ordinary project tracks while leaving the
     // source recording and legacy effect fields on their compatibility path.
@@ -651,9 +652,6 @@ export function extractClipsFromTracks(
       id: sourceTrack.id,
       type: sourceTrack.type,
       name: sourceTrack.name,
-      // Timeline rows are persisted top-to-bottom; the model uses larger
-      // zIndex values for layers that should appear above the others.
-      zIndex: tracks.length - trackIndex,
       clips,
       locked: track.locked ?? false,
       visible: track.visible ?? true,
@@ -684,22 +682,9 @@ export function convertTakeToTimeline(take: StudioTake): TimelineTrack[] {
       clips: track.clips.filter((clip) => !persistedClipIds.has(clip.id)),
     }))
     .filter((track) => track.clips.length > 0);
-  const visualOrder: Record<TimelineTrack['type'], number> = {
-    effects: 0,
-    captions: 1,
-    transitions: 2,
-    overlays: 3,
-    video: 4,
-    audio: 5,
-  };
-  return [...uniqueLegacyTracks, ...multiTrack].sort(
-    (a, b) => {
-      const typeOrder = visualOrder[a.type] - visualOrder[b.type];
-      if (typeOrder !== 0) return typeOrder;
-      if (a.type === 'video') {
-        return Number(a.id === VIDEO_TRACK_ID) - Number(b.id === VIDEO_TRACK_ID);
-      }
-      return 0;
-    },
-  );
+  const orderedTracks = sortTracksForTimeline([
+    ...uniqueLegacyTracks,
+    ...multiTrack,
+  ]);
+  return orderedTracks;
 }

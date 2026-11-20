@@ -15,6 +15,7 @@ import type {
   StudioCompositionTransitionType,
 } from '../types';
 import { resolveTimelineItemType } from './item-type';
+import { trackPaintOrder } from './layers';
 
 export interface EvaluatedTimelineClip {
   track: TimelineTrack;
@@ -83,7 +84,7 @@ function evaluateClip(
   };
 }
 
-function sourceRateForClip(clip: TimelineClip): number {
+export function sourceRateForClip(clip: TimelineClip): number {
   if (clip.durationMs > 0 && clip.sourceDurationMs > 0) {
     return clip.sourceDurationMs / clip.durationMs;
   }
@@ -189,11 +190,16 @@ export function evaluateEditorTimeline(
     ...video.filter((item) => !transitionParticipants.has(item.clip.id)),
     ...transitionParticipants.values(),
   ];
-  const trackOrder = new Map<string, number>();
-  tracks.forEach((track, index) => trackOrder.set(track.id, index));
+  // Paint order comes from the shared layer helper, so the evaluator cannot
+  // disagree with the store or the converter about row order. Within one track,
+  // clips still paint in start-time order.
+  const paintIndex = new Map(
+    trackPaintOrder(tracks).map((track, index) => [track.id, index]),
+  );
   const videoInPaintOrder = videoWithTransitions.sort((a, b) => {
-    const trackOrderDelta = (trackOrder.get(b.track.id) ?? 0) - (trackOrder.get(a.track.id) ?? 0);
-    return trackOrderDelta || a.clip.startMs - b.clip.startMs;
+    const layerDelta =
+      (paintIndex.get(a.track.id) ?? 0) - (paintIndex.get(b.track.id) ?? 0);
+    return layerDelta || a.clip.startMs - b.clip.startMs;
   });
 
   return {
