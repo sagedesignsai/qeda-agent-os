@@ -181,7 +181,7 @@ export function AnimateSvgDialog({
   const conflicts = useMemo(() => plan?.tracks.flatMap((track) => {
     const element = project?.elements[track.elementId];
     const existing = element?.tracks.find((entry) => entry.property === track.property);
-    return existing ? [{ elementId: track.elementId, name: element.name, property: track.property, label: existing.label }] : [];
+    return existing && element ? [{ elementId: track.elementId, name: element.name, property: track.property, label: existing.label }] : [];
   }) ?? [], [plan, project]);
 
   const seekPreview = useCallback((timeMs: number) => {

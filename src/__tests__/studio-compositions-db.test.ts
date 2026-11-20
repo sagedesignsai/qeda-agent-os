@@ -196,13 +196,34 @@ describe('Studio composition persistence', () => {
         imageLayerCount: 1,
       },
     ]);
+    const getTakeSummary = (id: string) => {
+      const take = getStudioTake(id);
+      if (!take) return null;
+      return {
+        id: take.id,
+        projectId: take.projectId,
+        title: take.title,
+        description: take.description,
+        sourceType: take.sourceType,
+        sourceName: take.sourceName,
+        durationMs: take.durationMs,
+        videoPath: take.videoPath,
+        cutCount: take.cuts.length,
+        zoomCount: take.zooms.length,
+        fileSizeBytes: take.fileSizeBytes,
+        createdAt: take.createdAt,
+        updatedAt: take.updatedAt,
+        isMultiTrack: false,
+      };
+    };
+
     expect(() =>
       createStudioCompositionFromTemplate({
         id: 'template-missing-source',
         title: 'Missing source',
         templateId: template.id,
         sourceTakeIds: [],
-        getTake: getStudioTake,
+        getTake: getTakeSummary,
       }),
     ).toThrow(/needs 1 recording/);
 
@@ -211,7 +232,7 @@ describe('Studio composition persistence', () => {
       title: 'Product reveal for launch',
       templateId: template.id,
       sourceTakeIds: ['template-source-take'],
-      getTake: getStudioTake,
+      getTake: getTakeSummary,
     });
     expect(created.document.layers[0]).toMatchObject({
       kind: 'video',

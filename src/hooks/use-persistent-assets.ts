@@ -32,7 +32,7 @@ export function usePersistentAssets(
   storageKey: string,
   options: PersistentAssetOptions = {}
 ) {
-  const { references, importReferences } = useAssetReferenceContext(contextId);
+  const { references, addReference } = useAssetReferenceContext(contextId);
   const storage = options.storage ?? globalThis.localStorage;
   const debounceMs = options.saveDebounceMs ?? 1000;
 
@@ -41,13 +41,33 @@ export function usePersistentAssets(
     try {
       const saved = storage.getItem(storageKey);
       if (saved) {
-        const data = JSON.parse(saved);
-        importReferences(data);
+        const data: Array<{
+          id: string;
+          projectId: string;
+          fileName: string;
+          fileKind: string;
+          path: string;
+          mediaUrl?: string;
+          metadata?: Record<string, unknown>;
+        }> = JSON.parse(saved);
+        for (const entry of data) {
+          addReference({
+            id: entry.id,
+            projectId: entry.projectId,
+            name: entry.fileName,
+            kind: entry.fileKind as 'image' | 'video' | 'audio' | 'document' | 'text' | 'archive' | 'other',
+            path: entry.path,
+            mimeType: '',
+            sizeBytes: null,
+            mediaUrl: entry.mediaUrl ?? null,
+            source: 'indexed' as const,
+          });
+        }
       }
     } catch (err) {
       console.error(`Failed to load persistent assets for ${contextId}:`, err);
     }
-  }, [contextId, storageKey, storage, importReferences]);
+  }, [contextId, storageKey, storage, addReference]);
 
   // Auto-save on change (debounced)
   useEffect(() => {
@@ -93,7 +113,7 @@ export async function useIndexedDBAssets(
   contextId: string,
   dbKey: string
 ) {
-  const { references, importReferences } = useAssetReferenceContext(contextId);
+  const { references, addReference } = useAssetReferenceContext(contextId);
 
   // Load on mount
   useEffect(() => {
@@ -102,20 +122,38 @@ export async function useIndexedDBAssets(
         const db = await openDB('qeda-assets', 1, {
           upgrade(db) {
             if (!db.objectStoreNames.contains('assets')) {
-              db.createObjectStore('assets');
+              db.createObjectStore('assets', { keyPath: 'key' });
             }
           },
         });
-        const saved = await db.get('assets', dbKey);
-        if (saved) {
-          importReferences(saved);
-        }
+        const tx = db.transaction('assets', 'readonly');
+        const store = tx.objectStore('assets');
+        const request = store.get(dbKey);
+        request.onsuccess = () => {
+          const saved = request.result;
+          if (saved) {
+            const data = Array.isArray(saved) ? saved : [saved];
+            for (const entry of data) {
+              addReference({
+                id: entry.id ?? '',
+                projectId: entry.projectId,
+                name: entry.fileName,
+                kind: entry.fileKind as 'image' | 'video' | 'audio' | 'document' | 'text' | 'archive' | 'other',
+                path: entry.path,
+                mimeType: '',
+                sizeBytes: null,
+                mediaUrl: entry.mediaUrl ?? null,
+                source: 'indexed' as const,
+              });
+            }
+          }
+        };
       } catch (err) {
         console.error(`Failed to load IndexedDB assets for ${contextId}:`, err);
       }
     };
     void loadFromIDB();
-  }, [contextId, dbKey, importReferences]);
+  }, [contextId, dbKey, addReference]);
 
   // Auto-save on change
   useEffect(() => {
@@ -123,6 +161,7 @@ export async function useIndexedDBAssets(
       try {
         const db = await openDB('qeda-assets', 1);
         const toSave = references.map((ref) => ({
+          key: dbKey,
           id: ref.id,
           projectId: ref.projectId,
           fileName: ref.fileName,
@@ -131,7 +170,13 @@ export async function useIndexedDBAssets(
           mediaUrl: ref.mediaUrl,
           metadata: ref.metadata,
         }));
-        await db.put('assets', toSave, dbKey);
+        const tx = db.transaction('assets', 'readwrite');
+        const store = tx.objectStore('assets');
+        store.put(toSave, dbKey);
+        await new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
       } catch (err) {
         console.error(`Failed to save IndexedDB assets for ${contextId}:`, err);
       }

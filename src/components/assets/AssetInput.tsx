@@ -33,7 +33,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { AssetPicker } from '@/components/assets/AssetPicker';
-import { useAssetReferenceContext } from '@/contexts/AssetReferenceContext';
+import { useAssetReferenceContext, type AssetReference } from '@/contexts/AssetReferenceContext';
 import type { ProjectFileSelection } from '@/lib/project-files';
 import { cn } from '@/lib/utils';
 
@@ -43,7 +43,7 @@ interface AssetInputProps {
   /** Project to scope picker to */
   projectId?: string | null;
   /** Called when assets are added/removed */
-  onAssetsChange?: (references: ReturnType<ReturnType<typeof useAssetReferenceContext>['references']>) => void;
+  onAssetsChange?: (references: AssetReference[]) => void;
   /** Button size and styling */
   className?: string;
   /** Show button even with no assets */
@@ -110,7 +110,7 @@ export function AssetInput({
               <FileIcon className="size-4" />
               {hasAssets && (
                 <Badge
-                  variant="primary"
+                  variant="default"
                   className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs"
                 >
                   {references.length}

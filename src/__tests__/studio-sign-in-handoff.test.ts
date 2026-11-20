@@ -128,12 +128,16 @@ describe('requestUserSignIn tool', () => {
   });
 
   it('returns a non-success result when the user cancels or the request expires', async () => {
+    type ExecuteFn = (
+      input: { browserId: string },
+      options: unknown,
+    ) => Promise<Record<string, unknown>>;
     const cancelTool = createStudioSignInTool(
       jest.fn().mockResolvedValue('cancelled'),
-    ) as unknown as { execute: typeof execute };
+    ) as unknown as { execute: ExecuteFn };
     const expiredTool = createStudioSignInTool(
       jest.fn().mockResolvedValue('expired'),
-    ) as unknown as { execute: typeof execute };
+    ) as unknown as { execute: ExecuteFn };
 
     await expect(
       cancelTool.execute({ browserId: 'browser-2' }, {}),

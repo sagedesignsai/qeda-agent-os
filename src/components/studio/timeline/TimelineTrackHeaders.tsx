@@ -20,6 +20,7 @@ import {
   VideoIcon,
   MusicIcon,
   ImageIcon,
+  ArrowLeftRightIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -53,6 +54,8 @@ function getTrackIcon(type: TrackType) {
       return <MusicIcon className="w-3.5 h-3.5 text-sky-400" />;
     case 'overlays':
       return <ImageIcon className="w-3.5 h-3.5 text-amber-400" />;
+    case 'transitions':
+      return <ArrowLeftRightIcon className="w-3.5 h-3.5 text-pink-400" />;
     default:
       return <SparklesIcon className="w-3.5 h-3.5 text-primary" />;
   }
@@ -76,7 +79,25 @@ export function TimelineTrackHeaders({
         style={{ height: `${rulerHeight}px` }}
         className="w-full flex items-center px-3 border-b border-border/40 bg-secondary/30 text-[11px] font-medium text-muted-foreground shrink-0 z-10"
       >
-        <span>Tracks</span>
+        <span className="flex-1">Tracks</span>
+        <div className="flex items-center gap-0.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Add video track" onClick={() => timelineStore.addTrack('video')}>
+                <VideoIcon className="w-3 h-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Add video track</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Add audio track" onClick={() => timelineStore.addTrack('audio')}>
+                <MusicIcon className="w-3 h-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Add audio track</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       {/* ── Track Header Rows (Synchronized Smooth Slide) ──────────────────── */}

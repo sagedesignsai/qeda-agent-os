@@ -21,10 +21,8 @@ import {
   type GizmoPoint,
   type GizmoTransform,
 } from '@/lib/trace/gizmo/geometry';
-import type { TraceElement } from '@/lib/trace/types';
-
 export interface TraceTransformGizmoProps {
-  element: TraceElement;
+  element: { visible: boolean };
   bbox: GizmoBBox | null;
   /** Resolved transform at the playhead (committed state). */
   transform: GizmoTransform;

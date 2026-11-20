@@ -38,6 +38,8 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
   const [isExtractingThumbnails, setIsExtractingThumbnails] = useState(false);
 
   const bitmapsRef = useRef<Map<number, ImageBitmap>>(new Map());
+  const durationRef = useRef(durationMs);
+  durationRef.current = durationMs;
 
   /**
    * Release bitmaps and stop publishing them in the same breath.
@@ -161,7 +163,7 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
             // own length. Headerless `MediaRecorder` webm reports `Infinity`, and
             // the take's recorded duration is what bins the samples instead.
             const totalDurationSec =
-              safeDurationMs(probe.duration, durationMs) / 1000;
+              safeDurationMs(probe.duration, durationRef.current) / 1000;
             if (!isFiniteDurationSeconds(totalDurationSec)) {
               throw new Error('Media duration is unknown');
             }
@@ -338,12 +340,12 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
       cancelSampling();
       detachProbe();
     };
-  }, [videoUrl, durationMs]);
+  }, [videoUrl]);
 
   // ── 2. Adaptive Video Keyframe Filmstrip Generator ────────────────────────
 
   useEffect(() => {
-    if (!videoUrl || durationMs <= 0) {
+    if (!videoUrl) {
       disposeBitmaps(bitmapsRef.current);
       setThumbnails(new Map());
       return;
@@ -370,7 +372,7 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
       const ctx = canvas.getContext('2d');
 
       const intervalSec = 1.5; // Snapshot every 1.5s
-      const totalDurationSec = Math.max(1, durationMs / 1000);
+      const totalDurationSec = Math.max(1, video.duration || durationRef.current / 1000);
       const targetTimes: number[] = [];
 
       for (let t = 0.5; t < totalDurationSec; t += intervalSec) {
@@ -500,7 +502,7 @@ export function useTimelineMedia(videoUrl: string | null, durationMs: number) {
         bitmapsRef.current = new Map();
       }
     };
-  }, [videoUrl, durationMs]);
+  }, [videoUrl]);
 
   return {
     audioPeaks,

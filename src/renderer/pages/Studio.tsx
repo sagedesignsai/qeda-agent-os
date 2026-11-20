@@ -50,7 +50,7 @@ import { StudioProjectsView } from '@/components/studio/projects/StudioProjectsV
 import { StudioCanvas } from '@/components/studio/StudioCanvas';
 import { StudioCanvasTimeline } from '@/components/studio/timeline/StudioCanvasTimeline';
 import { StudioVideoCropDialog } from '@/components/studio/plugins/StudioVideoCropDialog';
-import { timelineStore } from '@/hooks/use-timeline-store';
+import { timelineStore, useTimelineTracks } from '@/hooks/use-timeline-store';
 import { StudioInspector } from '@/components/studio/StudioInspector';
 import { StudioSourcePicker } from '@/components/studio/StudioSourcePicker';
 import { StudioRecordingBar } from '@/components/studio/StudioRecordingBar';
@@ -69,6 +69,7 @@ import {
   extractCutsFromTracks,
   extractEffectsFromTracks,
   extractOverlaysFromTracks,
+  convertTakeToTimeline,
   normalizeCuts,
   safeDurationMs,
   sourceFromComp,
@@ -155,10 +156,14 @@ export default function Studio() {
     updateOverlays,
     updateTimelineData,
     updateTracks,
+    updateMediaAssets,
     generateSocialKit,
     exportVideo,
     deleteTake,
   } = useStudio(takeId, projectId);
+
+  // Timeline tracks for per-clip animation evaluation on the preview canvas
+  const timelineTracks = useTimelineTracks();
 
   // A named take means one was just recorded (agent or manual). Keep the route
   // in sync so a refresh reopens that take, and let `useStudio` reload it.
@@ -333,8 +338,17 @@ export default function Studio() {
       if (!activeTake) return;
 
       // Multi-track model: extract clips directly from tracks
-      const isMultiTrack = activeTake.tracks !== undefined;
+      const isMultiTrack = activeTake.tracks !== undefined || timelineStore.getState().isMultiTrack;
       if (isMultiTrack) {
+        // Legacy tracks remain the editable base; persist their data alongside
+        // the media-backed layer tracks instead of replacing it.
+        void updateTimelineData({
+          zooms: extractZoomsFromTracks(tracks, cuts),
+          captions: extractCaptionsFromTracks(tracks, cuts),
+          cuts: extractCutsFromTracks(tracks, activeTake.durationMs),
+          effects: extractEffectsFromTracks(tracks, cuts),
+          overlays: extractOverlaysFromTracks(tracks, cuts),
+        });
         const extracted = extractClipsFromTracks(tracks);
         if (extracted) {
           void updateTracks(extracted.tracks);
@@ -734,8 +748,35 @@ export default function Studio() {
     }
   };
 
-  const handleInsertClip = async (clipPayload: ContentItemPayload) => {
-    const newClip = timelineStore.addClip(clipPayload.trackType, clipPayload);
+  const handleInsertClip = async (clipPayload: ContentItemPayload, startMs?: number, targetTrackId?: string) => {
+    if (clipPayload.mediaAsset && activeTake) {
+      const currentAssets = activeTake.mediaAssets ?? [];
+      const exists = currentAssets.some((asset) => asset.id === clipPayload.mediaAsset?.id);
+      if (!exists) await updateMediaAssets([...currentAssets, clipPayload.mediaAsset]);
+      if (activeTake.tracks === undefined) {
+        await updateTracks([]);
+        timelineStore.setTracksAndDuration(
+          convertTakeToTimeline({ ...activeTake, tracks: [], mediaAssets: [...currentAssets, clipPayload.mediaAsset] }),
+          effectiveDurationMs,
+          true,
+          true,
+        );
+      }
+    }
+    if (clipPayload.trackType === 'transitions' && activeTake?.tracks === undefined && activeTake) {
+      await updateTracks([]);
+      timelineStore.setTracksAndDuration(
+        convertTakeToTimeline({ ...activeTake, tracks: [] }),
+        effectiveDurationMs,
+        true,
+        true,
+      );
+    }
+    const newClip = timelineStore.addClip(clipPayload.trackType, {
+      ...clipPayload,
+      startMs: startMs ?? 0,
+      targetTrackId,
+    });
 
     // If it's a zoom effect, sync to activeTake.zooms
     if (
@@ -814,6 +855,7 @@ export default function Studio() {
     if (
       clipPayload.trackType === 'video' &&
       clipPayload.payload?.filePath &&
+      !clipPayload.mediaAsset &&
       activeTake
     ) {
       if (!activeTake.videoPath) {
@@ -1203,6 +1245,8 @@ export default function Studio() {
                         }
                         onEnded={handlePlaybackEnded}
                         onVideoElement={handlePreviewVideoElement}
+                        tracks={timelineTracks}
+                        mediaAssets={activeTake.mediaAssets ?? []}
                       />
                     </div>
                   </main>
@@ -1258,6 +1302,7 @@ export default function Studio() {
                 onTogglePlay={handleTogglePlayback}
                 onRestartPlayback={handleRestartPlayback}
                 onTracksChange={handleTimelineTracksChange}
+                onInsertClip={(clip, startMs, targetTrackId) => { void handleInsertClip(clip, startMs, targetTrackId); }}
                 onOpenVideoCrop={() => setVideoCropDialogOpen(true)}
               />
             </ResizablePanel>

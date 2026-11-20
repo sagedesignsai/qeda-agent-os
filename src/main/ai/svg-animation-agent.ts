@@ -316,7 +316,7 @@ export function createSvgAnimationAgent(request: SvgAnimationRequest, target?: M
         prompt: [{
           role: 'user',
           content: [
-            { type: 'text' as const, text: `Compare the original artwork to this ${plan.playback} animation. User direction: ${request.prompt?.trim() || request.motion}. Motion preset hint: ${request.motion}. Intensity: ${request.intensity}%. Check every supplied moment for intent match, recognizable artwork, clipping, continuity, and whether the motion is one-shot or looping as requested. Rendered frame times: ${sampleTimes.join(', ')} ms.` },
+            { type: 'text' as const, text: `Compare the original artwork to this ${request.playback} animation. User direction: ${request.prompt?.trim() || request.motion}. Motion preset hint: ${request.motion}. Intensity: ${request.intensity}%. Check every supplied moment for intent match, recognizable artwork, clipping, continuity, and whether the motion is one-shot or looping as requested. Rendered frame times: ${sampleTimes.join(', ')} ms.` },
             { type: 'text' as const, text: 'Original artwork before animation:' },
             { type: 'image' as const, image: new Uint8Array(basePng) },
             ...frames.flatMap(({ timeMs, png }) => [

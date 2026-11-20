@@ -35,6 +35,7 @@ describe('Studio Content Panel & Blank Project Flow', () => {
       projectName: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      isMultiTrack: false,
     },
   ];
 

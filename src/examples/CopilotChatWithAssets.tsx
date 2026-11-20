@@ -85,6 +85,9 @@ export function CopilotChatWithAssets({
                 // If message has attachments from agent, they'd go here
               };
             })}
+            status="ready"
+            error={undefined}
+            onApproval={() => {}}
           />
         </ConversationContent>
       </Conversation>
@@ -116,13 +119,13 @@ export function CopilotChatWithAssets({
               Ready to send: {assets.summary}
             </p>
             <Attachments variant="inline">
-              {assets.references.map((ref) => {
+              {assets.references.filter((ref) => ref.mediaUrl != null).map((ref) => {
                 const fileUIPart = {
                   type: 'file' as const,
                   id: ref.id,
                   filename: ref.fileName,
                   mediaType: `file/${ref.fileKind}`,
-                  url: ref.mediaUrl ?? undefined,
+                  url: ref.mediaUrl ?? '',
                 };
                 return (
                   <Attachment

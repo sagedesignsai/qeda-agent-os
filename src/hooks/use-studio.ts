@@ -29,6 +29,7 @@ import type {
   StudioOverlay,
   StudioRecordingSnapshot,
   StudioTrack,
+  StudioMediaAsset,
 } from '@/main/ipc/channels';
 import { DEFAULT_STUDIO_STYLING } from '@/main/ipc/channels';
 
@@ -623,6 +624,18 @@ export function useStudio(
     [activeTake],
   );
 
+  const updateMediaAssets = useCallback(
+    async (mediaAssets: StudioMediaAsset[]) => {
+      if (!activeTake) return;
+      setActiveTake((prev) => (prev ? { ...prev, mediaAssets } : null));
+      await window.electron.ipc.invoke('studio:save-take', {
+        id: activeTake.id,
+        mediaAssets,
+      });
+    },
+    [activeTake],
+  );
+
   // ── Re-run Magic Draft ────────────────────────────────────────────────────
 
   const runMagicDraft = useCallback(async () => {
@@ -793,6 +806,7 @@ export function useStudio(
     updateOverlays,
     updateTimelineData,
     updateTracks,
+    updateMediaAssets,
     runMagicDraft,
     generateSocialKit,
     exportVideo,

@@ -42,6 +42,8 @@ export function StudioPanelSection({
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
   const setOpen = onOpenChange ?? setUncontrolledOpen;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
       <section className="border-b border-border/60 px-3 py-2.5">
         <div className="flex min-h-6 items-center gap-1">
           <CollapsibleTrigger asChild>

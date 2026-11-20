@@ -20,6 +20,27 @@ import type {
 
 export type TimelineTool = 'select' | 'blade';
 
+function sortTracksForTimeline(tracks: TimelineTrack[]): TimelineTrack[] {
+  const rank: Record<TrackType, number> = {
+    effects: 0,
+    captions: 1,
+    transitions: 2,
+    overlays: 3,
+    video: 4,
+    audio: 5,
+  };
+  return [...tracks].sort((a, b) => {
+    const typeOrder = rank[a.type] - rank[b.type];
+    if (typeOrder !== 0) return typeOrder;
+    if (a.type === 'video') {
+      // Project video lanes sit above the legacy recording lane in the UI;
+      // the compositor paints the row order bottom-to-top.
+      return Number(a.id === 'track-video') - Number(b.id === 'track-video');
+    }
+    return 0;
+  });
+}
+
 export interface TimelineState {
   currentTimeMs: number;
   durationMs: number;
@@ -257,6 +278,8 @@ class TimelineStore {
   // ── Track Header Toggles ──────────────────────────────────────────────────
 
   toggleTrackLock = (trackId: string) => {
+    if (!this.state.tracks.some((track) => track.id === trackId)) return;
+    this.recordSnapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -264,9 +287,12 @@ class TimelineStore {
       ),
     };
     this.notify();
+    this.commitTrackChange();
   };
 
   toggleTrackVisibility = (trackId: string) => {
+    if (!this.state.tracks.some((track) => track.id === trackId)) return;
+    this.recordSnapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -274,9 +300,12 @@ class TimelineStore {
       ),
     };
     this.notify();
+    this.commitTrackChange();
   };
 
   toggleTrackMute = (trackId: string) => {
+    if (!this.state.tracks.some((track) => track.id === trackId)) return;
+    this.recordSnapshot();
     this.state = {
       ...this.state,
       tracks: this.state.tracks.map((t) =>
@@ -284,6 +313,38 @@ class TimelineStore {
       ),
     };
     this.notify();
+    this.commitTrackChange();
+  };
+
+  addTrack = (type: 'video' | 'audio') => {
+    const matchingTracks = this.state.tracks.filter((track) => track.type === type);
+    const suffix = matchingTracks.length + 1;
+    const track: TimelineTrack = {
+      id: `layer-${type}-${Math.random().toString(36).slice(2, 9)}`,
+      type,
+      name: `${type === 'video' ? 'Video' : 'Audio'} ${suffix}`,
+      locked: false,
+      visible: true,
+      muted: false,
+      clips: [],
+    };
+    this.recordSnapshot();
+    const tracks = [...this.state.tracks];
+    if (type === 'video') {
+      const firstVideoIndex = tracks.findIndex((candidate) => candidate.type === 'video');
+      if (firstVideoIndex >= 0) tracks.splice(firstVideoIndex, 0, track);
+      else tracks.push(track);
+    } else {
+      tracks.push(track);
+    }
+    this.state = {
+      ...this.state,
+      isMultiTrack: true,
+      tracks: sortTracksForTimeline(tracks),
+    };
+    this.notify();
+    this.commitTrackChange();
+    return track;
   };
 
   // ── Clip Operations (Slicing, Trimming, Moving) ────────────────────────────
@@ -416,11 +477,9 @@ class TimelineStore {
     const track = this.state.tracks.find((t) => t.id === trackId);
     if (!track || track.locked) return;
 
-    // In the legacy single-recording model, the video track is the timeline's
-    // spine: clips are contiguous so "no clip here" means a cut. Sliding one
-    // would leave a gap the model cannot express, so only trimming is allowed.
-    // In multi-track mode, clips are independent — free movement is fine.
-    if (!this.state.isMultiTrack && track.type === 'video') return;
+    // The legacy recording lane maps source gaps to cuts. Independent video
+    // tracks are free to move without changing the recorded source.
+    if (!this.state.isMultiTrack && track.id === 'track-video') return;
 
     const clampedStart = Math.max(0, newStartMs);
 
@@ -455,6 +514,44 @@ class TimelineStore {
     };
     this.notify();
     this.commitTrackChange();
+  };
+
+  duplicateSelectedClip = () => {
+    const selectedId = this.state.selectedClipId;
+    if (!selectedId) return null;
+
+    const found = this.findClip(selectedId);
+    if (!found || found.track.locked) return null;
+
+    const duplicate: TimelineClip = {
+      ...found.clip,
+      id: `clip-${Math.random().toString(36).slice(2, 9)}`,
+      trackId: found.track.id,
+      name: `${found.clip.name} copy`,
+      startMs: found.clip.startMs + found.clip.durationMs,
+      payload: found.clip.payload ? { ...found.clip.payload } : undefined,
+    };
+    const duplicateEnd = duplicate.startMs + duplicate.durationMs;
+
+    this.recordSnapshot();
+    this.state = {
+      ...this.state,
+      durationMs: Math.max(this.state.durationMs, duplicateEnd + 1000),
+      selectedClipId: duplicate.id,
+      tracks: this.state.tracks.map((track) =>
+        track.id === found.track.id
+          ? {
+              ...track,
+              clips: [...track.clips, duplicate].sort(
+                (a, b) => a.startMs - b.startMs,
+              ),
+            }
+          : track,
+      ),
+    };
+    this.notify();
+    this.commitTrackChange();
+    return duplicate;
   };
 
   findClip = (
@@ -521,34 +618,65 @@ class TimelineStore {
       startMs?: number;
       color?: string;
       payload?: TimelineClip['payload'];
+      targetTrackId?: string;
     },
   ): TimelineClip => {
-    let track = this.state.tracks.find((t) => t.type === trackType);
+    const wantsLayerTrack = this.state.isMultiTrack;
+    let track = this.state.tracks.find((t) => t.id === clipData.targetTrackId && t.type === trackType && !t.locked) ?? this.state.tracks.find((t) =>
+      t.type === trackType && !t.locked && (!wantsLayerTrack || !t.id.startsWith('track-')),
+    );
     if (!track) {
       const newTrack: TimelineTrack = {
-        id: `track-${trackType}`,
+        id: this.state.isMultiTrack
+          ? `layer-${trackType}-${Math.random().toString(36).slice(2, 9)}`
+          : `track-${trackType}`,
         type: trackType,
         name:
           trackType === 'effects'
-            ? 'Effects & Zooms'
+            ? 'Effects'
             : trackType === 'captions'
-              ? 'Subtitles & Text'
+              ? 'Text & Captions'
               : trackType === 'video'
-                ? 'Video'
-                : 'Audio',
+                ? `Video ${this.state.tracks.filter((candidate) => candidate.type === 'video').length + 1}`
+                : trackType === 'audio'
+                  ? `Audio ${this.state.tracks.filter((candidate) => candidate.type === 'audio').length + 1}`
+                  : trackType === 'transitions'
+                    ? 'Transitions'
+                    : 'Overlays',
         locked: false,
         visible: true,
         clips: [],
       };
       this.state = {
         ...this.state,
-        tracks: [...this.state.tracks, newTrack],
+        tracks: sortTracksForTimeline([...this.state.tracks, newTrack]),
       };
       track = newTrack;
     }
 
-    const startMs =
-      clipData.startMs !== undefined
+    const selected = this.state.selectedClipId
+      ? this.findClip(this.state.selectedClipId)
+      : null;
+    const transitionTarget = trackType === 'transitions'
+      ? selected?.track.type === 'video'
+        ? selected.clip
+        : this.state.tracks
+            .filter((candidate) => candidate.type === 'video')
+            .flatMap((candidate) => candidate.clips)
+            .sort((a, b) =>
+              Math.abs(a.startMs - this.state.currentTimeMs) -
+              Math.abs(b.startMs - this.state.currentTimeMs),
+            )[0]
+      : undefined;
+    const transitionSide = clipData.payload?.transitionSide ?? 'in';
+    const transitionDuration = transitionTarget
+      ? Math.min(clipData.durationMs, transitionTarget.durationMs)
+      : clipData.durationMs;
+    const startMs = transitionTarget
+      ? transitionSide === 'in'
+        ? transitionTarget.startMs
+        : transitionTarget.startMs + transitionTarget.durationMs - transitionDuration
+      : clipData.startMs !== undefined
         ? clipData.startMs
         : this.state.currentTimeMs;
 
@@ -557,11 +685,14 @@ class TimelineStore {
       trackId: track.id,
       name: clipData.name,
       startMs: Math.max(0, startMs),
-      durationMs: clipData.durationMs,
+      durationMs: transitionTarget ? transitionDuration : clipData.durationMs,
       sourceStartMs: 0,
-      sourceDurationMs: clipData.durationMs,
+      sourceDurationMs: transitionTarget ? transitionDuration : clipData.durationMs,
       color: clipData.color,
-      payload: clipData.payload,
+      payload: {
+        ...clipData.payload,
+        ...(transitionTarget ? { targetClipId: transitionTarget.id } : {}),
+      },
     };
 
     const clipEnd = newClip.startMs + newClip.durationMs;
@@ -618,6 +749,7 @@ export function useTimelineTools() {
     setZoomPxPerMs: timelineStore.setZoomPxPerMs,
     splitAtPlayhead: timelineStore.splitAtPlayhead,
     deleteSelectedClip: timelineStore.deleteSelectedClip,
+    duplicateSelectedClip: timelineStore.duplicateSelectedClip,
     updateClip: timelineStore.updateClip,
     undo: timelineStore.undo,
     redo: timelineStore.redo,

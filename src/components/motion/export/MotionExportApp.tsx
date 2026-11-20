@@ -91,11 +91,14 @@ export function MotionExportStageView({
         const usedSlots = new Set<number>();
         let needsAssetSettle = false;
         for (const layer of frame.layers.slice(-2)) {
-          let slot = sceneIdsRef.current.indexOf(layer.scene.id) as 0 | 1 | -1;
-          if (slot < 0 || usedSlots.has(slot)) slot = usedSlots.has(0) ? 1 : 0;
+          const index = sceneIdsRef.current.indexOf(layer.scene.id);
+          let slot: 0 | 1 = (index >= 0 && index <= 1) ? (index as 0 | 1) : (usedSlots.has(0) ? 1 : 0);
+          if (usedSlots.has(slot)) slot = slot === 0 ? 1 : 0;
           usedSlots.add(slot);
-          if (sceneIdsRef.current[slot] !== layer.scene.id) {
-            sceneIdsRef.current[slot] = layer.scene.id;
+          const arr = sceneIdsRef.current;
+          if (arr[slot] !== layer.scene.id) {
+            arr[slot] = layer.scene.id;
+            sceneIdsRef.current = arr;
             setSceneDocs((current) => {
               const next = [...current];
               next[slot] = selectMotionScene(job.document, layer.scene.id);
@@ -105,10 +108,10 @@ export function MotionExportStageView({
           }
           activeLayers.push({ sceneId: layer.scene.id, slot, sceneTime: layer.sceneTime });
           const clock = clocks[slot];
-          if (clock.getTime() === layer.sceneTime) {
+          if (clock && clock.getTime() === layer.sceneTime) {
             clock.seek(layer.sceneTime === 0 ? 1e-6 : layer.sceneTime - 1e-6);
           }
-          clock.seek(layer.sceneTime);
+          if (clock) clock.seek(layer.sceneTime);
         }
 
         if (needsAssetSettle) {

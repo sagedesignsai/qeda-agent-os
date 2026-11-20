@@ -12,6 +12,7 @@
 import type { StudioStyling } from './types';
 
 export const DEFAULT_STUDIO_STYLING: StudioStyling = {
+  canvasMode: 'edit',
   background: 'linear-gradient(135deg, #1e1b4b 0%, #0f172a 50%, #020617 100%)',
   borderRadius: 16,
   padding: 44,

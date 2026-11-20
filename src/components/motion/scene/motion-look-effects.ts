@@ -259,7 +259,11 @@ export function createLookEffect(kind: MotionLookKind): LookEffectInstance {
     }
 
     case 'lens-distortion': {
-      const effect = new LensDistortionEffect({ distortion: new Vector2() });
+      const effect = new LensDistortionEffect({
+        distortion: new Vector2(),
+        principalPoint: new Vector2(),
+        focalLength: new Vector2(1, 1),
+      });
       return {
         kind,
         effect,

@@ -1,4 +1,4 @@
-import { layoutDopeSheet } from '@/lib/timeline/dopesheet';
+import { layoutDopeSheet, type DopeSheetLayout, type DopeSheetRow } from '@/lib/timeline/dopesheet';
 import type { TimelineModel, TimelineView } from '@/lib/timeline/types';
 
 const view: TimelineView = { pxPerSecond: 100, scrollSeconds: 0 };
@@ -61,7 +61,7 @@ const model = modelWith(
   ],
 );
 
-function layout(input?: { view?: TimelineView; collapsedGroups?: Set<string> }) {
+function layout(input?: { view?: TimelineView; collapsedGroups?: Set<string> }): DopeSheetLayout {
   return layoutDopeSheet({
     model,
     view: input?.view ?? view,
@@ -82,12 +82,14 @@ describe('dope sheet layout', () => {
       'node-b::position.x',
     ]);
     expect(result.rows.find((row) => row.id === 'node-a:group')?.name).toBe('Node A');
-    expect(result.rows.filter((row) => !row.isGroupHeader)).toHaveLength(2);
+    const dopeRows = result.rows as DopeSheetRow[];
+    expect(dopeRows.filter((row) => !row.isGroupHeader)).toHaveLength(2);
   });
 
   it('keeps one row for two placements of the same clip on one track', () => {
     const result = layout();
-    const opacityRows = result.rows.filter((row) => row.property === 'opacity');
+    const dopeRows = result.rows as DopeSheetRow[];
+    const opacityRows = dopeRows.filter((row) => row.property === 'opacity');
 
     expect(opacityRows).toHaveLength(1);
     // Both bars live on that one row, each with its own keys.

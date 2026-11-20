@@ -153,7 +153,7 @@ export async function renderStudioCompositionVideo(
 
   const fps = Math.max(1, Math.round(options?.fps ?? 30));
   const dims = studioCanvasDims(document.aspectRatio);
-  const canvas = document.createElement('canvas');
+  const canvas = globalThis.document.createElement('canvas');
   canvas.width = dims.width;
   canvas.height = dims.height;
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -273,7 +273,7 @@ export async function renderStudioCompositionVideo(
       const media = new Map<string, StudioCompositionMedia>();
       for (const loaded of loadedLayers) {
         const { layer, video, image } = loaded;
-        if (video) {
+        if (video && layer.kind === 'video') {
           if (timeMs >= layer.startMs && timeMs <= layer.endMs) {
             const durationMs = Math.min(
               layer.sourceDurationMs,

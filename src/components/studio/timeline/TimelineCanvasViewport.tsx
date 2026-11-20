@@ -513,6 +513,16 @@ export function TimelineCanvasViewport({
           ctx.font = 'bold 10px sans-serif';
           ctx.textBaseline = 'middle';
           ctx.fillText(clip.name, clipX + 10, clipY + 12, 90);
+        } else if (track.type === 'transitions') {
+          const grad = ctx.createLinearGradient(clipX, clipY, clipX, clipY + clipH);
+          grad.addColorStop(0, '#db2777');
+          grad.addColorStop(1, '#9d174d');
+          ctx.fillStyle = grad;
+          ctx.fillRect(clipX, clipY, clipW, clipH);
+          ctx.fillStyle = '#fff1f2';
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`↔ ${clip.payload?.transitionType ?? 'Fade'}`, clipX + 8, clipY + clipH / 2, Math.max(10, clipW - 16));
         } else if (track.type === 'audio') {
           // Track 4: Audio Waveforms (Sky blue mirrored peaks)
           ctx.fillStyle = '#0c4a6e'; // Deep ocean blue
@@ -1162,6 +1172,9 @@ export function TimelineCanvasViewport({
       } else if ((e.metaKey || e.ctrlKey) && isY) {
         e.preventDefault();
         timelineStore.redo();
+      } else if ((e.metaKey || e.ctrlKey) && e.code === 'KeyD') {
+        e.preventDefault();
+        timelineStore.duplicateSelectedClip();
       } else if (e.code === 'KeyV') {
         timelineStore.setActiveTool('select');
       } else if (e.code === 'KeyC') {

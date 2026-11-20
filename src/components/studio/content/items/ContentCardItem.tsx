@@ -18,6 +18,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import type { StudioClipPayload, TrackType } from '@/lib/studio-types';
+import type { StudioMediaAsset } from '@/lib/studio/types';
 
 export interface ContentItemPayload {
   trackType: TrackType;
@@ -25,6 +26,8 @@ export interface ContentItemPayload {
   durationMs: number;
   color?: string;
   payload?: StudioClipPayload;
+  /** Source media to register in the active take's persistent media pool. */
+  mediaAsset?: StudioMediaAsset;
 }
 
 interface ContentCardItemProps {

@@ -142,7 +142,22 @@ export function registerStudioCompositionHandlers({
           if (!take.videoPath) {
             throw new Error(`Studio take "${take.title}" has no video source.`);
           }
-          return take;
+          return {
+            id: take.id,
+            projectId: take.projectId,
+            title: take.title,
+            description: take.description,
+            sourceType: take.sourceType,
+            sourceName: take.sourceName,
+            durationMs: take.durationMs,
+            videoPath: take.videoPath,
+            cutCount: take.cuts.length,
+            zoomCount: take.zooms.length,
+            fileSizeBytes: take.fileSizeBytes,
+            createdAt: take.createdAt,
+            updatedAt: take.updatedAt,
+            isMultiTrack: Array.isArray(take.tracks) && take.tracks.length > 0,
+          };
         },
       });
       broadcastChanged();

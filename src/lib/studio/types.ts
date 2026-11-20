@@ -88,6 +88,8 @@ export interface StudioPlugin {
 }
 
 export interface StudioStyling {
+  /** Video uses an edge-to-edge editing canvas; showcase retains the framed mockup presentation. */
+  canvasMode?: 'edit' | 'showcase';
   background: string;
   borderRadius: number;
   padding: number;
@@ -424,7 +426,7 @@ export interface StudioClip {
   /** Offset into the source media asset (ms). */
   sourceInMs: number;
   /** Reference to the media asset in the project's pool. */
-  mediaAssetId: string;
+  mediaAssetId?: string;
   /** Playback speed multiplier (1 = normal, 0.5 = half speed, 2 = double). */
   speed?: number;
   /** Volume multiplier for audio clips (0..2, default 1). */
@@ -447,15 +449,23 @@ export interface StudioClip {
   exitAnimation?: ClipAnimation;
   /** Optional device mockup frame overlay for this clip. */
   deviceFrame?: ClipDeviceFrame;
+  /** Optional effect, caption, overlay, or transition data for non-media clips. */
+  payload?: StudioClipPayload;
 }
 
 /**
  * A named track within a Showcase project timeline.
  *
- * Each track holds an ordered set of `StudioClip` instances.  Video tracks
- * composite from bottom to top by `zIndex`; audio tracks mix together.
+ * Each track holds an ordered set of clips. Media lanes compose or mix by
+ * stack order; effects and transitions are represented as timeline clips.
  */
-export type StudioTrackType = 'video' | 'audio';
+export type StudioTrackType =
+  | 'video'
+  | 'audio'
+  | 'effects'
+  | 'transitions'
+  | 'captions'
+  | 'overlays';
 
 export interface StudioTrack {
   id: string;
@@ -503,14 +513,13 @@ export interface StudioTake {
   updatedAt: number;
 
   // ── Multi-track project fields ─────────────────────────────────────────────
-  // These fields enable the new multi-track editing model.  When present, the
-  // timeline is built from `tracks` (which hold `StudioClip` instances) instead
-  // of being derived from `cuts`/`zooms`/`captions`.  A blank project has
-  // empty arrays here and an empty `videoPath`.
+  // These fields enable the independent track model. New media, effect, and
+  // transition clips live in `tracks`; legacy take fields remain readable for
+  // existing recordings. A blank project has empty arrays and an empty path.
 
   /** Media pool — all source recordings and imported assets for this project. */
   mediaAssets?: StudioMediaAsset[];
-  /** Named tracks (video/audio) holding the project's clips. */
+  /** Named media and effect tracks holding the project's clips. */
   tracks?: StudioTrack[];
 }
 
@@ -693,7 +702,7 @@ export interface StudioCompositionImageAsset {
 
 // ── Timeline projection ───────────────────────────────────────────────────────
 
-export type TrackType = 'effects' | 'captions' | 'video' | 'audio' | 'overlays';
+export type TrackType = StudioTrackType;
 
 /**
  * The payload carried by a timeline clip. Kept as one flat, optional bag so a
@@ -701,6 +710,8 @@ export type TrackType = 'effects' | 'captions' | 'video' | 'audio' | 'overlays';
  * `updateClip` can merge partial patches without wiping sibling keys.
  */
 export interface StudioClipPayload {
+  /** Media pool source used by this timeline placement. */
+  mediaAssetId?: string;
   // Kinetic camera zoom
   scale?: number;
   targetX?: number;
@@ -715,6 +726,9 @@ export interface StudioClipPayload {
   // Canvas effect pass
   effectType?: string;
   intensity?: number;
+  transitionType?: StudioCompositionTransitionType;
+  transitionSide?: 'in' | 'out';
+  targetClipId?: string;
   // Media overlay
   kind?: StudioOverlayKind;
   srcPath?: string;

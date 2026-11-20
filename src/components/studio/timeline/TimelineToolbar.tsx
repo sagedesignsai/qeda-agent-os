@@ -25,6 +25,7 @@ import {
   SplitIcon,
   Undo2Icon,
   Redo2Icon,
+  CopyIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -99,6 +100,7 @@ export function TimelineToolbar({
     toggleSnapping,
     setZoomPxPerMs,
     splitAtPlayhead,
+    duplicateSelectedClip,
     deleteSelectedClip,
     undo,
     redo,
@@ -195,6 +197,24 @@ export function TimelineToolbar({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Split at Playhead (B)</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-all duration-150 hover:bg-secondary/50 active:scale-95"
+              onClick={duplicateSelectedClip}
+              disabled={!selectedClipId}
+              aria-label="Duplicate selected clip"
+            >
+              <CopyIcon className="w-3 h-3" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            Duplicate selected clip (Ctrl/⌘+D)
+          </TooltipContent>
         </Tooltip>
 
         <Tooltip>

@@ -26,6 +26,7 @@ import {
   Maximize2Icon,
   KeyRoundIcon,
   ZapIcon,
+  ArrowLeftRightIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -89,6 +90,8 @@ export function ClipPropertiesSection({
         return <Volume2Icon className="w-3.5 h-3.5 text-amber-400" />;
       case 'overlays':
         return <ImageIcon className="w-3.5 h-3.5 text-amber-400" />;
+      case 'transitions':
+        return <ArrowLeftRightIcon className="w-3.5 h-3.5 text-pink-400" />;
       default:
         return <SparklesIcon className="w-3.5 h-3.5 text-primary" />;
     }
@@ -112,6 +115,8 @@ export function ClipPropertiesSection({
         return 'AUDIO';
       case 'overlays':
         return 'OVERLAY';
+      case 'transitions':
+        return `${clip.payload?.transitionType ?? 'FADE'} TRANSITION`;
       default:
         return 'CLIP';
     }
@@ -140,6 +145,7 @@ export function ClipPropertiesSection({
   // Set the default open section on mount based on track type
   useState(() => {
     if (track.type === 'effects') setActiveSection('Zoom');
+    else if (track.type === 'transitions') setActiveSection('Transition');
     else if (track.type === 'overlays') setActiveSection('Overlay');
     else if (track.type === 'captions') setActiveSection('Caption');
     else if (track.type === 'video') setActiveSection('Video');
@@ -383,6 +389,29 @@ export function ClipPropertiesSection({
           <XIcon className="w-3 h-3" />
         </Button>
       </div>
+
+      {track.type === 'transitions' && (
+        <StudioPanelSection title="Transition" open={activeSection === 'Transition'} onOpenChange={handleSectionToggle('Transition')}>
+          <StudioFieldRow label="Style">
+            <Select
+              value={clip.payload?.transitionType ?? 'fade'}
+              onValueChange={(value) =>
+                onUpdateClip(clip.id, {
+                  name: `${value} transition`,
+                  payload: { transitionType: value as StudioCompositionTransitionType },
+                })
+              }
+            >
+              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(['fade', 'slide-left', 'slide-right', 'slide-up', 'slide-down', 'scale'] as StudioCompositionTransitionType[]).map((value) => (
+                  <SelectItem key={value} value={value}>{value.replaceAll('-', ' ')}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </StudioFieldRow>
+        </StudioPanelSection>
+      )}
 
       {/* ── Effects: Zoom ─────────────────────────────────────────────────── */}
       {track.type === 'effects' && isZoomClip && (

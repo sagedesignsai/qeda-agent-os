@@ -324,6 +324,20 @@ export function getStudioOverlaySource(overlayId: string): string | null {
   return null;
 }
 
+/** Resolve a media-pool asset id to its persisted source path. */
+export function getStudioMediaAssetPath(assetId: string): string | null {
+  const row = getDb()
+    .prepare(
+      `SELECT json_extract(asset.value, '$.path') AS path
+         FROM studio_takes AS take, json_each(take.media_assets_json) AS asset
+        WHERE json_valid(take.media_assets_json) = 1
+          AND json_extract(asset.value, '$.id') = ?
+        LIMIT 1`,
+    )
+    .get(assetId) as { path?: string } | undefined;
+  return typeof row?.path === 'string' ? row.path : null;
+}
+
 export function saveStudioTake(take: {
   id: string;
   projectId?: string | null;

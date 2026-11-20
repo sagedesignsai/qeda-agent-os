@@ -27,6 +27,7 @@ import {
   type ContentItemPayload,
 } from '../items/ContentCardItem';
 import type { StudioTakeSummary } from '@/lib/studio-types';
+import type { StudioMediaAsset } from '@/lib/studio/types';
 import { toast } from 'sonner';
 import { AssetSearchDialog } from '@/components/resources/AssetSearchDialog';
 import type {
@@ -109,7 +110,7 @@ export function StudioMediaTab({
 
       return [
         {
-          id: Math.random().toString(36).slice(2, 9),
+          id: crypto.randomUUID(),
           name: file.name,
           path: file.path,
           type: file.kind,
@@ -127,7 +128,7 @@ export function StudioMediaTab({
   const handleAssetDownloaded = (res: DownloadResourceResult) => {
     if (!res.filePath || !res.fileName) return;
     const newAsset: ImportedAsset = {
-      id: Math.random().toString(36).slice(2, 9),
+      id: crypto.randomUUID(),
       name: res.fileName,
       path: res.filePath,
       type: 'image',
@@ -154,7 +155,7 @@ export function StudioMediaTab({
 
       if (!res.canceled && res.files.length > 0) {
         const newAssets: ImportedAsset[] = res.files.map((f) => ({
-          id: Math.random().toString(36).slice(2, 9),
+          id: crypto.randomUUID(),
           name: f.name,
           path: f.path,
           type: f.type,
@@ -302,14 +303,7 @@ export function StudioMediaTab({
                   )
                 }
                 itemData={{
-                  // Images become picture-in-picture overlays; audio and video
-                  // feed their dedicated tracks.
-                  trackType:
-                    asset.type === 'audio'
-                      ? 'audio'
-                      : asset.type === 'image'
-                        ? 'overlays'
-                        : 'video',
+                  trackType: asset.type === 'audio' ? 'audio' : 'video',
                   name: asset.name,
                   durationMs: asset.durationMs,
                   color:
@@ -319,11 +313,16 @@ export function StudioMediaTab({
                         ? '#f59e0b'
                         : '#4338ca',
                   payload: {
-                    mediaUrl: asset.path,
-                    filePath: asset.path,
-                    kind: asset.type === 'image' ? 'image' : undefined,
-                    srcPath: asset.type === 'image' ? asset.path : undefined,
+                    mediaAssetId: asset.id,
                   },
+                  mediaAsset: {
+                    id: asset.id,
+                    name: asset.name,
+                    path: asset.path,
+                    kind: asset.type,
+                    durationMs: asset.durationMs,
+                    addedAt: Date.now(),
+                  } satisfies StudioMediaAsset,
                 }}
                 onAdd={onAddClip}
               />
@@ -358,9 +357,16 @@ export function StudioMediaTab({
                   durationMs: take.durationMs,
                   color: '#3b82f6',
                   payload: {
-                    mediaUrl: take.videoPath,
-                    filePath: take.videoPath,
+                    mediaAssetId: take.id,
                   },
+                  mediaAsset: take.videoPath ? {
+                    id: take.id,
+                    name: take.title,
+                    path: take.videoPath,
+                    kind: 'video',
+                    durationMs: take.durationMs,
+                    addedAt: take.createdAt,
+                  } : undefined,
                 }}
                 onAdd={onAddClip}
               />

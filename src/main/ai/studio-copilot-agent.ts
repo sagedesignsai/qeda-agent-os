@@ -188,14 +188,10 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
     },
     broadcastChanged: opts.broadcastChanged,
   });
-  const signInTools =
+  const signInTool =
     !opts.forSubagent && opts.requestUserSignIn
-      ? {
-          requestUserSignIn: createStudioSignInTool(
-            opts.requestUserSignIn,
-          ),
-        }
-      : {};
+      ? createStudioSignInTool(opts.requestUserSignIn)
+      : undefined;
 
   return new ToolLoopAgent({
     model: model as any,
@@ -209,7 +205,7 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
       getStudioCapability,
       ...computerUseTools,
       ...browserUseTools,
-      ...signInTools,
+      ...(signInTool ? { requestUserSignIn: signInTool } : {}),
       ...createPlanTools(planManager),
     },
     ...(opts.forSubagent ? {} : { toolApproval: studioCopilotApprovalPolicy }),

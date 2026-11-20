@@ -14,7 +14,7 @@
  *     excised, so a clip's `startMs` is where it plays in the output and
  *     `sourceStartMs` is where it lives in the recording. Round-tripping goes
  *     back through the same mapping.
- *   - The `video` track is the only source of cuts, and its clips are laid out
+ *   - The legacy `track-video` lane is the only source of cuts, and its clips are laid out
  *     contiguously: a cut is the *absence* of a source span, never a gap on the
  *     ruler. `extractCutsFromTracks` therefore reads `sourceStartMs` /
  *     `sourceDurationMs`, not timeline positions.
@@ -22,8 +22,9 @@
  *     be mistaken for a silence gap.
  *   - The `effects` track holds both kinetic zooms and canvas effects; they are
  *     disambiguated by `payload.effectType` (absent ⇒ zoom).
- *   - Track order is stable (effects, captions, video, audio[, overlays]) so
- *     existing consumers keep their indices.
+ *   - Timeline rows are ordered top-to-bottom: effects, captions,
+ *     transitions, overlays, video lanes, then audio. Video rows composite
+ *     bottom-to-top so the highest visible lane draws over the lower lanes.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -182,7 +183,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     {
       id: EFFECTS_TRACK_ID,
       type: 'effects',
-      name: 'Effects & Zooms',
+      name: 'Effects',
       locked: false,
       visible: true,
       clips: [...zoomClips, ...effectClips].sort(
@@ -192,7 +193,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     {
       id: CAPTIONS_TRACK_ID,
       type: 'captions',
-      name: 'Subtitles & Text',
+      name: 'Text & Captions',
       locked: false,
       visible: true,
       clips: captionClips,
@@ -200,7 +201,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     {
       id: VIDEO_TRACK_ID,
       type: 'video',
-      name: 'Primary Video',
+      name: 'Video 1',
       locked: false,
       visible: true,
       clips: videoClips,
@@ -208,7 +209,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     {
       id: AUDIO_TRACK_ID,
       type: 'audio',
-      name: 'Audio Waveform',
+      name: 'Audio 1',
       locked: false,
       visible: true,
       muted: false,
@@ -216,8 +217,9 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     },
   ];
 
-  // Only present a track when it has content, so a take without overlays keeps
-  // the historical four-track shape.
+  // Keep empty legacy lanes out of the default timeline. They can be created
+  // when the user adds a clip of that type, and hiding them gives the actual
+  // edit room to breathe on short timelines.
   if (overlayClips.length > 0) {
     tracks.push({
       id: OVERLAYS_TRACK_ID,
@@ -229,7 +231,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     });
   }
 
-  return tracks;
+  return tracks.filter((track) => track.clips.length > 0);
 }
 
 function segmentTitle(title: string, index: number): string {
@@ -326,12 +328,15 @@ export function extractCutsFromTracks(
   tracks: TimelineTrack[],
   sourceDurationMs: number,
 ): StudioCut[] {
-  const videoTrack = tracks.find((track) => track.type === 'video');
+  // Only the legacy recording lane maps source gaps to cuts. Independent video
+  // tracks may have timeline gaps without changing the source recording.
+  const videoTrack = tracks.find((track) => track.id === VIDEO_TRACK_ID);
   if (!videoTrack || videoTrack.clips.length === 0) return [];
 
-  const sorted = [...videoTrack.clips].sort(
-    (a, b) => a.sourceStartMs - b.sourceStartMs,
-  );
+  const sorted = videoTrack.clips
+    .filter((clip) => !clip.payload?.mediaAssetId)
+    .sort((a, b) => a.sourceStartMs - b.sourceStartMs);
+  if (sorted.length === 0) return [];
   const cuts: StudioCut[] = [];
   let cursor = 0;
 
@@ -367,10 +372,9 @@ export function extractZoomsFromTracks(
   tracks: TimelineTrack[],
   cuts: readonly RippleCut[] = [],
 ): StudioZoom[] {
-  const effectsTrack = tracks.find((track) => track.type === 'effects');
-  if (!effectsTrack) return [];
-
-  return effectsTrack.clips
+  return tracks
+    .filter((track) => track.type === 'effects')
+    .flatMap((track) => track.clips)
     .filter((clip) => {
       // Zoom clips carry scale/target geometry and no canvas effect type, so
       // `effectTypeFromPayload` returns null for them; real FX resolve to a
@@ -394,29 +398,26 @@ export function extractCaptionsFromTracks(
   tracks: TimelineTrack[],
   cuts: readonly RippleCut[] = [],
 ): StudioCaption[] {
-  const captionsTrack = tracks.find((track) => track.type === 'captions');
-  if (!captionsTrack) return [];
-
-  return captionsTrack.clips.map((clip) => {
-    const span = roundSpan(clipSourceSpan(clip, cuts));
-    return {
-      id: clip.id,
-      startMs: span.startMs,
-      endMs: span.endMs,
-      text: clip.payload?.text || clip.name,
-    };
-  });
+  return tracks
+    .filter((track) => track.type === 'captions')
+    .flatMap((track) => track.clips)
+    .map((clip) => {
+      const span = roundSpan(clipSourceSpan(clip, cuts));
+      return {
+        id: clip.id,
+        startMs: span.startMs,
+        endMs: span.endMs,
+        text: clip.payload?.text || clip.name,
+      };
+    });
 }
 
 export function extractEffectsFromTracks(
   tracks: TimelineTrack[],
   cuts: readonly RippleCut[] = [],
 ): StudioEffect[] {
-  const effectsTrack = tracks.find((track) => track.type === 'effects');
-  if (!effectsTrack) return [];
-
   const effects: StudioEffect[] = [];
-  for (const clip of effectsTrack.clips) {
+  for (const clip of tracks.filter((track) => track.type === 'effects').flatMap((track) => track.clips)) {
     const type = effectTypeFromPayload(clip.payload);
     if (!type) continue;
     const span = roundSpan(clipSourceSpan(clip, cuts));
@@ -435,11 +436,8 @@ export function extractOverlaysFromTracks(
   tracks: TimelineTrack[],
   cuts: readonly RippleCut[] = [],
 ): StudioOverlay[] {
-  const overlaysTrack = tracks.find((track) => track.type === 'overlays');
-  if (!overlaysTrack) return [];
-
   const overlays: StudioOverlay[] = [];
-  for (const clip of overlaysTrack.clips) {
+  for (const clip of tracks.filter((track) => track.type === 'overlays').flatMap((track) => track.clips)) {
     const srcPath = clip.payload?.srcPath || clip.payload?.filePath;
     if (!srcPath) continue;
     const span = roundSpan(clipSourceSpan(clip, cuts));
@@ -494,6 +492,7 @@ export function studioClipToTimelineClip(
     sourceDurationMs,
     color: clip.color,
     payload: {
+      ...clip.payload,
       speed: clip.speed,
       volume: clip.volume,
       opacity: clip.opacity,
@@ -502,21 +501,18 @@ export function studioClipToTimelineClip(
       enterAnimation: clip.enterAnimation,
       exitAnimation: clip.exitAnimation,
       deviceFrame: clip.deviceFrame,
+      mediaAssetId: clip.mediaAssetId,
     },
   };
 }
 
 /**
- * Build `TimelineTrack[]` for the timeline store from the new multi-track
- * project model (`StudioTrack[]` + `StudioMediaAsset[]`).
+ * Build `TimelineTrack[]` from persisted project tracks and media assets.
  *
- * If the take has no `tracks` field (legacy single-recording take), returns
- * `null` so the caller falls back to `convertTakeToTracks`.
+ * If the take has no persisted track field, returns `null` so legacy fields
+ * can be projected into editable lanes.
  *
- * The returned tracks use the legacy `TrackType` enum so the existing timeline
- * store and UI components work unchanged:
- *   - `StudioTrack.type === 'video'` → `TrackType 'video'`
- *   - `StudioTrack.type === 'audio'` → `TrackType 'audio'`
+ * Track types and payloads round-trip without a privileged source lane.
  */
 export function convertProjectToTracks(
   take: StudioTake,
@@ -534,9 +530,12 @@ export function convertProjectToTracks(
   const timelineTracks: TimelineTrack[] = [];
 
   for (const track of tracks) {
-    const trackType: 'video' | 'audio' = track.type;
+    const trackType = track.type;
     const clips: TimelineClip[] = track.clips.map((clip) =>
-      studioClipToTimelineClip(clip, assetMap.get(clip.mediaAssetId)),
+      studioClipToTimelineClip(
+        { ...clip, trackId: track.id },
+        clip.mediaAssetId ? assetMap.get(clip.mediaAssetId) : undefined,
+      ),
     );
 
     timelineTracks.push({
@@ -571,14 +570,28 @@ export function extractClipsFromTracks(
 
   const studioTracks: StudioTrack[] = [];
 
-  for (const track of tracks) {
-    // Skip legacy track IDs that come from the single-recording model
-    // (track-effects, track-captions, track-video, track-audio, track-overlays).
-    // Multi-track projects use UUIDs generated when tracks are created.
+  for (const [trackIndex, track] of tracks.entries()) {
+    // Legacy video/audio lanes can also receive imported media. Persist those
+    // independent placements as ordinary project tracks while leaving the
+    // source recording and legacy effect fields on their compatibility path.
     const isLegacyTrack = track.id.startsWith('track-');
-    if (isLegacyTrack) continue;
+    let sourceTrack = track;
+    if (isLegacyTrack) {
+      if (track.type !== 'video' && track.type !== 'audio') continue;
+      const importedClips = track.clips.filter((clip) => clip.payload?.mediaAssetId);
+      if (importedClips.length === 0) continue;
+      sourceTrack = {
+        ...track,
+        id: `layer-imported-${track.type}-${track.id}`,
+        name: `${track.type === 'video' ? 'Video' : 'Audio'} media`,
+        clips: importedClips.map((clip) => ({
+          ...clip,
+          trackId: `layer-imported-${track.type}-${track.id}`,
+        })),
+      };
+    }
 
-    const clips: StudioClip[] = track.clips.map((clip) => {
+    const clips: StudioClip[] = sourceTrack.clips.map((clip) => {
       const payload = clip.payload;
       return {
         id: clip.id,
@@ -587,7 +600,7 @@ export function extractClipsFromTracks(
         startMs: clip.startMs,
         durationMs: clip.durationMs,
         sourceInMs: clip.sourceStartMs,
-        mediaAssetId: '',
+        mediaAssetId: payload?.mediaAssetId,
         speed: payload?.speed ?? 1,
         volume: payload?.volume ?? 1,
         opacity: payload?.opacity,
@@ -597,14 +610,17 @@ export function extractClipsFromTracks(
         enterAnimation: payload?.enterAnimation,
         exitAnimation: payload?.exitAnimation,
         deviceFrame: payload?.deviceFrame,
+        payload,
       };
     });
 
     studioTracks.push({
-      id: track.id,
-      type: track.type === 'audio' ? 'audio' : 'video',
-      name: track.name,
-      zIndex: studioTracks.length,
+      id: sourceTrack.id,
+      type: sourceTrack.type,
+      name: sourceTrack.name,
+      // Timeline rows are persisted top-to-bottom; the model uses larger
+      // zIndex values for layers that should appear above the others.
+      zIndex: tracks.length - trackIndex,
       clips,
       locked: track.locked ?? false,
       visible: track.visible ?? true,
@@ -619,14 +635,38 @@ export function extractClipsFromTracks(
 }
 
 /**
- * Convert a `StudioTake` to timeline tracks, preferring the new multi-track
- * model when available and falling back to the legacy single-recording model.
+ * Combine persisted tracks with legacy take-derived clips during migration.
  *
  * Callers should use this instead of `convertTakeToTracks` directly so that
  * both blank projects (empty tracks) and legacy takes work transparently.
  */
 export function convertTakeToTimeline(take: StudioTake): TimelineTrack[] {
+  const legacyTracks = convertTakeToTracks(take);
   const multiTrack = convertProjectToTracks(take);
-  if (multiTrack !== null) return multiTrack;
-  return convertTakeToTracks(take);
+  if (multiTrack === null) return legacyTracks;
+  const persistedClipIds = new Set(multiTrack.flatMap((track) => track.clips.map((clip) => clip.id)));
+  const uniqueLegacyTracks = legacyTracks
+    .map((track) => ({
+      ...track,
+      clips: track.clips.filter((clip) => !persistedClipIds.has(clip.id)),
+    }))
+    .filter((track) => track.clips.length > 0);
+  const visualOrder: Record<TimelineTrack['type'], number> = {
+    effects: 0,
+    captions: 1,
+    transitions: 2,
+    overlays: 3,
+    video: 4,
+    audio: 5,
+  };
+  return [...uniqueLegacyTracks, ...multiTrack].sort(
+    (a, b) => {
+      const typeOrder = visualOrder[a.type] - visualOrder[b.type];
+      if (typeOrder !== 0) return typeOrder;
+      if (a.type === 'video') {
+        return Number(a.id === VIDEO_TRACK_ID) - Number(b.id === VIDEO_TRACK_ID);
+      }
+      return 0;
+    },
+  );
 }

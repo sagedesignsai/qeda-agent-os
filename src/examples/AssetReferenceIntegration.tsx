@@ -182,11 +182,10 @@ export function TaskWithAttachments({ taskId, projectId }: { taskId: string; pro
 
 export function ResearchWithSources({ researchId, projectId }: { researchId: string; projectId: string }) {
   const assetPicker = useAssetPicker(`research-${researchId}`);
-  const { references, exportReferences } = useAssetReferenceContext(`research-${researchId}`);
+  const { references } = useAssetReferenceContext(`research-${researchId}`);
 
   const exportSources = () => {
-    const sources = exportReferences();
-    console.log('Research sources:', JSON.stringify(sources, null, 2));
+    console.log('Research sources:', JSON.stringify(references, null, 2));
     // Save to database or file
   };
 

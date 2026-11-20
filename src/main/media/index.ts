@@ -22,6 +22,7 @@ import { BLENDER_PREVIEW_HOST } from '../../lib/blender-preview.js';
 import { MOTION_LIBRARY_HOST } from '../../lib/motion/local-library.js';
 import {
   STUDIO_COMPOSITION_ASSET_HOST,
+  STUDIO_MEDIA_ASSET_HOST,
   STUDIO_OVERLAY_HOST,
   STUDIO_TAKE_HOST,
 } from '../../lib/studio/media.js';
@@ -33,6 +34,7 @@ import { serveProjectFile } from './project-files.js';
 import {
   serveOverlay,
   serveStudioCompositionAsset,
+  serveStudioMediaAsset,
   serveStudioTake,
 } from './studio.js';
 import { TTS_MEDIA_HOST } from '../../lib/tts/media.js';
@@ -61,6 +63,7 @@ const HOSTS: Record<string, MediaHostHandler> = {
   [STUDIO_TAKE_HOST]: serveStudioTake,
   [STUDIO_OVERLAY_HOST]: serveOverlay,
   [STUDIO_COMPOSITION_ASSET_HOST]: serveStudioCompositionAsset,
+  [STUDIO_MEDIA_ASSET_HOST]: serveStudioMediaAsset,
   [PROJECT_FILE_HOST]: serveProjectFile,
   motion: serveMotionMedia,
   'motion-staging': serveMotionMedia,

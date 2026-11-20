@@ -36,6 +36,7 @@ describe('StudioProjectsView & Components', () => {
       projectName: null,
       createdAt: Date.now() - 3600000,
       updatedAt: Date.now() - 3600000,
+      isMultiTrack: false,
     },
     {
       id: 'take-2',
@@ -52,6 +53,7 @@ describe('StudioProjectsView & Components', () => {
       projectName: null,
       createdAt: Date.now() - 86400000,
       updatedAt: Date.now() - 86400000,
+      isMultiTrack: false,
     },
   ];
 

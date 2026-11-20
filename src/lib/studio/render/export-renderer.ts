@@ -62,6 +62,8 @@ import {
   sourceFromComp,
 } from '../timeline/ripple';
 import { WebMMuxer } from './webm-muxer';
+import { convertTakeToTimeline, extractZoomsFromTracks } from '../timeline/convert';
+import { studioMediaAssetUrl } from '../media';
 
 export interface RenderComposedVideoOptions {
   onProgress?: (progressRatio: number, statusText: string) => void;
@@ -219,6 +221,11 @@ export async function renderComposedStudioVideo(
   // every encoded timestamp are composition time; only the video seeks use the
   // source. An all-cut take has nothing to render.
   const cuts = normalizeCuts(take.cuts ?? [], totalDurationMs);
+  const timelineTracks = convertTakeToTimeline(take);
+  const timelineZooms = extractZoomsFromTracks(
+    timelineTracks.filter((track) => track.visible),
+    cuts,
+  );
   const compositionDuration = compositionDurationMs(totalDurationMs, cuts);
   if (compositionDuration <= 0) {
     throw new Error('Showcase take has no content left after cuts');
@@ -265,6 +272,35 @@ export async function renderComposedStudioVideo(
           resolve();
         };
         ovVid.onerror = () => resolve();
+      });
+    }
+  }
+
+  const clipAssets = new Map<string, StudioOverlayAsset>();
+  for (const asset of take.mediaAssets ?? []) {
+    if (asset.kind === 'audio') continue;
+    const url = studioMediaAssetUrl(asset.id);
+    if (asset.kind === 'image') {
+      await new Promise<void>((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          if (image.naturalWidth) clipAssets.set(asset.id, { element: image, width: image.naturalWidth, height: image.naturalHeight });
+          resolve();
+        };
+        image.onerror = () => resolve();
+        image.src = url;
+      });
+    } else {
+      await new Promise<void>((resolve) => {
+        const clipVideo = document.createElement('video');
+        clipVideo.muted = true;
+        clipVideo.preload = 'auto';
+        clipVideo.onloadedmetadata = () => {
+          if (clipVideo.videoWidth) clipAssets.set(asset.id, { element: clipVideo, width: clipVideo.videoWidth, height: clipVideo.videoHeight });
+          resolve();
+        };
+        clipVideo.onerror = () => resolve();
+        clipVideo.src = url;
       });
     }
   }
@@ -452,6 +488,16 @@ export async function renderComposedStudioVideo(
         }
       }
     }
+    for (const track of timelineTracks ?? []) {
+      if (track.type !== 'video') continue;
+      for (const clip of track.clips) {
+        if (currentTimeMs < clip.startMs || currentTimeMs > clip.startMs + clip.durationMs) continue;
+        const media = clip.payload?.mediaAssetId ? clipAssets.get(clip.payload.mediaAssetId)?.element : undefined;
+        if (!(media instanceof HTMLVideoElement) || !(media.duration > 0)) continue;
+        const localMs = clip.sourceStartMs + Math.max(0, (currentTimeMs - clip.startMs) * (clip.payload?.speed ?? 1));
+        await seekTo(media, Math.min(localMs / 1000, Math.max(0, media.duration - 0.05)), options?.signal);
+      }
+    }
     if (profileTimings) {
       profileTimings.seekMs.push(performance.now() - tSeek0);
     }
@@ -460,7 +506,7 @@ export async function renderComposedStudioVideo(
     const target = take.videoCrop
       ? { ...IDLE_CAMERA }
       : computeCameraTarget({
-          zooms: take.zooms ?? [],
+          zooms: timelineZooms,
           timeMs: sourceMs,
           zoomIntensity: take.styling.zoomIntensity,
         });
@@ -481,13 +527,17 @@ export async function renderComposedStudioVideo(
       overlayAssets,
       videoCrop: take.videoCrop,
       glowGradient: radialGlow,
+      tracks: timelineTracks,
+      clipAssets,
+      compTimeMs: currentTimeMs,
       drawWindowChrome: (chromeCtx, frame) => {
+        const deviceFrame = take.styling.deviceFrame;
         if (
-          take.styling.deviceFrame &&
-          take.styling.deviceFrame.type !== 'none'
+          deviceFrame &&
+          deviceFrame.type !== 'none'
         ) {
           drawDeviceFrameHeader(chromeCtx, {
-            frame: take.styling.deviceFrame,
+            frame: deviceFrame,
             winX: frame.x,
             winY: frame.y,
             winW: frame.width,
@@ -496,7 +546,7 @@ export async function renderComposedStudioVideo(
             radius: frame.radius,
           });
           drawDeviceFrameFooter(chromeCtx, {
-            frame: take.styling.deviceFrame,
+            frame: deviceFrame,
             winX: frame.x,
             winY: frame.y,
             winW: frame.width,

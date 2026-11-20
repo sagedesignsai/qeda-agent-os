@@ -54,6 +54,22 @@ export function GlobalFramingSection({
       badge={styling.aspectRatio}
       defaultOpen={defaultOpen}
     >
+      <InspectorFieldRow
+        label="Canvas"
+        icon={<BoxSelectIcon className="w-3.5 h-3.5" />}
+      >
+        <InspectorSegmentedGroup
+          value={styling.canvasMode ?? 'showcase'}
+          onChange={(canvasMode) =>
+            onUpdateStyling({ canvasMode: canvasMode as 'edit' | 'showcase' })
+          }
+          options={[
+            { value: 'edit', label: 'Video', tooltip: 'Fill the canvas with timeline clips' },
+            { value: 'showcase', label: 'Showcase', tooltip: 'Place clips in a framed presentation' },
+          ]}
+        />
+      </InspectorFieldRow>
+
       {/* ── Aspect Ratio ────────────────────────────────────────────────────── */}
       <InspectorFieldRow
         label="Aspect Ratio"
@@ -87,49 +103,48 @@ export function GlobalFramingSection({
         />
       </InspectorFieldRow>
 
-      {/* ── Canvas Inset Padding ────────────────────────────────────────────── */}
-      <InspectorSliderInput
-        label="Canvas Padding"
-        icon={<CropIcon className="w-3.5 h-3.5" />}
-        value={styling.padding}
-        min={10}
-        max={65}
-        step={1}
-        unit="%"
-        onChange={(padding) => onUpdateStyling({ padding })}
-      />
+      {styling.canvasMode !== 'edit' && (
+        <>
+          {/* ── Canvas Inset Padding ────────────────────────────────────────── */}
+          <InspectorSliderInput
+            label="Canvas Padding"
+            icon={<CropIcon className="w-3.5 h-3.5" />}
+            value={styling.padding}
+            min={10}
+            max={65}
+            step={1}
+            unit="%"
+            onChange={(padding) => onUpdateStyling({ padding })}
+          />
 
-      {/* ── Corner Radius ───────────────────────────────────────────────────── */}
-      <InspectorSliderInput
-        label="Corner Radius"
-        icon={<CornerUpRightIcon className="w-3.5 h-3.5" />}
-        value={styling.borderRadius}
-        min={0}
-        max={32}
-        step={1}
-        unit="px"
-        onChange={(borderRadius) => onUpdateStyling({ borderRadius })}
-      />
+          {/* ── Corner Radius ───────────────────────────────────────────────── */}
+          <InspectorSliderInput
+            label="Corner Radius"
+            icon={<CornerUpRightIcon className="w-3.5 h-3.5" />}
+            value={styling.borderRadius}
+            min={0}
+            max={32}
+            step={1}
+            unit="px"
+            onChange={(borderRadius) => onUpdateStyling({ borderRadius })}
+          />
 
-      {/* ── Drop Shadow ─────────────────────────────────────────────────────── */}
-      <InspectorFieldRow
-        label="Drop Shadow"
-        icon={<SparkleIcon className="w-3.5 h-3.5" />}
-      >
-        <InspectorSegmentedGroup
-          value={activeShadowPreset}
-          onChange={(presetId) => {
-            const match = SHADOW_PRESETS.find((p) => p.id === presetId);
-            if (match) {
-              onUpdateStyling({ shadow: match.value });
-            }
-          }}
-          options={SHADOW_PRESETS.map((p) => ({
-            value: p.id,
-            label: p.label,
-          }))}
-        />
-      </InspectorFieldRow>
+          {/* ── Drop Shadow ─────────────────────────────────────────────────── */}
+          <InspectorFieldRow
+            label="Drop Shadow"
+            icon={<SparkleIcon className="w-3.5 h-3.5" />}
+          >
+            <InspectorSegmentedGroup
+              value={activeShadowPreset}
+              onChange={(presetId) => {
+                const match = SHADOW_PRESETS.find((p) => p.id === presetId);
+                if (match) onUpdateStyling({ shadow: match.value });
+              }}
+              options={SHADOW_PRESETS.map((p) => ({ value: p.id, label: p.label }))}
+            />
+          </InspectorFieldRow>
+        </>
+      )}
     </InspectorSection>
   );
 }

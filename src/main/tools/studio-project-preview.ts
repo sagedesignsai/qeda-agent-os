@@ -254,7 +254,7 @@ export function createStudioProjectPreviewTools(
         previewOwners.delete(dependencies.preview);
       }
       const existingOwner = previewOwners.get(dependencies.preview);
-      if (existingOwner && existingOwner.projectId !== projectId) {
+      if (existingOwner?.projectId !== projectId && existingOwner != null) {
         throw new Error(
           'A Qeda-managed preview for another project is still active. Switch to that project to inspect or stop it.',
         );
@@ -263,7 +263,7 @@ export function createStudioProjectPreviewTools(
         if (
           reuseExisting &&
           existingOwner?.projectId === projectId &&
-          existingOwner.codebaseId === codebase.id
+          existingOwner?.codebaseId === codebase.id
         ) {
           const settled =
             status.state === 'starting'

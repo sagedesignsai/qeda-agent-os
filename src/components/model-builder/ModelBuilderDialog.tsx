@@ -281,7 +281,7 @@ export function ModelBuilderDialog({
               <MotionSceneCanvas
                 doc={document}
                 clock={clock}
-                viewMode="perspective"
+                viewMode="cinematic"
                 stageColor="hsl(var(--background))"
                 gridVisible={gridVisible}
                 zoom={1}

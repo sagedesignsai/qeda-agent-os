@@ -14,18 +14,27 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import { FilmIcon } from 'lucide-react';
 import type {
+  ClipTransform,
   StudioCaption,
   StudioCut,
   StudioEffect,
+  StudioMediaAsset,
   StudioOverlay,
   StudioStyling,
   StudioVideoCrop,
   StudioZoom,
+  TimelineTrack,
 } from '@/main/ipc/channels';
-import { safeDurationMs } from '@/lib/studio-types';
+import { extractZoomsFromTracks, safeDurationMs } from '@/lib/studio-types';
+import {
+  artboardToLocal,
+  type GizmoBBox,
+  type GizmoPoint,
+  type GizmoTransform,
+} from '@/lib/trace/gizmo/geometry';
 import {
   compFromSource,
   cutAt,
@@ -39,6 +48,7 @@ import {
   type StudioCameraState,
 } from '@/lib/studio/render/camera';
 import {
+  computeStudioCanvasFrame,
   drawStudioFrame,
   type StudioComposeInput,
 } from '@/lib/studio/render/compose';
@@ -46,7 +56,9 @@ import {
   studioOverlayMediaUrl,
   type StudioOverlayAsset,
 } from '@/lib/studio/render/overlays';
-import { timelineStore } from '@/hooks/use-timeline-store';
+import { studioMediaAssetUrl } from '@/lib/studio/media';
+import { timelineStore, useSelectedClip } from '@/hooks/use-timeline-store';
+import { StudioCanvasTransformGizmo } from './StudioCanvasTransformGizmo';
 import {
   drawDeviceFrameHeader,
   drawDeviceFrameFooter,
@@ -70,6 +82,125 @@ interface StudioCanvasProps {
   onDurationChange?: (ms: number) => void;
   onEnded?: () => void;
   onVideoElement?: (video: HTMLVideoElement | null) => void;
+  /** Timeline tracks for per-clip animation evaluation (multi-track model). */
+  tracks?: TimelineTrack[];
+  mediaAssets?: StudioMediaAsset[];
+}
+
+interface StudioClipCanvasGeometry {
+  frame: ReturnType<typeof computeStudioCanvasFrame>;
+  bbox: GizmoBBox;
+  transform: GizmoTransform;
+  origin: GizmoPoint;
+  baseCenter: GizmoPoint;
+}
+
+function studioClipCanvasGeometry(
+  clip: TimelineTrack['clips'][number],
+  track: TimelineTrack,
+  sourceWidth: number,
+  sourceHeight: number,
+  dims: { width: number; height: number },
+  styling: StudioStyling,
+  videoCrop?: StudioVideoCrop,
+  frameContentAspect?: number,
+): StudioClipCanvasGeometry {
+  const cropAspect =
+    track.id === 'track-video' &&
+    !clip.payload?.mediaAssetId &&
+    videoCrop &&
+    videoCrop.width > 0 &&
+    videoCrop.height > 0
+      ? videoCrop.width / videoCrop.height
+      : undefined;
+  const contentAspect = frameContentAspect ?? cropAspect ?? (sourceWidth > 0 && sourceHeight > 0
+    ? sourceWidth / sourceHeight
+    : 16 / 9);
+  const frame = computeStudioCanvasFrame(dims.width, dims.height, styling, contentAspect);
+  const width = clip.payload?.widthPct
+    ? clip.payload.widthPct * frame.contentWidth
+    : frame.contentWidth;
+  const height = clip.payload?.widthPct
+    ? width / (sourceWidth / sourceHeight)
+    : frame.contentHeight;
+  const bbox: GizmoBBox = {
+    x: -width / 2,
+    y: -height / 2,
+    width,
+    height,
+  };
+  const anchor = clip.payload?.transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
+  const origin = {
+    x: (anchor.x - 0.5) * width,
+    y: (anchor.y - 0.5) * height,
+  };
+  const baseCenter = {
+    x: frame.contentX + (clip.payload?.x ?? 0.5) * frame.contentWidth,
+    y: frame.contentY + (clip.payload?.y ?? 0.5) * frame.contentHeight,
+  };
+  const transform: GizmoTransform = {
+    x: baseCenter.x + (clip.payload?.transform?.position?.x ?? 0),
+    y: baseCenter.y + (clip.payload?.transform?.position?.y ?? 0),
+    rotation: clip.payload?.transform?.rotation ?? 0,
+    scaleX: clip.payload?.transform?.scale?.x ?? 1,
+    scaleY: clip.payload?.transform?.scale?.y ?? 1,
+  };
+  return { frame, bbox, transform, origin, baseCenter };
+}
+
+function activeVideoAspectAtTime(
+  tracks: readonly TimelineTrack[],
+  timeMs: number,
+  assets: ReadonlyMap<string, StudioOverlayAsset>,
+  mediaAssets: readonly StudioMediaAsset[],
+  recordedVideo: HTMLVideoElement | null,
+  videoCrop?: StudioVideoCrop,
+): number {
+  const active = tracks
+    .filter((track) => track.type === 'video' && track.visible)
+    .flatMap((track) => track.clips.map((clip) => ({ track, clip })))
+    .find(({ clip }) => timeMs >= clip.startMs && timeMs <= clip.startMs + clip.durationMs);
+  if (!active) {
+    return recordedVideo?.videoWidth && recordedVideo.videoHeight
+      ? recordedVideo.videoWidth / recordedVideo.videoHeight
+      : 16 / 9;
+  }
+  if (active.clip.payload?.mediaAssetId) {
+    const asset = assets.get(active.clip.payload.mediaAssetId) ??
+      mediaAssets.find((candidate) => candidate.id === active.clip.payload?.mediaAssetId);
+    const width = asset?.width ?? 0;
+    const height = asset?.height ?? 0;
+    if (width > 0 && height > 0) return width / height;
+    return 16 / 9;
+  }
+  if (
+    active.track.id === 'track-video' &&
+    videoCrop &&
+    videoCrop.width > 0 &&
+    videoCrop.height > 0
+  ) return videoCrop.width / videoCrop.height;
+  return active.track.id === 'track-video' && recordedVideo?.videoWidth && recordedVideo.videoHeight
+    ? recordedVideo.videoWidth / recordedVideo.videoHeight
+    : 16 / 9;
+}
+
+function clipTransformFromGizmo(
+  transform: GizmoTransform,
+  origin: GizmoPoint,
+  geometry: StudioClipCanvasGeometry,
+): ClipTransform {
+  return {
+    position: {
+      x: transform.x - geometry.baseCenter.x,
+      y: transform.y - geometry.baseCenter.y,
+    },
+    scale: { x: transform.scaleX, y: transform.scaleY },
+    rotation: transform.rotation,
+    anchorPoint: {
+      x: 0.5 + origin.x / geometry.bbox.width,
+      y: 0.5 + origin.y / geometry.bbox.height,
+    },
+  };
 }
 
 // Max drift tolerated between the parent's clock and the video element while
@@ -91,6 +222,8 @@ export function StudioCanvas({
   onDurationChange,
   onEnded,
   onVideoElement,
+  tracks,
+  mediaAssets = [],
 }: StudioCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -98,6 +231,8 @@ export function StudioCanvas({
 
   const cameraRef = useRef<StudioCameraState>({ ...IDLE_CAMERA });
   const overlayAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
+  const clipAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
+  const clipVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
   const overlayVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const glowRef = useRef<{
     width: number;
@@ -117,8 +252,26 @@ export function StudioCanvas({
     () => studioCanvasDims(styling.aspectRatio),
     [styling.aspectRatio],
   );
+  const selectedTimelineClip = useSelectedClip();
+  const timelineZooms = useMemo(
+    () => tracks
+      ? extractZoomsFromTracks(tracks.filter((track) => track.visible), cuts ?? [])
+      : zooms,
+    [tracks, cuts, zooms],
+  );
 
   const [videoLoaded, setVideoLoaded] = useState(false);
+  const [, setClipAssetRevision] = useState(0);
+  const [selectedClipActive, setSelectedClipActive] = useState(() => {
+    const selected = selectedTimelineClip;
+    const time = timelineStore.getState().currentTimeMs;
+    return Boolean(
+      selected?.track.type === 'video' &&
+      selected.track.visible &&
+      time >= selected.clip.startMs &&
+      time <= selected.clip.startMs + selected.clip.durationMs,
+    );
+  });
   const lastEmittedTimeRef = useRef(0);
   const currentTimeRef = useRef(timelineStore.getState().currentTimeMs);
   const isPlayingRef = useRef(isPlaying);
@@ -132,13 +285,46 @@ export function StudioCanvas({
   cutsRef.current = cuts ?? [];
   const overlaysRef = useRef<StudioOverlay[]>(overlays ?? []);
   overlaysRef.current = overlays ?? [];
+  const tracksRef = useRef<TimelineTrack[]>(tracks ?? []);
+  tracksRef.current = tracks ?? [];
   const endedRef = useRef(false);
+  const clipTransformPreviewRef = useRef<StudioComposeInput['clipTransformPreview']>(null);
+  const selectedGizmoRef = useRef<{
+    clip: TimelineTrack['clips'][number];
+    track: TimelineTrack;
+    geometry: StudioClipCanvasGeometry;
+  } | null>(null);
+
+  useEffect(() => {
+    const selected = selectedTimelineClip;
+    const evaluateActive = (timeMs: number) => {
+      const next = Boolean(
+        selected?.track.type === 'video' &&
+        selected.track.visible &&
+        timeMs >= selected.clip.startMs &&
+        timeMs <= selected.clip.startMs + selected.clip.durationMs,
+      );
+      setSelectedClipActive((current) => current === next ? current : next);
+    };
+    evaluateActive(timelineStore.getState().currentTimeMs);
+    return timelineStore.subscribeTime(evaluateActive);
+  }, [
+    selectedTimelineClip?.clip.id,
+    selectedTimelineClip?.clip.startMs,
+    selectedTimelineClip?.clip.durationMs,
+    selectedTimelineClip?.track.visible,
+    selectedTimelineClip?.track.type,
+  ]);
+
+  useEffect(() => {
+    clipTransformPreviewRef.current = null;
+  }, [selectedTimelineClip?.clip.id]);
 
   // The numbers/texture inputs the render loop reads. Stored in refs so prop
   // changes never tear down and re-create the animation loop.
   const renderInputsRef = useRef({
     styling,
-    zooms,
+    zooms: timelineZooms,
     captions,
     effects: effects ?? [],
     overlays: overlays ?? [],
@@ -146,7 +332,7 @@ export function StudioCanvas({
   });
   renderInputsRef.current = {
     styling,
-    zooms,
+    zooms: timelineZooms,
     captions,
     effects: effects ?? [],
     overlays: overlays ?? [],
@@ -209,6 +395,44 @@ export function StudioCanvas({
       }
     }
   }, [overlays]);
+
+  // Load the media-pool sources referenced by multi-track clips.
+  useEffect(() => {
+    const activeIds = new Set(mediaAssets.map((asset) => asset.id));
+    for (const asset of mediaAssets) {
+      if (clipAssetsRef.current.has(asset.id)) continue;
+      const url = studioMediaAssetUrl(asset.id);
+      if (asset.kind === 'image') {
+        const image = new Image();
+        image.onload = () => {
+          if (image.naturalWidth) {
+            clipAssetsRef.current.set(asset.id, { element: image, width: image.naturalWidth, height: image.naturalHeight });
+            setClipAssetRevision((revision) => revision + 1);
+          }
+        };
+        image.src = url;
+      } else if (asset.kind === 'video') {
+        const video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.onloadedmetadata = () => {
+          if (video.videoWidth) {
+            clipAssetsRef.current.set(asset.id, { element: video, width: video.videoWidth, height: video.videoHeight });
+            setClipAssetRevision((revision) => revision + 1);
+          }
+        };
+        video.src = url;
+        clipVideosRef.current.set(asset.id, video);
+      }
+    }
+    for (const id of [...clipAssetsRef.current.keys()]) {
+      if (!activeIds.has(id)) clipAssetsRef.current.delete(id);
+    }
+    for (const [id, video] of clipVideosRef.current) {
+      if (!activeIds.has(id)) { video.pause(); video.src = ''; clipVideosRef.current.delete(id); }
+    }
+  }, [mediaAssets]);
 
   // ── Play / pause sync for overlay videos ──────────────────────────────────
   useEffect(() => {
@@ -401,6 +625,21 @@ export function StudioCanvas({
         glowRef.current = glow;
       }
 
+      for (const track of tracksRef.current) {
+        if (track.type !== 'video' || !track.visible) continue;
+        for (const clip of track.clips) {
+          if (compMs < clip.startMs || compMs > clip.startMs + clip.durationMs) continue;
+          const assetId = clip.payload?.mediaAssetId;
+          const media = assetId ? clipAssetsRef.current.get(assetId)?.element : undefined;
+          if (!(media instanceof HTMLVideoElement) || !(media.duration > 0)) continue;
+          const localMs = clip.sourceStartMs + Math.max(0, (compMs - clip.startMs) * (clip.payload?.speed ?? 1));
+          const seekTo = Math.min(localMs / 1000, Math.max(0, media.duration - 0.05));
+          if (Math.abs(media.currentTime - seekTo) > 0.08) media.currentTime = seekTo;
+          if (isPlayingRef.current && media.paused) void media.play().catch(() => {});
+          if (!isPlayingRef.current && !media.paused) media.pause();
+        }
+      }
+
       const input: StudioComposeInput = {
         width: canvas.width,
         height: canvas.height,
@@ -417,10 +656,15 @@ export function StudioCanvas({
         overlayAssets: overlayAssetsRef.current,
         videoCrop: vc,
         glowGradient: glow.value,
+        tracks: tracksRef.current,
+        clipAssets: clipAssetsRef.current,
+        compTimeMs: compMs,
+        clipTransformPreview: clipTransformPreviewRef.current,
         drawWindowChrome: (chromeCtx, frame) => {
-          if (style.deviceFrame && style.deviceFrame.type !== 'none') {
+          const deviceFrame = style.deviceFrame;
+          if (deviceFrame && deviceFrame.type !== 'none') {
             drawDeviceFrameHeader(chromeCtx, {
-              frame: style.deviceFrame,
+              frame: deviceFrame,
               winX: frame.x,
               winY: frame.y,
               winW: frame.width,
@@ -429,7 +673,7 @@ export function StudioCanvas({
               radius: frame.radius,
             });
             drawDeviceFrameFooter(chromeCtx, {
-              frame: style.deviceFrame,
+              frame: deviceFrame,
               winX: frame.x,
               winY: frame.y,
               winW: frame.width,
@@ -477,6 +721,155 @@ export function StudioCanvas({
     return () => cancelAnimationFrame(animId);
   }, [onTimeUpdate, durationMs, onEnded]);
 
+  const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLCanvasElement>) => {
+    if (isPlayingRef.current || event.button !== 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const point = {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+    const compTime = timelineStore.getState().currentTimeMs;
+    const frameAspect = activeVideoAspectAtTime(
+      tracksRef.current,
+      compTime,
+      clipAssetsRef.current,
+      mediaAssets,
+      videoRef.current,
+      videoCrop,
+    );
+    let hit: { track: TimelineTrack; clip: TimelineTrack['clips'][number] } | null = null;
+
+    // Rows are top-to-bottom, so the first matching video clip is the visible
+    // clip at the pointer when lanes overlap. Once selected, the Trace gizmo
+    // owns all transform drags and commits them as a single undo step.
+    for (const track of tracksRef.current) {
+      if (track.type !== 'video' || !track.visible) continue;
+      for (const clip of [...track.clips].reverse()) {
+        if (compTime < clip.startMs || compTime > clip.startMs + clip.durationMs) continue;
+        const asset = clip.payload?.mediaAssetId
+          ? clipAssetsRef.current.get(clip.payload.mediaAssetId)
+          : undefined;
+        const sourceWidth = asset?.width ?? (track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
+        const sourceHeight = asset?.height ?? (track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
+        if (sourceWidth <= 0 || sourceHeight <= 0) continue;
+        const geometry = studioClipCanvasGeometry(
+          clip,
+          track,
+          sourceWidth,
+          sourceHeight,
+          canvasDims,
+          styling,
+          videoCrop,
+          frameAspect,
+        );
+        const localPoint = artboardToLocal(point, geometry.transform, geometry.origin);
+        if (
+          localPoint.x >= geometry.bbox.x &&
+          localPoint.x <= geometry.bbox.x + geometry.bbox.width &&
+          localPoint.y >= geometry.bbox.y &&
+          localPoint.y <= geometry.bbox.y + geometry.bbox.height
+        ) {
+          hit = { track, clip };
+          break;
+        }
+      }
+      if (hit) break;
+    }
+
+    if (!hit) {
+      timelineStore.setSelectedClipId(null);
+      return;
+    }
+    timelineStore.setSelectedClipId(hit.clip.id);
+    event.preventDefault();
+  }, [canvasDims, styling, videoCrop]);
+
+  const selectedGizmo = (() => {
+    const selected = selectedTimelineClip;
+    if (
+      !selectedClipActive ||
+      !selected ||
+      selected.track.type !== 'video' ||
+      !selected.track.visible
+    ) return null;
+    const asset = selected.clip.payload?.mediaAssetId
+      ? clipAssetsRef.current.get(selected.clip.payload.mediaAssetId) ??
+        mediaAssets.find((candidate) => candidate.id === selected.clip.payload?.mediaAssetId)
+      : undefined;
+    const sourceWidth = asset?.width ?? (selected.track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
+    const sourceHeight = asset?.height ?? (selected.track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
+    if (sourceWidth <= 0 || sourceHeight <= 0) return null;
+    const frameAspect = activeVideoAspectAtTime(
+      tracksRef.current,
+      timelineStore.getState().currentTimeMs,
+      clipAssetsRef.current,
+      mediaAssets,
+      videoRef.current,
+      videoCrop,
+    );
+    const geometry = studioClipCanvasGeometry(
+      selected.clip,
+      selected.track,
+      sourceWidth,
+      sourceHeight,
+      canvasDims,
+      styling,
+      videoCrop,
+      frameAspect,
+    );
+    const rect = canvasRef.current?.getBoundingClientRect();
+    return {
+      ...selected,
+      geometry,
+      zoom: rect && rect.width > 0 ? rect.width / canvasDims.width : 1,
+    };
+  })();
+  selectedGizmoRef.current = selectedGizmo
+    ? {
+        clip: selectedGizmo.clip,
+        track: selectedGizmo.track,
+        geometry: selectedGizmo.geometry,
+      }
+    : null;
+
+  const getCanvasPoint = useCallback((clientX: number, clientY: number): GizmoPoint => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return { x: 0, y: 0 };
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }, []);
+
+  const handleGizmoPreview = useCallback((preview: { transform: GizmoTransform; origin: GizmoPoint } | null) => {
+    const selected = selectedGizmoRef.current;
+    clipTransformPreviewRef.current = preview && selected
+      ? {
+          clipId: selected.clip.id,
+          transform: clipTransformFromGizmo(preview.transform, preview.origin, selected.geometry),
+        }
+      : null;
+  }, []);
+
+  const handleGizmoCommit = useCallback((transform: GizmoTransform, origin: GizmoPoint) => {
+    const selected = selectedGizmoRef.current;
+    if (!selected) return;
+    timelineStore.updateClip(
+      selected.clip.id,
+      {
+        payload: {
+          transform: clipTransformFromGizmo(transform, origin, selected.geometry),
+        },
+      },
+      selected.track.id,
+    );
+  }, []);
+
   const aspectClass =
     styling.aspectRatio === '9:16'
       ? 'aspect-[9/16] max-h-[640px]'
@@ -486,7 +879,11 @@ export function StudioCanvas({
           ? 'aspect-[4/3] max-h-[580px]'
           : 'aspect-video max-h-[580px]';
 
-  const showBlankPlaceholder = !videoUrl && (overlays?.length ?? 0) === 0;
+  const hasVideoTrackClips = tracks?.some(
+    (track) => track.type === 'video' && track.clips.length > 0,
+  ) ?? false;
+  const showBlankPlaceholder =
+    !videoUrl && !hasVideoTrackClips && (overlays?.length ?? 0) === 0;
 
   return (
     <div
@@ -530,8 +927,23 @@ export function StudioCanvas({
         ref={canvasRef}
         width={canvasDims.width}
         height={canvasDims.height}
-        className="w-full h-full object-contain pointer-events-none select-none"
+        className="w-full h-full object-contain touch-none select-none cursor-crosshair"
+        onPointerDown={handleCanvasPointerDown}
       />
+
+      {selectedGizmo && (
+        <StudioCanvasTransformGizmo
+          key={selectedGizmo.clip.id}
+          bbox={selectedGizmo.geometry.bbox}
+          transform={selectedGizmo.geometry.transform}
+          origin={selectedGizmo.geometry.origin}
+          zoom={selectedGizmo.zoom}
+          disabled={isPlaying || selectedGizmo.track.locked}
+          getCanvasPoint={getCanvasPoint}
+          onPreview={handleGizmoPreview}
+          onCommit={handleGizmoCommit}
+        />
+      )}
 
       {/* Placeholder when there is nothing to preview yet. */}
       {showBlankPlaceholder && (
@@ -549,7 +961,7 @@ export function StudioCanvas({
             </div>
             <div className="flex flex-col gap-1">
               <h3 className="text-sm font-semibold text-foreground">
-                Blank Showcase Canvas
+                Empty Canvas
               </h3>
               <p className="text-xs text-muted-foreground/80 max-w-xs">
                 Drag media or click{' '}

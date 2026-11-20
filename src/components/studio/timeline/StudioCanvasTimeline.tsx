@@ -34,6 +34,7 @@ interface StudioCanvasTimelineProps {
   onTogglePlay: () => void;
   onRestartPlayback: () => void;
   onTracksChange?: (tracks: TimelineTrack[]) => void;
+  onInsertClip?: (clip: import('../content/items/ContentCardItem').ContentItemPayload, startMs: number, targetTrackId?: string) => void;
   onOpenVideoCrop?: () => void;
 }
 
@@ -49,6 +50,7 @@ export function StudioCanvasTimeline({
   onTogglePlay,
   onRestartPlayback,
   onTracksChange,
+  onInsertClip,
   onOpenVideoCrop,
 }: StudioCanvasTimelineProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -89,11 +91,19 @@ export function StudioCanvasTimeline({
       const relativeX = Math.max(0, e.clientX - rect.left - 192); // 192 is track header width
       const zoomPxPerMs = timelineStore.getState().zoomPxPerMs;
       const dropTimeMs = Math.round(relativeX / zoomPxPerMs);
+      const viewport = viewportContainerRef.current;
+      let targetTrackId: string | undefined;
+      if (viewport) {
+        const viewportRect = viewport.getBoundingClientRect();
+        const rowIndex = Math.floor(
+          (e.clientY - viewportRect.top + viewport.scrollTop - RULER_HEIGHT) / TRACK_HEIGHT,
+        );
+        const targetTrack = timelineStore.getState().tracks[rowIndex];
+        if (targetTrack?.type === clipData.trackType) targetTrackId = targetTrack.id;
+      }
 
-      timelineStore.addClip(clipData.trackType, {
-        ...clipData,
-        startMs: dropTimeMs,
-      });
+      if (onInsertClip) onInsertClip(clipData, dropTimeMs, targetTrackId);
+      else timelineStore.addClip(clipData.trackType, { ...clipData, startMs: dropTimeMs, targetTrackId });
       toast.success(`Added ${clipData.name} to ${clipData.trackType} track`);
     } catch {
       // Ignore parse errors

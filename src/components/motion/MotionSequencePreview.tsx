@@ -27,10 +27,13 @@ export function MotionSequencePreview({ doc, onClose }: { doc: MotionDocument; o
     const assigned: Array<{ slot: 0 | 1; sceneId: string; sceneTime: number }> = [];
     const used = new Set<number>();
     for (const layer of frame.layers.slice(-2)) {
-      let slot = slotSceneIds.current.indexOf(layer.scene.id) as 0 | 1 | -1;
-      if (slot < 0 || used.has(slot)) slot = used.has(0) ? 1 : 0;
+      const index = slotSceneIds.current.indexOf(layer.scene.id);
+      let slot: 0 | 1 = (index >= 0 && index <= 1) ? (index as 0 | 1) : (used.has(0) ? 1 : 0);
+      if (used.has(slot)) slot = slot === 0 ? 1 : 0;
       used.add(slot);
-      slotSceneIds.current[slot] = layer.scene.id;
+      const arr = slotSceneIds.current;
+      arr[slot] = layer.scene.id;
+      slotSceneIds.current = arr;
       assigned.push({ slot, sceneId: layer.scene.id, sceneTime: layer.sceneTime });
     }
     return { frame, assigned };
@@ -99,10 +102,10 @@ export function MotionSequencePreview({ doc, onClose }: { doc: MotionDocument; o
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden" style={{ background: doc.brand.colors.background }}>
         <div className="absolute inset-0" style={{ opacity: alphaA }}>
-          <MotionSceneCanvas doc={sceneDocs[0]} clock={clockA} viewMode="perspective" stageColor={doc.brand.colors.background} gridVisible={false} zoom={1} showEditorStage={false} dpr={1.25} />
+          <MotionSceneCanvas doc={sceneDocs[0]} clock={clockA} viewMode="cinematic" stageColor={doc.brand.colors.background} gridVisible={false} zoom={1} showEditorStage={false} dpr={1.25} />
         </div>
         <div className="absolute inset-0" style={{ opacity: alphaB }}>
-          <MotionSceneCanvas doc={sceneDocs[1]} clock={clockB} viewMode="perspective" stageColor={doc.brand.colors.background} gridVisible={false} zoom={1} showEditorStage={false} dpr={1.25} />
+          <MotionSceneCanvas doc={sceneDocs[1]} clock={clockB} viewMode="cinematic" stageColor={doc.brand.colors.background} gridVisible={false} zoom={1} showEditorStage={false} dpr={1.25} />
         </div>
         {dip && <div className="pointer-events-none absolute inset-0" style={{ backgroundColor: slots.frame.transition?.color ?? '#000000', opacity: dipOpacity }} />}
       </div>

@@ -38,7 +38,7 @@ export function registerTraceSvgAnimationHandlers({ mainWindow }: { mainWindow: 
             streamError = chunk.error;
             break;
           }
-          if (chunk?.type === 'tool-error' || chunk?.type === 'tool-input-error') {
+          if (chunk?.type === 'tool-error') {
             const toolError = chunk as { errorText?: string; error?: unknown };
             proposalValidationError = toolError.errorText ?? (toolError.error instanceof Error ? toolError.error.message : String(toolError.error ?? 'Tool validation failed.'));
           }

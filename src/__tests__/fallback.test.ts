@@ -10,8 +10,8 @@ const allConfigured = () => true;
 const noneConfigured = () => false;
 
 describe('buildModelChain', () => {
-  it('always tries the user selection first', () => {
-    const chain = buildModelChain({
+  it('always tries the user selection first', async () => {
+    const chain = await buildModelChain({
       activeProvider: 'openrouter',
       activeModel: 'qwen/qwen3.8-27b:free',
       isConfigured: allConfigured,
@@ -23,8 +23,8 @@ describe('buildModelChain', () => {
     });
   });
 
-  it('never repeats the active provider as a fallback', () => {
-    const chain = buildModelChain({
+  it('never repeats the active provider as a fallback', async () => {
+    const chain = await buildModelChain({
       activeProvider: 'groq',
       activeModel: 'openai/gpt-oss-120b',
       isConfigured: allConfigured,
@@ -33,8 +33,8 @@ describe('buildModelChain', () => {
     expect(chain.filter((t) => t.providerId === 'groq')).toHaveLength(1);
   });
 
-  it('only includes configured providers', () => {
-    const chain = buildModelChain({
+  it('only includes configured providers', async () => {
+    const chain = await buildModelChain({
       activeProvider: 'openrouter',
       activeModel: 'qwen/qwen3.8-27b:free',
       isConfigured: (id) => id === 'groq',
@@ -43,11 +43,11 @@ describe('buildModelChain', () => {
     expect(chain.map((t) => t.providerId)).toEqual(['openrouter', 'groq']);
   });
 
-  it('skips providers with no curated default model', () => {
+  it('skips providers with no curated default model', async () => {
     // Cohere has keys but no curated model, so it cannot be offered as a
     // fallback without an extra /models round-trip. It is still allowed as the
     // primary when the user picked it and supplied a model id.
-    const chain = buildModelChain({
+    const chain = await buildModelChain({
       activeProvider: 'cohere',
       activeModel: 'command-a',
       isConfigured: allConfigured,
@@ -57,8 +57,8 @@ describe('buildModelChain', () => {
     expect(chain.slice(1).map((t) => t.providerId)).not.toContain('cohere');
   });
 
-  it("uses each fallback provider's curated free model", () => {
-    const chain = buildModelChain({
+  it("uses each fallback provider's curated free model", async () => {
+    const chain = await buildModelChain({
       activeProvider: 'cohere',
       activeModel: 'command-a',
       isConfigured: (id) => id === 'groq',
@@ -70,8 +70,8 @@ describe('buildModelChain', () => {
     });
   });
 
-  it('caps the number of attempts', () => {
-    const chain = buildModelChain({
+  it('caps the number of attempts', async () => {
+    const chain = await buildModelChain({
       activeProvider: 'openrouter',
       activeModel: 'qwen/qwen3.8-27b:free',
       isConfigured: allConfigured,
@@ -81,8 +81,8 @@ describe('buildModelChain', () => {
     expect(chain).toHaveLength(2);
   });
 
-  it('returns nothing when no provider is configured', () => {
-    const chain = buildModelChain({
+  it('returns nothing when no provider is configured', async () => {
+    const chain = await buildModelChain({
       activeProvider: 'groq',
       activeModel: 'openai/gpt-oss-120b',
       isConfigured: noneConfigured,
@@ -108,8 +108,8 @@ describe('resolveChain', () => {
     ).toEqual([]);
   });
 
-  it('returns only the primary when fallback is disabled', () => {
-    const chain = resolveChain({
+  it('returns only the primary when fallback is disabled', async () => {
+    const chain = await resolveChain({
       activeProvider: 'openrouter',
       activeModel: 'qwen/qwen3.8-27b:free',
       fallbackEnabled: false,
@@ -121,8 +121,8 @@ describe('resolveChain', () => {
     ]);
   });
 
-  it('trims the selected model id', () => {
-    const chain = resolveChain({
+  it('trims the selected model id', async () => {
+    const chain = await resolveChain({
       activeProvider: 'groq',
       activeModel: '  openai/gpt-oss-120b  ',
       fallbackEnabled: false,

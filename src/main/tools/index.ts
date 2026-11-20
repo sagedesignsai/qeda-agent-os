@@ -216,13 +216,9 @@ export function registerSubagentTools() {
       task: z.string().describe('What to create or edit in the 3D scene'),
       projectId: z.string().optional().describe('Motion project ID to edit, or omit to create new'),
     }),
-    execute: async ({ task, projectId }) => {
-      const agent = createMotionCopilotAgent({
-        activeProject: projectId,
-        target: { providerId: settings.activeProvider, modelId: settings.activeModel },
-        forSubagent: true,
-      });
-      // Invoke the agent and return result
+    execute: async ({ task }) => {
+      // Motion copilot requires getDocument and apply which are not available
+      // in this context; return a placeholder delegation result.
       return { status: 'delegated', task };
     },
   });
@@ -253,6 +249,7 @@ export function registerSubagentTools() {
     }),
     execute: async ({ task, projectId }) => {
       const agent = createPresenceCopilotAgent({
+        projectId: projectId ?? null,
         activeProject: projectId,
         target: { providerId: settings.activeProvider, modelId: settings.activeModel },
         forSubagent: true,

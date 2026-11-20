@@ -27,8 +27,7 @@ export function assetRefToFileUIPart(
     id: ref.id,
     filename: ref.fileName,
     mediaType: getMimeTypeFromKind(ref.fileKind),
-    url: ref.mediaUrl ?? undefined,
-    data: Buffer.from(''), // Placeholder; actual data comes from agent
+    url: ref.mediaUrl ?? '',
   };
 }
 

@@ -109,30 +109,42 @@ export function registerStudioHandlers({
     }
   };
 
-  const prepMediaPipeline = async (
+  const mediaPrepInFlight = new Map<string, Promise<void>>();
+  const prepMediaPipeline = (
     take: StudioTake,
     force = false,
   ): Promise<void> => {
-    try {
-      broadcastProgress(take.id, 'probing', 0.1);
-      const probe = await probeTake(take.videoPath);
-      updateStudioTakeMediaPrep(take.id, { probeJson: JSON.stringify(probe) });
+    if (!force && take.mediaReadyAt) return Promise.resolve();
+    const pending = mediaPrepInFlight.get(take.id);
+    if (pending) return pending;
 
-      broadcastProgress(take.id, 'optimizing', 0.3);
-      await ensureOptimizedMedia(take, { force });
+    const work = (async () => {
+      try {
+        broadcastProgress(take.id, 'probing', 0.1);
+        const probe = await probeTake(take.videoPath);
+        updateStudioTakeMediaPrep(take.id, { probeJson: JSON.stringify(probe) });
 
-      const currentTake = getStudioTake(take.id) || take;
-      broadcastProgress(take.id, 'filmstrip', 0.6);
-      await generateFilmstrip(currentTake);
+        broadcastProgress(take.id, 'optimizing', 0.3);
+        await ensureOptimizedMedia(take, { force });
 
-      broadcastProgress(take.id, 'waveform', 0.8);
-      await generateWaveform(currentTake);
+        const currentTake = getStudioTake(take.id) || take;
+        broadcastProgress(take.id, 'filmstrip', 0.6);
+        await generateFilmstrip(currentTake);
 
-      broadcastProgress(take.id, 'ready', 1.0);
-    } catch (err: any) {
-      broadcastProgress(take.id, 'error', 0, err?.message || String(err));
-      throw err;
-    }
+        broadcastProgress(take.id, 'waveform', 0.8);
+        await generateWaveform(currentTake);
+
+        updateStudioTakeMediaPrep(take.id, { mediaReadyAt: Date.now() });
+        broadcastProgress(take.id, 'ready', 1.0);
+      } catch (err: any) {
+        broadcastProgress(take.id, 'error', 0, err?.message || String(err));
+        throw err;
+      } finally {
+        mediaPrepInFlight.delete(take.id);
+      }
+    })();
+    mediaPrepInFlight.set(take.id, work);
+    return work;
   };
 
   // ── Source Enumeration ────────────────────────────────────────────────────

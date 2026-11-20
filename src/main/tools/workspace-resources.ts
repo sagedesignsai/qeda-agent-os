@@ -330,11 +330,8 @@ export const listPresenceBatchesTool = tool({
       return {
         batches: batches.map((b) => ({
           id: b.id,
-          title: b.title,
-          status: b.status,
-          itemCount: b.item_count,
+          focus: b.focus,
           createdAt: b.created_at,
-          updatedAt: b.updated_at,
         })),
         count: batches.length,
       };

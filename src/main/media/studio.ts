@@ -12,6 +12,7 @@
 import { promises as fs } from 'node:fs';
 import { getStudioCompositionImagePath } from '../db/studio-compositions.js';
 import {
+  getStudioMediaAssetPath,
   getStudioOverlaySource,
   getStudioVideoPath,
 } from '../db/studio-store.js';
@@ -69,6 +70,14 @@ export async function serveStudioCompositionAsset(
   const id = idFromUrl(request);
   if (!id) return new Response(null, { status: 404 });
   const filePath = getStudioCompositionImagePath(id);
+  if (!filePath) return new Response(null, { status: 404 });
+  return serveFileRequest(request, filePath);
+}
+
+export async function serveStudioMediaAsset(request: Request): Promise<Response> {
+  const id = idFromUrl(request);
+  if (!id) return new Response(null, { status: 404 });
+  const filePath = getStudioMediaAssetPath(id);
   if (!filePath) return new Response(null, { status: 404 });
   return serveFileRequest(request, filePath);
 }

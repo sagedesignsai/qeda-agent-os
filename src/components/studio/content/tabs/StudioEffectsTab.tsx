@@ -23,6 +23,7 @@ import {
   ApertureIcon,
   FilmIcon,
   ScanLineIcon,
+  ArrowLeftRightIcon,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
@@ -30,7 +31,7 @@ import {
   type ContentItemPayload,
 } from '../items/ContentCardItem';
 import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
-import type { StudioEffectType } from '@/lib/studio-types';
+import type { StudioCompositionTransitionType, StudioEffectType } from '@/lib/studio-types';
 import { STUDIO_ZOOM_PRESETS } from '@/lib/studio/effects/zoom-presets';
 
 interface StudioEffectsTabProps {
@@ -107,7 +108,24 @@ function buildPresets(): EffectPreset[] {
     },
   }));
 
-  return [...zoomPresets, ...canvasEffects];
+  const transitions: EffectPreset[] = (
+    ['fade', 'slide-left', 'slide-right', 'scale'] as StudioCompositionTransitionType[]
+  ).flatMap((transitionType) => (['in', 'out'] as const).map((transitionSide) => ({
+    id: `transition-${transitionType}-${transitionSide}`,
+    title: `${transitionType.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())} ${transitionSide}`,
+    category: 'Transitions',
+    durationMs: 600,
+    preview: <ArrowLeftRightIcon className="w-6 h-6 text-pink-300" />,
+    itemData: {
+      trackType: 'transitions',
+      name: `${transitionType} ${transitionSide}`,
+      durationMs: 600,
+      color: '#db2777',
+      payload: { transitionType, transitionSide },
+    },
+  })));
+
+  return [...zoomPresets, ...canvasEffects, ...transitions];
 }
 
 const PRESETS = buildPresets();
@@ -130,7 +148,7 @@ export function StudioEffectsTab({ onAddClip }: StudioEffectsTabProps) {
         <Input
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search effects & zooms..."
+          placeholder="Search effects, zooms & transitions..."
           className="h-8 pl-8 text-xs bg-secondary/30 border-border/40 focus-visible:ring-1"
         />
       </div>
