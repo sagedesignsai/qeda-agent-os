@@ -417,6 +417,8 @@ export interface StudioClip {
   id: string;
   /** The track this clip belongs to. */
   trackId: string;
+  /** Semantic item kind; optional while reading projects created before tagging. */
+  itemType?: TimelineItemType;
   /** Human label (e.g. "Screen recording [1]"). */
   name: string;
   /** Composition-time start position on the timeline (ms). */
@@ -425,6 +427,8 @@ export interface StudioClip {
   durationMs: number;
   /** Offset into the source media asset (ms). */
   sourceInMs: number;
+  /** Selected source range in milliseconds; timeline duration may differ at non-1x speed. */
+  sourceDurationMs?: number;
   /** Reference to the media asset in the project's pool. */
   mediaAssetId?: string;
   /** Playback speed multiplier (1 = normal, 0.5 = half speed, 2 = double). */
@@ -704,6 +708,16 @@ export interface StudioCompositionImageAsset {
 
 export type TrackType = StudioTrackType;
 
+/** Semantic kind of an item placed on an Editor timeline track. */
+export type TimelineItemType =
+  | 'video'
+  | 'image'
+  | 'audio'
+  | 'text'
+  | 'effect'
+  | 'transition'
+  | 'overlay';
+
 /**
  * The payload carried by a timeline clip. Kept as one flat, optional bag so a
  * clip can round-trip through JSON without a discriminator union, and so
@@ -750,6 +764,8 @@ export interface StudioClipPayload {
 export interface TimelineClip {
   id: string;
   trackId: string;
+  /** Semantic item kind; new Editor placements always set this explicitly. */
+  itemType?: TimelineItemType;
   name: string;
   startMs: number;
   durationMs: number;

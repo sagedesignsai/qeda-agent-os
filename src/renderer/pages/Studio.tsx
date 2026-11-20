@@ -58,6 +58,7 @@ import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
 import { StudioContentPanel } from '@/components/studio/content/StudioContentPanel';
 import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
 import { StudioCommandBar } from '@/components/studio/StudioCommandBar';
+import { inferTimelineItemType } from '@/lib/studio/timeline/item-type';
 import { StudioCompositionCreateDialog } from '@/components/studio/StudioCompositionCreateDialog';
 import { ShowcaseProjectDialog, type ShowcaseProjectSourceType } from '@/components/studio/ShowcaseProjectDialog';
 import type { ContentItemPayload } from '@/components/studio/content/items/ContentCardItem';
@@ -434,20 +435,23 @@ export default function Studio() {
   const handleTogglePlayback = useCallback(() => {
     const nextPlaying = !isPlaying;
     const video = previewVideoRef.current;
+    const isMultiTrack = timelineStore.getState().isMultiTrack;
     if (nextPlaying) {
       // Start from the button's user gesture; the canvas also keeps playback
       // synchronized when state changes or the video element mounts later.
       // The playhead lives in composition time, the element in source time.
-      const playheadMs = timelineStore.getState().currentTimeMs;
-      const sourceMs = sourceFromComp(playheadMs, cuts);
-      if (video && Math.abs(video.currentTime * 1000 - sourceMs) > 50) {
-        video.currentTime = sourceMs / 1000;
+      if (!isMultiTrack) {
+        const playheadMs = timelineStore.getState().currentTimeMs;
+        const sourceMs = sourceFromComp(playheadMs, cuts);
+        if (video && Math.abs(video.currentTime * 1000 - sourceMs) > 50) {
+          video.currentTime = sourceMs / 1000;
+        }
+        void video?.play().catch((error: unknown) => {
+          console.warn('[Studio] Timeline playback request failed.', error);
+          setIsPlaying(false);
+          timelineStore.setPlaying(false);
+        });
       }
-      void video?.play().catch((error: unknown) => {
-        console.warn('[Studio] Timeline playback request failed.', error);
-        setIsPlaying(false);
-        timelineStore.setPlaying(false);
-      });
     } else {
       video?.pause();
     }
@@ -774,6 +778,13 @@ export default function Studio() {
     }
     const newClip = timelineStore.addClip(clipPayload.trackType, {
       ...clipPayload,
+      itemType:
+        clipPayload.itemType ??
+        inferTimelineItemType(
+          clipPayload.trackType,
+          clipPayload.payload,
+          clipPayload.mediaAsset?.kind,
+        ),
       startMs: startMs ?? 0,
       targetTrackId,
     });

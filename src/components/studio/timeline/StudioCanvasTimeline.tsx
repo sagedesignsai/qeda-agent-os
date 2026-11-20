@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef, useCallback } from 'react';
-import { timelineStore } from '@/hooks/use-timeline-store';
+import { timelineStore, useTimelineState } from '@/hooks/use-timeline-store';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineTrackHeaders } from './TimelineTrackHeaders';
 import { TimelineCanvasViewport } from './TimelineCanvasViewport';
@@ -53,6 +53,8 @@ export function StudioCanvasTimeline({
   onInsertClip,
   onOpenVideoCrop,
 }: StudioCanvasTimelineProps) {
+  const { durationMs: storeDurationMs, isMultiTrack } = useTimelineState();
+  const timelineDurationMs = isMultiTrack ? storeDurationMs : durationMs;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportContainerRef = useRef<HTMLDivElement | null>(null);
   // Vertical scrolling writes the header offset straight to the DOM. Driving it
@@ -129,9 +131,17 @@ export function StudioCanvasTimeline({
       const tracks = convertTakeToTimeline(activeTake);
       const cuts = normalizeCuts(activeTake.cuts ?? [], activeTake.durationMs);
       const isMultiTrack = activeTake.tracks !== undefined;
+      const editorDurationMs = isMultiTrack
+        ? Math.max(
+            1000,
+            ...tracks.flatMap((track) =>
+              track.clips.map((clip) => clip.startMs + clip.durationMs),
+            ),
+          )
+        : compositionDurationMs(activeTake.durationMs, cuts);
       timelineStore.setTracksAndDuration(
         tracks,
-        compositionDurationMs(activeTake.durationMs, cuts),
+        editorDurationMs,
         isNewTake,
         isMultiTrack,
       );
@@ -149,14 +159,14 @@ export function StudioCanvasTimeline({
   // Zoom to Fit calculation
   const handleZoomToFit = useCallback(() => {
     const container = containerRef.current;
-    if (!container || durationMs <= 0) return;
+    if (!container || timelineDurationMs <= 0) return;
 
     const availableWidth = container.clientWidth - 192 - 40; // minus track headers and padding
     if (availableWidth > 100) {
-      const targetPxPerMs = availableWidth / durationMs;
+      const targetPxPerMs = availableWidth / timelineDurationMs;
       timelineStore.setZoomPxPerMs(targetPxPerMs);
     }
-  }, [durationMs]);
+  }, [timelineDurationMs]);
 
   return (
     <div
@@ -167,7 +177,7 @@ export function StudioCanvasTimeline({
     >
       {/* ── Top Toolbar ────────────────────────────────────────────────────── */}
       <TimelineToolbar
-        durationMs={durationMs}
+        durationMs={timelineDurationMs}
         isPlaying={isPlaying}
         onTogglePlay={onTogglePlay}
         onRestartPlayback={onRestartPlayback}

@@ -21,8 +21,15 @@ import {
   MusicIcon,
   ImageIcon,
   ArrowLeftRightIcon,
+  PlusIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
   TooltipContent,
@@ -80,24 +87,39 @@ export function TimelineTrackHeaders({
         className="w-full flex items-center px-3 border-b border-border/40 bg-secondary/30 text-[11px] font-medium text-muted-foreground shrink-0 z-10"
       >
         <span className="flex-1">Tracks</span>
-        <div className="flex items-center gap-0.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Add video track" onClick={() => timelineStore.addTrack('video')}>
-                <VideoIcon className="w-3 h-3" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Add video track</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="Add audio track" onClick={() => timelineStore.addTrack('audio')}>
-                <MusicIcon className="w-3 h-3" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Add audio track</TooltipContent>
-          </Tooltip>
-        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              aria-label="Add track"
+              title="Add track"
+            >
+              <PlusIcon className="w-3.5 h-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem onSelect={() => timelineStore.addTrack('video')}>
+              <VideoIcon className="mr-2 h-4 w-4" /> Video track
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => timelineStore.addTrack('audio')}>
+              <MusicIcon className="mr-2 h-4 w-4" /> Audio track
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => timelineStore.addTrack('effects')}>
+              <SparklesIcon className="mr-2 h-4 w-4" /> Effects track
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => timelineStore.addTrack('transitions')}>
+              <ArrowLeftRightIcon className="mr-2 h-4 w-4" /> Transitions track
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => timelineStore.addTrack('captions')}>
+              <SubtitlesIcon className="mr-2 h-4 w-4" /> Text track
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => timelineStore.addTrack('overlays')}>
+              <ImageIcon className="mr-2 h-4 w-4" /> Overlay track
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* ── Track Header Rows (Synchronized Smooth Slide) ──────────────────── */}

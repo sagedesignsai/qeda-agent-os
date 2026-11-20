@@ -51,7 +51,6 @@ import {
   transitionTypeToPresetId,
 } from '@/lib/studio/animation-presets';
 import {
-  InspectorSegmentedGroup,
   InspectorCoordinatePad,
   TimecodeNudgeInput,
   StudioScrubField,
@@ -137,6 +136,65 @@ export function ClipPropertiesSection({
   const anchor = transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
 
   const isVisualTrack = track.type === 'video' || track.type === 'overlays';
+  const isSpeedEditable =
+    (clip.itemType === 'video' || clip.itemType === 'audio') &&
+    !track.id.startsWith('track-') &&
+    Boolean(
+      clip.payload?.mediaAssetId ||
+        clip.payload?.filePath ||
+        clip.payload?.mediaUrl,
+    );
+  const rawPlaybackSpeed =
+    clip.payload?.speed ??
+    (clip.durationMs > 0 && clip.sourceDurationMs > 0
+      ? clip.sourceDurationMs / clip.durationMs
+      : 1);
+  const playbackSpeed =
+    Number.isFinite(rawPlaybackSpeed) && rawPlaybackSpeed > 0
+      ? rawPlaybackSpeed
+      : 1;
+
+  const setPlaybackSpeed = (speed: number) => {
+    const sourceDurationMs =
+      clip.sourceDurationMs > 0
+        ? clip.sourceDurationMs
+        : clip.durationMs * playbackSpeed;
+    onUpdateClip(clip.id, {
+      durationMs: Math.max(1, sourceDurationMs / speed),
+      sourceDurationMs,
+      payload: { speed },
+    });
+  };
+
+  const renderPlaybackSpeed = () => {
+    if (!isSpeedEditable) return null;
+    const options = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+    const selectedSpeed = options.reduce((nearest, option) =>
+      Math.abs(option - playbackSpeed) < Math.abs(nearest - playbackSpeed)
+        ? option
+        : nearest,
+    );
+
+    return (
+      <StudioFieldRow label="Speed">
+        <Select
+          value={String(selectedSpeed)}
+          onValueChange={(value) => setPlaybackSpeed(Number(value))}
+        >
+          <SelectTrigger className="h-7 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((speed) => (
+              <SelectItem key={speed} value={String(speed)}>
+                {speed}×
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </StudioFieldRow>
+    );
+  };
 
   // Accordion state: only one section open at a time
   // The first visible section (by render order) is open by default
@@ -559,19 +617,7 @@ export function ClipPropertiesSection({
               className="h-7 text-xs bg-background"
             />
           </StudioFieldRow>
-          <div className="space-y-1.5">
-            <span className="text-[11px] text-muted-foreground">Speed</span>
-            <InspectorSegmentedGroup
-              value="1.0x"
-              onChange={() => {}}
-              options={[
-                { value: '0.5x', label: '0.5x' },
-                { value: '1.0x', label: '1.0x' },
-                { value: '1.5x', label: '1.5x' },
-                { value: '2.0x', label: '2.0x' },
-              ]}
-            />
-          </div>
+          {renderPlaybackSpeed()}
         </StudioPanelSection>
       )}
 
@@ -703,6 +749,7 @@ export function ClipPropertiesSection({
       {/* ── Audio ─────────────────────────────────────────────────────────── */}
       {track.type === 'audio' && (
         <StudioPanelSection title="Audio" open={activeSection === 'Audio'} onOpenChange={handleSectionToggle('Audio')}>
+          {renderPlaybackSpeed()}
           <StudioFieldRow label="Volume">
             <StudioScrubField
               label="Volume Gain"

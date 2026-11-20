@@ -17,11 +17,17 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import type { StudioClipPayload, TrackType } from '@/lib/studio-types';
+import type {
+  StudioClipPayload,
+  TimelineItemType,
+  TrackType,
+} from '@/lib/studio-types';
+import { inferTimelineItemType } from '@/lib/studio/timeline/item-type';
 import type { StudioMediaAsset } from '@/lib/studio/types';
 
 export interface ContentItemPayload {
   trackType: TrackType;
+  itemType?: TimelineItemType;
   name: string;
   durationMs: number;
   color?: string;
@@ -55,11 +61,21 @@ export function ContentCardItem({
   isPlayingPreview = false,
 }: ContentCardItemProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const typedItemData: ContentItemPayload = {
+    ...itemData,
+    itemType:
+      itemData.itemType ??
+      inferTimelineItemType(
+        itemData.trackType,
+        itemData.payload,
+        itemData.mediaAsset?.kind,
+      ),
+  };
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData(
       'application/x-qeda-studio-clip',
-      JSON.stringify(itemData),
+      JSON.stringify(typedItemData),
     );
     e.dataTransfer.effectAllowed = 'copy';
   };
@@ -140,7 +156,7 @@ export function ContentCardItem({
                 aria-label="Add to timeline at playhead"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onAdd(itemData);
+                  onAdd(typedItemData);
                 }}
                 className="h-7 w-7 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md"
               >

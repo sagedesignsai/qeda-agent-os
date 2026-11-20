@@ -38,6 +38,7 @@ import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
 import { computeStudioWindowFrame } from './geometry';
 import { drawClipDeviceFrame } from './clip-device-frame';
 import { drawStudioOverlays, type StudioOverlayAsset } from './overlays';
+import { evaluateEditorTimeline, type EvaluatedTimelineClip } from '../timeline/evaluate';
 
 export interface StudioComposeInput {
   width: number;
@@ -76,6 +77,9 @@ export function drawStudioFrame(
   const showcaseMode = styling.canvasMode !== 'edit';
   // Animation evaluation uses composition time, not source time
   const compTime = input.compTimeMs ?? timeMs;
+  const timelineFrame = input.tracks
+    ? evaluateEditorTimeline(input.tracks, compTime)
+    : null;
 
   drawStudioBackground(ctx, {
     width,
@@ -85,10 +89,12 @@ export function drawStudioFrame(
   });
 
   const crop = input.videoCrop;
-  const activeVideoClip = input.tracks
-    ?.filter((track) => track.type === 'video' && track.visible)
-    .flatMap((track) => track.clips)
-    .find((clip) => compTime >= clip.startMs && compTime <= clip.startMs + clip.durationMs);
+  const activeVideoItems = (timelineFrame?.video ?? []).filter(
+    ({ itemType }) => itemType === 'video' || itemType === 'image',
+  );
+  const activeVideoClip = activeVideoItems.length > 0
+    ? activeVideoItems[activeVideoItems.length - 1].clip
+    : undefined;
   const activeVideoAsset = activeVideoClip?.payload?.mediaAssetId
     ? input.clipAssets?.get(activeVideoClip.payload.mediaAssetId)
     : undefined;
@@ -153,7 +159,8 @@ export function drawStudioFrame(
   if (input.tracks) {
     drawMultiTrackClips(
       ctx,
-      input.tracks,
+      activeVideoItems,
+      timelineFrame?.transitions ?? [],
       input.clipAssets,
       frame,
       compTime,
@@ -164,18 +171,18 @@ export function drawStudioFrame(
     );
   }
 
-  const visibleOverlayIds = input.tracks
-    ?.filter((track) => track.type === 'overlays' && track.visible)
-    .flatMap((track) => track.clips.map((clip) => clip.id));
+  const visibleOverlayIds = timelineFrame?.overlays
+    .filter(({ itemType }) => itemType === 'overlay')
+    .map(({ clip }) => clip.id);
   const hasOverlayTracks = input.tracks?.some((track) => track.type === 'overlays');
   const overlays = input.tracks && hasOverlayTracks
     ? (input.overlays ?? []).filter((overlay) => visibleOverlayIds?.includes(overlay.id))
     : input.overlays;
   drawStudioOverlays(ctx, overlays, input.overlayAssets, frame, timeMs, input.tracks, compTime);
 
-  const trackEffects: StudioEffect[] | undefined = input.tracks
-    ?.filter((track) => track.type === 'effects' && track.visible)
-    .flatMap((track) => track.clips.flatMap((clip) => {
+  const trackEffects: StudioEffect[] | undefined = timelineFrame?.effects
+    .flatMap(({ clip, itemType }) => {
+      if (itemType !== 'effect') return [];
       const type = effectTypeFromPayload(clip.payload);
       return type
         ? [{
@@ -186,7 +193,7 @@ export function drawStudioFrame(
             intensity: clip.payload?.intensity ?? 0.6,
           }]
         : [];
-    }));
+    });
   drawStudioEffects(ctx, input.tracks ? trackEffects : input.effects, frame, compTime);
   if (showcaseMode) {
     (input.drawWindowChrome ?? drawStudioWindowChrome)(ctx, frame);
@@ -194,9 +201,9 @@ export function drawStudioFrame(
 
   ctx.restore();
 
-  const trackCaptions: StudioCaption[] | undefined = input.tracks
-    ?.filter((track) => track.type === 'captions' && track.visible)
-    .flatMap((track) => track.clips.map((clip) => {
+  const trackCaptions: StudioCaption[] | undefined = timelineFrame?.captions
+    .filter(({ itemType }) => itemType === 'text')
+    .map(({ clip }) => {
       const existing = input.captions?.find((captionItem) => captionItem.id === clip.id);
       return {
         ...existing,
@@ -205,7 +212,7 @@ export function drawStudioFrame(
         endMs: clip.startMs + clip.durationMs,
         text: clip.payload?.text ?? existing?.text ?? clip.name,
       };
-    }));
+    });
   const caption = styling.showCaptions
     ? resolveActiveStudioCaption(input.tracks ? trackCaptions : input.captions, compTime)
     : null;
@@ -222,7 +229,8 @@ export function drawStudioFrame(
 /** Draw active video clips in track order, with one renderer for all sources. */
 function drawMultiTrackClips(
   ctx: CanvasRenderingContext2D,
-  tracks: readonly TimelineTrack[],
+  activeVideoItems: readonly EvaluatedTimelineClip[],
+  activeTransitions: readonly EvaluatedTimelineClip[],
   assets: ReadonlyMap<string, StudioOverlayAsset> | undefined,
   frame: import('./geometry').StudioWindowFrame,
   compTimeMs: number,
@@ -231,129 +239,117 @@ function drawMultiTrackClips(
   videoCrop?: StudioVideoCrop,
   clipTransformPreview?: { clipId: string; transform: ClipTransform } | null,
 ): void {
-  const transitions = tracks
-    .filter((track) => track.type === 'transitions' && track.visible)
-    .flatMap((track) => track.clips);
+  for (const evaluatedItem of activeVideoItems) {
+    const { track, clip, localTimeMs } = evaluatedItem;
+    const payload = clip.payload;
+    const asset = payload?.mediaAssetId ? assets?.get(payload.mediaAssetId) : undefined;
+    const isRecordedSource = !payload?.mediaAssetId && track.id === 'track-video';
+    const source = asset?.element ?? (isRecordedSource ? recordedVideo : null);
+    if (!source) continue;
 
-  // Timeline rows are ordered top-to-bottom. Paint the lower video rows first
-  // so the topmost lane is the last one composited onto the canvas.
-  const videoTracks = tracks.filter((track) => track.type === 'video' && track.visible);
-  for (const track of [...videoTracks].reverse()) {
-
-    for (const clip of track.clips) {
-      if (compTimeMs < clip.startMs || compTimeMs > clip.startMs + clip.durationMs) continue;
-
-      const payload = clip.payload;
-      const asset = payload?.mediaAssetId ? assets?.get(payload.mediaAssetId) : undefined;
-      const isRecordedSource = !payload?.mediaAssetId && track.id === 'track-video';
-      const source = asset?.element ?? (isRecordedSource ? recordedVideo : null);
-      if (!source) continue;
-
-      const sourceWidth = asset?.width ?? recordedVideo?.videoWidth ?? 0;
-      const sourceHeight = asset?.height ?? recordedVideo?.videoHeight ?? 0;
-      if (sourceWidth <= 0 || sourceHeight <= 0) continue;
-      let sourceRect = { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
-      if (isRecordedSource && recordedVideo) {
-        if (videoCrop && videoCrop.width > 0 && videoCrop.height > 0) {
-          sourceRect = {
-            x: Math.max(0, Math.min(sourceWidth, videoCrop.x * sourceWidth)),
-            y: Math.max(0, Math.min(sourceHeight, videoCrop.y * sourceHeight)),
-            width: Math.max(1, videoCrop.width * sourceWidth),
-            height: Math.max(1, videoCrop.height * sourceHeight),
-          };
-        } else {
-          sourceRect = cameraSourceRect(camera, sourceWidth, sourceHeight);
-        }
+    const sourceWidth = asset?.width ?? recordedVideo?.videoWidth ?? 0;
+    const sourceHeight = asset?.height ?? recordedVideo?.videoHeight ?? 0;
+    if (sourceWidth <= 0 || sourceHeight <= 0) continue;
+    let sourceRect = { x: 0, y: 0, width: sourceWidth, height: sourceHeight };
+    if (isRecordedSource && recordedVideo) {
+      if (videoCrop && videoCrop.width > 0 && videoCrop.height > 0) {
+        sourceRect = {
+          x: Math.max(0, Math.min(sourceWidth, videoCrop.x * sourceWidth)),
+          y: Math.max(0, Math.min(sourceHeight, videoCrop.y * sourceHeight)),
+          width: Math.max(1, videoCrop.width * sourceWidth),
+          height: Math.max(1, videoCrop.height * sourceHeight),
+        };
+      } else {
+        sourceRect = cameraSourceRect(camera, sourceWidth, sourceHeight);
       }
-
-      const localTime = compTimeMs - clip.startMs;
-      const anim = evaluateClipAtTime(
-        clip.durationMs,
-        payload?.enterAnimation,
-        payload?.exitAnimation,
-        localTime,
-      );
-
-      const transition = transitions.find((candidate) =>
-          candidate.payload?.targetClipId === clip.id &&
-          compTimeMs >= candidate.startMs &&
-          compTimeMs <= candidate.startMs + candidate.durationMs,
-        );
-      const transitionDuration = Math.max(1, transition?.durationMs ?? 1);
-      const transitionProgress = transition
-        ? Math.max(0, Math.min(1, (compTimeMs - transition.startMs) / transitionDuration))
-        : 1;
-      const transitionSide = transition?.payload?.transitionSide ?? 'in';
-      const transitionType = transition?.payload?.transitionType;
-      const transitionAmount = transitionSide === 'out'
-        ? 1 - transitionProgress
-        : transitionProgress;
-      const transitionOpacity = transitionType === 'fade' ? transitionAmount : 1;
-      const transitionX = transitionType === 'slide-left'
-        ? frame.contentWidth * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
-        : transitionType === 'slide-right'
-          ? frame.contentWidth * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
-          : 0;
-      const transitionY = transitionType === 'slide-up'
-        ? frame.contentHeight * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
-        : transitionType === 'slide-down'
-          ? frame.contentHeight * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
-          : 0;
-      const transitionScale = transitionType === 'scale'
-        ? (transitionSide === 'out' ? 1 - 0.25 * transitionProgress : 0.75 + 0.25 * transitionProgress)
-        : 1;
-
-      const transform = clipTransformPreview?.clipId === clip.id
-        ? clipTransformPreview.transform
-        : payload?.transform;
-      const centerX = frame.contentX + (payload?.x ?? 0.5) * frame.contentWidth + (transform?.position?.x ?? 0);
-      const centerY = frame.contentY + (payload?.y ?? 0.5) * frame.contentHeight + (transform?.position?.y ?? 0);
-      const baseWidth = payload?.widthPct ? payload.widthPct * frame.contentWidth : frame.contentWidth;
-      const width = Math.max(1, baseWidth);
-      const aspect = sourceWidth / sourceHeight;
-      const height = payload?.widthPct ? Math.max(1, baseWidth / aspect) : frame.contentHeight;
-      // Full-canvas clips use a cover crop so portrait or 4:3 sources keep
-      // their proportions on a differently shaped output canvas. Smaller
-      // picture-in-picture clips keep the full source and its native aspect.
-      if (!payload?.widthPct) {
-        sourceRect = coverSourceRect(sourceRect, frame.contentWidth / frame.contentHeight);
-      }
-      const drawX = -width / 2 + anim.x + transitionX;
-      const drawY = -height / 2 + anim.y + transitionY;
-
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      const anchor = transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
-      const pivotX = (anchor.x - 0.5) * width;
-      const pivotY = (anchor.y - 0.5) * height;
-      ctx.translate(pivotX, pivotY);
-      ctx.scale(anim.scale * transitionScale * (transform?.scale?.x ?? 1), anim.scale * transitionScale * (transform?.scale?.y ?? 1));
-      ctx.rotate(((anim.rotation ?? 0) + (transform?.rotation ?? 0)) * Math.PI / 180);
-      ctx.translate(-pivotX, -pivotY);
-      ctx.globalAlpha = (payload?.opacity ?? 1) * anim.opacity * transitionOpacity;
-
-      const radius = Math.max(0, payload?.cornerRadius ?? 0);
-      ctx.save();
-      ctx.beginPath();
-      ctx.roundRect(drawX, drawY, width, height, radius);
-      ctx.clip();
-      ctx.drawImage(
-        source,
-        sourceRect.x,
-        sourceRect.y,
-        sourceRect.width,
-        sourceRect.height,
-        drawX,
-        drawY,
-        width,
-        height,
-      );
-      ctx.restore();
-
-      if (payload?.deviceFrame) drawClipDeviceFrame(ctx, payload.deviceFrame, width, height, radius);
-
-      ctx.restore();
     }
+
+    const anim = evaluateClipAtTime(
+      clip.durationMs,
+      payload?.enterAnimation,
+      payload?.exitAnimation,
+      localTimeMs,
+    );
+
+    const transition = activeTransitions.find(
+      ({ clip: candidate, itemType }) =>
+        itemType === 'transition' &&
+        candidate.payload?.targetClipId === clip.id,
+    )?.clip;
+    const transitionDuration = Math.max(1, transition?.durationMs ?? 1);
+    const transitionProgress = transition
+      ? Math.max(0, Math.min(1, (compTimeMs - transition.startMs) / transitionDuration))
+      : 1;
+    const transitionSide = transition?.payload?.transitionSide ?? 'in';
+    const transitionType = transition?.payload?.transitionType;
+    const transitionAmount = transitionSide === 'out'
+      ? 1 - transitionProgress
+      : transitionProgress;
+    const transitionOpacity = transitionType === 'fade' ? transitionAmount : 1;
+    const transitionX = transitionType === 'slide-left'
+      ? frame.contentWidth * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
+      : transitionType === 'slide-right'
+        ? frame.contentWidth * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
+        : 0;
+    const transitionY = transitionType === 'slide-up'
+      ? frame.contentHeight * (transitionSide === 'out' ? -transitionProgress : 1 - transitionProgress)
+      : transitionType === 'slide-down'
+        ? frame.contentHeight * (transitionSide === 'out' ? transitionProgress : transitionProgress - 1)
+        : 0;
+    const transitionScale = transitionType === 'scale'
+      ? (transitionSide === 'out' ? 1 - 0.25 * transitionProgress : 0.75 + 0.25 * transitionProgress)
+      : 1;
+
+    const transform = clipTransformPreview?.clipId === clip.id
+      ? clipTransformPreview.transform
+      : payload?.transform;
+    const centerX = frame.contentX + (payload?.x ?? 0.5) * frame.contentWidth + (transform?.position?.x ?? 0);
+    const centerY = frame.contentY + (payload?.y ?? 0.5) * frame.contentHeight + (transform?.position?.y ?? 0);
+    const baseWidth = payload?.widthPct ? payload.widthPct * frame.contentWidth : frame.contentWidth;
+    const width = Math.max(1, baseWidth);
+    const aspect = sourceWidth / sourceHeight;
+    const height = payload?.widthPct ? Math.max(1, baseWidth / aspect) : frame.contentHeight;
+    // Full-canvas clips use a cover crop so portrait or 4:3 sources keep
+    // their proportions on a differently shaped output canvas. Smaller
+    // picture-in-picture clips keep the full source and its native aspect.
+    if (!payload?.widthPct) {
+      sourceRect = coverSourceRect(sourceRect, frame.contentWidth / frame.contentHeight);
+    }
+    const drawX = -width / 2 + anim.x + transitionX;
+    const drawY = -height / 2 + anim.y + transitionY;
+
+    ctx.save();
+    ctx.translate(centerX, centerY);
+    const anchor = transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
+    const pivotX = (anchor.x - 0.5) * width;
+    const pivotY = (anchor.y - 0.5) * height;
+    ctx.translate(pivotX, pivotY);
+    ctx.scale(anim.scale * transitionScale * (transform?.scale?.x ?? 1), anim.scale * transitionScale * (transform?.scale?.y ?? 1));
+    ctx.rotate(((anim.rotation ?? 0) + (transform?.rotation ?? 0)) * Math.PI / 180);
+    ctx.translate(-pivotX, -pivotY);
+    ctx.globalAlpha = (payload?.opacity ?? 1) * anim.opacity * transitionOpacity;
+
+    const radius = Math.max(0, payload?.cornerRadius ?? 0);
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(drawX, drawY, width, height, radius);
+    ctx.clip();
+    ctx.drawImage(
+      source,
+      sourceRect.x,
+      sourceRect.y,
+      sourceRect.width,
+      sourceRect.height,
+      drawX,
+      drawY,
+      width,
+      height,
+    );
+    ctx.restore();
+
+    if (payload?.deviceFrame) drawClipDeviceFrame(ctx, payload.deviceFrame, width, height, radius);
+
+    ctx.restore();
   }
 }
 

@@ -63,6 +63,7 @@ import {
 } from '../timeline/ripple';
 import { WebMMuxer } from './webm-muxer';
 import { convertTakeToTimeline, extractZoomsFromTracks } from '../timeline/convert';
+import { evaluateEditorTimeline } from '../timeline/evaluate';
 import { studioMediaAssetUrl } from '../media';
 
 export interface RenderComposedVideoOptions {
@@ -226,7 +227,15 @@ export async function renderComposedStudioVideo(
     timelineTracks.filter((track) => track.visible),
     cuts,
   );
-  const compositionDuration = compositionDurationMs(totalDurationMs, cuts);
+  const sequenceDurationMs = take.tracks === undefined
+    ? compositionDurationMs(totalDurationMs, cuts)
+    : Math.max(
+        1000,
+        ...timelineTracks.flatMap((track) =>
+          track.clips.map((clip) => clip.startMs + clip.durationMs),
+        ),
+      );
+  const compositionDuration = sequenceDurationMs;
   if (compositionDuration <= 0) {
     throw new Error('Showcase take has no content left after cuts');
   }
@@ -488,15 +497,23 @@ export async function renderComposedStudioVideo(
         }
       }
     }
-    for (const track of timelineTracks ?? []) {
-      if (track.type !== 'video') continue;
-      for (const clip of track.clips) {
-        if (currentTimeMs < clip.startMs || currentTimeMs > clip.startMs + clip.durationMs) continue;
-        const media = clip.payload?.mediaAssetId ? clipAssets.get(clip.payload.mediaAssetId)?.element : undefined;
-        if (!(media instanceof HTMLVideoElement) || !(media.duration > 0)) continue;
-        const localMs = clip.sourceStartMs + Math.max(0, (currentTimeMs - clip.startMs) * (clip.payload?.speed ?? 1));
-        await seekTo(media, Math.min(localMs / 1000, Math.max(0, media.duration - 0.05)), options?.signal);
-      }
+    const evaluatedTimeline = evaluateEditorTimeline(
+      timelineTracks ?? [],
+      currentTimeMs,
+    );
+    for (const item of evaluatedTimeline.video) {
+      if (item.itemType !== 'video') continue;
+      const media = item.clip.payload?.mediaAssetId
+        ? clipAssets.get(item.clip.payload.mediaAssetId)?.element
+        : undefined;
+      if (!(media instanceof HTMLVideoElement) || !(media.duration > 0))
+        continue;
+      const seekSeconds = item.sourceTimeMs / 1000;
+      await seekTo(
+        media,
+        Math.max(0, Math.min(seekSeconds, Math.max(0, media.duration - 0.05))),
+        options?.signal,
+      );
     }
     if (profileTimings) {
       profileTimings.seekMs.push(performance.now() - tSeek0);

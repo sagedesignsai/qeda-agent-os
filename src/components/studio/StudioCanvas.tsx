@@ -52,12 +52,17 @@ import {
   drawStudioFrame,
   type StudioComposeInput,
 } from '@/lib/studio/render/compose';
+import { evaluateEditorTimeline } from '@/lib/studio/timeline/evaluate';
 import {
   studioOverlayMediaUrl,
   type StudioOverlayAsset,
 } from '@/lib/studio/render/overlays';
 import { studioMediaAssetUrl } from '@/lib/studio/media';
-import { timelineStore, useSelectedClip } from '@/hooks/use-timeline-store';
+import {
+  timelineStore,
+  useSelectedClip,
+  useTimelineState,
+} from '@/hooks/use-timeline-store';
 import { StudioCanvasTransformGizmo } from './StudioCanvasTransformGizmo';
 import {
   drawDeviceFrameHeader,
@@ -156,10 +161,8 @@ function activeVideoAspectAtTime(
   recordedVideo: HTMLVideoElement | null,
   videoCrop?: StudioVideoCrop,
 ): number {
-  const active = tracks
-    .filter((track) => track.type === 'video' && track.visible)
-    .flatMap((track) => track.clips.map((clip) => ({ track, clip })))
-    .find(({ clip }) => timeMs >= clip.startMs && timeMs <= clip.startMs + clip.durationMs);
+  const activeItems = evaluateEditorTimeline(tracks, timeMs).video;
+  const active = activeItems[activeItems.length - 1];
   if (!active) {
     return recordedVideo?.videoWidth && recordedVideo.videoHeight
       ? recordedVideo.videoWidth / recordedVideo.videoHeight
@@ -225,6 +228,16 @@ export function StudioCanvas({
   tracks,
   mediaAssets = [],
 }: StudioCanvasProps) {
+  const {
+    durationMs: editorDurationMs,
+    isMultiTrack,
+    playbackRate,
+  } = useTimelineState();
+  const playbackDurationMs = isMultiTrack ? editorDurationMs : durationMs;
+  const isMultiTrackRef = useRef(isMultiTrack);
+  const playbackRateRef = useRef(playbackRate);
+  isMultiTrackRef.current = isMultiTrack;
+  playbackRateRef.current = playbackRate;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -269,11 +282,12 @@ export function StudioCanvas({
       selected?.track.type === 'video' &&
       selected.track.visible &&
       time >= selected.clip.startMs &&
-      time <= selected.clip.startMs + selected.clip.durationMs,
+      time < selected.clip.startMs + selected.clip.durationMs,
     );
   });
   const lastEmittedTimeRef = useRef(0);
   const currentTimeRef = useRef(timelineStore.getState().currentTimeMs);
+  const frameClockRef = useRef<number | null>(null);
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
 
@@ -302,7 +316,7 @@ export function StudioCanvas({
         selected?.track.type === 'video' &&
         selected.track.visible &&
         timeMs >= selected.clip.startMs &&
-        timeMs <= selected.clip.startMs + selected.clip.durationMs,
+        timeMs < selected.clip.startMs + selected.clip.durationMs,
       );
       setSelectedClipActive((current) => current === next ? current : next);
     };
@@ -453,7 +467,7 @@ export function StudioCanvas({
 
   // ── Delta-clock playback loop for blank canvases (no video source) ─────────
   useEffect(() => {
-    if (!isPlaying || videoUrl) return;
+    if (!isPlaying || videoUrl || isMultiTrack) return;
 
     let animId: number;
     let lastTick = performance.now();
@@ -461,7 +475,7 @@ export function StudioCanvas({
     const tick = (now: number) => {
       const delta = now - lastTick;
       lastTick = now;
-      const targetDuration = durationMs || 30000;
+      const targetDuration = playbackDurationMs || 30000;
       const nextTime = currentTimeRef.current + delta;
 
       if (nextTime >= targetDuration) {
@@ -477,7 +491,7 @@ export function StudioCanvas({
 
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, videoUrl, durationMs, onTimeUpdate, onEnded]);
+  }, [isPlaying, videoUrl, isMultiTrack, playbackDurationMs, onTimeUpdate, onEnded]);
 
   // ── Sync the hidden video (and overlay videos) to the playhead ────────────
   useEffect(() => {
@@ -515,7 +529,25 @@ export function StudioCanvas({
 
       const video = videoRef.current;
       if (!video || !videoLoaded) return;
-      const diff = Math.abs(video.currentTime * 1000 - sourceMs);
+      const activeRecordedClip = isMultiTrackRef.current
+        ? evaluateEditorTimeline(tracksRef.current, compMs).video.find(
+            (item) =>
+              item.track.id === 'track-video' &&
+              !item.clip.payload?.mediaAssetId,
+          )
+        : undefined;
+      const videoSourceMs = activeRecordedClip?.sourceTimeMs ?? sourceMs;
+      const videoTargetSec = videoSourceMs / 1000;
+      if (!activeRecordedClip && isMultiTrackRef.current) {
+        video.pause();
+        return;
+      }
+      const diff = Math.abs(video.currentTime * 1000 - videoSourceMs);
+      if (isMultiTrackRef.current) {
+        if (diff > 50) video.currentTime = videoTargetSec;
+        if (!video.paused) video.pause();
+        return;
+      }
       if (!isPlayingRef.current) {
         if (diff > 50) video.currentTime = targetSec;
         return;
@@ -531,7 +563,7 @@ export function StudioCanvas({
   useEffect(() => {
     let animId: number;
 
-    const render = () => {
+    const render = (now: number) => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
       if (!canvas || !ctx) {
@@ -545,12 +577,32 @@ export function StudioCanvas({
       const video = videoRef.current;
       const ready = Boolean(video && video.readyState >= 2);
 
-      // Two clocks. `video.currentTime` is the source; the playhead and every
-      // consumer of `onTimeUpdate` is composition time.
+      // Legacy takes use the recording element as their clock. Real Editor
+      // projects use composition time as the clock, then seek each active
+      // source clip independently. This keeps gaps, overlaps and clips longer
+      // than the original recording on the same playhead.
       let sourceMs: number;
       let compMs: number;
 
-      if (ready && video) {
+      if (isMultiTrackRef.current) {
+        if (isPlayingRef.current) {
+          const previousFrame = frameClockRef.current ?? now;
+          const elapsed = Math.max(0, Math.min(100, now - previousFrame));
+          const rate = Number.isFinite(playbackRateRef.current)
+            ? Math.max(0.1, playbackRateRef.current)
+            : 1;
+          currentTimeRef.current = Math.min(
+            playbackDurationMs,
+            currentTimeRef.current + elapsed * rate,
+          );
+          frameClockRef.current = now;
+        } else {
+          frameClockRef.current = null;
+        }
+        compMs = currentTimeRef.current;
+        sourceMs = sourceFromComp(compMs, activeCuts);
+      } else if (ready && video) {
+        frameClockRef.current = null;
         sourceMs = video.currentTime * 1000;
 
         // The element is the playback clock, so skipping a cut means jumping it
@@ -581,7 +633,7 @@ export function StudioCanvas({
 
       // A trailing cut ends the composition before the file does, so the
       // element's own `ended` event is not enough.
-      const compositionEnd = durationMs ?? 0;
+      const compositionEnd = playbackDurationMs ?? 0;
       if (
         isPlayingRef.current &&
         compositionEnd > 0 &&
@@ -625,19 +677,36 @@ export function StudioCanvas({
         glowRef.current = glow;
       }
 
-      for (const track of tracksRef.current) {
-        if (track.type !== 'video' || !track.visible) continue;
-        for (const clip of track.clips) {
-          if (compMs < clip.startMs || compMs > clip.startMs + clip.durationMs) continue;
-          const assetId = clip.payload?.mediaAssetId;
-          const media = assetId ? clipAssetsRef.current.get(assetId)?.element : undefined;
-          if (!(media instanceof HTMLVideoElement) || !(media.duration > 0)) continue;
-          const localMs = clip.sourceStartMs + Math.max(0, (compMs - clip.startMs) * (clip.payload?.speed ?? 1));
-          const seekTo = Math.min(localMs / 1000, Math.max(0, media.duration - 0.05));
-          if (Math.abs(media.currentTime - seekTo) > 0.08) media.currentTime = seekTo;
-          if (isPlayingRef.current && media.paused) void media.play().catch(() => {});
-          if (!isPlayingRef.current && !media.paused) media.pause();
-        }
+      const evaluatedTimeline = evaluateEditorTimeline(tracksRef.current, compMs);
+      const activeVideoAssetIds = new Set<string>();
+      for (const item of evaluatedTimeline.video) {
+        if (item.itemType !== 'video') continue;
+        const assetId = item.clip.payload?.mediaAssetId;
+        if (assetId) activeVideoAssetIds.add(assetId);
+        const isRecordedSource = !assetId && item.track.id === 'track-video';
+        const media = assetId
+          ? clipAssetsRef.current.get(assetId)?.element
+          : isRecordedSource
+            ? video
+            : undefined;
+        if (!(media instanceof HTMLVideoElement) || !(media.duration > 0)) continue;
+        const sourceRate = item.clip.durationMs > 0 && item.clip.sourceDurationMs > 0
+          ? item.clip.sourceDurationMs / item.clip.durationMs
+          : item.clip.payload?.speed ?? 1;
+        media.playbackRate = Number.isFinite(sourceRate)
+          ? Math.max(0.0625, Math.min(16, sourceRate))
+          : 1;
+        const seekTo = Math.max(
+          0,
+          Math.min(item.sourceTimeMs / 1000, Math.max(0, media.duration - 0.05)),
+        );
+        if (Math.abs(media.currentTime - seekTo) > 0.08) media.currentTime = seekTo;
+        if (isPlayingRef.current && !isRecordedSource && media.paused) void media.play().catch(() => {});
+        if (isMultiTrackRef.current && isRecordedSource && !media.paused) media.pause();
+        if (!isPlayingRef.current && !media.paused) media.pause();
+      }
+      for (const [assetId, media] of clipVideosRef.current) {
+        if (!activeVideoAssetIds.has(assetId) && !media.paused) media.pause();
       }
 
       const input: StudioComposeInput = {
@@ -690,7 +759,8 @@ export function StudioCanvas({
 
       // ── 7. Intro & Outro Motion Cards Rendering ──────────────────────────────
       const totalDur =
-        durationMs || (video && video.duration ? video.duration * 1000 : 30000);
+        playbackDurationMs ||
+        (video && video.duration ? video.duration * 1000 : 30000);
 
       if (style.introCard?.enabled) {
         drawMotionCard(ctx, {
@@ -719,7 +789,7 @@ export function StudioCanvas({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [onTimeUpdate, durationMs, onEnded]);
+  }, [onTimeUpdate, playbackDurationMs, onEnded]);
 
   const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLCanvasElement>) => {
     if (isPlayingRef.current || event.button !== 0) return;
@@ -742,39 +812,40 @@ export function StudioCanvas({
     );
     let hit: { track: TimelineTrack; clip: TimelineTrack['clips'][number] } | null = null;
 
-    // Rows are top-to-bottom, so the first matching video clip is the visible
-    // clip at the pointer when lanes overlap. Once selected, the Trace gizmo
-    // owns all transform drags and commits them as a single undo step.
-    for (const track of tracksRef.current) {
-      if (track.type !== 'video' || !track.visible) continue;
-      for (const clip of [...track.clips].reverse()) {
-        if (compTime < clip.startMs || compTime > clip.startMs + clip.durationMs) continue;
-        const asset = clip.payload?.mediaAssetId
-          ? clipAssetsRef.current.get(clip.payload.mediaAssetId)
-          : undefined;
-        const sourceWidth = asset?.width ?? (track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
-        const sourceHeight = asset?.height ?? (track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
-        if (sourceWidth <= 0 || sourceHeight <= 0) continue;
-        const geometry = studioClipCanvasGeometry(
-          clip,
-          track,
-          sourceWidth,
-          sourceHeight,
-          canvasDims,
-          styling,
-          videoCrop,
-          frameAspect,
-        );
-        const localPoint = artboardToLocal(point, geometry.transform, geometry.origin);
-        if (
-          localPoint.x >= geometry.bbox.x &&
-          localPoint.x <= geometry.bbox.x + geometry.bbox.width &&
-          localPoint.y >= geometry.bbox.y &&
-          localPoint.y <= geometry.bbox.y + geometry.bbox.height
-        ) {
-          hit = { track, clip };
-          break;
-        }
+    // The highest painted active clip is the first hit candidate. Once
+    // selected, the Trace gizmo owns transform drags and commits them as one
+    // undo step.
+    const activeVideoItems = evaluateEditorTimeline(
+      tracksRef.current,
+      compTime,
+    ).video;
+    for (const item of [...activeVideoItems].reverse()) {
+      const { track, clip } = item;
+      const asset = clip.payload?.mediaAssetId
+        ? clipAssetsRef.current.get(clip.payload.mediaAssetId)
+        : undefined;
+      const sourceWidth = asset?.width ?? (track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
+      const sourceHeight = asset?.height ?? (track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
+      if (sourceWidth <= 0 || sourceHeight <= 0) continue;
+      const geometry = studioClipCanvasGeometry(
+        clip,
+        track,
+        sourceWidth,
+        sourceHeight,
+        canvasDims,
+        styling,
+        videoCrop,
+        frameAspect,
+      );
+      const localPoint = artboardToLocal(point, geometry.transform, geometry.origin);
+      if (
+        localPoint.x >= geometry.bbox.x &&
+        localPoint.x <= geometry.bbox.x + geometry.bbox.width &&
+        localPoint.y >= geometry.bbox.y &&
+        localPoint.y <= geometry.bbox.y + geometry.bbox.height
+      ) {
+        hit = { track, clip };
+        break;
       }
       if (hit) break;
     }

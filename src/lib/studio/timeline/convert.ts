@@ -52,6 +52,7 @@ import {
   sourceRangeFromComp,
   type RippleCut,
 } from './ripple';
+import { resolveTimelineItemType } from './item-type';
 
 const EFFECTS_TRACK_ID = 'track-effects';
 const CAPTIONS_TRACK_ID = 'track-captions';
@@ -82,6 +83,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
       {
         id: zoom.id,
         trackId: EFFECTS_TRACK_ID,
+        itemType: 'effect',
         name: `Zoom ${zoom.scale}x`,
         startMs: span.startMs,
         durationMs: span.endMs - span.startMs,
@@ -109,6 +111,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
       {
         id: effect.id,
         trackId: EFFECTS_TRACK_ID,
+        itemType: 'effect',
         name: definition?.label ?? effect.type,
         startMs: span.startMs,
         durationMs: span.endMs - span.startMs,
@@ -133,6 +136,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
       {
         id: caption.id,
         trackId: CAPTIONS_TRACK_ID,
+        itemType: 'text',
         name: caption.text,
         startMs: span.startMs,
         durationMs: span.endMs - span.startMs,
@@ -156,6 +160,7 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
       {
         id: overlay.id,
         trackId: OVERLAYS_TRACK_ID,
+        itemType: 'overlay',
         name: overlay.kind === 'image' ? 'Image Overlay' : 'Video Overlay',
         startMs: span.startMs,
         durationMs: span.endMs - span.startMs,
@@ -260,6 +265,7 @@ function buildVideoClips(
     clips.push({
       id: `${take.id}-video-${index}`,
       trackId: VIDEO_TRACK_ID,
+      itemType: 'video',
       name: index === 0 ? take.title : segmentTitle(take.title, index),
       startMs: compCursor,
       durationMs,
@@ -280,6 +286,7 @@ function buildAudioClips(
   return videoClips.map((clip, index) => ({
     id: `${take.id}-audio-${index}`,
     trackId: AUDIO_TRACK_ID,
+    itemType: 'audio',
     name: 'Microphone',
     startMs: clip.startMs,
     durationMs: clip.durationMs,
@@ -476,15 +483,25 @@ function numberOr(value: unknown, fallback: number): number {
 export function studioClipToTimelineClip(
   clip: StudioClip,
   asset: StudioMediaAsset | undefined,
+  trackType: TimelineTrack['type'],
 ): TimelineClip {
-  // For video/audio assets, the source duration equals the clip duration
-  // (the clip was trimmed at creation time). For images, source duration is 0.
-  const sourceDurationMs =
-    asset?.kind === 'image' ? 0 : clip.durationMs;
+  const sourceSpeed = clip.speed ?? clip.payload?.speed ?? 1;
+  const speed = Number.isFinite(sourceSpeed) && sourceSpeed > 0 ? sourceSpeed : 1;
+  // Older clips stored only timeline duration and speed. Materialize their
+  // selected source range once so later trim/split operations stay frame-aware.
+  const sourceDurationMs = asset?.kind === 'image'
+    ? 0
+    : clip.sourceDurationMs ?? clip.durationMs * speed;
 
   return {
     id: clip.id,
     trackId: clip.trackId,
+    itemType: resolveTimelineItemType(
+      trackType,
+      clip.itemType,
+      clip.payload,
+      asset?.kind,
+    ),
     name: clip.name,
     startMs: clip.startMs,
     durationMs: clip.durationMs,
@@ -535,6 +552,7 @@ export function convertProjectToTracks(
       studioClipToTimelineClip(
         { ...clip, trackId: track.id },
         clip.mediaAssetId ? assetMap.get(clip.mediaAssetId) : undefined,
+        trackType,
       ),
     );
 
@@ -596,12 +614,18 @@ export function extractClipsFromTracks(
       return {
         id: clip.id,
         trackId: clip.trackId,
+        itemType: resolveTimelineItemType(track.type, clip.itemType, payload),
         name: clip.name,
         startMs: clip.startMs,
         durationMs: clip.durationMs,
         sourceInMs: clip.sourceStartMs,
+        sourceDurationMs: clip.sourceDurationMs,
         mediaAssetId: payload?.mediaAssetId,
-        speed: payload?.speed ?? 1,
+        speed:
+          payload?.speed ??
+          (clip.durationMs > 0
+            ? clip.sourceDurationMs / clip.durationMs
+            : 1),
         volume: payload?.volume ?? 1,
         opacity: payload?.opacity,
         color: clip.color,

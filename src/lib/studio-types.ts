@@ -21,4 +21,6 @@ export * from './studio/effects/catalog';
 export * from './studio/effects/zoom-presets';
 export * from './studio/captions/presets';
 export * from './studio/timeline/convert';
+export * from './studio/timeline/evaluate';
+export * from './studio/timeline/item-type';
 export * from './studio/timeline/ripple';
