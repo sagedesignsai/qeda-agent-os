@@ -71,19 +71,46 @@ export function computeCameraTarget({
   };
 }
 
+/**
+ * Per-easing smoothing factors calibrated for 60 Hz (16.667 ms per frame).
+ * Exported so the export renderer can adapt these to its own frame rate.
+ */
+export const CAMERA_SMOOTHING_60FPS: Record<StudioCameraEasing, number> = {
+  snappy: 0.22,
+  smooth: 0.12,
+  cinematic: 0.07,
+};
+
+/**
+ * Step camera with frame-rate-independent smoothing.
+ *
+ * Converts the 60 Hz smoothing factor to the actual frame delta so camera
+ * motion is identical on 60 Hz, 120 Hz, and export (fixed fps).
+ * Formula: `alpha = 1 - (1 - smoothing)^(dtMs / 16.667)`
+ */
+export function stepCameraWithDelta(
+  current: StudioCameraState,
+  target: StudioCameraState,
+  easing: StudioCameraEasing,
+  dtMs: number,
+): StudioCameraState {
+  const smoothing60 = CAMERA_SMOOTHING_60FPS[easing] ?? CAMERA_SMOOTHING_60FPS.smooth;
+  // Frame-rate independent alpha: at dtMs=16.667 this equals smoothing60
+  const alpha = 1 - Math.pow(1 - smoothing60, dtMs / 16.667);
+  return {
+    scale: current.scale + (target.scale - current.scale) * alpha,
+    panX: current.panX + (target.panX - current.panX) * alpha,
+    panY: current.panY + (target.panY - current.panY) * alpha,
+  };
+}
+
 /** Ease `current` toward `target`; returns a new state (never mutates). */
 export function stepCamera(
   current: StudioCameraState,
   target: StudioCameraState,
   easing: StudioCameraEasing,
 ): StudioCameraState {
-  const smoothing =
-    easing === 'snappy' ? 0.22 : easing === 'cinematic' ? 0.07 : 0.12;
-  return {
-    scale: current.scale + (target.scale - current.scale) * smoothing,
-    panX: current.panX + (target.panX - current.panX) * smoothing,
-    panY: current.panY + (target.panY - current.panY) * smoothing,
-  };
+  return stepCameraWithDelta(current, target, easing, 16.667);
 }
 
 /**

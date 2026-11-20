@@ -8,18 +8,25 @@
  *   - neon-glow           → additive bloom via `globalCompositeOperation =
  *                           'lighter'` plus a `shadowBlur` stroke, which is the
  *                           standard canvas idiom for glow
- *   - film-grain          → a cached noise tile stamped with a random offset
+ *   - film-grain          → a cached noise tile stamped at a time-seeded offset
  *   - scanlines           → a cached 1×4 line tile rolled by time
  *
  * Tiles are built lazily on an offscreen canvas. In a non-DOM environment
  * (jsdom without a canvas backend) tile creation returns null and the pass is
  * skipped rather than throwing.
+ *
+ * DETERMINISM
+ * ───────────
+ * Noise comes from `./prng`, never `Math.random()`. The tile texture is seeded
+ * with a constant and the stamp offset is a pure function of composition time,
+ * so preview and export render identical pixels for the same timestamp.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { isStudioEffectActive } from '../effects/catalog';
-import type { StudioEffect } from '../types';
+import type { StudioEffect, StudioEffectType } from '../types';
 import type { StudioWindowFrame } from './geometry';
+import { filmGrainOffset, GRAIN_TILE_SEED, mulberry32 } from './prng';
 
 const GRAIN_TILE_SIZE = 256;
 const SCANLINE_TILE_HEIGHT = 4;
@@ -52,12 +59,15 @@ function getGrainTile(): HTMLCanvasElement | null {
   const ctx = tile.getContext('2d');
   if (!ctx) return null;
   const image = ctx.createImageData(GRAIN_TILE_SIZE, GRAIN_TILE_SIZE);
+  // Constant seed: the tile is a fixed texture, not per-frame noise. Only the
+  // stamp offset animates (see `drawFilmGrain`).
+  const random = mulberry32(GRAIN_TILE_SEED);
   for (let index = 0; index < image.data.length; index += 4) {
-    const value = Math.random() * 255;
+    const value = random() * 255;
     image.data[index] = value;
     image.data[index + 1] = value;
     image.data[index + 2] = value;
-    image.data[index + 3] = Math.random() * 120;
+    image.data[index + 3] = random() * 120;
   }
   ctx.putImageData(image, 0, 0);
   grainTile = tile;
@@ -79,6 +89,45 @@ function getScanlineTile(): HTMLCanvasElement | null {
   return tile;
 }
 
+/**
+ * Paint one effect pass. Shared by the legacy composition path and the
+ * display-list rasterizer so both backends stay pixel-identical.
+ */
+export function drawStudioEffectPass(
+  ctx: CanvasRenderingContext2D,
+  {
+    type,
+    intensity: rawIntensity,
+    frame,
+    timeMs,
+  }: {
+    type: StudioEffectType;
+    intensity: number;
+    frame: StudioWindowFrame;
+    timeMs: number;
+  },
+): void {
+  const intensity = Math.max(0, Math.min(1, rawIntensity));
+  if (intensity <= 0) return;
+  switch (type) {
+    case 'spotlight':
+      drawSpotlight(ctx, frame, intensity);
+      break;
+    case 'vignette':
+      drawVignette(ctx, frame, intensity);
+      break;
+    case 'neon-glow':
+      drawNeonGlow(ctx, frame, intensity);
+      break;
+    case 'film-grain':
+      drawFilmGrain(ctx, frame, timeMs, intensity);
+      break;
+    case 'scanlines':
+      drawScanlines(ctx, frame, timeMs, intensity);
+      break;
+  }
+}
+
 export function drawStudioEffects(
   ctx: CanvasRenderingContext2D,
   effects: readonly StudioEffect[] | undefined,
@@ -88,25 +137,12 @@ export function drawStudioEffects(
   if (!effects || effects.length === 0) return;
   for (const effect of effects) {
     if (!isStudioEffectActive(effect, timeMs)) continue;
-    const intensity = Math.max(0, Math.min(1, effect.intensity));
-    if (intensity <= 0) continue;
-    switch (effect.type) {
-      case 'spotlight':
-        drawSpotlight(ctx, frame, intensity);
-        break;
-      case 'vignette':
-        drawVignette(ctx, frame, intensity);
-        break;
-      case 'neon-glow':
-        drawNeonGlow(ctx, frame, intensity);
-        break;
-      case 'film-grain':
-        drawFilmGrain(ctx, frame, intensity);
-        break;
-      case 'scanlines':
-        drawScanlines(ctx, frame, timeMs, intensity);
-        break;
-    }
+    drawStudioEffectPass(ctx, {
+      type: effect.type,
+      intensity: effect.intensity,
+      frame,
+      timeMs,
+    });
   }
 }
 
@@ -185,6 +221,7 @@ function drawNeonGlow(
 function drawFilmGrain(
   ctx: CanvasRenderingContext2D,
   frame: StudioWindowFrame,
+  timeMs: number,
   intensity: number,
 ): void {
   const tile = getGrainTile();
@@ -193,9 +230,7 @@ function drawFilmGrain(
   if (!pattern) return;
 
   const rect = contentRect(frame);
-  const dx = Math.random() * GRAIN_TILE_SIZE;
-  const dy = Math.random() * GRAIN_TILE_SIZE;
-
+  const { x: dx, y: dy } = filmGrainOffset(timeMs, GRAIN_TILE_SIZE);
   ctx.save();
   ctx.globalAlpha = 0.5 * intensity;
   ctx.translate(-dx, -dy);

@@ -30,6 +30,7 @@
 
 import type {
   StudioCaption,
+  StudioCaptionWord,
   StudioClip,
   StudioCut,
   StudioEffect,
@@ -45,6 +46,7 @@ import {
   effectTypeFromPayload,
   getStudioEffectDefinition,
 } from '../effects/catalog';
+import { migrateEffectsToClips } from '../effects/migrate';
 import {
   compRangeFromSource,
   keptSegments,
@@ -55,6 +57,9 @@ import {
 import { resolveTimelineItemType } from './item-type';
 import { sortTracksForTimeline } from './layers';
 
+// Note: The 'effects' track now only contains zooms (kinetic zoom).
+// Canvas effects (spotlight, neon, etc.) are now clip-attached via clip.payload.effects[].
+// This track is preserved for backward compatibility but will eventually become 'zooms-track'.
 const EFFECTS_TRACK_ID = 'track-effects';
 const CAPTIONS_TRACK_ID = 'track-captions';
 const VIDEO_TRACK_ID = 'track-video';
@@ -64,14 +69,45 @@ const OVERLAYS_TRACK_ID = 'track-overlays';
 /** Gap below which two adjacent source spans are treated as continuous. */
 const CUT_GAP_TOLERANCE_MS = 50;
 
+/**
+ * Map measured caption word timings from source time onto a composition span.
+ *
+ * Word timings are authored against the source recording, so cutting dead air
+ * would otherwise leave the karaoke highlight behind the audio. The output is
+ * in composition time, the same base as the caption's `startMs`/`endMs`.
+ */
+function rebaseCaptionWords(
+  caption: StudioCaption,
+  compStartMs: number,
+  compEndMs: number,
+): StudioCaptionWord[] | undefined {
+  if (!caption.words || caption.words.length === 0) return undefined;
+  const sourceSpan = Math.max(1, caption.endMs - caption.startMs);
+  const compSpan = Math.max(1, compEndMs - compStartMs);
+  const scale = compSpan / sourceSpan;
+  return caption.words.map((word) => ({
+    word: word.word,
+    startMs: compStartMs + Math.round((word.startMs - caption.startMs) * scale),
+    endMs: compStartMs + Math.round((word.endMs - caption.startMs) * scale),
+  }));
+}
+
 // ── Direction A: take → tracks ────────────────────────────────────────────────
 
 export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
+  // Auto-migrate global effects to clip-attached effects (new system)
+  // This is idempotent: marked by take.effectsMigratedAt and safe to re-run
+  const migrationResult = migrateEffectsToClips(take);
+  if (migrationResult.warnings.length > 0) {
+    console.warn('Effects migration warnings:', migrationResult.warnings);
+  }
+
   const sourceDuration = Math.max(0, take.durationMs);
   const cuts = normalizeCuts(take.cuts ?? [], sourceDuration);
   const zooms = take.zooms ?? [];
   const captions = take.captions ?? [];
-  const effects = take.effects ?? [];
+  // NOTE: take.effects is no longer used—effects are now clip-attached (clip.payload.effects[])
+  // The old take.effects field is kept for backward compat but ignored during conversion.
   const overlays = take.overlays ?? [];
 
   const zoomClips = zooms.flatMap((zoom): TimelineClip[] => {
@@ -101,32 +137,6 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
     ];
   });
 
-  const effectClips = effects.flatMap((effect): TimelineClip[] => {
-    const span = compRangeFromSource(
-      { startMs: effect.startMs, endMs: effect.endMs },
-      cuts,
-    );
-    if (!span) return [];
-    const definition = getStudioEffectDefinition(effect.type);
-    return [
-      {
-        id: effect.id,
-        trackId: EFFECTS_TRACK_ID,
-        itemType: 'effect',
-        name: definition?.label ?? effect.type,
-        startMs: span.startMs,
-        durationMs: span.endMs - span.startMs,
-        sourceStartMs: effect.startMs,
-        sourceDurationMs: Math.max(0, effect.endMs - effect.startMs),
-        color: definition?.accent ?? '#8b5cf6',
-        payload: {
-          effectType: effect.type,
-          intensity: effect.intensity,
-        },
-      },
-    ];
-  });
-
   const captionClips = captions.flatMap((caption): TimelineClip[] => {
     const span = compRangeFromSource(
       { startMs: caption.startMs, endMs: caption.endMs },
@@ -146,6 +156,9 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
         color: '#14b8a6',
         payload: {
           text: caption.text,
+          // Measured word timings must survive the take → track conversion;
+          // dropping them silently downgraded karaoke to an even split.
+          words: rebaseCaptionWords(caption, span.startMs, span.endMs),
         },
       },
     ];
@@ -192,9 +205,9 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
       name: 'Effects',
       locked: false,
       visible: true,
-      clips: [...zoomClips, ...effectClips].sort(
-        (a, b) => a.startMs - b.startMs,
-      ),
+      // NOTE: This track now only contains zooms (kinetic zoom).
+      // Canvas effects (spotlight, neon, etc.) are now clip-attached via clip.payload.effects[].
+      clips: zoomClips.sort((a, b) => a.startMs - b.startMs),
     },
     {
       id: CAPTIONS_TRACK_ID,
@@ -420,11 +433,22 @@ export function extractCaptionsFromTracks(
     .flatMap((track) => track.clips)
     .map((clip) => {
       const span = roundSpan(clipSourceSpan(clip, cuts));
+      // Composition word timings map back to source time so the round trip is
+      // lossless (the legacy caption model is source-time addressed).
+      const compSpan = Math.max(1, clip.durationMs);
+      const sourceSpan = Math.max(1, span.endMs - span.startMs);
+      const scale = sourceSpan / compSpan;
+      const words = clip.payload?.words?.map((word) => ({
+        word: word.word,
+        startMs: span.startMs + Math.round((word.startMs - clip.startMs) * scale),
+        endMs: span.startMs + Math.round((word.endMs - clip.startMs) * scale),
+      }));
       return {
         id: clip.id,
         startMs: span.startMs,
         endMs: span.endMs,
         text: clip.payload?.text || clip.name,
+        ...(words && words.length > 0 ? { words } : {}),
       };
     });
 }

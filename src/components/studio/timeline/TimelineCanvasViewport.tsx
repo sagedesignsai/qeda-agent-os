@@ -20,6 +20,14 @@ import { useEffect, useRef, useCallback } from 'react';
 import { timelineStore, useTimelineState } from '@/hooks/use-timeline-store';
 import { useTimelineMedia } from '@/hooks/use-timeline-media';
 import { drawBitmapIfLive } from '@/lib/image-bitmap-lifetime';
+import { evaluateClipKeyframeValues } from '@/lib/studio/keyframes';
+import {
+  drawClipKeyframeDiamonds,
+  findClipKeyframeDiamond,
+  defaultAddKeyframePropertyForTrack,
+  keyframeUiInfoFor,
+  staticValueForProperty,
+} from '@/lib/studio/timeline/keyframes-ui';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -102,6 +110,17 @@ export function TimelineCanvasViewport({
     trackId: string;
     fromClipId: string;
     toClipId: string;
+  } | null>(null);
+
+  // Universal keyframe canvas UI state
+  const selectedKeyframeRef = useRef<{ clipId: string; keyframeId: string } | null>(null);
+  const hoveredKeyframeRef = useRef<{ clipId: string; keyframeId: string } | null>(null);
+  const keyframeDragRef = useRef<{
+    clipId: string;
+    keyframeId: string;
+    property: string;
+    startPointerY: number;
+    initialValue: number;
   } | null>(null);
 
   // Drag interaction state
@@ -353,6 +372,21 @@ export function TimelineCanvasViewport({
             }
           }
 
+          // Effects indicator badge (if overlay has attached effects)
+          const oEffects = clip.payload?.effects as any[];
+          if (oEffects && oEffects.length > 0) {
+            const oeEffectBadgeX = clipX + clipW - 50;
+            const oeEffectBadgeY = clipY + 4;
+            ctx.fillStyle = 'rgba(99, 102, 241, 0.85)'; // Indigo with opacity
+            ctx.beginPath();
+            ctx.roundRect(oeEffectBadgeX, oeEffectBadgeY, 36, 16, 4);
+            ctx.fill();
+            ctx.fillStyle = '#e0e7ff';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`✦ ${oEffects.length}`, oeEffectBadgeX + 8, oeEffectBadgeY + 8, 20);
+          }
+
           ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
           ctx.fillRect(clipX, clipY, clipW, 2);
 
@@ -455,6 +489,21 @@ export function TimelineCanvasViewport({
                 ctx.fillText('✢', badgeX + 11, badgeY + 8);
               }
             }
+          }
+
+          // Effects indicator badge (if clip has attached effects)
+          const effects = clip.payload?.effects as any[];
+          if (effects && effects.length > 0) {
+            const effectBadgeX = clipX + clipW - 50;
+            const effectBadgeY = clipY + 4;
+            ctx.fillStyle = 'rgba(79, 70, 229, 0.8)'; // Indigo with opacity
+            ctx.beginPath();
+            ctx.roundRect(effectBadgeX, effectBadgeY, 36, 16, 4);
+            ctx.fill();
+            ctx.fillStyle = '#e0e7ff';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`✦ ${effects.length}`, effectBadgeX + 8, effectBadgeY + 8, 20);
           }
 
           // Filmstrip frame tiles with viewport frustum culling
@@ -664,6 +713,45 @@ export function TimelineCanvasViewport({
             ctx.fill();
           }
         }
+
+        // ── Universal keyframe diamonds ─────────────────────────────────────
+        // Property-addressed keyframes, drawn as colored diamonds on the clip
+        // row (drag handles; hover shows the value, selected shows a ring).
+        drawClipKeyframeDiamonds(ctx, {
+          track,
+          clip,
+          clipX,
+          clipY,
+          clipH,
+          zoomPxPerMs,
+          selectedKeyframeId:
+            selectedKeyframeRef.current?.clipId === clip.id
+              ? selectedKeyframeRef.current?.keyframeId
+              : null,
+          hoveredKeyframeId:
+            hoveredKeyframeRef.current?.clipId === clip.id
+              ? hoveredKeyframeRef.current?.keyframeId
+              : null,
+          maxRight: clipX + clipW,
+          onTooltip: (text, x, y, maxWidth) => {
+            const tw = Math.min(
+              ctx.measureText(text).width + 10,
+              Math.max(0, maxWidth),
+            );
+            if (tw < 20) return;
+            const tx = Math.min(x, clipX + clipW - 6 - tw);
+            ctx.save();
+            ctx.fillStyle = 'rgba(8, 12, 20, 0.93)';
+            ctx.beginPath();
+            ctx.roundRect(tx - 3, y - 5, tw, 13, 4);
+            ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px sans-serif';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, tx + 4, y + 4);
+            ctx.restore();
+          },
+        });
 
         // ── Clip Outer Border & Trim Handles ────────────────────────────────
         ctx.save();
@@ -1009,6 +1097,9 @@ export function TimelineCanvasViewport({
 
       const track = tracks[trackIndex];
       const scrollX = scrollLeftRef.current;
+      const trackY = rulerHeight + trackIndex * trackHeight - scrollYRef.current;
+      const clipY = trackY + 4;
+      const clipH = trackHeight - 8;
 
       // 3. Check clips inside this track
       for (const clip of track.clips) {
@@ -1016,6 +1107,30 @@ export function TimelineCanvasViewport({
         const clipW = clip.durationMs * zoomPxPerMs;
 
         if (pointerX >= clipX && pointerX <= clipX + clipW) {
+          // Universal keyframe diamonds: drag handles; checked before the
+          // clip body/edges since they're the interactive handles.
+          const keyframeHit = findClipKeyframeDiamond(
+            track,
+            clip,
+            clipX,
+            clipY,
+            clipH,
+            pointerX,
+            pointerY,
+            zoomPxPerMs,
+          );
+          if (keyframeHit) {
+            return {
+              type: 'clip_keyframe' as const,
+              track,
+              clip,
+              keyframeId: keyframeHit.keyframe.id,
+              property: keyframeHit.property,
+              pointerX,
+              pointerY,
+            };
+          }
+
           // Check left/right edge within 6px
           const distToLeft = Math.abs(pointerX - clipX);
           const distToRight = Math.abs(pointerX - (clipX + clipW));
@@ -1079,6 +1194,26 @@ export function TimelineCanvasViewport({
       return;
     }
 
+    if (hit.type === 'clip_keyframe') {
+      timelineStore.setSelectedClipId(hit.clip.id);
+      selectedKeyframeRef.current = {
+        clipId: hit.clip.id,
+        keyframeId: hit.keyframeId,
+      };
+      const kf = hit.clip.payload?.keyframes?.find((k) => k.id === hit.keyframeId);
+      keyframeDragRef.current = kf
+        ? {
+            clipId: hit.clip.id,
+            keyframeId: hit.keyframeId,
+            property: hit.property,
+            startPointerY: hit.pointerY,
+            initialValue: kf.value,
+          }
+        : null;
+      dragModeRef.current = { type: 'none' };
+      return;
+    }
+
     if (hit.type === 'clip_body') {
       if (activeTool === 'blade') {
         // Razor blade split
@@ -1086,6 +1221,9 @@ export function TimelineCanvasViewport({
         timelineStore.splitClipAt(hit.track.id, hit.clip.id, splitTimeMs);
         return;
       }
+
+      // Clicking clip body clears keyframe-diamond selection.
+      selectedKeyframeRef.current = null;
 
       // Shift+Click toggles multi-select without starting a drag
       if (e.shiftKey) {
@@ -1151,6 +1289,7 @@ export function TimelineCanvasViewport({
 
     const rect = canvas.getBoundingClientRect();
     const pointerX = e.clientX - rect.left;
+    const pointerY = e.clientY - rect.top;
     const scrollX = scrollLeftRef.current;
     const currentDrag = dragModeRef.current;
 
@@ -1161,6 +1300,58 @@ export function TimelineCanvasViewport({
       scheduleRender();
     } else {
       hoverBladeXRef.current = null;
+    }
+
+    // ── Universal keyframe drag: horizontal = time, vertical = value ──────
+    if (keyframeDragRef.current) {
+      const drag = keyframeDragRef.current;
+      const clip = timelineStore
+        .getState()
+        .tracks.flatMap((t) => t.clips)
+        .find((c) => c.id === drag.clipId);
+      const kf = clip?.payload?.keyframes?.find((k) => k.id === drag.keyframeId);
+      if (clip && kf) {
+        const newTimeMs = Math.max(
+          0,
+          Math.min(clip.durationMs, (pointerX + scrollX) / zoomPxPerMs),
+        );
+        let newValue = kf.value;
+        const info = keyframeUiInfoFor(drag.property);
+        if (info) {
+          const deltaY = pointerY - drag.startPointerY;
+          newValue = Math.max(
+            info.min,
+            Math.min(
+              info.max,
+              drag.initialValue - deltaY * info.unitsPerPixelDown,
+            ),
+          );
+        }
+        if (Math.abs(newTimeMs - kf.timeMs) > 0.1) {
+          timelineStore.updateClipKeyframeTime(clip.id, drag.keyframeId, newTimeMs);
+        }
+        if (Math.abs(newValue - kf.value) > 0.005) {
+          timelineStore.updateClipKeyframeValue(clip.id, drag.keyframeId, newValue);
+        }
+      }
+      scheduleRender();
+      return;
+    }
+
+    // ── Hover keyframe diamonds: highlight + tooltip ─────────────────────
+    const hoverHit = hitTest(e.clientX, e.clientY);
+    const hoveredId =
+      hoverHit?.type === 'clip_keyframe'
+        ? { clipId: hoverHit.clip.id, keyframeId: hoverHit.keyframeId }
+        : null;
+    const wasHovered = hoveredKeyframeRef.current;
+    const sameHover =
+      hoveredId?.clipId === wasHovered?.clipId &&
+      hoveredId?.keyframeId === wasHovered?.keyframeId;
+    if (!sameHover) {
+      hoveredKeyframeRef.current = hoveredId;
+      canvas.style.cursor = hoveredId ? 'move' : '';
+      scheduleRender();
     }
 
     // ── Active Drag State Machine ───────────────────────────────────────────
@@ -1304,6 +1495,11 @@ export function TimelineCanvasViewport({
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    if (keyframeDragRef.current) {
+      keyframeDragRef.current = null;
+      renderCanvas();
+      return;
+    }
     const wasDragging =
       dragModeRef.current.type === 'move_clip' ||
       dragModeRef.current.type === 'trim_edge';
@@ -1317,10 +1513,32 @@ export function TimelineCanvasViewport({
   };
 
   const handlePointerLeave = () => {
+    hoveredKeyframeRef.current = null;
+    renderCanvas();
     if (dragModeRef.current.type === 'none') {
       hoverBladeXRef.current = null;
       renderCanvas();
     }
+  };
+
+  // ── Double-click on a clip row: add a universal keyframe ──────────────────
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const hit = hitTest(e.clientX, e.clientY);
+    if (hit?.type !== 'clip_body' || activeTool === 'blade') return;
+    const scrollX = scrollLeftRef.current;
+    const clipTimeMs = (hit.pointerX + scrollX) / zoomPxPerMs;
+    const localTimeMs = Math.max(
+      0,
+      Math.min(hit.clip.durationMs, clipTimeMs - hit.clip.startMs),
+    );
+    const property = defaultAddKeyframePropertyForTrack(hit.track.type);
+    if (!property) return;
+    const values = evaluateClipKeyframeValues(hit.clip, localTimeMs);
+    const value =
+      (values as Record<string, number | undefined>)[property] ??
+      staticValueForProperty(hit.clip, property);
+    timelineStore.addClipKeyframe(hit.clip.id, property, localTimeMs, value);
+    scheduleRender();
   };
 
   // ── Keyboard Shortcuts (V, C, Space, Del, Cmd+B, Undo/Redo, Arrows, Home/End, JKL) ──
@@ -1431,6 +1649,7 @@ export function TimelineCanvasViewport({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerLeave={handlePointerLeave}
+            onDoubleClick={handleDoubleClick}
             className="sticky left-0 top-0 block touch-none z-10 pointer-events-auto"
             style={{
               marginBottom: `-${viewportHeightRef.current || 300}px`,

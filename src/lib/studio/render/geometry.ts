@@ -9,7 +9,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import type { StudioAspectRatio } from '../types';
+import type { StudioAspectRatio, StudioStyling } from '../types';
 
 export interface StudioCanvasDims {
   width: number;
@@ -32,6 +32,44 @@ export interface StudioWindowFrame {
 }
 
 const HEADER_HEIGHT = 26;
+
+/**
+ * Resolve the window frame for a composition.
+ *
+ * `canvasMode: 'edit'` fills the whole canvas (no frame, no chrome); showcase
+ * mode fits a rounded window with a header bar inside the padded canvas.
+ *
+ * Lives in the pure geometry module so the display-list builder never has to
+ * import the Canvas composition entry point.
+ */
+export function computeStudioCanvasFrame(
+  width: number,
+  height: number,
+  styling: StudioStyling,
+  contentAspect: number,
+): StudioWindowFrame {
+  if (styling.canvasMode !== 'edit') {
+    return computeStudioWindowFrame({
+      canvasWidth: width,
+      canvasHeight: height,
+      padding: styling.padding,
+      borderRadius: styling.borderRadius,
+      contentAspect,
+    });
+  }
+  return {
+    x: 0,
+    y: 0,
+    width,
+    height,
+    radius: 0,
+    headerHeight: 0,
+    contentX: 0,
+    contentY: 0,
+    contentWidth: width,
+    contentHeight: height,
+  };
+}
 
 export function studioCanvasDims(
   aspectRatio: StudioAspectRatio,

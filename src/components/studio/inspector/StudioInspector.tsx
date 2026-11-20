@@ -18,6 +18,7 @@ import { SlidersIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { StudioStyling } from '@/lib/studio-types';
+import type { StudioEffectType } from '@/lib/studio/types';
 import { useSelectedClip, timelineStore } from '@/hooks/use-timeline-store';
 import {
   MagicActionsSection,
@@ -28,6 +29,7 @@ import {
   GlobalCameraSection,
   GlobalCaptionsSection,
   ClipPropertiesSection,
+  EffectsPalette,
 } from './sections';
 import { InspectorAccordionContext } from './components/InspectorSection';
 
@@ -61,6 +63,9 @@ export function StudioInspector({
     'Magic Agent & Export',
   );
 
+  // Track drag-over state for visual feedback
+  const [draggedEffect, setDraggedEffect] = React.useState<StudioEffectType | null>(null);
+
   const handleUpdateClip = (
     clipId: string,
     patch: Parameters<typeof timelineStore.updateClip>[1],
@@ -74,6 +79,10 @@ export function StudioInspector({
 
   const handleDeselectClip = () => {
     timelineStore.setSelectedClipId(null);
+  };
+
+  const handleEffectDragStart = (_effectType: StudioEffectType) => {
+    setDraggedEffect(_effectType);
   };
 
   return (
@@ -194,6 +203,12 @@ export function StudioInspector({
               styling={styling}
               onUpdateStyling={onUpdateStyling}
               defaultOpen={false}
+            />
+
+            {/* Effects Palette */}
+            <EffectsPalette
+              isOpen={false}
+              onEffectDragStart={handleEffectDragStart}
             />
           </div>
         </InspectorAccordionContext.Provider>

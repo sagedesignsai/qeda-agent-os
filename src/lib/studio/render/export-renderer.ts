@@ -43,11 +43,14 @@
 import { safeDurationMs } from '../styling';
 import { studioCanvasDims } from './geometry';
 import {
+  CAMERA_SMOOTHING_60FPS,
   computeCameraTarget,
   IDLE_CAMERA,
+  stepCameraWithDelta,
   type StudioCameraState,
 } from './camera';
-import { drawStudioFrame, type StudioComposeInput } from './compose';
+import type { StudioComposeInput } from './compose';
+import { renderStudioFrame } from './frame-renderer';
 import { studioOverlayMediaUrl, type StudioOverlayAsset } from './overlays';
 import { drawStudioWindowChrome } from './frame';
 import {
@@ -102,21 +105,6 @@ function seekTo(
     video.currentTime = timeSeconds;
   });
 }
-
-/**
- * Convert a preview-calibrated 60fps smoothing factor to the equivalent factor
- * for a different frame rate, preserving the apparent motion curve.
- */
-function adaptSmoothing(alpha60fps: number, targetFps: number): number {
-  return 1 - Math.pow(1 - alpha60fps, 60 / targetFps);
-}
-
-/** Easing multipliers per camera mode — mirrored from camera.ts. */
-const CAMERA_SMOOTHING_60FPS: Record<string, number> = {
-  snappy: 0.22,
-  balanced: 0.12,
-  cinematic: 0.07,
-};
 
 /**
  * Detect the best available VP9/VP8 VideoEncoder codec string.
@@ -519,22 +507,8 @@ export async function renderComposedStudioVideo(
   //    We run the camera forward at the export fps without rendering anything,
   //    so that by the time we start drawing we have a warmed-up camera state.
   //    (The camera is a low-pass filter — it needs history to be correct.)
-  const easingKey = take.styling.cameraEasing ?? 'balanced';
-  const alpha60 = CAMERA_SMOOTHING_60FPS[easingKey] ?? 0.12;
-  const alphaAtFps = adaptSmoothing(alpha60, fps);
-
-  // We use a patched stepCamera that accepts a custom alpha instead of easing name.
-  function stepCameraWithAlpha(
-    current: StudioCameraState,
-    target: StudioCameraState,
-    alpha: number,
-  ): StudioCameraState {
-    return {
-      scale: current.scale + (target.scale - current.scale) * alpha,
-      panX: current.panX + (target.panX - current.panX) * alpha,
-      panY: current.panY + (target.panY - current.panY) * alpha,
-    };
-  }
+  const easingKey = take.styling.cameraEasing ?? 'smooth';
+  const frameDeltaMs = 1000 / fps;
 
   let camera: StudioCameraState = { ...IDLE_CAMERA };
 
@@ -578,7 +552,7 @@ export async function renderComposedStudioVideo(
       }
     : null;
 
-  for (let frameIndex = 0; frameIndex <= totalFrames; frameIndex++) {
+  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
     if (options?.signal?.aborted) {
       encoder.close();
       throw new Error('Export cancelled by user');
@@ -651,7 +625,7 @@ export async function renderComposedStudioVideo(
           timeMs: sourceMs,
           zoomIntensity: take.styling.zoomIntensity,
         });
-    camera = stepCameraWithAlpha(camera, target, alphaAtFps);
+    camera = stepCameraWithDelta(camera, target, easingKey, frameDeltaMs);
 
     // Draw the full composition
     const input: StudioComposeInput = {
@@ -703,7 +677,7 @@ export async function renderComposedStudioVideo(
     };
 
     const tDraw0 = profileTimings ? performance.now() : 0;
-    drawStudioFrame(ctx, input);
+    renderStudioFrame(ctx, input);
 
     // Intro & Outro Motion Cards
     if (take.styling.introCard?.enabled) {
@@ -747,46 +721,53 @@ export async function renderComposedStudioVideo(
 
     // Mix and encode audio for this frame
     if (hasAudioClips && audioEncoder && !audioEncoderError) {
+      const framesPerSample = Math.round(audioSampleRate / fps);
       const audioClips = evaluatedTimeline.audio;
+      let mixedSamples: Float32Array | null = null;
+
       if (audioClips.length > 0) {
-        const framesPerSample = Math.round(audioSampleRate / fps);
-        const mixedSamples = mixAudioSamples(
+        mixedSamples = mixAudioSamples(
           audioClips,
           timelineTracks,
           audioSampleRate,
           framesPerSample,
         );
-        if (mixedSamples) {
-          // Convert interleaved Float32Array to s16-planar ArrayBuffer for AudioData.
-          // s16-planar stores each channel in a contiguous plane:
-          //   [ch0_sample0, ch0_sample1, ..., ch1_sample0, ch1_sample1, ...]
-          const numSamples = framesPerSample;
-          const totalBytes = numSamples * audioChannels * 2; // 2 bytes per sample per channel
-          const planeBuffer = new ArrayBuffer(totalBytes);
-          const int16View = new Int16Array(planeBuffer);
-          for (let ch = 0; ch < audioChannels; ch++) {
-            const planeOffset = ch * numSamples;
-            for (let i = 0; i < numSamples; i++) {
-              const sample = Math.max(-1, Math.min(1, mixedSamples[(i * audioChannels) + ch] || 0));
-              int16View[planeOffset + i] = sample < 0 ? Math.floor(sample * 0x8000) : Math.floor(sample * 0x7FFF);
-            }
+      } else {
+        // Emit silence for frames with no active audio clips to keep the
+        // Opus stream timestamp continuous — gaps cause playback artifacts.
+        mixedSamples = new Float32Array(framesPerSample * audioChannels);
+      }
+
+      if (mixedSamples) {
+        // Convert interleaved Float32Array to s16-planar ArrayBuffer for AudioData.
+        // s16-planar stores each channel in a contiguous plane:
+        //   [ch0_sample0, ch0_sample1, ..., ch1_sample0, ch1_sample1, ...]
+        const numSamples = framesPerSample;
+        const totalBytes = numSamples * audioChannels * 2; // 2 bytes per sample per channel
+        const planeBuffer = new ArrayBuffer(totalBytes);
+        const int16View = new Int16Array(planeBuffer);
+        for (let ch = 0; ch < audioChannels; ch++) {
+          const planeOffset = ch * numSamples;
+          for (let i = 0; i < numSamples; i++) {
+            const sample = Math.max(-1, Math.min(1, mixedSamples[(i * audioChannels) + ch] || 0));
+            int16View[planeOffset + i] = sample < 0 ? Math.floor(sample * 0x8000) : Math.floor(sample * 0x7FFF);
           }
-          const audioFrame = new AudioData({
-            format: 's16-planar' as const,
-            sampleRate: audioSampleRate,
-            numberOfChannels: audioChannels,
-            numberOfFrames: numSamples,
-            timestamp: Math.round(currentTimeMs * 1000), // μs
-            data: planeBuffer,
-          });
-          audioEncoder.encode(audioFrame);
-          audioFrame.close();
         }
+        const audioFrame = new AudioData({
+          format: 's16-planar' as const,
+          sampleRate: audioSampleRate,
+          numberOfChannels: audioChannels,
+          numberOfFrames: numSamples,
+          timestamp: Math.round(currentTimeMs * 1000), // μs
+          data: planeBuffer,
+        });
+        audioEncoder.encode(audioFrame);
+        audioFrame.close();
       }
     }
 
     // Drain encoder and flush muxer every ENCODE_BATCH frames to stream data
-    if (frameIndex % ENCODE_BATCH === 0 || frameIndex === totalFrames) {
+    if (frameIndex % ENCODE_BATCH === 0 || frameIndex === totalFrames - 1) {
       const tDrain0 = profileTimings ? performance.now() : 0;
       // Wait for all outstanding encodes to complete
       await new Promise<void>((resolve) => {

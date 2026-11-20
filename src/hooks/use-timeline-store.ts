@@ -17,8 +17,10 @@ import type {
   TimelineClip,
   TrackType,
   TimelineItemType,
+  StudioAnimationEasing,
 } from '@/lib/studio-types';
 import { inferTimelineItemType } from '@/lib/studio/timeline/item-type';
+import { generateKeyframeId } from '@/lib/studio/keyframes';
 import {
   moveTrackWithinType,
   sortTracksForTimeline,
@@ -1036,6 +1038,81 @@ class TimelineStore {
     this.notify();
     if (currentTimeMs !== previousTimeMs) this.notifyTime(currentTimeMs);
     if (commit) this.commitTrackChange();
+  };
+
+  // ── Universal clip keyframes ─────────────────────────────────────────────
+
+  /**
+   * Add a universal keyframe to a clip. Returns false if the clip is missing;
+   * returns true without changing state when a keyframe with the same
+   * property+time already exists.
+   */
+  addClipKeyframe = (
+    clipId: string,
+    property: string,
+    timeMs: number,
+    value: number,
+    easing: StudioAnimationEasing = 'ease-out',
+  ): boolean => {
+    const found = this.findClip(clipId);
+    if (!found) return false;
+    const durationMs = Math.max(0, found.clip.durationMs);
+    const t = Math.min(Math.max(0, timeMs), durationMs);
+    const payload = found.clip.payload ?? {};
+    const keyframes = payload.keyframes ?? [];
+    if (keyframes.some((k) => k.property === property && k.timeMs === t)) {
+      return true;
+    }
+    this.updateClip(clipId, {
+      payload: {
+        ...payload,
+        keyframes: [
+          ...keyframes,
+          { id: generateKeyframeId(), timeMs: t, property, value, easing },
+        ],
+      },
+    });
+    return true;
+  };
+
+  /** Set the value of an existing universal keyframe on a clip. */
+  updateClipKeyframeValue = (clipId: string, keyframeId: string, value: number) => {
+    const found = this.findClip(clipId);
+    if (!found) return;
+    const payload = found.clip.payload ?? {};
+    this.updateClip(clipId, {
+      payload: {
+        ...payload,
+        keyframes: (payload.keyframes ?? []).map((k) =>
+          k.id === keyframeId ? { ...k, value } : k,
+        ),
+      },
+    });
+  };
+
+  /** Set the timeline position (within the clip) of an existing keyframe. */
+  updateClipKeyframeTime = (clipId: string, keyframeId: string, timeMs: number) => {
+    const found = this.findClip(clipId);
+    if (!found) return;
+    const payload = found.clip.payload ?? {};
+    const t = Math.max(0, timeMs);
+    this.updateClip(clipId, {
+      payload: {
+        ...payload,
+        keyframes: (payload.keyframes ?? []).map((k) =>
+          k.id === keyframeId ? { ...k, timeMs: t } : k,
+        ),
+      },
+    });
+  };
+
+  /** Remove a universal keyframe from a clip. */
+  removeClipKeyframe = (clipId: string, keyframeId: string) => {
+    const found = this.findClip(clipId);
+    if (!found) return;
+    const payload = found.clip.payload ?? {};
+    const keyframes = (payload.keyframes ?? []).filter((k) => k.id !== keyframeId);
+    this.updateClip(clipId, { payload: { ...payload, keyframes } });
   };
 
   addTransitionClip = (data: {

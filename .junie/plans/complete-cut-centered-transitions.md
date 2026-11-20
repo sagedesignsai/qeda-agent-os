@@ -2,165 +2,116 @@
 sessionId: session-261120-073513-s2cf
 ---
 
-# Studio Editor — Gap Resolution Plan
+# Studio Editor — PR3 & PR4: Export Parity and Camera Parity
 
-## Completed Features
+## PR Status Summary
 
-The following features are **fully implemented and tested**:
+| PR | Name | Status | Notes |
+|----|------|--------|-------|
+| PR1 | Layer order | ✅ Done | `layers.ts`, `reorderTrack()`, chevron buttons, 12 tests |
+| PR2 | Preview audio mixer | ✅ Done | `schedule.ts`, `sync()` API, drift guard, 11 tests |
+| PR3 | Export parity | ✅ Done | `mixAudioSamples` is pure array math, typed `track.volume`, silence emission, frame count fixed, 6 tests |
+| PR4 | Camera parity | ✅ Done | Shared `stepCameraWithDelta`, frame-rate independent, preview/export convergence, 6 tests |
 
-### ✅ Cut-Centered Transitions (All 5 steps complete)
-- Transition model with `fromClipId`/`toClipId` pairing
-- `addTransitionClip()` with duration clamping and adjacency validation
-- `alignCutTransitions()` fires on trim/move operations
-- Undo/redo for all transition operations
-- Preview and export consistency verified
-- 11 dedicated tests passing
+### What's already done (PR1 + PR2)
+- **Layer ordering**: `timeline/layers.ts` with `TRACK_LANE_RANK`, `sortTracksForTimeline()`, `trackPaintOrder()`, `moveTrackWithinType()`. `zIndex` removed from `StudioTrack`. `reorderTrack()` in store with undo/redo. Chevron buttons in track headers. 12 tests.
+- **Preview audio mixer**: `audio/schedule.ts` with `planAudioSchedule()`. `StudioAudioMixer` uses `sync()` API with structured params. Drift guard resyncs at 120ms. StudioCanvas wired to call `sync()`. 11 tests.
+- **Core features**: Cut-centered transitions, multitrack audio, ripple operations, waveforms, multi-select, cross-track drag, transition hover preview — all complete and tested.
 
-### ✅ Multitrack Audio (Core pipeline complete)
-- `mixAudioSamples()` with per-clip volume and per-track volume/mute
-- `StudioAudioMixer` class wired into `StudioCanvas.tsx` for preview playback
-- Opus audio encoding in export via WebCodecs `AudioEncoder`
-- Audio track UI with volume sliders in timeline headers
-- 16 dedicated audio tests passing
+## PR3 — Export Audio Parity
 
-### ✅ Core Timeline Operations
-- Clip split, trim, move, delete, duplicate with undo/redo
-- Track lock, visibility, mute controls
-- Magnetic snapping, blade tool
-- Isolated playhead subscription (60fps, no React re-renders)
+### Current Issues
+1. **`mixAudioSamples()` depends on `getAudioContext()`** (`mixer.ts:133`) — export runs headless; `AudioContext` may not be available. The function only uses it to check availability, then does pure array math.
+2. **`(track as any).volume`** (`mixer.ts:163`) — `TimelineTrack` already has a typed `volume?: number` field. The cast is unnecessary.
+3. **No silence emission for empty audio frames** (`export-renderer.ts:751`) — when `audioClips.length === 0`, no `AudioData` is encoded, leaving timestamp gaps in the Opus stream.
+4. **Extra frame rendered** (`export-renderer.ts:581`) — `frameIndex <= totalFrames` renders one frame beyond the composition duration.
 
-## Current Test Status
+### Changes
+- **`src/lib/studio/audio/mixer.ts`**:
+  - Remove `getAudioContext()` call from `mixAudioSamples()` — the function is pure array math.
+  - Replace `(track as any).volume` with typed `track.volume`.
+  - Add `sourceRate` parameter for proper speed-adjusted sample reading (currently reads 1:1, ignoring clip speed).
+- **`src/lib/studio/render/export-renderer.ts`**:
+  - Emit silence `AudioData` (zeros) when no audio clips are active at a frame.
+  - Change `frameIndex <= totalFrames` → `frameIndex < totalFrames`.
+  - Reuse `sourceRateForClip` from `evaluate.ts` for speed-adjusted mixing.
 
-**253/261 tests passing (97%)**. 8 failures in 6 test files, all from stale expectations after component refactoring:
+### Tests
+- `mixAudioSamples` without `AudioContext` returns valid samples.
+- Silence emission produces continuous timestamps across empty regions.
+- Frame count equals `ceil(duration / interval)` without the extra frame.
+- Speed-adjusted clips mix at correct source offsets.
 
-| Test File | Failing Test | Root Cause |
-|-----------|-------------|------------|
-| `studio-resizable-layout.test.tsx` | 2 tests | Stale track names and inspector header text |
-| `studio-inspector-gui.test.tsx` | 2 tests | Inspector header text changed from "Studio Inspector"/"CLIP ACTIVE" to "Clip Properties"/"SELECTED" |
-| `studio-canvas-enhancements.test.tsx` | 1 test | Canvas placeholder text changed from "Blank Showcase Canvas" to "Empty Canvas" |
-| `studio-projects-view.test.tsx` | 1 test | PageHeader replaced "Studio Projects" heading with "Showcase Studio" crumb |
-| `studio-content-panel.test.tsx` | 1 test | Images now go to `video` track instead of `overlays`, payload uses `mediaAssetId` instead of `filePath` |
-| `studio-composition.test.ts` | 1 test | Blank compositions now allowed — validation removed |
+## PR4 — Camera Parity
 
-## Known Code Gaps
+### Current Issues
+1. **Export has private `stepCameraWithAlpha`** (`export-renderer.ts:527-537`) — duplicates `camera.ts` logic with raw alpha instead of easing name.
+2. **`CAMERA_SMOOTHING_60FPS` duplicated** (`export-renderer.ts:115-118`) — mirrors values from `camera.ts` instead of importing.
+3. **Preview doesn't use frame delta** — calls `stepCamera()` with fixed smoothing every frame. On 120 Hz displays, camera moves twice as fast. Export handles this via `adaptSmoothing()` but preview doesn't.
 
-### 🟡 Stereo Audio Export
-The export renderer hardcodes `numberOfChannels: 1` (line 769) and reads only the first channel (line 763), despite the mixer producing interleaved stereo samples. The `audioChannels = 2` config is set but unused in the encoding loop.
+### Changes
+- **`src/lib/studio/render/camera.ts`**:
+  - Export `CAMERA_SMOOTHING_60FPS` constant for reuse.
+  - Add `stepCameraWithDelta(current, target, easing, dtMs)` with frame-rate-independent smoothing: `alpha = 1 - (1 - smoothing)^(dtMs / 16.667)`.
+  - Keep `stepCamera()` as a convenience wrapper with `dtMs = 16.667`.
+- **`src/components/studio/StudioCanvas.tsx`**:
+  - Pass measured frame delta (`elapsed` from `now - previousFrame`) to `stepCameraWithDelta()`.
+- **`src/lib/studio/render/export-renderer.ts`**:
+  - Remove private `stepCameraWithAlpha()` and `CAMERA_SMOOTHING_60FPS`.
+  - Import `stepCameraWithDelta` from `camera.ts`.
+  - Call `stepCameraWithDelta(camera, target, easing, 1000 / fps)`.
 
-### 🟡 Original Recording Audio in Export
-The recording's own audio track is not mixed into the multitrack output — only timeline audio clips are encoded.
-
-### 🟡 Ripple Delete/Trim
-Gaps left by deleted clips don't auto-close. The `ripple.ts` module handles cut-based time mapping, but no ripple delete/trim UI exists.
-
-### 🟡 Keyboard Shortcuts
-Basic keyboard shortcuts exist (J/K/L, arrow keys, undo/redo) but no visible shortcut system or comprehensive coverage.
-
-### 🟡 Multi-clip Selection
-Only single clip selection is supported.
-
-### 🟡 Audio Waveform Visualization
-Audio clips show solid blocks, not waveforms.
-
-### 🟡 Transition Hover Preview
-No visual preview when hovering over a cut point.
-
-### 🟡 Drag-and-drop Between Tracks
-Clips can't be moved between tracks via drag.
+### Tests
+- `stepCameraWithDelta` at 16.67ms and 33.3ms produce equivalent motion over equal wall time.
+- Export and preview converge to the same camera state from the same start.
+- No regression in existing camera tests.
 
 # Delivery Steps
 
 ### ✓ Step 1: Fix all 8 failing tests
 Update stale test expectations to match current component text and behavior.
 
-- **`studio-resizable-layout.test.tsx`** (2 fixes):
-  - Replace `'Effects & Zooms'` → `'Effects'`
-  - Replace `'Subtitles & Text'` → `'Text & Captions'`
-  - Replace `'Primary Video'` → `'Video 1'`
-  - Replace `'Audio Waveform'` → `'Audio 1'`
-  - Replace `'Studio Inspector'` → `'Clip Properties'` (or find the actual header text)
-- **`studio-inspector-gui.test.tsx`** (2 fixes):
-  - Replace `'Studio Inspector'` → `'Clip Properties'` (the actual header text)
-  - Replace `'CLIP ACTIVE'` → `'SELECTED'` (the actual badge text)
-- **`studio-canvas-enhancements.test.tsx`** (1 fix):
-  - Replace `'Blank Showcase Canvas'` → `'Empty Canvas'`
-- **`studio-projects-view.test.tsx`** (1 fix):
-  - Replace `'Studio Projects'` → `'Showcase Studio'` (the PageHeader crumb)
-- **`studio-content-panel.test.tsx`** (1 fix):
-  - Update expected `trackType` from `'overlays'` → `'video'`
-  - Update expected payload from `{filePath: ...}` → `{mediaAssetId: ...}`
-- **`studio-composition.test.ts`** (1 fix):
-  - Remove or update the test that expects "needs at least 2 recordings" error since blank compositions are now allowed
-- Run all tests to confirm 261/261 passing
-
 ### ✓ Step 2: Fix stereo audio export
 Extend the export renderer to encode both audio channels instead of mono.
 
-- In `export-renderer.ts` (lines 758-775), change `numberOfChannels: 1` → `numberOfChannels: audioChannels`
-- Extend the sample conversion loop to handle both channels: iterate over all `audioChannels` instead of just the first
-- Update the `s16-planar` format data to include both channel planes
-- Verify the WebM muxer's audio track entry uses the correct channel count
-- Add a test that verifies stereo audio encoding produces 2-channel output
-
 ### ✓ Step 3: Mix original recording audio into export
-Include the recording's own audio track in the multitrack export output.
-
-**Resolution**: The existing export pipeline already handles this correctly:
-- If the rendered WebM has audio (timeline clips), it IS the final mix — no recording audio merge.
-- If the rendered WebM has NO audio, ffmpeg merges the original recording's audio (`audioInputPath`).
-- This is by design: timeline audio clips replace the recording audio. If the user wants both, they can add the recording as an audio clip on the timeline.
-No code changes needed.
+**Resolution**: Already handled by existing pipeline. No code changes needed.
 
 ### ✓ Step 4: Add ripple delete and trim operations
 Auto-close gaps when clips are deleted or trimmed.
 
-- Add `rippleDeleteClip()` method to `use-timeline-store.ts` that shifts subsequent clips on the same track to close the gap
-- Add `rippleTrimClip()` method that shifts subsequent clips when a clip edge is trimmed inward
-- Wire ripple delete to the Delete key when a clip is selected
-- Add undo/redo support for ripple operations
-- Add tests for ripple delete and ripple trim scenarios
-
 ### ✓ Step 5: Add audio waveform visualization
 Render audio clip waveforms in the timeline canvas.
-
-- Pre-compute waveform data (RMS amplitude per sample) when audio clips are decoded
-- Store waveform data in `StudioClipPayload` as a `Float32Array`
-- In `TimelineCanvasViewport.tsx`, render waveform peaks instead of solid blocks for audio clips
-- Add zoom-aware waveform density (more detail at higher zoom levels)
-- Add tests for waveform rendering
 
 ### ✓ Step 6: Add transition hover preview
 Show a subtle transition indicator when hovering over adjacent clip cuts.
 
-- In `TimelineCanvasViewport.tsx`, detect hover position near clip boundaries
-- Show a subtle transition icon/indicator at the cut point
-- On click, insert a default transition (fade, 500ms) at the hovered cut
-- Add visual feedback during hover (highlight the cut line)
-
 ### ✓ Step 7: Add multi-clip selection
 Enable shift-click and drag-select for batch operations.
-
-- Extend `use-timeline-store.ts` to support `selectedClipIds: Set<string>` instead of `selectedClipId: string | null`
-- Add shift-click to add/remove clips from selection
-- Add drag-select (marquee) in `TimelineCanvasViewport.tsx`
-- Extend delete, duplicate, and copy operations to work on multiple clips
-- Add visual selection indicators (highlight borders) for multiple clips
 
 ### ✓ Step 8: Add drag-and-drop between tracks
 Allow clips to be moved between tracks via drag.
 
-- In `TimelineCanvasViewport.tsx`, detect when a clip is dragged over a different track
-- On drop, remove the clip from its current track and insert it at the drop position on the target track
-- Validate track type compatibility (e.g., video clips can't go on audio tracks)
-- Add undo/redo support
-- Add tests for cross-track drag operations
-
 ### ✓ Step 9: Final verification and cleanup
 End-to-end verification of all implemented features.
 
-- Run full test suite to confirm all tests pass
-- Run TypeScript compilation to verify no type errors
-- Verify audio export produces valid stereo WebM
-- Verify ripple operations maintain transition alignment
-- Verify multi-clip selection works with all batch operations
-- Update documentation if needed
+### ✓ Step 10: PR3 — Export audio parity
+Remove `AudioContext` dependency from `mixAudioSamples`, fix typed track volume, emit silence for empty frames, and fix the extra-frame bug.
+
+- Remove `getAudioContext()` call from `mixAudioSamples()` in `mixer.ts` — the function is pure array math.
+- Replace `(track as any).volume` with typed `track.volume` in `mixer.ts`.
+- Add `sourceRate` parameter to `mixAudioSamples()` for proper speed-adjusted sample reading.
+- In `export-renderer.ts`, emit silence `AudioData` (zeros) when no audio clips are active at a frame.
+- Change `frameIndex <= totalFrames` → `frameIndex < totalFrames` to avoid rendering one extra frame.
+- Add tests: `mixAudioSamples` without AudioContext, silence emission, frame count, speed-adjusted mixing.
+
+### ✓ Step 11: PR4 — Camera parity
+Unify preview and export camera stepping into a single frame-rate-independent function.
+
+- Export `CAMERA_SMOOTHING_60FPS` from `camera.ts` for reuse.
+- Add `stepCameraWithDelta(current, target, easing, dtMs)` to `camera.ts` with frame-rate-independent smoothing.
+- Keep `stepCamera()` as a convenience wrapper with `dtMs = 16.667`.
+- In `StudioCanvas.tsx`, pass measured frame delta to `stepCameraWithDelta()`.
+- In `export-renderer.ts`, remove private `stepCameraWithAlpha()` and `CAMERA_SMOOTHING_60FPS`.
+- Import and call `stepCameraWithDelta(camera, target, easing, 1000 / fps)` in the export loop.
+- Add tests: frame-rate independence, preview/export convergence.

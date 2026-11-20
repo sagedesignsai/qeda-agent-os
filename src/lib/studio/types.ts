@@ -505,6 +505,12 @@ export interface StudioTake {
   captions: StudioCaption[];
   /** Canvas compositing passes (spotlight, glow, vignette, grain, scanlines). */
   effects?: StudioEffect[];
+  /**
+   * Timestamp indicating when global effects were migrated to clip-attached
+   * effects (new system). If present, migration has completed. Absence means
+   * migration should run on next load.
+   */
+  effectsMigratedAt?: number;
   /** Picture-in-picture image / video elements. */
   overlays?: StudioOverlay[];
   /** Normalized sub-region of source video to render/export (OBS-like crop). */
@@ -719,6 +725,7 @@ export type TimelineItemType =
   | 'image'
   | 'audio'
   | 'text'
+  | 'shape'
   | 'effect'
   | 'transition'
   | 'overlay';
@@ -728,6 +735,134 @@ export type TimelineItemType =
  * clip can round-trip through JSON without a discriminator union, and so
  * `updateClip` can merge partial patches without wiping sibling keys.
  */
+/**
+ * A universal, property-addressed keyframe on a clip.
+ *
+ * `timeMs` is the keyframe position within the clip (0 = clip start,
+ * `clip.durationMs` = clip end). Multiple keyframes per property are allowed;
+ * they interpolate between each other in clip time and clamp at the ends
+ * (hold the first keyframe's value before the first, the last after the last).
+ *
+ * Property namespaces:
+ *  - Transform: 'x', 'y', 'scale', 'rotation', 'opacity'
+ *    (draw-space offsets and multipliers, same semantics as enter/exit anims)
+ *  - Time remap: 'speed' (source-seconds per composition-second multiplier;
+ *    1 = real time, 2 = twice as fast)
+ *  - Effect intensity: 'effect:<effectId>:intensity' (0..1, keyframed strength
+ *    for clip-attached effects; renders as colored circles on timeline)
+ */
+export interface StudioKeyframe {
+  id: string;
+  timeMs: number;
+  property: string;
+  value: number;
+  easing: StudioAnimationEasing;
+}
+
+// ── Shape clip payloads ──────────────────────────────────────────────────────
+
+export type StudioShapeKind = 'rect' | 'circle' | 'arrow' | 'callout' | 'path';
+
+/**
+ * SVG-based shape with optional trim animation and stroke styling.
+ * Used by shape timeline clips to render vector graphics.
+ */
+export interface ShapeClipPayload {
+  /** Shape type or SVG path data mode. */
+  shapeKind: StudioShapeKind;
+  /** SVG path data (e.g. "M 0 0 L 100 100 Z"). Required for 'path' kind. */
+  pathData: string;
+  /** Fill color (CSS color string or undefined for no fill). */
+  fill?: string;
+  /** Stroke properties. */
+  stroke?: { color: string; width: number };
+  /**
+   * Path trim animation: start/end as fractions [0, 1] of total path length.
+   * Offset drives the animation phase.
+   */
+  trim?: { start: number; end: number; offset: number };
+  /** Pre-computed path length in pixels (for trim dash calculation). */
+  pathLengthPx?: number;
+  /** Universal keyframes (inherited from base). */
+  keyframes?: StudioKeyframe[];
+  /** Spatial transform: position, scale, rotation. */
+  transform?: ClipTransform;
+  /** Entry animation. */
+  enterAnimation?: ClipAnimation;
+  /** Exit animation. */
+  exitAnimation?: ClipAnimation;
+}
+
+// ── Text animator modes ──────────────────────────────────────────────────────
+
+/**
+ * Frame-by-frame text reveal animation modes for captions and free text.
+ *
+ * - 'typewriter': Characters reveal left-to-right, one at a time.
+ * - 'fade-words': Words fade in sequentially (requires word timings).
+ * - 'slide-up': Characters slide in from below with a fade.
+ */
+export type TextAnimatorMode = 'typewriter' | 'fade-words' | 'slide-up';
+
+/**
+ * Configuration for text animation. Attached to text clips to enable
+ * character/word-by-word reveal effects.
+ */
+export interface TextAnimator {
+  /** Animation mode. */
+  mode: TextAnimatorMode;
+  /** Duration per character/word in milliseconds. */
+  charDurationMs?: number;
+  /** Easing function name (default: 'ease-out'). */
+  easing?: string;
+}
+
+// ── Clip-attached effects ────────────────────────────────────────────────────
+
+/**
+ * A visual effect attached to an individual clip (video or overlay).
+ *
+ * Effects render in `stackOrder` sequence after the clip is drawn, inheriting
+ * the clip's clip domain ('content' for video/overlay, except neon-glow always
+ * uses 'window'). Intensity is keyframable via the universal keyframe system
+ * with property name `effect:<effectId>:intensity`. Parameters are static
+ * (set once when the effect is added).
+ *
+ * Keyframe colors (visual distinction):
+ *   - Spotlight: #f59e0b (orange)
+ *   - Neon-Glow: #6366f1 (indigo)
+ *   - Vignette: #475569 (slate)
+ *   - Film-Grain: #a8a29e (brown)
+ *   - Scanlines: #22d3ee (cyan)
+ */
+export interface ClipEffect {
+  /** Unique ID for this effect instance on the clip. */
+  id: string;
+  /** Effect type (spotlight, neon-glow, vignette, film-grain, scanlines). */
+  type: StudioEffectType;
+  /**
+   * Base intensity (0–1). Keyframed via universal keyframes with property
+   * `effect:<effectId>:intensity`. Evaluated at render time and multiplied
+   * with the keyframed value (if present).
+   */
+  intensity: number;
+  /**
+   * Static effect-specific parameters (not keyframable).
+   * Examples:
+   *   - Spotlight: { radius: 0.3 } (normalized 0–1)
+   *   - Neon-Glow: { colorHue: 0.6, colorSat: 1.0 }
+   *   - Vignette: { falloff: 0.5 }
+   *   - Film-Grain: { grainSize: 1.0 }
+   *   - Scanlines: { lineSpacing: 2.0 }
+   */
+  params: Record<string, number>;
+  /**
+   * Render order on this clip (0 = first, 1 = second, etc.).
+   * Effects render in ascending order; user can reorder via inspector UI.
+   */
+  stackOrder: number;
+}
+
 export interface StudioClipPayload {
   /** Media pool source used by this timeline placement. */
   mediaAssetId?: string;
@@ -737,6 +872,14 @@ export interface StudioClipPayload {
   targetY?: number;
   // Subtitles / text
   text?: string;
+  /**
+   * Measured caption word timings, in composition time (same base as the
+   * clip's `startMs`). Populated by the take → track converter so karaoke keeps
+   * the transcription's timings after dead-air cuts.
+   */
+  words?: StudioCaptionWord[];
+  /** Text animator for frame-by-frame reveal effects (typewriter, fade-words, slide-up). */
+  textAnimator?: TextAnimator;
   // Audio
   volume?: number;
   /** Runtime-only: decoded audio buffer for preview/export mixing. Not serialized. */
@@ -746,6 +889,8 @@ export interface StudioClipPayload {
   // Shared
   reason?: string;
   speed?: number;
+  // Universal keyframes (user-authored per-property timelines)
+  keyframes?: StudioKeyframe[];
   // Canvas effect pass
   effectType?: string;
   intensity?: number;
@@ -771,6 +916,11 @@ export interface StudioClipPayload {
   enterAnimation?: ClipAnimation;
   exitAnimation?: ClipAnimation;
   deviceFrame?: ClipDeviceFrame;
+  /** Blend mode for compositing (source-over, multiply, screen, overlay, etc.) */
+  blendMode?: string;
+  // Clip-attached effects (new system; replaces global take.effects[])
+  /** Visual effects attached to this individual clip. Renders in stackOrder. */
+  effects?: ClipEffect[];
 }
 
 export interface TimelineClip {
@@ -798,3 +948,55 @@ export interface TimelineTrack {
   volume?: number;
   clips: TimelineClip[];
 }
+
+// ── Discriminated payload map ─────────────────────────────────────────────────
+//
+// `StudioClipPayload` is a flat optional bag so partial patches and JSON
+// round-trips keep working. That shape cannot discriminate: narrowing on
+// `clip.itemType` would still leave `payload` as the full union.
+//
+// The types below re-attach the discriminant by distributing over the *whole
+// clip* rather than over the payload. Use `TypedTimelineClip` / `TypedStudioClip`
+// where a switch on `itemType` should narrow `payload`; the wide interfaces stay
+// in place so the migration can proceed file by file.
+
+export interface PayloadTypeMap {
+  video: StudioClipPayload & { mediaAssetId?: string };
+  image: StudioClipPayload & { mediaAssetId: string };
+  audio: StudioClipPayload & { mediaAssetId: string };
+  text: StudioClipPayload & { text: string };
+  shape: ShapeClipPayload & { shapeKind: StudioShapeKind };
+  effect: StudioClipPayload & { effectType: string };
+  transition: StudioClipPayload & {
+    transitionType?: StudioCompositionTransitionType;
+  };
+  overlay: StudioClipPayload & { kind?: StudioOverlayKind };
+}
+
+export type PayloadFor<T extends TimelineItemType> = PayloadTypeMap[T];
+
+export type TimelineClipOf<T extends TimelineItemType> = Omit<
+  TimelineClip,
+  'itemType' | 'payload'
+> & {
+  itemType: T;
+  payload: PayloadFor<T>;
+};
+
+/** A timeline clip whose `itemType` narrows `payload` when switched on. */
+export type TypedTimelineClip = {
+  [K in TimelineItemType]: TimelineClipOf<K>;
+}[TimelineItemType];
+
+export type StudioClipOf<T extends TimelineItemType> = Omit<
+  StudioClip,
+  'itemType' | 'payload'
+> & {
+  itemType: T;
+  payload: PayloadFor<T>;
+};
+
+/** A persisted clip whose `itemType` narrows `payload` when switched on. */
+export type TypedStudioClip = {
+  [K in TimelineItemType]: StudioClipOf<K>;
+}[TimelineItemType];

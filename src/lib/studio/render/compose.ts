@@ -7,13 +7,15 @@
  *   1. wallpaper + ambient glow
  *   2. window shadow
  *   3. active video clips from bottom to top, clipped to the rounded window
+ *      (each clip's effects render immediately after the clip is drawn)
  *   4. media overlays
- *   5. canvas effect passes
- *   6. window chrome (header, dots, border)
- *   7. captions
+ *   5. window chrome (header, dots, border)
+ *   6. captions
  *
- * Keeping the order in one place means the Canvas preview, and any future
- * export renderer, paint identical frames.
+ * Effects are now clip-attached (not global). Each clip's effects render in
+ * stackOrder sequence immediately after the clip is drawn, before the next
+ * clip. This enables depth-ordered effects where effects on top clips can
+ * blend onto bottom clips.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -21,6 +23,7 @@ import { resolveActiveStudioCaption } from '../captions/presets';
 import type {
   StudioCaption,
   ClipTransform,
+  ClipEffect,
   StudioEffect,
   StudioEffectType,
   StudioOverlay,
@@ -30,12 +33,16 @@ import type {
 } from '../types';
 import { effectTypeFromPayload } from '../effects/catalog';
 import { evaluateClipAtTime } from '../animation-evaluator';
+import { evaluateClipKeyframeValues, evaluateKeyframesAt } from '../keyframes';
 import { drawStudioBackground } from './background';
 import { cameraSourceRect, type StudioCameraState } from './camera';
 import { drawStudioCaption } from './captions';
-import { drawStudioEffects } from './effects';
+import { drawStudioEffects, drawStudioEffectPass } from './effects';
 import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
-import { computeStudioWindowFrame } from './geometry';
+import { computeStudioCanvasFrame } from './geometry';
+
+// Re-exported for callers that historically imported it from this module.
+export { computeStudioCanvasFrame };
 import { drawClipDeviceFrame } from './clip-device-frame';
 import { drawStudioOverlays, type StudioOverlayAsset } from './overlays';
 import { evaluateEditorTimeline, type EvaluatedTimelineClip } from '../timeline/evaluate';
@@ -183,21 +190,11 @@ export function drawStudioFrame(
     : input.overlays;
   drawStudioOverlays(ctx, overlays, input.overlayAssets, frame, timeMs, input.tracks, compTime);
 
-  const trackEffects: StudioEffect[] | undefined = timelineFrame?.effects
-    .flatMap(({ clip, itemType }) => {
-      if (itemType !== 'effect') return [];
-      const type = effectTypeFromPayload(clip.payload);
-      return type
-        ? [{
-            id: clip.id,
-            type: type as StudioEffectType,
-            startMs: clip.startMs,
-            endMs: clip.startMs + clip.durationMs,
-            intensity: clip.payload?.intensity ?? 0.6,
-          }]
-        : [];
-    });
-  drawStudioEffects(ctx, input.tracks ? trackEffects : input.effects, frame, compTime);
+  // Legacy path: apply global effects (only when not using tracks)
+  // When using tracks, effects are per-clip and applied in drawMultiTrackClips()
+  if (!input.tracks) {
+    drawStudioEffects(ctx, input.effects, frame, compTime);
+  }
   if (showcaseMode) {
     (input.drawWindowChrome ?? drawStudioWindowChrome)(ctx, frame);
   }
@@ -209,22 +206,32 @@ export function drawStudioFrame(
     .map(({ clip }) => {
       const existing = input.captions?.find((captionItem) => captionItem.id === clip.id);
       return {
-        ...existing,
         id: clip.id,
         startMs: clip.startMs,
         endMs: clip.startMs + clip.durationMs,
         text: clip.payload?.text ?? existing?.text ?? clip.name,
+        // Word timings on the track path are composition-addressed. Spreading
+        // the legacy caption here would import source-time timings and desync
+        // the karaoke highlight whenever cuts are present.
+        ...(clip.payload?.words && clip.payload.words.length > 0
+          ? { words: clip.payload.words }
+          : {}),
       };
     });
+
+  // Caption spans are composition time on the track path and source time on the
+  // legacy path. Selection and the karaoke clock must use the matching axis.
+  const usingTracks = Boolean(input.tracks);
+  const captionPool = usingTracks ? trackCaptions : input.captions;
   const caption = styling.showCaptions
-    ? resolveActiveStudioCaption(input.tracks ? trackCaptions : input.captions, compTime)
+    ? resolveActiveStudioCaption(captionPool, usingTracks ? compTime : timeMs)
     : null;
   if (caption) {
     drawStudioCaption(ctx, {
       caption,
       style: styling.captionStyle,
       frame,
-      timeMs,
+      timeMs: usingTracks ? compTime : timeMs,
     });
   }
 }
@@ -246,6 +253,9 @@ function drawMultiTrackClips(
   for (const evaluatedItem of activeVideoItems) {
     const { track, clip, localTimeMs } = evaluatedItem;
     const payload = clip.payload;
+    // Universal keyframes override the enter/exit animation values for
+    // x/y/scale/rotation/opacity; absent keyframes fall through to `anim`.
+    const kf = evaluateClipKeyframeValues(clip, localTimeMs);
     const asset = clipInstances?.get(clip.id) ?? (payload?.mediaAssetId ? assets?.get(payload.mediaAssetId) : undefined);
     const isRecordedSource = !payload?.mediaAssetId && track.id === 'track-video';
     const source = asset?.element ?? (isRecordedSource ? recordedVideo : null);
@@ -354,8 +364,8 @@ function drawMultiTrackClips(
     if (!payload?.widthPct) {
       sourceRect = coverSourceRect(sourceRect, frame.contentWidth / frame.contentHeight);
     }
-    const drawX = -width / 2 + anim.x + transitionX;
-    const drawY = -height / 2 + anim.y + transitionY;
+    const drawX = -width / 2 + (kf.x ?? anim.x) + transitionX;
+    const drawY = -height / 2 + (kf.y ?? anim.y) + transitionY;
 
     ctx.save();
     ctx.translate(centerX, centerY);
@@ -363,10 +373,11 @@ function drawMultiTrackClips(
     const pivotX = (anchor.x - 0.5) * width;
     const pivotY = (anchor.y - 0.5) * height;
     ctx.translate(pivotX, pivotY);
-    ctx.scale(anim.scale * transitionScale * (transform?.scale?.x ?? 1), anim.scale * transitionScale * (transform?.scale?.y ?? 1));
-    ctx.rotate(((anim.rotation ?? 0) + (transform?.rotation ?? 0)) * Math.PI / 180);
+    const clipScale = kf.scale ?? anim.scale;
+    ctx.scale(clipScale * transitionScale * (transform?.scale?.x ?? 1), clipScale * transitionScale * (transform?.scale?.y ?? 1));
+    ctx.rotate(((kf.rotation ?? anim.rotation ?? 0) + (transform?.rotation ?? 0)) * Math.PI / 180);
     ctx.translate(-pivotX, -pivotY);
-    ctx.globalAlpha = (payload?.opacity ?? 1) * anim.opacity * transitionOpacity;
+    ctx.globalAlpha = (kf.opacity ?? payload?.opacity ?? 1) * anim.opacity * transitionOpacity;
 
     const radius = Math.max(0, payload?.cornerRadius ?? 0);
     ctx.save();
@@ -392,37 +403,33 @@ function drawMultiTrackClips(
 
     if (payload?.deviceFrame) drawClipDeviceFrame(ctx, payload.deviceFrame, width, height, radius);
 
+    // NEW: Render clip-attached effects in stackOrder
+    // Effects render immediately after the clip, so they appear on top of it
+    // but beneath subsequent clips (depth-ordered).
+    if (payload?.effects && payload.effects.length > 0) {
+      // Sort effects by stackOrder
+      const sortedEffects = [...payload.effects].sort((a, b) => a.stackOrder - b.stackOrder);
+      
+      for (const effect of sortedEffects) {
+        // Evaluate keyframed intensity (property: 'effect:<effectId>:intensity')
+        const keyframeProperty = `effect:${effect.id}:intensity`;
+        const keyframes = clip.payload?.keyframes ?? [];
+        const keyframedIntensity = evaluateKeyframesAt(keyframes, localTimeMs, keyframeProperty);
+        const intensity = keyframedIntensity !== undefined ? keyframedIntensity : effect.intensity;
+        
+        // Draw effect pass with inherited clip domain
+        // For now, use 'content' for video/overlay clips (will be refined in Task 12)
+        drawStudioEffectPass(ctx, {
+          type: effect.type,
+          intensity,
+          frame,
+          timeMs: compTimeMs,
+        });
+      }
+    }
+
     ctx.restore();
   }
-}
-
-export function computeStudioCanvasFrame(
-  width: number,
-  height: number,
-  styling: StudioStyling,
-  contentAspect: number,
-): import('./geometry').StudioWindowFrame {
-  if (styling.canvasMode !== 'edit') {
-    return computeStudioWindowFrame({
-      canvasWidth: width,
-      canvasHeight: height,
-      padding: styling.padding,
-      borderRadius: styling.borderRadius,
-      contentAspect,
-    });
-  }
-  return {
-    x: 0,
-    y: 0,
-    width,
-    height,
-    radius: 0,
-    headerHeight: 0,
-    contentX: 0,
-    contentY: 0,
-    contentWidth: width,
-    contentHeight: height,
-  };
 }
 
 function coverSourceRect(

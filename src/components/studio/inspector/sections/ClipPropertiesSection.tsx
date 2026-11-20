@@ -60,6 +60,8 @@ import {
   StudioLinkToggle,
   StudioPanelSection,
 } from '../components';
+import { UniversalKeyframesSection } from './UniversalKeyframesSection';
+import { ClipEffectsSection } from './ClipEffectsSection';
 
 interface ClipPropertiesSectionProps {
   track: TimelineTrack;
@@ -710,6 +712,9 @@ export function ClipPropertiesSection({
         </div>
       </StudioPanelSection>
 
+      {/* ── Universal Keyframes ───────────────────────────────────────────── */}
+      <UniversalKeyframesSection track={track} clip={clip} />
+
       {/* ── Transform (video & overlays) ──────────────────────────────────── */}
       {isVisualTrack && (
         <StudioPanelSection title="Transform" open={activeSection === 'Transform'} onOpenChange={handleSectionToggle('Transform')}>
@@ -843,6 +848,11 @@ export function ClipPropertiesSection({
           onChange={(durationMs) => onUpdateClip(clip.id, { durationMs })}
         />
       </StudioPanelSection>
+
+      {/* ── Effects (Clip-Attached) ───────────────────────────────────────── */}
+      {isVisualTrack && (
+        <ClipEffectsSection clip={clip} onUpdateClip={onUpdateClip} />
+      )}
 
       {/* ── Delete Clip Action ────────────────────────────────────────────── */}
       <div className="px-3 py-2 flex justify-end">

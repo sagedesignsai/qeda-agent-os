@@ -15,6 +15,7 @@ import type {
   StudioCompositionTransitionType,
 } from '../types';
 import { resolveTimelineItemType } from './item-type';
+import { integratedSpeedAtMs } from '../keyframes';
 import { trackPaintOrder } from './layers';
 
 export interface EvaluatedTimelineClip {
@@ -23,7 +24,7 @@ export interface EvaluatedTimelineClip {
   itemType: TimelineItemType;
   /** Time since the clip's timeline start. */
   localTimeMs: number;
-  /** Source-media time after applying the clip playback speed. */
+  /** Source-media time after applying the clip playback speed (or speed keyframes). */
   sourceTimeMs: number;
   /** Visual state for a clip participating in a cut-centered transition. */
   transition?: {
@@ -67,20 +68,16 @@ function evaluateClip(
   if (durationMs <= 0 || timeMs < startMs || timeMs >= endMs) return null;
 
   const localTimeMs = timeMs - startMs;
-  const rawSpeed = clip.payload?.speed ?? 1;
-  const sourceRate =
-    clip.sourceDurationMs > 0 && durationMs > 0
-      ? clip.sourceDurationMs / durationMs
-      : Number.isFinite(rawSpeed) && rawSpeed > 0
-        ? rawSpeed
-        : 1;
+  // Speed keyframes (time remap) supersede the static speed; with none,
+  // this is identical to the legacy `localTimeMs * sourceRate`.
+  const sourceTimeMs = clip.sourceStartMs + integratedSpeedAtMs(clip, localTimeMs);
 
   return {
     track,
     clip,
     itemType: resolveTimelineItemType(track.type, clip.itemType, clip.payload),
     localTimeMs,
-    sourceTimeMs: clip.sourceStartMs + localTimeMs * sourceRate,
+    sourceTimeMs,
   };
 }
 

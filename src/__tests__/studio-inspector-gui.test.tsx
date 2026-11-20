@@ -298,12 +298,14 @@ describe('Master StudioInspector Component', () => {
             {
               id: 'zoom-clip-test-1',
               trackId: 'track-effects',
+              itemType: 'effect',
               name: 'Zoom 1.8x',
               startMs: 1000,
               durationMs: 3000,
               sourceStartMs: 1000,
               sourceDurationMs: 3000,
               payload: {
+                effectType: 'zoom',
                 scale: 1.8,
                 targetX: 0.3,
                 targetY: 0.4,

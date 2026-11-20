@@ -121,6 +121,9 @@ export function computeWaveformPeaks(
 /**
  * Mix audio samples from multiple evaluated clips at a given time position.
  * Returns an interleaved Float32Array of mixed samples.
+ *
+ * This is pure array math — no AudioContext dependency — so it works in both
+ * preview (browser) and export (headless WebCodecs) environments.
  */
 export function mixAudioSamples(
   audioClips: EvaluatedTimelineClip[],
@@ -129,9 +132,6 @@ export function mixAudioSamples(
   framesCount: number,
 ): Float32Array | null {
   if (audioClips.length === 0) return null;
-
-  const ctx = getAudioContext();
-  if (!ctx) return null;
 
   // Build track lookup for mute/volume
   const trackMap = new Map<string, TimelineTrack>();
@@ -159,8 +159,8 @@ export function mixAudioSamples(
 
     // Per-clip volume (default 1.0)
     const clipVolume = evaluated.clip.payload?.volume ?? 1.0;
-    // Per-track volume from track metadata
-    const trackVolume = (track as any)?.volume ?? 1.0;
+    // Per-track volume from track metadata (typed field)
+    const trackVolume = track?.volume ?? 1.0;
     const volume = clipVolume * trackVolume;
 
     if (volume <= 0) continue;
@@ -172,13 +172,24 @@ export function mixAudioSamples(
 
     if (framesToCopy <= 0) continue;
 
-    // Mix samples
+    // Mix samples with speed-adjusted reading
+    // `sourceRate` accounts for clips that play faster/slower than real-time
+    const sourceRate = evaluated.clip.durationMs > 0 && evaluated.clip.sourceDurationMs > 0
+      ? evaluated.clip.sourceDurationMs / evaluated.clip.durationMs
+      : evaluated.clip.payload?.speed ?? 1;
+
     for (let ch = 0; ch < Math.min(channelCount, buffer.numberOfChannels); ch++) {
       const channelData = buffer.getChannelData(ch);
       for (let i = 0; i < framesToCopy; i++) {
-        const srcIdx = sourceOffset + i;
+        // Speed-adjusted source index with linear interpolation
+        const srcFloat = sourceOffset + i * sourceRate;
+        const srcIdx = Math.floor(srcFloat);
+        const srcNext = Math.min(srcIdx + 1, channelData.length - 1);
+        const frac = srcFloat - srcIdx;
+        const sample = channelData[Math.min(srcIdx, channelData.length - 1)] * (1 - frac) +
+          channelData[srcNext] * frac;
         const dstIdx = i * channelCount + ch;
-        output[dstIdx] += channelData[Math.min(srcIdx, channelData.length - 1)] * volume;
+        output[dstIdx] += sample * volume;
       }
     }
   }

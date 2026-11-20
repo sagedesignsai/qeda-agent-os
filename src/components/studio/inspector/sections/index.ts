@@ -6,3 +6,5 @@ export { GlobalWallpaperSection } from './GlobalWallpaperSection';
 export { GlobalCameraSection } from './GlobalCameraSection';
 export { GlobalCaptionsSection } from './GlobalCaptionsSection';
 export { ClipPropertiesSection } from './ClipPropertiesSection';
+export { ClipEffectsSection } from './ClipEffectsSection';
+export { EffectsPalette } from './EffectsPalette';

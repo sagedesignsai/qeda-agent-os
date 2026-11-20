@@ -109,9 +109,6 @@ export function TimelineTrackHeaders({
             <DropdownMenuItem onSelect={() => timelineStore.addTrack('audio')}>
               <MusicIcon className="mr-2 h-4 w-4" /> Audio track
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => timelineStore.addTrack('effects')}>
-              <SparklesIcon className="mr-2 h-4 w-4" /> Effects track
-            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => timelineStore.addTrack('transitions')}>
               <ArrowLeftRightIcon className="mr-2 h-4 w-4" /> Transitions track
             </DropdownMenuItem>

@@ -44,14 +44,14 @@ import { studioCanvasDims } from '@/lib/studio/render/geometry';
 import {
   computeCameraTarget,
   IDLE_CAMERA,
-  stepCamera,
+  stepCameraWithDelta,
   type StudioCameraState,
 } from '@/lib/studio/render/camera';
 import {
   computeStudioCanvasFrame,
-  drawStudioFrame,
   type StudioComposeInput,
 } from '@/lib/studio/render/compose';
+import { renderStudioFrame } from '@/lib/studio/render/frame-renderer';
 import { evaluateEditorTimeline } from '@/lib/studio/timeline/evaluate';
 import { StudioAudioMixer } from '@/lib/studio/audio/mixer';
 import {
@@ -99,6 +99,35 @@ interface StudioClipCanvasGeometry {
   transform: GizmoTransform;
   origin: GizmoPoint;
   baseCenter: GizmoPoint;
+}
+
+/**
+ * Measure text dimensions for a caption clip.
+ * Uses the same font and styling as rendered captions.
+ */
+function measureTextClipBounds(
+  clip: TimelineTrack['clips'][number],
+  styling: StudioStyling,
+): { width: number; height: number } {
+  const text = clip.payload?.text ?? clip.name;
+  if (!text) return { width: 300, height: 100 };
+
+  // Create temporary canvas for text measurement
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return { width: 300, height: 100 };
+
+  const style = styling.captionStyle;
+  ctx.font = `${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
+
+  const lines = text.split('\n');
+  const metrics = lines.map((line) => ctx.measureText(line));
+
+  const width = Math.max(...metrics.map((m) => m.width), 200);
+  const lineHeight = style.lineHeight ?? style.fontSize * 1.2;
+  const height = lines.length * lineHeight;
+
+  return { width, height };
 }
 
 function studioClipCanvasGeometry(
@@ -244,6 +273,7 @@ export function StudioCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const cameraRef = useRef<StudioCameraState>({ ...IDLE_CAMERA });
+  const cameraPrevFrameRef = useRef<number | null>(null);
   const overlayAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
   const clipAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
   const clipVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
@@ -729,10 +759,16 @@ export function StudioCanvas({
             timeMs: sourceMs,
             zoomIntensity: style.zoomIntensity,
           });
-      cameraRef.current = stepCamera(
+      // Use measured frame delta for frame-rate-independent camera smoothing.
+      // On 120 Hz displays this prevents the camera from moving twice as fast.
+      const previousFrame = cameraPrevFrameRef.current ?? now;
+      const frameDeltaMs = Math.max(1, Math.min(100, now - previousFrame));
+      cameraPrevFrameRef.current = now;
+      cameraRef.current = stepCameraWithDelta(
         cameraRef.current,
         target,
         style.cameraEasing,
+        frameDeltaMs,
       );
 
       let glow = glowRef.current;
@@ -870,7 +906,7 @@ export function StudioCanvas({
           }
         },
       };
-      drawStudioFrame(ctx, input);
+      renderStudioFrame(ctx, input);
 
       // ── 7. Intro & Outro Motion Cards Rendering ──────────────────────────────
       const totalDur =
@@ -975,19 +1011,36 @@ export function StudioCanvas({
 
   const selectedGizmo = (() => {
     const selected = selectedTimelineClip;
-    if (
-      !selectedClipActive ||
-      !selected ||
-      selected.track.type !== 'video' ||
-      !selected.track.visible
-    ) return null;
-    const asset = selected.clip.payload?.mediaAssetId
-      ? clipAssetsRef.current.get(selected.clip.payload.mediaAssetId) ??
-        mediaAssets.find((candidate) => candidate.id === selected.clip.payload?.mediaAssetId)
-      : undefined;
-    const sourceWidth = asset?.width ?? (selected.track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
-    const sourceHeight = asset?.height ?? (selected.track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
+    if (!selectedClipActive || !selected || !selected.track.visible) return null;
+
+    // Support gizmo for visual clip types: video, overlays, and captions (text)
+    const isVisualClip =
+      selected.track.type === 'video' ||
+      selected.track.type === 'overlays' ||
+      (selected.track.type === 'captions' && selected.clip.itemType === 'text');
+
+    if (!isVisualClip) return null;
+
+    let sourceWidth = 0;
+    let sourceHeight = 0;
+
+    if (selected.track.type === 'overlays' || selected.track.type === 'video') {
+      // Media assets: image or video
+      const asset = selected.clip.payload?.mediaAssetId
+        ? clipAssetsRef.current.get(selected.clip.payload.mediaAssetId) ??
+          mediaAssets.find((candidate) => candidate.id === selected.clip.payload?.mediaAssetId)
+        : undefined;
+      sourceWidth = asset?.width ?? (selected.track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
+      sourceHeight = asset?.height ?? (selected.track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
+    } else if (selected.track.type === 'captions' && selected.clip.itemType === 'text') {
+      // Text: measure from rendered caption
+      const measured = measureTextClipBounds(selected.clip, styling);
+      sourceWidth = measured.width;
+      sourceHeight = measured.height;
+    }
+
     if (sourceWidth <= 0 || sourceHeight <= 0) return null;
+
     const frameAspect = activeVideoAspectAtTime(
       tracksRef.current,
       timelineStore.getState().currentTimeMs,
