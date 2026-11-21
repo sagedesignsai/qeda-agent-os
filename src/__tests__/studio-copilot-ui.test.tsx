@@ -13,6 +13,7 @@ import React from 'react';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { StudioCopilotSheet } from '../components/studio/copilot/StudioCopilotSheet';
+import { useStudioCopilot } from '../hooks/use-studio-copilot';
 import type { StudioTake } from '../lib/studio-types';
 import { DEFAULT_STUDIO_STYLING } from '../lib/studio-types';
 
@@ -32,6 +33,8 @@ jest.mock('../hooks/use-studio-copilot', () => ({
     sendMessage: mockSendMessage,
     respondToApproval: mockRespondToApproval,
     clearMessages: mockClearMessages,
+    plan: null,
+    clearPlan: jest.fn(),
   })),
 }));
 
@@ -49,6 +52,10 @@ beforeAll(() => {
     disconnect() {}
   } as unknown as typeof ResizeObserver;
 });
+
+const mockUseStudioCopilot = useStudioCopilot as jest.MockedFunction<
+  typeof useStudioCopilot
+>;
 
 describe('StudioCopilotSheet UI Component', () => {
   const sampleTake: StudioTake = {
@@ -119,6 +126,25 @@ describe('StudioCopilotSheet UI Component', () => {
     expect(mockSendMessage).toHaveBeenCalledWith(
       expect.stringContaining('Run a complete Magic Draft on this take')
     );
+  });
+
+  it('switches to showcase mode and threads it into the agent context', () => {
+    renderWithRouter(
+      <StudioCopilotSheet
+        open={true}
+        onOpenChange={jest.fn()}
+        activeTake={sampleTake}
+        currentTimeMs={5000}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Showcase' }));
+
+    expect(mockUseStudioCopilot).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mode: 'showcase' }),
+    );
+    expect(screen.getByText('Showcase Builder')).toBeInTheDocument();
+    expect(screen.getByText('Build Showcase')).toBeInTheDocument();
   });
 
   it('auto-dispatches initialPrompt when opened and calls onInitialPromptHandled', () => {

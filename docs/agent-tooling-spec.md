@@ -251,13 +251,15 @@ its tool set is paid for repeatedly.
 | Agent | Today | Ceiling |
 | --- | --- | --- |
 | Focus copilot | 34 | **42** |
-| Chat | 101 | **105** |
+| Chat | ~154 | **155** |
 
 `allTools` spreads **every** registered group, so the chat tool set is whatever
-the groups sum to — 101 names today, drawn from filesystem 4, shell 1, clipboard
+the groups sum to — roughly 154 names today, drawn from filesystem 4, shell 1, clipboard
 2, rag 7, web 2, workspace 12, services 6, repo 4, resources 4, tasks 17,
-documents-drafter 10, computer-use 14, browser-use 7, studio 10 and planning 2,
-plus `indexPage`. (A couple of names are registered by more than one group, so
+documents-drafter 10, computer-use 14, browser-use 7, studio 35 and planning 2,
+plus `indexPage`. Studio grew from 10 to 35 when the multi-track project verbs
+(tracks, clips, clip effects and keyframes, captions, overlays, recording import,
+showcase presets) became agent-editable. (A couple of names are registered by more than one group, so
 the parts add up to slightly more than the whole.) Chat is the general surface;
 it is not a curated subset, and the task verbs included — the Document Drafter's
 block tools are now shared with it the same way. Classifying a tool an agent does

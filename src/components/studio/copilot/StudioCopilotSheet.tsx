@@ -18,6 +18,7 @@ import {
   XIcon,
   Wand2Icon,
   FilmIcon,
+  LayersIcon,
   Share2Icon,
   TypeIcon,
   VideoIcon,
@@ -49,13 +50,37 @@ import {
 import { MessageList } from '@/components/chat/MessageList';
 import { PlanPanel } from '@/components/plan/PlanPanel';
 import { ActiveProjectNotice } from '@/components/projects/ActiveProjectNotice';
-import { useStudioCopilot } from '@/hooks/use-studio-copilot';
+import {
+  useStudioCopilot,
+  type StudioCopilotMode,
+} from '@/hooks/use-studio-copilot';
 import { useIpcEvent, useIpcInvoke } from '@/hooks/use-ipc';
 import type { StudioTake } from '@/lib/studio-types';
 import type {
   StudioSignInDecision,
   StudioSignInRequest,
 } from '@/lib/studio/types';
+
+const SHOWCASE_SUGGESTIONS = [
+  {
+    icon: <LayersIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />,
+    label: 'Build Showcase',
+    prompt:
+      'Build a polished multi-track showcase from this recording: inspect the project, import the source, create video and audio lanes, place clips, and add captions.',
+  },
+  {
+    icon: <Wand2Icon className="w-3.5 h-3.5 text-purple-400 shrink-0" />,
+    label: 'Add Captions & Effects',
+    prompt:
+      'Add timed captions and a clip-attached spotlight effect with an animated intensity keyframe to the main video clip.',
+  },
+  {
+    icon: <FilmIcon className="w-3.5 h-3.5 text-teal-400 shrink-0" />,
+    label: 'Cut Vertical Teaser',
+    prompt:
+      'Create a 9:16 vertical teaser from this recording with the key moment in the middle, bold captions, and a vignette.',
+  },
+];
 
 const SUGGESTIONS = [
   {
@@ -103,6 +128,7 @@ export function StudioCopilotSheet({
   initialPrompt,
   onInitialPromptHandled,
 }: StudioCopilotSheetProps) {
+  const [mode, setMode] = useState<StudioCopilotMode>('edit');
   const {
     messages,
     status,
@@ -118,6 +144,7 @@ export function StudioCopilotSheet({
     takeId: activeTake.id,
     projectId: activeTake.projectId ?? projectId,
     currentTimeMs,
+    mode,
   });
   const ipcInvoke = useIpcInvoke();
   const [signInRequest, setSignInRequest] =
@@ -199,6 +226,16 @@ export function StudioCopilotSheet({
     clearMessages();
   };
 
+  const handleModeChange = (nextMode: StudioCopilotMode) => {
+    if (nextMode === mode) return;
+    // The active plan belongs to the previous workflow; keep the transcript,
+    // but do not show stale steps beside the new mode.
+    clearPlan();
+    setMode(nextMode);
+  };
+
+  const suggestions = mode === 'showcase' ? SHOWCASE_SUGGESTIONS : SUGGESTIONS;
+
   // Automatically dispatch when opened with an initial prompt (e.g. from Inspector buttons)
   useEffect(() => {
     if (open && initialPrompt && initialPrompt.trim()) {
@@ -217,16 +254,17 @@ export function StudioCopilotSheet({
       </div>
       <div>
         <h3 className="text-sm font-semibold tracking-tight text-foreground">
-          Studio AI Video Director
+          {mode === 'showcase' ? 'Showcase Builder' : 'Studio AI Video Director'}
         </h3>
         <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
-          Autonomous video editing partner: synthesize kinetic zooms, prune
-          silence, generate subtitles, and style canvas framing.
+          {mode === 'showcase'
+            ? 'Build a multi-track showcase from your media pool: arrange clips, attach effects, and time captions on their own lanes.'
+            : 'Autonomous video editing partner: synthesize kinetic zooms, prune silence, generate subtitles, and style canvas framing.'}
         </p>
       </div>
 
       <div className="flex w-full max-w-sm flex-col gap-2 pt-2">
-        {SUGGESTIONS.map((item) => (
+        {suggestions.map((item) => (
           <button
             key={item.label}
             type="button"
@@ -286,9 +324,39 @@ export function StudioCopilotSheet({
           </div>
 
           <SheetDescription className="text-[11px] text-muted-foreground pt-0.5">
-            Autonomous video director over timeline cuts, zooms, subtitles, and
-            release kits.
+            {mode === 'showcase'
+              ? 'Multi-track project builder: import sources, arrange clips, and attach effects.'
+              : 'Autonomous video director over timeline cuts, zooms, subtitles, and release kits.'}
           </SheetDescription>
+
+          <div className="mt-2 flex items-center gap-2">
+            <div
+              role="group"
+              aria-label="Copilot mode"
+              className="inline-flex rounded-md border border-border/60 bg-secondary/30 p-0.5"
+            >
+              {(['edit', 'showcase'] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={mode === option}
+                  onClick={() => handleModeChange(option)}
+                  className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors cursor-pointer ${
+                    mode === option
+                      ? 'bg-background text-foreground shadow-2xs'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {option === 'edit' ? 'Edit' : 'Showcase'}
+                </button>
+              ))}
+            </div>
+            <span className="truncate text-[10px] text-muted-foreground">
+              {mode === 'showcase'
+                ? 'Builds tracks and clips, not just take arrays'
+                : 'Edits the open recording'}
+            </span>
+          </div>
 
           <ActiveProjectNotice
             className="mt-1.5"
@@ -396,7 +464,11 @@ export function StudioCopilotSheet({
           >
             <PromptInputBody>
               <PromptInputTextarea
-                placeholder="Ask Copilot to zoom, cut silence, subtitle, or style..."
+                placeholder={
+                  mode === 'showcase'
+                    ? 'Ask Copilot to build tracks, arrange clips, or add effects...'
+                    : 'Ask Copilot to zoom, cut silence, subtitle, or style...'
+                }
                 className="text-xs min-h-12"
               />
             </PromptInputBody>

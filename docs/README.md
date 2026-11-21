@@ -42,6 +42,15 @@ This folder contains all project documentation organized by category.
 #### Correspondence
 - **correspondence-system-plan.md** - Correspondence system architecture
 
+#### Studio
+- **studio/** - Showcase agent roadmap, editing-system plans, and implementation notes
+
+#### Vision
+- **vision/VISION_SYSTEM_INDEX.md** - Entry point for the vision system specifications
+
+#### Assets
+- **assets/** - Asset reference system implementation notes
+
 #### Reference & Protocols
 - **agent-tooling-spec.md** - Agent tooling specification
 - **opencode-v2-protocol.md** - OpenCode v2 protocol
@@ -55,6 +64,9 @@ This folder contains all project documentation organized by category.
 docs/
 ├── README.md (this file)
 ├── *.md (documentation files)
+├── assets/ (asset system documentation)
+├── studio/ (Showcase Studio documentation)
+├── vision/ (vision system specifications)
 ├── reference-code/ (reference implementations)
 ├── motion-2/ (motion 2.0 related files)
 └── opencode-v2-openapi.json (OpenAPI spec)
@@ -71,6 +83,12 @@ docs/
 **Terminal features?** → `terminal-implementation.md`
 
 **Motion/Studio?** → `motion-2-spec.md`
+
+**Showcase Studio implementation?** → `studio/`
+
+**Vision system?** → `vision/VISION_SYSTEM_INDEX.md`
+
+**Asset reference system?** → `assets/`
 
 ---
 

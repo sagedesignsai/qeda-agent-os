@@ -16,11 +16,8 @@
  */
 
 import { describe, it, expect, beforeAll } from '@jest/globals';
-import type {
-  StudioStyling,
-  TimelineTrack,
-  StudioCameraState,
-} from '@/lib/studio/types';
+import type { StudioStyling, TimelineTrack } from '@/lib/studio/types';
+import type { StudioCameraState } from '@/lib/studio/render/camera';
 import { drawStudioFrame, type StudioComposeInput } from '@/lib/studio/render/compose';
 import {
   buildFrameProgram,
@@ -60,18 +57,9 @@ class RecordingContext implements Partial<CanvasRenderingContext2D> {
     this.recordCall('fillRect', x, y, w, h);
   }
 
-  drawImage(
-    image: CanvasImageSource,
-    sx: number,
-    sy: number,
-    sw: number,
-    sh: number,
-    dx: number,
-    dy: number,
-    dw: number,
-    dh: number,
-  ): void {
-    this.recordCall('drawImage', sx, sy, sw, sh, dx, dy, dw, dh);
+  drawImage(...args: unknown[]): void {
+    // Drop the image source; jsdom cannot inspect it and only geometry matters.
+    this.recordCall('drawImage', ...args.slice(1));
   }
 
   beginPath(): void {
@@ -293,6 +281,8 @@ function createFixtureTimeline(): TimelineTrack[] {
       id: 'track-video',
       name: 'Video',
       type: 'video',
+      locked: false,
+      visible: true,
       clips: [
         {
           id: 'clip-video-1',
@@ -302,6 +292,7 @@ function createFixtureTimeline(): TimelineTrack[] {
           startMs: 0,
           durationMs: 5000,
           sourceStartMs: 0,
+          sourceDurationMs: 5000,
           payload: {
             transform: undefined,
           },
@@ -331,12 +322,9 @@ function createFixtureStyling(): StudioStyling {
 
 function createFixtureCamera(): StudioCameraState {
   return {
-    x: 0.5,
-    y: 0.5,
-    zoom: 1,
-    targetX: 0.5,
-    targetY: 0.5,
-    targetZoom: 1,
+    scale: 1,
+    panX: 0.5,
+    panY: 0.5,
   };
 }
 

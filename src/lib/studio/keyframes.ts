@@ -18,7 +18,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import type { StudioKeyframe, StudioAnimationEasing, TimelineClip } from './types';
+import type {
+  StudioKeyframe,
+  StudioAnimationEasing,
+  TimelineClip,
+  ClipEffect,
+} from './types';
 import type { EvaluatedTimelineClip } from './timeline/evaluate';
 
 // ── Easing evaluation ────────────────────────────────────────────────────────
@@ -314,6 +319,41 @@ export function evaluateClipKeyframeValues(
     if (value !== undefined) out[prop] = value;
   }
   return out;
+}
+
+/**
+ * Keyframe property name for a clip-attached effect's intensity.
+ *
+ * Centralized so the renderers, the inspector and the editing tools cannot
+ * disagree about the namespace.
+ */
+export function effectIntensityProperty(effectId: string): string {
+  return `effect:${effectId}:intensity`;
+}
+
+/**
+ * Evaluate a clip-attached effect's intensity at `localTimeMs`.
+ *
+ * Falls back to the effect's static `intensity` when the clip has no keyframes
+ * for `effect:<id>:intensity`. This is the single lookup both render paths use;
+ * the old code asked `evaluateClipKeyframeValues` for a dynamic property it
+ * could never return, so keyframed effect intensity silently rendered as the
+ * static value.
+ */
+export function evaluateEffectIntensity(
+  clip: TimelineClip,
+  effect: Pick<ClipEffect, 'id' | 'intensity'>,
+  localTimeMs: number,
+): number {
+  const keyframes = clip.payload?.keyframes;
+  if (!keyframes || keyframes.length === 0) return effect.intensity;
+  const value = evaluateKeyframesAt(
+    keyframes,
+    localTimeMs,
+    effectIntensityProperty(effect.id),
+    undefined,
+  );
+  return value === undefined ? effect.intensity : value;
 }
 
 let keyframeCounter = 0;

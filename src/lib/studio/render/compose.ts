@@ -33,7 +33,10 @@ import type {
 } from '../types';
 import { effectTypeFromPayload } from '../effects/catalog';
 import { evaluateClipAtTime } from '../animation-evaluator';
-import { evaluateClipKeyframeValues, evaluateKeyframesAt } from '../keyframes';
+import {
+  evaluateClipKeyframeValues,
+  evaluateEffectIntensity,
+} from '../keyframes';
 import { drawStudioBackground } from './background';
 import { cameraSourceRect, type StudioCameraState } from './camera';
 import { drawStudioCaption } from './captions';
@@ -189,6 +192,44 @@ export function drawStudioFrame(
     ? (input.overlays ?? []).filter((overlay) => visibleOverlayIds?.includes(overlay.id))
     : input.overlays;
   drawStudioOverlays(ctx, overlays, input.overlayAssets, frame, timeMs, input.tracks, compTime);
+
+  // Overlay clips can carry clip-attached effects too. They are drawn in
+  // composition space (the overlay renderer resolves their geometry), which is
+  // the same space the display-list overlay op uses.
+  if (timelineFrame) {
+    for (const item of timelineFrame.overlays) {
+      const record = input.overlays?.find(
+        (overlay) => overlay.id === item.clip.id,
+      );
+      if (!record) continue;
+      const effects = item.clip.payload?.effects;
+      if (!effects || effects.length === 0) continue;
+      const width = Math.max(24, record.widthPct * frame.contentWidth);
+      const height = width; // Overlay renderer preserves aspect; effects only
+      const rect = {
+        x: frame.contentX + record.x * frame.contentWidth - width / 2,
+        y: frame.contentY + record.y * frame.contentHeight - height / 2,
+        width,
+        height,
+      };
+      for (const effect of [...effects].sort(
+        (a, b) => a.stackOrder - b.stackOrder,
+      )) {
+        drawStudioEffectPass(ctx, {
+          type: effect.type,
+          intensity: evaluateEffectIntensity(
+            item.clip,
+            effect,
+            item.localTimeMs,
+          ),
+          frame,
+          timeMs: compTime,
+          params: effect.params,
+          rect,
+        });
+      }
+    }
+  }
 
   // Legacy path: apply global effects (only when not using tracks)
   // When using tracks, effects are per-clip and applied in drawMultiTrackClips()
@@ -403,27 +444,27 @@ function drawMultiTrackClips(
 
     if (payload?.deviceFrame) drawClipDeviceFrame(ctx, payload.deviceFrame, width, height, radius);
 
-    // NEW: Render clip-attached effects in stackOrder
-    // Effects render immediately after the clip, so they appear on top of it
-    // but beneath subsequent clips (depth-ordered).
+    // Clip-attached effects paint in ascending stackOrder immediately after
+    // the clip, inside the clip's transform and local draw box, so the pass
+    // follows the clip through transforms and PiP layouts.
     if (payload?.effects && payload.effects.length > 0) {
-      // Sort effects by stackOrder
-      const sortedEffects = [...payload.effects].sort((a, b) => a.stackOrder - b.stackOrder);
-      
+      const sortedEffects = [...payload.effects].sort(
+        (a, b) => a.stackOrder - b.stackOrder,
+      );
+
       for (const effect of sortedEffects) {
-        // Evaluate keyframed intensity (property: 'effect:<effectId>:intensity')
-        const keyframeProperty = `effect:${effect.id}:intensity`;
-        const keyframes = clip.payload?.keyframes ?? [];
-        const keyframedIntensity = evaluateKeyframesAt(keyframes, localTimeMs, keyframeProperty);
-        const intensity = keyframedIntensity !== undefined ? keyframedIntensity : effect.intensity;
-        
-        // Draw effect pass with inherited clip domain
-        // For now, use 'content' for video/overlay clips (will be refined in Task 12)
+        const intensity = evaluateEffectIntensity(
+          clip,
+          effect,
+          localTimeMs,
+        );
         drawStudioEffectPass(ctx, {
           type: effect.type,
           intensity,
           frame,
           timeMs: compTimeMs,
+          params: effect.params,
+          rect: { x: drawX, y: drawY, width, height },
         });
       }
     }

@@ -108,6 +108,7 @@ export function registerStudioCopilotHandlers({
           takeId: string;
           projectId?: string;
           currentTimeMs?: number;
+          mode?: 'edit' | 'showcase';
         };
       },
     ) => {
@@ -160,6 +161,7 @@ export function registerStudioCopilotHandlers({
           try {
             const agent = createStudioCopilotAgent({
               activeTakeId: context.takeId,
+              mode: context.mode === 'showcase' ? 'showcase' : 'edit',
               projectId: projectId ?? undefined,
               activeProject,
               requestUserSignIn: async (browserId) => {

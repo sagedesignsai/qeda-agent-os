@@ -19,7 +19,28 @@ import {
 import type { StudioCaption, StudioCaptionStyle } from '../types';
 import type { StudioWindowFrame } from './geometry';
 
-const FONT_STACK = 'Inter, system-ui, sans-serif';
+export const CAPTION_FONT_STACK = 'Inter, system-ui, sans-serif';
+const FONT_STACK = CAPTION_FONT_STACK;
+
+const DEFAULT_CAPTION_WEIGHT = 600;
+
+/**
+ * Font size the caption renderer uses for a given framed content box.
+ *
+ * The canvas gizmo measures text with the same formula so its bounding box
+ * matches what is painted instead of guessing at a font.
+ */
+export function captionFontSizeForFrame(width: number, height: number): number {
+  return Math.max(18, Math.round(Math.min(width, height) * 0.05));
+}
+
+/** `ctx.font` value shared by the renderer and the gizmo text measurement. */
+export function captionFont(
+  fontSize: number,
+  weight: number = DEFAULT_CAPTION_WEIGHT,
+): string {
+  return `${weight} ${fontSize}px ${CAPTION_FONT_STACK}`;
+}
 
 export function drawStudioCaption(
   ctx: CanvasRenderingContext2D,
@@ -35,10 +56,7 @@ export function drawStudioCaption(
     timeMs: number;
   },
 ): void {
-  const fontSize = Math.max(
-    18,
-    Math.round(Math.min(frame.width, frame.height) * 0.05),
-  );
+  const fontSize = captionFontSizeForFrame(frame.width, frame.height);
   const bottomOffset = Math.round(
     Math.min(frame.width, frame.height) * 0.045,
   );
@@ -69,7 +87,7 @@ function setCaptionFont(
   fontSize: number,
   weight = 600,
 ): void {
-  ctx.font = `${weight} ${fontSize}px ${FONT_STACK}`;
+  ctx.font = captionFont(fontSize, weight);
 }
 
 function drawBadge(

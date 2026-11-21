@@ -25,10 +25,14 @@ const STUDIO_COPILOT_TRANSPORT: AgentTransport = {
   fallbackChannel: 'studio-copilot:stream-fallback',
 };
 
+export type StudioCopilotMode = 'edit' | 'showcase';
+
 export interface UseStudioCopilotOptions {
   takeId: string;
   projectId?: string;
   currentTimeMs?: number;
+  /** 'showcase' turns every turn into the multi-track project workflow. */
+  mode?: StudioCopilotMode;
 }
 
 export interface UseStudioCopilotReturn extends UseAgentChatReturn {
@@ -40,6 +44,7 @@ export function useStudioCopilot({
   takeId,
   projectId,
   currentTimeMs,
+  mode = 'edit',
 }: UseStudioCopilotOptions): UseStudioCopilotReturn {
   const agent = useAgentChat({
     sessionId: `studio-copilot-${takeId}`,
@@ -48,6 +53,7 @@ export function useStudioCopilot({
       takeId,
       projectId,
       currentTimeMs,
+      mode,
     },
     persist: false,
     hydrate: false,

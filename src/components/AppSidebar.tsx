@@ -79,6 +79,7 @@ import type { Project } from '@/main/ipc/channels';
 import { TerminalMenu } from '@/components/sidebar/TerminalMenu';
 import { SidebarMusicPlayer } from '@/components/music/SidebarMusicPlayer';
 import { SidebarFocusPlayer } from '@/components/focus/SidebarFocusPlayer';
+import { useAutonomousStore } from '@/stores/autonomous-store';
 
 const STATUS_DOT: Record<string, string> = {
   active: 'bg-emerald-500',
@@ -257,6 +258,9 @@ export function AppSidebar({
       ? 'main'
       : section;
 
+  const { overlayOpen, toggleOverlay, status } = useAutonomousStore();
+  const isAutonomousActive = status.running && !status.paused;
+
   // Starting a chat only navigates: the session is created by the first
   // message, so bailing out here leaves no empty conversation behind.
   const handleNewChat = () => {
@@ -269,29 +273,46 @@ export function AppSidebar({
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link
-                to="/projects"
-                onClick={() => setShowMainAt(null)}
-                className="group/brand"
+            <SidebarMenuButton
+              size="lg"
+              onClick={(e) => {
+                e.preventDefault();
+                toggleOverlay();
+              }}
+              className="group/brand cursor-pointer"
+              title={isAutonomousActive ? 'Autonomous Operator Active (Click to toggle HUD)' : 'Toggle Autonomous Operator HUD'}
+            >
+              <div
+                className={cn(
+                  'relative flex size-8 shrink-0 items-center justify-center rounded-lg bg-card border border-border/70 text-foreground shadow-sm group-hover/brand:border-primary/50 group-hover/brand:bg-accent/40 transition-all',
+                  isAutonomousActive && 'border-emerald-500/60 ring-2 ring-emerald-500/20 shadow-emerald-500/10',
+                  overlayOpen && 'border-primary ring-2 ring-primary/20',
+                )}
               >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-card border border-border/70 text-foreground shadow-sm group-hover/brand:border-primary/50 group-hover/brand:bg-accent/40 transition-all">
-                  <QedaLogomark
-                    size={16}
-                    ringClassName="text-foreground"
-                    boltClassName="text-sky-400 group-hover/brand:text-amber-400"
-                    animated
-                  />
-                </div>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-bold tracking-tight text-foreground">
-                    Qeda
+                <QedaLogomark
+                  size={16}
+                  ringClassName={isAutonomousActive ? 'text-emerald-400' : 'text-foreground'}
+                  boltClassName={isAutonomousActive ? 'text-emerald-300' : 'text-sky-400 group-hover/brand:text-amber-400'}
+                  animated
+                />
+                {isAutonomousActive && (
+                  <span className="absolute -top-1 -right-1 flex size-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full size-2.5 bg-emerald-500" />
                   </span>
-                  <span className="truncate text-xs text-sidebar-foreground/70">
-                    Agent OS
-                  </span>
-                </div>
-              </Link>
+                )}
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-bold tracking-tight text-foreground flex items-center gap-1.5">
+                  Qeda
+                  {isAutonomousActive && (
+                    <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  )}
+                </span>
+                <span className="truncate text-xs text-sidebar-foreground/70">
+                  {isAutonomousActive ? 'Self-Driving' : 'Agent OS'}
+                </span>
+              </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

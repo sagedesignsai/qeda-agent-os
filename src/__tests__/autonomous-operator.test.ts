@@ -143,6 +143,8 @@ describe('AutonomousOperator — sandbox approval policy', () => {
     expect(approvalFor(op, 'setValue')).toBe('not-applicable');
     expect(approvalFor(op, 'createTask')).toBe('not-applicable');
     expect(approvalFor(op, 'writeClipboard')).toBe('not-applicable');
+    expect(approvalFor(op, 'studioEdit')).toBe('not-applicable');
+    expect(approvalFor(op, 'focusPlan')).toBe('not-applicable');
   });
 
   it('allows writeFile within workspace sandbox', () => {

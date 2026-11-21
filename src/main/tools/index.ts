@@ -27,6 +27,7 @@ export { resourceTools } from './resources.js';
 export { taskTools } from './tasks.js';
 export { computerUseTools } from './computer-use.js';
 export { browserUseTools } from './browser-use.js';
+export { navigationTools } from './navigation.js';
 export { workspaceResourceTools } from './workspace-resources.js';
 
 export {
@@ -45,6 +46,8 @@ export { copilotToolPolicies } from './policies/copilot.js';
 export { correspondenceToolPolicies } from './policies/correspondence.js';
 export { traceToolPolicies } from './policies/trace.js';
 export { studioToolPolicies } from './policies/studio.js';
+export { visionToolPolicies } from './policies/vision.js';
+export { visionTools } from './vision.js';
 export { createPlanTools } from './plan.js';
 export { createMotionTools, type MotionToolContext } from './motion.js';
 export { createTraceTools, type TraceTools } from './trace.js';
@@ -63,7 +66,9 @@ import { taskTools } from './tasks.js';
 import { documentDrafterTools } from './documents-drafter.js';
 import { computerUseTools } from './computer-use.js';
 import { browserUseTools } from './browser-use.js';
+import { navigationTools } from './navigation.js';
 import { workspaceResourceTools } from './workspace-resources.js';
+import { visionTools } from './vision.js';
 import { createStudioTools } from './studio.js';
 import { createPlanTools } from './plan.js';
 import { PlanManager } from '../ai/plan-manager.js';
@@ -71,6 +76,7 @@ import { createApprovalPolicy } from './capability.js';
 import { chatToolPolicies } from './policies/chat.js';
 import { correspondenceToolPolicies } from './policies/correspondence.js';
 import { studioToolPolicies } from './policies/studio.js';
+import { visionToolPolicies } from './policies/vision.js';
 import { createFocusPlanSubagentTool } from './focus-plan-subagent.js';
 import { createStudioEditSubagentTool } from './studio-edit-subagent.js';
 import { createCorrespondenceDraftSubagentTool } from './correspondence-draft-subagent.js';
@@ -102,6 +108,8 @@ export const allTools = {
   ...documentDrafterTools,
   ...computerUseTools,
   ...browserUseTools,
+  ...navigationTools,
+  ...visionTools,
   ...studioTools,
   ...workspaceResourceTools,
   ...createPlanTools(new PlanManager()),
@@ -122,7 +130,10 @@ export const allTools = {
  * Pass directly as `ToolLoopAgent`'s `toolApproval`. Also used by the Tools
  * page (ipc/handlers/tools.ts) so manual execution cannot bypass it.
  */
-export const chatApprovalPolicy = createApprovalPolicy(chatToolPolicies);
+export const chatApprovalPolicy = createApprovalPolicy({
+  ...chatToolPolicies,
+  ...visionToolPolicies,
+});
 
 /**
  * The correspondence copilot's approval gate, derived from

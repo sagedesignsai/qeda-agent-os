@@ -527,21 +527,101 @@ Can run in parallel with other work; each task is semi-independent.
 **Future Enhancements (Post-MVP):**
 - Agent learns from past projects (RAG over previous showcases)
 - Smart effect recommendations based on content
-- Template-based workflows (e.g., "tech demo template")
+- Preset-driven workflows beyond the four built-ins (e.g., brand/agency-specific presets)
 - Multi-language support for captions
 - Social media kit generation enhanced
 
 ---
 
-## Next Steps
+## Implementation Status (2026-11-21)
 
-1. **Notify team of plan** — Review this roadmap, ask clarifying questions
-2. **Prepare development environment** — Ensure tests can run, DB setup correct
-3. **Execute Task 1** — Start with core track/clip operations
-4. **Iterate** — Complete each task, verify tests pass, demo working
-5. **Integrate** — Wire into UI, end-to-end testing
-6. **Deploy** — Merge to main, announce to users
+Tasks 1–7 are implemented; Task 8 is covered by unit/policy tests below, with a
+full UI-driven E2E pass still outstanding.
 
----
+**Architecture decisions**
 
-**Plan approved and ready for execution. Each task has clear deliverables, tests, and definition of done.**
+- **Legacy effects are projected, never destructively migrated.**
+  `src/lib/studio/effects/migrate.ts` turns timed `take.effects` into effect-lane
+  clips (preserving their ids) whenever `take.tracks === undefined`.
+  `migrateEffectsToClips` remains a compatibility no-op. No DB column was added.
+- **The first project edit materializes the model once.**
+  `materializeProjectTracks` converts a recording's legacy arrays into persisted
+  `StudioTrack[]`, clears `take.effects`, and preserves ids so the legacy
+  projection de-duplicates instead of doubling. `stripLegacyElement` prevents a
+  deleted projected zoom/caption/overlay from reappearing on reload.
+- **Editing is a pure layer.** `src/lib/studio/editing/*` mutators take a
+  `StudioTake` and return a new one; the tools only resolve → materialize →
+  apply → persist → broadcast.
+- **Effects render per clip.** Clip effects use `payload.effects` and the
+  `effect:<id>:intensity` keyframe property; both the legacy compose path and the
+  display-list/program path share `evaluateEffectIntensity`, static `params`, and
+  an explicit target rect, so effects follow clip transforms and PiP clips.
+- **One toolset, two modes.** `createStudioCopilotAgent({ mode: 'showcase' })`
+  adds the multi-track workflow prompt and a 40-step budget;
+  `createStudioShowcaseAgent` is the thin wrapper. The same tools are exposed to
+  the chat agent through `createStudioTools`. The Studio Copilot sheet has an
+  **Edit / Showcase** switch; the selected mode travels with each turn over
+  `studio-copilot:chat`, and the handler validates it before constructing the
+  agent.
+
+**Files**
+
+- Editing core: `src/lib/studio/editing/{materialize,tracks,clips,effects,media,composition,index}.ts`
+- Tools: `src/main/tools/studio-editing.ts`, wired in `src/main/tools/studio.ts`
+- Policies: `src/main/tools/policies/{studio,chat}.ts`
+- Agent: `src/main/ai/studio-copilot-agent.ts`, `src/main/ai/studio-showcase-agent.ts`
+- Pipeline: `src/lib/studio/effects/migrate.ts`, `timeline/convert.ts`,
+  `keyframes.ts`, `render/{effects,display-list,rasterize-2d,program,compose}.ts`
+- Tests: `src/__tests__/studio-editing-core.test.ts`,
+  `src/__tests__/studio-showcase-workflow.test.ts`,
+  `src/__tests__/studio-copilot-ui.test.tsx`
+
+**Verification**
+
+- The headless showcase workflow test covers import → lane creation → clip
+  placement → parameterized clip effect → intensity keyframes → caption →
+  9:16 styling → program build, asserting the effect and caption draw ops and
+  that the effect follows the clip rect.
+- `studio-editing-core`, `studio-showcase-workflow`,
+  `studio-display-list-parity`, `studio-copilot-ui`, `studio-copilot`, and
+  `agent-capabilities` pass (49 tests). Policy exhaustiveness passes with the 23
+  new tool names classified.
+- The chat tool ceiling was raised to 150 and `docs/agent-tooling-spec.md §8`
+  updated in the same change, as the spec requires.
+- `tsc --noEmit` passes. The previous `StudioCanvas` caption-style bug is fixed
+  by sharing the renderer's caption font helpers, and the parity fixture now uses
+  the real `StudioCameraState` shape plus `sourceDurationMs`.
+
+**Showcase template presets (2026-11-21)**
+
+- `src/lib/studio/showcase-presets.ts` defines validated, versioned recipes:
+  segment order and pacing, `{{slot}}` copy, recordings per beat, effect stack
+  with fades, aspect ratio, caption style, camera easing, framing and suggested
+  variants.
+- Four built-ins ship: `product-demo-60` (3 recordings), `mobile-app-preview`
+  (2, 9:16, iPhone frame), `tutorial-walkthrough` (1 recording split into two
+  source ranges) and `social-cutdown` (1 recording, 30s vertical).
+- `applyShowcasePreset` replaces the project timeline while keeping the media
+  pool, imports path-based sources, trims beats to available footage with
+  warnings, and returns the tracks/clips it created. Every slot has a default,
+  so the agent only asks for values the user actually chose.
+- Agent tools: `listShowcasePresets` (read) and `applyShowcasePreset`
+  (`write-local`), classified in both chat and Studio policies. The showcase
+  prompt now starts standard formats from a preset and verifies with
+  `getProjectState`.
+- Tests: `src/__tests__/studio-showcase-presets.test.ts` covers catalog
+  validation, full product-demo construction, legacy timeline replacement,
+  slot defaults, device frames, source reuse, short-footage trimming and error
+  paths. The replacement behavior is explicit in the tool description and code:
+  presets replace the timeline, not the media pool.
+- The chat tool ceiling moved to 155 and `docs/agent-tooling-spec.md §8` records
+  the new Studio tool count.
+
+**Remaining**
+
+- A true Electron E2E test that records video and exports a file; the current
+  workflow test is headless and stops at the render program.
+- Optional preset gallery in the Studio UI. Presets are currently selected and
+  applied through the Showcase agent (`listShowcasePresets` →
+  `applyShowcasePreset`), not a visual picker.
+- Optional empty-state analytics.

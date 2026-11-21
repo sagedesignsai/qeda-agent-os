@@ -11,6 +11,7 @@ import { useSpotlightTour } from '@/components/tour/useSpotlightTour';
 import { useProjects } from '@/hooks/use-projects';
 import { useAppStore } from '@/stores/app-store';
 import { FocusRuntime } from '@/components/focus/FocusRuntime';
+import { AutonomousHUD } from '@/components/autonomous/AutonomousHUD';
 
 /** The Inbox is seeded for every install, so it does not count as a project. */
 const INBOX_PROJECT_ID = 'inbox';
@@ -139,6 +140,8 @@ export function AppLayout() {
         />
 
         <FocusRuntime />
+
+        <AutonomousHUD />
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
 

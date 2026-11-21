@@ -22,11 +22,13 @@ import type {
   StudioOverlay,
   StudioStyling,
   StudioVideoCrop,
-  ClipEffect,
 } from '../types';
 import { evaluateClipAtTime } from '../animation-evaluator';
 import { effectTypeFromPayload } from '../effects/catalog';
-import { evaluateClipKeyframeValues } from '../keyframes';
+import {
+  evaluateClipKeyframeValues,
+  evaluateEffectIntensity,
+} from '../keyframes';
 import { LEGACY_VIDEO_TRACK_ID } from '../timeline/layers';
 import type { EditorTimelineFrame, EvaluatedTimelineClip } from '../timeline/evaluate';
 import { cameraSourceRect, type StudioCameraState } from './camera';
@@ -40,6 +42,8 @@ import {
   type ChromeDrawOp,
   type DrawOp,
   type EffectDrawOp,
+  type EffectRect,
+  type Matrix2D,
   type FrameProgram,
   type MediaDrawOp,
   type MotionCardDrawOp,
@@ -493,46 +497,56 @@ function buildEffectOps(input: BuildFrameProgramInput): EffectDrawOp[] {
     });
   }
 
-  // Process clip-attached effects from video and overlay clips
-  const allClips = [
-    ...input.evaluatedFrame.video,
-    ...input.evaluatedFrame.overlays,
-  ];
-  
-  for (const item of allClips) {
-    if (!item.clip.payload?.effects) continue;
-    
-    const clipEffects = item.clip.payload.effects as ClipEffect[];
-    for (const effect of clipEffects) {
-      // Evaluate effect intensity at current time (may be keyframed)
-      const keyframeProperty = `effect:${effect.id}:intensity`;
-      const keyframedIntensity = evaluateClipKeyframeValues(
-        item.clip,
-        item.localTimeMs
-      )[keyframeProperty];
-      
-      const intensity =
-        keyframedIntensity !== undefined ? keyframedIntensity : effect.intensity;
-      
-      if (intensity <= 0) continue;
-      
-      ops.push({
-        id: `clip-effect:${item.clip.id}:${effect.id}`,
-        clipId: item.clip.id,
-        kind: 'effect',
-        transform: IDENTITY_MATRIX,
-        opacity: 1,
-        blendMode: 'source-over',
-        // Clip-attached effects inherit the clip's domain
-        clip: effect.type === 'neon-glow' ? 'window' : 'content',
-        effectType: effect.type,
-        intensity,
-        timeMs: input.compTimeMs,
-      });
-    }
+  // The evaluator returns effects in track order; keep the lane's row order.
+  return ops;
+}
+
+/**
+ * Clip-attached effect ops for one media/overlay draw op.
+ *
+ * The effect op reuses the clip's matrix and local draw box, so the pass follows
+ * the clip through transforms, transitions and picture-in-picture layouts rather
+ * than painting over the whole window. `stackOrder` is authoritative: effects
+ * paint in ascending order immediately after the clip, which is what makes the
+ * depth-ordered stack in the inspector match the output.
+ */
+function buildClipEffectOps(
+  item: EvaluatedTimelineClip,
+  anchor: { transform: Matrix2D; rect: EffectRect },
+  compTimeMs: number,
+): EffectDrawOp[] {
+  const effects = item.clip.payload?.effects;
+  if (!effects || effects.length === 0) return [];
+
+  const ops: EffectDrawOp[] = [];
+  const sorted = [...effects].sort((a, b) => a.stackOrder - b.stackOrder);
+
+  for (const effect of sorted) {
+    const intensity = evaluateEffectIntensity(
+      item.clip,
+      effect,
+      item.localTimeMs,
+    );
+    if (intensity <= 0) continue;
+
+    ops.push({
+      id: `clip-effect:${item.clip.id}:${effect.id}`,
+      clipId: item.clip.id,
+      kind: 'effect',
+      transform: anchor.transform,
+      opacity: 1,
+      blendMode: 'source-over',
+      // Neon bloom intentionally extends past the clip box; keep it window
+      // clipped so the falloff is not amputated.
+      clip: effect.type === 'neon-glow' ? 'window' : 'content',
+      effectType: effect.type,
+      intensity,
+      params: effect.params,
+      rect: anchor.rect,
+      timeMs: compTimeMs,
+    });
   }
 
-  // The evaluator returns effects in track order; keep the lane's row order.
   return ops;
 }
 
@@ -599,7 +613,8 @@ function buildShapeOps(input: BuildFrameProgramInput): DrawOp[] {
       kind: 'shape' as const,
       transform: matrix,
       opacity,
-      blendMode: (shapePayload.blendMode ?? 'source-over') as any,
+      blendMode: ((shapePayload as { blendMode?: string }).blendMode ??
+        'source-over') as any,
       clip: 'window',
       pathData: shapePayload.pathData,
       fill: shapePayload.fill,
@@ -694,14 +709,38 @@ export function buildFrameProgram(input: BuildFrameProgramInput): FrameProgram {
   for (const item of input.evaluatedFrame.video) {
     if (!isMediaItem(item)) continue;
     const op = buildMediaOp(input, item, frame);
-    if (op) ops.push(op);
+    if (!op) continue;
+    ops.push(op);
+    ops.push(
+      ...buildClipEffectOps(
+        item,
+        { transform: op.transform, rect: op.destRect },
+        compTimeMs,
+      ),
+    );
   }
 
   // 2. Picture-in-picture overlays.
   for (const item of input.evaluatedFrame.overlays) {
     if (item.itemType !== 'overlay') continue;
     const op = buildOverlayOp(input, item, frame);
-    if (op) ops.push(op);
+    if (!op) continue;
+    ops.push(op);
+    ops.push(
+      ...buildClipEffectOps(
+        item,
+        {
+          transform: op.transform,
+          rect: {
+            x: -op.width / 2,
+            y: -op.height / 2,
+            width: op.width,
+            height: op.height,
+          },
+        },
+        compTimeMs,
+      ),
+    );
   }
 
   // 2.5. Vector shapes (SVG paths with optional trim animation).

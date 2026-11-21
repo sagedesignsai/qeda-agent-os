@@ -38,6 +38,7 @@ import { getProject } from '../db/projects.js';
 import { repoTools } from './repo.js';
 import { filesystemTools } from './filesystem.js';
 import { createStudioProjectPreviewTools } from './studio-project-preview.js';
+import { createStudioEditingTools } from './studio-editing.js';
 import type { StudioSignInOutcome } from '../../lib/studio/types.js';
 
 export function getStudioStorageDir(takeId?: string): string {
@@ -131,6 +132,17 @@ export function createStudioTools({
     ...(includeProjectPreviewTools
       ? createStudioProjectPreviewTools(projectId, undefined, requestUserSignIn)
       : {}),
+
+    // ─── 0. Multi-Track Project Editing ───────────────────────────────────────
+    // Track/clip/effect verbs for building a video from the media pool. These
+    // are the preferred tools for new edits; the legacy take-array tools below
+    // remain for existing recordings and are projected onto the timeline.
+    ...createStudioEditingTools({
+      resolveTake,
+      persist: (take) => saveStudioTake(take),
+      notify,
+    }),
+
     // ─── 1. Take & Telemetry Inspection ───────────────────────────────────────
 
     getTakeDetails: tool({
@@ -425,7 +437,7 @@ export function createStudioTools({
 
     addCanvasEffect: tool({
       description:
-        'Adds a timed canvas compositing effect (spotlight, neon-glow, vignette, film-grain, scanlines) over the framed video.',
+        'Deprecated: adds a full-frame timed canvas effect. Prefer addClipEffect, which attaches effects to a specific clip and supports static parameters and intensity keyframes.',
       inputSchema: z.object({
         type: z
           .enum([
@@ -480,7 +492,7 @@ export function createStudioTools({
 
     removeCanvasEffect: tool({
       description:
-        'Removes a canvas effect by id, or clears every canvas effect from the timeline.',
+        'Deprecated: removes a legacy full-frame canvas effect. Prefer removeClipEffect for clip-attached effects.',
       inputSchema: z.object({
         effectId: z.string().optional().describe('ID of the effect to remove'),
         clearAll: z

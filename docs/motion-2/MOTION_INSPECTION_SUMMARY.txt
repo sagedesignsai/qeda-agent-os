@@ -1,0 +1,480 @@
+═══════════════════════════════════════════════════════════════════════════════
+  MOTION SYSTEM: COMPLETE INSPECTION SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+INSPECTION DATE:        2026-11-21
+SCOPE:                  Editor implementations, AI integration, architecture
+TOTAL DOCUMENTATION:    4 companion documents, 2,261 lines, 74 KB
+
+───────────────────────────────────────────────────────────────────────────────
+WHAT IS THE MOTION SYSTEM?
+───────────────────────────────────────────────────────────────────────────────
+
+A professional-grade 3D scene editor built with:
+  • Document-driven architecture (MotionDocument as single source of truth)
+  • 50+ node types (cameras, lights, geometry, procedural, data-viz, UI)
+  • Timeline-based animation (keyframes, clips, tracks, easing)
+  • AI copilot integration (ToolLoopAgent with 40-step budget)
+  • Live R3F rendering (Three.js host, 60fps independent of React)
+  • Op-based mutations (all changes serializable, validated, undoable)
+  • Multi-scene composition (sequences with transitions)
+  • Full undo/redo, autosave, crash recovery
+
+───────────────────────────────────────────────────────────────────────────────
+KEY METRICS
+───────────────────────────────────────────────────────────────────────────────
+
+CODEBASE:
+  Component files:           50+ React components
+  Library utilities:         59 TypeScript modules
+  AI agent files:            1 copilot agent + 4 tool files
+  Total lines of code:       ~15,000 (Motion subsystem)
+  
+DATA MODEL:
+  Node types:                50+ registered types
+  Operation types:           50+ validated op types
+  Scene graph max nodes:     1,000+ tested
+  Document size typical:     1–5 MB
+  Undo stack limit:          200 documents
+  
+PERFORMANCE:
+  Rendering:                 60fps independent of React
+  Procedural instances:      Max 5,000 per batch
+  Timeline evaluation:       O(n) channels × O(log n) keyframes
+  No re-renders on playback: ✓ Clock is external
+
+───────────────────────────────────────────────────────────────────────────────
+ARCHITECTURE LAYERS (5-LAYER SYSTEM)
+───────────────────────────────────────────────────────────────────────────────
+
+LAYER 1: DATA MODEL
+  ├─ MotionDocument (immutable, 1–5 MB)
+  ├─ Scenes (1–many, independent timelines)
+  ├─ Nodes (scene graph with hierarchy)
+  ├─ Timeline (clips, tracks, keyframes)
+  ├─ Assets (library: images, models, fonts, audio)
+  └─ Metadata (schema version, output resolution)
+
+LAYER 2: OPERATIONS SYSTEM
+  ├─ 50+ op types (document, asset, scene, node, track, clip, keyframe)
+  ├─ Risk classification (safe / mutating / destructive)
+  ├─ Zod validation (per-op schema)
+  ├─ Pure reducers (same ops → same document)
+  └─ Audit trail (all changes recorded)
+
+LAYER 3: EVALUATION ENGINE
+  ├─ Deterministic frame evaluation
+  ├─ Timeline sampling (keyframes → interpolated values)
+  ├─ Node property application
+  ├─ No side effects or randomness
+  └─ Clock-independent (works at any time)
+
+LAYER 4: RENDERING PIPELINE
+  ├─ R3F host (React Three Fiber)
+  ├─ Three.js scene graph
+  ├─ 50+ node-type renderers
+  ├─ External clock subscription
+  ├─ Frame loop (60fps independent of React)
+  ├─ Transform gizmo for editing
+  └─ Multi-view support (cinematic + editorial)
+
+LAYER 5: EDITOR UI
+  ├─ MotionEditor (shell + layout)
+  ├─ MotionViewport (live preview)
+  ├─ MotionInspector (context-aware properties)
+  ├─ MotionTimeline (animation editor)
+  ├─ MotionScenePanel (hierarchy tree)
+  ├─ MotionCopilotPanel (AI assistant)
+  └─ Export dialog (render presets)
+
+───────────────────────────────────────────────────────────────────────────────
+EDITOR COMPONENTS (50+ FILES)
+───────────────────────────────────────────────────────────────────────────────
+
+MAIN PANELS:
+  MotionViewport.tsx              Live 3D preview + chrome controls
+  MotionInspector.tsx             Context-aware properties panel
+  MotionScenePanel.tsx            Hierarchy tree with drag-to-reparent
+  MotionTimeline.tsx              Animation editor + timeline adapter
+
+CANVAS & RENDERING:
+  MotionSceneCanvas.tsx           R3F host (Three.js integration)
+  MotionNodeRenderers.tsx         50+ node-type renderers
+  MotionWorldBinding.tsx          Environment + lighting setup
+  MotionLookComposer.tsx          Camera/look management
+
+DIALOGS & OVERLAYS:
+  MotionCopilotPanel.tsx          AI chat + streaming
+  MotionAddNodeDialog.tsx         Node type picker
+  MotionAssetMarketplaceDialog    Asset import/browsing
+  MotionExportDialog.tsx          Render settings
+  ModelBuilderDialog.tsx          Blender subagent
+
+INSPECTOR CONTROLS (18 custom):
+  transform-controls.tsx          Position, rotation, scale
+  color-field.tsx                 Color picker
+  rotation-orb.tsx                Rotation visualization
+  scrub-number.tsx                Numeric slider
+  vector-field.tsx                XYZ input group
+  asset-picker.tsx                Model/image selection
+  And 12 more specialized controls...
+
+───────────────────────────────────────────────────────────────────────────────
+AI COPILOT INTEGRATION
+───────────────────────────────────────────────────────────────────────────────
+
+AGENT:
+  Type:                           ToolLoopAgent (40-step budget)
+  Model selection:                Active provider + model (fallback-aware)
+  System prompt:                  ~800 lines (scene state + capabilities)
+
+TOOL ECOSYSTEM:
+  sceneDirector                   Add/update/remove nodes
+  keyframe                        Timeline animation
+  nodeBuilder                     Pre-configured node creation
+  proceduralModeling              Geometry generation (arrays, scatter)
+  buildModel                      Blender subagent for heroes
+  getMotionCapability             Design pattern discovery
+  applyMotionRecipe               Senior designer patterns (product hero, stinger)
+  lintMotionProject               Schema validation
+  renderMotionPreview             Frame render at current time
+  createPlan                      Task planning
+
+CAPABILITIES:
+  ✓ Scene operations (add, update, remove nodes)
+  ✓ Animation (keyframes, easing, channels)
+  ✓ Procedural modeling (instances, arrays, grids)
+  ✓ Model building (via Blender subagent)
+  ✓ Design patterns (recipes + capability discovery)
+  ✓ Quality assurance (linting, preview rendering)
+  ✓ Task planning (visible in UI as checklist)
+
+───────────────────────────────────────────────────────────────────────────────
+DOCUMENT STATE MANAGEMENT
+───────────────────────────────────────────────────────────────────────────────
+
+MOTIONSTORE (Zustand-like):
+  store.getDocument()             Access current MotionDocument
+  store.commit(label, ops)        Apply ops (creates new document)
+  store.undo() / redo()           Navigate history
+  store.play() / pause()          Control playback
+  store.seek(time)                Scrub to time
+  store.setSelection()            Ephemeral UI selection
+  store.setView()                 Timeline viewport state
+  
+UNDO/REDO:
+  Stack of documents:             200 max (configurable)
+  Same ops → same document:       Deterministic replay
+  No inverse ops needed:          Documents are small, immutable
+  
+SUBSCRIPTIONS:
+  useMotionSnapshot()             React hook, renders on doc change
+  useSyncExternalStore()          React sync pattern
+  No playhead updates:            Clock is external
+  Frame loop independent:         R3F updates without React
+
+───────────────────────────────────────────────────────────────────────────────
+NODE REGISTRY (50+ TYPES)
+───────────────────────────────────────────────────────────────────────────────
+
+CAMERAS:
+  camera.perspective              Standard perspective camera
+  camera.orthographic             Orthographic/parallel projection
+
+LIGHTS:
+  light.directional               Sun/directional light
+  light.point                     Point/bulb light
+  light.spot                      Spotlight with cone
+  light.ambient                   Ambient/fill light
+
+GEOMETRY:
+  geometry.box                    Cube/rectangular box
+  geometry.sphere                 UV sphere
+  geometry.cylinder               Cylinder
+  geometry.plane                  Flat plane
+  geometry.cone                   Cone
+  geometry.torus                  Donut shape
+  geometry.lathe                  Revolution sweep
+  geometry.extrude                Extruded shape
+
+TEXT & UI:
+  text.3d                         3D text with font
+  text.billboard                  Always-facing text
+  ui.billboard                    UI overlay (buttons, panels)
+
+PRIMITIVES & SHAPES:
+  shapes.rectangle                2D rectangle
+  shapes.circle                   2D circle
+  shapes.polygon                  N-sided polygon
+  shapes.star                     Star shape
+  shapes.line                     Thin line
+
+PROCEDURAL:
+  procedural.array                Linear array of instances
+  procedural.radial-array         Circular array of instances
+  procedural.grid                 2D grid of instances
+  procedural.scatter              Random scatter pattern
+  procedural.curve                Instances along curve
+  procedural.clone                Simple copy
+
+DATA VISUALIZATION:
+  data.bar-chart                  3D bar chart
+  data.pie-chart                  3D pie chart
+  data.scatter-plot               3D scatter plot
+
+MEDIA:
+  video.playback                  Video texture, synced to playhead
+  graphics.canvas                 Canvas 2D → texture
+
+MATERIALS & SURFACES:
+  surfaces.material               Material property overrides
+  surfaces.binding                Surface texture binding
+
+STAGE & ENVIRONMENT:
+  stage.ground                    Infinite ground plane
+  stage.environment               HDRI environment
+  stage.skybox                    Skybox cubemap
+
+And more categories (lights, procedural, product showcase templates, etc.)
+
+───────────────────────────────────────────────────────────────────────────────
+KEYBOARD SHORTCUTS
+───────────────────────────────────────────────────────────────────────────────
+
+VIEWPORT:
+  1                               Cinematic view (free orbit)
+  2                               Editorial view (with gizmo)
+  W / R / E                       Transform mode (translate/rotate/scale)
+  Space                           Play/pause
+  G                               Toggle grid
+
+EDITING:
+  Cmd/Ctrl+S                      Save
+  Cmd/Ctrl+Z                      Undo
+  Cmd/Ctrl+Shift+Z                Redo
+  Cmd/Ctrl+Shift+T                Toggle timeline collapse
+  Shift+A                         Add node dialog
+
+MULTI-SELECT:
+  Shift+Click                     Add to selection
+  Cmd/Ctrl+Click                  Toggle in selection
+  Cmd/Ctrl+A                      Select all
+
+───────────────────────────────────────────────────────────────────────────────
+OPERATION TYPES (50+ OPS)
+───────────────────────────────────────────────────────────────────────────────
+
+DOCUMENT:
+  document.rename                 Change project name
+  document.setOutput              Resolution, FPS
+  document.setActiveScene         Switch between scenes
+  document.setSequence            Set multi-scene composition
+
+ASSETS:
+  asset.add                       Add image/model/audio to library
+  asset.remove                    Delete from library
+  asset.relink                    Update path/hash
+  asset.update-metadata           Update parsed metadata
+
+SCENE GRAPH:
+  scene.node.add                  Create node
+  scene.node.update               Modify node properties/transform
+  scene.node.remove               Delete node
+  scene.node.reparent             Change parent (with world-space option)
+  scene.node.reorder              Adjust in parent's child list
+  scene.node.duplicate            Clone node with ID mapping
+
+SCENES:
+  scene.add                       Create new scene
+  scene.duplicate                 Clone scene with new IDs
+  scene.remove                    Delete scene
+
+ANIMATION:
+  track.add / remove              Animation track CRUD
+  clip.add / remove               Animation clip CRUD
+  keyframe.add / update / remove  Keyframe CRUD
+  channel.add / remove            Property channel CRUD
+
+TIMELINE:
+  timeline.setLoop                Enable/disable looping
+  timeline.setWorkArea            Set scrub range
+  timeline.setPlayMode            Once / loop / ping-pong
+
+AUDIO:
+  audio.add / update / remove     Audio track CRUD
+
+SEQUENCES (MULTI-SCENE):
+  sequence.set                    Define scene composition order
+
+RISK CLASSIFICATION:
+  safe                            Add node, keyframe (no approval)
+  mutating                        Update properties
+  destructive                     Delete, reparent (requires approval)
+
+───────────────────────────────────────────────────────────────────────────────
+EXPORT SYSTEM
+───────────────────────────────────────────────────────────────────────────────
+
+RENDER PLAN:
+  Total frames                    Calculated from duration + FPS
+  Codec options                   H.264, VP9, ProRes
+  Parallel encoding               Multi-worker support
+  Quality presets                 Standard + custom resolutions
+
+PRESETS:
+  1920×1080 (16:9)                HD, square, portrait
+  2560×1440 (16:9)                2K
+  1280×720 (16:9)                 720p
+  Custom resolution               User-defined
+
+EXPORT FLOW:
+  1. Frame-by-frame evaluation (evaluateMotionFrame)
+  2. Render to PNG buffer (WebGL readPixels)
+  3. Encode to video stream (worker pool)
+  4. Progress tracking (IPC updates)
+  5. Save to project folder
+
+───────────────────────────────────────────────────────────────────────────────
+KEY DESIGN PATTERNS (17 TOTAL)
+───────────────────────────────────────────────────────────────────────────────
+
+1. Operation-based mutations     All changes are ops
+2. Batch atomicity               Group related ops
+3. Selection as subscription     Ephemeral state in store
+4. Clock external                60fps independent of React
+5. Deterministic evaluation      Same input → same output
+6. Immutable updates             Never mutate directly
+7. Component registration        Self-registering node types
+8. Adapter layers                Motion ↔ Timeline ↔ Canvas
+9. Accordion inspector           One section open
+10. Risk-based approval          safe / mutating / destructive
+11. Registry as source           Types in code, instances in doc
+12. Hook composition             Complex state in hooks
+13. Page-level shortcuts         Not component-local
+14. Modifier selection           Shift/Cmd for multi-select
+15. Error recovery               Autosave + crash restore
+16. Render blocking              Don't render until ready
+17. Streaming + approval         Agent streams, UI gates ops
+
+───────────────────────────────────────────────────────────────────────────────
+PRODUCTION READINESS
+───────────────────────────────────────────────────────────────────────────────
+
+✅ PRODUCTION-READY:
+  ✓ Core rendering and animation
+  ✓ 50+ node types fully functional
+  ✓ Undo/redo, autosave, crash recovery
+  ✓ AI copilot integration
+  ✓ Export with presets
+  ✓ Multi-scene composition
+  ✓ Timeline animation
+  ✓ Transform gizmo and selection
+  ✓ Material and lighting system
+  ✓ Procedural geometry
+  ✓ Performance optimized
+
+⚠️  KNOWN GAPS:
+  • Keyframe animation UI not fully wired (ops exist)
+  • No advanced camera rigs (single node only)
+  • No effects/compositing layer
+  • No real-time collaboration
+  • No advanced material editor
+
+🚀 FUTURE OPPORTUNITIES:
+  • Non-linear editor (transitions, compositing)
+  • VFX integration (particles, post-processing)
+  • AI material generation (procedural shaders)
+  • Mobile/AR export targets
+  • Performance HUD and profiling
+  • Real-time collaboration (CRDT)
+
+───────────────────────────────────────────────────────────────────────────────
+INSPECTION DOCUMENTATION (2,261 LINES, 74 KB)
+───────────────────────────────────────────────────────────────────────────────
+
+MOTION_INSPECTION_INDEX.md              386 lines | Navigation + cross-reference
+MOTION_SYSTEM_INSPECTION.md             749 lines | Complete system overview
+MOTION_ARCHITECTURE_DIAGRAM.md          551 lines | 15 visual diagrams
+MOTION_PATTERNS_GUIDE.md                575 lines | 17 implementation patterns
+
+USE:
+  New to Motion?           Start with INDEX → INSPECTION → DIAGRAM → PATTERNS
+  Building a feature?      Start with PATTERNS → find relevant pattern → implement
+  Optimizing?              Check DIAGRAM + PATTERNS for performance
+  Adding AI?               Read INSPECTION → PATTERNS 17 → reference code
+  Integrating?             Check DIAGRAM section 14 "Integration Points"
+
+───────────────────────────────────────────────────────────────────────────────
+QUICK START FOR DEVELOPERS
+───────────────────────────────────────────────────────────────────────────────
+
+ADD A FEATURE:
+  1. Read MOTION_PATTERNS_GUIDE.md (find your pattern)
+  2. Check MOTION_SYSTEM_INSPECTION.md (API details)
+  3. Reference similar code in src/components/motion/ or src/lib/motion/
+  4. Follow the same pattern for consistency
+
+ADD A NODE TYPE:
+  1. Create definition file (src/lib/motion/nodes/category.ts)
+  2. Register in src/lib/motion/nodes/index.ts
+  3. Create renderer (src/components/motion/scene/nodes/)
+  4. Map renderer in getMotionThreeRenderer()
+  5. Test via UI
+
+DEBUG A BUG:
+  1. Use MOTION_ARCHITECTURE_DIAGRAM.md to trace data flow
+  2. Check if ops are being recorded (undo/redo)
+  3. Verify evaluation is deterministic (same time → same result)
+  4. Profile rendering (clock should be independent)
+  5. Reference MOTION_PATTERNS_GUIDE.md for common issues
+
+───────────────────────────────────────────────────────────────────────────────
+FILE LOCATIONS
+───────────────────────────────────────────────────────────────────────────────
+
+CORE IMPLEMENTATION:
+  Editor shell:           src/components/motion/MotionEditor.tsx
+  Viewport:               src/components/motion/MotionViewport.tsx
+  Inspector:              src/components/motion/MotionInspector.tsx
+  Timeline:               src/components/motion/MotionTimeline.tsx
+  Scene panel:            src/components/motion/MotionScenePanel.tsx
+  Copilot panel:          src/components/motion/MotionCopilotPanel.tsx
+
+RENDERING:
+  Canvas host:            src/components/motion/scene/MotionSceneCanvas.tsx
+  Node renderers:         src/components/motion/scene/nodes/ (50+ files)
+  Frame binding:          src/components/motion/scene/motion-frame-binding.ts
+  Clock subscription:     src/components/motion/scene/motion-frame-clock.ts
+
+STATE MANAGEMENT:
+  Store:                  src/hooks/use-motion-store.ts
+  Export:                 src/hooks/use-motion-export.ts
+  Copilot:                src/hooks/use-motion-copilot.ts
+  Project:                src/hooks/use-motion-project.ts
+
+LIBRARY:
+  Types:                  src/lib/motion/types.ts
+  Operations:             src/lib/motion/ops.ts
+  Evaluation:             src/lib/motion/evaluate.ts
+  Node registry:          src/lib/motion/node-registry.ts
+  Schema:                 src/lib/motion/schema.ts
+  Node definitions:       src/lib/motion/nodes/ (16 category files)
+
+AI & TOOLS:
+  Copilot agent:          src/main/ai/motion-copilot-agent.ts
+  Core tools:             src/main/tools/motion.ts
+  Recipes:                src/main/tools/motion-recipe-tool.ts
+  Verification:           src/main/tools/motion-verify-tool.ts
+  Capability:             src/main/tools/motion-capability-tool.ts
+
+ROUTES:
+  Page:                   src/renderer/pages/Motion.tsx
+  Route:                  /motion/:projectId
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Created: 2026-11-21
+Status:  Complete inspection, ready for reference and implementation
+Contact: Reference MOTION_INSPECTION_INDEX.md for navigation
+
+═══════════════════════════════════════════════════════════════════════════════

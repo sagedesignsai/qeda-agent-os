@@ -40,6 +40,12 @@ export interface StudioCopilotAgentOptions {
   planManager?: PlanManager;
   /** When true, omit toolApproval (subagent tools cannot use approval flows). */
   forSubagent?: boolean;
+  /**
+   * 'edit' (default) focuses on one recording's take arrays; 'showcase' enables
+   * the multi-track project workflow (import, tracks, clips, clip effects) and
+   * a larger step budget.
+   */
+  mode?: 'edit' | 'showcase';
 }
 
 function formatTimecode(ms: number): string {
@@ -54,6 +60,7 @@ function buildStudioInstructions(
   take: StudioTake | null,
   activeProject?: string,
   currentTimeMs?: number,
+  mode: 'edit' | 'showcase' = 'edit',
 ): string {
   const now = new Date();
   const timeContext = [
@@ -147,6 +154,43 @@ You help developers turn raw screen recordings and software demos into stunning,
    - Use these properties to create picture-in-picture layouts, kinetic animations, and styled presentations.
    - The inspector allows editing these properties per-clip.
 
+## Multi-Track Showcase Workflow${mode === 'showcase' ? '' : ' (available when the user asks for it)'}
+Build the video from the media pool instead of tweaking one recording. The old
+take-array tools still work on the currently open recording; for anything that
+involves more than one source, use the project tools.
+
+1. **Inspect first.** Call \`getProjectState\` to see the media pool, tracks and
+   clips. Call \`listEffectCatalog\` before choosing effect parameters.
+2. **Start from a preset when the format fits.** \`listShowcasePresets\` returns
+   complete recipes (product demo, mobile preview, tutorial, social cutdown)
+   with segment pacing, slots, effects, aspect ratio and suggested variants.
+   \`applyShowcasePreset\` builds that timeline in one call, replacing the
+   current timeline but keeping the media pool: pass \`assetId\` values from
+   \`importRecording\` (or file paths), fill only the slots the user chose, then
+   refine with the clip tools. Do this instead of hand-building a standard
+   format, and call \`getProjectState\` afterwards to verify what landed.
+3. **Import sources.** \`importRecording\` adds a video to the media pool and
+   returns an \`assetId\`. It does not place it on the timeline.
+4. **Build lanes.** \`autoCreateTracks\` (or \`createTrack\`) ensures the video and
+   audio lanes exist and returns their ids.
+5. **Place clips.** \`addClipFromAsset\` places an asset at a chosen start and
+   source offset. Reuse one asset for recaps, intros and callouts. Use
+   \`moveClip\`, \`removeClip\` and \`setClipProperties\` to refine timing, speed and
+   framing.
+6. **Attach effects per clip.** \`addClipEffect\` attaches spotlight, neon-glow,
+   vignette, film-grain or scanlines to a specific clip (max 5). Set static
+   parameters with the catalog schema, then animate strength with
+   \`addEffectKeyframe\` (clip-relative ms) and \`updateClipEffect\` for the base
+   intensity. Effects follow the clip's transform and render in \`stackOrder\`;
+   use \`reorderClipEffects\` to change layering.
+7. **Captions & overlays.** \`addCaption\` and \`addOverlay\` are composition-time
+   elements on their own lanes.
+8. **Verify.** Call \`getProjectState\` again after a batch of edits and confirm
+   the clips, effect counts and track order match what the user asked for.
+
+Prefer the clip tools over the deprecated \`addCanvasEffect\` / \`removeCanvasEffect\`,
+which only add full-frame passes to the legacy take arrays.
+
 ## Tone & Output
 - Confident, creative, and action-oriented.
 - When you execute tools, summarize the exact changes made to the timeline in clean markdown (e.g. list timestamps and actions taken).
@@ -199,6 +243,7 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
       take,
       opts.activeProject,
       opts.currentTimeMs,
+      opts.mode,
     ),
     tools: {
       ...tools,
@@ -209,6 +254,9 @@ export function createStudioCopilotAgent(opts: StudioCopilotAgentOptions) {
       ...createPlanTools(planManager),
     },
     ...(opts.forSubagent ? {} : { toolApproval: studioCopilotApprovalPolicy }),
-    stopWhen: [isStepCount(25), planManager.stopCondition()],
+    stopWhen: [
+      isStepCount(opts.mode === 'showcase' ? 40 : 25),
+      planManager.stopCondition(),
+    ],
   });
 }

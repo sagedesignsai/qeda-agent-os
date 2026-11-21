@@ -51,6 +51,35 @@ export const studioToolPolicies: ToolPolicyMap = {
   updateStyling: t('write-local'),
   generateSocialKit: t('write-local'),
 
+  // ── Multi-track project editing (tools/studio-editing.ts) ──────────────────
+  // Same reasoning as the legacy take-array tools: every call rewrites one
+  // project's own tracks/clips and is visible + undoable in the timeline.
+  getProjectState: t('read'),
+  listEffectCatalog: t('read'),
+  listShowcasePresets: t('read'),
+  applyShowcasePreset: t('write-local'),
+  createTrack: t('write-local'),
+  updateTrack: t('write-local'),
+  deleteTrack: t('write-local'),
+  reorderTracks: t('write-local'),
+  addClipFromAsset: t('write-local'),
+  addClip: t('write-local'),
+  removeClip: t('write-local'),
+  moveClip: t('write-local'),
+  setClipProperties: t('write-local'),
+  addClipEffect: t('write-local'),
+  updateClipEffect: t('write-local'),
+  removeClipEffect: t('write-local'),
+  reorderClipEffects: t('write-local'),
+  addEffectKeyframe: t('write-local'),
+  removeEffectKeyframe: t('write-local'),
+  addCaption: t('write-local'),
+  removeCaption: t('write-local'),
+  addOverlay: t('write-local'),
+  removeOverlay: t('write-local'),
+  importRecording: t('write-local'),
+  autoCreateTracks: t('write-local'),
+
   // ── Capability discovery ───────────────────────────────────────────────────
   getStudioCapability: t('read'),
   getProjectRunOptions: t('read'),

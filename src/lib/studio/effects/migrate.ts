@@ -1,75 +1,91 @@
 /**
  * lib/studio/effects/migrate.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Auto-migration of global effects (old system) to clip-attached effects (new).
+ * Legacy (timed, take-level) effects → timeline effect clips.
  *
- * On first load of a project with `take.effects[]` (global track-based), this
- * migrates effects to individual clips while preserving all intensity keyframes
- * in local (clip-relative) time.
+ * HISTORICAL CONTEXT
+ * ──────────────────
+ * The effects redesign introduced clip-attached effects (`clip.payload.effects`).
+ * An earlier version of this module *destructively* migrated `take.effects` onto
+ * clips during conversion, then cleared the field and set `effectsMigratedAt`.
+ * That approach had two fatal problems:
  *
- * Migration is idempotent: marked by `take.effectsMigratedAt` timestamp.
- * Re-running migration on an already-migrated take is safe (no-op).
+ *   1. A legacy take has no `tracks`, so there was no clip to attach to. The
+ *      migration warned, cleared `take.effects`, and the recording silently lost
+ *      every effect on the next load.
+ *   2. `effectsMigratedAt` was never persisted (no DB column), so the migration
+ *      re-ran on every load and could duplicate effects.
+ *
+ * THE CURRENT MODEL
+ * ─────────────────
+ * The conversion is now **non-destructive and idempotent by construction**:
+ *
+ *   - `take.tracks === undefined` (a legacy single-recording take):
+ *     `take.effects` is authoritative and is projected as timed effect clips on
+ *     the effects lane, alongside kinetic zooms. Nothing is mutated, so there is
+ *     no marker to persist and no way to lose or duplicate an effect.
+ *
+ *   - `take.tracks !== undefined` (a multi-track project):
+ *     clip-attached effects are authoritative. `take.effects` is ignored, which
+ *     is what prevents an effect clip on the effects lane from rendering twice.
+ *
+ * Round-tripping still works because `extractEffectsFromTracks` maps effect-lane
+ * clips back to `StudioEffect[]` when the timeline is committed.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import type { StudioTake, StudioClip, ClipEffect, StudioKeyframe } from '../types';
+import type {
+  StudioTake,
+  StudioEffect,
+  TimelineClip,
+  StudioEffectType,
+} from '../types';
 import { isStudioEffectType } from './catalog';
-import { nanoid } from 'nanoid';
+import {
+  compRangeFromSource,
+  type RippleCut,
+} from '../timeline/ripple';
 
-export interface MigrationResult {
-  success: boolean;
-  migratedEffectCount: number;
-  assignedToClips: Map<string, number>;  // clipId → effect count
+/** Timeline lane that holds zooms and legacy timed canvas effects. */
+const EFFECTS_TRACK_ID = 'track-effects';
+
+export interface LegacyEffectProjection {
+  clips: TimelineClip[];
   warnings: string[];
 }
 
 /**
- * Migrate global effects from `take.effects[]` to clip-attached effects.
+ * Project `take.effects` into effect clips on the effects lane.
  *
- * - For each effect in `take.effects[]`:
- *   1. Find all overlapping video/overlay clips
- *   2. Assign to primary (first in z-order) clip
- *   3. Convert global timing to local (clip-relative)
- *   4. Preserve intensity keyframes
- *   5. Attach to `clip.payload.effects[]`
- * - Clear `take.effects[]` after migration
- * - Set `take.effectsMigratedAt` marker (idempotent)
+ * The returned clip ids are the original effect ids, so the reverse conversion
+ * (`extractEffectsFromTracks`) is lossless and re-saving a take cannot create
+ * duplicate effects.
  *
- * Safe to call multiple times (checks marker first).
+ * Returns an empty list when the take is a multi-track project, because its
+ * clip-attached effects already own rendering.
  */
-export function migrateEffectsToClips(take: StudioTake): MigrationResult {
-  const result: MigrationResult = {
-    success: true,
-    migratedEffectCount: 0,
-    assignedToClips: new Map(),
-    warnings: [],
-  };
+export function buildLegacyEffectClips(
+  take: StudioTake,
+  cuts: readonly RippleCut[] = [],
+): TimelineClip[] {
+  return projectLegacyEffects(take, cuts).clips;
+}
 
-  // Check if already migrated
-  if (take.effectsMigratedAt !== undefined) {
-    return result;  // Already migrated, no-op
-  }
+/** Same as {@link buildLegacyEffectClips} but surfaces validation warnings. */
+export function projectLegacyEffects(
+  take: StudioTake,
+  cuts: readonly RippleCut[] = [],
+): LegacyEffectProjection {
+  const result: LegacyEffectProjection = { clips: [], warnings: [] };
 
-  // No effects to migrate
-  if (!take.effects || take.effects.length === 0) {
-    // Mark as migrated even if no effects (prevents future re-runs)
-    take.effectsMigratedAt = Date.now();
-    return result;
-  }
+  // Multi-track projects render clip-attached effects; the legacy field is a
+  // read-only artifact and must not paint a second time.
+  if (take.tracks !== undefined) return result;
 
-  // Collect all video and overlay clips (from tracks)
-  const videoOverlayClips: StudioClip[] = [];
-  if (take.tracks) {
-    for (const track of take.tracks) {
-      if (track.type === 'video' || track.type === 'overlays') {
-        videoOverlayClips.push(...track.clips);
-      }
-    }
-  }
+  const effects = take.effects ?? [];
+  if (effects.length === 0) return result;
 
-  // Migrate each global effect
-  for (const effect of take.effects) {
-    // Validate effect type
+  for (const effect of effects) {
     if (!isStudioEffectType(effect.type)) {
       result.warnings.push(
         `Skipped effect ${effect.id}: invalid type '${effect.type}'`,
@@ -77,80 +93,93 @@ export function migrateEffectsToClips(take: StudioTake): MigrationResult {
       continue;
     }
 
-    // Find overlapping clips
-    const overlappingClips = videoOverlayClips.filter((clip) => {
-      const clipStart = clip.startMs;
-      const clipEnd = clip.startMs + clip.durationMs;
-      const effectStart = effect.startMs;
-      const effectEnd = effect.endMs;
-
-      // Half-open range: [clipStart, clipEnd) ∩ [effectStart, effectEnd)
-      return clipStart < effectEnd && effectStart < clipEnd;
-    });
-
-    if (overlappingClips.length === 0) {
+    const span = compRangeFromSource(
+      { startMs: effect.startMs, endMs: effect.endMs },
+      cuts,
+    );
+    if (!span || span.endMs <= span.startMs) {
       result.warnings.push(
-        `Effect ${effect.id} (${effect.type}) has no overlapping clips; skipped`,
+        `Effect ${effect.id} (${effect.type}) is fully cut; skipped`,
       );
       continue;
     }
 
-    // Assign to primary (first) clip
-    const primaryClip = overlappingClips[0];
-    if (!primaryClip.payload) {
-      primaryClip.payload = {};
-    }
-    if (!primaryClip.payload.effects) {
-      primaryClip.payload.effects = [];
-    }
-
-    // Create ClipEffect with converted timing
-    const clipEffect: ClipEffect = {
-      id: nanoid(8),
-      type: effect.type,
-      intensity: effect.intensity,
-      params: {},  // No params in old system; static defaults per effect type
-      stackOrder: primaryClip.payload.effects.length,  // Append to stack
-    };
-
-    // Add to clip
-    primaryClip.payload.effects.push(clipEffect);
-    result.migratedEffectCount++;
-
-    const assignCount = result.assignedToClips.get(primaryClip.id) ?? 0;
-    result.assignedToClips.set(primaryClip.id, assignCount + 1);
-
-    // Migrate intensity keyframes from global to local (clip-relative)
-    // The old system used clip.payload.intensity (static) + no keyframes on effects track
-    // The new system uses universal keyframes with property 'effect:<effectId>:intensity'
-    //
-    // If effect has multiple keyframes in old system (unlikely), they would be on the
-    // effect clip's universal keyframes. We preserve those here.
-    //
-    // For now, no keyframes are transferred (old effects track clips don't have keyframes
-    // in the current system). Future enhancement: support keyframed intensity on effect clips.
+    result.clips.push(effectToClip(effect, span.startMs, span.endMs));
   }
-
-  // Clear global effects after migration
-  take.effects = [];
-
-  // Mark migration complete (idempotent)
-  take.effectsMigratedAt = Date.now();
 
   return result;
 }
 
-/**
- * Get migration status for a take.
- * Returns true if migration has been completed (or not needed).
- */
-export function isEffectsMigrated(take: StudioTake): boolean {
-  return take.effectsMigratedAt !== undefined;
+function effectToClip(
+  effect: StudioEffect,
+  startMs: number,
+  endMs: number,
+): TimelineClip {
+  return {
+    id: effect.id,
+    trackId: EFFECTS_TRACK_ID,
+    itemType: 'effect',
+    name: effectLabel(effect.type),
+    startMs,
+    durationMs: endMs - startMs,
+    sourceStartMs: effect.startMs,
+    sourceDurationMs: Math.max(0, effect.endMs - effect.startMs),
+    color: '#0ea5e9',
+    payload: {
+      effectType: effect.type,
+      intensity: effect.intensity,
+    },
+  };
+}
+
+function effectLabel(type: StudioEffectType): string {
+  switch (type) {
+    case 'spotlight':
+      return 'Spotlight';
+    case 'neon-glow':
+      return 'Neon Glow';
+    case 'vignette':
+      return 'Vignette';
+    case 'film-grain':
+      return 'Film Grain';
+    case 'scanlines':
+      return 'Scanlines';
+  }
 }
 
 /**
- * Validate migrated take: ensure effects are on clips and no orphans remain.
- * Used for diagnostics and testing.
+ * Legacy compatibility shim.
+ *
+ * Migration is no longer a mutation step — effects are projected on read. This
+ * remains because older call sites imported it, and it now reports "nothing to
+ * do" instead of rewriting a take.
+ */
+export function migrateEffectsToClips(take: StudioTake): {
+  success: boolean;
+  migratedEffectCount: number;
+  assignedToClips: Map<string, number>;
+  warnings: string[];
+} {
+  return {
+    success: true,
+    migratedEffectCount: 0,
+    assignedToClips: new Map(),
+    warnings: take.tracks === undefined
+      ? []
+      : [
+          'Effects are clip-attached on this multi-track project; take.effects is ignored.',
+        ],
+  };
+}
+
+/** True when the take no longer relies on the legacy timed-effect field. */
+export function isEffectsMigrated(take: StudioTake): boolean {
+  return take.tracks !== undefined || (take.effects ?? []).length === 0;
+}
+
+/**
+ * Diagnostics for a take: confirm no effect is rendered twice and that every
+ * clip-attached effect is well-formed.
  */
 export function validateMigration(take: StudioTake): {
   valid: boolean;
@@ -158,32 +187,31 @@ export function validateMigration(take: StudioTake): {
   clipsWithEffects: number;
   errors: string[];
 } {
-  const result = {
-    valid: true,
-    orphanedEffects: 0,
-    clipsWithEffects: 0,
-    errors: [] as string[],
-  };
+  const errors: string[] = [];
+  let clipsWithEffects = 0;
 
-  // Should have no global effects after migration
-  if (take.effects && take.effects.length > 0) {
-    result.valid = false;
-    result.orphanedEffects = take.effects.length;
-    result.errors.push(
-      `Migration incomplete: ${take.effects.length} global effects remain`,
-    );
-  }
-
-  // Count clips with effects
-  if (take.tracks) {
-    for (const track of take.tracks) {
-      for (const clip of track.clips) {
-        if (clip.payload?.effects && clip.payload.effects.length > 0) {
-          result.clipsWithEffects += clip.payload.effects.length;
+  for (const track of take.tracks ?? []) {
+    for (const clip of track.clips) {
+      const effects = clip.payload?.effects ?? [];
+      clipsWithEffects += effects.length;
+      const seen = new Set<string>();
+      for (const effect of effects) {
+        if (seen.has(effect.id)) {
+          errors.push(`Clip ${clip.id} has duplicate effect id ${effect.id}`);
+        }
+        seen.add(effect.id);
+        if (!isStudioEffectType(effect.type)) {
+          errors.push(`Clip ${clip.id} has invalid effect type ${effect.type}`);
         }
       }
     }
   }
 
-  return result;
+  return {
+    valid: errors.length === 0,
+    orphanedEffects:
+      take.tracks === undefined ? 0 : (take.effects ?? []).length,
+    clipsWithEffects,
+    errors,
+  };
 }

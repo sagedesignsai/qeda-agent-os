@@ -29,6 +29,7 @@ import {
   type TextDrawOp,
   type TextLayout,
 } from './display-list';
+import type { StudioCaption } from '@/lib/studio/types';
 import { drawStudioBackground } from './background';
 import { drawStudioCaption } from './captions';
 import { drawClipDeviceFrame } from './clip-device-frame';
@@ -340,12 +341,16 @@ function applyTextAnimator(
     if (wordCount === 0) {
       return { ...caption, text: '' };
     }
-    // Find the end position of the last revealed word
+    // Reveal through the end of the last revealed word. Word records carry
+    // timings only (no character indices), so locate the word in the caption
+    // text; fall back to the full text when it cannot be found verbatim.
     const lastWord = caption.words[wordCount - 1];
-    const endMs = lastWord.endMs || lastWord.startMs;
+    const wordIndex = text.indexOf(lastWord.word);
+    const endChar =
+      wordIndex === -1 ? text.length : wordIndex + lastWord.word.length;
     return {
       ...caption,
-      text: text.substring(0, lastWord.startCharIndex + (lastWord.endCharIndex - lastWord.startCharIndex)),
+      text: text.substring(0, endChar),
     };
   }
 
@@ -447,6 +452,8 @@ function renderEffectOp(
     intensity: op.intensity,
     frame: program.windowFrame,
     timeMs: op.timeMs,
+    params: op.params,
+    rect: op.rect,
   });
 }
 

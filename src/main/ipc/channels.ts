@@ -1995,6 +1995,8 @@ export interface IpcChannels {
         takeId: string;
         projectId?: string;
         currentTimeMs?: number;
+        /** 'showcase' enables the multi-track project workflow prompt. */
+        mode?: 'edit' | 'showcase';
       };
     };
     res: void;

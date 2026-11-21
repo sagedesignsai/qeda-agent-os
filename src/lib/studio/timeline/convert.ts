@@ -46,7 +46,7 @@ import {
   effectTypeFromPayload,
   getStudioEffectDefinition,
 } from '../effects/catalog';
-import { migrateEffectsToClips } from '../effects/migrate';
+import { projectLegacyEffects } from '../effects/migrate';
 import {
   compRangeFromSource,
   keptSegments,
@@ -95,13 +95,9 @@ function rebaseCaptionWords(
 // ── Direction A: take → tracks ────────────────────────────────────────────────
 
 export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
-  // Auto-migrate global effects to clip-attached effects (new system)
-  // This is idempotent: marked by take.effectsMigratedAt and safe to re-run
-  const migrationResult = migrateEffectsToClips(take);
-  if (migrationResult.warnings.length > 0) {
-    console.warn('Effects migration warnings:', migrationResult.warnings);
-  }
-
+  // Legacy timed effects live on the effects lane for single-recording takes.
+  // This is a pure projection: nothing on the take is mutated, so there is no
+  // migration marker to persist and no way to lose or duplicate an effect.
   const sourceDuration = Math.max(0, take.durationMs);
   const cuts = normalizeCuts(take.cuts ?? [], sourceDuration);
   const zooms = take.zooms ?? [];
@@ -109,6 +105,11 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
   // NOTE: take.effects is no longer used—effects are now clip-attached (clip.payload.effects[])
   // The old take.effects field is kept for backward compat but ignored during conversion.
   const overlays = take.overlays ?? [];
+
+  const legacyEffectProjection = projectLegacyEffects(take, cuts);
+  if (legacyEffectProjection.warnings.length > 0) {
+    console.warn('Effects projection warnings:', legacyEffectProjection.warnings);
+  }
 
   const zoomClips = zooms.flatMap((zoom): TimelineClip[] => {
     const span = compRangeFromSource(
@@ -205,9 +206,11 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
       name: 'Effects',
       locked: false,
       visible: true,
-      // NOTE: This track now only contains zooms (kinetic zoom).
-      // Canvas effects (spotlight, neon, etc.) are now clip-attached via clip.payload.effects[].
-      clips: zoomClips.sort((a, b) => a.startMs - b.startMs),
+      // Zooms plus legacy timed canvas effects. On a multi-track project the
+      // projection is empty and effects live on clip.payload.effects instead.
+      clips: [...zoomClips, ...legacyEffectProjection.clips].sort(
+        (a, b) => a.startMs - b.startMs,
+      ),
     },
     {
       id: CAPTIONS_TRACK_ID,

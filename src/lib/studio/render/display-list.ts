@@ -254,12 +254,27 @@ export interface ShapeDrawOp extends BaseDrawOp {
   pathLengthPx?: number;
 }
 
+export interface EffectRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface EffectDrawOp extends BaseDrawOp {
   kind: 'effect';
   effectType: StudioEffectType;
   intensity: number;
   /** Composition time: drives animated grain / scanline phases. */
   timeMs: number;
+  /** Static effect parameters (spotlight radius, glow colour, …). */
+  params?: Record<string, number | string | boolean>;
+  /**
+   * Explicit target box in the op's local transform space. Clip-attached
+   * effects pass the clip's draw rect so the pass follows the clip instead of
+   * covering the whole window content.
+   */
+  rect?: EffectRect;
 }
 
 export interface ChromeDrawOp extends BaseDrawOp {

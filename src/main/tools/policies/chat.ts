@@ -160,6 +160,10 @@ export const chatToolPolicies: ToolPolicyMap = {
   insertBlocksAt: t('write-local'),
   replaceBlock: t('destructive'),
 
+  // ── In-app navigation (tools/navigation.ts) ────────────────────────────────
+  navigatePage: t('write-local'),
+  getActiveRoute: t('read'),
+
   // ── Computer Use (tools/computer-use.ts) ────────────────────────────────────
   listWindows: t('read'),
   listCaptureTargets: t('read'),
@@ -202,6 +206,35 @@ export const chatToolPolicies: ToolPolicyMap = {
   setCaptions: t('write-local'),
   updateStyling: t('write-local'),
   generateSocialKit: t('write-local'),
+
+  // ── Multi-track project editing (tools/studio-editing.ts) ──────────────────
+  // Same classification as the legacy Studio tools: local, visible project
+  // edits. The two inspection tools are read-only.
+  getProjectState: t('read'),
+  listEffectCatalog: t('read'),
+  listShowcasePresets: t('read'),
+  applyShowcasePreset: t('write-local'),
+  createTrack: t('write-local'),
+  updateTrack: t('write-local'),
+  deleteTrack: t('write-local'),
+  reorderTracks: t('write-local'),
+  addClipFromAsset: t('write-local'),
+  addClip: t('write-local'),
+  removeClip: t('write-local'),
+  moveClip: t('write-local'),
+  setClipProperties: t('write-local'),
+  addClipEffect: t('write-local'),
+  updateClipEffect: t('write-local'),
+  removeClipEffect: t('write-local'),
+  reorderClipEffects: t('write-local'),
+  addEffectKeyframe: t('write-local'),
+  removeEffectKeyframe: t('write-local'),
+  addCaption: t('write-local'),
+  removeCaption: t('write-local'),
+  addOverlay: t('write-local'),
+  removeOverlay: t('write-local'),
+  importRecording: t('write-local'),
+  autoCreateTracks: t('write-local'),
 
   // ── Browser Use (tools/browser-use.ts) ──────────────────────────────────────
   openBrowser: t('network'),

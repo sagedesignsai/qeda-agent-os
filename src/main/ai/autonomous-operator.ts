@@ -37,7 +37,8 @@ import { parseMarkdownToBlocks } from '../../lib/markdown-blocks.js';
 export type AutonomousOperatorEvent =
   | { type: 'status'; status: OperatorStatus }
   | { type: 'task-started'; taskId: string; title: string }
-  | { type: 'step'; taskId: string; message: string }
+  | { type: 'step'; taskId: string; message: string; toolName?: string; args?: any }
+  | { type: 'thought'; taskId: string; thought: string }
   | { type: 'task-finished'; taskId: string; ok: boolean; error?: string }
   | { type: 'error'; error: string };
 
@@ -199,6 +200,7 @@ class AutonomousOperator {
         'listStudioTakes', 'listDocuments', 'listResearchRuns', 'listTerminalSessions',
         'listSoundLabSessions', 'listKnowledgePages', 'listCodeProjects', 'listChatSessions',
         'screenshotBrowser',
+        'getActiveRoute',
       ]);
       const writeLocalSafe = new Set([
         'writeClipboard', 'indexFile', 'indexPage', 'storeProjectMemory', 'downloadResource',
@@ -207,11 +209,13 @@ class AutonomousOperator {
         'appendBlocks', 'insertBlocksAt', 'addSteps', 'scheduleBlock', 'handToTerminal',
         'createTask', 'createTasks', 'createProject', 'createPlan', 'updatePlanItem',
         'moveMouse', 'click', 'doubleClick', 'typeText', 'setValue', 'pressKey', 'hotkey',
-        'scroll', 'startDemoRecording', 'markHighlight', 'stopDemoRecording',
+        'scroll', 'navigatePage', 'startDemoRecording', 'markHighlight', 'stopDemoRecording',
         'addKineticZoom', 'removeKineticZoom', 'addCanvasEffect', 'removeCanvasEffect',
         'cutSilenceOrRange', 'setCaptions', 'updateStyling', 'generateSocialKit',
         'openBrowser', 'navigateBrowser', 'clickSelector', 'typeSelector', 'evaluateBrowser',
         'closeBrowser',
+        // Specialist copilot sub-agents (same delegation tools as Chat/Research)
+        'focusPlan', 'studioEdit', 'correspondenceDraft', 'motionEdit', 'traceEdit', 'presenceCoach',
       ]);
       const destructiveNeedsSandbox = new Set(['writeFile', 'deleteFile', 'runShell', 'replaceBlock']);
 
@@ -286,6 +290,15 @@ class AutonomousOperator {
         `Safety budget: max ${this.maxSteps} tool steps. Be efficient and finish.`,
         'Create a short plan, execute it, and when complete summarize what was done.',
         'Do not ask the user questions; make reasonable assumptions and proceed safely.',
+        '',
+        '## Specialist Subagent Delegation',
+        'You have full access to Qeda specialist subagents for complex multi-step work:',
+        '- focusPlan: Delegate for multi-step task planning, breakdown, or scheduling.',
+        '- studioEdit: Delegate for video editing, camera zooms, dead-air cuts, captions, and demo recording.',
+        '- correspondenceDraft: Delegate for drafting messages, follow-ups, or escalation notes.',
+        '- motionEdit: Delegate for 3D scene creation, camera animations, and product showcase editing.',
+        '- traceEdit: Delegate for 2D vector graphic animation and keyframe editing.',
+        '- presenceCoach: Delegate for social presence strategy and content batch planning.',
       ].filter(Boolean).join('\n');
 
       const tools = { ...allTools, ...createPlanTools(planManager) };
@@ -299,19 +312,53 @@ class AutonomousOperator {
       } as any);
 
       this.emit({ type: 'step', taskId: task.id, message: 'Planning and executing task…' });
-      const result: any = await (agent as any).generate({
-        prompt: `Execute this task autonomously: ${task.title}\n\n${task.description || ''}`.trim(),
-      });
-      this.stepCount = Array.isArray(result?.steps) ? result.steps.length : this.stepCount;
-      const text =
-        typeof result?.text === 'string'
-          ? result.text
-          : Array.isArray(result?.response?.messages)
-            ? String(result.response.messages.at(-1)?.content ?? '')
-            : '';
+
+      // Use agent.stream() to iterate chunks via fullStream, exactly like the copilots
+      let textAcc = '';
+      if (typeof (agent as any).stream === 'function') {
+        const streamResult = await (agent as any).stream({
+          prompt: `Execute this task autonomously: ${task.title}\n\n${task.description || ''}`.trim(),
+          abortSignal: this.abortController.signal,
+        });
+
+        for await (const chunk of streamResult.fullStream) {
+          if (chunk.type === 'tool-call') {
+            this.stepCount += 1;
+            const argsSummary = chunk.args ? JSON.stringify(chunk.args).slice(0, 100) : '';
+            this.emit({
+              type: 'step',
+              taskId: task.id,
+              message: `Calling ${chunk.toolName}${argsSummary ? `: ${argsSummary}` : ''}`,
+              toolName: chunk.toolName,
+              args: chunk.args,
+            });
+            this.emitStatus();
+          } else if (chunk.type === 'reasoning') {
+            this.emit({
+              type: 'thought',
+              taskId: task.id,
+              thought: chunk.textDelta || '',
+            });
+          } else if (chunk.type === 'text-delta') {
+            textAcc += chunk.textDelta;
+          }
+        }
+      } else {
+        // Fallback to generate() in environments where stream is mocked
+        const result: any = await (agent as any).generate({
+          prompt: `Execute this task autonomously: ${task.title}\n\n${task.description || ''}`.trim(),
+        });
+        this.stepCount = Array.isArray(result?.steps) ? result.steps.length : this.stepCount;
+        textAcc =
+          typeof result?.text === 'string'
+            ? result.text
+            : Array.isArray(result?.response?.messages)
+              ? String(result.response.messages.at(-1)?.content ?? '')
+              : '';
+      }
 
       updateTask(task.id, { status: 'done' });
-      await this.recordAudit(task, project?.id ?? null, text || 'Task completed.', true).catch(() => {});
+      await this.recordAudit(task, project?.id ?? null, textAcc || 'Task completed.', true).catch(() => {});
       this.emit({ type: 'task-finished', taskId: task.id, ok: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

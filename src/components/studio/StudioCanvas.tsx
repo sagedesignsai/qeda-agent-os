@@ -71,6 +71,10 @@ import {
 } from './renderers/device-frames';
 import { drawMotionCard } from './renderers/motion-cards';
 import { drawStudioWindowChrome } from '@/lib/studio/render/frame';
+import {
+  captionFont,
+  captionFontSizeForFrame,
+} from '@/lib/studio/render/captions';
 
 interface StudioCanvasProps {
   videoUrl: string | null;
@@ -107,7 +111,7 @@ interface StudioClipCanvasGeometry {
  */
 function measureTextClipBounds(
   clip: TimelineTrack['clips'][number],
-  styling: StudioStyling,
+  fontSize: number,
 ): { width: number; height: number } {
   const text = clip.payload?.text ?? clip.name;
   if (!text) return { width: 300, height: 100 };
@@ -117,14 +121,13 @@ function measureTextClipBounds(
   const ctx = canvas.getContext('2d');
   if (!ctx) return { width: 300, height: 100 };
 
-  const style = styling.captionStyle;
-  ctx.font = `${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
+  ctx.font = captionFont(fontSize);
 
   const lines = text.split('\n');
   const metrics = lines.map((line) => ctx.measureText(line));
 
   const width = Math.max(...metrics.map((m) => m.width), 200);
-  const lineHeight = style.lineHeight ?? style.fontSize * 1.2;
+  const lineHeight = fontSize * 1.2;
   const height = lines.length * lineHeight;
 
   return { width, height };
@@ -1023,6 +1026,14 @@ export function StudioCanvas({
 
     let sourceWidth = 0;
     let sourceHeight = 0;
+    const frameAspect = activeVideoAspectAtTime(
+      tracksRef.current,
+      timelineStore.getState().currentTimeMs,
+      clipAssetsRef.current,
+      mediaAssets,
+      videoRef.current,
+      videoCrop,
+    );
 
     if (selected.track.type === 'overlays' || selected.track.type === 'video') {
       // Media assets: image or video
@@ -1033,22 +1044,24 @@ export function StudioCanvas({
       sourceWidth = asset?.width ?? (selected.track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
       sourceHeight = asset?.height ?? (selected.track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
     } else if (selected.track.type === 'captions' && selected.clip.itemType === 'text') {
-      // Text: measure from rendered caption
-      const measured = measureTextClipBounds(selected.clip, styling);
+      // Text: measure with the same font the caption renderer uses, sized for
+      // the framed content box rather than the full canvas.
+      const contentFrame = computeStudioCanvasFrame(
+        canvasDims.width,
+        canvasDims.height,
+        styling,
+        frameAspect,
+      );
+      const measured = measureTextClipBounds(
+        selected.clip,
+        captionFontSizeForFrame(contentFrame.contentWidth, contentFrame.contentHeight),
+      );
       sourceWidth = measured.width;
       sourceHeight = measured.height;
     }
 
     if (sourceWidth <= 0 || sourceHeight <= 0) return null;
 
-    const frameAspect = activeVideoAspectAtTime(
-      tracksRef.current,
-      timelineStore.getState().currentTimeMs,
-      clipAssetsRef.current,
-      mediaAssets,
-      videoRef.current,
-      videoCrop,
-    );
     const geometry = studioClipCanvasGeometry(
       selected.clip,
       selected.track,
