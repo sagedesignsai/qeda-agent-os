@@ -18,7 +18,7 @@ import { SlidersIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { StudioStyling } from '@/lib/studio-types';
-import type { StudioEffectType } from '@/lib/studio/types';
+import type { StudioEffectType, StudioMediaAsset } from '@/lib/studio/types';
 import { useSelectedClip, timelineStore } from '@/hooks/use-timeline-store';
 import {
   MagicActionsSection,
@@ -43,6 +43,7 @@ export interface StudioInspectorProps {
   onExportVideo: (format: 'mp4' | 'gif') => void;
   onAddZoomAtPlayhead?: () => void;
   onToggleCollapse?: () => void;
+  mediaAssets?: StudioMediaAsset[];
 }
 
 export function StudioInspector({
@@ -55,6 +56,7 @@ export function StudioInspector({
   onExportVideo,
   onAddZoomAtPlayhead,
   onToggleCollapse,
+  mediaAssets = [],
 }: StudioInspectorProps) {
   const selectedClipData = useSelectedClip();
   // Agent actions (draft, social kit, export) are the primary commands, so they
@@ -143,6 +145,7 @@ export function StudioInspector({
           onUpdateClip={handleUpdateClip}
           onDeleteClip={handleDeleteClip}
           onDeselectClip={handleDeselectClip}
+          mediaAssets={mediaAssets}
         />
       )}
 

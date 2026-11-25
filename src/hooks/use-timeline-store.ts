@@ -25,6 +25,7 @@ import {
   moveTrackWithinType,
   sortTracksForTimeline,
 } from '@/lib/studio/timeline/layers';
+import { trackHasDetailLanes } from '@/lib/studio/timeline/rows';
 
 export type TimelineTool = 'select' | 'blade';
 
@@ -59,9 +60,13 @@ export interface TimelineState {
   selectedClipId: string | null;
   /** Multi-select set — kept in sync with selectedClipId for backward compat. */
   selectedClipIds: Set<string>;
+  /** Currently focused track — only this track may show detail lanes. */
+  selectedTrackId: string | null;
   snapLineMs: number | null; // Active magnetic guide indicator
   tracks: TimelineTrack[];
   isMultiTrack: boolean; // true when take.tracks is defined (multi-track model)
+  /** Tracks whose animation/effect detail lanes are expanded. */
+  expandedTrackIds: Set<string>;
 }
 
 export type TimelineListener = () => void;
@@ -78,9 +83,11 @@ class TimelineStore {
     snappingEnabled: true,
     selectedClipId: null,
     selectedClipIds: new Set(),
+    selectedTrackId: null,
     snapLineMs: null,
     tracks: [],
     isMultiTrack: false,
+    expandedTrackIds: new Set(),
   };
 
   private listeners = new Set<TimelineListener>();
@@ -338,6 +345,61 @@ class TimelineStore {
     this.notify();
   };
 
+  // ── Collapsible Rows (selected track only) ────────────────────────────────
+
+  private expandedOnlyFor(trackId: string | null): Set<string> {
+    if (!trackId) return this.state.expandedTrackIds;
+    const next = new Set<string>();
+    if (this.state.expandedTrackIds.has(trackId)) next.add(trackId);
+    return next;
+  }
+
+  setSelectedTrackId = (selectedTrackId: string | null) => {
+    if (this.state.selectedTrackId === selectedTrackId) return;
+    this.state = {
+      ...this.state,
+      selectedTrackId,
+      expandedTrackIds: selectedTrackId
+        ? this.expandedOnlyFor(selectedTrackId)
+        : this.state.expandedTrackIds,
+    };
+    this.notify();
+  };
+
+  toggleTrackExpanded = (trackId: string) => {
+    const isExpanded = this.state.expandedTrackIds.has(trackId);
+    // Expansion is exclusive: selecting a track collapses every other lane set.
+    this.state = {
+      ...this.state,
+      selectedTrackId: trackId,
+      expandedTrackIds: isExpanded ? new Set() : new Set([trackId]),
+    };
+    this.notify();
+  };
+
+  setTrackExpanded = (trackId: string, expanded: boolean) => {
+    if (expanded) {
+      this.state = {
+        ...this.state,
+        selectedTrackId: trackId,
+        expandedTrackIds: new Set([trackId]),
+      };
+      this.notify();
+      return;
+    }
+    if (!this.state.expandedTrackIds.has(trackId)) return;
+    const next = new Set(this.state.expandedTrackIds);
+    next.delete(trackId);
+    this.state = { ...this.state, expandedTrackIds: next };
+    this.notify();
+  };
+
+  toggleSelectedTrackExpanded = () => {
+    const trackId = this.state.selectedTrackId;
+    if (!trackId) return;
+    this.toggleTrackExpanded(trackId);
+  };
+
   // ── Tools & Snapping ──────────────────────────────────────────────────────
 
   setActiveTool = (activeTool: TimelineTool) => {
@@ -361,11 +423,26 @@ class TimelineStore {
     this.notify();
   };
 
+  private trackIdForClip(clipId: string | null): string | null {
+    if (!clipId) return null;
+    for (const track of this.state.tracks) {
+      if (track.clips.some((clip) => clip.id === clipId)) return track.id;
+    }
+    return null;
+  }
+
   setSelectedClipId = (selectedClipId: string | null) => {
     if (this.state.selectedClipId === selectedClipId) return;
     const ids = new Set<string>();
     if (selectedClipId) ids.add(selectedClipId);
-    this.state = { ...this.state, selectedClipId, selectedClipIds: ids };
+    const selectedTrackId = this.trackIdForClip(selectedClipId) ?? this.state.selectedTrackId;
+    this.state = {
+      ...this.state,
+      selectedClipId,
+      selectedClipIds: ids,
+      selectedTrackId,
+      expandedTrackIds: selectedClipId ? this.expandedOnlyFor(selectedTrackId) : this.state.expandedTrackIds,
+    };
     this.notify();
   };
 
@@ -378,14 +455,30 @@ class TimelineStore {
       ids.add(clipId);
     }
     const selectedClipId = ids.size === 1 ? [...ids][0] : ids.size > 1 ? null : null;
-    this.state = { ...this.state, selectedClipId, selectedClipIds: ids };
+    const firstId = ids.size ? [...ids][0] : null;
+    const selectedTrackId = this.trackIdForClip(selectedClipId ?? firstId) ?? this.state.selectedTrackId;
+    this.state = {
+      ...this.state,
+      selectedClipId,
+      selectedClipIds: ids,
+      selectedTrackId,
+      expandedTrackIds: selectedTrackId ? this.expandedOnlyFor(selectedTrackId) : this.state.expandedTrackIds,
+    };
     this.notify();
   };
 
   /** Set the multi-select set directly (drag-select behavior). */
   setSelectedClipIds = (ids: Set<string>) => {
     const selectedClipId = ids.size === 1 ? [...ids][0] : null;
-    this.state = { ...this.state, selectedClipId, selectedClipIds: ids };
+    const firstId = ids.size ? [...ids][0] : null;
+    const selectedTrackId = this.trackIdForClip(selectedClipId ?? firstId) ?? this.state.selectedTrackId;
+    this.state = {
+      ...this.state,
+      selectedClipId,
+      selectedClipIds: ids,
+      selectedTrackId,
+      expandedTrackIds: selectedTrackId ? this.expandedOnlyFor(selectedTrackId) : this.state.expandedTrackIds,
+    };
     this.notify();
   };
 
@@ -413,7 +506,11 @@ class TimelineStore {
         : Math.min(this.state.scrollTimeMs, nextDurationMs),
       selectedClipId: resetHistory ? null : this.state.selectedClipId,
       selectedClipIds: resetHistory ? new Set() : this.state.selectedClipIds,
+      selectedTrackId: resetHistory ? null : this.state.selectedTrackId,
       isMultiTrack,
+      expandedTrackIds: resetHistory
+        ? new Set()
+        : this.state.expandedTrackIds,
     };
     if (resetHistory) {
       this.undoStack = [];
@@ -1324,6 +1421,19 @@ export function useTimelineTools() {
     selectedClipIds: state.selectedClipIds,
     canUndo: timelineStore.canUndo(),
     canRedo: timelineStore.canRedo(),
+    expandedTrackIds: state.expandedTrackIds,
+    selectedTrackId: state.selectedTrackId,
+    selectedTrackExpanded: Boolean(
+      state.selectedTrackId && state.expandedTrackIds.has(state.selectedTrackId),
+    ),
+    canToggleSelectedTrack: (() => {
+      const t = state.tracks.find((t) => t.id === state.selectedTrackId);
+      return Boolean(t && trackHasDetailLanes(t));
+    })(),
+    toggleTrackExpanded: timelineStore.toggleTrackExpanded,
+    setTrackExpanded: timelineStore.setTrackExpanded,
+    setSelectedTrackId: timelineStore.setSelectedTrackId,
+    toggleSelectedTrackExpanded: timelineStore.toggleSelectedTrackExpanded,
     setActiveTool: timelineStore.setActiveTool,
     toggleSnapping: timelineStore.toggleSnapping,
     setZoomPxPerMs: timelineStore.setZoomPxPerMs,

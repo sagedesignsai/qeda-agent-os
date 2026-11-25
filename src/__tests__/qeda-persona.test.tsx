@@ -21,10 +21,11 @@ describe('QedaPersona', () => {
 
   it('renders the Qeda mark with an accessible state label', () => {
     const { rerender } = render(<QedaPersona state="thinking" />);
+    const avatar = screen.getByRole('img', { name: 'Qeda assistant, thinking' });
 
-    expect(
-      screen.getByRole('img', { name: 'Qeda assistant, thinking' }),
-    ).toBeInTheDocument();
+    expect(avatar).toBeInTheDocument();
+    expect(avatar.querySelector('[data-head]')).toBeInTheDocument();
+    expect(avatar.querySelector('[data-bolt]')).toBeInTheDocument();
 
     rerender(<QedaPersona state="asleep" />);
 

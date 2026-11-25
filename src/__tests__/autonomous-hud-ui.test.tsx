@@ -18,6 +18,7 @@ import { useAutonomousOperator } from '../hooks/use-autonomous-operator';
 
 const mockSetOverlayOpen = jest.fn();
 const mockPause = jest.fn();
+const mockStop = jest.fn();
 const mockResume = jest.fn();
 const mockDispatchInstruction = jest.fn();
 
@@ -54,6 +55,7 @@ describe('AutonomousHUD UI Component', () => {
       isThinking: false,
       isExecuting: false,
       pause: mockPause,
+      stop: mockStop,
       resume: mockResume,
       dispatchInstruction: mockDispatchInstruction,
     });
@@ -79,6 +81,7 @@ describe('AutonomousHUD UI Component', () => {
       isThinking: true,
       isExecuting: true,
       pause: mockPause,
+      stop: mockStop,
       resume: mockResume,
       dispatchInstruction: mockDispatchInstruction,
     });
@@ -110,6 +113,7 @@ describe('AutonomousHUD UI Component', () => {
       isThinking: false,
       isExecuting: true,
       pause: mockPause,
+      stop: mockStop,
       resume: mockResume,
       dispatchInstruction: mockDispatchInstruction,
     });
@@ -137,6 +141,7 @@ describe('AutonomousHUD UI Component', () => {
       isThinking: false,
       isExecuting: false,
       pause: mockPause,
+      stop: mockStop,
       resume: mockResume,
       dispatchInstruction: mockDispatchInstruction,
     });
@@ -165,6 +170,7 @@ describe('AutonomousHUD UI Component', () => {
       isThinking: false,
       isExecuting: false,
       pause: mockPause,
+      stop: mockStop,
       resume: mockResume,
       dispatchInstruction: mockDispatchInstruction,
     });

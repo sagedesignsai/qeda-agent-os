@@ -46,6 +46,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from '@/lib/studio-types';
+import type { StudioMediaAsset } from '@/lib/studio/types';
 import { timelineStore } from '@/hooks/use-timeline-store';
 import {
   ANIMATION_PRESETS,
@@ -70,6 +71,7 @@ interface ClipPropertiesSectionProps {
   onDeleteClip: () => void;
   onDeselectClip: () => void;
   maxDurationMs?: number;
+  mediaAssets?: StudioMediaAsset[];
 }
 
 export function ClipPropertiesSection({
@@ -79,6 +81,7 @@ export function ClipPropertiesSection({
   onDeleteClip,
   onDeselectClip,
   maxDurationMs = 3600000,
+  mediaAssets = [],
 }: ClipPropertiesSectionProps) {
   const getTrackIcon = () => {
     switch (track.type) {
@@ -666,6 +669,86 @@ export function ClipPropertiesSection({
       {/* ── Video ─────────────────────────────────────────────────────────── */}
       {track.type === 'video' && (
         <StudioPanelSection title="Video" open={activeSection === 'Video'} onOpenChange={handleSectionToggle('Video')}>
+          {(() => {
+            const visualAssets = mediaAssets.filter((asset) => asset.kind !== 'audio');
+            const selectedAssetId = clip.payload?.mediaAssetId;
+            const selectedAsset = selectedAssetId
+              ? visualAssets.find((asset) => asset.id === selectedAssetId) ??
+                mediaAssets.find((asset) => asset.id === selectedAssetId)
+              : undefined;
+            const canSelectSource =
+              visualAssets.length > 0 ||
+              Boolean(selectedAssetId) ||
+              !track.id.startsWith('track-');
+
+            if (!canSelectSource) return null;
+
+            return (
+              <StudioFieldRow label="Source">
+                <Select
+                  value={selectedAssetId ?? '__none__'}
+                  onValueChange={(value) => {
+                    if (value === '__none__') {
+                      onUpdateClip(clip.id, {
+                        payload: {
+                          mediaAssetId: undefined,
+                          filePath: undefined,
+                          mediaUrl: undefined,
+                          srcPath: undefined,
+                        },
+                      });
+                      return;
+                    }
+                    const asset = mediaAssets.find((candidate) => candidate.id === value);
+                    if (!asset) return;
+                    const nextSpeed =
+                      Number.isFinite(playbackSpeed) && playbackSpeed > 0 ? playbackSpeed : 1;
+                    const sourceDurationMs =
+                      asset.kind === 'image'
+                        ? Math.max(clip.sourceDurationMs || 0, clip.durationMs, 1)
+                        : Math.max(asset.durationMs || 0, 1);
+                    const durationMs =
+                      asset.kind === 'image'
+                        ? clip.durationMs
+                        : Math.max(1, sourceDurationMs / nextSpeed);
+
+                    onUpdateClip(clip.id, {
+                      name: asset.name,
+                      durationMs,
+                      sourceDurationMs,
+                      payload: {
+                        mediaAssetId: asset.id,
+                        filePath: undefined,
+                        mediaUrl: undefined,
+                        srcPath: undefined,
+                      },
+                    });
+                  }}
+                >
+                  <SelectTrigger className="h-7 text-xs">
+                    <SelectValue placeholder="Select source video" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {!selectedAssetId && (
+                      <SelectItem value="__none__">
+                        {clip.payload?.filePath || clip.payload?.mediaUrl
+                          ? 'Current source'
+                          : 'No source selected'}
+                      </SelectItem>
+                    )}
+                    {selectedAssetId && !selectedAsset && (
+                      <SelectItem value={selectedAssetId}>Missing source</SelectItem>
+                    )}
+                    {visualAssets.map((asset) => (
+                      <SelectItem key={asset.id} value={asset.id}>
+                        {asset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </StudioFieldRow>
+            );
+          })()}
           <StudioFieldRow label="Name" wide>
             <Input
               value={clip.name}

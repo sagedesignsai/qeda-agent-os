@@ -966,13 +966,12 @@ export function StudioCanvas({
     );
     let hit: { track: TimelineTrack; clip: TimelineTrack['clips'][number] } | null = null;
 
+    const evaluated = evaluateEditorTimeline(tracksRef.current, compTime);
+
     // The highest painted active clip is the first hit candidate. Once
     // selected, the Trace gizmo owns transform drags and commits them as one
     // undo step.
-    const activeVideoItems = evaluateEditorTimeline(
-      tracksRef.current,
-      compTime,
-    ).video;
+    const activeVideoItems = evaluated.video;
     for (const item of [...activeVideoItems].reverse()) {
       const { track, clip } = item;
       const asset = clip.payload?.mediaAssetId
@@ -1004,13 +1003,85 @@ export function StudioCanvas({
       if (hit) break;
     }
 
+    // Hit-test overlay clips (images/videos placed on the canvas)
+    if (!hit) {
+      for (const item of [...evaluated.overlays].reverse()) {
+        const { track, clip } = item;
+        const asset = clip.payload?.mediaAssetId
+          ? clipAssetsRef.current.get(clip.payload.mediaAssetId) ??
+            mediaAssets.find((candidate) => candidate.id === clip.payload?.mediaAssetId)
+          : undefined;
+        const sourceWidth = asset?.width ?? 0;
+        const sourceHeight = asset?.height ?? 0;
+        if (sourceWidth <= 0 || sourceHeight <= 0) continue;
+        const geometry = studioClipCanvasGeometry(
+          clip,
+          track,
+          sourceWidth,
+          sourceHeight,
+          canvasDims,
+          styling,
+          videoCrop,
+          frameAspect,
+        );
+        const localPoint = artboardToLocal(point, geometry.transform, geometry.origin);
+        if (
+          localPoint.x >= geometry.bbox.x &&
+          localPoint.x <= geometry.bbox.x + geometry.bbox.width &&
+          localPoint.y >= geometry.bbox.y &&
+          localPoint.y <= geometry.bbox.y + geometry.bbox.height
+        ) {
+          hit = { track, clip };
+          break;
+        }
+      }
+    }
+
+    // Hit-test caption/text clips
+    if (!hit) {
+      for (const item of [...evaluated.captions].reverse()) {
+        const { track, clip } = item;
+        if (clip.itemType !== 'text') continue;
+        const contentFrame = computeStudioCanvasFrame(
+          canvasDims.width,
+          canvasDims.height,
+          styling,
+          frameAspect,
+        );
+        const measured = measureTextClipBounds(
+          clip,
+          captionFontSizeForFrame(contentFrame.contentWidth, contentFrame.contentHeight),
+        );
+        const geometry = studioClipCanvasGeometry(
+          clip,
+          track,
+          measured.width,
+          measured.height,
+          canvasDims,
+          styling,
+          videoCrop,
+          frameAspect,
+        );
+        const localPoint = artboardToLocal(point, geometry.transform, geometry.origin);
+        if (
+          localPoint.x >= geometry.bbox.x &&
+          localPoint.x <= geometry.bbox.x + geometry.bbox.width &&
+          localPoint.y >= geometry.bbox.y &&
+          localPoint.y <= geometry.bbox.y + geometry.bbox.height
+        ) {
+          hit = { track, clip };
+          break;
+        }
+      }
+    }
+
     if (!hit) {
       timelineStore.setSelectedClipId(null);
       return;
     }
     timelineStore.setSelectedClipId(hit.clip.id);
     event.preventDefault();
-  }, [canvasDims, styling, videoCrop]);
+  }, [canvasDims, styling, videoCrop, mediaAssets]);
 
   const selectedGizmo = (() => {
     const selected = selectedTimelineClip;

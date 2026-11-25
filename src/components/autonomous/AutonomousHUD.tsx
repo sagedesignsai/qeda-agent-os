@@ -22,7 +22,7 @@ import {
 import { useAutonomousOperator } from '@/hooks/use-autonomous-operator';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { PauseIcon, PlayIcon, XIcon, ShieldAlertIcon, SparklesIcon, BotIcon } from 'lucide-react';
+import { PauseIcon, PlayIcon, SquareIcon, XIcon, ShieldAlertIcon, SparklesIcon, BotIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export const AutonomousHUD: FC = () => {
@@ -35,6 +35,7 @@ export const AutonomousHUD: FC = () => {
     isThinking,
     isExecuting,
     pause,
+    stop,
     resume,
     dispatchInstruction,
   } = useAutonomousOperator();
@@ -235,6 +236,17 @@ export const AutonomousHUD: FC = () => {
                 Resume
               </Button>
             )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void stop()}
+              disabled={!status.running && !status.paused}
+              className="h-7 px-2.5 text-xs gap-1 text-destructive hover:bg-destructive/10"
+            >
+              <SquareIcon className="size-3" />
+              Stop
+            </Button>
 
             <Button
               variant="ghost"

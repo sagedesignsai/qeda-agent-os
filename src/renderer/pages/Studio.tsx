@@ -1234,6 +1234,7 @@ export default function Studio() {
                     onExportVideo={exportVideo}
                     onAddZoomAtPlayhead={handleAddZoomAtPlayhead}
                     onToggleCollapse={toggleRightPanel}
+                    mediaAssets={activeTake.mediaAssets ?? []}
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>

@@ -22,6 +22,7 @@ export interface AutonomousStoreState {
   handleEvent: (event: AutonomousOperatorEvent) => void;
   refreshStatus: () => Promise<void>;
   pause: () => Promise<void>;
+  stop: () => Promise<void>;
   startTask: (taskId?: string, maxSteps?: number) => Promise<void>;
   dispatchInstruction: (prompt: string, maxSteps?: number) => Promise<void>;
 }
@@ -63,7 +64,9 @@ export const useAutonomousStore = create<AutonomousStoreState>((set, get) => ({
     if (!event) return;
     if (event.type === 'status') {
       get().setStatus(event.status);
-    } else if (event.type === 'task-started') {
+      return;
+    }
+    if (event.type === 'task-started') {
       set((state) => ({
         status: {
           ...state.status,
@@ -74,35 +77,44 @@ export const useAutonomousStore = create<AutonomousStoreState>((set, get) => ({
           stepCount: 0,
         },
         latestThought: `Initiating plan for "${event.title}"...`,
-        latestAction: `Starting autonomous execution`,
+        latestAction: 'Starting autonomous execution',
         isThinking: true,
       }));
-    } else if (event.type === 'step') {
+      return;
+    }
+    if (event.type === 'step') {
       set((state) => ({
-        status: {
-          ...state.status,
-          stepCount: state.status.stepCount + 1,
-        },
         latestAction: event.message,
         latestThought: event.message.startsWith('Plan') ? event.message : state.latestThought,
-        isThinking: true,
+        isThinking: state.status.running && !state.status.paused,
       }));
-    } else if (event.type === 'thought') {
-      set((state) => ({
-        latestThought: (state.latestThought || '') + event.thought,
-        isThinking: true,
-      }));
-    } else if (event.type === 'task-finished') {
+      return;
+    }
+    if (event.type === 'thought') {
+      set((state) => {
+        const nextThought = `${state.latestThought || ''}${event.thought || ''}`;
+        return {
+          latestThought: nextThought.length > 4000 ? nextThought.slice(-4000) : nextThought,
+          isThinking: true,
+        };
+      });
+      return;
+    }
+    if (event.type === 'task-finished') {
       set((state) => ({
         status: {
           ...state.status,
           currentTaskId: null,
           currentTaskTitle: null,
         },
-        latestAction: event.ok ? 'Task completed successfully' : `Task failed: ${event.error || 'Unknown error'}`,
+        latestAction: event.ok
+          ? 'Task completed successfully'
+          : `Task failed: ${event.error || 'Unknown error'}`,
         isThinking: false,
       }));
-    } else if (event.type === 'error') {
+      return;
+    }
+    if (event.type === 'error') {
       set({
         latestAction: `Error: ${event.error}`,
         isThinking: false,
@@ -124,6 +136,17 @@ export const useAutonomousStore = create<AutonomousStoreState>((set, get) => ({
   pause: async () => {
     try {
       const res = await window.electron.ipc.invoke<OperatorStatus>('autonomous:pause');
+      if (res) {
+        get().setStatus(res);
+      }
+    } catch {
+      // best-effort
+    }
+  },
+
+  stop: async () => {
+    try {
+      const res = await window.electron.ipc.invoke<OperatorStatus>('autonomous:stop');
       if (res) {
         get().setStatus(res);
       }

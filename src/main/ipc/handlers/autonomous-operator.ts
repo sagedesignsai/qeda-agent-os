@@ -33,6 +33,10 @@ export function registerAutonomousOperatorHandlers({
     return operator.pause();
   });
 
+  ipcMain.handle('autonomous:stop', async () => {
+    return operator.stop();
+  });
+
   ipcMain.handle(
     'autonomous:start-task',
     async (_e, req?: { taskId?: string; maxSteps?: number }) => {

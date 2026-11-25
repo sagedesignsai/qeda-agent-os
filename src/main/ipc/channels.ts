@@ -2476,6 +2476,17 @@ export interface IpcChannels {
       maxSteps: number;
     };
   };
+  'autonomous:stop': {
+    req: void;
+    res: {
+      running: boolean;
+      paused: boolean;
+      currentTaskId: string | null;
+      currentTaskTitle: string | null;
+      stepCount: number;
+      maxSteps: number;
+    };
+  };
   'autonomous:status': {
     req: void;
     res: {

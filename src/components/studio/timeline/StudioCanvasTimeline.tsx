@@ -23,6 +23,7 @@ import {
   type StudioTake,
   type TimelineTrack,
 } from '@/lib/studio-types';
+import { buildTimelineRows } from '@/lib/studio/timeline/rows';
 import { toast } from 'sonner';
 
 interface StudioCanvasTimelineProps {
@@ -53,7 +54,8 @@ export function StudioCanvasTimeline({
   onInsertClip,
   onOpenVideoCrop,
 }: StudioCanvasTimelineProps) {
-  const { durationMs: storeDurationMs, isMultiTrack } = useTimelineState();
+  const { durationMs: storeDurationMs, isMultiTrack, expandedTrackIds } =
+    useTimelineState();
   const timelineDurationMs = isMultiTrack ? storeDurationMs : durationMs;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportContainerRef = useRef<HTMLDivElement | null>(null);
@@ -97,11 +99,20 @@ export function StudioCanvasTimeline({
       let targetTrackId: string | undefined;
       if (viewport) {
         const viewportRect = viewport.getBoundingClientRect();
-        const rowIndex = Math.floor(
-          (e.clientY - viewportRect.top + viewport.scrollTop - RULER_HEIGHT) / TRACK_HEIGHT,
+        const contentY =
+          e.clientY - viewportRect.top + viewport.scrollTop - RULER_HEIGHT;
+        const rows = buildTimelineRows(
+          timelineStore.getState().tracks,
+          expandedTrackIds,
         );
-        const targetTrack = timelineStore.getState().tracks[rowIndex];
-        if (targetTrack?.type === clipData.trackType) targetTrackId = targetTrack.id;
+        const row = rows.find(
+          (candidate) =>
+            contentY >= candidate.y && contentY < candidate.y + candidate.height,
+        );
+        const targetTrack = row?.track;
+        if (targetTrack?.type === clipData.trackType) {
+          targetTrackId = targetTrack.id;
+        }
       }
 
       if (onInsertClip) {

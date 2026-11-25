@@ -24,6 +24,7 @@ export interface UseAutonomousOperatorReturn {
   setOverlayOpen: AutonomousStoreState['setOverlayOpen'];
   toggleOverlay: () => void;
   pause: () => Promise<void>;
+  stop: () => Promise<void>;
   resume: () => Promise<void>;
   startTask: (taskId?: string, maxSteps?: number) => Promise<void>;
   dispatchInstruction: (prompt: string, maxSteps?: number) => Promise<void>;
@@ -42,6 +43,7 @@ export function useAutonomousOperator(): UseAutonomousOperatorReturn {
     handleEvent,
     refreshStatus,
     pause,
+    stop,
     startTask,
     dispatchInstruction,
   } = useAutonomousStore();
@@ -72,6 +74,7 @@ export function useAutonomousOperator(): UseAutonomousOperatorReturn {
     isThinking,
     isExecuting,
     pause,
+    stop,
     resume,
     startTask,
     dispatchInstruction,

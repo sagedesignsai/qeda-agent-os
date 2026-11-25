@@ -16,18 +16,27 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { timelineStore, useTimelineState } from '@/hooks/use-timeline-store';
 import { useTimelineMedia } from '@/hooks/use-timeline-media';
 import { drawBitmapIfLive } from '@/lib/image-bitmap-lifetime';
 import { evaluateClipKeyframeValues } from '@/lib/studio/keyframes';
 import {
   drawClipKeyframeDiamonds,
+  drawEffectKeyframeCircle,
+  drawKeyframeDiamond,
   findClipKeyframeDiamond,
   defaultAddKeyframePropertyForTrack,
   keyframeUiInfoFor,
   staticValueForProperty,
 } from '@/lib/studio/timeline/keyframes-ui';
+import {
+  buildTimelineRows,
+  collectRowBands,
+  collectRowMarkers,
+  timelineRowsHeight,
+  type TimelineRowMarker,
+} from '@/lib/studio/timeline/rows';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -92,7 +101,33 @@ export function TimelineCanvasViewport({
     selectedClipId,
     selectedClipIds,
     isPlaying,
+    expandedTrackIds,
   } = useTimelineState();
+
+  // Collapsible rows: track rows carry clips; group/lane rows carry animation
+  // and effect markers. Headers build the same rows, so geometry stays in sync.
+  const rows = useMemo(
+    () => buildTimelineRows(tracks, expandedTrackIds),
+    [tracks, expandedTrackIds],
+  );
+
+  const rowMarkers = useMemo(() => {
+    const map = new Map<string, TimelineRowMarker[]>();
+    for (const row of rows) {
+      if (row.kind === 'track') continue;
+      map.set(row.id, collectRowMarkers(row));
+    }
+    return map;
+  }, [rows]);
+
+  const rowBands = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof collectRowBands>>();
+    for (const row of rows) {
+      if (row.kind === 'track') continue;
+      map.set(row.id, collectRowBands(row));
+    }
+    return map;
+  }, [rows]);
 
   // Waveform & keyframe thumbnail extraction engines
   const { audioPeaks, thumbnails } = useTimelineMedia(videoUrl, durationMs);
@@ -115,6 +150,8 @@ export function TimelineCanvasViewport({
   // Universal keyframe canvas UI state
   const selectedKeyframeRef = useRef<{ clipId: string; keyframeId: string } | null>(null);
   const hoveredKeyframeRef = useRef<{ clipId: string; keyframeId: string } | null>(null);
+  const hoveredSubMarkerRef = useRef<{ clipId: string; keyframeId: string } | null>(null);
+  const hoveredRowIdRef = useRef<string | null>(null);
   const keyframeDragRef = useRef<{
     clipId: string;
     keyframeId: string;
@@ -155,7 +192,7 @@ export function TimelineCanvasViewport({
     800,
     Math.ceil(durationMs * zoomPxPerMs) + 400,
   );
-  const totalHeight = rulerHeight + tracks.length * trackHeight;
+  const totalHeight = rulerHeight + timelineRowsHeight(rows);
 
   // ── Helper: Find Magnetic Snap Target ─────────────────────────────────────
   const findSnapTarget = useCallback(
@@ -287,37 +324,79 @@ export function TimelineCanvasViewport({
     ctx.rect(0, rulerHeight, width, Math.max(0, height - rulerHeight));
     ctx.clip();
 
-    tracks.forEach((track, index) => {
-      const trackY = rulerHeight + index * trackHeight - scrollY;
-      if (trackY + trackHeight < rulerHeight || trackY > height) return;
+    let laneIndex = 0;
+    rows.forEach((row) => {
+      const rowTop = rulerHeight + row.y - scrollY;
+      if (rowTop + row.height < rulerHeight || rowTop > height) return;
 
-      // Alternating lane backgrounds
-      ctx.fillStyle = index % 2 === 0 ? '#0a0e17' : '#0d121e';
-      ctx.fillRect(0, trackY, width, trackHeight);
+      if (row.kind === 'track') {
+        // Alternating lane backgrounds
+        ctx.fillStyle = laneIndex % 2 === 0 ? '#0a0e17' : '#0d121e';
+        ctx.fillRect(0, rowTop, width, row.height);
+        laneIndex += 1;
 
-      // Track bottom border
-      ctx.strokeStyle = '#1e293b';
+        // If track is locked, draw subtle overlay
+        if (row.track.locked) {
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+          ctx.fillRect(0, rowTop, width, row.height);
+        }
+      } else if (row.kind === 'group') {
+        // Tinted section band with a colored gutter.
+        const hovered = hoveredRowIdRef.current === row.id;
+        ctx.fillStyle =
+          row.group === 'animations'
+            ? hovered
+              ? 'rgba(168, 85, 247, 0.13)'
+              : 'rgba(168, 85, 247, 0.055)'
+            : hovered
+              ? 'rgba(99, 102, 241, 0.13)'
+              : 'rgba(99, 102, 241, 0.055)';
+        ctx.fillRect(0, rowTop, width, row.height);
+
+        ctx.fillStyle = row.group === 'animations' ? '#a855f7' : '#6366f1';
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(0, rowTop, 2, row.height);
+        ctx.globalAlpha = 1;
+      } else {
+        // Detail lane: recessed strip with a dashed center guide.
+        ctx.fillStyle =
+          hoveredRowIdRef.current === row.id ? '#0b1019' : '#070a11';
+        ctx.fillRect(0, rowTop, width, row.height);
+
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.07)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(0, rowTop + row.height / 2 + 0.5);
+        ctx.lineTo(width, rowTop + row.height / 2 + 0.5);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.fillStyle = row.color;
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(0, rowTop, 2, row.height);
+        ctx.globalAlpha = 1;
+      }
+
+      // Row bottom border
+      ctx.strokeStyle = row.kind === 'track' ? '#1e293b' : '#141b28';
       ctx.lineWidth = 0.5;
       ctx.beginPath();
-      ctx.moveTo(0, trackY + trackHeight - 0.5);
-      ctx.lineTo(width, trackY + trackHeight - 0.5);
+      ctx.moveTo(0, rowTop + row.height - 0.5);
+      ctx.lineTo(width, rowTop + row.height - 0.5);
       ctx.stroke();
-
-      // If track is locked or hidden, draw subtle overlay
-      if (track.locked) {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
-        ctx.fillRect(0, trackY, width, trackHeight);
-      }
     });
 
     // 4. Clips Rendering
-    tracks.forEach((track, trackIndex) => {
+    rows.forEach((row) => {
+      if (row.kind !== 'track') return;
+      const track = row.track;
       if (!track.visible) return;
 
-      const trackY = rulerHeight + trackIndex * trackHeight - scrollY;
-      if (trackY + trackHeight < rulerHeight || trackY > height) return;
+      const trackY = rulerHeight + row.y - scrollY;
+      if (trackY + row.height < rulerHeight || trackY > height) return;
       const clipY = trackY + 4;
-      const clipH = trackHeight - 8;
+      const clipH = row.height - 8;
 
       track.clips.forEach((clip) => {
         const clipX = clip.startMs * zoomPxPerMs - scrollX;
@@ -809,6 +888,70 @@ export function TimelineCanvasViewport({
       });
     });
 
+    // 4b. Animation & Effect Lanes
+    rows.forEach((row) => {
+      if (row.kind === 'track') return;
+
+      const rowTop = rulerHeight + row.y - scrollY;
+      if (rowTop + row.height < rulerHeight || rowTop > height) return;
+
+      const centerY = rowTop + row.height / 2;
+
+      // Soft tinted bands over the clip extents where the lane applies.
+      for (const band of rowBands.get(row.id) ?? []) {
+        const bandStartX = band.startMs * zoomPxPerMs - scrollX;
+        const bandEndX = band.endMs * zoomPxPerMs - scrollX;
+        if (bandEndX < 0 || bandStartX > width) continue;
+        const x = Math.max(0, bandStartX);
+        const w = Math.min(width, bandEndX) - x;
+        if (w <= 0) continue;
+        ctx.fillStyle = band.color;
+        ctx.globalAlpha = row.kind === 'group' ? 0.055 : 0.085;
+        ctx.fillRect(x, rowTop + 2, w, row.height - 4);
+        ctx.globalAlpha = 1;
+      }
+
+      // Keyframe markers: diamonds for animated properties, circles for
+      // effect intensity. Group rows aggregate every lane in the section.
+      for (const marker of rowMarkers.get(row.id) ?? []) {
+        const cx = marker.timeMs * zoomPxPerMs - scrollX;
+        if (cx < -8 || cx > width + 8) continue;
+
+        const isSelected =
+          Boolean(marker.keyframeId) &&
+          selectedKeyframeRef.current?.clipId === marker.clipId &&
+          selectedKeyframeRef.current?.keyframeId === marker.keyframeId;
+        const isHovered =
+          Boolean(marker.keyframeId) &&
+          hoveredSubMarkerRef.current?.clipId === marker.clipId &&
+          hoveredSubMarkerRef.current?.keyframeId === marker.keyframeId;
+
+        if (marker.shape === 'circle') {
+          drawEffectKeyframeCircle(ctx, cx, centerY, marker.color, {
+            isSelected,
+            isHovered,
+          });
+        } else {
+          drawKeyframeDiamond(
+            ctx,
+            cx,
+            centerY,
+            {
+              property: marker.property ?? '',
+              label: marker.label,
+              color: marker.color,
+              min: 0,
+              max: 1,
+              step: 1,
+              unitsPerPixelDown: 1,
+              rowOffset: 0,
+            },
+            { isSelected, isHovered },
+          );
+        }
+      }
+    });
+
     // 5. Blade Cut Cursor Line (If Blade tool is active)
     if (activeTool === 'blade' && hoverBladeXRef.current !== null) {
       const bladeX = hoverBladeXRef.current;
@@ -846,10 +989,11 @@ export function TimelineCanvasViewport({
       const cutX = hoverCut.cutMs * zoomPxPerMs - scrollX;
       if (cutX >= 0 && cutX <= width) {
         // Find the track's Y position
-        const track = tracks.find((t) => t.id === hoverCut.trackId);
-        if (track) {
-          const trackIndex = tracks.indexOf(track);
-          const trackY = rulerHeight + trackIndex * trackHeight - scrollYRef.current;
+        const trackRow = rows.find(
+          (row) => row.kind === 'track' && row.track.id === hoverCut.trackId,
+        );
+        if (trackRow) {
+          const trackY = rulerHeight + trackRow.y - scrollYRef.current;
           ctx.save();
           // Dashed vertical line
           ctx.strokeStyle = 'rgba(219, 39, 119, 0.8)'; // Pink-600
@@ -859,10 +1003,10 @@ export function TimelineCanvasViewport({
           ctx.shadowBlur = 6;
           ctx.beginPath();
           ctx.moveTo(cutX, trackY);
-          ctx.lineTo(cutX, trackY + trackHeight);
+          ctx.lineTo(cutX, trackY + trackRow.height);
           ctx.stroke();
           // Transition icon (double arrow) at center of track
-          const iconY = trackY + trackHeight / 2;
+          const iconY = trackY + trackRow.height / 2;
           ctx.fillStyle = '#db2777'; // Pink-600
           ctx.beginPath();
           ctx.roundRect(cutX - 14, iconY - 10, 28, 20, 4);
@@ -925,6 +1069,9 @@ export function TimelineCanvasViewport({
     rulerHeight,
     trackHeight,
     tracks,
+    rows,
+    rowMarkers,
+    rowBands,
     zoomPxPerMs,
     selectedClipId,
     selectedClipIds,
@@ -1087,19 +1234,58 @@ export function TimelineCanvasViewport({
         return { type: 'ruler' as const, pointerX, pointerY };
       }
 
-      // 2. Which track is it in? (Account for vertical track scroll)
-      const trackIndex = Math.floor(
-        (pointerY - rulerHeight + scrollYRef.current) / trackHeight,
+      // 2. Which row is it in? (Account for vertical track scroll)
+      // Rows are shared with the header panel, so group / lane rows occupy
+      // real vertical space and can be hit-tested like any other band.
+      const contentY = pointerY - rulerHeight + scrollYRef.current;
+      const row = rows.find(
+        (candidate) => contentY >= candidate.y && contentY < candidate.y + candidate.height,
       );
-      if (trackIndex < 0 || trackIndex >= tracks.length) {
+      if (!row) {
         return { type: 'empty' as const, pointerX, pointerY };
       }
 
-      const track = tracks[trackIndex];
       const scrollX = scrollLeftRef.current;
-      const trackY = rulerHeight + trackIndex * trackHeight - scrollYRef.current;
+      const rowTop = rulerHeight + row.y - scrollYRef.current;
+
+      // 2a. Animation / effect rows: markers first, then the lane itself.
+      if (row.kind !== 'track') {
+        const centerY = rowTop + row.height / 2;
+
+        for (const marker of rowMarkers.get(row.id) ?? []) {
+          if (!marker.keyframeId) continue;
+          const markerX = marker.timeMs * zoomPxPerMs - scrollX;
+          if (
+            Math.abs(pointerX - markerX) <= 6 &&
+            Math.abs(pointerY - centerY) <= Math.max(6, row.height / 2 - 2)
+          ) {
+            const clip = row.track.clips.find((c) => c.id === marker.clipId);
+            return {
+              type: 'row_marker' as const,
+              row,
+              track: row.track,
+              clip,
+              marker,
+              pointerX,
+              pointerY,
+            };
+          }
+        }
+
+        return {
+          type: row.kind === 'group' ? ('row_group' as const) : ('row_lane' as const),
+          row,
+          track: row.track,
+          pointerX,
+          pointerY,
+        };
+      }
+
+      // 2b. Clip rows.
+      const track = row.track;
+      const trackY = rowTop;
       const clipY = trackY + 4;
-      const clipH = trackHeight - 8;
+      const clipH = row.height - 8;
 
       // 3. Check clips inside this track
       for (const clip of track.clips) {
@@ -1168,7 +1354,7 @@ export function TimelineCanvasViewport({
 
       return { type: 'track_lane' as const, track, pointerX, pointerY };
     },
-    [rulerHeight, trackHeight, tracks, zoomPxPerMs],
+    [rulerHeight, rows, rowMarkers, zoomPxPerMs],
   );
 
   // ── Pointer Event Handlers ────────────────────────────────────────────────
@@ -1190,6 +1376,38 @@ export function TimelineCanvasViewport({
       timelineStore.seek(snappedMs, true);
       onSeek?.(snappedMs);
       dragModeRef.current = { type: 'scrub_ruler' };
+      renderCanvas();
+      return;
+    }
+
+    if (hit.type === 'row_group') {
+      timelineStore.toggleTrackExpanded(hit.track.id);
+      renderCanvas();
+      return;
+    }
+
+    if (hit.type === 'row_marker' && hit.clip) {
+      timelineStore.setSelectedClipId(hit.clip.id);
+      selectedKeyframeRef.current = {
+        clipId: hit.clip.id,
+        keyframeId: hit.marker.keyframeId!,
+      };
+      dragModeRef.current = { type: 'none' };
+      renderCanvas();
+      return;
+    }
+
+    if (hit.type === 'row_lane') {
+      const clickTimeMs = (hit.pointerX + scrollX) / zoomPxPerMs;
+      const clip = hit.track.clips.find(
+        (candidate) =>
+          clickTimeMs >= candidate.startMs &&
+          clickTimeMs <= candidate.startMs + candidate.durationMs,
+      );
+      timelineStore.setSelectedClipId(clip?.id ?? null);
+      if (!clip) timelineStore.setSelectedTrackId(hit.track.id);
+      selectedKeyframeRef.current = null;
+      dragModeRef.current = { type: 'none' };
       renderCanvas();
       return;
     }
@@ -1280,6 +1498,9 @@ export function TimelineCanvasViewport({
       renderCanvas();
       return;
     }
+    if (hit.type === 'track_lane') {
+      timelineStore.setSelectedTrackId(hit.track.id);
+    }
     timelineStore.setSelectedClipId(null);
   };
 
@@ -1354,6 +1575,39 @@ export function TimelineCanvasViewport({
       scheduleRender();
     }
 
+    // Sub-row markers (animation / effect lanes) get their own hover state so
+    // the canvas can highlight them without touching clip-row keyframes.
+    const hoveredSubId =
+      hoverHit?.type === 'row_marker' && hoverHit.marker.keyframeId
+        ? {
+            clipId: hoverHit.marker.clipId,
+            keyframeId: hoverHit.marker.keyframeId,
+          }
+        : null;
+    const wasSubHovered = hoveredSubMarkerRef.current;
+    const sameSubHover =
+      hoveredSubId?.clipId === wasSubHovered?.clipId &&
+      hoveredSubId?.keyframeId === wasSubHovered?.keyframeId;
+    if (!sameSubHover) {
+      hoveredSubMarkerRef.current = hoveredSubId;
+      if (hoveredSubId) canvas.style.cursor = 'move';
+      scheduleRender();
+    }
+
+    // Row hover: group rows brighten under the pointer so the expand target
+    // reads as clickable without moving the mouse to the header panel.
+    const hoveredRowId =
+      hoverHit &&
+      (hoverHit.type === 'row_group' ||
+        hoverHit.type === 'row_lane' ||
+        hoverHit.type === 'row_marker')
+        ? hoverHit.row.id
+        : null;
+    if (hoveredRowId !== hoveredRowIdRef.current) {
+      hoveredRowIdRef.current = hoveredRowId;
+      scheduleRender();
+    }
+
     // ── Active Drag State Machine ───────────────────────────────────────────
     if (currentDrag.type === 'scrub_ruler') {
       const rawTimeMs = (pointerX + scrollX) / zoomPxPerMs;
@@ -1385,9 +1639,11 @@ export function TimelineCanvasViewport({
         snapLineMsRef.current = null;
       }
 
-      // Detect if dragged over a different track (cross-track move)
+      // Detect if dragged over a different track (cross-track move). Group and
+      // lane rows resolve to their parent track, so dragging onto an expanded
+      // animation lane still moves the clip to the owning track.
       const hit = hitTest(e.clientX, e.clientY);
-      if (hit && (hit.type === 'track_lane' || hit.type === 'clip_body' || hit.type === 'clip_edge')) {
+      if (hit && 'track' in hit) {
         const targetTrackId = hit.track.id;
         if (targetTrackId !== currentDrag.originalTrackId) {
           // Cross-track move
@@ -1450,6 +1706,10 @@ export function TimelineCanvasViewport({
       } else if (hit?.type === 'clip_body') {
         canvas.style.cursor = 'grab';
       } else if (hit?.type === 'ruler') {
+        canvas.style.cursor = 'pointer';
+      } else if (hit?.type === 'row_marker') {
+        canvas.style.cursor = 'move';
+      } else if (hit?.type === 'row_group') {
         canvas.style.cursor = 'pointer';
       } else {
         canvas.style.cursor = 'default';
@@ -1514,6 +1774,8 @@ export function TimelineCanvasViewport({
 
   const handlePointerLeave = () => {
     hoveredKeyframeRef.current = null;
+    hoveredSubMarkerRef.current = null;
+    hoveredRowIdRef.current = null;
     renderCanvas();
     if (dragModeRef.current.type === 'none') {
       hoverBladeXRef.current = null;

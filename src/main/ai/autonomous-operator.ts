@@ -1,14 +1,14 @@
 /**
  * ai/autonomous-operator.ts
  * ─────────────────────────────────────────────────────────────────────────────
- * Autonomous Operator Daemon (Phase 1 scaffold)
+ * Autonomous Operator Daemon (Phase 1+)
  *
  * Executes tasks unattended within a configurable safety budget:
  *  - picks eligible tasks (autonomous=1, status backlog/active)
  *  - assembles basic workspace/project context
  *  - runs a ToolLoopAgent with a sandboxed auto-approval policy
  *  - emits progress events for the renderer
- *  - marks tasks done/failed and records a best-effort audit note
+ *  - marks tasks done/active and records a best-effort audit note
  */
 
 import { EventEmitter } from 'node:events';
@@ -69,11 +69,17 @@ function extractToolTargets(toolName: string, input: any): string[] {
   for (const k of keys) {
     if (typeof input[k] === 'string') candidates.push(input[k]);
   }
-  // Shell commands are opaque; we only do lightweight checks.
-  if (toolName === 'runShell' && typeof input.command === 'string') {
-    candidates.push(input.command);
-  }
   return candidates;
+}
+
+function isAbortError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const name = (e as { name?: unknown }).name;
+  const message = (e as { message?: unknown }).message;
+  return (
+    name === 'AbortError' ||
+    (typeof message === 'string' && /aborted|abort/i.test(message))
+  );
 }
 
 class AutonomousOperator {
@@ -86,6 +92,7 @@ class AutonomousOperator {
   private stepCount = 0;
   private maxSteps = DEFAULT_MAX_STEPS;
   private abortController: AbortController | null = null;
+  private abortReason: 'pause' | 'stop' | null = null;
 
   on(listener: (event: AutonomousOperatorEvent) => void): () => void {
     this.emitter.on('event', listener);
@@ -111,31 +118,63 @@ class AutonomousOperator {
     this.emit({ type: 'status', status: this.getStatus() });
   }
 
+  private clearLoopTimer() {
+    if (this.loopTimer) {
+      clearTimeout(this.loopTimer);
+      this.loopTimer = null;
+    }
+  }
+
   start(opts?: { maxSteps?: number }) {
     if (opts?.maxSteps && Number.isFinite(opts.maxSteps)) {
       this.maxSteps = Math.max(1, Math.min(200, Math.floor(opts.maxSteps)));
     }
     if (this.running) {
       this.paused = false;
+      this.abortReason = null;
       this.emitStatus();
-      this.schedule();
+      this.schedule(0);
       return this.getStatus();
     }
     this.running = true;
     this.paused = false;
+    this.abortReason = null;
     this.emitStatus();
     this.schedule(0);
     return this.getStatus();
   }
 
   pause() {
+    if (!this.running) return this.getStatus();
     this.paused = true;
+    this.abortReason = 'pause';
+    this.clearLoopTimer();
     try {
       this.abortController?.abort();
     } catch {
       // ignore
     }
     this.emitStatus();
+    return this.getStatus();
+  }
+
+  stop() {
+    const wasRunning = this.running || this.paused || !!this.currentTaskId;
+    this.running = false;
+    this.paused = false;
+    this.abortReason = 'stop';
+    this.clearLoopTimer();
+    try {
+      this.abortController?.abort();
+    } catch {
+      // ignore
+    }
+    if (wasRunning && !this.currentTaskId) {
+      this.emitStatus();
+    } else if (wasRunning) {
+      // runTask.finally will emit status after clearing current task
+      this.emitStatus();
+    }
     return this.getStatus();
   }
 
@@ -155,7 +194,7 @@ class AutonomousOperator {
   }
 
   private schedule(delayMs = 1500) {
-    if (this.loopTimer) clearTimeout(this.loopTimer);
+    this.clearLoopTimer();
     if (!this.running || this.paused) return;
     this.loopTimer = setTimeout(() => {
       void this.tick();
@@ -178,7 +217,9 @@ class AutonomousOperator {
     const root = workspaceRoot ? path.resolve(workspaceRoot) : null;
     return ({ toolCall }: { toolCall: { toolName: string; args?: any; dynamic?: boolean } }) => {
       const name = toolCall.toolName;
-      if (toolCall.dynamic) return 'user-approval';
+      if (toolCall.dynamic) {
+        return { type: 'denied' as const, reason: 'Dynamic tool calls are not allowed in unattended autonomous mode.' };
+      }
 
       // Step budget is enforced by stopWhen/loop guard too, but fail closed here.
       if (this.stepCount >= this.maxSteps) {
@@ -224,14 +265,20 @@ class AutonomousOperator {
         return 'not-applicable';
       }
       if (destructiveNeedsSandbox.has(name)) {
-        if (!root) return { type: 'denied' as const, reason: 'No workspace root; refusing unattended destructive tool.' };
-        const targets = extractToolTargets(name, toolCall.args);
-        // runShell: allow only when workspace-scoped cwd/path hints are present is hard; be conservative.
+        if (!root) {
+          return { type: 'denied' as const, reason: 'No workspace root; refusing unattended destructive tool.' };
+        }
+        const input = toolCall.args ?? {};
+        const targets = extractToolTargets(name, input);
         if (name === 'runShell') {
-          const cmd = String(toolCall.args?.command ?? '');
+          const cmd = String(input.command ?? '');
+          const cwd = typeof input.cwd === 'string' ? input.cwd : null;
           // Deny obviously risky patterns.
           if (/\brm\s+-rf\s+\/|sudo\b|\bcurl\b[^\n]*\|\s*(sh|bash)\b/.test(cmd)) {
             return { type: 'denied' as const, reason: 'Shell command denied by autonomous safety policy.' };
+          }
+          if (cwd && !isPathInside(root, cwd)) {
+            return { type: 'denied' as const, reason: `Shell cwd outside workspace sandbox: ${cwd}` };
           }
           return 'not-applicable';
         }
@@ -253,6 +300,7 @@ class AutonomousOperator {
     this.currentTaskId = task.id;
     this.currentTaskTitle = task.title;
     this.stepCount = 0;
+    this.abortReason = null;
     this.emit({ type: 'task-started', taskId: task.id, title: task.title });
     this.emitStatus();
 
@@ -334,13 +382,16 @@ class AutonomousOperator {
             });
             this.emitStatus();
           } else if (chunk.type === 'reasoning') {
-            this.emit({
-              type: 'thought',
-              taskId: task.id,
-              thought: chunk.textDelta || '',
-            });
+            const thought = chunk.textDelta || chunk.text || '';
+            if (thought) {
+              this.emit({
+                type: 'thought',
+                taskId: task.id,
+                thought,
+              });
+            }
           } else if (chunk.type === 'text-delta') {
-            textAcc += chunk.textDelta;
+            textAcc += chunk.textDelta ?? chunk.text ?? '';
           }
         }
       } else {
@@ -355,6 +406,7 @@ class AutonomousOperator {
             : Array.isArray(result?.response?.messages)
               ? String(result.response.messages.at(-1)?.content ?? '')
               : '';
+        this.emitStatus();
       }
 
       updateTask(task.id, { status: 'done' });
@@ -362,15 +414,28 @@ class AutonomousOperator {
       this.emit({ type: 'task-finished', taskId: task.id, ok: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Keep task active for review/retry rather than losing it.
-      updateTask(task.id, { status: 'active' });
-      await this.recordAudit(task, project?.id ?? null, `Autonomous run failed: ${msg}`, false).catch(() => {});
-      this.emit({ type: 'task-finished', taskId: task.id, ok: false, error: msg });
-      this.emit({ type: 'error', error: msg });
+      const aborted = this.abortReason !== null || isAbortError(e);
+
+      if (aborted) {
+        // Keep task active for later resume/retry; do not treat pause/stop as failure.
+        updateTask(task.id, { status: 'active' });
+        if (this.abortReason === 'stop') {
+          this.emit({ type: 'step', taskId: task.id, message: 'Autonomous run stopped.' });
+        } else if (this.abortReason === 'pause') {
+          this.emit({ type: 'step', taskId: task.id, message: 'Autonomous run paused.' });
+        }
+      } else {
+        // Keep task active for review/retry rather than losing it.
+        updateTask(task.id, { status: 'active' });
+        await this.recordAudit(task, project?.id ?? null, `Autonomous run failed: ${msg}`, false).catch(() => {});
+        this.emit({ type: 'task-finished', taskId: task.id, ok: false, error: msg });
+        this.emit({ type: 'error', error: msg });
+      }
     } finally {
       this.currentTaskId = null;
       this.currentTaskTitle = null;
       this.abortController = null;
+      this.abortReason = null;
       this.emitStatus();
     }
   }

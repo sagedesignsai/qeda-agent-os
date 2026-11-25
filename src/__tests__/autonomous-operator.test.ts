@@ -125,6 +125,17 @@ describe('AutonomousOperator — status', () => {
     op2.start({ maxSteps: -5 });
     expect(op2.getStatus().maxSteps).toBe(1);
   });
+
+  it('stops the operator and clears running/paused state', () => {
+    const op = freshOperator();
+    (getNextAutonomousTask as jest.Mock).mockReturnValue(null);
+    op.start();
+    op.pause();
+    const status = op.stop();
+    expect(status.running).toBe(false);
+    expect(status.paused).toBe(false);
+    expect(status.currentTaskId).toBeNull();
+  });
 });
 
 describe('AutonomousOperator — sandbox approval policy', () => {
@@ -182,15 +193,22 @@ describe('AutonomousOperator — sandbox approval policy', () => {
     expect(result).toBe('not-applicable');
   });
 
+  it('denies runShell when cwd is outside the workspace sandbox', () => {
+    const result = approvalFor(op, 'runShell', { command: 'ls -la', cwd: '/etc' }, '/tmp/ws');
+    expect(result).toMatchObject({ type: 'denied' });
+    expect((result as any).reason).toMatch(/cwd outside workspace/i);
+  });
+
   it('denies unknown/unclassified tools conservatively', () => {
     const result = approvalFor(op, 'someWeirdUnknownTool');
     expect(result).toMatchObject({ type: 'denied' });
   });
 
-  it('denies dynamic tool calls regardless of name', () => {
+  it('denies dynamic tool calls in unattended mode', () => {
     const policy = op['buildAutonomousApproval']('/tmp/ws');
     const result = policy({ toolCall: { toolName: 'readFile', args: {}, dynamic: true } });
-    expect(result).toBe('user-approval');
+    expect(result).toMatchObject({ type: 'denied' });
+    expect((result as any).reason).toMatch(/dynamic/i);
   });
 });
 

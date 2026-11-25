@@ -26,6 +26,8 @@ import {
   Undo2Icon,
   Redo2Icon,
   CopyIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -96,6 +98,9 @@ export function TimelineToolbar({
     selectedClipId,
     canUndo,
     canRedo,
+    selectedTrackExpanded,
+    canToggleSelectedTrack,
+    toggleSelectedTrackExpanded,
     setActiveTool,
     toggleSnapping,
     setZoomPxPerMs,
@@ -289,8 +294,41 @@ export function TimelineToolbar({
         <TimelineTimecodeDisplay durationMs={durationMs} />
       </div>
 
-      {/* ── Right: Zoom Controls (Compact) ──────────────────────────────────── */}
+      {/* ── Right: Lane Visibility & Zoom Controls (Compact) ────────────────── */}
       <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!canToggleSelectedTrack}
+              className="h-6 gap-1 px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-all duration-150 hover:bg-secondary/50 active:scale-95 disabled:opacity-30 disabled:pointer-events-none"
+              onClick={toggleSelectedTrackExpanded}
+              aria-label={
+                selectedTrackExpanded
+                  ? 'Collapse selected track lanes'
+                  : 'Expand selected track lanes'
+              }
+            >
+              {selectedTrackExpanded ? (
+                <ChevronUpIcon className="w-3 h-3" />
+              ) : (
+                <ChevronDownIcon className="w-3 h-3" />
+              )}
+              <span className="hidden sm:inline">
+                {selectedTrackExpanded ? 'Collapse' : 'Expand'}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            {selectedTrackExpanded
+              ? 'Collapse selected track lanes'
+              : 'Expand selected track lanes'}
+          </TooltipContent>
+        </Tooltip>
+
+        <div className="mx-0.5 h-3 w-px bg-border/40" />
+
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
