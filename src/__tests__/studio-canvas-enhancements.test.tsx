@@ -15,6 +15,7 @@ import { DEFAULT_STUDIO_STYLING } from '../lib/studio-types';
 
 describe('Studio Canvas Enhancements', () => {
   beforeEach(() => {
+    timelineStore.setSelectedClipId(null);
     timelineStore.setTracksAndDuration(
       [
         {
@@ -111,6 +112,115 @@ describe('Studio Canvas Enhancements', () => {
       expect(canvas).toBeInTheDocument();
       expect(canvas).toHaveAttribute('width', '1440');
       expect(canvas).toHaveAttribute('height', '1080');
+    });
+
+    it('selects active text and shows its transform gizmo', () => {
+      const tracks = [
+        {
+          id: 'track-captions',
+          name: 'Captions',
+          type: 'captions' as const,
+          muted: false,
+          locked: false,
+          visible: true,
+          clips: [
+            {
+              id: 'text-clip-1',
+              trackId: 'track-captions',
+              itemType: 'text' as const,
+              name: 'Canvas title',
+              startMs: 0,
+              durationMs: 10000,
+              sourceStartMs: 0,
+              sourceDurationMs: 10000,
+              payload: {
+                text: 'Canvas title',
+                textStyle: { fontSize: 64, color: '#ffffff' },
+              },
+            },
+          ],
+        },
+      ];
+      timelineStore.setTracksAndDuration(tracks, 10000);
+      timelineStore.seek(5000, true);
+
+      const measureText = jest.fn(() => ({ width: 240 }));
+      const getContextSpy = jest
+        .spyOn(HTMLCanvasElement.prototype, 'getContext')
+        .mockImplementation(
+          () => ({ measureText }) as unknown as CanvasRenderingContext2D,
+        );
+
+      const { container } = render(
+        <StudioCanvas
+          videoUrl={null}
+          styling={DEFAULT_STUDIO_STYLING}
+          zooms={[]}
+          captions={[]}
+          isPlaying={false}
+          tracks={tracks}
+        />,
+      );
+      const canvas = container.querySelector('canvas');
+      expect(canvas).toBeInTheDocument();
+      if (!canvas) return;
+      jest.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1080,
+        width: 1920,
+        height: 1080,
+        toJSON: () => ({}),
+      });
+      act(() => {
+        canvas.dispatchEvent(
+          new MouseEvent('pointerdown', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            clientX: 960,
+            clientY: 540,
+          }),
+        );
+      });
+      expect(timelineStore.getState().selectedClipId).toBe('text-clip-1');
+      expect(
+        container.querySelector('[data-stage-overlay]'),
+      ).toBeInTheDocument();
+      const moveHandle = container.querySelector('[data-gizmo-handle="move"]');
+      expect(moveHandle).toBeInTheDocument();
+      if (!moveHandle) return;
+      Object.defineProperty(moveHandle, 'setPointerCapture', {
+        value: jest.fn(),
+      });
+      const pointerEvent = (type: string, clientX: number, clientY: number) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+        });
+        Object.defineProperty(event, 'pointerId', { value: 1 });
+        return event;
+      };
+      act(() => {
+        moveHandle.dispatchEvent(pointerEvent('pointerdown', 960, 540));
+        moveHandle.dispatchEvent(pointerEvent('pointermove', 1000, 560));
+        moveHandle.dispatchEvent(pointerEvent('pointerup', 1000, 560));
+      });
+      getContextSpy.mockRestore();
+
+      expect(
+        timelineStore.findClip('text-clip-1')?.clip.payload?.transform,
+      ).toEqual({
+        position: { x: 40, y: 20 },
+        scale: { x: 1, y: 1 },
+        rotation: 0,
+        anchorPoint: { x: 0.5, y: 0.5 },
+      });
     });
 
     it('renders blank canvas message when no video is loaded', () => {

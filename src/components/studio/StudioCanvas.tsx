@@ -72,9 +72,9 @@ import {
 import { drawMotionCard } from './renderers/motion-cards';
 import { drawStudioWindowChrome } from '@/lib/studio/render/frame';
 import {
-  captionFont,
-  captionFontSizeForFrame,
-} from '@/lib/studio/render/captions';
+  resolveStudioTextStyle,
+  usesStudioFreeTextClip,
+} from '@/lib/studio/render/text-style';
 
 interface StudioCanvasProps {
   videoUrl: string | null;
@@ -106,12 +106,10 @@ interface StudioClipCanvasGeometry {
 }
 
 /**
- * Measure text dimensions for a caption clip.
- * Uses the same font and styling as rendered captions.
+ * Measure text dimensions for a text clip using its resolved display style.
  */
 function measureTextClipBounds(
   clip: TimelineTrack['clips'][number],
-  fontSize: number,
 ): { width: number; height: number } {
   const text = clip.payload?.text ?? clip.name;
   if (!text) return { width: 300, height: 100 };
@@ -121,13 +119,14 @@ function measureTextClipBounds(
   const ctx = canvas.getContext('2d');
   if (!ctx) return { width: 300, height: 100 };
 
-  ctx.font = captionFont(fontSize);
+  const style = resolveStudioTextStyle(clip.payload?.textStyle);
+  ctx.font = `600 ${style.fontSize}px ${style.fontFamily}`;
 
   const lines = text.split('\n');
   const metrics = lines.map((line) => ctx.measureText(line));
 
   const width = Math.max(...metrics.map((m) => m.width), 200);
-  const lineHeight = fontSize * 1.2;
+  const lineHeight = style.fontSize * 1.2;
   const height = lines.length * lineHeight;
 
   return { width, height };
@@ -155,12 +154,20 @@ function studioClipCanvasGeometry(
     ? sourceWidth / sourceHeight
     : 16 / 9);
   const frame = computeStudioCanvasFrame(dims.width, dims.height, styling, contentAspect);
-  const width = clip.payload?.widthPct
-    ? clip.payload.widthPct * frame.contentWidth
-    : frame.contentWidth;
-  const height = clip.payload?.widthPct
-    ? width / (sourceWidth / sourceHeight)
-    : frame.contentHeight;
+  const isFreeTextClip =
+    track.type === 'captions' &&
+    clip.itemType === 'text' &&
+    usesStudioFreeTextClip(clip);
+  const width = isFreeTextClip
+    ? sourceWidth
+    : clip.payload?.widthPct
+      ? clip.payload.widthPct * frame.contentWidth
+      : frame.contentWidth;
+  const height = isFreeTextClip
+    ? sourceHeight
+    : clip.payload?.widthPct
+      ? width / (sourceWidth / sourceHeight)
+      : frame.contentHeight;
   const bbox: GizmoBBox = {
     x: -width / 2,
     y: -height / 2,
@@ -315,8 +322,11 @@ export function StudioCanvas({
   const [selectedClipActive, setSelectedClipActive] = useState(() => {
     const selected = selectedTimelineClip;
     const time = timelineStore.getState().currentTimeMs;
+    const isTransformableClip =
+      selected?.track.type === 'video' ||
+      (selected?.track.type === 'captions' && selected.clip.itemType === 'text');
     return Boolean(
-      selected?.track.type === 'video' &&
+      isTransformableClip &&
       selected.track.visible &&
       time >= selected.clip.startMs &&
       time < selected.clip.startMs + selected.clip.durationMs,
@@ -359,8 +369,11 @@ export function StudioCanvas({
   useEffect(() => {
     const selected = selectedTimelineClip;
     const evaluateActive = (timeMs: number) => {
+      const isTransformableClip =
+        selected?.track.type === 'video' ||
+        (selected?.track.type === 'captions' && selected.clip.itemType === 'text');
       const next = Boolean(
-        selected?.track.type === 'video' &&
+        isTransformableClip &&
         selected.track.visible &&
         timeMs >= selected.clip.startMs &&
         timeMs < selected.clip.startMs + selected.clip.durationMs,
@@ -371,6 +384,7 @@ export function StudioCanvas({
     return timelineStore.subscribeTime(evaluateActive);
   }, [
     selectedTimelineClip?.clip.id,
+    selectedTimelineClip?.clip.itemType,
     selectedTimelineClip?.clip.startMs,
     selectedTimelineClip?.clip.durationMs,
     selectedTimelineClip?.track.visible,
@@ -1042,16 +1056,7 @@ export function StudioCanvas({
       for (const item of [...evaluated.captions].reverse()) {
         const { track, clip } = item;
         if (clip.itemType !== 'text') continue;
-        const contentFrame = computeStudioCanvasFrame(
-          canvasDims.width,
-          canvasDims.height,
-          styling,
-          frameAspect,
-        );
-        const measured = measureTextClipBounds(
-          clip,
-          captionFontSizeForFrame(contentFrame.contentWidth, contentFrame.contentHeight),
-        );
+        const measured = measureTextClipBounds(clip);
         const geometry = studioClipCanvasGeometry(
           clip,
           track,
@@ -1115,18 +1120,8 @@ export function StudioCanvas({
       sourceWidth = asset?.width ?? (selected.track.id === 'track-video' ? videoRef.current?.videoWidth : 0) ?? 0;
       sourceHeight = asset?.height ?? (selected.track.id === 'track-video' ? videoRef.current?.videoHeight : 0) ?? 0;
     } else if (selected.track.type === 'captions' && selected.clip.itemType === 'text') {
-      // Text: measure with the same font the caption renderer uses, sized for
-      // the framed content box rather than the full canvas.
-      const contentFrame = computeStudioCanvasFrame(
-        canvasDims.width,
-        canvasDims.height,
-        styling,
-        frameAspect,
-      );
-      const measured = measureTextClipBounds(
-        selected.clip,
-        captionFontSizeForFrame(contentFrame.contentWidth, contentFrame.contentHeight),
-      );
+      // Text bounds use the same resolved font as the text renderer.
+      const measured = measureTextClipBounds(selected.clip);
       sourceWidth = measured.width;
       sourceHeight = measured.height;
     }

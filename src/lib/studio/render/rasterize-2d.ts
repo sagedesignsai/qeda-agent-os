@@ -32,6 +32,10 @@ import {
 import type { StudioCaption } from '@/lib/studio/types';
 import { drawStudioBackground } from './background';
 import { drawStudioCaption } from './captions';
+import {
+  applyStudioTextAnimator,
+  drawStudioFreeText,
+} from './text-style';
 import { drawClipDeviceFrame } from './clip-device-frame';
 import { drawStudioEffectPass } from './effects';
 import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
@@ -289,7 +293,7 @@ function renderTextOp(
     // Handle text animator for captions
     let caption = op.layout.caption;
     if (op.animator) {
-      caption = applyTextAnimator(caption, op.animator);
+      caption = applyStudioTextAnimator(caption, op.animator);
     }
 
     drawStudioCaption(ctx, {
@@ -300,72 +304,18 @@ function renderTextOp(
     });
     return;
   }
-  renderFreeText(ctx, op.layout);
+  const caption: StudioCaption = {
+    id: op.clipId ?? op.id,
+    startMs: 0,
+    endMs: 0,
+    text: op.layout.text,
+    ...(op.layout.words ? { words: op.layout.words } : {}),
+  };
+  const text = op.animator
+    ? applyStudioTextAnimator(caption, op.animator).text
+    : op.layout.text;
+  renderFreeText(ctx, { ...op.layout, text });
 }
-
-/**
- * Apply text animator to a caption, revealing characters/words based on mode.
- * @param caption Original caption
- * @param animator Animator configuration with mode and progress
- * @returns Caption with potentially truncated text
- */
-function applyTextAnimator(
-  caption: StudioCaption,
-  animator: NonNullable<TextDrawOp['animator']>,
-): StudioCaption {
-  const { mode, progress } = animator;
-  const text = caption.text || '';
-
-  if (mode === 'typewriter') {
-    // Character-by-character reveal
-    const charCount = Math.floor(progress * text.length);
-    return {
-      ...caption,
-      text: text.substring(0, charCount),
-    };
-  }
-
-  if (mode === 'fade-words') {
-    // Word-by-word reveal using word timings
-    if (!caption.words || caption.words.length === 0) {
-      // Fallback to typewriter if no word timings
-      const charCount = Math.floor(progress * text.length);
-      return {
-        ...caption,
-        text: text.substring(0, charCount),
-      };
-    }
-    // For word-based animation, we'd need to map words to text positions
-    // This is complex; for now, reveal based on word count
-    const wordCount = Math.floor(progress * caption.words.length);
-    if (wordCount === 0) {
-      return { ...caption, text: '' };
-    }
-    // Reveal through the end of the last revealed word. Word records carry
-    // timings only (no character indices), so locate the word in the caption
-    // text; fall back to the full text when it cannot be found verbatim.
-    const lastWord = caption.words[wordCount - 1];
-    const wordIndex = text.indexOf(lastWord.word);
-    const endChar =
-      wordIndex === -1 ? text.length : wordIndex + lastWord.word.length;
-    return {
-      ...caption,
-      text: text.substring(0, endChar),
-    };
-  }
-
-  if (mode === 'slide-up') {
-    // Character reveal with slide-up effect (partial opacity for next char)
-    const charIndex = Math.floor(progress * text.length);
-    return {
-      ...caption,
-      text: text.substring(0, charIndex),
-    };
-  }
-
-  return caption;
-}
-
 
 function renderFreeText(
   ctx: CanvasRenderingContext2D,
@@ -379,32 +329,17 @@ function renderFreeText(
   if (layout.rotationDeg) {
     ctx.rotate((layout.rotationDeg * Math.PI) / 180);
   }
-  ctx.font = `${style.fontWeight} ${style.fontSize}px ${style.fontFamily}`;
-  ctx.textAlign = style.align;
-  ctx.textBaseline = 'top';
-  if (style.letterSpacing !== undefined) {
-    (ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing =
-      `${style.letterSpacing}px`;
-  }
-
-  const lineHeight = style.lineHeight ?? style.fontSize * 1.2;
-  const lines = text.split('\n');
-
-  lines.forEach((line, index) => {
-    const y = index * lineHeight;
-    if (style.shadow) {
-      ctx.shadowColor = style.shadow.color;
-      ctx.shadowBlur = style.shadow.blur;
-      ctx.shadowOffsetX = style.shadow.offsetX;
-      ctx.shadowOffsetY = style.shadow.offsetY;
-    }
-    if (style.stroke) {
-      ctx.lineWidth = style.stroke.width;
-      ctx.strokeStyle = style.stroke.color;
-      ctx.strokeText(line, 0, y, style.maxWidth);
-    }
-    ctx.fillStyle = style.fill;
-    ctx.fillText(line, 0, y, style.maxWidth);
+  drawStudioFreeText(ctx, text, {
+    fontFamily: style.fontFamily,
+    fontSize: style.fontSize,
+    fontWeight: style.fontWeight,
+    color: style.fill,
+    align: style.align,
+    letterSpacing: style.letterSpacing,
+    lineHeight: style.lineHeight,
+    maxWidth: style.maxWidth,
+    stroke: style.stroke,
+    shadow: style.shadow,
   });
 
   ctx.restore();

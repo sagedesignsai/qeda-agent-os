@@ -18,7 +18,11 @@
 import { describe, it, expect, beforeAll } from '@jest/globals';
 import type { StudioStyling, TimelineTrack } from '@/lib/studio/types';
 import type { StudioCameraState } from '@/lib/studio/render/camera';
-import { drawStudioFrame, type StudioComposeInput } from '@/lib/studio/render/compose';
+import {
+  computeStudioCanvasFrame,
+  drawStudioFrame,
+  type StudioComposeInput,
+} from '@/lib/studio/render/compose';
 import {
   buildFrameProgram,
   type BuildFrameProgramInput,
@@ -72,6 +76,18 @@ class RecordingContext implements Partial<CanvasRenderingContext2D> {
 
   transform(a: number, b: number, c: number, d: number, e: number, f: number): void {
     this.recordCall('transform', a, b, c, d, e, f);
+  }
+
+  translate(x: number, y: number): void {
+    this.recordCall('translate', x, y);
+  }
+
+  rotate(angle: number): void {
+    this.recordCall('rotate', angle);
+  }
+
+  scale(x: number, y: number): void {
+    this.recordCall('scale', x, y);
   }
 
   roundRect(
@@ -153,6 +169,11 @@ class RecordingContext implements Partial<CanvasRenderingContext2D> {
   // Text rendering
   fillText(text: string, x: number, y: number): void {
     this.recordCall('fillText', text, x, y);
+  }
+
+  measureText(text: string): TextMetrics {
+    this.recordCall('measureText', text);
+    return { width: text.length * 20 } as TextMetrics;
   }
 
   get font(): string {
@@ -439,6 +460,128 @@ describe('Studio Display-List Parity', () => {
     if (chromeIndex >= 0 && textIndex >= 0) {
       expect(textIndex).toBeGreaterThan(chromeIndex);
     }
+  });
+
+  it('keeps transformed text aligned between preview and display-list rendering', () => {
+    const width = 1280;
+    const height = 720;
+    const styling: StudioStyling = {
+      ...createFixtureStyling(),
+      canvasMode: 'edit',
+      showCaptions: true,
+    };
+    const tracks: TimelineTrack[] = [
+      {
+        id: 'track-captions',
+        name: 'Captions',
+        type: 'captions',
+        locked: false,
+        visible: true,
+        clips: [
+          {
+            id: 'text-transform-1',
+            name: 'Transform parity',
+            trackId: 'track-captions',
+            itemType: 'text',
+            startMs: 0,
+            durationMs: 5000,
+            sourceStartMs: 0,
+            sourceDurationMs: 5000,
+            payload: {
+              text: 'Transform parity',
+              x: 0.25,
+              y: 0.75,
+              textStyle: {
+                fontFamily: 'Georgia, serif',
+                fontSize: 48,
+                color: '#ff3366',
+                align: 'center',
+              },
+              transform: {
+                position: { x: 20, y: -12 },
+                rotation: 30,
+                scale: { x: 1.5, y: 0.75 },
+                anchorPoint: { x: 0.5, y: 0.5 },
+              },
+            },
+          },
+        ],
+      },
+    ];
+    const frame = computeStudioCanvasFrame(width, height, styling, 16 / 9);
+    const centerX = frame.contentX + 0.25 * frame.contentWidth + 20;
+    const centerY = frame.contentY + 0.75 * frame.contentHeight - 12;
+    const previewContext = new RecordingContext();
+
+    drawStudioFrame(previewContext as unknown as CanvasRenderingContext2D, {
+      width,
+      height,
+      styling,
+      timeMs: 1000,
+      video: null,
+      videoReady: false,
+      camera: createFixtureCamera(),
+      effects: [],
+      captions: [],
+      overlays: [],
+      overlayAssets: new Map(),
+      tracks,
+    });
+
+    const program = buildFrameProgram({
+      width,
+      height,
+      compTimeMs: 1000,
+      styling,
+      evaluatedFrame: evaluateEditorTimeline(tracks, 1000),
+      camera: createFixtureCamera(),
+      assets: {
+        byAssetId: new Map(),
+        recordedVideo: { width: 1920, height: 1080 },
+      },
+    });
+    const textOp = program.ops.find((op) => op.kind === 'text');
+    expect(textOp?.kind).toBe('text');
+    if (textOp?.kind !== 'text') return;
+
+    const rotation = Math.PI / 6;
+    expect(textOp.transform[0]).toBeCloseTo(Math.cos(rotation) * 1.5);
+    expect(textOp.transform[1]).toBeCloseTo(Math.sin(rotation) * 1.5);
+    expect(textOp.transform[2]).toBeCloseTo(-Math.sin(rotation) * 0.75);
+    expect(textOp.transform[3]).toBeCloseTo(Math.cos(rotation) * 0.75);
+    expect(textOp.transform[4]).toBeCloseTo(centerX);
+    expect(textOp.transform[5]).toBeCloseTo(centerY);
+    expect(previewContext.calls).toContainEqual({
+      method: 'translate',
+      args: [centerX, centerY],
+    });
+    expect(previewContext.calls).toContainEqual({
+      method: 'rotate',
+      args: [rotation],
+    });
+    expect(previewContext.calls).toContainEqual({
+      method: 'scale',
+      args: [1.5, 0.75],
+    });
+    expect(previewContext.calls).toContainEqual({
+      method: 'fillText',
+      args: ['Transform parity', expect.any(Number), expect.any(Number)],
+    });
+
+    const displayListContext = new RecordingContext();
+    rasterize2D(
+      displayListContext as unknown as CanvasRenderingContext2D,
+      program,
+      { assets: new Map(), recordedVideo: null },
+    );
+    expect(displayListContext.calls).toContainEqual({
+      method: 'transform',
+      args: [...textOp.transform],
+    });
+    expect(displayListContext.calls).toContainEqual({
+      method: 'fillText',
+      args: ['Transform parity', expect.any(Number), expect.any(Number)],
+    });
   });
 
   it('should respect clip domains correctly', () => {

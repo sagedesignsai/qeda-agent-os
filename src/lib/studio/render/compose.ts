@@ -40,6 +40,12 @@ import {
 import { drawStudioBackground } from './background';
 import { cameraSourceRect, type StudioCameraState } from './camera';
 import { drawStudioCaption } from './captions';
+import {
+  applyStudioTextAnimator,
+  drawStudioFreeText,
+  resolveStudioTextStyle,
+  usesStudioFreeTextClip,
+} from './text-style';
 import { drawStudioEffects, drawStudioEffectPass } from './effects';
 import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
 import { computeStudioCanvasFrame } from './geometry';
@@ -242,7 +248,57 @@ export function drawStudioFrame(
 
   ctx.restore();
 
-  const trackCaptions: StudioCaption[] | undefined = timelineFrame?.captions
+  const trackTextItems = (timelineFrame?.captions ?? []).filter(
+    ({ itemType }) => itemType === 'text',
+  );
+  const freeTextItems = trackTextItems.filter(({ clip }) =>
+    usesStudioFreeTextClip(clip),
+  );
+
+  if (styling.showCaptions) {
+    for (const { clip } of freeTextItems) {
+      const style = resolveStudioTextStyle(clip.payload?.textStyle);
+      const baseCaption: StudioCaption = {
+        id: clip.id,
+        startMs: clip.startMs,
+        endMs: clip.startMs + clip.durationMs,
+        text: clip.payload?.text ?? clip.name,
+        ...(clip.payload?.words?.length ? { words: clip.payload.words } : {}),
+      };
+      const textAnimator = clip.payload?.textAnimator;
+      const relativeTimeMs = Math.max(0, compTime - clip.startMs);
+      const text = textAnimator
+        ? applyStudioTextAnimator(baseCaption, {
+            mode: textAnimator.mode,
+            progress: Math.min(
+              1,
+              relativeTimeMs / (clip.durationMs || 1),
+            ),
+          }).text
+        : baseCaption.text;
+      const transform = input.clipTransformPreview?.clipId === clip.id
+        ? input.clipTransformPreview.transform
+        : clip.payload?.transform;
+      const centerX =
+        frame.contentX +
+        (clip.payload?.x ?? 0.5) * frame.contentWidth +
+        (transform?.position?.x ?? 0);
+      const centerY =
+        frame.contentY +
+        (clip.payload?.y ?? 0.5) * frame.contentHeight +
+        (transform?.position?.y ?? 0);
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(((transform?.rotation ?? 0) * Math.PI) / 180);
+      ctx.scale(transform?.scale?.x ?? 1, transform?.scale?.y ?? 1);
+      drawStudioFreeText(ctx, text, { ...style, fontWeight: 600 });
+      ctx.restore();
+    }
+  }
+
+  const trackCaptions: StudioCaption[] | undefined = trackTextItems
+    .filter(({ clip }) => !usesStudioFreeTextClip(clip))
     .filter(({ itemType }) => itemType === 'text')
     .map(({ clip }) => {
       const existing = input.captions?.find((captionItem) => captionItem.id === clip.id);

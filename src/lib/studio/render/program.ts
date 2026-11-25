@@ -23,6 +23,7 @@ import type {
   StudioStyling,
   StudioVideoCrop,
 } from '../types';
+import { resolveStudioTextStyle, usesStudioFreeTextClip } from './text-style';
 import { evaluateClipAtTime } from '../animation-evaluator';
 import { effectTypeFromPayload } from '../effects/catalog';
 import {
@@ -627,7 +628,10 @@ function buildShapeOps(input: BuildFrameProgramInput): DrawOp[] {
   return ops;
 }
 
-function buildTextOps(input: BuildFrameProgramInput): TextDrawOp[] {
+function buildTextOps(
+  input: BuildFrameProgramInput,
+  frame: ProgramWindowFrame,
+): TextDrawOp[] {
   const styling = input.styling;
   if (!styling.showCaptions) return [];
 
@@ -635,6 +639,7 @@ function buildTextOps(input: BuildFrameProgramInput): TextDrawOp[] {
   for (const item of input.evaluatedFrame.captions) {
     if (item.itemType !== 'text') continue;
     const { clip } = item;
+    const freeText = usesStudioFreeTextClip(clip);
     const caption: StudioCaption = {
       id: clip.id,
       startMs: clip.startMs,
@@ -664,21 +669,53 @@ function buildTextOps(input: BuildFrameProgramInput): TextDrawOp[] {
       };
     }
 
+    const textStyle = resolveStudioTextStyle(clip.payload?.textStyle);
+    const clipTransform = input.clipTransformPreview?.clipId === clip.id
+      ? input.clipTransformPreview.transform
+      : clip.payload?.transform;
+    const centerX =
+      frame.contentX +
+      (clip.payload?.x ?? 0.5) * frame.contentWidth +
+      (clipTransform?.position?.x ?? 0);
+    const centerY =
+      frame.contentY +
+      (clip.payload?.y ?? 0.5) * frame.contentHeight +
+      (clipTransform?.position?.y ?? 0);
+    const transform = composeMatrices(
+      translationMatrix(centerX, centerY),
+      rotationMatrix(((clipTransform?.rotation ?? 0) * Math.PI) / 180),
+      scaleMatrix(clipTransform?.scale?.x ?? 1, clipTransform?.scale?.y ?? 1),
+    );
+
     ops.push({
       id: `text:${clip.id}`,
       clipId: clip.id,
       kind: 'text',
-      transform: IDENTITY_MATRIX,
+      transform: freeText ? transform : IDENTITY_MATRIX,
       opacity: 1,
       blendMode: (clip.payload?.blendMode ?? 'source-over') as any,
       // Captions are painted outside the window clip — the historical look.
       clip: 'none',
-      layout: {
-        mode: 'caption',
-        caption,
-        style: styling.captionStyle,
-        timeMs: input.compTimeMs,
-      },
+      layout: freeText
+        ? {
+            mode: 'free',
+            text: caption.text,
+            words: caption.words,
+            style: {
+              fontFamily: textStyle.fontFamily,
+              fontSize: textStyle.fontSize,
+              fontWeight: 600,
+              fill: textStyle.color,
+              align: textStyle.align,
+            },
+            anchor: { x: 0, y: 0 },
+          }
+        : {
+            mode: 'caption',
+            caption,
+            style: styling.captionStyle,
+            timeMs: input.compTimeMs,
+          },
       animator,
     });
   }
@@ -767,7 +804,7 @@ export function buildFrameProgram(input: BuildFrameProgramInput): FrameProgram {
   }
 
   // 5. Unclipped text.
-  ops.push(...buildTextOps(input));
+  ops.push(...buildTextOps(input, frame));
 
   // 6. Intro / outro cards — painted last, over everything.
   const includeCards = input.includeMotionCards !== false;

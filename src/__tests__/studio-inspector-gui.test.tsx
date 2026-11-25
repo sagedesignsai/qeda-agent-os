@@ -284,6 +284,73 @@ describe('Master StudioInspector Component', () => {
     expect(defaultProps.onExportVideo).toHaveBeenCalledWith('mp4');
   });
 
+  it('edits text clip transforms without replacing typography settings', () => {
+    timelineStore.setTracksAndDuration(
+      [
+        {
+          id: 'track-captions',
+          type: 'captions',
+          name: 'Captions',
+          locked: false,
+          visible: true,
+          clips: [
+            {
+              id: 'text-clip-test-1',
+              trackId: 'track-captions',
+              itemType: 'text',
+              name: 'Title text',
+              startMs: 1000,
+              durationMs: 3000,
+              sourceStartMs: 1000,
+              sourceDurationMs: 3000,
+              payload: {
+                text: 'Title text',
+                textStyle: {
+                  fontFamily: 'Georgia, serif',
+                  fontSize: 64,
+                  color: '#ff3366',
+                  align: 'center',
+                },
+                transform: {
+                  position: { x: 0, y: 12 },
+                  scale: { x: 1.2, y: 0.8 },
+                  rotation: 15,
+                  anchorPoint: { x: 0.3, y: 0.7 },
+                },
+              },
+            },
+          ],
+        },
+      ],
+      12000,
+    );
+    timelineStore.setSelectedClipId('text-clip-test-1');
+
+    render(<StudioInspector {...defaultProps} />);
+
+    const transformSection = screen.getByRole('button', { name: 'Transform' });
+    expect(transformSection).toHaveAttribute('aria-expanded', 'true');
+
+    const positionX = screen.getByRole('textbox', { name: 'Position X' });
+    fireEvent.change(positionX, { target: { value: '25' } });
+    fireEvent.blur(positionX);
+
+    const updatedClip = timelineStore.findClip('text-clip-test-1')?.clip;
+    expect(updatedClip?.payload?.transform).toEqual({
+      position: { x: 25, y: 12 },
+      scale: { x: 1.2, y: 0.8 },
+      rotation: 15,
+      anchorPoint: { x: 0.3, y: 0.7 },
+    });
+    expect(updatedClip?.payload?.textStyle).toEqual({
+      fontFamily: 'Georgia, serif',
+      fontSize: 64,
+      color: '#ff3366',
+      align: 'center',
+    });
+    expect(updatedClip?.payload?.text).toBe('Title text');
+  });
+
   it('docks Clip Properties section at the top when a Zoom clip is selected', () => {
     // Seed timeline store with a Zoom clip
     timelineStore.setTracksAndDuration(

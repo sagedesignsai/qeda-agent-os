@@ -221,8 +221,9 @@ export type TextLayout =
       mode: 'free';
       text: string;
       style: TextDrawStyle;
-      /** Top-left anchor in frame coordinates. */
+      /** Center anchor in clip-local coordinates. */
       anchor: { x: number; y: number };
+      words?: StudioCaption['words'];
       rotationDeg?: number;
     };
 

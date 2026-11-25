@@ -872,6 +872,8 @@ export interface StudioClipPayload {
   targetY?: number;
   // Subtitles / text
   text?: string;
+  /** Per-clip typography for text layers; absent styles retain legacy captions. */
+  textStyle?: StudioTextStyle;
   /**
    * Measured caption word timings, in composition time (same base as the
    * clip's `startMs`). Populated by the take → track converter so karaoke keeps
@@ -921,6 +923,13 @@ export interface StudioClipPayload {
   // Clip-attached effects (new system; replaces global take.effects[])
   /** Visual effects attached to this individual clip. Renders in stackOrder. */
   effects?: ClipEffect[];
+}
+
+export interface StudioTextStyle {
+  fontFamily?: string;
+  fontSize?: number;
+  color?: string;
+  align?: 'left' | 'center' | 'right';
 }
 
 export interface TimelineClip {

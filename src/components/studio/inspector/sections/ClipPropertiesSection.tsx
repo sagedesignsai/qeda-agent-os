@@ -43,10 +43,15 @@ import type {
   ClipTransform,
   StudioAnimationEasing,
   StudioCompositionTransitionType,
+  StudioTextStyle,
   TimelineClip,
   TimelineTrack,
 } from '@/lib/studio-types';
 import type { StudioMediaAsset } from '@/lib/studio/types';
+import {
+  resolveStudioTextStyle,
+  STUDIO_TEXT_FONT_OPTIONS,
+} from '@/lib/studio/render/text-style';
 import { timelineStore } from '@/hooks/use-timeline-store';
 import {
   ANIMATION_PRESETS,
@@ -140,8 +145,16 @@ export function ClipPropertiesSection({
   const scl = transform?.scale ?? { x: 1, y: 1 };
   const rot = transform?.rotation ?? 0;
   const anchor = transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
+  const textStyle = resolveStudioTextStyle(clip.payload?.textStyle);
+  const updateTextStyle = (patch: Partial<StudioTextStyle>) => {
+    onUpdateClip(clip.id, {
+      payload: { textStyle: { ...textStyle, ...patch } },
+    });
+  };
 
   const isVisualTrack = track.type === 'video' || track.type === 'overlays';
+  const isTextClip = track.type === 'captions' && clip.itemType === 'text';
+  const isTransformableTrack = isVisualTrack || isTextClip;
   const transitionFrom = clip.payload?.fromClipId
     ? timelineStore.findClip(clip.payload.fromClipId)
     : null;
@@ -231,10 +244,12 @@ export function ClipPropertiesSection({
     if (track.type === 'effects') setActiveSection('Zoom');
     else if (track.type === 'transitions') setActiveSection('Transition');
     else if (track.type === 'overlays') setActiveSection('Overlay');
-    else if (track.type === 'captions') setActiveSection('Caption');
+    else if (track.type === 'captions') {
+      setActiveSection(isTextClip ? 'Transform' : 'Caption');
+    }
     else if (track.type === 'video') setActiveSection('Video');
     else if (track.type === 'audio') setActiveSection('Audio');
-    else if (isVisualTrack) setActiveSection('Transform');
+    else if (isTransformableTrack) setActiveSection('Transform');
   });
 
   const handleSectionToggle = useCallback(
@@ -663,6 +678,70 @@ export function ClipPropertiesSection({
               className="min-h-16 text-xs resize-none bg-background font-sans"
             />
           </div>
+          <StudioFieldRow label="Font">
+            <Select
+              value={textStyle.fontFamily}
+              onValueChange={(fontFamily) => updateTextStyle({ fontFamily })}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {!STUDIO_TEXT_FONT_OPTIONS.some(
+                  ({ value }) => value === textStyle.fontFamily,
+                ) && (
+                  <SelectItem value={textStyle.fontFamily}>
+                    {textStyle.fontFamily}
+                  </SelectItem>
+                )}
+                {STUDIO_TEXT_FONT_OPTIONS.map(({ label, value }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </StudioFieldRow>
+          <StudioFieldRow label="Size">
+            <StudioScrubField
+              label="Text size"
+              value={textStyle.fontSize}
+              min={12}
+              max={256}
+              step={1}
+              suffix="px"
+              onChange={(fontSize) => updateTextStyle({ fontSize })}
+            />
+          </StudioFieldRow>
+          <StudioFieldRow label="Color">
+            <Input
+              aria-label="Text color"
+              type="color"
+              value={textStyle.color}
+              onChange={(event) => updateTextStyle({ color: event.target.value })}
+              className="h-7 w-12 cursor-pointer bg-background p-1"
+            />
+          </StudioFieldRow>
+          <StudioFieldRow label="Alignment">
+            <Select
+              value={textStyle.align}
+              onValueChange={(align) =>
+                updateTextStyle({ align: align as NonNullable<StudioTextStyle['align']> })
+              }
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="left">Left</SelectItem>
+                <SelectItem value="center">Center</SelectItem>
+                <SelectItem value="right">Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </StudioFieldRow>
+          <p className="text-[10px] text-muted-foreground">
+            Drag the text on the canvas to position it.
+          </p>
         </StudioPanelSection>
       )}
 
@@ -798,8 +877,8 @@ export function ClipPropertiesSection({
       {/* ── Universal Keyframes ───────────────────────────────────────────── */}
       <UniversalKeyframesSection track={track} clip={clip} />
 
-      {/* ── Transform (video & overlays) ──────────────────────────────────── */}
-      {isVisualTrack && (
+      {/* ── Transform (video, overlays & text) ────────────────────────────── */}
+      {isTransformableTrack && (
         <StudioPanelSection title="Transform" open={activeSection === 'Transform'} onOpenChange={handleSectionToggle('Transform')}>
           <StudioFieldRow label="Position">
             <StudioPairRow

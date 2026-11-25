@@ -14,6 +14,7 @@ import {
 import { filmGrainOffset } from '@/lib/studio/render/prng';
 import { buildFrameProgram } from '@/lib/studio/render/program';
 import { IDLE_CAMERA } from '@/lib/studio/render/camera';
+import { applyStudioTextAnimator } from '@/lib/studio/render/text-style';
 import { evaluateEditorTimeline } from '@/lib/studio/timeline/evaluate';
 import type { StudioStyling, TimelineTrack } from '@/lib/studio/types';
 import type { BuildFrameProgramInput } from '@/lib/studio/render/program';
@@ -206,6 +207,68 @@ describe('display list — determinism', () => {
     const again = filmGrainOffset(1000, 256);
     expect(again).toEqual(first);
     expect(filmGrainOffset(2000, 256)).not.toEqual(first);
+  });
+});
+
+describe('display list — text styling', () => {
+  it('builds positioned free-text ops from each clip style', () => {
+    const tracks = fullStackTracks();
+    const caption = tracks.find((track) => track.type === 'captions')!.clips[0];
+    caption.payload = {
+      ...caption.payload,
+      x: 0.25,
+      y: 0.75,
+      transform: {
+        position: { x: 12, y: -8 },
+        rotation: 15,
+        scale: { x: 1.2, y: 0.8 },
+      },
+      textStyle: {
+        fontFamily: 'Georgia, serif',
+        fontSize: 72,
+        color: '#ff3366',
+        align: 'right',
+      },
+    };
+
+    const textOp = build(tracks, 1000, {
+      styling: { ...STYLING, canvasMode: 'edit' },
+    }).ops.find((op) => op.kind === 'text');
+
+    expect(textOp?.layout.mode).toBe('free');
+    if (textOp?.layout.mode !== 'free') return;
+    expect(textOp.layout).toMatchObject({
+      text: 'Hello world',
+      style: {
+        fontFamily: 'Georgia, serif',
+        fontSize: 72,
+        fill: '#ff3366',
+        align: 'right',
+      },
+    });
+    expect(textOp.transform[4]).toBe(492);
+    expect(textOp.transform[5]).toBe(802);
+  });
+
+  it('keeps legacy caption styling until a clip is customized', () => {
+    const textOp = build(fullStackTracks()).ops.find(
+      (op) => op.kind === 'text',
+    );
+    expect(textOp?.layout.mode).toBe('caption');
+  });
+
+  it('retains text animation behavior for styled clips', () => {
+    const caption = applyStudioTextAnimator(
+      {
+        id: 'caption',
+        startMs: 0,
+        endMs: 1000,
+        text: 'Hello world',
+      },
+      { mode: 'typewriter', progress: 0.5 },
+    );
+
+    expect(caption.text).toBe('Hello');
   });
 });
 
