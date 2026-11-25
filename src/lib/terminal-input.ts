@@ -73,6 +73,8 @@ const PTY_COMMANDS = new Set([
   'lazygit',
   'lazydocker',
   'tig',
+  'cline',
+  'kiro-cli',
 ]);
 
 const DEV_SCRIPT_NAMES = new Set([
@@ -121,9 +123,14 @@ export function getDirectCommandRoute(command: string): DirectCommandRoute {
   if (packageScript && DEV_SCRIPT_NAMES.has(packageScript)) return 'pty';
 
   const binary = trimmed.match(
-    /^(?:npx|pnpm\s+dlx|bunx|yarn\s+dlx)\s+([\w.-]+)/,
+    /^(?:npx|pnpm\s+dlx|bunx|yarn\s+dlx)\s+(?:(?:--yes|-y)\s+)?([\w.-]+)/,
   )?.[1];
-  if (binary && LONG_RUNNING_BINARIES.has(binary)) return 'pty';
+  if (
+    binary &&
+    (LONG_RUNNING_BINARIES.has(binary) || PTY_COMMANDS.has(binary))
+  ) {
+    return 'pty';
+  }
 
   const firstBin = trimmed.match(/^([\w.-]+)/)?.[1];
   if (firstBin && LONG_RUNNING_BINARIES.has(firstBin)) return 'pty';

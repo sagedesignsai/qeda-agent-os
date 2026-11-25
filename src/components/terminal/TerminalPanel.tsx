@@ -38,6 +38,11 @@ interface TerminalPanelProps {
   onFocusPane: (paneId: string) => void;
   /** Unique key prefix for this panel group (for React keys). */
   keyPrefix?: string;
+  /** Hide pane tab bars when the sole pane's tabs are in the page header. */
+  showTabBars?: boolean;
+  /** Default directory and owning project for newly created terminal sessions. */
+  defaultCwd?: string;
+  projectId?: string | null;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -53,6 +58,9 @@ export function TerminalPanel({
   onNewTab,
   onFocusPane,
   keyPrefix = 'root',
+  showTabBars = true,
+  defaultCwd,
+  projectId,
 }: TerminalPanelProps) {
   if (node.type === 'leaf') {
     return (
@@ -65,6 +73,9 @@ export function TerminalPanel({
         onTabSelect={onTabSelect}
         onNewTab={onNewTab}
         onFocusPane={onFocusPane}
+        showTabBar={showTabBars}
+        defaultCwd={defaultCwd}
+        projectId={projectId}
       />
     );
   }
@@ -111,6 +122,9 @@ export function TerminalPanel({
                 onTabSelect={onTabSelect}
                 onNewTab={onNewTab}
                 onFocusPane={onFocusPane}
+                showTabBars={showTabBars}
+                defaultCwd={defaultCwd}
+                projectId={projectId}
                 keyPrefix={childKey}
               />
             </ResizablePanel>
@@ -132,6 +146,9 @@ interface PaneContentProps {
   onTabSelect: (paneId: string, tabId: string) => void;
   onNewTab: (paneId: string, mode: TerminalMode) => void;
   onFocusPane: (paneId: string) => void;
+  showTabBar: boolean;
+  defaultCwd?: string;
+  projectId?: string | null;
 }
 
 function PaneContent({
@@ -143,6 +160,9 @@ function PaneContent({
   onTabSelect,
   onNewTab,
   onFocusPane,
+  showTabBar,
+  defaultCwd,
+  projectId,
 }: PaneContentProps) {
   const { paneId, tabs, activeTabIndex } = pane;
 
@@ -164,17 +184,19 @@ function PaneContent({
   return (
     <div className="flex h-full flex-col">
       {/* Per-pane tab bar */}
-      <TerminalTabBar
-        tabs={tabs}
-        activeTabIndex={activeTabIndex}
-        tabStatuses={tabStatuses}
-        onTabSelect={(tabId) => {
-          onTabSelect(paneId, tabId);
-          onFocusPane(paneId);
-        }}
-        onTabClose={(tabId) => onCloseTab(paneId, tabId)}
-        onNewTab={(mode) => onNewTab(paneId, mode)}
-      />
+      {showTabBar && (
+        <TerminalTabBar
+          tabs={tabs}
+          activeTabIndex={activeTabIndex}
+          tabStatuses={tabStatuses}
+          onTabSelect={(tabId) => {
+            onTabSelect(paneId, tabId);
+            onFocusPane(paneId);
+          }}
+          onTabClose={(tabId) => onCloseTab(paneId, tabId)}
+          onNewTab={(mode) => onNewTab(paneId, mode)}
+        />
+      )}
 
       {/* Active tab content */}
       <div className="relative flex-1 min-h-0">
@@ -182,6 +204,8 @@ function PaneContent({
           tabId={activeTab.tabId}
           sessionId={activeTab.sessionId}
           mode={activeTab.mode}
+          defaultCwd={defaultCwd}
+          projectId={projectId}
           onTitleChange={onTitleChange}
           onSessionAssigned={onSessionAssigned}
         />

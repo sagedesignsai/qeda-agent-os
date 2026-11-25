@@ -61,6 +61,7 @@ import type {
   TtsVoiceQuery,
 } from '../../lib/tts/types';
 import type { TerminalSession, TerminalBlock } from '../db/terminal.js';
+import type { TerminalSettings } from '../../lib/terminal-settings';
 import type { Task } from '../db/tasks.js';
 import type { TaskStep, StepProgress } from '../db/task-steps.js';
 import type { TaskBlock, TaskBlockWithTask } from '../db/task-blocks.js';
@@ -768,6 +769,7 @@ export interface IpcChannels {
   'settings:get': {
     req: void;
     res: Omit<AppSettings, 'providers' | 'serviceKeys'> & {
+      terminal: TerminalSettings;
       providers: Record<
         string,
         {
@@ -1535,7 +1537,7 @@ export interface IpcChannels {
 
   /** Get current directory and Git context for the terminal composer. */
   'terminal:get-context-info': {
-    req: { cwd?: string } | void;
+    req: { cwd?: string; projectId?: string | null } | void;
     res: {
       cwd: string;
       gitBranch: string | null;
@@ -1552,6 +1554,39 @@ export interface IpcChannels {
   'terminal:set-session-cwd': {
     req: { sessionId: string; cwd: string };
     res: void;
+  };
+  'terminal:acp-discover': {
+    req: void;
+    res: import('../../lib/terminal-acp').CodingCliAvailability;
+  };
+  'terminal:acp-state': {
+    req: { sessionId: string };
+    res: import('../../lib/terminal-acp').AcpSessionSnapshot | null;
+  };
+  'terminal:acp-start': {
+    req: {
+      sessionId: string;
+      provider: import('../../lib/terminal-acp').CodingCliProvider;
+      cwd: string;
+      prompt: string;
+    };
+    res: void;
+  };
+  'terminal:acp-cancel': {
+    req: { sessionId: string };
+    res: void;
+  };
+  'terminal:acp-stop': {
+    req: { sessionId: string };
+    res: void;
+  };
+  'terminal:acp-permission-response': {
+    req: { sessionId: string; requestId: string; optionId?: string };
+    res: void;
+  };
+  'terminal:acp-event': {
+    sessionId: string;
+    event: import('../../lib/terminal-acp').AcpTerminalEvent;
   };
 
   // ── Raw PTY shell (Shell Mode & Shell Integration) ─────────────────────────
@@ -1574,6 +1609,11 @@ export interface IpcChannels {
   'pty:write': {
     req: { ptyId: string; data: string };
     res: void;
+  };
+  /** Return the foreground command for a session's live PTY, if any. */
+  'pty:session-command': {
+    req: { sessionId: string };
+    res: { command: string | null };
   };
   /** Notify the PTY of a terminal resize (columns × rows). */
   'pty:resize': {

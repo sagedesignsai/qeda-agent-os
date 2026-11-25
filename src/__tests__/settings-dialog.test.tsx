@@ -129,7 +129,9 @@ function savePayloads(): Record<string, unknown>[] {
  * `hidden`), so an unscoped `getByRole('button', {name: 'Save'})` would be
  * ambiguous by design.
  */
-function panel(id: 'models' | 'builder' | 'embeddings' | 'appearance') {
+function panel(
+  id: 'models' | 'builder' | 'embeddings' | 'appearance' | 'terminal',
+) {
   const el = document.getElementById(`settings-panel-${id}`);
   if (!el) throw new Error(`settings panel "${id}" is not mounted`);
   return within(el);
@@ -149,6 +151,7 @@ describe('SettingsDialog', () => {
       for (const label of [
         'AI & Models',
         'Builder & MCP',
+        'Terminal',
         'Embeddings',
         'Appearance',
       ]) {
@@ -162,6 +165,29 @@ describe('SettingsDialog', () => {
       expect(
         await screen.findByRole('heading', { name: 'AI & Models' }),
       ).toBeInTheDocument();
+    },
+    TEST_TIMEOUT,
+  );
+
+  it(
+    'saves Terminal preferences without replacing other settings',
+    async () => {
+      renderDialog();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Terminal' }));
+      const shellPath = await panel('terminal').findByLabelText(
+        'Shell executable',
+      );
+      fireEvent.change(shellPath, { target: { value: '/bin/zsh' } });
+      fireEvent.blur(shellPath);
+
+      await waitFor(() => {
+        expect(savePayloads()).toHaveLength(1);
+      });
+
+      expect(savePayloads()[0]).toMatchObject({
+        terminal: { shellPath: '/bin/zsh' },
+      });
     },
     TEST_TIMEOUT,
   );

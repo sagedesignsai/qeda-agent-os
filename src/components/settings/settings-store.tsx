@@ -28,6 +28,10 @@ import {
   DEFAULT_BUILDER_MAX_STEPS,
   DEFAULT_E2B_SANDBOX_TEMPLATE,
 } from '@/lib/builder/engine';
+import {
+  DEFAULT_TERMINAL_SETTINGS,
+  type TerminalSettings,
+} from '@/lib/terminal-settings';
 
 /** The subset of `settings:get` the sections actually read. */
 export interface SettingsSnapshot {
@@ -59,6 +63,7 @@ export interface SettingsSnapshot {
   e2bSandboxTimeoutMs: number;
   /** E2B template alias used for OpenCode sandbox sessions. */
   e2bSandboxTemplate: string;
+  terminal: TerminalSettings;
   /**
    * Whether an encrypted GitHub PAT is stored for cloning private repos
    * into the E2B sandbox. The value itself never leaves the main process.
@@ -77,6 +82,7 @@ const EMPTY: SettingsSnapshot = {
   mcpServers: [],
   e2bSandboxTimeoutMs: 3_600_000,
   e2bSandboxTemplate: DEFAULT_E2B_SANDBOX_TEMPLATE,
+  terminal: DEFAULT_TERMINAL_SETTINGS,
   githubPatSet: false,
 };
 

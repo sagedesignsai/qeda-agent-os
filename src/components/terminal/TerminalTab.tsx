@@ -35,6 +35,7 @@ import {
 } from '@/components/terminal/CommandBlock';
 import { TerminalGoalInput } from '@/components/terminal/TerminalGoalInput';
 import { TerminalWelcome } from '@/components/terminal/TerminalWelcome';
+import { AcpSessionPanel } from '@/components/terminal/AcpSessionPanel';
 import {
   XtermPane,
   type XtermPaneHandle,
@@ -45,7 +46,18 @@ import {
   parseComposerInput,
   shouldRouteDirectCommandToPty,
 } from '@/lib/terminal-input';
+import {
+  DEFAULT_TERMINAL_SETTINGS,
+  normalizeTerminalSettings,
+  type TerminalSettings,
+} from '@/lib/terminal-settings';
 import type { TerminalBlock } from '@/main/ipc/channels';
+import type {
+  AcpSessionSnapshot,
+  AcpTerminalEvent,
+  CodingCliAvailability,
+  CodingCliProvider,
+} from '@/lib/terminal-acp';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,10 +72,34 @@ export interface TerminalTabProps {
   sessionId?: string;
   /** Fixed mode — the tab always renders in this mode. */
   mode: TerminalMode;
+  /** Repository directory for the active project, used for a new session. */
+  defaultCwd?: string;
+  /** Active project whose repo directory this tab should use by default. */
+  projectId?: string | null;
   /** Called when the session title changes. */
   onTitleChange?: (tabId: string, title: string) => void;
   /** Called when the session ID is assigned (after auto-creation). */
   onSessionAssigned?: (tabId: string, sessionId: string) => void;
+}
+
+function applyAcpEvent(
+  snapshot: AcpSessionSnapshot,
+  event: AcpTerminalEvent,
+): AcpSessionSnapshot {
+  const pendingPermissions =
+    event.type === 'permission-request'
+      ? [...snapshot.pendingPermissions, event]
+      : event.type === 'permission-resolved'
+        ? snapshot.pendingPermissions.filter(
+            (permission) => permission.requestId !== event.requestId,
+          )
+        : snapshot.pendingPermissions;
+  return {
+    ...snapshot,
+    status: event.type === 'status' ? event.status : snapshot.status,
+    events: [...snapshot.events, event].slice(-600),
+    pendingPermissions,
+  };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -72,14 +108,31 @@ export function TerminalTab({
   tabId,
   sessionId: initialSessionId,
   mode,
+  defaultCwd,
+  projectId,
   onTitleChange,
   onSessionAssigned,
 }: TerminalTabProps) {
   const xtermRef = useRef<XtermPaneHandle>(null);
   const activePtyIdRef = useRef<string | null>(null);
+  const interactiveLaunchStartedRef = useRef(false);
+  const restoringInteractivePtyRef = useRef(false);
 
   const [shellExited, setShellExited] = useState(false);
   const [hasVisitedShell, setHasVisitedShell] = useState(false);
+  const [acpAvailability, setAcpAvailability] =
+    useState<CodingCliAvailability | null>(null);
+  const [terminalSettings, setTerminalSettings] = useState<TerminalSettings>(
+    DEFAULT_TERMINAL_SETTINGS,
+  );
+  const [terminalSettingsReady, setTerminalSettingsReady] = useState(false);
+  const [acpSnapshot, setAcpSnapshot] = useState<AcpSessionSnapshot | null>(
+    null,
+  );
+  const acpStartPendingRef = useRef(false);
+  const acpEventsBeforeSnapshotRef = useRef<
+    Array<{ sessionId: string; event: AcpTerminalEvent }>
+  >([]);
 
   // Track the current session ID — may change if auto-created
   const [sessionId, setSessionId] = useState<string | undefined>(
@@ -105,6 +158,96 @@ export function TerminalTab({
     stop,
   } = useTerminalSession(sessionId);
 
+  const refreshTerminalSettings = useCallback(async () => {
+    const snapshot = await window.electron.ipc.invoke<{
+      terminal?: Partial<TerminalSettings>;
+    }>('settings:get');
+    setTerminalSettings(normalizeTerminalSettings(snapshot.terminal));
+    setTerminalSettingsReady(true);
+    if (mode === 'agent') {
+      try {
+        const availability =
+          await window.electron.ipc.invoke<CodingCliAvailability>(
+            'terminal:acp-discover',
+          );
+        setAcpAvailability(availability);
+      } catch {
+        toast.error('Could not check for installed coding CLIs');
+      }
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    void refreshTerminalSettings().catch(() => {
+      setTerminalSettings(DEFAULT_TERMINAL_SETTINGS);
+      setTerminalSettingsReady(true);
+      toast.error('Could not load Terminal preferences; using defaults.');
+    });
+  }, [refreshTerminalSettings]);
+
+  useIpcEvent(
+    'settings:changed',
+    () => {
+      void refreshTerminalSettings().catch(() => {
+        toast.error('Could not refresh Terminal preferences');
+      });
+    },
+    [refreshTerminalSettings],
+  );
+
+  useEffect(() => {
+    if (mode !== 'agent' || !sessionId) {
+      setAcpSnapshot(null);
+      return;
+    }
+
+    let cancelled = false;
+    void window.electron.ipc
+      .invoke<AcpSessionSnapshot | null>('terminal:acp-state', { sessionId })
+      .then((snapshot) => {
+        if (cancelled || !snapshot) return;
+        const earlyEvents = acpEventsBeforeSnapshotRef.current
+          .filter((entry) => entry.sessionId === sessionId)
+          .map((entry) => entry.event);
+        acpEventsBeforeSnapshotRef.current =
+          acpEventsBeforeSnapshotRef.current.filter(
+            (entry) => entry.sessionId !== sessionId,
+          );
+        setAcpSnapshot(
+          earlyEvents.reduce(
+            (current, event) => applyAcpEvent(current, event),
+            snapshot,
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('Could not restore the coding CLI session');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, sessionId]);
+
+  const handleAcpEvent = useCallback(
+    (...args: unknown[]) => {
+      const payload = args[0] as {
+        sessionId: string;
+        event: AcpTerminalEvent;
+      };
+      if (payload.sessionId !== sessionId) return;
+      setAcpSnapshot((current) => {
+        if (!current) {
+          acpEventsBeforeSnapshotRef.current.push(payload);
+          return current;
+        }
+        return applyAcpEvent(current, payload.event);
+      });
+    },
+    [sessionId],
+  );
+  useIpcEvent('terminal:acp-event', handleAcpEvent, [handleAcpEvent]);
+
   // When a fix is accepted, it goes into the composer rather than straight to
   // the shell — the user still presses Enter.
   const [draftCommand, setDraftCommand] = useState<string | undefined>();
@@ -121,9 +264,39 @@ export function TerminalTab({
   }, []);
 
   const handleRunInShell = useCallback((command: string) => {
+    interactiveLaunchStartedRef.current = true;
+    restoringInteractivePtyRef.current = false;
     setInteractivePtyCommand(command.trim() || null);
     setLastPtyCommand(null);
   }, []);
+
+  useEffect(() => {
+    if (mode !== 'agent' || !sessionId) return;
+    let cancelled = false;
+
+    void window.electron.ipc
+      .invoke<{ command: string | null }>('pty:session-command', { sessionId })
+      .then(({ command }) => {
+        if (
+          cancelled ||
+          interactiveLaunchStartedRef.current ||
+          !command
+        ) {
+          return;
+        }
+        restoringInteractivePtyRef.current = true;
+        setInteractivePtyCommand(command);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          toast.error('Could not check for a running terminal command');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, sessionId]);
 
   // Context info: cwd & git branch for Warp-style rich prompt
   const [contextInfo, setContextInfo] = useState<{
@@ -134,20 +307,27 @@ export function TerminalTab({
     additions?: number;
     deletions?: number;
   }>({});
+  const [contextError, setContextError] = useState(false);
 
-  const refreshContext = useCallback((targetCwd?: string) => {
-    void window.electron.ipc
-      .invoke<{
-        cwd: string;
-        gitBranch: string | null;
-        gitRoot: string | null;
-        changedFiles: number;
-        additions: number;
-        deletions: number;
-      }>('terminal:get-context-info', { cwd: targetCwd })
-      .then((info) => setContextInfo(info))
-      .catch(() => {});
-  }, []);
+  const refreshContext = useCallback(
+    (targetCwd?: string) => {
+      void window.electron.ipc
+        .invoke<{
+          cwd: string;
+          gitBranch: string | null;
+          gitRoot: string | null;
+          changedFiles: number;
+          additions: number;
+          deletions: number;
+        }>('terminal:get-context-info', { cwd: targetCwd, projectId })
+        .then((info) => {
+          setContextInfo(info);
+          setContextError(false);
+        })
+        .catch(() => setContextError(true));
+    },
+    [projectId],
+  );
 
   // Update working directory whenever PTY shell reports OSC 7 directory changes
   useIpcEvent('pty:cwd-changed', (...args: unknown[]) => {
@@ -171,11 +351,12 @@ export function TerminalTab({
 
   // Track saved session working directory for fresh shell launches
   const [sessionCwd, setSessionCwd] = useState<string | undefined>();
+  const workingDirectory = sessionCwd || contextInfo.cwd || defaultCwd;
   useEffect(() => {
     setShellExited(false);
     if (!sessionId) {
       setSessionCwd(undefined);
-      refreshContext();
+      refreshContext(defaultCwd);
       return;
     }
     void window.electron.ipc
@@ -187,12 +368,12 @@ export function TerminalTab({
           setSessionCwd(data.cwd);
           refreshContext(data.cwd);
         } else {
-          refreshContext();
+          refreshContext(defaultCwd);
         }
         return undefined;
       })
       .catch(() => {});
-  }, [sessionId, refreshContext]);
+  }, [sessionId, refreshContext, defaultCwd]);
 
   // Report title changes to parent
   useEffect(() => {
@@ -237,16 +418,16 @@ export function TerminalTab({
     }
   }, [blocks.length, lastOutput, lastStatus, summary]);
 
-  // Focus and re-fit xterm on mount for shell tabs
+  // Focus and re-fit xterm after its initial working directory is resolved.
   useEffect(() => {
-    if (mode === 'shell') {
+    if (mode === 'shell' && workingDirectory) {
       setHasVisitedShell(true);
       requestAnimationFrame(() => {
         xtermRef.current?.fit();
         xtermRef.current?.focus();
       });
     }
-  }, [mode]);
+  }, [mode, workingDirectory]);
 
   // Agent goal submission
   const pendingGoalRef = useRef<string | null>(null);
@@ -256,7 +437,10 @@ export function TerminalTab({
       const intent = parseComposerInput(input);
 
       if (intent.kind === 'command') {
-        if (shouldRouteDirectCommandToPty(input)) {
+        if (
+          terminalSettings.autoRouteInteractiveCommandsToPty &&
+          shouldRouteDirectCommandToPty(input)
+        ) {
           handleRunInShell(intent.command);
           return;
         }
@@ -269,8 +453,9 @@ export function TerminalTab({
       }
 
       try {
-        const folder = contextInfo.cwd
-          ? contextInfo.cwd.split('/').filter(Boolean).pop() || ''
+        const cwd = contextInfo.cwd || defaultCwd;
+        const folder = cwd
+          ? cwd.split('/').filter(Boolean).pop() || ''
           : '';
         const branchSuffix = contextInfo.gitBranch
           ? ` (${contextInfo.gitBranch})`
@@ -286,7 +471,8 @@ export function TerminalTab({
           {
             title,
             goal: input,
-            cwd: contextInfo.cwd,
+            cwd,
+            project_id: projectId,
           },
         );
         setSessionId(session.id);
@@ -302,9 +488,120 @@ export function TerminalTab({
       runGoal,
       runCommand,
       contextInfo,
+      defaultCwd,
+      projectId,
       tabId,
       onSessionAssigned,
       handleRunInShell,
+      terminalSettings.autoRouteInteractiveCommandsToPty,
+    ],
+  );
+
+  const handleAcpSubmit = useCallback(
+    async (provider: CodingCliProvider, prompt: string) => {
+      const cwd = contextInfo.cwd || defaultCwd;
+      if (!cwd) {
+        toast.error('Resolve a project working directory before starting a CLI');
+        return false;
+      }
+
+      if (acpStartPendingRef.current) return false;
+      acpStartPendingRef.current = true;
+      const previousSnapshot = acpSnapshot;
+      if (!previousSnapshot || previousSnapshot.provider === provider) {
+        setAcpSnapshot({
+          provider,
+          status: 'starting',
+          events: previousSnapshot?.events ?? [],
+          pendingPermissions: previousSnapshot?.pendingPermissions ?? [],
+        });
+      }
+
+      try {
+        let targetSessionId = sessionId;
+        if (!targetSessionId) {
+          const folder = cwd.split('/').filter(Boolean).pop() || '';
+          const branchSuffix = contextInfo.gitBranch
+            ? ` (${contextInfo.gitBranch})`
+            : '';
+          const shortPrompt =
+            prompt.length > 25 ? `${prompt.slice(0, 22)}…` : prompt;
+          const session = await window.electron.ipc.invoke<{ id: string }>(
+            'terminal:session-create',
+            {
+              title: `${shortPrompt}${folder ? ` · ${folder}${branchSuffix}` : ''}`,
+              goal: prompt,
+              cwd,
+              project_id: projectId,
+            },
+          );
+          targetSessionId = session.id;
+          setSessionId(session.id);
+          onSessionAssigned?.(tabId, session.id);
+        }
+
+        await window.electron.ipc.invoke('terminal:acp-start', {
+          sessionId: targetSessionId,
+          provider,
+          cwd,
+          prompt,
+        });
+        const snapshot =
+          await window.electron.ipc.invoke<AcpSessionSnapshot | null>(
+            'terminal:acp-state',
+            { sessionId: targetSessionId },
+          );
+        if (snapshot) {
+          const earlyEvents = acpEventsBeforeSnapshotRef.current
+            .filter((entry) => entry.sessionId === targetSessionId)
+            .map((entry) => entry.event);
+          acpEventsBeforeSnapshotRef.current =
+            acpEventsBeforeSnapshotRef.current.filter(
+              (entry) => entry.sessionId !== targetSessionId,
+            );
+          setAcpSnapshot(
+            earlyEvents.reduce(
+              (current, event) => applyAcpEvent(current, event),
+              snapshot,
+            ),
+          );
+        }
+        return true;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Could not start the coding CLI';
+        if (previousSnapshot && previousSnapshot.provider !== provider) {
+          setAcpSnapshot(previousSnapshot);
+        } else {
+          setAcpSnapshot((current) =>
+            current
+              ? {
+                  ...current,
+                  status: message.includes('cancelled') ? 'stopped' : 'error',
+                  events: [
+                    ...current.events,
+                    { type: 'error' as const, message },
+                  ].slice(-600),
+                }
+              : current,
+          );
+        }
+        if (message.includes('cancelled')) toast.info(message);
+        else toast.error(message);
+        return false;
+      } finally {
+        acpStartPendingRef.current = false;
+      }
+    },
+    [
+      acpSnapshot,
+      contextInfo.cwd,
+      contextInfo.gitBranch,
+      defaultCwd,
+      sessionId,
+      projectId,
+      tabId,
+      onSessionAssigned,
     ],
   );
 
@@ -320,8 +617,41 @@ export function TerminalTab({
 
   const hasBlocks = blocks.length > 0;
   const isDone = status === 'done' || status === 'error';
-  const isRunning = status === 'running';
+  const isAcpRunning =
+    acpSnapshot?.status === 'starting' || acpSnapshot?.status === 'running';
+  const isRunning = status === 'running' || isAcpRunning;
   const runningBlock = blocks.find((block) => block.status === 'running');
+
+  const cancelAcp = useCallback(() => {
+    if (!sessionId) return;
+    void window.electron.ipc
+      .invoke('terminal:acp-cancel', { sessionId })
+      .catch(() => toast.error('Could not cancel the coding CLI turn'));
+  }, [sessionId]);
+
+  const stopAcp = useCallback(() => {
+    if (!sessionId) return;
+    void window.electron.ipc
+      .invoke('terminal:acp-stop', { sessionId })
+      .then(() => setAcpSnapshot((current) =>
+        current ? { ...current, status: 'stopped' } : current,
+      ))
+      .catch(() => toast.error('Could not stop the coding CLI'));
+  }, [sessionId]);
+
+  const respondToAcpPermission = useCallback(
+    (requestId: string, optionId?: string) => {
+      if (!sessionId) return;
+      void window.electron.ipc
+        .invoke('terminal:acp-permission-response', {
+          sessionId,
+          requestId,
+          optionId,
+        })
+        .catch(() => toast.error('Could not respond to the permission request'));
+    },
+    [sessionId],
+  );
 
   const pendingShellCmdRef = useRef<string | null>(null);
 
@@ -332,12 +662,20 @@ export function TerminalTab({
     return (
       <div className="flex h-full flex-col bg-background text-foreground">
         <div className="h-full">
-          {hasVisitedShell && !shellExited && (
+          {hasVisitedShell &&
+            !shellExited &&
+            workingDirectory &&
+            terminalSettingsReady && (
             <XtermPane
               key={sessionId ?? tabId}
               ref={xtermRef}
               sessionId={sessionId}
-              cwd={sessionCwd || contextInfo.cwd}
+              cwd={workingDirectory}
+              shell={terminalSettings.shellPath}
+              fontSize={terminalSettings.fontSize}
+              scrollbackLines={terminalSettings.scrollbackLines}
+              replayBufferBytes={terminalSettings.ptyReplayBufferBytes}
+              enableShellIntegration={terminalSettings.shellIntegration}
               className="h-full"
               onReady={(ptyId) => {
                 activePtyIdRef.current = ptyId;
@@ -357,6 +695,32 @@ export function TerminalTab({
               }}
             />
           )}
+          {hasVisitedShell &&
+            !shellExited &&
+            workingDirectory &&
+            !terminalSettingsReady && (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                Loading terminal preferences…
+              </div>
+            )}
+          {!shellExited && !workingDirectory && (
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              {contextError ? (
+                <div className="flex flex-col items-center gap-2">
+                  <p>Could not resolve the terminal working directory.</p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => refreshContext(defaultCwd)}
+                  >
+                    Retry
+                  </Button>
+                </div>
+              ) : (
+                'Resolving terminal working directory…'
+              )}
+            </div>
+          )}
           {shellExited && (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/75">
               <p className="font-sans text-sm">Shell process exited.</p>
@@ -371,6 +735,35 @@ export function TerminalTab({
             </div>
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (interactivePtyCommand && !workingDirectory) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
+        {contextError ? (
+          <div className="flex flex-col items-center gap-2">
+            <p>Could not resolve the terminal working directory.</p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => refreshContext(defaultCwd)}
+            >
+              Retry
+            </Button>
+          </div>
+        ) : (
+          'Resolving terminal working directory…'
+        )}
+      </div>
+    );
+  }
+
+  if (interactivePtyCommand && !terminalSettingsReady) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background text-sm text-muted-foreground">
+        Loading terminal preferences…
       </div>
     );
   }
@@ -413,14 +806,42 @@ export function TerminalTab({
           <XtermPane
             key={`pty-${sessionId ?? tabId}-${interactivePtyCommand}`}
             sessionId={sessionId}
-            cwd={sessionCwd || contextInfo.cwd}
+            cwd={workingDirectory}
+            shell={terminalSettings.shellPath}
+            fontSize={terminalSettings.fontSize}
+            scrollbackLines={terminalSettings.scrollbackLines}
+            replayBufferBytes={terminalSettings.ptyReplayBufferBytes}
+            enableShellIntegration={terminalSettings.shellIntegration}
             className="h-full"
             onReady={(ptyId) => {
               interactivePtyPtyIdRef.current = ptyId;
+              if (restoringInteractivePtyRef.current) {
+                restoringInteractivePtyRef.current = false;
+                void window.electron.ipc
+                  .invoke<{ command: string | null }>(
+                    'pty:session-command',
+                    { sessionId },
+                  )
+                  .then(({ command }) => {
+                    if (!command) setInteractivePtyCommand(null);
+                    return null;
+                  })
+                  .catch(() => {
+                    toast.error('Could not restore the running terminal command');
+                  });
+                return;
+              }
               void window.electron.ipc.invoke('pty:run-command', {
                 ptyId,
                 command: interactivePtyCommand,
               });
+            }}
+            onCommandExit={(code) => {
+              const command = interactivePtyCommand;
+              if (!command) return;
+              interactivePtyPtyIdRef.current = null;
+              setInteractivePtyCommand(null);
+              setLastPtyCommand({ command, exitCode: code });
             }}
             onExit={(code) => {
               const command = interactivePtyCommand;
@@ -482,7 +903,7 @@ export function TerminalTab({
         >
           <div className="mx-auto max-w-3xl px-4 py-6">
             <AnimatePresence initial={false}>
-            {!hasBlocks && !isRunning ? (
+            {!hasBlocks && !isRunning && !acpSnapshot ? (
               <motion.div
                 key="welcome"
                 initial={{ opacity: 0 }}
@@ -528,6 +949,15 @@ export function TerminalTab({
                   </CommandBlock>
                 ))}
 
+                {acpSnapshot && (
+                  <AcpSessionPanel
+                    snapshot={acpSnapshot}
+                    onPermissionResponse={respondToAcpPermission}
+                    onCancel={cancelAcp}
+                    onStop={stopAcp}
+                  />
+                )}
+
                 <AnimatePresence>
                   {isDone && summary && (
                     <AgentSummary key="summary" summary={summary} />
@@ -569,8 +999,19 @@ export function TerminalTab({
       <div className="border-t border-border/60 p-3">
         <TerminalGoalInput
           onSubmit={handleGoalSubmit}
+          onAcpSubmit={handleAcpSubmit}
+          acpAvailability={acpAvailability}
+          preferredCodingCli={terminalSettings.preferredCodingCli}
+          historyLimit={terminalSettings.historyLimit}
+          autoRouteToPty={terminalSettings.autoRouteInteractiveCommandsToPty}
           onRunInShell={handleRunInShell}
-          onStop={runningBlock ? () => stop(runningBlock.id) : undefined}
+          onStop={
+            isAcpRunning
+              ? cancelAcp
+              : runningBlock
+                ? () => stop(runningBlock.id)
+                : undefined
+          }
           isRunning={isRunning}
           disabled={isRunning}
           prefill={draftCommand}

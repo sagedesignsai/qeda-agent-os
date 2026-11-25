@@ -25,7 +25,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { isInteractiveCommand } from '@/lib/terminal-input';
+import { DEFAULT_TERMINAL_SETTINGS } from '@/lib/terminal-settings';
+import {
+  isInteractiveCommand,
+  parseComposerInput,
+  shouldRouteDirectCommandToPty,
+} from '@/lib/terminal-input';
 import { WorkflowsDialog } from '@/components/terminal/WorkflowsDialog';
 import { TerminalHistoryDialog } from '@/components/terminal/TerminalHistoryDialog';
 import {
@@ -38,6 +43,7 @@ import {
   BookOpenIcon,
   ChevronUpIcon,
   ClockIcon,
+  ChevronDownIcon,
   FolderIcon,
   GitBranchIcon,
   LoaderCircleIcon,
@@ -46,6 +52,10 @@ import {
   TerminalIcon,
   ZapIcon,
 } from 'lucide-react';
+import type {
+  CodingCliAvailability,
+  CodingCliProvider,
+} from '@/lib/terminal-acp';
 
 // ─── Preset goals ─────────────────────────────────────────────────────────────
 
@@ -92,6 +102,12 @@ const PRESET_GOALS: { label: string; goal: string; tag: string }[] = [
   },
 ];
 
+const ACP_PROVIDER_OPTIONS: Array<[CodingCliProvider, string]> = [
+  ['opencode', 'OpenCode'],
+  ['cline', 'Cline'],
+  ['kiro', 'Kiro CLI'],
+];
+
 const TAG_COLORS: Record<string, string> = {
   explore: 'bg-sky-900/60 text-sky-300 border-sky-700/40',
   system: 'bg-orange-900/60 text-orange-300 border-orange-700/40',
@@ -124,6 +140,14 @@ interface TerminalGoalInputProps {
   additions?: number;
   deletions?: number;
   onCwdChange?: (cwd: string) => void;
+  acpAvailability?: CodingCliAvailability | null;
+  preferredCodingCli?: CodingCliProvider | 'ask';
+  historyLimit?: number;
+  autoRouteToPty?: boolean;
+  onAcpSubmit?: (
+    provider: CodingCliProvider,
+    prompt: string,
+  ) => Promise<boolean>;
 }
 
 export function TerminalGoalInput({
@@ -141,11 +165,18 @@ export function TerminalGoalInput({
   additions = 0,
   deletions = 0,
   onCwdChange,
+  acpAvailability,
+  preferredCodingCli = 'ask',
+  historyLimit = DEFAULT_TERMINAL_SETTINGS.historyLimit,
+  autoRouteToPty =
+    DEFAULT_TERMINAL_SETTINGS.autoRouteInteractiveCommandsToPty,
+  onAcpSubmit,
 }: TerminalGoalInputProps) {
   const [text, setText] = useState('');
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [workflowsOpen, setWorkflowsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [acpProvidersOpen, setAcpProvidersOpen] = useState(false);
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [directorySearch, setDirectorySearch] = useState('');
   const [directories, setDirectories] = useState<string[]>([]);
@@ -191,9 +222,10 @@ export function TerminalGoalInput({
   // A leading ! or $ means "run this directly", mirroring Warp's convention of
   // letting the shell handle what you type instead of routing it to the agent.
   const isDirectMode = /^[!$]\s?/.test(text.trimStart());
+  const parsedInput = parseComposerInput(text);
 
   // Ghost text autosuggestion suffix from command history
-  const suggestion = getHistorySuggestion(text);
+  const suggestion = getHistorySuggestion(text, historyLimit);
 
   const handleSubmit = (message: PromptInputMessage) => {
     const goal = message.text.trim();
@@ -202,11 +234,22 @@ export function TerminalGoalInput({
     // Check if command requires interactive TTY input
     const rawCmd = goal.replace(/^[!$]\s?/, '').trim();
     if (isInteractiveCommand(rawCmd)) {
+      if (
+        autoRouteToPty &&
+        onRunInShell &&
+        parseComposerInput(goal).kind === 'command' &&
+        shouldRouteDirectCommandToPty(goal)
+      ) {
+        addCommandHistory(goal, cwd, historyLimit);
+        onRunInShell(rawCmd);
+        setText('');
+        return;
+      }
       setInteractivePrompt(rawCmd);
       return;
     }
 
-    addCommandHistory(goal, cwd);
+    addCommandHistory(goal, cwd, historyLimit);
     onSubmit(goal);
     setText('');
   };
@@ -248,6 +291,23 @@ export function TerminalGoalInput({
       }
       return `! ${current}`;
     });
+  };
+
+  const runDirectCommandInPty = () => {
+    if (parsedInput.kind !== 'command' || !onRunInShell) return;
+    addCommandHistory(`!${parsedInput.command}`, cwd, historyLimit);
+    setText('');
+    onRunInShell(parsedInput.command);
+  };
+
+  const runWithAcp = async (provider: CodingCliProvider) => {
+    const prompt = text.trim();
+    if (!prompt || disabled || isRunning || !onAcpSubmit) return;
+    const started = await onAcpSubmit(provider, prompt);
+    if (!started) return;
+    addCommandHistory(prompt, cwd, historyLimit);
+    setText((current) => (current.trim() === prompt ? '' : current));
+    setAcpProvidersOpen(false);
   };
 
   const chooseDirectory = (nextCwd: string) => {
@@ -307,7 +367,7 @@ export function TerminalGoalInput({
                 onClick={() => {
                   const cmd = interactivePrompt;
                   setInteractivePrompt(null);
-                  addCommandHistory(`!${cmd}`, cwd);
+                  addCommandHistory(`!${cmd}`, cwd, historyLimit);
                   onSubmit(`!${cmd}`);
                   setText('');
                 }}
@@ -377,6 +437,94 @@ export function TerminalGoalInput({
               <BotIcon className="size-3.5" />
             )}
           </Button>
+
+          {parsedInput.kind === 'command' && onRunInShell && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 px-2 text-[11px] font-sans"
+              onClick={runDirectCommandInPty}
+              disabled={disabled || isRunning}
+              title="Run this command in an interactive terminal"
+            >
+              <TerminalIcon data-icon="inline-start" />
+              <span>Run in PTY</span>
+            </Button>
+          )}
+
+          {acpAvailability && onAcpSubmit && (
+            <Popover
+              open={acpProvidersOpen}
+              onOpenChange={setAcpProvidersOpen}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5 px-2 text-[11px] font-sans"
+                  disabled={
+                    disabled ||
+                    isRunning ||
+                    !text.trim() ||
+                    parsedInput.kind === 'command'
+                  }
+                  title="Run this prompt with an installed coding CLI"
+                >
+                  <BotIcon className="size-3" />
+                  <span className="hidden sm:inline">Run with CLI</span>
+                  <ChevronDownIcon className="size-3" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                align="start"
+                className="w-64 border-border bg-popover p-1.5"
+              >
+                <p className="px-2 py-1 text-[11px] text-muted-foreground">
+                  Choose a coding CLI
+                </p>
+                {[...ACP_PROVIDER_OPTIONS]
+                  .sort(([a], [b]) => {
+                    if (a === preferredCodingCli) return -1;
+                    if (b === preferredCodingCli) return 1;
+                    return 0;
+                  })
+                  .map(([provider, label]) => {
+                    const executable = acpAvailability[provider];
+                    return (
+                      <button
+                        key={provider}
+                        type="button"
+                        disabled={!executable}
+                        onClick={() => void runWithAcp(provider)}
+                        className="flex w-full items-center justify-between gap-3 rounded-sm px-2 py-2 text-left text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <span className="flex items-center gap-2">
+                          {label}
+                          {provider === preferredCodingCli && (
+                            <Badge
+                              variant="secondary"
+                              className="px-1.5 py-0 text-[9px]"
+                            >
+                              Preferred
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="truncate font-mono text-[10px] text-muted-foreground">
+                          {executable ? 'available' : 'not found on PATH'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                <p className="mt-1 border-t border-border/50 px-2 pt-2 text-[10px] leading-relaxed text-muted-foreground">
+                  External CLIs run with your OS account permissions. Each
+                  requested action needs your approval.
+                </p>
+              </PopoverContent>
+            </Popover>
+          )}
 
           {/* Preset goals popover */}
           <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
@@ -590,6 +738,7 @@ export function TerminalGoalInput({
       <TerminalHistoryDialog
         open={historyOpen}
         onOpenChange={setHistoryOpen}
+        historyLimit={historyLimit}
         onSelectCommand={(cmd, runDirectly) => {
           if (runDirectly) {
             onSubmit(

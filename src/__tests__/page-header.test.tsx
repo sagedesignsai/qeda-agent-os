@@ -133,6 +133,26 @@ describe('PageHeader', () => {
     expect(container.querySelector('[data-slot="page-header-nav"]')).toBeNull();
   });
 
+  it('can render only the sidebar trigger and nav', () => {
+    const { container } = renderHeader(
+      <PageHeader
+        crumbs={[]}
+        nav={<button type="button">Session tab</button>}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-slot="sidebar-trigger"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="page-header-identity"]'),
+    ).toBeNull();
+    expect(screen.queryByRole('heading')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Session tab' }),
+    ).toBeInTheDocument();
+  });
+
   it('renders ancestor crumbs as links and lets title override the leaf', () => {
     renderHeader(
       <PageHeader

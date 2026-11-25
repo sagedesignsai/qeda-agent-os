@@ -8,9 +8,9 @@
  *
  * Architecture
  * ────────────
- * The agent runs as a stateful loop in the main process, *separate* from the
- * chat ToolLoopAgent. It maintains a queue of pending blocks and an approval
- * map (blockId → resolve/reject). Each tool call becomes a TerminalBlock:
+ * The agent uses the AI SDK ToolLoopAgent with a terminal-specific tool set.
+ * The app maintains a queue of pending blocks and an approval map
+ * (blockId → resolve/reject). Each shell tool call becomes a TerminalBlock:
  *
  *   1. Agent calls runShell with a command
  *   2. We intercept → create a TerminalBlock with status=pending
@@ -25,7 +25,13 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { generateText, tool, isStepCount, type LanguageModel } from 'ai';
+import {
+  ToolLoopAgent,
+  generateText,
+  tool,
+  isStepCount,
+  type LanguageModel,
+} from 'ai';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import fs from 'node:fs';
@@ -34,8 +40,14 @@ import { z } from 'zod';
 import { resolveModel } from './provider.js';
 import { getSettings } from './settings.js';
 import {
+  DEFAULT_TERMINAL_SETTINGS,
+  normalizeTerminalSettings,
+} from '../../lib/terminal-settings.js';
+import { resolveActiveProjectRepoPath } from './project-context.js';
+import {
   appendBlock,
   getBlock,
+  getTerminalSession,
   updateBlock,
   updateTerminalSession,
   getSessionBlocks,
@@ -170,6 +182,14 @@ export function stopCommand(blockId: string): boolean {
  * Terminate all active processes belonging to a given session.
  */
 export function stopSessionProcesses(sessionId: string): void {
+  const gates = approvalGates.get(sessionId);
+  if (gates) {
+    for (const resolve of Array.from(gates.values())) {
+      resolve(false);
+    }
+    approvalGates.delete(sessionId);
+  }
+
   const blocks = sessionActiveBlocks.get(sessionId);
   if (blocks) {
     for (const blockId of Array.from(blocks)) {
@@ -181,7 +201,7 @@ export function stopSessionProcesses(sessionId: string): void {
 
 // ─── Command execution ────────────────────────────────────────────────────────
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_TIMEOUT_MS = DEFAULT_TERMINAL_SETTINGS.commandTimeoutMs;
 
 function runCommand(
   command: string,
@@ -455,7 +475,11 @@ export async function executeDirectCommand({
  * Build the terminal-specific tool set with the approval gate wired in.
  * Each tool call goes through the block → propose → approval → execute cycle.
  */
-function buildTerminalTools(sessionId: string, emitter: TerminalAgentEmitter) {
+function buildTerminalTools(
+  sessionId: string,
+  emitter: TerminalAgentEmitter,
+  commandTimeoutMs: number,
+) {
   const runShell = tool({
     description:
       'Run a shell command. Each call will be shown to the user for approval before executing. Use the `thought` field to explain WHY you are running this command.',
@@ -466,7 +490,7 @@ function buildTerminalTools(sessionId: string, emitter: TerminalAgentEmitter) {
       cwd: z
         .string()
         .optional()
-        .describe('Working directory. Defaults to home.'),
+        .describe('Working directory. Defaults to the terminal session directory.'),
       thought: z
         .string()
         .describe('1–2 sentences explaining what this command does and why.'),
@@ -474,12 +498,19 @@ function buildTerminalTools(sessionId: string, emitter: TerminalAgentEmitter) {
         .number()
         .int()
         .min(1000)
-        .max(120_000)
-        .default(DEFAULT_TIMEOUT_MS)
+        .max(commandTimeoutMs)
+        .default(commandTimeoutMs)
         .optional()
         .describe('Timeout in milliseconds.'),
     }),
     execute: async ({ command, cwd, thought, timeoutMs }) => {
+      const exportVars = parseExportCommand(command);
+      if (exportVars) {
+        for (const [key, value] of Object.entries(exportVars)) {
+          setSessionEnvVar(sessionId, key, value);
+        }
+      }
+
       // 1. Persist a pending block
       const block = appendBlock({
         sessionId,
@@ -528,12 +559,20 @@ function buildTerminalTools(sessionId: string, emitter: TerminalAgentEmitter) {
         }
       };
 
-      const { output, exitCode, timedOut, durationMs } = await runCommand(
+      const session = getTerminalSession(sessionId);
+      const workingDirectory =
+        cwd ||
+        session?.cwd ||
+        resolveActiveProjectRepoPath(session?.project_id) ||
+        process.env.HOME ||
+        process.cwd();
+      const { output, exitCode, timedOut, durationMs, finalCwd } = await runCommand(
         command,
-        cwd,
-        timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        workingDirectory,
+        Math.min(timeoutMs ?? commandTimeoutMs, commandTimeoutMs),
         onChunk,
         block.id,
+        sessionId,
       );
 
       if (emitTimer) clearTimeout(emitTimer);
@@ -558,6 +597,13 @@ function buildTerminalTools(sessionId: string, emitter: TerminalAgentEmitter) {
         exit_code: exitCode,
         duration_ms: durationMs,
       });
+
+      if (finalCwd && finalCwd !== workingDirectory) {
+        try {
+          updateTerminalSession(sessionId, { cwd: finalCwd });
+          emitter.onCwdChanged?.(finalCwd);
+        } catch {}
+      }
 
       return {
         skipped: false,
@@ -655,6 +701,7 @@ export async function runGoal({
   taskId,
 }: RunGoalOptions): Promise<void> {
   const settings = getSettings();
+  const terminalSettings = normalizeTerminalSettings(settings.terminal);
   const model = resolveModel(
     settings.activeProvider,
     settings.activeModel,
@@ -668,16 +715,26 @@ export async function runGoal({
   updateTerminalSession(sessionId, { status: 'running' });
 
   try {
-    const shellTools = buildTerminalTools(sessionId, emitter);
+    const shellTools = buildTerminalTools(
+      sessionId,
+      emitter,
+      terminalSettings.commandTimeoutMs,
+    );
     const planTools = createPlanTools(planManager);
 
-    const result = await generateText({
+    const agent = new ToolLoopAgent({
       model: model as any,
-      system: TERMINAL_AGENT_INSTRUCTIONS,
-      prompt: goal,
+      instructions: TERMINAL_AGENT_INSTRUCTIONS.replace(
+        'Maximum 20 tool calls per goal.',
+        `Maximum ${terminalSettings.maxAgentSteps} tool calls per goal.`,
+      ),
       tools: { ...shellTools, ...planTools },
-      stopWhen: [isStepCount(20), planManager.stopCondition()],
+      stopWhen: [
+        isStepCount(terminalSettings.maxAgentSteps),
+        planManager.stopCondition(),
+      ],
     });
+    const result = await agent.generate({ prompt: goal });
 
     // Final text is the agent's summary
     const summary = result.text?.trim() ?? 'Goal completed.';

@@ -131,6 +131,18 @@ describe('getDirectCommandRoute', () => {
     },
   );
 
+  it.each([
+    'cline',
+    'cline --resume',
+    'kiro-cli',
+    'kiro-cli chat',
+    'npx cline',
+    'npx -y cline',
+    'pnpm dlx opencode',
+  ])('routes coding CLI command %j through a PTY', (command) => {
+    expect(getDirectCommandRoute(command)).toBe('pty');
+  });
+
   it.each(['ls -la', 'git status', 'npm test', 'node scripts/check.js'])(
     'keeps non-interactive command %j on block execution',
     (command) => {

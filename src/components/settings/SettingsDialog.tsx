@@ -47,14 +47,25 @@ import { AppearanceView } from './views/AppearanceView';
 import { ComputerUseView } from './views/ComputerUseView';
 import { OfflineModelsView } from './views/OfflineModelsView';
 import { OllamaView } from './views/OllamaView';
+import { TerminalView } from './views/TerminalView';
 import { cn } from '@/lib/utils';
-import { BotIcon, BoxesIcon, CpuIcon, HardDriveIcon, PaletteIcon, MousePointerIcon, CircleIcon } from 'lucide-react';
+import {
+  BotIcon,
+  BoxesIcon,
+  CpuIcon,
+  HardDriveIcon,
+  PaletteIcon,
+  MousePointerIcon,
+  CircleIcon,
+  TerminalIcon,
+} from 'lucide-react';
 
 const SECTIONS = [
   { id: 'models', label: 'AI & Models', icon: BotIcon },
   { id: 'ollama', label: 'Ollama Local', icon: CircleIcon },
   { id: 'offline', label: 'Offline Models', icon: HardDriveIcon },
   { id: 'builder', label: 'Builder & MCP', icon: CpuIcon },
+  { id: 'terminal', label: 'Terminal', icon: TerminalIcon },
   { id: 'embeddings', label: 'Embeddings', icon: BoxesIcon },
   { id: 'computeruse', label: 'Computer Use', icon: MousePointerIcon },
   { id: 'appearance', label: 'Appearance', icon: PaletteIcon },
@@ -137,6 +148,12 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </div>
                 <div id="settings-panel-builder" hidden={section !== 'builder'}>
                   <BuilderMcpView />
+                </div>
+                <div
+                  id="settings-panel-terminal"
+                  hidden={section !== 'terminal'}
+                >
+                  <TerminalView />
                 </div>
                 <div
                   id="settings-panel-embeddings"

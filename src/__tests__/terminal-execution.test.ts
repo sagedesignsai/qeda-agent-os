@@ -6,21 +6,33 @@
  */
 
 jest.mock('ai', () => ({
+  ToolLoopAgent: jest.fn().mockImplementation(() => ({
+    generate: jest.fn().mockResolvedValue({ text: 'Goal completed.' }),
+  })),
   generateText: jest.fn(),
   tool: jest.fn((config) => config),
-  isStepCount: jest.fn(),
+  isStepCount: jest.fn(() => jest.fn()),
 }));
 
 jest.mock('../main/ai/provider.js', () => ({
   resolveModel: jest.fn(),
 }));
 
+jest.mock('../main/ai/settings.js', () => ({
+  getSettings: jest.fn(() => ({
+    activeProvider: 'test',
+    activeModel: 'test-model',
+  })),
+}));
+
+import { ToolLoopAgent } from 'ai';
 import Database from 'better-sqlite3';
 import { useTestDatabase } from '../main/db/client';
 import { applyMigrations } from '../main/db/schema';
 import { createTerminalSession, getBlock } from '../main/db/terminal';
 import {
   executeDirectCommand,
+  runGoal,
   stopCommand,
   type TerminalAgentEmitter,
 } from '../main/ai/terminal-agent';
@@ -42,6 +54,40 @@ describe('terminal-execution and stopCommand', () => {
 
   it('returns false when stopping a non-existent process', () => {
     expect(stopCommand('non-existent-id')).toBe(false);
+  });
+
+  it('runs terminal goals through ToolLoopAgent with the terminal tool set', async () => {
+    const session = createTerminalSession({ title: 'Agent goal' });
+    const emitter: TerminalAgentEmitter = {
+      onBlockProposed: jest.fn(),
+      onBlockUpdated: jest.fn(),
+      onDone: jest.fn(),
+      onError: jest.fn(),
+    };
+
+    await runGoal({
+      sessionId: session.id,
+      goal: 'Inspect this project',
+      emitter,
+    });
+
+    const agentFactory = ToolLoopAgent as unknown as jest.Mock;
+    expect(agentFactory).toHaveBeenCalledTimes(1);
+    const config = agentFactory.mock.calls[0][0];
+    expect(config.instructions).toContain('terminal agent');
+    expect(config.tools).toHaveProperty('runShell');
+    expect(config.tools).toHaveProperty('readFile');
+    expect(config.tools).toHaveProperty('listDir');
+    expect(config.tools).toHaveProperty('createPlan');
+    expect(config.tools).toHaveProperty('updatePlanItem');
+    expect(config.stopWhen).toHaveLength(2);
+    expect(agentFactory.mock.results[0].value.generate).toHaveBeenCalledWith({
+      prompt: 'Inspect this project',
+    });
+    expect(emitter.onDone).toHaveBeenCalledWith(
+      session.id,
+      'Goal completed.',
+    );
   });
 
   it('runs a short direct command, updates the block, and finishes as done', async () => {

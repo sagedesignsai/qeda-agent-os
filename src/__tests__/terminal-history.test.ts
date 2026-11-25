@@ -64,4 +64,15 @@ describe('terminal-history', () => {
     expect(results[0].command).toBe('docker stop container1');
     expect(results[1].command).toBe('docker compose up -d');
   });
+
+  it('honors the configured retention limit when storing and retrieving', () => {
+    addCommandHistory('first', undefined, 2);
+    addCommandHistory('second', undefined, 2);
+    addCommandHistory('third', undefined, 2);
+
+    expect(getCommandHistory(2).map((entry) => entry.command)).toEqual([
+      'third',
+      'second',
+    ]);
+  });
 });

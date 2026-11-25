@@ -24,12 +24,14 @@ import {
   type HistoryEntry,
 } from '@/lib/terminal-history';
 import { cn } from '@/lib/utils';
+import { DEFAULT_TERMINAL_SETTINGS } from '@/lib/terminal-settings';
 import { ClockIcon, PlayIcon, SearchIcon, TerminalIcon } from 'lucide-react';
 
 interface TerminalHistoryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectCommand: (command: string, runDirectly: boolean) => void;
+  historyLimit?: number;
 }
 
 function formatRelativeTime(ts: number): string {
@@ -47,6 +49,7 @@ export function TerminalHistoryDialog({
   open,
   onOpenChange,
   onSelectCommand,
+  historyLimit = DEFAULT_TERMINAL_SETTINGS.historyLimit,
 }: TerminalHistoryDialogProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [query, setQuery] = useState('');
@@ -55,16 +58,16 @@ export function TerminalHistoryDialog({
 
   useEffect(() => {
     if (open) {
-      setHistory(getCommandHistory());
+      setHistory(getCommandHistory(historyLimit));
       setQuery('');
       setSelectedIndex(0);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [open]);
+  }, [historyLimit, open]);
 
   const filtered = useMemo(() => {
-    return query ? searchCommandHistory(query) : history;
-  }, [query, history]);
+    return query ? searchCommandHistory(query, historyLimit) : history;
+  }, [historyLimit, query, history]);
 
   useEffect(() => {
     setSelectedIndex(0);

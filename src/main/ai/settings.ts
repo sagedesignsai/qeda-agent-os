@@ -19,6 +19,11 @@ import {
   type McpServerSettings,
 } from '../../lib/builder/engine';
 import type { TtsSettings } from '../../lib/tts/types';
+import {
+  DEFAULT_TERMINAL_SETTINGS,
+  normalizeTerminalSettings,
+  type TerminalSettings,
+} from '../../lib/terminal-settings';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -126,6 +131,8 @@ export interface AppSettings {
    * OpenCode 2 runtime; override when the E2B account uses another alias.
    */
   e2bSandboxTemplate?: string;
+  /** Shell, agent, display, and history preferences for the Terminal system. */
+  terminal?: TerminalSettings;
   /**
    * Set once the first-launch onboarding has been finished or skipped, so the
    * welcome flow is shown exactly once. Absent on a fresh install.
@@ -201,6 +208,7 @@ function defaultSettings(): AppSettings {
     builderEngine: 'local',
     builderMaxSteps: DEFAULT_BUILDER_MAX_STEPS,
     e2bSandboxTemplate: DEFAULT_E2B_SANDBOX_TEMPLATE,
+    terminal: DEFAULT_TERMINAL_SETTINGS,
     mcpServers: [],
     blender: {
       enabled: true,
@@ -254,9 +262,11 @@ export function getRawSettings(): AppSettings {
  */
 export function getSettings(): AppSettings {
   const raw = getRawSettings();
+  const terminal = normalizeTerminalSettings(raw.terminal);
   if (!safeStorage.isEncryptionAvailable()) {
     return {
       ...raw,
+      terminal,
       providers: Object.fromEntries(
         Object.entries(raw.providers ?? {}).map(([id, provider]) => [
           id,
@@ -279,6 +289,7 @@ export function getSettings(): AppSettings {
   }
 
   const decrypted: AppSettings = JSON.parse(JSON.stringify(raw));
+  decrypted.terminal = terminal;
 
   // Decrypt external-service keys.
   if (decrypted.serviceKeys) {

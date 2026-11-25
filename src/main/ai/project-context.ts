@@ -81,6 +81,19 @@ export function resolveActiveProjectId(scoped?: string | null): string | null {
   }
 }
 
+/** Resolve the active project's configured repository directory, if any. */
+export function resolveActiveProjectRepoPath(
+  scoped?: string | null,
+): string | null {
+  const projectId = resolveActiveProjectId(scoped);
+  if (!projectId) return null;
+  try {
+    return getProject(projectId)?.repo_path ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * `id` when the projects store can still resolve it, `null` when the store says
  * it does not exist, and `id` unchanged when the store itself is unreadable.

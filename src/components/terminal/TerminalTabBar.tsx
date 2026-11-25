@@ -108,6 +108,8 @@ interface TerminalTabBarProps {
   onTabSelect: (tabId: string) => void;
   onTabClose: (tabId: string) => void;
   onNewTab: (mode: TerminalMode) => void;
+  /** Render as an inline page-header control instead of a pane header. */
+  compact?: boolean;
 }
 
 export function TerminalTabBar({
@@ -117,25 +119,34 @@ export function TerminalTabBar({
   onTabSelect,
   onTabClose,
   onNewTab,
+  compact = false,
 }: TerminalTabBarProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex items-center gap-px border-b border-border/40 bg-background/80">
-      {/* Tab items */}
-      {tabs.map((info, index) => (
-        <TabItem
-          key={info.tabId}
-          info={info}
-          isActive={index === activeTabIndex}
-          status={tabStatuses?.get(info.tabId)}
-          onSelect={() => onTabSelect(info.tabId)}
-          onClose={() => onTabClose(info.tabId)}
-        />
-      ))}
+    <div
+      className={cn(
+        'flex items-center gap-px',
+        compact
+          ? 'min-w-0 max-w-[45vw]'
+          : 'border-b border-border/40 bg-background/80',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto">
+        {tabs.map((info, index) => (
+          <TabItem
+            key={info.tabId}
+            info={info}
+            isActive={index === activeTabIndex}
+            status={tabStatuses?.get(info.tabId)}
+            onSelect={() => onTabSelect(info.tabId)}
+            onClose={() => onTabClose(info.tabId)}
+          />
+        ))}
+      </div>
 
       {/* New tab dropdown */}
-      <div className="ml-auto flex items-center gap-1 px-1">
+      <div className="ml-auto flex shrink-0 items-center gap-1 px-1">
         <DropdownMenu open={open} onOpenChange={setOpen}>
           <DropdownMenuTrigger asChild>
             <Button

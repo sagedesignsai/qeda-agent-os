@@ -21,6 +21,10 @@ import { performChatGPTSignIn } from '../../ai/chatgpt-auth';
 import { mcpManager } from '../../ai/mcp/manager';
 import { listServiceStatuses } from '../../services/keys';
 import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '../../../lib/builder/engine';
+import {
+  mergeTerminalSettings,
+  normalizeTerminalSettings,
+} from '../../../lib/terminal-settings';
 import { type ProviderInfo } from '../channels';
 import { resetAgents } from '../agent-runtime';
 
@@ -86,6 +90,7 @@ export function registerSettingsHandlers({
       e2bSandboxTimeoutMs: s.e2bSandboxTimeoutMs ?? 3_600_000,
       // Pinned OpenCode runtime template used by the sandbox engine.
       e2bSandboxTemplate: s.e2bSandboxTemplate ?? DEFAULT_E2B_SANDBOX_TEMPLATE,
+      terminal: normalizeTerminalSettings(s.terminal),
       // Whether an encrypted GitHub PAT is stored for cloning private repos
       // into the E2B sandbox. The value itself never leaves the main process.
       githubPatSet: Boolean(s.githubPat),
@@ -152,6 +157,9 @@ export function registerSettingsHandlers({
       ...current,
       ...incoming,
       providers: mergedProviders,
+      terminal: Object.prototype.hasOwnProperty.call(incoming, 'terminal')
+        ? mergeTerminalSettings(current.terminal, incoming.terminal)
+        : current.terminal,
     };
     // Custom providers are replaced as a list (an entry left out is deleted),
     // but an omitted `apiKey` means "keep the stored cipher": the renderer only

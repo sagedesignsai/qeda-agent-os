@@ -28,12 +28,16 @@ import {
   cleanupShellIntegration,
 } from './shell-integration.js';
 import { execSync } from 'node:child_process';
+import { buildExecutionEnv, getShellExecutable } from '../ai/shell-env.js';
+import { getSettings } from '../ai/settings.js';
+import { normalizeTerminalSettings } from '../../lib/terminal-settings.js';
 import {
   appendBlock,
   updateBlock,
   createTerminalSession,
   updateTerminalSession,
 } from '../db/terminal.js';
+import { appendPtyOutput } from './output-buffer.js';
 
 // node-pty is a native module — import type separately to avoid bundler issues.
 // The actual require happens at runtime inside the main process.
@@ -49,6 +53,8 @@ interface PtyEntry {
   sessionId?: string;
   outputBuffer: string[];
   totalOutputBytes: number;
+  maxOutputBytes: number;
+  activeCommand?: string;
   isCommandRunning?: boolean;
   isPromptReady?: boolean;
   pendingCommand?: string;
@@ -82,6 +88,13 @@ export class PtyManager {
     return !!(ptyId && this.ptys.has(ptyId));
   }
 
+  /** Return the command currently running inside a session's PTY, if any. */
+  getActiveCommand(sessionId: string): string | null {
+    const ptyId = this.sessionPtys.get(sessionId);
+    if (!ptyId) return null;
+    return this.ptys.get(ptyId)?.activeCommand ?? null;
+  }
+
   /**
    * Spawn a new PTY shell (or re-attach to an existing one for the session)
    * and start forwarding its output to the renderer.
@@ -95,6 +108,7 @@ export class PtyManager {
     sessionId?: string;
     enableShellIntegration?: boolean;
   }): string {
+    const terminalSettings = normalizeTerminalSettings(getSettings().terminal);
     // If sessionId already has an active running PTY, reattach and replay recent output
     if (opts.sessionId && this.sessionPtys.has(opts.sessionId)) {
       const existingPtyId = this.sessionPtys.get(opts.sessionId)!;
@@ -120,17 +134,14 @@ export class PtyManager {
     const ptyId = nanoid();
 
     const targetShell =
-      opts.shell ??
-      process.env.SHELL ??
-      (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
+      opts.shell ?? terminalSettings.shellPath ?? getShellExecutable();
 
     const shellBasename = path.basename(targetShell).toLowerCase();
     let spawnArgs: string[] = [];
-    const spawnEnv: Record<string, string> = {
-      ...(process.env as Record<string, string>),
-    };
+    const spawnEnv = buildExecutionEnv(opts.sessionId, opts.cwd);
 
-    const useIntegration = opts.enableShellIntegration ?? true;
+    const useIntegration =
+      opts.enableShellIntegration ?? terminalSettings.shellIntegration;
 
     if (useIntegration && process.platform !== 'win32') {
       try {
@@ -160,8 +171,11 @@ export class PtyManager {
       onPromptReady: () => {
         entry.isPromptReady = true;
         if (entry.pendingCommand) {
-          entry.pty.write(`${entry.pendingCommand}\r`);
+          const command = entry.pendingCommand;
           entry.pendingCommand = undefined;
+          entry.isPromptReady = false;
+          entry.activeCommand = command;
+          entry.pty.write(`${command}\r`);
         }
         if (!this.window.isDestroyed()) {
           this.window.webContents.send('pty:prompt-ready', { ptyId });
@@ -221,6 +235,7 @@ export class PtyManager {
         const sid = opts.sessionId || entry.sessionId;
         if (sid && command) {
           entry.isCommandRunning = true;
+          entry.activeCommand = command;
           try {
             const block = appendBlock({
               sessionId: sid,
@@ -255,6 +270,7 @@ export class PtyManager {
       },
       onCommandEnd: (event) => {
         entry.isCommandRunning = false;
+        entry.activeCommand = undefined;
         const sid = opts.sessionId || entry.sessionId;
         if (sid && activeBlockId) {
           try {
@@ -314,15 +330,12 @@ export class PtyManager {
     instance.onData((data: string) => {
       const clean = parser.feed(data);
       if (clean.length > 0) {
-        entry.outputBuffer.push(clean);
-        entry.totalOutputBytes += clean.length;
-        while (
-          entry.totalOutputBytes > 120_000 &&
-          entry.outputBuffer.length > 1
-        ) {
-          const removed = entry.outputBuffer.shift()!;
-          entry.totalOutputBytes -= removed.length;
-        }
+        entry.totalOutputBytes = appendPtyOutput(
+          entry.outputBuffer,
+          clean,
+          entry.totalOutputBytes,
+          entry.maxOutputBytes,
+        );
 
         if (!this.window.isDestroyed()) {
           this.window.webContents.send('pty:data', { ptyId, data: clean });
@@ -333,6 +346,8 @@ export class PtyManager {
     // Forward PTY exit to renderer and clean up
     instance.onExit(({ exitCode }: { exitCode: number }) => {
       const sid = opts.sessionId || entry.sessionId;
+      entry.activeCommand = undefined;
+      entry.isCommandRunning = false;
       if (sid) {
         this.sessionPtys.delete(sid);
         try {
@@ -361,6 +376,7 @@ export class PtyManager {
       sessionId: opts.sessionId,
       outputBuffer: [],
       totalOutputBytes: 0,
+      maxOutputBytes: terminalSettings.ptyReplayBufferBytes,
     };
     this.ptys.set(ptyId, entry);
     if (opts.sessionId) {
@@ -377,9 +393,17 @@ export class PtyManager {
   /** Queue a command for the next prompt or submit it to a ready shell. */
   runCommand(ptyId: string, command: string): boolean {
     const entry = this.ptys.get(ptyId);
-    if (!entry || entry.pendingCommand || entry.isCommandRunning) return false;
+    if (
+      !entry ||
+      entry.pendingCommand ||
+      entry.isCommandRunning ||
+      entry.activeCommand
+    ) {
+      return false;
+    }
     if (entry.isPromptReady) {
       entry.isPromptReady = false;
+      entry.activeCommand = command;
       entry.pty.write(`${command}\r`);
     } else {
       entry.pendingCommand = command;
@@ -493,6 +517,13 @@ export function registerPtyHandlers(
     (_e, { ptyId, command }: { ptyId: string; command: string }) => {
       return { queued: manager!.runCommand(ptyId, command) };
     },
+  );
+
+  ipcMain.handle(
+    'pty:session-command',
+    (_e, { sessionId }: { sessionId: string }) => ({
+      command: manager!.getActiveCommand(sessionId),
+    }),
   );
 
   ipcMain.handle('pty:interrupt', (_e, { ptyId }: { ptyId: string }) => {

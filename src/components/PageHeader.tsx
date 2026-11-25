@@ -89,6 +89,9 @@ export function PageHeader({
   children,
   className,
 }: PageHeaderProps) {
+  const heading = title ?? crumbs[crumbs.length - 1]?.label;
+  const showIdentity = heading !== undefined || subtitle !== undefined;
+
   return (
     <header
       className={cn(
@@ -98,50 +101,50 @@ export function PageHeader({
     >
       <SidebarTrigger className="-ml-1 size-7 shrink-0 text-muted-foreground" />
 
-      {/* `shrink` (not `flex-1`) so the action group wins the leftover width
-          and the heading truncates first. */}
-      <div
-        data-slot="page-header-identity"
-        className="flex min-w-0 shrink items-center gap-2"
-      >
-        {crumbs.length > 1 && (
-          <Breadcrumb className="min-w-0 shrink">
-            <BreadcrumbList className="flex-wrap text-xs">
-              {crumbs.slice(0, -1).map((crumb, index) => (
-                // Separators are siblings of items, not children: both render
-                // <li>, so nesting them is invalid list markup.
-                <Fragment key={`${crumb.label}-${index}`}>
-                  <BreadcrumbItem className="min-w-0">
-                    {crumb.to ? (
-                      <BreadcrumbLink
-                        asChild
-                        className="truncate text-xs font-normal"
-                      >
-                        <Link to={crumb.to}>{crumb.label}</Link>
-                      </BreadcrumbLink>
-                    ) : (
-                      <BreadcrumbPage className="truncate text-xs font-normal text-muted-foreground">
-                        {crumb.label}
-                      </BreadcrumbPage>
-                    )}
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                </Fragment>
-              ))}
-            </BreadcrumbList>
-          </Breadcrumb>
-        )}
+      {showIdentity && (
+        <div
+          data-slot="page-header-identity"
+          className="flex min-w-0 shrink items-center gap-2"
+        >
+          {crumbs.length > 1 && (
+            <Breadcrumb className="min-w-0 shrink">
+              <BreadcrumbList className="flex-wrap text-xs">
+                {crumbs.slice(0, -1).map((crumb, index) => (
+                  // Separators are siblings of items, not children: both render
+                  // <li>, so nesting them is invalid list markup.
+                  <Fragment key={`${crumb.label}-${index}`}>
+                    <BreadcrumbItem className="min-w-0">
+                      {crumb.to ? (
+                        <BreadcrumbLink
+                          asChild
+                          className="truncate text-xs font-normal"
+                        >
+                          <Link to={crumb.to}>{crumb.label}</Link>
+                        </BreadcrumbLink>
+                      ) : (
+                        <BreadcrumbPage className="truncate text-xs font-normal text-muted-foreground">
+                          {crumb.label}
+                        </BreadcrumbPage>
+                      )}
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator />
+                  </Fragment>
+                ))}
+              </BreadcrumbList>
+            </Breadcrumb>
+          )}
 
-        <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
-          {title ?? crumbs[crumbs.length - 1]?.label}
-        </h1>
+          <h1 className="truncate text-sm font-semibold tracking-tight text-foreground">
+            {heading}
+          </h1>
 
-        {subtitle && (
-          <p className="hidden truncate text-xs text-muted-foreground md:block">
-            {subtitle}
-          </p>
-        )}
-      </div>
+          {subtitle && (
+            <p className="hidden truncate text-xs text-muted-foreground md:block">
+              {subtitle}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* shrink-0: the heading truncates first so the switcher never squashes. */}
       {nav && (

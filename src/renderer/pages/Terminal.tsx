@@ -33,6 +33,7 @@ import { useParams, useSearchParams } from 'react-router';
 
 import { PageHeader } from '@/components/PageHeader';
 import { TerminalPanel } from '@/components/terminal/TerminalPanel';
+import { TerminalTabBar } from '@/components/terminal/TerminalTabBar';
 import { useTerminalLayout } from '@/hooks/use-terminal-layout';
 import { useProjectScope } from '@/hooks/use-project-scope';
 
@@ -44,7 +45,7 @@ import type { TerminalMode } from '@/components/terminal/TerminalTab';
 export default function Terminal() {
   const { sessionId: urlSessionId } = useParams<{ sessionId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { projectName, clear: clearProjectScope } = useProjectScope();
+  const { activeProject, activeProjectId } = useProjectScope();
 
   const {
     panelTree,
@@ -139,15 +140,29 @@ export default function Terminal() {
 
   // Check if there are any panes with tabs
   const hasContent = panelTree !== null;
+  const singlePane = panelTree?.type === 'leaf' ? panelTree : undefined;
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <PageHeader
-        crumbs={[
-          { label: 'Terminal' },
-          ...(projectName ? [{ label: projectName }] : []),
-        ]}
+        crumbs={[]}
+        nav={
+          singlePane ? (
+            <TerminalTabBar
+              tabs={singlePane.tabs}
+              activeTabIndex={singlePane.activeTabIndex}
+              tabStatuses={tabStatuses}
+              compact
+              onTabSelect={(tabId) => {
+                handleTabSelect(singlePane.paneId, tabId);
+                handleFocusPane(singlePane.paneId);
+              }}
+              onTabClose={(tabId) => handleTabClose(singlePane.paneId, tabId)}
+              onNewTab={(mode) => handleNewTab(singlePane.paneId, mode)}
+            />
+          ) : undefined
+        }
       />
 
       {/* ── Panel area ─────────────────────────────────────────────────────── */}
@@ -163,6 +178,9 @@ export default function Terminal() {
             onTabSelect={handleTabSelect}
             onNewTab={handleNewTab}
             onFocusPane={handleFocusPane}
+            showTabBars={!singlePane}
+            defaultCwd={activeProject?.repo_path ?? undefined}
+            projectId={activeProjectId}
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/75">

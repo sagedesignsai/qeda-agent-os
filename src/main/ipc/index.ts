@@ -60,6 +60,7 @@ import { registerWorkspaceHandlers } from './handlers/workspace';
 import { registerResearchHandlers } from './handlers/research';
 import { registerAgentChatHandlers } from './handlers/agent-chat';
 import { registerTerminalHandlers } from './handlers/terminal';
+import { registerTerminalAcpHandlers } from './handlers/terminal-acp';
 import { registerProjectsHandlers } from './handlers/projects';
 import { registerProjectFilesHandlers } from './handlers/project-files';
 import { registerTasksHandlers } from './handlers/tasks';
@@ -108,6 +109,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerResearchHandlers({ mainWindow });
   registerAgentChatHandlers({ mainWindow });
   registerTerminalHandlers({ mainWindow });
+  registerTerminalAcpHandlers({ mainWindow });
   registerProjectsHandlers({ mainWindow });
   registerProjectFilesHandlers({ mainWindow });
   registerTasksHandlers({ mainWindow });

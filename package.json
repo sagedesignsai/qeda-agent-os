@@ -74,6 +74,7 @@
     ]
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^2.12.0",
     "@ai-sdk/alibaba": "^2.0.93",
     "@ai-sdk/anthropic": "^4.0.108",
     "@ai-sdk/cohere": "^4.0.78",

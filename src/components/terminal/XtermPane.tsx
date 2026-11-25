@@ -40,6 +40,9 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { cn } from '@/lib/utils';
 import { useIpcEvent } from '@/hooks/use-ipc';
+import { DEFAULT_TERMINAL_SETTINGS } from '@/lib/terminal-settings';
+
+const terminalTextEncoder = new TextEncoder();
 
 // ─── Public handle ────────────────────────────────────────────────────────────
 
@@ -63,8 +66,14 @@ interface XtermPaneProps extends HTMLAttributes<HTMLDivElement> {
   cwd?: string;
   /** Override the shell binary. Defaults to $SHELL / /bin/bash. */
   shell?: string;
+  fontSize?: number;
+  scrollbackLines?: number;
+  replayBufferBytes?: number;
+  enableShellIntegration?: boolean;
   /** Called when the PTY process exits. */
   onExit?: (exitCode: number) => void;
+  /** Called when a shell command finishes while its parent PTY remains open. */
+  onCommandExit?: (exitCode: number) => void;
   /** Called when the PTY has been created and has a ptyId. */
   onReady?: (ptyId: string) => void;
 }
@@ -169,7 +178,20 @@ function useXtermTheme(term: Terminal | null): void {
 
 export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
   function XtermPane(
-    { sessionId, cwd, shell: shellBin, onExit, onReady, className, ...props },
+    {
+      sessionId,
+      cwd,
+      shell: shellBin,
+      fontSize = DEFAULT_TERMINAL_SETTINGS.fontSize,
+      scrollbackLines = DEFAULT_TERMINAL_SETTINGS.scrollbackLines,
+      replayBufferBytes = DEFAULT_TERMINAL_SETTINGS.ptyReplayBufferBytes,
+      enableShellIntegration = DEFAULT_TERMINAL_SETTINGS.shellIntegration,
+      onExit,
+      onCommandExit,
+      onReady,
+      className,
+      ...props
+    },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -178,6 +200,13 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
     const ptyIdRef = useRef<string | null>(null);
     const sessionIdRef = useRef<string | undefined>(sessionId);
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
+    const ptyCreationPendingRef = useRef(false);
+    const pendingOutputRef = useRef<Array<{ ptyId: string; data: string }>>([]);
+    const pendingOutputBytesRef = useRef(0);
+    const pendingExitRef = useRef<{
+      ptyId: string;
+      exitCode: number;
+    } | null>(null);
 
     // The xterm instance is built in a mount effect, but the theme has to be
     // re-applied reactively. State bridges the two so `useXtermTheme` can hold
@@ -234,8 +263,20 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
       const { ptyId, data } = args[0] as { ptyId: string; data: string };
       if (ptyId === ptyIdRef.current) {
         termRef.current?.write(data);
+      } else if (ptyCreationPendingRef.current) {
+        pendingOutputRef.current.push({ ptyId, data });
+        pendingOutputBytesRef.current += terminalTextEncoder.encode(data).byteLength;
+        while (
+          pendingOutputBytesRef.current > replayBufferBytes &&
+          pendingOutputRef.current.length > 1
+        ) {
+          const removed = pendingOutputRef.current.shift()!;
+          pendingOutputBytesRef.current -= terminalTextEncoder
+            .encode(removed.data)
+            .byteLength;
+        }
       }
-    });
+    }, [replayBufferBytes]);
 
     // ── PTY exit event ────────────────────────────────────────────────────
     useIpcEvent('pty:exit', (...args: unknown[]) => {
@@ -249,8 +290,27 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
         );
         ptyIdRef.current = null;
         onExit?.(exitCode);
+      } else if (ptyCreationPendingRef.current) {
+        pendingExitRef.current = { ptyId, exitCode };
       }
     });
+
+    useIpcEvent('pty:block-completed', (...args: unknown[]) => {
+      const { ptyId, exitCode } = args[0] as {
+        ptyId: string;
+        exitCode: number;
+      };
+      if (ptyId === ptyIdRef.current) {
+        onCommandExit?.(exitCode);
+      }
+    });
+
+    useEffect(() => {
+      if (!term) return;
+      term.options.fontSize = fontSize;
+      term.options.scrollback = scrollbackLines;
+      requestAnimationFrame(() => fitAddonRef.current?.fit());
+    }, [fontSize, scrollbackLines, term]);
 
     // ── Mount: create xterm + PTY ─────────────────────────────────────────
     useEffect(() => {
@@ -260,11 +320,11 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
       const term = new Terminal({
         theme: buildXtermTheme(),
         fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
-        fontSize: 13,
+        fontSize,
         lineHeight: 1.3,
         cursorBlink: true,
         cursorStyle: 'block',
-        scrollback: 5000,
+        scrollback: scrollbackLines,
         scrollOnUserInput: true,
         smoothScrollDuration: 0,
         allowProposedApi: true,
@@ -284,6 +344,8 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
       const { cols, rows } = term;
 
       // Spawn PTY in main with OSC 133 shell integration
+      let disposed = false;
+      ptyCreationPendingRef.current = true;
       void window.electron.ipc
         .invoke<{ ptyId: string }>('pty:create', {
           cols,
@@ -291,12 +353,45 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
           cwd,
           shell: shellBin,
           sessionId,
-          enableShellIntegration: true,
+          enableShellIntegration,
         })
         .then(({ ptyId }) => {
+          if (disposed) {
+            if (!sessionIdRef.current) {
+              void window.electron.ipc.invoke('pty:kill', { ptyId });
+            }
+            return;
+          }
+
           ptyIdRef.current = ptyId;
+          ptyCreationPendingRef.current = false;
+          for (const pending of pendingOutputRef.current) {
+            if (pending.ptyId === ptyId) term.write(pending.data);
+          }
+          pendingOutputRef.current = [];
+          pendingOutputBytesRef.current = 0;
+          const pendingExit = pendingExitRef.current;
+          pendingExitRef.current = null;
           onReady?.(ptyId);
+          if (pendingExit?.ptyId === ptyId) {
+            term.write(
+              `\r\n\x1b[90m[Process exited with code ${pendingExit.exitCode}]\x1b[0m\r\n`,
+            );
+            ptyIdRef.current = null;
+            onExit?.(pendingExit.exitCode);
+          }
           return undefined;
+        })
+        .catch((error: unknown) => {
+          ptyCreationPendingRef.current = false;
+          pendingOutputRef.current = [];
+          pendingOutputBytesRef.current = 0;
+          pendingExitRef.current = null;
+          if (disposed) return;
+          const message =
+            error instanceof Error ? error.message : String(error);
+          term.write(`\r\n[Could not start terminal process: ${message}]\r\n`);
+          onExit?.(-1);
         });
 
       // xterm input → PTY write
@@ -339,6 +434,11 @@ export const XtermPane = forwardRef<XtermPaneHandle, XtermPaneProps>(
 
       // ── Cleanup ─────────────────────────────────────────────────────────
       return () => {
+        disposed = true;
+        ptyCreationPendingRef.current = false;
+        pendingOutputRef.current = [];
+        pendingOutputBytesRef.current = 0;
+        pendingExitRef.current = null;
         onDataDispose.dispose();
         observer.disconnect();
         // Only kill the PTY process if this was an ephemeral scratchpad without a session.

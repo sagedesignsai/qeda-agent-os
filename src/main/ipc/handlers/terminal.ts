@@ -12,6 +12,10 @@ import { ipcMain, shell, type BrowserWindow } from 'electron';
 import { exec } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
+import {
+  resolveActiveProjectId,
+  resolveActiveProjectRepoPath,
+} from '../../ai/project-context.js';
 import { clearSessionEnv } from '../../ai/shell-env.js';
 import {
   executeDirectCommand,
@@ -34,6 +38,15 @@ import {
   updateTerminalSession,
 } from '../../db/terminal';
 import { getPtyManager } from '../../pty/manager.js';
+import { stopAcpTerminalSession } from './terminal-acp.js';
+
+function defaultTerminalDirectory(projectId?: string | null): string {
+  return (
+    resolveActiveProjectRepoPath(projectId) ||
+    process.env.HOME ||
+    process.cwd()
+  );
+}
 
 export function registerTerminalHandlers({
   mainWindow,
@@ -167,7 +180,14 @@ export function registerTerminalHandlers({
         project_id?: string | null;
       },
     ) => {
-      const session = createTerminalSession({ title, goal, cwd, project_id });
+      const activeProjectId =
+        project_id ?? resolveActiveProjectId();
+      const session = createTerminalSession({
+        title,
+        goal,
+        cwd: cwd || defaultTerminalDirectory(activeProjectId),
+        project_id: activeProjectId,
+      });
       if (!mainWindow.isDestroyed()) {
         mainWindow.webContents.send('terminal:sessions-changed');
       }
@@ -175,9 +195,10 @@ export function registerTerminalHandlers({
     },
   );
 
-  ipcMain.handle('terminal:session-delete', (_e, { id }: { id: string }) => {
+  ipcMain.handle('terminal:session-delete', async (_e, { id }: { id: string }) => {
     stopSessionProcesses(id);
     getPtyManager()?.killBySessionId(id);
+    await stopAcpTerminalSession(id);
     clearSessionEnv(id);
     deleteTerminalSession(id);
     if (!mainWindow.isDestroyed()) {
@@ -249,7 +270,8 @@ export function registerTerminalHandlers({
       }: { sessionId: string; command: string; cwd?: string },
     ) => {
       const session = getTerminalSession(sessionId);
-      const effectiveCwd = cwd || session?.cwd || process.cwd();
+      const effectiveCwd =
+        cwd || session?.cwd || defaultTerminalDirectory(session?.project_id);
 
       // If the session title starts with "cd " and a real command is now run, update the title
       if (
@@ -330,12 +352,16 @@ export function registerTerminalHandlers({
     (_e, { sessionId, blockId }: { sessionId: string; blockId: string }) => {
       const block = getBlock(blockId);
       if (!block || !block.command) return;
+      const session = getTerminalSession(sessionId);
+      const effectiveCwd =
+        session?.cwd || defaultTerminalDirectory(session?.project_id);
 
       // A re-run is a *new* block rather than a mutation, so the original
       // result and its duration stay in the transcript as history.
       void executeDirectCommand({
         sessionId,
         command: block.command,
+        cwd: effectiveCwd,
         emitter: makeTerminalEmitter(),
       });
     },
@@ -386,8 +412,11 @@ export function registerTerminalHandlers({
 
   ipcMain.handle(
     'terminal:get-context-info',
-    async (_e, opts?: { cwd?: string }) => {
-      const dir = opts?.cwd || process.env.HOME || process.cwd();
+    async (
+      _e,
+      opts?: { cwd?: string; projectId?: string | null },
+    ) => {
+      const dir = opts?.cwd || defaultTerminalDirectory(opts?.projectId);
       let gitBranch: string | null = null;
       let gitRoot: string | null = null;
       let changedFiles = 0;

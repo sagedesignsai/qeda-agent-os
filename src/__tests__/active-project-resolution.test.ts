@@ -33,8 +33,12 @@ const projectsMock = require('../main/db/projects') as {
   getProject: jest.Mock;
 };
 
-const { resolveActiveProjectId } = require('../main/ai/project-context') as {
+const {
+  resolveActiveProjectId,
+  resolveActiveProjectRepoPath,
+} = require('../main/ai/project-context') as {
   resolveActiveProjectId: (scoped?: string | null) => string | null;
+  resolveActiveProjectRepoPath: (scoped?: string | null) => string | null;
 };
 
 function setDefault(id: string | null | undefined): void {
@@ -92,6 +96,27 @@ describe('resolveActiveProjectId', () => {
     expect(resolveActiveProjectId('deleted')).toBeNull();
     setDefault('deleted');
     expect(resolveActiveProjectId()).toBeNull();
+  });
+
+  it('resolves the active project repository path, preferring explicit scope', () => {
+    projectsMock.getProject.mockImplementation((id: string) => ({
+      id,
+      repo_path: `/repos/${id}`,
+    }));
+
+    expect(resolveActiveProjectRepoPath('proj-scoped')).toBe(
+      '/repos/proj-scoped',
+    );
+    expect(resolveActiveProjectRepoPath()).toBe('/repos/proj-default');
+  });
+
+  it('returns null when the active project has no repository path', () => {
+    projectsMock.getProject.mockImplementation((id: string) => ({
+      id,
+      repo_path: null,
+    }));
+
+    expect(resolveActiveProjectRepoPath('proj-scoped')).toBeNull();
   });
 
   it('does not throw when settings are unreadable', () => {

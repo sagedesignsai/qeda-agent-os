@@ -5,6 +5,7 @@
     "": {
       "name": "qeda",
       "dependencies": {
+        "@agentclientprotocol/sdk": "^2.12.0",
         "@ai-sdk/alibaba": "^2.0.93",
         "@ai-sdk/anthropic": "^4.0.108",
         "@ai-sdk/cohere": "^4.0.78",
@@ -154,6 +155,8 @@
   },
   "packages": {
     "@adobe/css-tools": ["@adobe/css-tools@4.5.0", "", {}, "sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q=="],
+
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@2.12.0", "", { "peerDependencies": { "@modelcontextprotocol/server": "^2.4.0", "zod": "^3.25.76 || ^4.0.0" }, "optionalPeers": ["@modelcontextprotocol/server"] }, "sha512-nSkamfY4Lw9/AVBU5G5V9p82ScXhANDMBybQwcPH/9+euUtZm04/VFUMaLj4gLFEXxQEy+QP1VQiKgSRbYVIPg=="],
 
     "@ai-sdk/alibaba": ["@ai-sdk/alibaba@2.0.93", "", { "dependencies": { "@ai-sdk/provider": "4.0.39", "@ai-sdk/provider-utils": "5.0.83" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-hZA4C8O7yKt4MWbC32ndrnpQGEJDoxGemSlWl+DB4TXiU2q0UIPi4tBV3ESaFCTUOmk+BQbxumOmqgjvFOtf6w=="],
 
