@@ -7,5 +7,6 @@ export { GlobalCameraSection } from './GlobalCameraSection';
 export { GlobalCaptionsSection } from './GlobalCaptionsSection';
 export { ClipPropertiesSection } from './ClipPropertiesSection';
 export { ClipEffectsSection } from './ClipEffectsSection';
+export { ClipEffectsStudioDialog } from '../ClipEffectsStudioDialog';
 export { EffectParamsEditorSection } from './EffectParamsEditorSection';
 export { EffectsPalette } from './EffectsPalette';

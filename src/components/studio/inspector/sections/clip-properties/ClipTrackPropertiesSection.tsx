@@ -359,6 +359,12 @@ export function ClipTrackPropertiesSection({
                     'slide-up',
                     'slide-down',
                     'scale',
+                    'blur',
+                    'cross-zoom',
+                    'directional-blur',
+                    'glitch',
+                    'rgb-split',
+                    'radial-wipe',
                   ] as StudioCompositionTransitionType[]
                 ).map((value) => (
                   <SelectItem key={value} value={value}>

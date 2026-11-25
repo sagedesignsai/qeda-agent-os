@@ -115,7 +115,17 @@ function buildPresets(): EffectPreset[] {
   }));
 
   const transitions: EffectPreset[] = (
-    ['fade', 'slide-left', 'slide-right', 'scale'] as StudioCompositionTransitionType[]
+    [
+      'fade',
+      'slide-left',
+      'slide-right',
+      'scale',
+      'cross-zoom',
+      'directional-blur',
+      'glitch',
+      'rgb-split',
+      'radial-wipe',
+    ] as StudioCompositionTransitionType[]
   ).map((transitionType) => ({
     id: `transition-${transitionType}`,
     title: transitionType.replaceAll('-', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),

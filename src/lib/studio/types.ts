@@ -398,6 +398,18 @@ export interface ClipDeviceFrame {
   color?: string;
   /** Gap between the clip content and the frame edge in px. */
   padding?: number;
+  /** Visual surface theme for realistic mockups. */
+  theme?: 'dark' | 'light' | 'silver';
+  /** Optional window title (for browser / window frames). */
+  title?: string;
+  /** Optional address bar URL (for browser frames). */
+  url?: string;
+  /** Optional preset identifier (e.g. 'macos-window', 'macbook-pro'). */
+  presetId?: string;
+  /** Cast a realistic drop shadow behind the device frame. */
+  shadow?: boolean;
+  /** Subtle diagonal glass glare sheen across the top-left corner. */
+  glare?: boolean;
 }
 
 /**
@@ -586,7 +598,12 @@ export type StudioCompositionTransitionType =
   | 'slide-up'
   | 'slide-down'
   | 'scale'
-  | 'blur';
+  | 'blur'
+  | 'cross-zoom'
+  | 'directional-blur'
+  | 'glitch'
+  | 'rgb-split'
+  | 'radial-wipe';
 
 export interface StudioCompositionTransition {
   type: StudioCompositionTransitionType;
@@ -927,6 +944,17 @@ export interface StudioClipPayload {
   // Clip-attached effects (new system; replaces global take.effects[])
   /** Visual effects attached to this individual clip. Renders in stackOrder. */
   effects?: ClipEffect[];
+  /** Optional GPU shape mask applied before compositing this clip. */
+  mask?: {
+    enabled?: boolean;
+    shape: 'circle' | 'rect';
+    centerX: number;
+    centerY: number;
+    radiusX: number;
+    radiusY: number;
+    feather: number;
+    invert?: boolean;
+  };
 }
 
 export interface StudioTextStyle {

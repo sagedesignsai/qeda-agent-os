@@ -25,9 +25,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { TimelineClip, ClipEffect } from '@/lib/studio-types';
+import type { StudioMediaAsset } from '@/lib/studio/types';
 import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
 import { getDefaultParams } from '@/lib/studio/effects/params';
 import { StudioPanelSection } from '../components';
+import { ClipEffectsStudioDialog } from '../ClipEffectsStudioDialog';
 import { EffectKeyframeEditorSection } from './EffectKeyframeEditorSection';
 import { EffectParamsEditorSection } from './EffectParamsEditorSection';
 import { nanoid } from 'nanoid';
@@ -35,14 +37,17 @@ import { nanoid } from 'nanoid';
 interface ClipEffectsSectionProps {
   clip: TimelineClip;
   onUpdateClip: (clipId: string, patch: Partial<TimelineClip>) => void;
+  mediaAssets?: StudioMediaAsset[];
 }
 
 export function ClipEffectsSection({
   clip,
   onUpdateClip,
+  mediaAssets = [],
 }: ClipEffectsSectionProps) {
   const [isAddingEffect, setIsAddingEffect] = useState(false);
   const [selectedEffectId, setSelectedEffectId] = useState<string | null>(null);
+  const [studioOpen, setStudioOpen] = useState(false);
 
   const effects = (clip.payload?.effects ?? []) as ClipEffect[];
   const selectedEffect = effects.find((e) => e.id === selectedEffectId);
@@ -115,18 +120,38 @@ export function ClipEffectsSection({
       defaultOpen={false}
     >
       <div className="space-y-2">
-        {/* Add Effect Button */}
-        {!isAddingEffect && effects.length < 5 && (
+        {/* Add Effect & Studio Buttons */}
+        <div className="flex gap-1.5">
+          {!isAddingEffect && effects.length < 5 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="flex-1 h-7 text-xs"
+              onClick={() => setIsAddingEffect(true)}
+            >
+              <PlusIcon className="w-3 h-3 mr-1" />
+              Add Effect
+            </Button>
+          )}
           <Button
             size="sm"
-            variant="outline"
-            className="w-full h-7 text-xs"
-            onClick={() => setIsAddingEffect(true)}
+            variant="secondary"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setStudioOpen(true)}
           >
-            <PlusIcon className="w-3 h-3 mr-1" />
-            Add Effect
+            <SparklesIcon className="w-3 h-3 mr-1 text-sky-400" />
+            Effects Studio…
           </Button>
-        )}
+        </div>
+
+        <ClipEffectsStudioDialog
+          open={studioOpen}
+          onOpenChange={setStudioOpen}
+          clip={clip}
+          initialEffectId={selectedEffectId}
+          mediaAssets={mediaAssets}
+          onUpdateClip={onUpdateClip}
+        />
 
         {/* Add Effect Dropdown */}
         {isAddingEffect && (

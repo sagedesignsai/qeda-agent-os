@@ -866,13 +866,15 @@ export function buildFrameProgram(input: BuildFrameProgramInput): FrameProgram {
     compTimeMs,
     background: { paint: styling.background, glow: true },
     windowFrame: frame,
-    contentBackdrop: {
-      x: frame.contentX,
-      y: frame.contentY,
-      width: frame.contentWidth,
-      height: frame.contentHeight,
-      color: '#0b0d12',
-    },
+    contentBackdrop: showcaseMode
+      ? {
+          x: frame.contentX,
+          y: frame.contentY,
+          width: frame.contentWidth,
+          height: frame.contentHeight,
+          color: '#0b0d12',
+        }
+      : undefined,
     ops,
   };
 }

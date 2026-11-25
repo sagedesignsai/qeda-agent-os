@@ -24,11 +24,13 @@ import {
   addClipFromAsset,
   addEffectKeyframe,
   addOverlay,
+  applyColorLut,
   autoCreateTracks,
   createTrack,
   deleteTrack,
   describeProject,
   importRecording,
+  listColorLutPresets as getColorLutPresets,
   listEffectCatalog as getEffectCatalog,
   materializeProjectTracks,
   moveClip,
@@ -39,6 +41,7 @@ import {
   removeOverlay,
   reorderClipEffects,
   reorderTracks,
+  setClipMask,
   setClipProperties,
   updateClipEffect,
   updateTrack,
@@ -77,6 +80,9 @@ const effectTypeSchema = z.enum([
   'vignette',
   'film-grain',
   'scanlines',
+  'color-grade',
+  'chroma-key',
+  'motion-blur',
 ]);
 
 const effectParamsSchema = z
@@ -641,6 +647,73 @@ export function createStudioEditingTools(ctx: StudioEditingToolContext) {
         }
         const saved = commit(result.take);
         return { success: true, takeId: saved.id, removedKeyframeId: keyframeId };
+      },
+    }),
+
+    listColorLutPresets: tool({
+      description:
+        'List available Film Look (LUT) presets that can be applied to a clip via applyColorLut.',
+      inputSchema: z.object({}),
+      execute: async () => ({
+        success: true,
+        presets: getColorLutPresets(),
+      }),
+    }),
+
+    applyColorLut: tool({
+      description:
+        'Apply a named Film Look (LUT) preset to a clip (updates existing color-grade effect or attaches a new one). Call listColorLutPresets for preset ids.',
+      inputSchema: z.object({
+        clipId: z.string(),
+        presetId: z.string().describe('LUT preset id, e.g. teal-orange, matte-film, noir-mono, crisp-product'),
+        intensity: z.number().min(0).max(1).optional(),
+        takeId: takeIdSchema,
+      }),
+      execute: async ({ clipId, presetId, intensity, takeId }) => {
+        const { take, error } = resolve(takeId);
+        if (!take) return { success: false, error };
+        const result = applyColorLut(
+          materializeProjectTracks(take),
+          clipId,
+          presetId,
+          intensity,
+        );
+        if (result.error) return { success: false, error: result.error };
+        const saved = commit(result.take);
+        return { success: true, takeId: saved.id, effect: result.effect };
+      },
+    }),
+
+    setClipMask: tool({
+      description:
+        'Set or clear a feathered GPU shape mask (circle or rect) on a video or overlay clip. Pass mask: null to remove.',
+      inputSchema: z.object({
+        clipId: z.string(),
+        mask: z
+          .object({
+            enabled: z.boolean().optional(),
+            shape: z.enum(['circle', 'rect']),
+            centerX: z.number().min(0).max(1),
+            centerY: z.number().min(0).max(1),
+            radiusX: z.number().min(0.01).max(1),
+            radiusY: z.number().min(0.01).max(1),
+            feather: z.number().min(0.001).max(0.5),
+            invert: z.boolean().optional(),
+          })
+          .nullable(),
+        takeId: takeIdSchema,
+      }),
+      execute: async ({ clipId, mask, takeId }) => {
+        const { take, error } = resolve(takeId);
+        if (!take) return { success: false, error };
+        const result = setClipMask(
+          materializeProjectTracks(take),
+          clipId,
+          mask,
+        );
+        if (result.error) return { success: false, error: result.error };
+        const saved = commit(result.take);
+        return { success: true, takeId: saved.id };
       },
     }),
 

@@ -52,6 +52,8 @@ import {
   type StudioComposeInput,
 } from '@/lib/studio/render/compose';
 import { renderStudioFrame } from '@/lib/studio/render/frame-renderer';
+import { computeCameraMotionBlur } from '@/lib/studio/render/gl-camera-fx';
+import { renderGpuEffectPass } from '@/lib/studio/render/gl-effect-pass';
 import { isGenerativeBackground } from '@/lib/studio/render/background-generator';
 import { evaluateEditorTimeline } from '@/lib/studio/timeline/evaluate';
 import { StudioAudioMixer } from '@/lib/studio/audio/mixer';
@@ -297,6 +299,7 @@ export function StudioCanvas({
     height: number;
     value: CanvasGradient;
   } | null>(null);
+  const prevCameraRef = useRef<StudioCameraState>({ ...IDLE_CAMERA });
 
   const attachVideoRef = useCallback(
     (video: HTMLVideoElement | null) => {
@@ -932,6 +935,32 @@ export function StudioCanvas({
         },
       };
       renderStudioFrame(ctx, input);
+
+      const camBlur = computeCameraMotionBlur(
+        prevCameraRef.current,
+        cameraRef.current,
+        canvas.width,
+        canvas.height,
+      );
+      if (camBlur && isPlayingRef.current) {
+        renderGpuEffectPass(ctx, {
+          type: 'motion-blur',
+          intensity: camBlur.intensity,
+          frame: computeStudioCanvasFrame(
+            canvas.width,
+            canvas.height,
+            style,
+            canvas.width / Math.max(1, canvas.height),
+          ),
+          timeMs: compMs,
+          params: {
+            distance: camBlur.distance,
+            angle: camBlur.angle,
+            samples: camBlur.samples,
+          },
+        });
+      }
+      prevCameraRef.current = { ...cameraRef.current };
 
       // ── 7. Intro & Outro Motion Cards Rendering ──────────────────────────────
       const totalDur =

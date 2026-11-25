@@ -31,6 +31,11 @@ import {
   type EffectParamSchema,
 } from '../effects/params';
 import { effectIntensityProperty } from '../keyframes';
+import {
+  COLOR_LUT_PRESETS,
+  resolveColorLutParams,
+  type ColorLutPreset,
+} from '../render/gl-scopes';
 import { findClip } from './clips';
 
 export const MAX_EFFECTS_PER_CLIP = 5;
@@ -284,4 +289,96 @@ export function removeEffectKeyframe(
   };
   tracks[found.trackIndex] = { ...found.track, clips };
   return { take: { ...take, tracks }, removed: true };
+}
+
+// ── Film LUT presets & GPU shape masks ────────────────────────────────────────
+
+export function listColorLutPresets(): readonly ColorLutPreset[] {
+  return COLOR_LUT_PRESETS;
+}
+
+/**
+ * Apply a named film LUT preset to a clip. Updates an existing `color-grade`
+ * effect on the clip if present, or attaches a new `color-grade` effect.
+ */
+export function applyColorLut(
+  take: StudioTake,
+  clipId: string,
+  presetId: string,
+  intensity?: number,
+): { take: StudioTake; effect?: ClipEffect; error?: string } {
+  const lutParams = resolveColorLutParams(presetId);
+  if (!lutParams) {
+    return { take, error: `Unknown color LUT preset: ${presetId}` };
+  }
+
+  const found = findClip(take, clipId);
+  if (!found) return { take, error: `Clip ${clipId} not found` };
+
+  const existing = (found.clip.payload?.effects ?? []).find(
+    (e) => e.type === 'color-grade',
+  );
+
+  if (existing) {
+    const nextEffects = (found.clip.payload?.effects ?? []).map((e) =>
+      e.id === existing.id
+        ? {
+            ...e,
+            intensity:
+              intensity !== undefined
+                ? Math.max(0, Math.min(1, intensity))
+                : e.intensity,
+            params: { ...e.params, ...lutParams },
+          }
+        : e,
+    );
+    const res = withClipEffects(take, clipId, nextEffects);
+    const updated = nextEffects.find((e) => e.id === existing.id);
+    return { take: res.take, effect: updated, error: res.error };
+  }
+
+  return addClipEffect(take, clipId, {
+    type: 'color-grade',
+    intensity: intensity ?? 0.85,
+    params: lutParams,
+  });
+}
+
+export type ClipMaskPatch = NonNullable<
+  NonNullable<
+    NonNullable<StudioTake['tracks']>[number]['clips'][number]['payload']
+  >['mask']
+>;
+
+/**
+ * Set or clear a GPU shape mask on a clip (`clip.payload.mask`).
+ */
+export function setClipMask(
+  take: StudioTake,
+  clipId: string,
+  mask: ClipMaskPatch | null,
+): { take: StudioTake; error?: string } {
+  const found = findClip(take, clipId);
+  if (!found) return { take, error: `Clip ${clipId} not found` };
+
+  const tracks = [...(take.tracks ?? [])];
+  const clips = [...found.track.clips];
+  const nextPayload = { ...found.clip.payload };
+  if (!mask) {
+    delete nextPayload.mask;
+  } else {
+    nextPayload.mask = {
+      enabled: mask.enabled ?? true,
+      shape: mask.shape,
+      centerX: Math.max(0, Math.min(1, mask.centerX)),
+      centerY: Math.max(0, Math.min(1, mask.centerY)),
+      radiusX: Math.max(0.01, Math.min(1, mask.radiusX)),
+      radiusY: Math.max(0.01, Math.min(1, mask.radiusY)),
+      feather: Math.max(0.001, Math.min(0.5, mask.feather)),
+      invert: Boolean(mask.invert),
+    };
+  }
+  clips[found.clipIndex] = { ...found.clip, payload: nextPayload };
+  tracks[found.trackIndex] = { ...found.track, clips };
+  return { take: { ...take, tracks } };
 }

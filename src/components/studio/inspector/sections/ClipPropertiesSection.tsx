@@ -208,7 +208,11 @@ export function ClipPropertiesSection({
 
       {/* ── Effects (Clip-Attached) ───────────────────────────────────────── */}
       {isVisualTrack && (
-        <ClipEffectsSection clip={clip} onUpdateClip={onUpdateClip} />
+        <ClipEffectsSection
+          clip={clip}
+          onUpdateClip={onUpdateClip}
+          mediaAssets={mediaAssets}
+        />
       )}
 
       {/* ── Delete Clip Action ────────────────────────────────────────────── */}

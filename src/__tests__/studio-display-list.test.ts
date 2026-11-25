@@ -416,6 +416,7 @@ describe('display list — geometry', () => {
       styling: { ...STYLING, canvasMode: 'edit' },
     });
     expect(program.windowFrame?.shadow).toBe(false);
+    expect(program.contentBackdrop).toBeUndefined();
     expect(program.ops.some((op) => op.kind === 'chrome')).toBe(false);
   });
 });

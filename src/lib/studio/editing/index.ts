@@ -42,15 +42,19 @@ export {
 export {
   addClipEffect,
   addEffectKeyframe,
+  applyColorLut,
+  listColorLutPresets,
   listEffectCatalog,
   removeClipEffect,
   removeEffectKeyframe,
   reorderClipEffects,
+  setClipMask,
   updateClipEffect,
   MAX_EFFECTS_PER_CLIP,
   type AddClipEffectInput,
   type AddEffectKeyframeInput,
   type CatalogEntry,
+  type ClipMaskPatch,
   type UpdateClipEffectInput,
 } from './effects';
 

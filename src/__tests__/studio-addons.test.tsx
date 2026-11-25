@@ -194,6 +194,8 @@ describe('Showcase Studio addons', () => {
       />,
     );
 
+    fireEvent.mouseDown(screen.getByRole('tab', { name: /Generator/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Generator/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Neon Plasma' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply background' }));
 

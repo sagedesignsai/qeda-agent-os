@@ -48,6 +48,12 @@ import {
 } from './text-style';
 import { drawStudioEffects, drawStudioEffectPass } from './effects';
 import { drawKeyedSource } from './gl-effect-pass';
+import { drawMaskedSource } from './gl-masks';
+import {
+  drawGpuTransitionFallback,
+  isGpuTransitionType,
+  renderGpuTransitionPass,
+} from './gl-transitions';
 import { findChromaKeyEffect, resolveChromaKeyParams } from './chroma-key';
 import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
 import { computeStudioCanvasFrame } from './geometry';
@@ -164,7 +170,7 @@ export function drawStudioFrame(
       frame.contentWidth,
       frame.contentHeight,
     );
-  } else {
+  } else if (showcaseMode) {
     ctx.fillStyle = '#0b0d12';
     ctx.fillRect(
       frame.contentX,
@@ -354,6 +360,7 @@ function drawMultiTrackClips(
   videoCrop?: StudioVideoCrop,
   clipTransformPreview?: { clipId: string; transform: ClipTransform } | null,
 ): void {
+  const lastOutgoingSourceByTrack = new Map<string, CanvasImageSource>();
   for (const evaluatedItem of activeVideoItems) {
     const { track, clip, localTimeMs } = evaluatedItem;
     const payload = clip.payload;
@@ -405,6 +412,17 @@ function drawMultiTrackClips(
       : 1);
     const transitionSide = transition?.payload?.transitionSide ?? 'in';
     const transitionType = pairedTransition?.type ?? transition?.payload?.transitionType;
+    const isPairedGpuTransition = Boolean(
+      pairedTransition && transitionType && isGpuTransitionType(transitionType),
+    );
+    if (isPairedGpuTransition && pairedTransition?.role === 'outgoing') {
+      lastOutgoingSourceByTrack.set(clip.trackId, source);
+      continue;
+    }
+    const gpuTransitionFromSource =
+      isPairedGpuTransition && pairedTransition?.role === 'incoming'
+        ? lastOutgoingSourceByTrack.get(clip.trackId)
+        : undefined;
     const transitionAmount = pairedTransition
       ? pairedTransition.role === 'outgoing'
         ? 1 - transitionProgress
@@ -504,33 +522,84 @@ function drawMultiTrackClips(
     ctx.roundRect(drawX, drawY, width, height, radius);
     ctx.clip();
 
-    const keyed = chromaKey
-      ? drawKeyedSource(
-          ctx,
-          { x: drawX, y: drawY, width, height },
-          chromaKey,
-          (layerCtx) => {
-            layerCtx.beginPath();
-            layerCtx.roundRect(drawX, drawY, width, height, radius);
-            layerCtx.save();
-            layerCtx.clip();
-            layerCtx.drawImage(
-              source,
-              sourceRect.x,
-              sourceRect.y,
-              sourceRect.width,
-              sourceRect.height,
-              drawX,
-              drawY,
-              width,
-              height,
-            );
-            layerCtx.restore();
-          },
-        )
-      : false;
+    const maskParams = payload?.mask?.enabled ? payload.mask : undefined;
 
-    if (!keyed) {
+    const gpuTransitionRendered =
+      gpuTransitionFromSource &&
+      transitionType &&
+      isGpuTransitionType(transitionType)
+        ? renderGpuTransitionPass(ctx, {
+            type: transitionType,
+            progress: transitionProgress,
+            fromSource: gpuTransitionFromSource,
+            toSource: source,
+            rect: { x: drawX, y: drawY, width, height },
+          }) ||
+          (drawGpuTransitionFallback(ctx, {
+            type: transitionType,
+            progress: transitionProgress,
+            fromSource: gpuTransitionFromSource,
+            toSource: source,
+            rect: { x: drawX, y: drawY, width, height },
+          }),
+          true)
+        : false;
+
+    const keyed =
+      !gpuTransitionRendered && chromaKey
+        ? drawKeyedSource(
+            ctx,
+            { x: drawX, y: drawY, width, height },
+            chromaKey,
+            (layerCtx) => {
+              layerCtx.beginPath();
+              layerCtx.roundRect(drawX, drawY, width, height, radius);
+              layerCtx.save();
+              layerCtx.clip();
+              layerCtx.drawImage(
+                source,
+                sourceRect.x,
+                sourceRect.y,
+                sourceRect.width,
+                sourceRect.height,
+                drawX,
+                drawY,
+                width,
+                height,
+              );
+              layerCtx.restore();
+            },
+          )
+        : false;
+
+    const masked =
+      !gpuTransitionRendered && !keyed && maskParams
+        ? drawMaskedSource(
+            ctx,
+            { x: drawX, y: drawY, width, height },
+            { kind: 'shape', params: maskParams },
+            (layerCtx) => {
+              layerCtx.beginPath();
+              layerCtx.roundRect(drawX, drawY, width, height, radius);
+              layerCtx.save();
+              layerCtx.clip();
+              layerCtx.drawImage(
+                source,
+                sourceRect.x,
+                sourceRect.y,
+                sourceRect.width,
+                sourceRect.height,
+                drawX,
+                drawY,
+                width,
+                height,
+              );
+              layerCtx.restore();
+            },
+          )
+        : false;
+
+    if (!gpuTransitionRendered && !keyed && !masked) {
       ctx.drawImage(
         source,
         sourceRect.x,
