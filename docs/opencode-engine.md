@@ -320,7 +320,7 @@ Following the repo's conventions (flat `src/__tests__/`, jsdom, `isolatedModules
   imports it transitively, it needs *both* a mock in `.erb/mocks/` *and* a
   `moduleNameMapper` entry in `jest.config.js`, or the whole suite fails to load.
   Keeping `translate.ts` free of SDK imports avoids this for the important tests.
-- `npm run build` before `npm test` (the `check-build-exists` guard), and
+- `bun run build` before `bun run test` (the `check-build-exists` guard), and
   `python3 scripts/verify-ipc-split.py` after touching the IPC layer.
 
 ---

@@ -13,8 +13,8 @@ tools.
 - Target contract: OpenCode v2's `{ id, setup(ctx) }` plugin object, verified
   against OpenCode `v2.0.18`. The v1 `@opencode-ai/plugin` function form does not
   run in v2.
-- The plugin is compiled by `npm run build:opencode-plugin` (also part of
-  `npm run build`) from `plugins/qeda-builder/src` to
+- The plugin is compiled by `bun run build:opencode-plugin` (also part of
+  `bun run build`) from `plugins/qeda-builder/src` to
   `plugins/qeda-builder/dist/index.js`. Electron Builder places that
   dependency-free entry in `resources/opencode-plugins/qeda-builder`.
 - Setup copies the entry into the user's OpenCode config directory at
@@ -137,7 +137,7 @@ worktree.
 
 The integration evidence path is:
 
-1. Compile the plugin against the v2 contract (`npm run build:opencode-plugin`).
+1. Compile the plugin against the v2 contract (`bun run build:opencode-plugin`).
 2. Jest contract tests fake the host transform boundary and assert tool
    namespace/CodeMode options, agent registration, MCP mirroring, prompt
    binding, and cleanup (`src/__tests__/opencode-plugin.test.ts`).

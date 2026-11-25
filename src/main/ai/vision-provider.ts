@@ -7,8 +7,7 @@
  * 1. OpenRouter free vision models (PRIORITY: your preferred fallback provider)
  * 2. Gemini Flash (if GEMINI_API_KEY set)
  * 3. Ollama LLaVA (if OLLAMA_BASE_URL configured)
- * 4. SmolVLM2 offline (always available, local)
- * 5. Error if no vision available
+ * 4. Error if no supported vision model is available
  *
  * Vision models available in free tiers:
  * - OpenRouter (10+ free vision models)
@@ -17,15 +16,14 @@
  *   └─ Others: inclusionai/ling-3.2-flash:free, nvidia/nemotron-3-nano-omni*, etc.
  * - Gemini Flash — YES, vision in free tier
  * - Ollama (local) — Depends on pulled model (e.g., llava:7b)
- * - Offline (Transformers.js) — SmolVLM2 1.7B (local)
+ * Transformers.js inference currently supports text generation only; it is
+ * not advertised here as a vision provider.
  *
- * Strategy: OpenRouter free vision → Gemini → Ollama local → SmolVLM2 offline → Error
+ * Strategy: OpenRouter free vision → Gemini → configured Ollama → Error
  */
 
 import { getSettings } from './settings.js';
-import { resolveModel } from './provider.js';
-import { PROVIDERS, envApiKey } from './registry.js';
-import type { LanguageModel } from 'ai';
+import { resolveApiKey, resolveModel } from './provider.js';
 
 export type VisionTask =
   | 'viewport-analysis'
@@ -74,10 +72,7 @@ const VISION_MODELS: VisionCapability[] = [
     modelId: 'nvidia/nemotron-3.5-super-vl:free',
     modelName: 'NVIDIA Nemotron 3.5 Super VL (OpenRouter free)',
     offline: false,
-    isAvailable: () => {
-      const provider = PROVIDERS.find((p) => p.id === 'openrouter');
-      return provider ? !!envApiKey(provider) : false;
-    },
+    isAvailable: () => Boolean(resolveApiKey('openrouter')),
     priority: (task) => {
       // NVIDIA Nemotron is strong across all vision tasks
       switch (task) {
@@ -99,10 +94,7 @@ const VISION_MODELS: VisionCapability[] = [
     modelId: 'gemini-3.8-flash',
     modelName: 'Gemini 3.8 Flash',
     offline: false,
-    isAvailable: () => {
-      const provider = PROVIDERS.find((p) => p.id === 'gemini');
-      return provider ? !!envApiKey(provider) : false;
-    },
+    isAvailable: () => Boolean(resolveApiKey('gemini')),
     priority: (task) => {
       // Gemini Flash is solid for all vision tasks
       switch (task) {
@@ -126,9 +118,11 @@ const VISION_MODELS: VisionCapability[] = [
     modelName: 'LLaVA 7B (local)',
     offline: true,
     isAvailable: () => {
-      // Check if Ollama base URL is configured and responsive
-      const baseUrl = process.env.OLLAMA_BASE_URL;
-      return !!baseUrl; // Simplified: assume it's running if URL is set
+      const settings = getSettings();
+      return Boolean(
+        settings.providers?.ollama?.baseURL?.trim() ||
+          process.env.OLLAMA_BASE_URL,
+      );
     },
     priority: (task) => {
       // LLaVA is decent but slower than cloud options
@@ -145,34 +139,6 @@ const VISION_MODELS: VisionCapability[] = [
     },
   },
 
-  // ─── Offline SmolVLM2 (local, requires download) ────────────────────────
-  {
-    providerId: 'offline',
-    modelId: 'xenova/smollvm2-1.7b',
-    modelName: 'SmolVLM2 1.7B (offline)',
-    offline: true,
-    isAvailable: () => {
-      // Check if offline models are configured/enabled in settings
-      const settings = getSettings();
-      // Offline models require explicit user action (Settings → Offline Models)
-      // so we don't claim availability unless the user has indicated they want offline
-      const hasOfflineConfig = settings.offlineModelsEnabled ?? false;
-      return hasOfflineConfig;
-    },
-    priority: (task) => {
-      // SmolVLM2 is solid, reliable fallback for all tasks
-      switch (task) {
-        case 'viewport-analysis':
-          return 50; // Slower, but accurate
-        case 'asset-scoring':
-          return 50;
-        case 'composition-validation':
-          return 50;
-        case 'consistency-check':
-          return 60; // Slightly better at simple checks
-      }
-    },
-  },
 ];
 
 /**
@@ -191,9 +157,14 @@ export function selectVisionModel(task: VisionTask): VisionModelSelection | null
   if (settings.blender?.visionModel) {
     const explicit = settings.blender.visionModel;
     // Format: "providerId/modelId" or "modelId" (assume first available provider)
-    const [providerId, modelId] = explicit.includes('/')
-      ? explicit.split('/')
-      : [VISION_MODELS[0]?.providerId || 'offline', explicit];
+    const slashIndex = explicit.indexOf('/');
+    const providerId =
+      slashIndex === -1
+        ? VISION_MODELS[0]?.providerId
+        : explicit.slice(0, slashIndex);
+    const modelId =
+      slashIndex === -1 ? explicit : explicit.slice(slashIndex + 1);
+    if (!providerId || providerId === 'offline') return null;
 
     return {
       providerId,
@@ -222,19 +193,7 @@ export function selectVisionModel(task: VisionTask): VisionModelSelection | null
     };
   }
 
-  // ─── 3. Fallback to SmolVLM2 (always available, no key needed) ────────────
-  const smolVLM = VISION_MODELS.find((m) => m.modelId === 'xenova/smollvm2-1.7b');
-  if (smolVLM && smolVLM.isAvailable()) {
-    return {
-      providerId: smolVLM.providerId,
-      modelId: smolVLM.modelId,
-      modelName: smolVLM.modelName,
-      offline: true,
-      reason: `Fallback: SmolVLM2 1.7B (offline, no key needed). First run ~5s, cached ~2–3s.`,
-    };
-  }
-
-  // ─── 4. No vision available ───────────────────────────────────────────────
+  // ─── 3. No supported vision model available ───────────────────────────────
   return null;
 }
 
@@ -292,9 +251,10 @@ export function resolveVisionModel(
   providerId: string,
   modelId: string,
 ): ReturnType<typeof resolveModel> | null {
+  if (providerId === 'offline') return null;
   try {
     return resolveModel(providerId, modelId) as ReturnType<typeof resolveModel>;
-  } catch (error) {
+  } catch {
     // Model resolution failed (invalid provider, missing key, etc)
     return null;
   }
@@ -321,9 +281,9 @@ export function getVisionStatus(): {
     recommended,
     allOptions: all,
     note: all.length === 0
-      ? 'No vision models available. Set GEMINI_API_KEY for free vision, or vision tools will use offline SmolVLM2 (slower).'
+      ? 'No vision models available. Configure an OpenRouter or Gemini key, or configure a running Ollama vision model.'
       : all.length === 1 && all[0].offline
-        ? `Only ${all[0].modelName} available (offline). For faster vision, set GEMINI_API_KEY.`
+        ? `Only ${all[0].modelName} available (local). For faster vision, set GEMINI_API_KEY.`
         : `${all.length} vision model(s) available. Using: ${recommended?.modelName}`,
   };
 }

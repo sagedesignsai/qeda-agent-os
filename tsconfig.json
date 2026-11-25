@@ -22,6 +22,9 @@
   },
   "exclude": [
     "test",
+    // Disconnected legacy prototype; its stale tests are not part of the app typecheck.
+    "src/__tests__/motion-pipeline-*.test.ts",
+    "src/lib/motion/pipeline",
     "release/build",
     "release/app/dist",
     ".erb/dll",

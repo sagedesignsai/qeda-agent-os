@@ -89,10 +89,18 @@ export function ModelsView() {
       .invoke<ProviderInfo[]>('providers:list')
       .then((list) => {
         if (!cancelled) {
-          setProviders(list);
+          // Transformers.js runs in the renderer and is selected separately in
+          // Offline Models; it is not a provider for main-process agents.
+          const selectableProviders = list.filter(
+            (provider) => provider.id !== 'offline',
+          );
+          setProviders(selectableProviders);
           setApiKeySources(
             Object.fromEntries(
-              list.map((provider) => [provider.id, provider.apiKeyPreference]),
+              selectableProviders.map((provider) => [
+                provider.id,
+                provider.apiKeyPreference,
+              ]),
             ),
           );
         }

@@ -205,17 +205,16 @@ async function resolveModelChain(settings): Promise<ModelTarget[]> {
 
 2. **Chat Interface**
    - Model selection respects Ollama choice
-   - Fallback to Ollama on primary provider failure
+   - Fallback to Ollama on primary provider failure in chain-enabled chat surfaces
    - UI shows "Using Ollama…" when fallback occurs
 
-3. **Terminal Agent**
-   - Goal→plan→execute also uses fallback chain
-   - Can complete goals using Ollama if needed
+3. **Direct model callers**
+   - Terminal, task/document generation, Studio generation, Local Builder, and the autonomous operator resolve the active model directly.
+   - These direct entrypoints do not use the cross-provider fallback chain.
 
 4. **All Copilots**
-   - Task, Studio, Motion, Music, Trace, Correspondence, Document
-   - All use `resolveModelChain()` for provider selection
-   - All support Ollama as fallback
+   - Only chat surfaces wired to `resolveModelChain()` support cross-provider fallback.
+   - Do not assume every generation or agent entrypoint uses the same resolution path.
 
 ## Next Steps (Future)
 
@@ -270,10 +269,9 @@ curl http://localhost:11434/api/tags
 
 ### Environment Variables
 
-None required - Ollama uses hardcoded `http://localhost:11434` by default.
-
-Override in Settings:
-- Provider → Ollama → Base URL field (if needed)
+None required - Ollama uses `http://localhost:11434/v1` by default.
+`OLLAMA_BASE_URL` overrides that default; the Settings UI does not currently
+expose a Base URL field.
 
 ## Known Issues
 

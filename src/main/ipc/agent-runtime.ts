@@ -16,6 +16,7 @@
 
 import { type UIMessage } from 'ai';
 import { createDesktopAgent, type WorkspaceContext } from '../ai/agent';
+import { getSettings } from '../ai/settings';
 import { resolveActiveProjectId } from '../ai/project-context';
 import { type ModelTarget } from '../ai/fallback';
 import { type ChatContext } from './channels';
@@ -47,7 +48,11 @@ function cacheKey(
     context?.projectId ? `pr:${context.projectId}` : null,
     context?.taskId ? `t:${context.taskId}` : null,
   ].filter(Boolean);
-  return `${target.providerId}::${target.modelId}::${mode}::${parts.join('|') || '-'}`;
+  const authEpoch =
+    target.providerId === 'chatgpt'
+      ? getSettings().chatgptAuth?.expiresAt ?? '-'
+      : '-';
+  return `${target.providerId}::${target.modelId}::${mode}::${authEpoch}::${parts.join('|') || '-'}`;
 }
 
 export function getAgent(

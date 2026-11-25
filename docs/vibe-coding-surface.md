@@ -309,7 +309,7 @@ Flat `src/__tests__/`, jsdom, `isolatedModules`.
   `/api` client instead of an npm SDK, there is no ESM-only dependency to mock or
   map. Keep `translate.ts` and `checkpoint.ts` free of Electron and `fetch` so
   they stay directly unit-testable.
-- `npm run build` before `npm test` (the `check-build-exists` guard), and
+- `bun run build` before `bun run test` (the `check-build-exists` guard), and
   `python3 scripts/verify-ipc-split.py` after touching the IPC layer.
 
 ---

@@ -1,7 +1,8 @@
 import { createServer } from 'node:http';
 import crypto from 'node:crypto';
 import { URL } from 'node:url';
-import { getSettings, getRawSettings, saveSettings } from './settings';
+import log from 'electron-log';
+import { getSettings, saveSettings } from './settings';
 
 const AUTH_ENDPOINT = 'https://auth.openai.com/api/accounts/authorize';
 const TOKEN_ENDPOINT = 'https://auth.openai.com/api/accounts/oauth/token';
@@ -105,12 +106,12 @@ export async function performChatGPTSignIn(port = 1455): Promise<ChatGPTCredenti
     hostId,
   };
 
-  const raw = getRawSettings();
+  const raw = getSettings();
   saveSettings({
     ...raw,
     chatgptAuth: creds,
     activeProvider: 'chatgpt',
-    activeModel: raw.activeModel || 'gpt-5',
+    activeModel: raw.activeProvider === 'chatgpt' ? raw.activeModel : 'gpt-5',
   });
   return creds;
 }
@@ -118,8 +119,11 @@ export async function performChatGPTSignIn(port = 1455): Promise<ChatGPTCredenti
 export async function refreshChatGPTToken(): Promise<string | undefined> {
   const settings = getSettings();
   const auth = settings.chatgptAuth;
-  if (!auth?.refreshToken) return auth?.accessToken;
-  if (auth.expiresAt && auth.expiresAt > Date.now() + 60_000) return auth.accessToken;
+  if (!auth?.accessToken) return undefined;
+  if (auth.expiresAt && auth.expiresAt > Date.now() + 60_000) {
+    return auth.accessToken;
+  }
+  if (!auth.refreshToken) return undefined;
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: auth.refreshToken,
@@ -129,10 +133,14 @@ export async function refreshChatGPTToken(): Promise<string | undefined> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
+    signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) return auth.accessToken;
+  if (!res.ok) {
+    if (auth.expiresAt && auth.expiresAt <= Date.now()) return undefined;
+    return auth.accessToken;
+  }
   const json = (await res.json()) as { access_token: string; refresh_token?: string; expires_in: number };
-  const raw = getRawSettings();
+  const raw = getSettings();
   saveSettings({
     ...raw,
     chatgptAuth: {
@@ -143,4 +151,26 @@ export async function refreshChatGPTToken(): Promise<string | undefined> {
     },
   });
   return json.access_token;
+}
+
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Refresh persisted OAuth credentials before their access token expires. */
+export function startChatGPTTokenRefresh(): void {
+  if (refreshTimer) return;
+
+  const refresh = async () => {
+    try {
+      await refreshChatGPTToken();
+    } catch (error) {
+      log.warn(
+        '[chatgpt-auth] token refresh failed:',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
+
+  void refresh();
+  refreshTimer = setInterval(() => void refresh(), 30_000);
+  refreshTimer.unref?.();
 }

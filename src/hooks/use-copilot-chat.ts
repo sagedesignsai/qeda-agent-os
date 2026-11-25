@@ -7,9 +7,8 @@
  * `hydrate: false`): it is a working session against the task board, not a
  * chat thread to file away. The tools it calls are what persist.
  *
- * When the active provider is "offline" (Transformers.js), this hook routes
- * through `useOfflineAI` in the renderer instead of the main process agent,
- * so the model runs locally via WebGPU/WASM.
+ * When an offline model is selected, this hook routes through `useOfflineAI`
+ * in the renderer instead of the main-process agent.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -37,7 +36,6 @@ const COPILOT_TRANSPORT: AgentTransport = {
  * Cached so the hook does not re-fetch on every render.
  */
 function useActiveProvider() {
-  const [provider, setProvider] = useState('');
   const [offlineModel, setOfflineModel] = useState('');
 
   useEffect(() => {
@@ -46,7 +44,6 @@ function useActiveProvider() {
       .invoke<Record<string, unknown>>('settings:get')
       .then((s) => {
         if (cancelled) return;
-        setProvider((s?.activeProvider as string) ?? '');
         setOfflineModel((s?.offlineModel as string) ?? '');
       })
       .catch(() => {});
@@ -57,7 +54,6 @@ function useActiveProvider() {
         .invoke<Record<string, unknown>>('settings:get')
         .then((s) => {
           if (cancelled) return;
-          setProvider((s?.activeProvider as string) ?? '');
           setOfflineModel((s?.offlineModel as string) ?? '');
         })
         .catch(() => {});
@@ -69,7 +65,7 @@ function useActiveProvider() {
     };
   }, []);
 
-  return { provider, offlineModel };
+  return offlineModel;
 }
 
 /**
@@ -185,19 +181,17 @@ function useOfflineCopilotChat(
 export function useCopilotChat(opts?: {
   projectId?: string;
 }): UseAgentChatReturn {
-  const { provider, offlineModel } = useActiveProvider();
-
-  // When the offline provider is active, route through the renderer's
-  // Transformers.js hook instead of the main process agent.
-  if (provider === 'offline') {
-    return useOfflineCopilotChat(offlineModel);
-  }
-
-  return useAgentChat({
+  const offlineModel = useActiveProvider();
+  const offlineChat = useOfflineCopilotChat(offlineModel);
+  const agentChat = useAgentChat({
     sessionId: 'focus-copilot',
     transport: COPILOT_TRANSPORT,
     context: opts?.projectId ? { projectId: opts.projectId } : undefined,
     persist: false,
     hydrate: false,
   });
+
+  // A default selected in Offline Models opts this copilot into local inference
+  // without changing the model used by main-process agents.
+  return offlineModel ? offlineChat : agentChat;
 }

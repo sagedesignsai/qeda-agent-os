@@ -310,7 +310,7 @@ Chat and copilot both inject context that is not a tool. Rules:
 
 ## 10. Verification bar
 
-There is no CI and no pre-commit hook; `npm test` requires `npm run build`
+There is no CI and no pre-commit hook; `bun run test` requires `bun run build`
 first. The bar for a change to this domain is therefore explicit rather than
 assumed.
 

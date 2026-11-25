@@ -14,6 +14,7 @@ import log from 'electron-log';
 // Imported first so provider keys from .env.local are in process.env before any
 // module reads them during app startup.
 import { loadEnvironment } from './env';
+import { startChatGPTTokenRefresh } from './ai/chatgpt-auth';
 import { getDb, closeDb } from './db/client.js';
 import { registerIpcHandlers } from './ipc/index.js';
 import { readPersistedTheme } from './ipc/handlers/theme.js';
@@ -247,6 +248,8 @@ function onActivate() {
 app
   .whenReady()
   .then(async () => {
+    startChatGPTTokenRefresh();
+
     // Show splash screen immediately — before DB init and window creation
     createSplashWindow();
 

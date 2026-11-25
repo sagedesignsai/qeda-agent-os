@@ -29,7 +29,7 @@ Copy the implementation from `capability-discovery-architecture.md` § Implement
 ```bash
 # Check file exists and is syntactically valid
 ls -la src/main/ai/capability-discovery.ts
-npx tsc --noEmit src/main/ai/capability-discovery.ts
+bun run typecheck
 ```
 
 ### Step 1.2: Create Capability Discovery Tools
@@ -46,7 +46,7 @@ Copy the implementation from `capability-discovery-architecture.md` § Implement
 **Verify**:
 ```bash
 ls -la src/main/tools/capability-discovery.ts
-npx tsc --noEmit src/main/tools/capability-discovery.ts
+bun run typecheck
 ```
 
 ### Step 1.3: Export from Tool Registry
@@ -240,7 +240,7 @@ describe('Capability Discovery', () => {
 
 **Verify**:
 ```bash
-npm test -- capability-discovery.test.ts
+bun run test -- capability-discovery.test.ts
 ```
 
 ---
@@ -374,7 +374,7 @@ export const copilotToolPolicies: ToolPolicyMap = {
 **Check**: Agent capabilities test still passes
 
 ```bash
-npm test -- agent-capabilities.test.ts
+bun run test -- agent-capabilities.test.ts
 ```
 
 Should pass without changes (tests verify all tools have policy entries).
@@ -658,7 +658,7 @@ const response = await askCapabilityAgent(
 - [ ] Update all copilot agents (studio, motion, music, correspondence)
 - [ ] Update all copilot approval policies
 - [ ] Integration test all copilots
-- [ ] Verify `npm test -- agent-capabilities.test.ts` passes
+- [ ] Verify `bun run test -- agent-capabilities.test.ts` passes
 
 ### Phase 3 (Day 3 - 1 hour)
 - [ ] Measure token reduction (system prompt sizes before/after)

@@ -43,4 +43,4 @@ PY
 
 echo
 echo "=== full test suite ==="
-npm test 2>&1 | tail -10
+bun run test 2>&1 | tail -10

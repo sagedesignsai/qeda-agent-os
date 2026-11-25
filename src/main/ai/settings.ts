@@ -225,7 +225,16 @@ function readRaw(): AppSettings {
   const defaults = defaultSettings();
   try {
     const raw = fs.readFileSync(settingsPath(), 'utf8');
-    return { ...defaults, ...JSON.parse(raw) };
+    const settings = { ...defaults, ...JSON.parse(raw) };
+    if (settings.activeProvider === 'offline') {
+      return {
+        ...settings,
+        activeProvider: defaults.activeProvider,
+        activeModel: defaults.activeModel,
+        offlineModel: settings.offlineModel || settings.activeModel,
+      };
+    }
+    return settings;
   } catch {
     return { ...defaults };
   }
@@ -245,7 +254,29 @@ export function getRawSettings(): AppSettings {
  */
 export function getSettings(): AppSettings {
   const raw = getRawSettings();
-  if (!safeStorage.isEncryptionAvailable()) return raw;
+  if (!safeStorage.isEncryptionAvailable()) {
+    return {
+      ...raw,
+      providers: Object.fromEntries(
+        Object.entries(raw.providers ?? {}).map(([id, provider]) => [
+          id,
+          { ...provider, apiKey: undefined },
+        ]),
+      ),
+      customProviders: raw.customProviders?.map((provider) => ({
+        ...provider,
+        apiKey: undefined,
+      })),
+      serviceKeys: undefined,
+      githubPat: undefined,
+      chatgptAuth: undefined,
+      mcpServers: raw.mcpServers?.map((server) => ({
+        ...server,
+        env: undefined,
+        headers: undefined,
+      })),
+    };
+  }
 
   const decrypted: AppSettings = JSON.parse(JSON.stringify(raw));
 
@@ -271,6 +302,19 @@ export function getSettings(): AppSettings {
       );
     } catch {
       decrypted.githubPat = undefined;
+    }
+  }
+  if (decrypted.chatgptAuth) {
+    for (const key of ['accessToken', 'refreshToken'] as const) {
+      const value = decrypted.chatgptAuth[key];
+      if (!value?.startsWith('enc:')) continue;
+      try {
+        decrypted.chatgptAuth[key] = safeStorage.decryptString(
+          Buffer.from(value.slice(4), 'base64'),
+        );
+      } catch {
+        decrypted.chatgptAuth[key] = undefined;
+      }
     }
   }
   for (const val of Object.values(decrypted.providers)) {
@@ -356,7 +400,48 @@ export function getSettings(): AppSettings {
 export function saveSettings(settings: AppSettings): void {
   const toWrite: AppSettings = JSON.parse(JSON.stringify(settings));
 
-  if (safeStorage.isEncryptionAvailable()) {
+  const encryptionAvailable = safeStorage.isEncryptionAvailable();
+  const hasSensitiveValues =
+    Object.values(toWrite.providers ?? {}).some((provider) =>
+      Boolean(provider?.apiKey?.trim()),
+    ) ||
+    (toWrite.customProviders ?? []).some((provider) =>
+      Boolean(provider.apiKey?.trim()),
+    ) ||
+    Object.values(toWrite.serviceKeys ?? {}).some((value) =>
+      Boolean(value?.trim()),
+    ) ||
+    Boolean(toWrite.githubPat?.trim()) ||
+    Boolean(
+      toWrite.chatgptAuth?.accessToken?.trim() ||
+        toWrite.chatgptAuth?.refreshToken?.trim(),
+    ) ||
+    (toWrite.mcpServers ?? []).some(
+      (server) =>
+        Object.values(server.env ?? {}).some(Boolean) ||
+        Object.values(server.headers ?? {}).some(Boolean),
+    );
+
+  if (!encryptionAvailable && hasSensitiveValues) {
+    throw new Error(
+      'Credentials cannot be saved because OS secure storage is unavailable. Use environment variables or enable a system keychain.',
+    );
+  }
+
+  if (encryptionAvailable) {
+    const encryptChatGPTToken = (value: string | undefined) => {
+      if (!value || value.startsWith('enc:')) return value;
+      return `enc:${safeStorage.encryptString(value).toString('base64')}`;
+    };
+    if (toWrite.chatgptAuth) {
+      toWrite.chatgptAuth.accessToken = encryptChatGPTToken(
+        toWrite.chatgptAuth.accessToken,
+      );
+      toWrite.chatgptAuth.refreshToken = encryptChatGPTToken(
+        toWrite.chatgptAuth.refreshToken,
+      );
+    }
+
     if (toWrite.serviceKeys) {
       for (const [id, value] of Object.entries(toWrite.serviceKeys)) {
         if (typeof value === 'string' && value) {
@@ -433,7 +518,7 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 export function setActiveModel(providerId: string, modelId: string): void {
-  const s = getRawSettings();
+  const s = getSettings();
   saveSettings({ ...s, activeProvider: providerId, activeModel: modelId });
 }
 
@@ -458,7 +543,7 @@ export function setActiveProjectId(
   id: string | null,
   explicitlyCleared = false,
 ): boolean {
-  const current = getRawSettings();
+  const current = getSettings();
   const nextId: string | null = id ?? null;
   const nextExplicitlyCleared = nextId === null && explicitlyCleared;
   if (

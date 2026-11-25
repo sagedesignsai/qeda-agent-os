@@ -122,11 +122,11 @@ export const PROVIDERS: ProviderConfig[] = [
   },
   {
     id: 'anthropic',
-    name: 'Anthropic (OpenAI-compatible)',
+    name: 'Anthropic',
     baseURL: 'https://api.anthropic.com/v1',
     apiKeyEnvs: ['ANTHROPIC_API_KEY'],
     freeModels: ['claude-haiku-4-5'],
-    note: 'Paid.',
+    note: 'Paid. Uses the Anthropic Messages API.',
   },
   {
     id: 'ollama',

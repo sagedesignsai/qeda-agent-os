@@ -17,7 +17,7 @@ A comprehensive guide to Qeda's support for local Ollama models with full connec
 1. Download Ollama from https://ollama.ai
 2. Start Ollama: `ollama serve`
 3. Pull a model: `ollama pull qwen3.5:0.8b`
-4. In Qeda Settings → AI & Models → Providers, select "Ollama (local, no key)"
+4. In Qeda Settings → AI & Models, select "Ollama (local, no key)"
 5. Click "Refresh models" to list installed models
 6. Select a model and start chatting
 

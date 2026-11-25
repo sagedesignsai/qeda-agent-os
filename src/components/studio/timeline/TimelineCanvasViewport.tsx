@@ -1643,7 +1643,7 @@ export function TimelineCanvasViewport({
       // lane rows resolve to their parent track, so dragging onto an expanded
       // animation lane still moves the clip to the owning track.
       const hit = hitTest(e.clientX, e.clientY);
-      if (hit && 'track' in hit) {
+      if (hit && 'track' in hit && hit.track) {
         const targetTrackId = hit.track.id;
         if (targetTrackId !== currentDrag.originalTrackId) {
           // Cross-track move

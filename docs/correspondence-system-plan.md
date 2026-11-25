@@ -406,11 +406,11 @@ agent calls a fixed protocol, it does not invent one.
 Per phase, in order:
 
 ```bash
-npx tsc --noEmit -p tsconfig.json          # there is no typecheck script
+bun run typecheck                          # project TypeScript check
 python3 scripts/verify-ipc-split.py        # after any channels.ts / handlers change
-npm run build                              # REQUIRED before npm test (build-exists guard)
-npm test
-npm run lint
+bun run build                              # REQUIRED before bun run test (build-exists guard)
+bun run test
+bun run lint
 ```
 
 - Pure logic is tested without Electron: `src/lib/correspondence.ts` and

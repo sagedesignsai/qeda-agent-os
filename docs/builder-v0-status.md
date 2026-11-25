@@ -163,7 +163,7 @@ aborted and discarded cleanly.
 
 - Compare the current UI against the v0 reference screenshots for hierarchy,
   density, breakpoints, and empty/running/error/approval/review states.
-- Run deferred typecheck (`npx tsc --noEmit`), lint, targeted Builder tests,
+- Run deferred typecheck (`bun run typecheck`), lint, targeted Builder tests,
   `scripts/verify-ipc-split.py`, production build, and smoke test.
 
 ---
@@ -181,10 +181,10 @@ can be revisited as a setting once the safety boundary is established.
 ## Current verification status
 
 The following have not been run for this snapshot:
-- `npx tsc --noEmit` — TypeScript typecheck
-- `npm run lint`
-- `npm test` (Builder-specific test files exist but have not been executed)
-- `npm run build` + production smoke run
+- `bun run typecheck` — TypeScript typecheck
+- `bun run lint`
+- `bun run test` (Builder-specific test files exist but have not been executed)
+- `bun run build` + production smoke run
 - `python3 scripts/verify-ipc-split.py` (two new IPC channels added)
 
 Treat all runtime behaviour — especially OpenCode event payload handling,

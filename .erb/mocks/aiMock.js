@@ -3,6 +3,7 @@ module.exports = {
   generateText: jest.fn(),
   streamText: jest.fn(),
   createGateway: jest.fn(),
+  createAnthropic: jest.fn(),
   createOpenAICompatible: jest.fn(),
   openai: jest.fn(),
   anthropic: jest.fn(),

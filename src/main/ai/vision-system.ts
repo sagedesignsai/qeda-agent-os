@@ -18,10 +18,7 @@ import fs from 'node:fs/promises';
 import * as cu from '../computer-use.js';
 import {
   selectVisionModel,
-  fallbackVisionModel,
   resolveVisionModel,
-  type VisionTask,
-  type VisionModelSelection,
 } from './vision-provider.js';
 
 // ─── Response schemas (Zod) ────────────────────────────────────────────────
@@ -101,7 +98,7 @@ export class VisionSystem {
       if (!modelSelection) {
         return {
           success: false,
-          error: 'No vision model available. Set OPENROUTER_API_KEY, GEMINI_API_KEY, or enable offline models in Settings.',
+          error: 'No supported vision model available. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
           timingMs: Date.now() - startMs,
         };
       }
@@ -111,11 +108,7 @@ export class VisionSystem {
       if (!model) {
         return {
           success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. ${
-            modelSelection.providerId === 'offline'
-              ? 'Download models in Settings → Offline Models first.'
-              : `Check that your ${modelSelection.providerId} API key is configured.`
-          }`,
+          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
           timingMs: Date.now() - startMs,
         };
       }
@@ -197,7 +190,7 @@ Do not include markdown formatting, just the JSON object.`,
       if (!modelSelection) {
         return {
           success: false,
-          error: 'No vision model available for asset scoring. Set OPENROUTER_API_KEY or GEMINI_API_KEY.',
+          error: 'No supported vision model available for asset scoring. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
           timingMs: Date.now() - startMs,
         };
       }
@@ -207,11 +200,7 @@ Do not include markdown formatting, just the JSON object.`,
       if (!model) {
         return {
           success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. ${
-            modelSelection.providerId === 'offline'
-              ? 'Download models in Settings → Offline Models first.'
-              : `Check that your ${modelSelection.providerId} API key is configured.`
-          }`,
+          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
           timingMs: Date.now() - startMs,
         };
       }
@@ -291,7 +280,7 @@ Do not include markdown formatting, just the JSON object.`,
       if (!modelSelection) {
         return {
           success: false,
-          error: 'No vision model available for composition validation. Set OPENROUTER_API_KEY or GEMINI_API_KEY.',
+          error: 'No supported vision model available for composition validation. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
           timingMs: Date.now() - startMs,
         };
       }
@@ -301,11 +290,7 @@ Do not include markdown formatting, just the JSON object.`,
       if (!model) {
         return {
           success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. ${
-            modelSelection.providerId === 'offline'
-              ? 'Download models in Settings → Offline Models first.'
-              : `Check that your ${modelSelection.providerId} API key is configured.`
-          }`,
+          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
           timingMs: Date.now() - startMs,
         };
       }
@@ -393,7 +378,7 @@ Do not include markdown formatting, just the JSON object.`,
       if (!modelSelection) {
         return {
           success: false,
-          error: 'No vision model available for consistency check. Set OPENROUTER_API_KEY or GEMINI_API_KEY.',
+          error: 'No supported vision model available for consistency check. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
           timingMs: Date.now() - startMs,
         };
       }
@@ -403,11 +388,7 @@ Do not include markdown formatting, just the JSON object.`,
       if (!model) {
         return {
           success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. ${
-            modelSelection.providerId === 'offline'
-              ? 'Download models in Settings → Offline Models first.'
-              : `Check that your ${modelSelection.providerId} API key is configured.`
-          }`,
+          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
           timingMs: Date.now() - startMs,
         };
       }

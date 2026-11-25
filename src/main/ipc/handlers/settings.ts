@@ -12,7 +12,6 @@ import { ipcMain, type BrowserWindow } from 'electron';
 import { listProviderModels } from '../../ai/provider';
 import { PROVIDERS, envApiKey } from '../../ai/registry';
 import {
-  getRawSettings,
   getSettings,
   saveSettings,
   setActiveProjectId,
@@ -33,7 +32,7 @@ export function registerSettingsHandlers({
   // ── Settings ──────────────────────────────────────────────────────────────
 
   ipcMain.handle('settings:get', () => {
-    const s = getRawSettings();
+    const s = getSettings();
     // Only expose whether a key is set (boolean), never the actual value.
     const sanitizedProviders: Record<
       string,
@@ -73,6 +72,8 @@ export function registerSettingsHandlers({
       // tools/rag.ts, which falls back to the environment when they are unset.
       embeddingProvider: s.embeddingProvider ?? '',
       embeddingModel: s.embeddingModel ?? '',
+      offlineModel: s.offlineModel ?? '',
+      downloadedOfflineModels: s.downloadedOfflineModels ?? [],
       // The restored default project. Empty string rather than null so the
       // renderer gets a plain falsy value it can compare against directly.
       activeProjectId,
@@ -251,7 +252,11 @@ export function registerSettingsHandlers({
       // ChatGPT is an OAuth session, not an API key. Its "signed in" state
       // lives under settings.chatgptAuth, not providers.chatgpt.apiKey.
       if (provider.id === 'chatgpt') {
-        const signedIn = Boolean(getSettings().chatgptAuth?.accessToken);
+        const auth = getSettings().chatgptAuth;
+        const signedIn = Boolean(
+          auth?.accessToken &&
+            (!auth.expiresAt || auth.expiresAt > Date.now()),
+        );
         return {
           id: provider.id,
           name: provider.name,
@@ -353,16 +358,19 @@ export function registerSettingsHandlers({
 
   ipcMain.handle('chatgpt:status', () => {
     const s = getSettings();
+    const auth = s.chatgptAuth;
     return {
-      signedIn: Boolean(s.chatgptAuth?.accessToken),
-      expiresAt: s.chatgptAuth?.expiresAt,
-      clientId: s.chatgptAuth?.clientId,
+      signedIn: Boolean(
+        auth?.accessToken && (!auth.expiresAt || auth.expiresAt > Date.now()),
+      ),
+      expiresAt: auth?.expiresAt,
+      clientId: auth?.clientId,
     };
   });
 
   ipcMain.handle('chatgpt:signout', () => {
-    const raw = getRawSettings();
-    const { chatgptAuth: _chatgptAuth, ...rest } = raw;
+    const current = getSettings();
+    const { chatgptAuth: _chatgptAuth, ...rest } = current;
     void _chatgptAuth;
     saveSettings(rest);
     return;

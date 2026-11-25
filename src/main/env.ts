@@ -9,7 +9,7 @@
  * deliberately unprefixed, so without this the registry would see an empty
  * environment and fall back to defaults.
  *
- * Precedence: `.env.local` first (wins), then `.env` for shared defaults.
+ * Precedence: OS-provided values win, then `.env.local`, then `.env` defaults.
  * In a packaged build these files are not shipped, so credentials come from
  * the encrypted Settings store instead — see ai/settings.ts.
  * ─────────────────────────────────────────────────────────────────────────────
@@ -20,8 +20,8 @@ import path from 'node:path';
 import log from 'electron-log';
 import { config as loadEnvFile } from 'dotenv';
 
-/** Files to load, in increasing order of precedence. */
-const ENV_FILES = ['.env', '.env.local'];
+/** Load the higher-precedence local file first; shared defaults fill gaps. */
+const ENV_FILES = ['.env.local', '.env'];
 
 export function loadEnvironment(): void {
   const root = app.getAppPath();
@@ -29,7 +29,7 @@ export function loadEnvironment(): void {
   for (const file of ENV_FILES) {
     const result = loadEnvFile({
       path: path.join(root, file),
-      // Never clobber a variable the OS/launcher already provided.
+      // Never clobber a value already loaded from the OS or an earlier file.
       override: false,
       quiet: true,
     });

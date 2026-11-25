@@ -19,6 +19,7 @@
  */
 
 import { createGateway } from '@ai-sdk/gateway';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { createCohere } from '@ai-sdk/cohere';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { wrapLanguageModel, type EmbeddingModel, type LanguageModel } from 'ai';
@@ -64,6 +65,11 @@ function requireApiKey(
 ): string | undefined {
   const apiKey = resolveApiKey(providerId, settings);
   if (!apiKey && requiresApiKey(provider)) {
+    if (providerId === 'chatgpt') {
+      throw new Error(
+        'ChatGPT is not signed in or its session expired. Sign in again in Settings.',
+      );
+    }
     const env = provider.apiKeyEnvs?.[0] ?? 'API key';
     throw new Error(
       `No API key for "${provider.name}". Add one in Settings or set ${env}.`,
@@ -107,7 +113,9 @@ export function resolveApiKey(
   settings: AppSettings = getSettings(),
 ): string | undefined {
   if (providerId === 'chatgpt') {
-    return settings.chatgptAuth?.accessToken;
+    const auth = settings.chatgptAuth;
+    if (auth?.expiresAt && auth.expiresAt <= Date.now()) return undefined;
+    return auth?.accessToken;
   }
   const provider = getProvider(providerId);
   const providerSettings = settings.providers?.[providerId];
@@ -126,6 +134,10 @@ function resolveBaseURL(
 ): string | undefined {
   const fromSettings = settings.providers?.[providerId]?.baseURL;
   if (fromSettings && fromSettings.trim()) return fromSettings.trim();
+  if (providerId === 'ollama') {
+    const fromEnvironment = process.env.OLLAMA_BASE_URL?.trim();
+    if (fromEnvironment) return fromEnvironment.replace(/\/+$/, '');
+  }
   return getProvider(providerId)?.baseURL;
 }
 
@@ -148,6 +160,12 @@ export function resolveModel(
     );
   }
 
+  if (providerId === 'offline') {
+    throw new Error(
+      'Offline models are available in Focus Copilot and Offline AI, not main-process agents.',
+    );
+  }
+
   const apiKey = requireApiKey(providerId, provider, settings);
 
   // ── AI Gateway ──────────────────────────────────────────────────────────────
@@ -160,6 +178,12 @@ export function resolveModel(
   if (providerId === 'cohere') {
     const cohere = createCohere({ apiKey });
     return cohere(modelId) as unknown as LanguageModel;
+  }
+
+  // Anthropic uses the Messages API, not the OpenAI Chat Completions protocol.
+  if (providerId === 'anthropic') {
+    const anthropic = createAnthropic({ apiKey });
+    return anthropic(modelId) as unknown as LanguageModel;
   }
 
   // ── OpenAI-compatible (every other provider) ────────────────────────────────
@@ -225,6 +249,10 @@ export function resolveEmbeddingModel(
   }
 
   const apiKey = requireApiKey(providerId, provider, settings);
+
+  if (providerId === 'anthropic') {
+    throw new Error('Anthropic does not provide an embeddings endpoint.');
+  }
 
   if (providerId === 'gateway') {
     const gateway = createGateway({ apiKey });
@@ -337,6 +365,10 @@ export async function listProviderModels(
     return { models: downloaded };
   }
 
+  if (providerId === 'chatgpt') {
+    return { models: suggestions };
+  }
+
   // Ollama: Use native API endpoint (/api/tags) for more reliable model listing
   if (providerId === 'ollama') {
     const baseURL = resolveBaseURL(providerId, getSettings());
@@ -377,8 +409,18 @@ export async function listProviderModels(
   }
 
   try {
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      if (providerId === 'anthropic') {
+        headers['x-api-key'] = apiKey;
+        headers['anthropic-version'] = '2023-06-01';
+      } else {
+        headers.Authorization = `Bearer ${apiKey}`;
+      }
+    }
+
     const response = await fetch(`${baseURL.replace(/\/$/, '')}/models`, {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      headers,
       signal: AbortSignal.timeout(10_000),
     });
 

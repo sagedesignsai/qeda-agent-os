@@ -110,7 +110,10 @@ export function StudioCanvasTimeline({
             contentY >= candidate.y && contentY < candidate.y + candidate.height,
         );
         const targetTrack = row?.track;
-        if (targetTrack?.type === clipData.trackType) {
+        if (
+          targetTrack &&
+          targetTrack.type === clipData.trackType
+        ) {
           targetTrackId = targetTrack.id;
         }
       }

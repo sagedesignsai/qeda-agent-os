@@ -94,22 +94,22 @@ To add support for a new AI provider:
 
 ## Provider Comparison
 
-| Provider | Type | Auth | Local | Free Tier | Setup |
-|----------|------|------|-------|-----------|-------|
-| [Ollama](./OLLAMA.md) | Open-weight | None | ✓ | ✓ | `ollama serve` |
-| Groq | Cloud | API Key | ✗ | ✓ Limited | 1 env var |
-| OpenRouter | Cloud | API Key | ✗ | ✓ Free models | 1 env var |
-| Gemini | Cloud | API Key | ✗ | ✓ Flash tier | 1 env var |
-| OpenAI | Cloud | API Key | ✗ | ✗ (paid) | 1 env var |
-| Anthropic | Cloud | API Key | ✗ | ✗ (paid) | 1 env var |
-| Cohere | Cloud | API Key | ✗ | ✓ Trial | 1 env var |
+| Provider | API integration | Auth | Local | Setup |
+|----------|-----------------|------|-------|-------|
+| Groq, OpenRouter, Gemini, NVIDIA NIM, OpenCode Zen, OpenAI | OpenAI-compatible | API key | No | Set provider key in Settings or environment |
+| Cohere | Dedicated AI SDK provider | API key | No | Set `COHERE_API_KEY`; choose a live model |
+| Anthropic | Anthropic Messages API | API key | No | Set `ANTHROPIC_API_KEY` |
+| AI Gateway | Dedicated AI SDK provider | Gateway key | No | Set `AI_GATEWAY_API_KEY` |
+| [Ollama](./OLLAMA.md) | OpenAI-compatible local API | None | Yes | Start Ollama; optional `OLLAMA_BASE_URL` |
+| Offline | Transformers.js renderer inference | None | Yes | Download in Settings → Offline Models; used by Focus Copilot and Offline AI |
+| ChatGPT | Codex OAuth integration | Browser sign-in | No | Sign in from Settings |
 
 ## Error Handling
 
 All providers implement consistent error handling:
 
-- **Retryable errors** (429, 5xx, network): Fallback to next provider
-- **Non-retryable errors** (401, 403, 404): Show error immediately
+- **Provider errors** (400–409, 425, 429, 5xx, and transient network errors): eligible for fallback when no output has been emitted
+- **Local/client errors** (invalid prompts, malformed tool inputs, and user aborts): not retried on another provider
 - **Provider-specific messages**: Clear guidance on resolution
 
 ## Performance
