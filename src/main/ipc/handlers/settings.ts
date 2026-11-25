@@ -10,7 +10,7 @@
 
 import { ipcMain, type BrowserWindow } from 'electron';
 import { listProviderModels } from '../../ai/provider';
-import { PROVIDERS, envApiKey } from '../../ai/registry';
+import { PROVIDERS, peekEnvApiKey } from '../../ai/registry';
 import {
   getSettings,
   saveSettings,
@@ -93,7 +93,8 @@ export function registerSettingsHandlers({
       // keys live in `serviceKeys` and are only ever reported as booleans.
       tts: s.tts ?? null,
       // MCP servers: strip secret env and header values, expose only presence.
-      mcpServers: (s.mcpServers ?? []).map((srv) => ({        id: srv.id,
+      mcpServers: (s.mcpServers ?? []).map((srv) => ({
+        id: srv.id,
         name: srv.name,
         enabled: srv.enabled,
         transport: srv.transport,
@@ -152,6 +153,21 @@ export function registerSettingsHandlers({
       ...incoming,
       providers: mergedProviders,
     };
+    // Custom providers are replaced as a list (an entry left out is deleted),
+    // but an omitted `apiKey` means "keep the stored cipher": the renderer only
+    // ever learns whether a key exists, never its value.
+    if (incoming.customProviders) {
+      merged.customProviders = incoming.customProviders.map((provider) => {
+        const previous = current.customProviders?.find(
+          (candidate) => candidate.id === provider.id,
+        );
+        return {
+          ...previous,
+          ...provider,
+          apiKey: provider.apiKey?.trim() || previous?.apiKey,
+        };
+      });
+    }
     // External-service keys: merge per service. A non-empty value replaces the
     // stored key; an empty string clears it. Absent services are untouched.
     if (incoming.serviceKeys) {
@@ -193,7 +209,9 @@ export function registerSettingsHandlers({
     // Downloaded offline models: merge — append new ids, remove cleared ones.
     // When the renderer sends a list, union it with the existing list so
     // saving other settings does not erase the downloaded model ids.
-    if (Object.prototype.hasOwnProperty.call(incoming, 'downloadedOfflineModels')) {
+    if (
+      Object.prototype.hasOwnProperty.call(incoming, 'downloadedOfflineModels')
+    ) {
       const incomingModels = incoming.downloadedOfflineModels ?? [];
       const existing = current.downloadedOfflineModels ?? [];
       if (incomingModels.length === 0) {
@@ -248,14 +266,13 @@ export function registerSettingsHandlers({
   ipcMain.handle('providers:list', (): ProviderInfo[] => {
     const settings = getSettings();
 
-    return PROVIDERS.map((provider) => {
+    const builtIn: ProviderInfo[] = PROVIDERS.map((provider) => {
       // ChatGPT is an OAuth session, not an API key. Its "signed in" state
       // lives under settings.chatgptAuth, not providers.chatgpt.apiKey.
       if (provider.id === 'chatgpt') {
-        const auth = getSettings().chatgptAuth;
+        const auth = settings.chatgptAuth;
         const signedIn = Boolean(
-          auth?.accessToken &&
-            (!auth.expiresAt || auth.expiresAt > Date.now()),
+          auth?.accessToken && (!auth.expiresAt || auth.expiresAt > Date.now()),
         );
         return {
           id: provider.id,
@@ -264,6 +281,7 @@ export function registerSettingsHandlers({
           freeModels: provider.freeModels ?? [],
           note: provider.note,
           apiKeyEnvs: provider.apiKeyEnvs ?? [],
+          supportsEmbeddings: provider.supportsEmbeddings === true,
           apiKeySet: signedIn,
           apiKeySource: signedIn ? 'settings' : null,
           apiKeyPreference: 'settings',
@@ -272,10 +290,16 @@ export function registerSettingsHandlers({
 
       const fromSettings = settings.providers?.[provider.id]?.apiKey;
       const hasStoredKey = Boolean(fromSettings && fromSettings.trim());
-      const hasEnvKey = Boolean(envApiKey(provider));
+      // Peek instead of rotating: listing providers must not consume a key
+      // rotation slot that a real request should get.
+      const hasEnvKey = Boolean(peekEnvApiKey(provider));
       const configuredSource = settings.providers?.[provider.id]?.apiKeySource;
+      // Default to the encrypted store when neither source has a key. Defaulting
+      // to "environment" would disable the key input on a first run, leaving the
+      // user to discover the toggle before they can type anything.
       const apiKeyPreference =
-        configuredSource ?? (hasStoredKey ? 'settings' : 'environment');
+        configuredSource ??
+        (hasStoredKey ? 'settings' : hasEnvKey ? 'environment' : 'settings');
       const apiKeySource =
         apiKeyPreference === 'settings'
           ? hasStoredKey
@@ -292,12 +316,31 @@ export function registerSettingsHandlers({
         freeModels: provider.freeModels ?? [],
         note: provider.note,
         apiKeyEnvs: provider.apiKeyEnvs ?? [],
+        supportsEmbeddings: provider.supportsEmbeddings === true,
         // A keyless provider (a local Ollama) counts as configured.
         apiKeySet: apiKeySource !== null || !provider.apiKeyEnvs?.length,
         apiKeySource,
         apiKeyPreference,
       };
     });
+
+    const custom: ProviderInfo[] = (settings.customProviders ?? []).map(
+      (provider) => ({
+        id: provider.id,
+        name: provider.name,
+        baseURL: provider.baseURL,
+        freeModels: [],
+        note: 'Custom OpenAI-compatible provider.',
+        apiKeyEnvs: [],
+        supportsEmbeddings: true,
+        custom: true,
+        apiKeySet: Boolean(provider.apiKey?.trim()),
+        apiKeySource: provider.apiKey?.trim() ? 'settings' : null,
+        apiKeyPreference: 'settings',
+      }),
+    );
+
+    return [...builtIn, ...custom];
   });
 
   ipcMain.handle(

@@ -26,9 +26,12 @@ afterAll(() => {
 });
 
 describe('provider registry', () => {
-  it('lists OpenAI-compatible base URLs for every non-gateway provider', () => {
+  it('lists OpenAI-compatible base URLs for every provider that has one', () => {
     for (const provider of PROVIDERS) {
-      if (provider.id === 'gateway') continue;
+      // The AI Gateway, the renderer-only Offline provider, and Alibaba Model
+      // Cloud Token Plan are resolved through workspace-specific env vars and
+      // deliberately have no static base URL.
+      if (provider.id === 'gateway' || provider.id === 'offline' || provider.id === 'alibaba-token-plan') continue;
       expect(provider.baseURL).toBeDefined();
       expect(provider.baseURL).toMatch(/^https?:\/\//);
     }

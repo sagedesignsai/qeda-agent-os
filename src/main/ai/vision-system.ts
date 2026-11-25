@@ -18,7 +18,9 @@ import fs from 'node:fs/promises';
 import * as cu from '../computer-use.js';
 import {
   selectVisionModel,
+  fallbackVisionModel,
   resolveVisionModel,
+  type VisionTask,
 } from './vision-provider.js';
 
 // ─── Response schemas (Zod) ────────────────────────────────────────────────
@@ -70,6 +72,11 @@ export interface VisionResult<T> {
   timingMs?: number;
 }
 
+/** How many distinct models a single operation may try before giving up. */
+const MAX_VISION_ATTEMPTS = 4;
+
+type ResolvedVisionModel = NonNullable<ReturnType<typeof resolveVisionModel>>;
+
 // ─── Core Vision System class ──────────────────────────────────────────────
 
 export class VisionSystem {
@@ -82,41 +89,24 @@ export class VisionSystem {
   ): Promise<VisionResult<ViewportAnalysis>> {
     const startMs = Date.now();
 
-    try {
-      // 1. Capture viewport screenshot
-      const screenshot = await this.captureViewportScreenshot(app);
-      if (!screenshot) {
-        return {
-          success: false,
-          error: `Could not capture ${app} viewport.`,
-          timingMs: Date.now() - startMs,
-        };
-      }
+    // 1. Capture viewport screenshot
+    const screenshot = await this.captureViewportScreenshot(app);
+    if (!screenshot) {
+      return {
+        success: false,
+        error: `Could not capture ${app} viewport.`,
+        timingMs: Date.now() - startMs,
+      };
+    }
 
-      // 2. Select vision model
-      const modelSelection = selectVisionModel('viewport-analysis');
-      if (!modelSelection) {
-        return {
-          success: false,
-          error: 'No supported vision model available. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
-          timingMs: Date.now() - startMs,
-        };
-      }
-
-      // 3. Resolve model
-      const model = resolveVisionModel(modelSelection.providerId, modelSelection.modelId);
-      if (!model) {
-        return {
-          success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
-          timingMs: Date.now() - startMs,
-        };
-      }
-
-      // 4. Call vision model with viewport-specific prompt
-      const result = await generateText({
-        model: model as any,
-        system: `You are a UI/UX analyst. Examine the screenshot and identify:
+    // 2. Select, call and (on failure) fall back across vision models
+    return this.runVisionTask<ViewportAnalysis>(
+      'viewport-analysis',
+      startMs,
+      (model) =>
+        generateText({
+          model: model as any,
+          system: `You are a UI/UX analyst. Examine the screenshot and identify:
 - What application or editor this is
 - What task the user appears to be doing
 - Key UI elements visible and their state
@@ -133,42 +123,26 @@ Respond ONLY with valid JSON matching this schema:
 }
 
 Do not include markdown formatting, just the JSON object.`,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image' as const,
-                image: screenshot,
-              },
-              {
-                type: 'text' as const,
-                text:
-                  question ||
-                  'Analyze this viewport and identify the current UI state.',
-              },
-            ],
-          },
-        ],
-      });
-
-      // 5. Parse response
-      const text = result.text?.trim() ?? '{}';
-      const json = JSON.parse(text) as ViewportAnalysis;
-
-      return {
-        success: true,
-        data: json,
-        modelUsed: modelSelection.modelName,
-        timingMs: Date.now() - startMs,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        timingMs: Date.now() - startMs,
-      };
-    }
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image' as const,
+                  image: screenshot,
+                },
+                {
+                  type: 'text' as const,
+                  text:
+                    question ||
+                    'Analyze this viewport and identify the current UI state.',
+                },
+              ],
+            },
+          ],
+        }),
+      'No supported vision model available. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
+    );
   }
 
   /**
@@ -181,36 +155,26 @@ Do not include markdown formatting, just the JSON object.`,
   ): Promise<VisionResult<AssetScoring>> {
     const startMs = Date.now();
 
+    let imageBuffer: Buffer;
     try {
-      // 1. Read image file
-      const imageBuffer = await fs.readFile(imagePath);
+      imageBuffer = await fs.readFile(imagePath);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timingMs: Date.now() - startMs,
+      };
+    }
 
-      // 2. Select vision model
-      const modelSelection = selectVisionModel('asset-scoring');
-      if (!modelSelection) {
-        return {
-          success: false,
-          error: 'No supported vision model available for asset scoring. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
-          timingMs: Date.now() - startMs,
-        };
-      }
+    const criteriaGuide = this.getCriteriaGuide(criteria);
 
-      // 3. Resolve model
-      const model = resolveVisionModel(modelSelection.providerId, modelSelection.modelId);
-      if (!model) {
-        return {
-          success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
-          timingMs: Date.now() - startMs,
-        };
-      }
-
-      // 4. Call vision model with asset-scoring prompt
-      const criteriaGuide = this.getCriteriaGuide(criteria);
-
-      const result = await generateText({
-        model: model as any,
-        system: `You are a 3D/2D asset visual quality evaluator. Examine the preview render and the brief it was supposed to match.
+    return this.runVisionTask<AssetScoring>(
+      'asset-scoring',
+      startMs,
+      (model) =>
+        generateText({
+          model: model as any,
+          system: `You are a 3D/2D asset visual quality evaluator. Examine the preview render and the brief it was supposed to match.
 
 Focus on: ${criteriaGuide}
 
@@ -226,40 +190,24 @@ Respond ONLY with valid JSON matching this schema:
 }
 
 Do not include markdown formatting, just the JSON object.`,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image' as const,
-                image: imageBuffer,
-              },
-              {
-                type: 'text' as const,
-                text: `Brief: ${brief}`,
-              },
-            ],
-          },
-        ],
-      });
-
-      // 5. Parse response
-      const text = result.text?.trim() ?? '{}';
-      const json = JSON.parse(text) as AssetScoring;
-
-      return {
-        success: true,
-        data: json,
-        modelUsed: modelSelection.modelName,
-        timingMs: Date.now() - startMs,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        timingMs: Date.now() - startMs,
-      };
-    }
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image' as const,
+                  image: imageBuffer,
+                },
+                {
+                  type: 'text' as const,
+                  text: `Brief: ${brief}`,
+                },
+              ],
+            },
+          ],
+        }),
+      'No supported vision model available for asset scoring. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
+    );
   }
 
   /**
@@ -271,34 +219,24 @@ Do not include markdown formatting, just the JSON object.`,
   ): Promise<VisionResult<CompositionValidation>> {
     const startMs = Date.now();
 
+    let imageBuffer: Buffer;
     try {
-      // 1. Read image file
-      const imageBuffer = await fs.readFile(imagePath);
+      imageBuffer = await fs.readFile(imagePath);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timingMs: Date.now() - startMs,
+      };
+    }
 
-      // 2. Select vision model
-      const modelSelection = selectVisionModel('composition-validation');
-      if (!modelSelection) {
-        return {
-          success: false,
-          error: 'No supported vision model available for composition validation. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
-          timingMs: Date.now() - startMs,
-        };
-      }
-
-      // 3. Resolve model
-      const model = resolveVisionModel(modelSelection.providerId, modelSelection.modelId);
-      if (!model) {
-        return {
-          success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
-          timingMs: Date.now() - startMs,
-        };
-      }
-
-      // 4. Call vision model with composition-validation prompt
-      const result = await generateText({
-        model: model as any,
-        system: `You are a composition and layout validator. Examine the image and evaluate it against the specification.
+    return this.runVisionTask<CompositionValidation>(
+      'composition-validation',
+      startMs,
+      (model) =>
+        generateText({
+          model: model as any,
+          system: `You are a composition and layout validator. Examine the image and evaluate it against the specification.
 
 Check:
 - Visual balance and weight distribution
@@ -320,40 +258,24 @@ Respond ONLY with valid JSON matching this schema:
 }
 
 Do not include markdown formatting, just the JSON object.`,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image' as const,
-                image: imageBuffer,
-              },
-              {
-                type: 'text' as const,
-                text: `Specification: ${spec}`,
-              },
-            ],
-          },
-        ],
-      });
-
-      // 5. Parse response
-      const text = result.text?.trim() ?? '{}';
-      const json = JSON.parse(text) as CompositionValidation;
-
-      return {
-        success: true,
-        data: json,
-        modelUsed: modelSelection.modelName,
-        timingMs: Date.now() - startMs,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        timingMs: Date.now() - startMs,
-      };
-    }
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image' as const,
+                  image: imageBuffer,
+                },
+                {
+                  type: 'text' as const,
+                  text: `Specification: ${spec}`,
+                },
+              ],
+            },
+          ],
+        }),
+      'No supported vision model available for composition validation. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
+    );
   }
 
   /**
@@ -366,39 +288,30 @@ Do not include markdown formatting, just the JSON object.`,
   ): Promise<VisionResult<ConsistencyCheck>> {
     const startMs = Date.now();
 
+    let buffer1: Buffer;
+    let buffer2: Buffer;
     try {
-      // 1. Read both images
-      const [buffer1, buffer2] = await Promise.all([
+      [buffer1, buffer2] = await Promise.all([
         fs.readFile(imagePath1),
         fs.readFile(imagePath2),
       ]);
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        timingMs: Date.now() - startMs,
+      };
+    }
 
-      // 2. Select vision model
-      const modelSelection = selectVisionModel('consistency-check');
-      if (!modelSelection) {
-        return {
-          success: false,
-          error: 'No supported vision model available for consistency check. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
-          timingMs: Date.now() - startMs,
-        };
-      }
+    const dimensionGuide = this.getDimensionGuide(dimension);
 
-      // 3. Resolve model
-      const model = resolveVisionModel(modelSelection.providerId, modelSelection.modelId);
-      if (!model) {
-        return {
-          success: false,
-          error: `Vision model unavailable: ${modelSelection.modelId}. Check that ${modelSelection.providerId} is configured and the model is available.`,
-          timingMs: Date.now() - startMs,
-        };
-      }
-
-      // 4. Call vision model with consistency-check prompt
-      const dimensionGuide = this.getDimensionGuide(dimension);
-
-      const result = await generateText({
-        model: model as any,
-        system: `You are a visual consistency checker. Compare two images and evaluate if they are consistent in the given dimension.
+    return this.runVisionTask<ConsistencyCheck>(
+      'consistency-check',
+      startMs,
+      (model) =>
+        generateText({
+          model: model as any,
+          system: `You are a visual consistency checker. Compare two images and evaluate if they are consistent in the given dimension.
 
 Check for: ${dimensionGuide}
 
@@ -409,51 +322,104 @@ Respond ONLY with valid JSON matching this schema:
 }
 
 Do not include markdown formatting, just the JSON object.`,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text' as const,
-                text: 'First image (reference):',
-              },
-              {
-                type: 'image' as const,
-                image: buffer1,
-              },
-              {
-                type: 'text' as const,
-                text: 'Second image (to check):',
-              },
-              {
-                type: 'image' as const,
-                image: buffer2,
-              },
-            ],
-          },
-        ],
-      });
-
-      // 5. Parse response
-      const text = result.text?.trim() ?? '{}';
-      const json = JSON.parse(text) as ConsistencyCheck;
-
-      return {
-        success: true,
-        data: json,
-        modelUsed: modelSelection.modelName,
-        timingMs: Date.now() - startMs,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        timingMs: Date.now() - startMs,
-      };
-    }
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text' as const,
+                  text: 'First image (reference):',
+                },
+                {
+                  type: 'image' as const,
+                  image: buffer1,
+                },
+                {
+                  type: 'text' as const,
+                  text: 'Second image (to check):',
+                },
+                {
+                  type: 'image' as const,
+                  image: buffer2,
+                },
+              ],
+            },
+          ],
+        }),
+      'No supported vision model available for consistency check. Configure an OpenRouter or Gemini key, or a running Ollama vision model.',
+    );
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────
+
+  /**
+   * Run one vision operation, walking the ordered candidate list on failure.
+   *
+   * A model that is unavailable, errors, or returns unparseable JSON is
+   * abandoned for the next candidate. This is what makes the advertised
+   * OpenRouter → Gemini → Ollama fallback real.
+   */
+  private async runVisionTask<T>(
+    task: VisionTask,
+    startMs: number,
+    buildRequest: (model: ResolvedVisionModel) => Promise<{ text?: string }>,
+    noModelError: string,
+  ): Promise<VisionResult<T>> {
+    let selection = await selectVisionModel(task);
+    if (!selection) {
+      return {
+        success: false,
+        error: noModelError,
+        timingMs: Date.now() - startMs,
+      };
+    }
+
+    const tried = new Set<string>();
+    let lastError: unknown;
+
+    while (selection && tried.size < MAX_VISION_ATTEMPTS) {
+      const key = `${selection.providerId}/${selection.modelId}`;
+      if (tried.has(key)) break;
+      tried.add(key);
+
+      const model = resolveVisionModel(selection.providerId, selection.modelId);
+
+      if (model) {
+        try {
+          const result = await buildRequest(model);
+          const text = result.text?.trim() ?? '{}';
+          return {
+            success: true,
+            data: JSON.parse(text) as T,
+            modelUsed: selection.modelName,
+            timingMs: Date.now() - startMs,
+          };
+        } catch (error) {
+          lastError = error;
+        }
+      } else {
+        lastError = new Error(
+          `Vision model unavailable: ${selection.modelId}. Check that ${selection.providerId} is configured and the model is available.`,
+        );
+      }
+
+      selection = await fallbackVisionModel(
+        selection.providerId,
+        selection.modelId,
+        task,
+        [...tried],
+      );
+    }
+
+    return {
+      success: false,
+      error:
+        lastError instanceof Error
+          ? lastError.message
+          : String(lastError ?? 'No vision model could complete the request.'),
+      timingMs: Date.now() - startMs,
+    };
+  }
 
   private async captureViewportScreenshot(
     app: 'studio' | 'motion' | 'trace' | 'workspace',

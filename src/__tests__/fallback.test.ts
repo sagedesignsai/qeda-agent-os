@@ -94,12 +94,51 @@ describe('buildModelChain', () => {
       { providerId: 'groq', modelId: 'openai/gpt-oss-120b' },
     ]);
   });
+
+  it('uses an installed Ollama model when one exists', async () => {
+    const chain = await buildModelChain({
+      activeProvider: 'groq',
+      activeModel: 'openai/gpt-oss-120b',
+      isConfigured: (id) => id === 'ollama',
+      getInstalledModels: async () => ['llava:7b', 'qwen3.5:0.8b'],
+    });
+
+    expect(chain[1]).toEqual({
+      providerId: 'ollama',
+      modelId: 'llava:7b',
+    });
+  });
+
+  it('skips Ollama when nothing is installed instead of using a curated id', async () => {
+    const chain = await buildModelChain({
+      activeProvider: 'groq',
+      activeModel: 'openai/gpt-oss-120b',
+      isConfigured: (id) => id === 'ollama',
+      getInstalledModels: async () => [],
+    });
+
+    // Curated ids are `ollama pull` suggestions, not proof of installation.
+    expect(chain.map((t) => t.providerId)).toEqual(['groq']);
+  });
+
+  it('skips Ollama when the installed-model lookup fails', async () => {
+    const chain = await buildModelChain({
+      activeProvider: 'groq',
+      activeModel: 'openai/gpt-oss-120b',
+      isConfigured: (id) => id === 'ollama',
+      getInstalledModels: async () => {
+        throw new Error('ollama is not running');
+      },
+    });
+
+    expect(chain.map((t) => t.providerId)).toEqual(['groq']);
+  });
 });
 
 describe('resolveChain', () => {
-  it('refuses to run without a selected model', () => {
+  it('refuses to run without a selected model', async () => {
     expect(
-      resolveChain({
+      await resolveChain({
         activeProvider: 'cohere',
         activeModel: '',
         fallbackEnabled: true,

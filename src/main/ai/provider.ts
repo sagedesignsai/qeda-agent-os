@@ -29,10 +29,12 @@ import {
   chooseProviderApiKey,
   getProvider,
   envApiKey,
+  hasEnvApiKey,
   type ProviderConfig,
 } from './registry';
 import { resolveChain, type ModelTarget } from './fallback';
 import { listOllamaModels } from './ollama';
+import { OFFLINE_MODELS } from '../../lib/offline-ai/models';
 
 export { PROVIDERS, type ProviderConfig };
 
@@ -41,12 +43,50 @@ function requiresApiKey(provider: ProviderConfig): boolean {
   return (provider.apiKeyEnvs?.length ?? 0) > 0;
 }
 
+/**
+ * Materialise a user-defined OpenAI-compatible provider as a registry entry.
+ *
+ * Custom providers live in `settings.customProviders` rather than the static
+ * registry because they are per-install. Every resolution path accepts this
+ * shape, so they behave like any other OpenAI-compatible backend once found.
+ */
+function findCustomProvider(
+  providerId: string,
+  settings: AppSettings,
+): ProviderConfig | undefined {
+  const custom = settings.customProviders?.find((c) => c.id === providerId);
+  if (!custom) return undefined;
+  return {
+    id: custom.id,
+    name: custom.name,
+    baseURL: custom.baseURL,
+    freeModels: [],
+    // A custom endpoint is assumed to be OpenAI-compatible, embeddings included.
+    supportsEmbeddings: true,
+    note: 'Custom OpenAI-compatible provider.',
+  };
+}
+
+/** Registry entry for a built-in or user-defined provider. */
+function findProvider(
+  providerId: string,
+  settings: AppSettings,
+): ProviderConfig | undefined {
+  return getProvider(providerId) ?? findCustomProvider(providerId, settings);
+}
+
 /** Validate the provider id, naming the alternatives rather than failing bare. */
-function requireProvider(providerId: string): ProviderConfig {
-  const provider = getProvider(providerId);
+function requireProvider(
+  providerId: string,
+  settings: AppSettings = getSettings(),
+): ProviderConfig {
+  const provider = findProvider(providerId, settings);
   if (!provider) {
     throw new Error(
-      `Unknown provider "${providerId}". Known providers: ${PROVIDERS.map((p) => p.id).join(', ')}.`,
+      `Unknown provider "${providerId}". Known providers: ${[
+        ...PROVIDERS.map((p) => p.id),
+        ...(settings.customProviders ?? []).map((p) => p.id),
+      ].join(', ')}.`,
     );
   }
   return provider;
@@ -64,12 +104,18 @@ function requireApiKey(
   settings: AppSettings,
 ): string | undefined {
   const apiKey = resolveApiKey(providerId, settings);
-  if (!apiKey && requiresApiKey(provider)) {
-    if (providerId === 'chatgpt') {
-      throw new Error(
-        'ChatGPT is not signed in or its session expired. Sign in again in Settings.',
-      );
-    }
+  if (apiKey) return apiKey;
+
+  // ChatGPT is keyless in the registry (its credential is an OAuth token), so
+  // `requiresApiKey` cannot catch it. Check it explicitly before that gate,
+  // otherwise an expired session silently becomes an unauthenticated request.
+  if (providerId === 'chatgpt') {
+    throw new Error(
+      'ChatGPT is not signed in or its session expired. Sign in again in Settings.',
+    );
+  }
+
+  if (requiresApiKey(provider)) {
     const env = provider.apiKeyEnvs?.[0] ?? 'API key';
     throw new Error(
       `No API key for "${provider.name}". Add one in Settings or set ${env}.`,
@@ -117,6 +163,8 @@ export function resolveApiKey(
     if (auth?.expiresAt && auth.expiresAt <= Date.now()) return undefined;
     return auth?.accessToken;
   }
+  const custom = settings.customProviders?.find((c) => c.id === providerId);
+  if (custom) return custom.apiKey?.trim() || undefined;
   const provider = getProvider(providerId);
   const providerSettings = settings.providers?.[providerId];
   const fromEnvironment = provider ? envApiKey(provider) : undefined;
@@ -132,13 +180,42 @@ function resolveBaseURL(
   providerId: string,
   settings: AppSettings,
 ): string | undefined {
+  const custom = settings.customProviders?.find((c) => c.id === providerId);
+  if (custom?.baseURL?.trim()) return custom.baseURL.trim();
   const fromSettings = settings.providers?.[providerId]?.baseURL;
   if (fromSettings && fromSettings.trim()) return fromSettings.trim();
   if (providerId === 'ollama') {
     const fromEnvironment = process.env.OLLAMA_BASE_URL?.trim();
     if (fromEnvironment) return fromEnvironment.replace(/\/+$/, '');
   }
-  return getProvider(providerId)?.baseURL;
+  if (providerId === 'alibaba-token-plan') {
+    // Alibaba base URLs are workspace-specific per-account; prefer the Token
+    // Plan endpoint, then fall back to the regular Model Studio endpoint.
+    const fromTokenPlan = process.env.ALIBABA_TOKEN_PLAN_OPENAI_ENDPOINT?.trim();
+    if (fromTokenPlan) return fromTokenPlan.replace(/\/+$/, '');
+    const fromModelStudio = process.env.ALIBABA_OPENAI_ENDPOINT?.trim();
+    if (fromModelStudio) return fromModelStudio.replace(/\/+$/, '');
+  }
+  return findProvider(providerId, settings)?.baseURL;
+}
+
+/**
+ * Only the base URL the user explicitly supplied.
+ *
+ * Dedicated SDKs already know their own default endpoint, and the registry's
+ * `baseURL` describes the OpenAI-compatible route (Cohere's is
+ * `/compatibility/v1`, which is not the endpoint `@ai-sdk/cohere` expects).
+ * Passing the registry value would silently break those providers, so the
+ * dedicated-SDK branches use this helper and only override when Settings or a
+ * custom entry says to.
+ */
+function resolveBaseURLOverride(
+  providerId: string,
+  settings: AppSettings,
+): string | undefined {
+  const custom = settings.customProviders?.find((c) => c.id === providerId);
+  if (custom?.baseURL?.trim()) return custom.baseURL.trim();
+  return settings.providers?.[providerId]?.baseURL?.trim() || undefined;
 }
 
 /**
@@ -152,7 +229,7 @@ export function resolveModel(
   modelId: string,
 ): LanguageModel {
   const settings = getSettings();
-  const provider = requireProvider(providerId);
+  const provider = requireProvider(providerId, settings);
 
   if (!modelId) {
     throw new Error(
@@ -170,19 +247,28 @@ export function resolveModel(
 
   // ── AI Gateway ──────────────────────────────────────────────────────────────
   if (providerId === 'gateway') {
-    const gateway = createGateway({ apiKey });
+    const baseURL = resolveBaseURLOverride(providerId, settings);
+    const gateway = createGateway({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+    });
     return gateway(modelId) as unknown as LanguageModel;
   }
 
   // ── Cohere (dedicated provider for proper API format) ───────────────────────
   if (providerId === 'cohere') {
-    const cohere = createCohere({ apiKey });
+    const baseURL = resolveBaseURLOverride(providerId, settings);
+    const cohere = createCohere({ apiKey, ...(baseURL ? { baseURL } : {}) });
     return cohere(modelId) as unknown as LanguageModel;
   }
 
   // Anthropic uses the Messages API, not the OpenAI Chat Completions protocol.
   if (providerId === 'anthropic') {
-    const anthropic = createAnthropic({ apiKey });
+    const baseURL = resolveBaseURLOverride(providerId, settings);
+    const anthropic = createAnthropic({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+    });
     return anthropic(modelId) as unknown as LanguageModel;
   }
 
@@ -239,7 +325,7 @@ export function resolveEmbeddingModel(
   modelId: string,
 ): EmbeddingModel {
   const settings = getSettings();
-  const provider = requireProvider(providerId);
+  const provider = requireProvider(providerId, settings);
 
   if (!modelId) {
     throw new Error(
@@ -248,14 +334,26 @@ export function resolveEmbeddingModel(
     );
   }
 
-  const apiKey = requireApiKey(providerId, provider, settings);
-
+  // Fail with a configuration message before any credential check: whether a
+  // provider is signed in is irrelevant when it has no /embeddings route.
   if (providerId === 'anthropic') {
     throw new Error('Anthropic does not provide an embeddings endpoint.');
   }
+  if (provider.supportsEmbeddings !== true) {
+    throw new Error(
+      `"${provider.name}" does not provide an embeddings endpoint. ` +
+        'Choose an embeddings-capable provider in Settings → Embeddings.',
+    );
+  }
+
+  const apiKey = requireApiKey(providerId, provider, settings);
 
   if (providerId === 'gateway') {
-    const gateway = createGateway({ apiKey });
+    const baseURL = resolveBaseURLOverride(providerId, settings);
+    const gateway = createGateway({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+    });
     // The gateway's embedding factory is typed to its own model id union; the
     // cast is the same one resolveModel already makes for chat.
     return gateway.embeddingModel(modelId) as unknown as EmbeddingModel;
@@ -263,7 +361,8 @@ export function resolveEmbeddingModel(
 
   // ── Cohere (dedicated provider for proper API format) ───────────────────────
   if (providerId === 'cohere') {
-    const cohere = createCohere({ apiKey });
+    const baseURL = resolveBaseURLOverride(providerId, settings);
+    const cohere = createCohere({ apiKey, ...(baseURL ? { baseURL } : {}) });
     return cohere.embeddingModel(modelId) as unknown as EmbeddingModel;
   }
 
@@ -272,6 +371,34 @@ export function resolveEmbeddingModel(
   return openAICompatible(providerId, settings, apiKey).embeddingModel(
     modelId,
   ) as EmbeddingModel;
+}
+
+/**
+ * Whether a provider can be attempted without a network round-trip.
+ *
+ * Uses a non-rotating environment probe so building a fallback chain does not
+ * consume key-rotation slots, and separates the two keyless cases: Ollama needs
+ * no credential at all, while ChatGPT needs a live OAuth token even though its
+ * registry entry has no `apiKeyEnvs`.
+ */
+function isProviderConfigured(
+  providerId: string,
+  settings: AppSettings,
+): boolean {
+  if (settings.customProviders?.some((c) => c.id === providerId)) return true;
+  if (providerId === 'chatgpt') {
+    return Boolean(resolveApiKey('chatgpt', settings));
+  }
+  const provider = getProvider(providerId);
+  if (!provider) return false;
+  // Keyless providers (a local Ollama) count as configured.
+  if (!provider.apiKeyEnvs?.length) return true;
+
+  const saved = settings.providers?.[providerId]?.apiKey?.trim();
+  const preference = settings.providers?.[providerId]?.apiKeySource;
+  if (preference === 'settings') return Boolean(saved);
+  if (preference === 'environment') return hasEnvApiKey(provider);
+  return Boolean(saved) || hasEnvApiKey(provider);
 }
 
 /**
@@ -294,11 +421,7 @@ export async function resolveModelChain(
     fallbackEnabled: settings.fallbackEnabled !== false,
     isConfigured: (providerId) => {
       if (providerId === settings.activeProvider) return true;
-      const provider = getProvider(providerId);
-      if (!provider) return false;
-      // Keyless providers (a local Ollama) count as configured.
-      if (!provider.apiKeyEnvs?.length) return true;
-      return Boolean(resolveApiKey(providerId, settings));
+      return isProviderConfigured(providerId, settings);
     },
     // For Ollama, get installed models dynamically
     getInstalledModels: async (providerId) => {
@@ -332,7 +455,8 @@ export interface ProviderModelList {
 export async function listProviderModels(
   providerId: string,
 ): Promise<ProviderModelList> {
-  const provider = getProvider(providerId);
+  const settings = getSettings();
+  const provider = findProvider(providerId, settings);
   const suggestions = provider?.freeModels ?? [];
 
   if (!provider) {
@@ -342,16 +466,11 @@ export async function listProviderModels(
   // Offline provider: no /models endpoint — return downloaded language models
   // that have chat templates (required by @browser-ai/transformers-js).
   if (providerId === 'offline') {
-    const settings = getSettings();
     const allDownloaded = settings.downloadedOfflineModels ?? [];
     // Filter to language models with chat templates only
-    const { OFFLINE_MODELS } = require('../../lib/offline-ai/models');
-    const chatModelIds = OFFLINE_MODELS
-      .filter(
-        (m: { category: string; hasChatTemplate?: boolean }) =>
-          m.category === 'language' && m.hasChatTemplate === true,
-      )
-      .map((m: { id: string }) => m.id);
+    const chatModelIds = OFFLINE_MODELS.filter(
+      (m) => m.category === 'language' && m.hasChatTemplate === true,
+    ).map((m) => m.id);
     const downloaded = allDownloaded.filter((id: string) =>
       chatModelIds.includes(id),
     );
@@ -467,7 +586,8 @@ export async function listProviderModels(
       if (providerId === 'ollama') {
         return {
           models: [],
-          error: 'No models found in Ollama. Pull a model with "ollama pull <model-name>".',
+          error:
+            'No models found in Ollama. Pull a model with "ollama pull <model-name>".',
         };
       }
       return { models: suggestions, error: 'Provider returned no models.' };
@@ -486,7 +606,10 @@ export async function listProviderModels(
   } catch (error) {
     let message = error instanceof Error ? error.message : String(error);
 
-    if (message.includes('ECONNREFUSED') || message.includes('Failed to fetch')) {
+    if (
+      message.includes('ECONNREFUSED') ||
+      message.includes('Failed to fetch')
+    ) {
       return {
         models: suggestions,
         error: `Cannot connect to provider at ${baseURL}.`,

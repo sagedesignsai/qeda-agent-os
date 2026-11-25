@@ -55,7 +55,7 @@ import { StudioSourcePicker } from '@/components/studio/StudioSourcePicker';
 import { StudioRecordingBar } from '@/components/studio/StudioRecordingBar';
 import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
 import { StudioContentPanel } from '@/components/studio/content/StudioContentPanel';
-import { StudioCopilotSheet } from '@/components/studio/copilot/StudioCopilotSheet';
+import { StudioCopilotPanel } from '@/components/studio/copilot/StudioCopilotPanel';
 import { StudioCommandBar } from '@/components/studio/StudioCommandBar';
 import { inferTimelineItemType } from '@/lib/studio/timeline/item-type';
 import { StudioCompositionCreateDialog } from '@/components/studio/StudioCompositionCreateDialog';
@@ -980,7 +980,8 @@ export default function Studio() {
         />
       ) : activeTake ? (
         /* ── Full Showcase Studio Editor ───────────────────────────────────── */
-        <>
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* ── Top Header Bar (Dense h-10) ─────────────────────────────────────── */}
           <PageHeader
             className="select-none"
@@ -1267,7 +1268,17 @@ export default function Studio() {
               />
             </ResizablePanel>
           </ResizablePanelGroup>
-        </>
+          </div>
+          <StudioCopilotPanel
+            open={copilotOpen}
+            onOpenChange={setCopilotOpen}
+            activeTake={activeTake}
+            projectId={projectId ?? undefined}
+            currentTimeMs={timelineStore.getState().currentTimeMs}
+            initialPrompt={copilotInitialPrompt}
+            onInitialPromptHandled={() => setCopilotInitialPrompt(null)}
+          />
+        </div>
       ) : (
         /* Take Not Found Screen */
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-in fade-in duration-300">
@@ -1325,18 +1336,6 @@ export default function Studio() {
         videoCrop={activeTake?.videoCrop ?? null}
         onApply={handleApplyVideoCrop}
       />
-
-      {activeTake && (
-        <StudioCopilotSheet
-          open={copilotOpen}
-          onOpenChange={setCopilotOpen}
-          activeTake={activeTake}
-          projectId={projectId ?? undefined}
-          currentTimeMs={timelineStore.getState().currentTimeMs}
-          initialPrompt={copilotInitialPrompt}
-          onInitialPromptHandled={() => setCopilotInitialPrompt(null)}
-        />
-      )}
 
       {/* ── Studio Command Bar ─────────────────────────────────────────────── */}
       {activeTake && (

@@ -31,7 +31,7 @@
  *   - A created document gets an explicit handoff to the editor rather than
  *     hoping the user notices the sidebar refreshed.
  *
- * Structure is deliberately the same as `StudioCopilotSheet` (Sheet →
+ * Structure is deliberately the same as `StudioCopilotPanel` (Panel →
  * Conversation → MessageList → PromptInput) so a turn looks identical wherever
  * it happens. Only the parts that make drafting different are new.
  * ─────────────────────────────────────────────────────────────────────────────

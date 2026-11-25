@@ -314,8 +314,9 @@ export function createDesktopAgent(options: CreateAgentOptions = {}) {
     BASE_INSTRUCTIONS,
     options.researchMode || options.notebookMode ? RESEARCH_SUPPLEMENT : '',
     options.notebookMode ? NOTEBOOK_SUPPLEMENT : '',
+    // `renderContextBlock` already includes `renderProjectContext` when a
+    // project is bound; appending it again duplicated the whole project block.
     renderContextBlock(options.context),
-    renderProjectContext(options.context),
   ]
     .filter(Boolean)
     .join('\n\n');

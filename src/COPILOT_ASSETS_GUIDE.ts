@@ -8,7 +8,7 @@
  * QUICK INTEGRATION (for any existing copilot)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Step 1: Update your copilot chat component (e.g., CopilotPanel, StudioCopilotSheet)
+ * Step 1: Update your copilot chat component (e.g., CopilotPanel, StudioCopilotPanel)
  *
  *   import { useMessageAssets } from '@/hooks/use-message-assets';
  *   import { AssetInput } from '@/components/assets';
@@ -69,7 +69,7 @@
  * 1. Task Copilot (Focus) - src/components/copilot/CopilotPanel.tsx
  *    └─ Can reference task files, code, context
  *
- * 2. Studio Copilot - src/components/studio/copilot/StudioCopilotSheet.tsx
+ * 2. Studio Copilot - src/components/studio/copilot/StudioCopilotPanel.tsx
  *    └─ Can reference recordings, media files
  *
  * 3. Trace Copilot - src/components/trace/copilot/TraceCopilotSheet.tsx

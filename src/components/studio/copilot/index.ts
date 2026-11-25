@@ -1,2 +1,2 @@
-export { StudioCopilotSheet } from './StudioCopilotSheet';
-export type { StudioCopilotSheetProps } from './StudioCopilotSheet';
+export { StudioCopilotPanel } from './StudioCopilotPanel';
+export type { StudioCopilotPanelProps } from './StudioCopilotPanel';

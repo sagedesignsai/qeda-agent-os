@@ -1,9 +1,9 @@
 /**
- * components/studio/copilot/StudioCopilotSheet.tsx
+ * components/studio/copilot/StudioCopilotPanel.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * The Studio Copilot Sheet — an autonomous conversational video editor.
+ * The Studio Copilot panel — an autonomous conversational video editor.
  *
- * Provides a dedicated sliding Sheet overlay (right side, sm:max-w-lg) with:
+ * Provides a docked right-side panel with:
  *   - AI Elements Conversation & MessageList rendering streaming responses and tool cards
  *   - Autonomous tool execution (zooms, dead-air cuts, subtitles, framing, release kit)
  *   - Quick-action suggestion chips for video directing
@@ -35,18 +35,16 @@ import {
   PromptInputBody,
   PromptInputFooter,
   PromptInputSubmit,
+  PromptInputSelect,
+  PromptInputSelectContent,
+  PromptInputSelectItem,
+  PromptInputSelectTrigger,
+  PromptInputSelectValue,
   PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { MessageList } from '@/components/chat/MessageList';
 import { PlanPanel } from '@/components/plan/PlanPanel';
 import { ActiveProjectNotice } from '@/components/projects/ActiveProjectNotice';
@@ -109,7 +107,7 @@ const SUGGESTIONS = [
   },
 ];
 
-export interface StudioCopilotSheetProps {
+export interface StudioCopilotPanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activeTake: StudioTake;
@@ -119,7 +117,7 @@ export interface StudioCopilotSheetProps {
   onInitialPromptHandled?: () => void;
 }
 
-export function StudioCopilotSheet({
+export function StudioCopilotPanel({
   open,
   onOpenChange,
   activeTake,
@@ -127,7 +125,7 @@ export function StudioCopilotSheet({
   currentTimeMs = 0,
   initialPrompt,
   onInitialPromptHandled,
-}: StudioCopilotSheetProps) {
+}: StudioCopilotPanelProps) {
   const [mode, setMode] = useState<StudioCopilotMode>('edit');
   const {
     messages,
@@ -287,19 +285,23 @@ export function StudioCopilotSheet({
   );
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        side="right"
-        className="flex w-full flex-col gap-0 p-0 sm:max-w-lg bg-card/95 backdrop-blur-md border-l border-border/50"
-      >
+    <aside
+      aria-label="Studio Copilot"
+      aria-hidden={!open}
+      inert={!open}
+      className={`h-full shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out ${
+        open ? 'w-[clamp(320px,35vw,420px)]' : 'w-0'
+      }`}
+    >
+      <div className="flex h-full w-[clamp(320px,35vw,420px)] flex-col border-l border-border/60 bg-card/95 shadow-2xl backdrop-blur-md">
         {/* ── Header ──────────────────────────────────────────────────────────── */}
-        <SheetHeader className="border-b border-border/40 px-4 py-3 bg-card/80">
+        <header className="flex h-9 shrink-0 items-center justify-between border-b border-border/40 bg-card/80 px-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 min-w-0">
-              <SheetTitle className="flex items-center gap-2 text-xs font-semibold text-foreground tracking-tight">
+              <h2 className="flex min-w-0 items-center gap-2 text-xs font-semibold tracking-tight text-foreground">
                 <SparklesIcon className="size-4 text-indigo-400 shrink-0" />
                 <span>Studio Copilot</span>
-              </SheetTitle>
+              </h2>
               <Badge
                 variant="outline"
                 className="h-4 text-[9px] font-mono px-1 font-normal bg-background/50 border-border/60 text-muted-foreground truncate"
@@ -307,62 +309,39 @@ export function StudioCopilotSheet({
                 {activeTake.title}
               </Badge>
             </div>
-
-            <div className="mr-6 flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
-                onClick={handleClear}
-                title="New session / Clear"
-                disabled={messages.length === 0}
-              >
-                <PlusIcon className="size-3.5" />
-                <span className="sr-only">New session</span>
-              </Button>
-            </div>
           </div>
 
-          <SheetDescription className="text-[11px] text-muted-foreground pt-0.5">
-            {mode === 'showcase'
-              ? 'Multi-track project builder: import sources, arrange clips, and attach effects.'
-              : 'Autonomous video director over timeline cuts, zooms, subtitles, and release kits.'}
-          </SheetDescription>
-
-          <div className="mt-2 flex items-center gap-2">
-            <div
-              role="group"
-              aria-label="Copilot mode"
-              className="inline-flex rounded-md border border-border/60 bg-secondary/30 p-0.5"
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground hover:text-foreground cursor-pointer"
+              onClick={handleClear}
+              title="New session / Clear"
+              disabled={messages.length === 0}
             >
-              {(['edit', 'showcase'] as const).map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={mode === option}
-                  onClick={() => handleModeChange(option)}
-                  className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors cursor-pointer ${
-                    mode === option
-                      ? 'bg-background text-foreground shadow-2xs'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {option === 'edit' ? 'Edit' : 'Showcase'}
-                </button>
-              ))}
-            </div>
-            <span className="truncate text-[10px] text-muted-foreground">
-              {mode === 'showcase'
-                ? 'Builds tracks and clips, not just take arrays'
-                : 'Edits the open recording'}
-            </span>
+              <PlusIcon className="size-3.5" />
+              <span className="sr-only">New session</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground hover:text-foreground"
+              aria-label="Close Studio Copilot"
+              onClick={() => handleOpenChange(false)}
+            >
+              <XIcon className="size-3.5" />
+            </Button>
           </div>
+        </header>
 
+        <div className="shrink-0 border-b border-border/40 px-3 py-1">
           <ActiveProjectNotice
-            className="mt-1.5"
+            className="rounded-none border-0 bg-transparent px-0 py-0 text-[10px]"
             compact
           />
-        </SheetHeader>
+        </div>
 
         {signInRequest && (
           <div
@@ -416,7 +395,7 @@ export function StudioCopilotSheet({
         )}
 
         {/* ── Conversation Stream ─────────────────────────────────────────────── */}
-        <Conversation className="flex-1 overflow-hidden">
+        <Conversation className="min-h-0 flex-1 overflow-hidden">
           <ConversationContent className="p-0 pb-20">
             <MessageList
               messages={messages}
@@ -474,6 +453,29 @@ export function StudioCopilotSheet({
             </PromptInputBody>
             <PromptInputFooter>
               <PromptInputTools>
+                <PromptInputSelect
+                  value={mode}
+                  onValueChange={(nextMode) => {
+                    if (nextMode === 'edit' || nextMode === 'showcase') {
+                      handleModeChange(nextMode);
+                    }
+                  }}
+                >
+                  <PromptInputSelectTrigger
+                    aria-label="Copilot mode"
+                    className="h-7 w-[112px] justify-between px-2 text-[10px]"
+                  >
+                    <PromptInputSelectValue />
+                  </PromptInputSelectTrigger>
+                  <PromptInputSelectContent>
+                    <PromptInputSelectItem value="edit">
+                      Edit
+                    </PromptInputSelectItem>
+                    <PromptInputSelectItem value="showcase">
+                      Showcase
+                    </PromptInputSelectItem>
+                  </PromptInputSelectContent>
+                </PromptInputSelect>
                 <Button
                   type="button"
                   variant="ghost"
@@ -492,7 +494,7 @@ export function StudioCopilotSheet({
             </PromptInputFooter>
           </PromptInput>
         </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </aside>
   );
 }

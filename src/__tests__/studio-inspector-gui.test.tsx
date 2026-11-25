@@ -351,6 +351,86 @@ describe('Master StudioInspector Component', () => {
     expect(updatedClip?.payload?.text).toBe('Title text');
   });
 
+  it('shows a compact GUI source field and switches video assets safely', () => {
+    const mediaAssets = [
+      {
+        id: 'asset-one',
+        name: 'A very long showcase recording name with extra source details.mp4',
+        path: '/tmp/asset-one.mp4',
+        kind: 'video' as const,
+        durationMs: 125000,
+        width: 1920,
+        height: 1080,
+        addedAt: 1,
+      },
+      {
+        id: 'asset-two',
+        name: 'Second source',
+        path: '/tmp/asset-two.mp4',
+        kind: 'video' as const,
+        durationMs: 42000,
+        width: 1280,
+        height: 720,
+        addedAt: 2,
+      },
+    ];
+
+    timelineStore.setTracksAndDuration(
+      [
+        {
+          id: 'track-custom-video',
+          type: 'video',
+          name: 'Video',
+          locked: false,
+          visible: true,
+          clips: [
+            {
+              id: 'video-clip-test-1',
+              trackId: 'track-custom-video',
+              itemType: 'video',
+              name: 'A very long showcase recording name with extra source details.mp4',
+              startMs: 0,
+              durationMs: 125000,
+              sourceStartMs: 0,
+              sourceDurationMs: 125000,
+              payload: {
+                mediaAssetId: 'asset-one',
+                speed: 1,
+              },
+            },
+          ],
+        },
+      ],
+      125000,
+    );
+    timelineStore.setSelectedClipId('video-clip-test-1');
+
+    render(
+      <StudioInspector
+        {...defaultProps}
+        mediaAssets={mediaAssets}
+      />,
+    );
+
+    const sourceField = screen.getByRole('button', { name: 'Video source' });
+    expect(sourceField).toHaveAttribute(
+      'title',
+      'A very long showcase recording name with extra source details.mp4',
+    );
+
+    fireEvent.click(sourceField);
+    fireEvent.click(screen.getByTitle('Second source'));
+
+    const updatedClip = timelineStore.findClip('video-clip-test-1')?.clip;
+    expect(updatedClip?.name).toBe('Second source');
+    expect(updatedClip?.payload?.mediaAssetId).toBe('asset-two');
+
+    const keyframesSection = screen.getByRole('button', { name: 'Keyframes' });
+    expect(keyframesSection).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(keyframesSection);
+    expect(keyframesSection).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('docks Clip Properties section at the top when a Zoom clip is selected', () => {
     // Seed timeline store with a Zoom clip
     timelineStore.setTracksAndDuration(

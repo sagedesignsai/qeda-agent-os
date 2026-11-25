@@ -40,19 +40,30 @@ import {
   LoaderIcon,
   RefreshCwIcon,
   GiftIcon,
+  PlusIcon,
+  Trash2Icon,
 } from 'lucide-react';
 import type { ProviderInfo, ServiceStatus } from '../../../main/ipc/channels';
 import { useSettingsStore } from '../settings-store';
 
+/** Editable draft of a user-defined OpenAI-compatible provider. */
+interface CustomProviderDraft {
+  id: string;
+  name: string;
+  baseURL: string;
+  apiKey: string;
+  hasKey: boolean;
+}
+
 /** Display order + labels for the service categories. */
-  const SERVICE_CATEGORIES: { id: ServiceStatus['category']; label: string }[] = [
-    { id: 'search', label: 'Web search' },
-    { id: 'scrape', label: 'Scraping' },
-    { id: 'docs', label: 'Documentation' },
-    { id: 'images', label: 'Images' },
-    { id: 'speech', label: 'Speech' },
-    { id: 'sandbox', label: 'Sandbox' },
-  ];
+const SERVICE_CATEGORIES: { id: ServiceStatus['category']; label: string }[] = [
+  { id: 'search', label: 'Web search' },
+  { id: 'scrape', label: 'Scraping' },
+  { id: 'docs', label: 'Documentation' },
+  { id: 'images', label: 'Images' },
+  { id: 'speech', label: 'Speech' },
+  { id: 'sandbox', label: 'Sandbox' },
+];
 
 export function ModelsView() {
   const { snapshot, saving, save } = useSettingsStore();
@@ -67,6 +78,9 @@ export function ModelsView() {
     Record<string, 'settings' | 'environment'>
   >({});
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [customProviders, setCustomProviders] = useState<CustomProviderDraft[]>(
+    [],
+  );
   const [models, setModels] = useState<string[]>([]);
   const [modelsError, setModelsError] = useState<string | undefined>();
   const [loadingModels, setLoadingModels] = useState(false);
@@ -83,30 +97,42 @@ export function ModelsView() {
     setFallbackEnabled(snapshot.fallbackEnabled);
   }, [snapshot]);
 
+  const loadProviders = useCallback(async () => {
+    try {
+      const list =
+        await window.electron.ipc.invoke<ProviderInfo[]>('providers:list');
+      // Transformers.js runs in the renderer and is selected separately in
+      // Offline Models; it is not a provider for main-process agents.
+      const selectableProviders = list.filter(
+        (provider) => provider.id !== 'offline',
+      );
+      setProviders(selectableProviders);
+      setCustomProviders(
+        selectableProviders
+          .filter((provider) => provider.custom)
+          .map((provider) => ({
+            id: provider.id,
+            name: provider.name,
+            baseURL: provider.baseURL ?? '',
+            apiKey: '',
+            hasKey: provider.apiKeySet,
+          })),
+      );
+      setApiKeySources(
+        Object.fromEntries(
+          selectableProviders
+            .filter((provider) => !provider.custom)
+            .map((provider) => [provider.id, provider.apiKeyPreference]),
+        ),
+      );
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    window.electron.ipc
-      .invoke<ProviderInfo[]>('providers:list')
-      .then((list) => {
-        if (!cancelled) {
-          // Transformers.js runs in the renderer and is selected separately in
-          // Offline Models; it is not a provider for main-process agents.
-          const selectableProviders = list.filter(
-            (provider) => provider.id !== 'offline',
-          );
-          setProviders(selectableProviders);
-          setApiKeySources(
-            Object.fromEntries(
-              selectableProviders.map((provider) => [
-                provider.id,
-                provider.apiKeyPreference,
-              ]),
-            ),
-          );
-        }
-        return list;
-      })
-      .catch(console.error);
+    void loadProviders();
 
     window.electron.ipc
       .invoke<ServiceStatus[]>('services:list')
@@ -119,7 +145,7 @@ export function ModelsView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadProviders]);
 
   const current = providers.find((p) => p.id === activeProvider);
 
@@ -171,6 +197,36 @@ export function ModelsView() {
     setActiveModel(suggested[0] ?? '');
   };
 
+  const addCustomProvider = () => {
+    setCustomProviders((previous) => [
+      ...previous,
+      {
+        id: `custom-${Date.now().toString(36)}`,
+        name: '',
+        baseURL: '',
+        apiKey: '',
+        hasKey: false,
+      },
+    ]);
+  };
+
+  const updateCustomProvider = (
+    id: string,
+    patch: Partial<Omit<CustomProviderDraft, 'id'>>,
+  ) => {
+    setCustomProviders((previous) =>
+      previous.map((provider) =>
+        provider.id === id ? { ...provider, ...patch } : provider,
+      ),
+    );
+  };
+
+  const removeCustomProvider = (id: string) => {
+    setCustomProviders((previous) =>
+      previous.filter((provider) => provider.id !== id),
+    );
+  };
+
   const handleSave = async () => {
     if (!activeModel.trim()) {
       toast.error('Pick or type a model id first.');
@@ -183,6 +239,9 @@ export function ModelsView() {
         { apiKey?: string; apiKeySource?: 'settings' | 'environment' }
       > = {};
       for (const provider of providers) {
+        // Custom providers carry their key in `customProviders`, not the
+        // built-in providers map.
+        if (provider.custom) continue;
         providerSettings[provider.id] = {
           apiKeySource: apiKeySources[provider.id] ?? 'environment',
         };
@@ -201,11 +260,24 @@ export function ModelsView() {
         if (value.trim()) serviceKeyPayload[id] = value.trim();
       }
 
+      // Entries the user removed are simply absent from this list; the main
+      // process treats it as the full set. An empty key field keeps the stored
+      // cipher (see settings:save) instead of clearing it.
+      const customProviderPayload = customProviders
+        .filter((provider) => provider.name.trim() && provider.baseURL.trim())
+        .map((provider) => ({
+          id: provider.id,
+          name: provider.name.trim(),
+          baseURL: provider.baseURL.trim(),
+          ...(provider.apiKey.trim() ? { apiKey: provider.apiKey.trim() } : {}),
+        }));
+
       await save({
         activeProvider,
         activeModel: activeModel.trim(),
         fallbackEnabled,
         providers: providerSettings,
+        customProviders: customProviderPayload,
         // When the offline provider is selected, also persist the model id
         // so the renderer-side chat hook knows which Transformers.js model to use.
         ...(activeProvider === 'offline'
@@ -220,6 +292,8 @@ export function ModelsView() {
       // inputs rather than leaving a secret sitting in component state.
       setApiKeys({});
       setServiceKeys({});
+      // Re-read so a newly added provider appears in the selector immediately.
+      await loadProviders();
 
       toast.success(
         'Saved. The agent uses the new model on your next message.',
@@ -370,6 +444,87 @@ export function ModelsView() {
 
       <Separator />
 
+      {/* Custom providers */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label>Custom providers</Label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 gap-1 px-1.5 text-xs text-muted-foreground"
+            onClick={addCustomProvider}
+          >
+            <PlusIcon className="size-3" />
+            Add
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Any OpenAI-compatible endpoint. Custom providers appear in the
+          provider list and can be used for chat and embeddings.
+        </p>
+
+        {customProviders.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No custom providers configured.
+          </p>
+        ) : (
+          customProviders.map((provider) => (
+            <div
+              key={provider.id}
+              className="space-y-1.5 rounded-md border border-border/60 p-2.5"
+            >
+              <div className="flex items-center gap-2">
+                <Input
+                  value={provider.name}
+                  placeholder="Display name"
+                  className="text-sm"
+                  onChange={(e) =>
+                    updateCustomProvider(provider.id, { name: e.target.value })
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0"
+                  aria-label={`Remove ${provider.name || 'custom provider'}`}
+                  onClick={() => removeCustomProvider(provider.id)}
+                >
+                  <Trash2Icon className="size-3.5" />
+                </Button>
+              </div>
+              <Input
+                value={provider.baseURL}
+                placeholder="https://api.example.com/v1"
+                className="text-sm"
+                onChange={(e) =>
+                  updateCustomProvider(provider.id, { baseURL: e.target.value })
+                }
+              />
+              <div className="relative">
+                <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+                <Input
+                  type="password"
+                  className="pl-8 text-sm"
+                  placeholder={
+                    provider.hasKey ? '••••••••••••••••' : 'API key (optional)'
+                  }
+                  value={provider.apiKey}
+                  onChange={(e) =>
+                    updateCustomProvider(provider.id, {
+                      apiKey: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <Separator />
+
       {/* External services */}
       <div className="space-y-3">
         <Label>External services</Label>
@@ -447,89 +602,91 @@ export function ModelsView() {
           automatically.
         </p>
 
-        {providers.map((provider) => (
-          <div key={provider.id} className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label
-                htmlFor={`key-${provider.id}`}
-                className="text-sm font-normal"
-              >
-                {provider.name}
-              </Label>
-              {provider.apiKeySet && (
-                <Badge variant="secondary" className="gap-1 text-xs">
-                  <CheckCircleIcon className="size-3 text-green-500" />
-                  {provider.apiKeySource === 'environment'
-                    ? 'From environment'
-                    : 'Saved'}
-                </Badge>
-              )}
-            </div>
-            {provider.apiKeyEnvs.length > 0 && (
-              <div className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-2.5 py-2">
-                <div className="grid gap-0.5">
-                  <Label
-                    htmlFor={`key-source-${provider.id}`}
-                    className="text-xs font-normal"
-                  >
-                    Use environment variable
-                  </Label>
-                  <p className="text-[11px] text-muted-foreground">
-                    {provider.apiKeyEnvs.join(' / ')}
-                  </p>
+        {providers
+          .filter((provider) => !provider.custom)
+          .map((provider) => (
+            <div key={provider.id} className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label
+                  htmlFor={`key-${provider.id}`}
+                  className="text-sm font-normal"
+                >
+                  {provider.name}
+                </Label>
+                {provider.apiKeySet && (
+                  <Badge variant="secondary" className="gap-1 text-xs">
+                    <CheckCircleIcon className="size-3 text-green-500" />
+                    {provider.apiKeySource === 'environment'
+                      ? 'From environment'
+                      : 'Saved'}
+                  </Badge>
+                )}
+              </div>
+              {provider.apiKeyEnvs.length > 0 && (
+                <div className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-2.5 py-2">
+                  <div className="grid gap-0.5">
+                    <Label
+                      htmlFor={`key-source-${provider.id}`}
+                      className="text-xs font-normal"
+                    >
+                      Use environment variable
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      {provider.apiKeyEnvs.join(' / ')}
+                    </p>
+                  </div>
+                  <Switch
+                    id={`key-source-${provider.id}`}
+                    checked={
+                      (apiKeySources[provider.id] ??
+                        provider.apiKeyPreference) === 'environment'
+                    }
+                    onCheckedChange={(useEnvironment) =>
+                      setApiKeySources((previous) => ({
+                        ...previous,
+                        [provider.id]: useEnvironment
+                          ? 'environment'
+                          : 'settings',
+                      }))
+                    }
+                    aria-label={`Use environment variable for ${provider.name}`}
+                  />
                 </div>
-                <Switch
-                  id={`key-source-${provider.id}`}
-                  checked={
+              )}
+              <div className="relative">
+                <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+                <Input
+                  id={`key-${provider.id}`}
+                  type="password"
+                  className="pl-8 text-sm"
+                  placeholder={
+                    provider.apiKeySet
+                      ? '••••••••••••••••'
+                      : `Enter ${provider.name} API key…`
+                  }
+                  value={apiKeys[provider.id] ?? ''}
+                  disabled={
                     (apiKeySources[provider.id] ??
                       provider.apiKeyPreference) === 'environment'
                   }
-                  onCheckedChange={(useEnvironment) =>
-                    setApiKeySources((previous) => ({
-                      ...previous,
-                      [provider.id]: useEnvironment
-                        ? 'environment'
-                        : 'settings',
+                  onChange={(e) =>
+                    setApiKeys((prev) => ({
+                      ...prev,
+                      [provider.id]: e.target.value,
                     }))
                   }
-                  aria-label={`Use environment variable for ${provider.name}`}
                 />
               </div>
-            )}
-            <div className="relative">
-              <KeyIcon className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-              <Input
-                id={`key-${provider.id}`}
-                type="password"
-                className="pl-8 text-sm"
-                placeholder={
-                  provider.apiKeySet
-                    ? '••••••••••••••••'
-                    : `Enter ${provider.name} API key…`
-                }
-                value={apiKeys[provider.id] ?? ''}
-                disabled={
-                  (apiKeySources[provider.id] ?? provider.apiKeyPreference) ===
-                  'environment'
-                }
-                onChange={(e) =>
-                  setApiKeys((prev) => ({
-                    ...prev,
-                    [provider.id]: e.target.value,
-                  }))
-                }
-              />
+              {(apiKeySources[provider.id] ?? provider.apiKeyPreference) ===
+                'environment' &&
+                provider.apiKeyEnvs.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    The saved key is retained but ignored while environment mode
+                    is on.
+                  </p>
+                )}
             </div>
-            {(apiKeySources[provider.id] ?? provider.apiKeyPreference) ===
-              'environment' &&
-              provider.apiKeyEnvs.length > 0 && (
-                <p className="text-[11px] text-muted-foreground">
-                  The saved key is retained but ignored while environment mode
-                  is on.
-                </p>
-              )}
-          </div>
-        ))}
+          ))}
       </div>
 
       <div className="flex justify-end gap-2 pt-1">

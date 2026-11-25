@@ -73,7 +73,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(85vh,36rem)] w-full max-w-3xl flex-col gap-0 overflow-hidden p-0">
+      <DialogContent className="flex h-[min(85vh,36rem)] w-full max-w-5xl flex-col gap-0 overflow-hidden p-0">
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogDescription className="sr-only">
           Configure {active.label.toLowerCase()}.

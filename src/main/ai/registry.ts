@@ -31,6 +31,17 @@ export interface ProviderConfig {
   freeModels?: string[];
   /** Free-tier caveat surfaced in the Settings dialog. */
   note?: string;
+  /**
+   * True when the provider exposes an OpenAI-compatible embeddings endpoint.
+   *
+   * This is deliberately explicit rather than inferred from `baseURL`: several
+   * OpenAI-compatible providers (Groq, OpenRouter, ChatGPT's Codex backend) serve
+   * chat completions but have no `/embeddings` route, and Anthropic's own SDK has
+   * none at all. The Embeddings settings screen and `resolveEmbeddingModel` both
+   * consult this flag so an unsupported choice fails with an explanation instead
+   * of an opaque HTTP error.
+   */
+  supportsEmbeddings?: boolean;
 }
 
 /**
@@ -50,7 +61,11 @@ export const PROVIDERS: ProviderConfig[] = [
     id: 'openrouter',
     name: 'OpenRouter (free models)',
     baseURL: 'https://openrouter.ai/api/v1',
-    apiKeyEnvs: ['OPENROUTER_API_KEY', 'OPENROUTER_API_KEY_2', 'OPENROUTER_API_KEY_3'],
+    apiKeyEnvs: [
+      'OPENROUTER_API_KEY',
+      'OPENROUTER_API_KEY_2',
+      'OPENROUTER_API_KEY_3',
+    ],
     freeModels: [
       'qwen/qwen3.8-27b:free',
       'z-ai/glm-5.2:free',
@@ -64,6 +79,7 @@ export const PROVIDERS: ProviderConfig[] = [
     name: 'Google Gemini (free tier)',
     baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     apiKeyEnvs: ['GEMINI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'],
+    supportsEmbeddings: true,
     freeModels: [
       'gemini-3.8-flash',
       'gemini-3.1-flash-lite',
@@ -76,6 +92,7 @@ export const PROVIDERS: ProviderConfig[] = [
     name: 'NVIDIA NIM (free credits)',
     baseURL: 'https://integrate.api.nvidia.com/v1',
     apiKeyEnvs: ['NVIDIA_API_KEY', 'NVIDIA_NIM_API_KEY'],
+    supportsEmbeddings: true,
     freeModels: ['moonshotai/kimi-k2.6', 'z-ai/glm-5.2', 'openai/gpt-oss-120b'],
     note: 'Hosted open-weight models with free credits and a low default rate limit.',
   },
@@ -84,6 +101,7 @@ export const PROVIDERS: ProviderConfig[] = [
     name: 'Cohere (trial key)',
     baseURL: 'https://api.cohere.ai/compatibility/v1',
     apiKeyEnvs: ['COHERE_API_KEY'],
+    supportsEmbeddings: true,
     // Model ids are not curated: they churn, so use the live lookup.
     freeModels: [],
     note: 'Trial keys are free but rate-limited and not licensed for production.',
@@ -109,6 +127,7 @@ export const PROVIDERS: ProviderConfig[] = [
     id: 'gateway',
     name: 'AI Gateway (multi-provider)',
     apiKeyEnvs: ['AI_GATEWAY_API_KEY'],
+    supportsEmbeddings: true,
     freeModels: ['openai/gpt-4o-mini', 'anthropic/claude-haiku-4.5'],
     note: 'One key for many providers. Billed per token.',
   },
@@ -117,6 +136,7 @@ export const PROVIDERS: ProviderConfig[] = [
     name: 'OpenAI',
     baseURL: 'https://api.openai.com/v1',
     apiKeyEnvs: ['OPENAI_API_KEY'],
+    supportsEmbeddings: true,
     freeModels: ['gpt-4o-mini'],
     note: 'Paid.',
   },
@@ -132,23 +152,43 @@ export const PROVIDERS: ProviderConfig[] = [
     id: 'ollama',
     name: 'Ollama (local, no key)',
     baseURL: 'http://localhost:11434/v1',
+    supportsEmbeddings: true,
     freeModels: ['qwen3.5:0.8b', 'mistral', 'neural-chat', 'dolphin-mixtral'],
     note: 'Fully local and free. Start with "ollama serve", then list available models in Settings. Pull models with "ollama pull <model-name>".',
+  },
+  {
+    id: 'alibaba-token-plan',
+    name: 'Alibaba Model Cloud (Token Plan)',
+    baseURL: undefined,
+    apiKeyEnvs: ['ALIBABA_TOKEN_PLAN_API_KEY', 'ALIBABA_API_KEY'],
+    supportsEmbeddings: false,
+    freeModels: [
+      'qwen4-max',
+      'qwen3.8-max',
+      'qwen3.8-flash',
+      'qwen3.7-plus',
+      'qwen3.7-max',
+      'qwen3.6-flash',
+      'deepseek-v4.1-flash',
+      'deepseek-v4-pro',
+      'glm-5.3',
+      'glm-5.2',
+      'auto',
+    ],
+    note: 'Token plan limits apply per-account. Base URL is workspace-specific; set ALIBABA_TOKEN_PLAN_OPENAI_ENDPOINT or ALIBABA_OPENAI_ENDPOINT.',
   },
   {
     id: 'offline',
     name: 'Offline (Transformers.js)',
     freeModels: [],
-    note:
-      'Runs locally in the browser via WebGPU. Download models in Settings → Offline Models first.',
+    note: 'Runs locally in the browser via WebGPU. Download models in Settings → Offline Models first.',
   },
   {
     id: 'chatgpt',
     name: 'ChatGPT (subscription, browser sign-in)',
     baseURL: 'https://chatgpt.com/backend-api/codex',
     freeModels: ['gpt-5'],
-    note:
-      'Uses your ChatGPT Plus/Pro/Business plan via browser OAuth. No API key required.',
+    note: 'Uses your ChatGPT Plus/Pro/Business plan via browser OAuth. No API key required.',
   },
 ];
 
@@ -167,6 +207,34 @@ export function getProvider(id: string): ProviderConfig | undefined {
 const keyRotationIndex = new Map<string, number>();
 
 /**
+ * Return the provider's configured API keys that are actually present in the
+ * environment, in priority order. Pure: does not advance the rotation counter.
+ */
+function availableEnvKeys(provider: ProviderConfig): string[] {
+  const envs = provider.apiKeyEnvs ?? [];
+  return envs
+    .map((name) => process.env[name]?.trim())
+    .filter((value): value is string => Boolean(value));
+}
+
+/**
+ * Look at a provider's environment key without consuming a rotation slot.
+ *
+ * Use this for capability/configuration checks. Calling `envApiKey` merely to
+ * answer "is this provider configured?" would advance the round-robin cursor
+ * for every probe, so the key a real request receives would depend on how many
+ * times the Settings dialog happened to refresh.
+ */
+export function peekEnvApiKey(provider: ProviderConfig): string | undefined {
+  return availableEnvKeys(provider)[0];
+}
+
+/** True when at least one of the provider's environment variables is set. */
+export function hasEnvApiKey(provider: ProviderConfig): boolean {
+  return availableEnvKeys(provider).length > 0;
+}
+
+/**
  * Return one of the provider's configured API keys, rotating round-robin across
  * all env vars that are set.
  *
@@ -175,21 +243,16 @@ const keyRotationIndex = new Map<string, number>();
  * that one is always returned.
  */
 export function envApiKey(provider: ProviderConfig): string | undefined {
-  const envs = provider.apiKeyEnvs ?? [];
-
-  // Collect all keys that are actually present in the environment.
-  const available = envs
-    .map((name) => ({ name, value: process.env[name]?.trim() }))
-    .filter((e): e is { name: string; value: string } => Boolean(e.value));
+  const available = availableEnvKeys(provider);
 
   if (available.length === 0) return undefined;
-  if (available.length === 1) return available[0].value;
+  if (available.length === 1) return available[0];
 
   // Round-robin: advance the index each call and wrap around.
   const prev = keyRotationIndex.get(provider.id) ?? 0;
   const next = (prev + 1) % available.length;
   keyRotationIndex.set(provider.id, next);
-  return available[next].value;
+  return available[next];
 }
 
 /**

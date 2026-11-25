@@ -1,8 +1,8 @@
 /**
  * __tests__/studio-copilot-ui.test.tsx
  * ─────────────────────────────────────────────────────────────────────────────
- * UI tests for StudioCopilotSheet:
- *   - Sliding sheet presentation, header badges, project notice
+ * UI tests for StudioCopilotPanel:
+ *   - Docked panel presentation, header badges, project notice
  *   - Empty state suggestions and prompt input interactions
  *   - Initial prompt auto-dispatch and smart bridge handling
  * ─────────────────────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { StudioCopilotSheet } from '../components/studio/copilot/StudioCopilotSheet';
+import { StudioCopilotPanel } from '../components/studio/copilot/StudioCopilotPanel';
 import { useStudioCopilot } from '../hooks/use-studio-copilot';
 import type { StudioTake } from '../lib/studio-types';
 import { DEFAULT_STUDIO_STYLING } from '../lib/studio-types';
@@ -46,6 +46,7 @@ jest.mock('../hooks/use-ipc', () => ({
 }));
 
 beforeAll(() => {
+  Element.prototype.scrollIntoView = jest.fn();
   global.ResizeObserver = class {
     observe() {}
     unobserve() {}
@@ -57,7 +58,7 @@ const mockUseStudioCopilot = useStudioCopilot as jest.MockedFunction<
   typeof useStudioCopilot
 >;
 
-describe('StudioCopilotSheet UI Component', () => {
+describe('StudioCopilotPanel UI Component', () => {
   const sampleTake: StudioTake = {
     id: 'take-ui-copilot-1',
     projectId: 'proj-123',
@@ -89,9 +90,9 @@ describe('StudioCopilotSheet UI Component', () => {
     return render(<MemoryRouter>{ui}</MemoryRouter>);
   };
 
-  it('renders sheet header with take title, suggestions, and prompt input', () => {
+  it('renders docked panel header with take title, suggestions, and prompt input', () => {
     renderWithRouter(
-      <StudioCopilotSheet
+      <StudioCopilotPanel
         open={true}
         onOpenChange={jest.fn()}
         activeTake={sampleTake}
@@ -108,11 +109,38 @@ describe('StudioCopilotSheet UI Component', () => {
     expect(screen.getByText('Zoom at Playhead')).toBeInTheDocument();
     expect(screen.getByText('Generate Subtitles')).toBeInTheDocument();
     expect(screen.getByText('Draft Release Kit')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Copilot mode' })).toHaveTextContent(
+      'Edit',
+    );
+    expect(
+      screen.queryByText(/Autonomous video director over timeline cuts/),
+    ).not.toBeInTheDocument();
+    const copilotPanel = screen.getByRole('complementary', {
+      name: 'Studio Copilot',
+    });
+    expect(copilotPanel).toBeInTheDocument();
+    expect(copilotPanel).toHaveClass('w-[clamp(320px,35vw,420px)]');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('closes the docked panel through its header control', () => {
+    const onOpenChange = jest.fn();
+    renderWithRouter(
+      <StudioCopilotPanel
+        open
+        onOpenChange={onOpenChange}
+        activeTake={sampleTake}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Studio Copilot' }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('clicking a suggestion chip sends the prompt', () => {
     renderWithRouter(
-      <StudioCopilotSheet
+      <StudioCopilotPanel
         open={true}
         onOpenChange={jest.fn()}
         activeTake={sampleTake}
@@ -130,7 +158,7 @@ describe('StudioCopilotSheet UI Component', () => {
 
   it('switches to showcase mode and threads it into the agent context', () => {
     renderWithRouter(
-      <StudioCopilotSheet
+      <StudioCopilotPanel
         open={true}
         onOpenChange={jest.fn()}
         activeTake={sampleTake}
@@ -138,11 +166,17 @@ describe('StudioCopilotSheet UI Component', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Showcase' }));
+    fireEvent.click(
+      screen.getByRole('combobox', { name: 'Copilot mode' }),
+    );
+    fireEvent.click(screen.getByRole('option', { name: 'Showcase' }));
 
     expect(mockUseStudioCopilot).toHaveBeenLastCalledWith(
       expect.objectContaining({ mode: 'showcase' }),
     );
+    expect(
+      screen.getByRole('combobox', { name: 'Copilot mode' }),
+    ).toHaveTextContent('Showcase');
     expect(screen.getByText('Showcase Builder')).toBeInTheDocument();
     expect(screen.getByText('Build Showcase')).toBeInTheDocument();
   });
@@ -150,7 +184,7 @@ describe('StudioCopilotSheet UI Component', () => {
   it('auto-dispatches initialPrompt when opened and calls onInitialPromptHandled', () => {
     const handlePromptHandled = jest.fn();
     renderWithRouter(
-      <StudioCopilotSheet
+      <StudioCopilotPanel
         open={true}
         onOpenChange={jest.fn()}
         activeTake={sampleTake}
@@ -168,7 +202,7 @@ describe('StudioCopilotSheet UI Component', () => {
 
   it('shows a clear sign-in handoff and confirms only through the IPC reply', async () => {
     renderWithRouter(
-      <StudioCopilotSheet
+      <StudioCopilotPanel
         open={true}
         onOpenChange={jest.fn()}
         activeTake={sampleTake}

@@ -74,6 +74,20 @@ export function EmbeddingsView() {
   const usingEnv = !snapshot?.embeddingProvider && !snapshot?.embeddingModel;
 
   /**
+   * Only providers with an actual `/embeddings` route. Listing every chat
+   * provider here used to offer Anthropic, ChatGPT, Offline and OpenRouter,
+   * none of which can serve an embedding — the failure only appeared later,
+   * inside a RAG tool.
+   */
+  const embeddingProviders = useMemo(
+    () => providers.filter((p) => p.supportsEmbeddings === true),
+    [providers],
+  );
+
+  const unsupportedSelection =
+    Boolean(provider) && !embeddingProviders.some((p) => p.id === provider);
+
+  /**
    * Curated models whose provider the user has already keyed.
    *
    * This is the part that makes the feature usable: without a hint, the only
@@ -84,9 +98,9 @@ export function EmbeddingsView() {
   const suggestions = useMemo(
     () =>
       availableEmbeddingConfigs((id) =>
-        providers.some((p) => p.id === id && p.apiKeySet),
+        embeddingProviders.some((p) => p.id === id && p.apiKeySet),
       ),
-    [providers],
+    [embeddingProviders],
   );
 
   const clearOverride = () => {
@@ -145,7 +159,7 @@ export function EmbeddingsView() {
             <SelectValue placeholder="Choose a provider…" />
           </SelectTrigger>
           <SelectContent>
-            {providers.map((p) => (
+            {embeddingProviders.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 <span className="flex items-center gap-2">
                   {p.name}
@@ -157,6 +171,12 @@ export function EmbeddingsView() {
             ))}
           </SelectContent>
         </Select>
+        {unsupportedSelection && (
+          <p className="text-xs text-amber-600 dark:text-amber-500">
+            “{provider}” does not provide an embeddings endpoint. Pick another
+            provider — RAG indexing will fail with this selection.
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
           Leave empty to fall back to{' '}
           <code className="font-mono">EMBEDDING_PROVIDER</code>.

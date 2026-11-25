@@ -222,62 +222,59 @@ export function StudioMediaTab({
         />
       </div>
 
-      {/* Import Drop Zone — Prominent with Animation */}
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDropFiles}
-        className="relative flex flex-col items-center justify-center p-3 border border-dashed border-primary/50 hover:border-primary hover:bg-primary/8 rounded-md bg-primary/5 transition-all duration-200 text-center cursor-pointer group active:scale-95"
-        onClick={handleOpenNativePicker}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') handleOpenNativePicker();
-        }}
-      >
-        <div className="p-1.5 rounded-lg bg-primary/15 group-hover:bg-primary/25 text-primary transition-all duration-200 mb-1">
-          <UploadCloudIcon className="w-4 h-4" />
-        </div>
-        <span className="text-xs font-semibold text-foreground">
-          {isImporting ? 'Importing…' : 'Import Media'}
-        </span>
-        <span className="text-[10px] text-muted-foreground mt-0.5">
-          Drop MP4, WebM, MOV, MP3, PNG…
-        </span>
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="h-7 w-full justify-start gap-1.5 text-xs"
-        onClick={() => setProjectFilesOpen(true)}
-      >
-        <FolderSearchIcon className="size-3.5" />
-        Browse project files
-      </Button>
-
-      {/* Online Resource Search (Serper) */}
-      <button
-        type="button"
-        onClick={() => setIsSearchModalOpen(true)}
-        className="flex items-center justify-between px-2.5 py-1.5 border border-secondary/60 hover:border-secondary/80 rounded-md bg-secondary/10 hover:bg-secondary/15 transition-all duration-200 active:scale-95 text-left cursor-pointer group shrink-0"
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="p-1 rounded bg-primary/20 text-primary transition-colors duration-200">
-            <GlobeIcon className="w-3 h-3" />
+      <div className="flex shrink-0 flex-col gap-1.5">
+        {/* Compact drop target keeps file import visible without taking over the panel. */}
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDropFiles}
+          className="group relative flex h-11 min-w-0 items-center gap-2 rounded-md border border-dashed border-primary/50 bg-primary/5 px-2 text-left transition-colors hover:border-primary hover:bg-primary/10"
+          onClick={handleOpenNativePicker}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') handleOpenNativePicker();
+          }}
+        >
+          <div className="flex size-7 shrink-0 items-center justify-center rounded bg-primary/15 text-primary transition-colors group-hover:bg-primary/25">
+            <UploadCloudIcon className="size-4" />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-semibold text-foreground truncate">
-              Search Web
-            </div>
-            <div className="text-[10px] text-muted-foreground truncate">
-              PNGs, mockups via Serper
-            </div>
+            <span className="block truncate text-[11px] font-semibold text-foreground">
+              {isImporting ? 'Importing…' : 'Import Media'}
+            </span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              Drop files or click to browse
+            </span>
           </div>
         </div>
-        <span className="text-[9px] font-bold text-primary px-1.5 py-0.5 rounded bg-primary/15 border border-primary/30 shrink-0 ml-1">
-          WEB
-        </span>
-      </button>
+
+        <div className="grid grid-cols-2 gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 min-w-0 justify-start gap-1.5 px-2 text-[10px]"
+            onClick={() => setProjectFilesOpen(true)}
+            aria-label="Browse project files"
+            title="Browse project files"
+          >
+            <FolderSearchIcon className="size-3.5 shrink-0" />
+            <span className="truncate">Project files</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 min-w-0 justify-start gap-1.5 px-2 text-[10px]"
+            onClick={() => setIsSearchModalOpen(true)}
+            aria-label="Search Web"
+            title="Search web"
+          >
+            <GlobeIcon className="size-3.5 shrink-0 text-primary" />
+            <span className="truncate">Search web</span>
+          </Button>
+        </div>
+      </div>
 
       {/* Imported Media Section */}
       {filteredImported.length > 0 && (

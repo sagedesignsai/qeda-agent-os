@@ -161,7 +161,12 @@ export function ClipPropertiesSection({
       />
 
       {/* ── Universal Keyframes ───────────────────────────────────────────── */}
-      <UniversalKeyframesSection track={track} clip={clip} />
+      <UniversalKeyframesSection
+        track={track}
+        clip={clip}
+        open={activeSection === 'Keyframes'}
+        onOpenChange={handleSectionToggle('Keyframes')}
+      />
 
       <ClipTransformSection
         track={track}

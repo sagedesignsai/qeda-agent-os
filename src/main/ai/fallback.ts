@@ -50,7 +50,9 @@ export async function resolveChain({
   isConfigured,
   maxAttempts,
   getInstalledModels,
-}: BuildModelChainOptions & { fallbackEnabled: boolean }): Promise<ModelTarget[]> {
+}: BuildModelChainOptions & { fallbackEnabled: boolean }): Promise<
+  ModelTarget[]
+> {
   if (!activeModel.trim()) return [];
 
   if (!fallbackEnabled) {
@@ -98,18 +100,23 @@ export async function buildModelChain({
     if (used.has(provider.id)) continue;
     if (!isConfigured(provider.id)) continue;
 
-    // For Ollama, try to get installed models dynamically
+    // For Ollama, try to get installed models dynamically.
     if (provider.id === 'ollama' && getInstalledModels) {
+      let installed: string[] = [];
       try {
-        const models = await getInstalledModels('ollama');
-        if (models.length > 0) {
-          chain.push({ providerId: 'ollama', modelId: models[0] });
-          used.add('ollama');
-          continue;
-        }
+        installed = await getInstalledModels('ollama');
       } catch {
-        // If dynamic lookup fails, fall back to curated models or skip
+        // Treat an unreachable Ollama the same as an empty one below.
       }
+      if (installed.length > 0) {
+        chain.push({ providerId: 'ollama', modelId: installed[0] });
+        used.add('ollama');
+      }
+      // We asked Ollama for the truth, so do NOT fall through to the curated
+      // `freeModels` list: those ids are suggestions for `ollama pull`, not a
+      // guarantee that anything is installed. Falling back to one would make
+      // the next attempt fail with "model not found" and hide the real error.
+      continue;
     }
 
     // Use curated free models for all other providers

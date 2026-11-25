@@ -1,6 +1,17 @@
 import React from 'react';
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  FilmIcon,
+  ImageIcon,
+} from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import {
   Select,
   SelectContent,
@@ -29,6 +40,156 @@ import {
 
 type SectionToggle = (section: string) => (open: boolean) => void;
 type UpdateClip = (clipId: string, patch: Partial<TimelineClip>) => void;
+
+function formatAssetDuration(durationMs: number): string {
+  if (durationMs <= 0) return 'Still image';
+  const seconds = durationMs / 1000;
+  return `${seconds >= 60 ? `${Math.floor(seconds / 60)}m ` : ''}${Math.round(
+    seconds % 60,
+  )}s`;
+}
+
+function StudioMediaSourceField({
+  assets,
+  selectedAsset,
+  selectedAssetId,
+  hasCurrentSource,
+  onSelect,
+}: {
+  assets: StudioMediaAsset[];
+  selectedAsset?: StudioMediaAsset;
+  selectedAssetId?: string;
+  hasCurrentSource: boolean;
+  onSelect: (assetId: string | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const displayName =
+    selectedAsset?.name ??
+    (selectedAssetId
+      ? 'Missing source'
+      : hasCurrentSource
+        ? 'Current source'
+        : 'Select source');
+  const displayKind =
+    selectedAsset?.kind === 'image'
+      ? 'Image'
+      : selectedAsset?.kind === 'video'
+        ? 'Video'
+        : selectedAssetId
+          ? 'Unavailable'
+          : hasCurrentSource
+            ? 'Recorded source'
+            : 'No source';
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Video source"
+          title={displayName}
+          className="flex h-10 w-full min-w-0 items-center gap-2 rounded-md border border-input bg-muted/20 px-1.5 text-left outline-none transition-colors hover:bg-accent/30 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded bg-background/70 text-blue-400 ring-1 ring-border/50">
+            {selectedAsset?.kind === 'image' ? (
+              <ImageIcon className="size-3.5" />
+            ) : (
+              <FilmIcon className="size-3.5" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[10px] font-medium text-foreground">
+              {displayName}
+            </span>
+            <span className="block truncate text-[9px] text-muted-foreground">
+              {displayKind}
+              {selectedAsset ? ` · ${formatAssetDuration(selectedAsset.durationMs)}` : ''}
+            </span>
+          </span>
+          <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={6}
+        className="w-72 gap-0 overflow-hidden p-1"
+      >
+        <div className="max-h-64 overflow-y-auto">
+          {!selectedAssetId && (
+            <button
+              type="button"
+              onClick={() => {
+                onSelect(null);
+                setOpen(false);
+              }}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] hover:bg-accent/60"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+                <FilmIcon className="size-3.5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-foreground">
+                  {hasCurrentSource ? 'Current source' : 'No source selected'}
+                </span>
+                <span className="block text-[9px] text-muted-foreground">
+                  Recorded source
+                </span>
+              </span>
+              {!selectedAssetId && (
+                <CheckIcon className="size-3 shrink-0 text-primary" />
+              )}
+            </button>
+          )}
+          {selectedAssetId && !selectedAsset && (
+            <div className="flex items-center gap-2 rounded px-2 py-1.5 text-[11px] text-muted-foreground">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded bg-muted">
+                <FilmIcon className="size-3.5" />
+              </span>
+              <span className="truncate">Missing source</span>
+            </div>
+          )}
+          {assets.map((asset) => {
+            const selected = asset.id === selectedAssetId;
+            return (
+              <button
+                type="button"
+                key={asset.id}
+                onClick={() => {
+                  onSelect(asset.id);
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] hover:bg-accent/60"
+              >
+                <span className="flex size-8 shrink-0 items-center justify-center rounded bg-muted text-blue-400">
+                  {asset.kind === 'image' ? (
+                    <ImageIcon className="size-3.5" />
+                  ) : (
+                    <FilmIcon className="size-3.5" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span
+                    className="block truncate font-medium text-foreground"
+                    title={asset.name}
+                  >
+                    {asset.name}
+                  </span>
+                  <span className="block truncate text-[9px] text-muted-foreground">
+                    {asset.kind === 'image' ? 'Image' : 'Video'} ·{' '}
+                    {formatAssetDuration(asset.durationMs)}
+                  </span>
+                </span>
+                {selected && (
+                  <CheckIcon className="size-3 shrink-0 text-primary" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 interface ClipTrackPropertiesSectionProps {
   track: TimelineTrack;
@@ -487,10 +648,15 @@ export function ClipTrackPropertiesSection({
 
             return (
               <StudioFieldRow label="Source">
-                <Select
-                  value={selectedAssetId ?? '__none__'}
-                  onValueChange={(value) => {
-                    if (value === '__none__') {
+                <StudioMediaSourceField
+                  assets={visualAssets}
+                  selectedAsset={selectedAsset}
+                  selectedAssetId={selectedAssetId}
+                  hasCurrentSource={Boolean(
+                    clip.payload?.filePath || clip.payload?.mediaUrl,
+                  )}
+                  onSelect={(assetId) => {
+                    if (!assetId) {
                       onUpdateClip(clip.id, {
                         payload: {
                           mediaAssetId: undefined,
@@ -502,7 +668,7 @@ export function ClipTrackPropertiesSection({
                       return;
                     }
                     const asset = mediaAssets.find(
-                      (candidate) => candidate.id === value,
+                      (candidate) => candidate.id === assetId,
                     );
                     if (!asset) return;
                     const nextSpeed =
@@ -534,30 +700,7 @@ export function ClipTrackPropertiesSection({
                       },
                     });
                   }}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue placeholder="Select source video" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {!selectedAssetId && (
-                      <SelectItem value="__none__">
-                        {clip.payload?.filePath || clip.payload?.mediaUrl
-                          ? 'Current source'
-                          : 'No source selected'}
-                      </SelectItem>
-                    )}
-                    {selectedAssetId && !selectedAsset && (
-                      <SelectItem value={selectedAssetId}>
-                        Missing source
-                      </SelectItem>
-                    )}
-                    {visualAssets.map((asset) => (
-                      <SelectItem key={asset.id} value={asset.id}>
-                        {asset.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </StudioFieldRow>
             );
           })()}

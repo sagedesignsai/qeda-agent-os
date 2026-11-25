@@ -369,6 +369,10 @@ export interface ProviderInfo {
   note?: string;
   /** Environment variable names accepted for this provider. */
   apiKeyEnvs: string[];
+  /** True when the provider exposes an embeddings endpoint. */
+  supportsEmbeddings?: boolean;
+  /** True for a user-defined OpenAI-compatible provider. */
+  custom?: boolean;
   /** Whether a usable key is available. */
   apiKeySet: boolean;
   /** Where that key comes from – an env var name, the encrypted store, or none. */

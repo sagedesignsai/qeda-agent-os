@@ -275,10 +275,12 @@ Tool execution across all agent surfaces (Chat, Terminal Agent, the Task Copilot
 ### Providers
 
 The provider registry lives in `src/main/ai/registry.ts` and is the single
-source of truth for the app, the IPC layer and the Settings dialog. Every
-provider is reached through `@ai-sdk/openai-compatible`, except the AI Gateway,
-the Transformers.js offline provider, and the ChatGPT subscription provider,
-which each use their own SDK.
+source of truth for the app, the IPC layer and the Settings dialog. Most
+providers are reached through `@ai-sdk/openai-compatible`; the AI Gateway,
+Cohere and Anthropic use their dedicated SDKs. The ChatGPT subscription
+provider is an OpenAI-compatible client pointed at the Codex backend, with the
+OAuth access token supplied as the bearer credential. The Transformers.js
+offline provider runs in the renderer and is not used by main-process agents.
 
 Entries are ordered free-first, and `pickDefaultProvider()` selects the first
 provider that is both **configured in the environment** and has a curated free
@@ -298,6 +300,10 @@ configuration at all.
 | Offline (Transformers.js) | local, via WebGPU | downloaded models only |
 | ChatGPT | `chatgpt.com/backend-api/codex` | `gpt-5` (subscription sign-in, no API key) |
 
+Custom OpenAI-compatible endpoints can be added in Settings → AI & Models. They
+are stored under `customProviders`, appear in the provider picker, and resolve
+through the same chat and embedding paths as built-ins.
+
 ### Automatic provider fallback
 
 Free tiers run out. When a turn fails on the active provider, `agent:chat`
@@ -307,12 +313,17 @@ The rules, all in `src/main/ai/fallback.ts`:
 - The user's selection is always attempted first — an explicit choice is never
   silently second-guessed.
 - Fallback candidates are other configured providers in registry order (free
-  tiers first) that have a curated default model, capped at 3 attempts.
-- **Only retryable failures fall back**: HTTP 408/409/425/429/5xx, and transient
-  network errors. A 400, an invalid key or a malformed tool call will not be
-  retried elsewhere — that would just burn another provider's quota and hide the
-  bug. The SDK's `RetryError` wrapper is unwrapped so a wrapped 401 is not
-  mistaken for a transient failure.
+  tiers first) that have a curated default model, capped at 3 attempts. Ollama
+  is a candidate only when `ollama list` reports an installed model; the curated
+  `freeModels` are `ollama pull` suggestions, not proof of installation.
+- **Only provider-side failures fall back**: HTTP 400/401/402/403/404 (schema
+  rejection, invalid key, no credits, quota/region block, retired model),
+  408/409/425/429, and 5xx, plus typed SDK failures (missing model, unsupported
+  functionality, empty or malformed response, missing API key) and transient
+  network errors. User aborts and purely client-side errors (invalid prompt,
+  malformed tool arguments) never fall back — retrying those would burn another
+  provider's quota and hide the bug. The SDK's `RetryError` wrapper is unwrapped
+  so the underlying status decides.
 - **Fallback stops as soon as any content reaches the renderer.** Retrying after
   output has been displayed would duplicate or contradict what the user can
   already see. Only content-bearing chunks count — lifecycle chunks such as
