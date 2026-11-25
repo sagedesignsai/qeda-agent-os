@@ -192,6 +192,14 @@ describe('Studio Resizable Panels Layout', () => {
     // Verify right inspector (header shows 'Clip Properties' or 'Global Settings')
     expect(screen.getByText('Global Settings')).toBeInTheDocument();
 
+    const releaseKitButton = screen.getByRole('button', {
+      name: 'Generate social release kit',
+    });
+    expect(releaseKitButton).not.toHaveTextContent('Release Kit');
+    expect(releaseKitButton.querySelector('svg')).toHaveClass(
+      'studio-icon-shimmer',
+    );
+
     // Verify bottom timeline toolbar and track headers
     expect(screen.getByText('Tracks')).toBeInTheDocument();
     expect(screen.getByText('00:00:00')).toBeInTheDocument();
@@ -225,6 +233,22 @@ describe('Studio Resizable Panels Layout', () => {
 
     fireEvent.click(screen.getByTitle('Show Studio Inspector'));
     expect(screen.getByTitle('Hide Studio Inspector')).toBeInTheDocument();
+  });
+
+  it('collapses the timeline to transport controls from the editor header', () => {
+    renderStudioEditor();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Timeline' }));
+
+    expect(screen.getByRole('toolbar', { name: 'Timeline playback controls' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Play playback' })).toBeInTheDocument();
+    expect(screen.queryByText('Tracks')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand Timeline' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Timeline' }));
+
+    expect(screen.getByText('Tracks')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse Timeline' })).toBeInTheDocument();
   });
 
   it('renders timeline track badges and controls', () => {

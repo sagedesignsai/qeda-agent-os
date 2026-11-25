@@ -44,6 +44,7 @@ interface TimelineToolbarProps {
   onTogglePlay: () => void;
   onRestartPlayback: () => void;
   onZoomToFit: () => void;
+  collapsed?: boolean;
 }
 
 function formatTimecode(ms: number): string {
@@ -90,6 +91,7 @@ export function TimelineToolbar({
   onTogglePlay,
   onRestartPlayback,
   onZoomToFit,
+  collapsed = false,
 }: TimelineToolbarProps) {
   const {
     activeTool,
@@ -112,9 +114,17 @@ export function TimelineToolbar({
   } = useTimelineTools();
 
   return (
-    <div className="h-9 w-full flex items-center justify-between px-2 bg-background/40 border-b border-border/40 select-none text-xs gap-2">
+    <div
+      role="toolbar"
+      aria-label={
+        collapsed ? 'Timeline playback controls' : 'Timeline editing controls'
+      }
+      className={`h-9 w-full flex items-center px-2 bg-background/40 border-b border-border/40 select-none text-xs gap-2 ${
+        collapsed ? 'justify-center' : 'justify-between'
+      }`}
+    >
       {/* ── Left: Edit Tools (Compact Group) ─────────────────────────────────── */}
-      <div className="flex items-center gap-0.5">
+      <div className={collapsed ? 'hidden' : 'flex items-center gap-0.5'}>
         {/* Undo/Redo */}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -283,6 +293,7 @@ export function TimelineToolbar({
           size="icon"
           className="h-6 w-6 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground transition-all duration-200 active:scale-95 shadow-sm hover:shadow-md"
           onClick={onTogglePlay}
+          aria-label={isPlaying ? 'Pause playback' : 'Play playback'}
         >
           {isPlaying ? (
             <PauseIcon className="w-2.5 h-2.5 fill-current" />
@@ -295,7 +306,7 @@ export function TimelineToolbar({
       </div>
 
       {/* ── Right: Lane Visibility & Zoom Controls (Compact) ────────────────── */}
-      <div className="flex items-center gap-1">
+      <div className={collapsed ? 'hidden' : 'flex items-center gap-1'}>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

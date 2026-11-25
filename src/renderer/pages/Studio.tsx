@@ -21,6 +21,8 @@ import {
   DownloadIcon,
   PanelLeft as PanelLeftIcon,
   PanelRight as PanelRightIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   SparklesIcon,
   Circle,
 } from 'lucide-react';
@@ -222,8 +224,11 @@ export default function Studio() {
   // Content library & inspector panel states & refs
   const [contentPanelCollapsed, setContentPanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const [timelineCollapsed, setTimelineCollapsed] = useState(false);
   const leftPanelRef = useRef<PanelImperativeHandle | null>(null);
   const rightPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const timelinePanelRef = useRef<PanelImperativeHandle | null>(null);
+  const expandedTimelineSizeRef = useRef(35);
 
   // Persistence hooks for Studio layout
   const verticalLayout = useDefaultLayout({ id: 'studio-layout-vertical-v1' });
@@ -252,6 +257,19 @@ export default function Studio() {
     } else {
       panel.collapse();
       setInspectorCollapsed(true);
+    }
+  };
+
+  const toggleTimelinePanel = () => {
+    const panel = timelinePanelRef.current;
+    if (!panel) return;
+    if (timelineCollapsed) {
+      panel.resize(`${expandedTimelineSizeRef.current}%`);
+      setTimelineCollapsed(false);
+    } else {
+      expandedTimelineSizeRef.current = panel.getSize().asPercentage;
+      panel.resize('36px');
+      setTimelineCollapsed(true);
     }
   };
 
@@ -1070,6 +1088,28 @@ export default function Studio() {
                     <PanelRightIcon className="w-3.5 h-3.5" />
                   </Button>
 
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'size-7 shrink-0 text-muted-foreground hover:text-foreground',
+                      timelineCollapsed && 'bg-primary/10 text-primary',
+                    )}
+                    onClick={toggleTimelinePanel}
+                    title={
+                      timelineCollapsed ? 'Expand Timeline' : 'Collapse Timeline'
+                    }
+                    aria-label={
+                      timelineCollapsed ? 'Expand Timeline' : 'Collapse Timeline'
+                    }
+                  >
+                    {timelineCollapsed ? (
+                      <ChevronUpIcon className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDownIcon className="w-3.5 h-3.5" />
+                    )}
+                  </Button>
+
                   <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border/60" />
 
                   {/* Primary AI Actions */}
@@ -1089,15 +1129,14 @@ export default function Studio() {
 
                   <Button
                     variant="default"
-                    size="sm"
-                    className="h-7 shrink-0 gap-1.5 px-3 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-all duration-200 shadow-sm hover:shadow-md active:scale-95"
+                    size="icon"
+                    className="size-7 shrink-0 bg-indigo-600 text-white shadow-sm transition-all duration-200 hover:bg-indigo-700 hover:shadow-md active:scale-95 disabled:opacity-50"
                     onClick={handleOpenSocialKit}
                     disabled={isGeneratingSocialKit}
-                    title="Generate social media release kit"
+                    title="Generate social release kit"
+                    aria-label="Generate social release kit"
                   >
-                    <Share2Icon className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Release Kit</span>
-                    <span className="sm:hidden">Kit</span>
+                    <Share2Icon className="size-3.5 studio-icon-shimmer" />
                   </Button>
 
                   <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border/60" />
@@ -1249,9 +1288,19 @@ export default function Studio() {
             {/* Bottom Full-Width Multi-Track Timeline Panel */}
             <ResizablePanel
               id="studio-bottom-timeline"
+              panelRef={timelinePanelRef}
               defaultSize="35%"
-              minSize="20%"
+              minSize="36px"
               maxSize="55%"
+              collapsible
+              collapsedSize="36px"
+              onResize={(size) => {
+                const isCollapsed = size.inPixels <= 36;
+                if (!isCollapsed) {
+                  expandedTimelineSizeRef.current = size.asPercentage;
+                }
+                setTimelineCollapsed(isCollapsed);
+              }}
               className="p-0 bg-background flex flex-col min-h-0 overflow-hidden"
             >
               <StudioCanvasTimeline
@@ -1265,6 +1314,7 @@ export default function Studio() {
                 onTracksChange={handleTimelineTracksChange}
                 onInsertClip={(clip, startMs, targetTrackId) => { void handleInsertClip(clip, startMs, targetTrackId); }}
                 onOpenVideoCrop={() => setVideoCropDialogOpen(true)}
+                collapsed={timelineCollapsed}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -1345,8 +1395,10 @@ export default function Studio() {
           isPlaying={isPlaying}
           contentLibraryOpen={!contentPanelCollapsed}
           inspectorOpen={!inspectorCollapsed}
+          timelineOpen={!timelineCollapsed}
           onToggleContentLibrary={toggleLeftPanel}
           onToggleInspector={toggleRightPanel}
+          onToggleTimeline={toggleTimelinePanel}
           onTogglePlayback={handleTogglePlayback}
           onRestartPlayback={handleRestartPlayback}
           onZoomToFit={() => {

@@ -334,6 +334,27 @@
   }
 }
 
+.studio-icon-shimmer {
+  animation: studio-icon-shimmer 2.4s ease-in-out infinite;
+}
+
+@keyframes studio-icon-shimmer {
+  0%,
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: brightness(1.35)
+      drop-shadow(0 0 4px color-mix(in oklab, currentColor 70%, transparent));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-icon-shimmer {
+    animation: none;
+  }
+}
+
 /* Sidebar now-playing EQ — short bars that bob while audio is audible. */
 @keyframes music-eq-bar {
   0%,

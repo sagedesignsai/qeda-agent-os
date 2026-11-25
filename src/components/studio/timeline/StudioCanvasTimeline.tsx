@@ -37,6 +37,7 @@ interface StudioCanvasTimelineProps {
   onTracksChange?: (tracks: TimelineTrack[]) => void;
   onInsertClip?: (clip: import('../content/items/ContentCardItem').ContentItemPayload, startMs: number, targetTrackId?: string) => void;
   onOpenVideoCrop?: () => void;
+  collapsed?: boolean;
 }
 
 const TRACK_HEIGHT = 48;
@@ -53,6 +54,7 @@ export function StudioCanvasTimeline({
   onTracksChange,
   onInsertClip,
   onOpenVideoCrop,
+  collapsed = false,
 }: StudioCanvasTimelineProps) {
   const { durationMs: storeDurationMs, isMultiTrack, expandedTrackIds } =
     useTimelineState();
@@ -214,30 +216,33 @@ export function StudioCanvasTimeline({
         onTogglePlay={onTogglePlay}
         onRestartPlayback={onRestartPlayback}
         onZoomToFit={handleZoomToFit}
+        collapsed={collapsed}
       />
 
       {/* ── Main Multi-Track Body: Left Headers + Right 60fps Canvas ───────── */}
-      <div className="flex flex-1 w-full overflow-hidden bg-background/50 min-h-0">
-        {/* Fixed Width DOM Track Headers (Lock, Eye, Mute) */}
-        <TimelineTrackHeaders
-          trackHeight={TRACK_HEIGHT}
-          rulerHeight={RULER_HEIGHT}
-          contentRef={headersContentRef}
-          onWheel={handleTrackHeadersWheel}
-        />
+      {!collapsed && (
+        <div className="flex flex-1 w-full overflow-hidden bg-background/50 min-h-0">
+          {/* Fixed Width DOM Track Headers (Lock, Eye, Mute) */}
+          <TimelineTrackHeaders
+            trackHeight={TRACK_HEIGHT}
+            rulerHeight={RULER_HEIGHT}
+            contentRef={headersContentRef}
+            onWheel={handleTrackHeadersWheel}
+          />
 
-        {/* 60fps Hardware-Accelerated Canvas Viewport */}
-        <TimelineCanvasViewport
-          videoUrl={videoUrl}
-          trackHeight={TRACK_HEIGHT}
-          rulerHeight={RULER_HEIGHT}
-          onSeek={onSeek}
-          onTogglePlay={onTogglePlay}
-          onScrollYChange={handleHeadersScrollY}
-          containerRef={viewportContainerRef}
-          onOpenVideoCrop={onOpenVideoCrop}
-        />
-      </div>
+          {/* 60fps Hardware-Accelerated Canvas Viewport */}
+          <TimelineCanvasViewport
+            videoUrl={videoUrl}
+            trackHeight={TRACK_HEIGHT}
+            rulerHeight={RULER_HEIGHT}
+            onSeek={onSeek}
+            onTogglePlay={onTogglePlay}
+            onScrollYChange={handleHeadersScrollY}
+            containerRef={viewportContainerRef}
+            onOpenVideoCrop={onOpenVideoCrop}
+          />
+        </div>
+      )}
     </div>
   );
 }

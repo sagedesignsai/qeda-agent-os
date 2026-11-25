@@ -27,6 +27,8 @@ import {
 import {
   PanelLeftIcon,
   PanelRightIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   LayersIcon,
   PlayIcon,
   PauseIcon,
@@ -50,8 +52,10 @@ interface StudioCommandBarProps {
   isPlaying?: boolean;
   contentLibraryOpen?: boolean;
   inspectorOpen?: boolean;
+  timelineOpen?: boolean;
   onToggleContentLibrary?: () => void;
   onToggleInspector?: () => void;
+  onToggleTimeline?: () => void;
   onTogglePlayback?: () => void;
   onRestartPlayback?: () => void;
   onZoomToFit?: () => void;
@@ -74,8 +78,10 @@ export function StudioCommandBar({
   isPlaying = false,
   contentLibraryOpen = true,
   inspectorOpen = true,
+  timelineOpen = true,
   onToggleContentLibrary,
   onToggleInspector,
+  onToggleTimeline,
   onTogglePlayback,
   onRestartPlayback,
   onZoomToFit,
@@ -139,6 +145,19 @@ export function StudioCommandBar({
                 <PanelRightIcon className="size-4" />
                 <span>{inspectorOpen ? 'Hide' : 'Show'} Inspector</span>
                 <CommandShortcut>⌘]</CommandShortcut>
+              </CommandItem>
+            )}
+            {onToggleTimeline && (
+              <CommandItem
+                onSelect={() => run(onToggleTimeline)}
+                className="cursor-pointer"
+              >
+                {timelineOpen ? (
+                  <ChevronDownIcon className="size-4" />
+                ) : (
+                  <ChevronUpIcon className="size-4" />
+                )}
+                <span>{timelineOpen ? 'Collapse' : 'Expand'} Timeline</span>
               </CommandItem>
             )}
           </CommandGroup>
