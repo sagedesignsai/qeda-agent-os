@@ -51,7 +51,11 @@ import { StudioProjectsView } from '@/components/studio/projects/StudioProjectsV
 import { StudioCanvas } from '@/components/studio/StudioCanvas';
 import { StudioCanvasTimeline } from '@/components/studio/timeline/StudioCanvasTimeline';
 import { StudioVideoCropDialog } from '@/components/studio/plugins/StudioVideoCropDialog';
-import { timelineStore, useTimelineTracks } from '@/hooks/use-timeline-store';
+import {
+  timelineStore,
+  useSelectedClip,
+  useTimelineTracks,
+} from '@/hooks/use-timeline-store';
 import { StudioInspector } from '@/components/studio/StudioInspector';
 import { StudioSourcePicker } from '@/components/studio/StudioSourcePicker';
 import { StudioRecordingBar } from '@/components/studio/StudioRecordingBar';
@@ -85,9 +89,15 @@ import {
   type StudioCompositionSummary,
   type StudioCompositionTemplateSummary,
   type StudioTakeSummary,
+  type TimelineClip,
   type TimelineTrack,
 } from '@/lib/studio-types';
 import { renderComposedStudioVideo } from '@/lib/studio/render/export-renderer';
+import {
+  BUILTIN_STUDIO_ADDONS,
+  type StudioAddonId,
+} from '@/components/studio/addons/StudioAddonRegistry';
+import { studioMediaAssetUrl } from '@/lib/studio/media';
 import { toast } from 'sonner';
 
 export default function Studio() {
@@ -166,6 +176,16 @@ export default function Studio() {
 
   // Timeline tracks for per-clip animation evaluation on the preview canvas
   const timelineTracks = useTimelineTracks();
+  const selectedClipData = useSelectedClip();
+  const availableAddons = useMemo(
+    () => BUILTIN_STUDIO_ADDONS.filter((addon) =>
+      addon.scope === 'canvas' ||
+      (selectedClipData
+        ? addon.canRun(selectedClipData.track, selectedClipData.clip)
+        : false),
+    ),
+    [selectedClipData],
+  );
 
   // A named take means one was just recorded (agent or manual). Keep the route
   // in sync so a refresh reopens that take, and let `useStudio` reload it.
@@ -220,6 +240,72 @@ export default function Studio() {
   >(null);
   const [videoCropDialogOpen, setVideoCropDialogOpen] = useState(false);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
+  const [activeAddonId, setActiveAddonId] = useState<StudioAddonId | null>(null);
+  const [addonTargetClipId, setAddonTargetClipId] = useState<string | null>(null);
+
+  const openStudioAddon = useCallback(
+    (addonId: StudioAddonId, clipId?: string) => {
+      const addon = BUILTIN_STUDIO_ADDONS.find((item) => item.id === addonId);
+      if (!addon) return;
+      if (addon.scope === 'canvas') {
+        setAddonTargetClipId(null);
+        setActiveAddonId(addonId);
+        return;
+      }
+
+      const target = clipId
+        ? timelineStore.findClip(clipId)
+        : selectedClipData;
+      if (!target || !addon.canRun(target.track, target.clip)) {
+        toast.error('Select a supported video clip to use this add-on.');
+        return;
+      }
+      setAddonTargetClipId(target.clip.id);
+      setActiveAddonId(addonId);
+    },
+    [selectedClipData],
+  );
+
+  const activeAddon = BUILTIN_STUDIO_ADDONS.find(
+    (addon) => addon.id === activeAddonId,
+  );
+  const addonTarget = addonTargetClipId
+    ? timelineStore.findClip(addonTargetClipId)
+    : null;
+
+  const applyStudioAddonPatch = useCallback(
+    (clipId: string, patch: Partial<TimelineClip>) => {
+      const target = timelineStore.findClip(clipId);
+      const addon = BUILTIN_STUDIO_ADDONS.find(
+        (item) => item.id === activeAddonId,
+      );
+      if (
+        addon?.scope !== 'clip' ||
+        !target ||
+        !addon.canRun(target.track, target.clip)
+      ) {
+        toast.error('This add-on can no longer be applied to the selected clip.');
+        return false;
+      }
+      if (target.track.locked) {
+        toast.error('Unlock this video track before applying the add-on.');
+        return false;
+      }
+      timelineStore.updateClip(clipId, patch, target.track.id);
+      toast.success(`${addon.name} applied.`);
+      return true;
+    },
+    [activeAddonId],
+  );
+
+  const applyStudioCanvasBackground = useCallback(
+    (background: string) => {
+      if (!activeTake) return;
+      void updateStyling({ background });
+      toast.success('Canvas background updated.');
+    },
+    [activeTake, updateStyling],
+  );
 
   // Content library & inspector panel states & refs
   const [contentPanelCollapsed, setContentPanelCollapsed] = useState(false);
@@ -355,10 +441,16 @@ export default function Studio() {
           cuts: extractCutsFromTracks(tracks, activeTake.durationMs),
           effects: extractEffectsFromTracks(tracks, cuts),
           overlays: extractOverlaysFromTracks(tracks, cuts),
+        }).catch((error: unknown) => {
+          console.error('[Studio] Failed to save timeline data.', error);
+          toast.error('Could not save the latest timeline changes.');
         });
         const extracted = extractClipsFromTracks(tracks);
         if (extracted) {
-          void updateTracks(extracted.tracks);
+          void updateTracks(extracted.tracks).catch((error: unknown) => {
+            console.error('[Studio] Failed to save timeline tracks.', error);
+            toast.error('Could not save the latest timeline changes.');
+          });
         }
         return;
       }
@@ -380,6 +472,9 @@ export default function Studio() {
         cuts: updatedCuts,
         effects: updatedEffects,
         overlays: updatedOverlays,
+      }).catch((error: unknown) => {
+        console.error('[Studio] Failed to save timeline data.', error);
+        toast.error('Could not save the latest timeline changes.');
       });
     },
     [activeTake, cuts, updateTimelineData, updateTracks],
@@ -1314,6 +1409,10 @@ export default function Studio() {
                 onTracksChange={handleTimelineTracksChange}
                 onInsertClip={(clip, startMs, targetTrackId) => { void handleInsertClip(clip, startMs, targetTrackId); }}
                 onOpenVideoCrop={() => setVideoCropDialogOpen(true)}
+                addons={BUILTIN_STUDIO_ADDONS}
+                onRunAddon={(addonId, clipId) =>
+                  openStudioAddon(addonId, clipId)
+                }
                 collapsed={timelineCollapsed}
               />
             </ResizablePanel>
@@ -1387,6 +1486,43 @@ export default function Studio() {
         onApply={handleApplyVideoCrop}
       />
 
+      {activeAddon?.scope === 'clip' &&
+        addonTarget &&
+        activeTake && (
+          <activeAddon.Dialog
+            open={Boolean(activeAddonId)}
+            clip={addonTarget.clip}
+            track={addonTarget.track}
+            videoUrl={
+              addonTarget.clip.payload?.mediaAssetId
+                ? studioMediaAssetUrl(addonTarget.clip.payload.mediaAssetId)
+                : videoUrl
+            }
+            onOpenChange={(open) => {
+              if (!open) {
+                setActiveAddonId(null);
+                setAddonTargetClipId(null);
+              }
+            }}
+            onApply={(patch) =>
+              applyStudioAddonPatch(addonTarget.clip.id, patch)
+            }
+          />
+        )}
+      {activeAddon?.scope === 'canvas' && activeTake && (
+        <activeAddon.Dialog
+          open={Boolean(activeAddonId)}
+          styling={activeTake.styling}
+          onOpenChange={(open) => {
+            if (!open) {
+              setActiveAddonId(null);
+              setAddonTargetClipId(null);
+            }
+          }}
+          onApply={applyStudioCanvasBackground}
+        />
+      )}
+
       {/* ── Studio Command Bar ─────────────────────────────────────────────── */}
       {activeTake && (
         <StudioCommandBar
@@ -1424,8 +1560,10 @@ export default function Studio() {
           onDeleteClip={() => {
             /* Delete selected clip */
           }}
+          addons={availableAddons}
+          onRunAddon={(addonId) => openStudioAddon(addonId)}
           activeTool="select"
-          selectedClipId={null}
+          selectedClipId={selectedClipData?.clip.id ?? null}
         />
       )}
     </div>

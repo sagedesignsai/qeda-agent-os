@@ -16,7 +16,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { timelineStore, useTimelineState } from '@/hooks/use-timeline-store';
 import { useTimelineMedia } from '@/hooks/use-timeline-media';
 import { drawBitmapIfLive } from '@/lib/image-bitmap-lifetime';
@@ -43,6 +43,11 @@ import {
   ContextMenuContent,
   ContextMenuItem,
 } from '@/components/ui/context-menu';
+import type { TimelineClip, TimelineTrack } from '@/lib/studio-types';
+import type {
+  StudioAddonDefinition,
+  StudioAddonId,
+} from '@/components/studio/addons/StudioAddonRegistry';
 
 interface TimelineCanvasViewportProps {
   videoUrl: string | null;
@@ -52,6 +57,8 @@ interface TimelineCanvasViewportProps {
   onTogglePlay?: () => void;
   onScrollYChange?: (scrollY: number) => void;
   onOpenVideoCrop?: () => void;
+  addons?: readonly StudioAddonDefinition[];
+  onRunAddon?: (addonId: StudioAddonId, clipId: string) => void;
   containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -86,6 +93,8 @@ export function TimelineCanvasViewport({
   onScrollYChange,
   containerRef: externalContainerRef,
   onOpenVideoCrop,
+  addons = [],
+  onRunAddon,
 }: TimelineCanvasViewportProps) {
   const internalContainerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = externalContainerRef || internalContainerRef;
@@ -162,7 +171,10 @@ export function TimelineCanvasViewport({
 
   // Drag interaction state
   const dragModeRef = useRef<DragMode>({ type: 'none' });
-  const contextTargetRef = useRef<{ type?: string } | null>(null);
+  const [contextTarget, setContextTarget] = useState<{
+    track?: TimelineTrack;
+    clip?: TimelineClip;
+  } | null>(null);
 
   // Scroll and pointer input are coalesced into one animation frame: wheel,
   // momentum, and pointermove all fire faster than the display refreshes, and
@@ -1901,8 +1913,14 @@ export function TimelineCanvasViewport({
           asChild
           onContextMenu={(e: React.MouseEvent<HTMLCanvasElement>) => {
             const hit = hitTest(e.clientX, e.clientY);
-            contextTargetRef.current =
-              hit && 'track' in hit ? (hit.track as { type?: string }) : null;
+            setContextTarget(
+              hit && 'track' in hit
+                ? {
+                    track: hit.track,
+                    ...('clip' in hit && hit.clip ? { clip: hit.clip } : {}),
+                  }
+                : null,
+            );
           }}
         >
           <canvas
@@ -1919,11 +1937,28 @@ export function TimelineCanvasViewport({
           />
         </ContextMenuTrigger>
         <ContextMenuContent>
-          {contextTargetRef.current?.type === 'video' && (
+          {contextTarget?.track?.type === 'video' && (
             <ContextMenuItem onSelect={() => onOpenVideoCrop?.()}>
               Crop video region…
             </ContextMenuItem>
           )}
+          {contextTarget?.track &&
+            contextTarget.clip &&
+            addons
+              .filter((addon) =>
+                addon.scope === 'clip' &&
+                addon.canRun(contextTarget.track!, contextTarget.clip!),
+              )
+              .map((addon) => (
+                <ContextMenuItem
+                  key={addon.id}
+                  onSelect={() =>
+                    onRunAddon?.(addon.id, contextTarget.clip!.id)
+                  }
+                >
+                  {addon.name}…
+                </ContextMenuItem>
+              ))}
         </ContextMenuContent>
       </ContextMenu>
 

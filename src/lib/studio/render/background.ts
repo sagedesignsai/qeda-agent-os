@@ -10,6 +10,11 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import {
+  drawGenerativeBackground,
+  parseGenerativeBackground,
+} from './background-generator';
+
 export type StudioBackgroundPaint = string | CanvasGradient;
 
 /** Parse `linear-gradient(<angle|to-dir>, stops…)` into a CanvasGradient. */
@@ -138,14 +143,28 @@ export function drawStudioBackground(
     height,
     background,
     glowGradient,
+    timeMs = 0,
   }: {
     width: number;
     height: number;
     background: string;
     /** Pre-built radial glow gradient; callers cache it per (width, height). */
     glowGradient?: CanvasGradient | null;
+    /** Composition timestamp in ms for animated generative backgrounds. */
+    timeMs?: number;
   },
 ): void {
+  const generative = parseGenerativeBackground(background);
+  if (generative) {
+    drawGenerativeBackground(ctx, {
+      width,
+      height,
+      config: generative,
+      timeMs,
+    });
+    return;
+  }
+
   ctx.fillStyle = resolveBackgroundPaint(ctx, background, width, height);
   ctx.fillRect(0, 0, width, height);
 

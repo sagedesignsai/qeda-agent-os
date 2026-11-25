@@ -23,6 +23,10 @@ import {
   type StudioTake,
   type TimelineTrack,
 } from '@/lib/studio-types';
+import type {
+  StudioAddonDefinition,
+  StudioAddonId,
+} from '@/components/studio/addons/StudioAddonRegistry';
 import { buildTimelineRows } from '@/lib/studio/timeline/rows';
 import { toast } from 'sonner';
 
@@ -37,6 +41,8 @@ interface StudioCanvasTimelineProps {
   onTracksChange?: (tracks: TimelineTrack[]) => void;
   onInsertClip?: (clip: import('../content/items/ContentCardItem').ContentItemPayload, startMs: number, targetTrackId?: string) => void;
   onOpenVideoCrop?: () => void;
+  addons?: readonly StudioAddonDefinition[];
+  onRunAddon?: (addonId: StudioAddonId, clipId: string) => void;
   collapsed?: boolean;
 }
 
@@ -54,6 +60,8 @@ export function StudioCanvasTimeline({
   onTracksChange,
   onInsertClip,
   onOpenVideoCrop,
+  addons = [],
+  onRunAddon,
   collapsed = false,
 }: StudioCanvasTimelineProps) {
   const { durationMs: storeDurationMs, isMultiTrack, expandedTrackIds } =
@@ -240,6 +248,8 @@ export function StudioCanvasTimeline({
             onScrollYChange={handleHeadersScrollY}
             containerRef={viewportContainerRef}
             onOpenVideoCrop={onOpenVideoCrop}
+            addons={addons}
+            onRunAddon={onRunAddon}
           />
         </div>
       )}

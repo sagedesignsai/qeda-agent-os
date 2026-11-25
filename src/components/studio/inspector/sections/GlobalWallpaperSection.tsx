@@ -14,6 +14,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import type { StudioStyling } from '@/lib/studio-types';
+import {
+  getBackgroundPreviewCss,
+  isGenerativeBackground,
+} from '@/lib/studio/render/background-generator';
 import { InspectorSection } from '../components/InspectorSection';
 
 interface GlobalWallpaperSectionProps {
@@ -82,6 +86,7 @@ export function GlobalWallpaperSection({
   defaultOpen = true,
 }: GlobalWallpaperSectionProps) {
   const [customInput, setCustomInput] = useState(styling.background);
+  const generativeActive = isGenerativeBackground(styling.background);
 
   const handleApplyCustom = (color: string) => {
     if (!color.trim()) return;
@@ -94,6 +99,17 @@ export function GlobalWallpaperSection({
       icon={<PaletteIcon className="w-3.5 h-3.5 text-muted-foreground" />}
       defaultOpen={defaultOpen}
     >
+      {generativeActive && (
+        <div
+          className="mb-2 flex items-center justify-between rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] text-foreground"
+        >
+          <span>Animated Generator Active</span>
+          <span
+            className="size-3.5 rounded-sm border border-white/20"
+            style={{ background: getBackgroundPreviewCss(styling.background) }}
+          />
+        </div>
+      )}
       <Tabs defaultValue="gradients" className="w-full">
         <TabsList className="grid grid-cols-3 h-7 p-0.5 bg-secondary/50 border border-border/40">
           <TabsTrigger value="gradients" className="text-[11px] h-6 px-1">
@@ -184,7 +200,7 @@ export function GlobalWallpaperSection({
                 className="absolute -top-2 -left-2 w-12 h-12 cursor-pointer opacity-0"
               />
               <div
-                style={{ background: styling.background }}
+                style={{ background: getBackgroundPreviewCss(styling.background) }}
                 className="w-full h-full pointer-events-none flex items-center justify-center"
               >
                 <PipetteIcon className="w-3 h-3 text-white/80 drop-shadow" />

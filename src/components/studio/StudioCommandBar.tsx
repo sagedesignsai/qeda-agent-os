@@ -12,7 +12,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Command,
   CommandDialog,
@@ -29,7 +29,6 @@ import {
   PanelRightIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  LayersIcon,
   PlayIcon,
   PauseIcon,
   RotateCcwIcon,
@@ -42,9 +41,11 @@ import {
   DownloadIcon,
   Share2Icon,
   SparklesIcon,
-  VideoIcon,
-  PlusIcon,
 } from 'lucide-react';
+import type {
+  StudioAddonDefinition,
+  StudioAddonId,
+} from '@/components/studio/addons/StudioAddonRegistry';
 
 interface StudioCommandBarProps {
   open: boolean;
@@ -70,6 +71,8 @@ interface StudioCommandBarProps {
   onDeleteClip?: () => void;
   activeTool?: 'select' | 'blade';
   selectedClipId?: string | null;
+  addons?: readonly StudioAddonDefinition[];
+  onRunAddon?: (addonId: StudioAddonId) => void;
 }
 
 export function StudioCommandBar({
@@ -96,6 +99,8 @@ export function StudioCommandBar({
   onDeleteClip,
   activeTool = 'select',
   selectedClipId = null,
+  addons = [],
+  onRunAddon,
 }: StudioCommandBarProps) {
   const [query, setQuery] = useState('');
 
@@ -162,6 +167,28 @@ export function StudioCommandBar({
             )}
           </CommandGroup>
 
+          {addons.length > 0 && onRunAddon && (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading="Add-ons">
+                {addons.map((addon) => {
+                  const Icon = addon.icon;
+                  return (
+                    <CommandItem
+                      key={addon.id}
+                      onSelect={() => run(() => onRunAddon(addon.id))}
+                      className="cursor-pointer"
+                      keywords={[...addon.keywords]}
+                    >
+                      <Icon className="size-4 text-primary" />
+                      <span>{addon.name}</span>
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </>
+          )}
+
           <CommandSeparator />
 
           {/* ── Playback Controls ───────────────────────────────────────────── */}
@@ -227,7 +254,9 @@ export function StudioCommandBar({
                 className="cursor-pointer"
               >
                 <ScissorsIcon className="size-4" />
-                <span>{activeTool === 'blade' ? '✓ ' : ''}Razor blade tool</span>
+                <span>
+                  {activeTool === 'blade' ? '✓ ' : ''}Razor blade tool
+                </span>
                 <CommandShortcut>C</CommandShortcut>
               </CommandItem>
             )}

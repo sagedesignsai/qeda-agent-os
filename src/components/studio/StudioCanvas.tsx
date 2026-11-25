@@ -52,6 +52,7 @@ import {
   type StudioComposeInput,
 } from '@/lib/studio/render/compose';
 import { renderStudioFrame } from '@/lib/studio/render/frame-renderer';
+import { isGenerativeBackground } from '@/lib/studio/render/background-generator';
 import { evaluateEditorTimeline } from '@/lib/studio/timeline/evaluate';
 import { StudioAudioMixer } from '@/lib/studio/audio/mixer';
 import {
@@ -895,7 +896,14 @@ export function StudioCanvas({
         tracks: tracksRef.current,
         clipAssets: clipAssetsRef.current,
         clipInstances: clipInstanceAssetsRef.current,
-        compTimeMs: compMs,
+        compTimeMs:
+          !isPlayingRef.current &&
+          !video &&
+          !tracksRef.current.some((t) => t.type === 'video' && t.clips.length > 0) &&
+          ov.length === 0 &&
+          isGenerativeBackground(style.background)
+            ? now
+            : compMs,
         clipTransformPreview: clipTransformPreviewRef.current,
         drawWindowChrome: (chromeCtx, frame) => {
           const deviceFrame = style.deviceFrame;
@@ -1290,9 +1298,11 @@ export function StudioCanvas({
         <div
           className="absolute inset-0 flex flex-col items-center justify-center p-8 text-center"
           style={{
-            background: styling.background.includes('gradient')
-              ? styling.background
-              : styling.background || '#090a0f',
+            background: isGenerativeBackground(styling.background)
+              ? 'transparent'
+              : styling.background.includes('gradient')
+                ? styling.background
+                : styling.background || '#090a0f',
           }}
         >
           <div className="w-full max-w-md p-8 rounded-2xl border-2 border-dashed border-border/40 bg-black/40 backdrop-blur-md flex flex-col items-center gap-3 shadow-2xl">

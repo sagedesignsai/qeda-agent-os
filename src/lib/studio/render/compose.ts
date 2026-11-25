@@ -104,6 +104,7 @@ export function drawStudioFrame(
     height,
     background: styling.background,
     glowGradient: input.glowGradient,
+    timeMs: compTime,
   });
 
   const crop = input.videoCrop;

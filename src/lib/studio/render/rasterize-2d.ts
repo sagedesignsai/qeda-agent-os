@@ -116,6 +116,7 @@ export function rasterize2D(
     height: program.height,
     background: program.background.paint,
     glowGradient: options?.glowGradient,
+    timeMs: program.compTimeMs,
   });
 
   const frame = program.windowFrame;
