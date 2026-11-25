@@ -1,5 +1,5 @@
 /**
- * lib/builder-engine.ts
+ * lib/builder/engine.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Renderer-safe Builder engine configuration. The main process owns runtime
  * wiring; these types are the contract Settings and IPC share with the UI.

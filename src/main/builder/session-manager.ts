@@ -24,13 +24,13 @@ import type { BuilderRuntime } from './client';
 import type { LocalBuilderSession } from './local-engine';
 import type { E2bSandboxHandle } from '../sandbox/e2b.js';
 import type { ModelMessage } from 'ai';
-import type { BuilderPreviewStatus } from '../../lib/builder-preview';
-import type { BuilderWorkspace } from '../../lib/builder-workspace';
+import type { BuilderPreviewStatus } from '../../lib/builder/preview';
+import type { BuilderWorkspace } from '../../lib/builder/workspace';
 import type {
   BuilderSessionEvent,
   BuilderSessionState,
   BuilderSessionSummary,
-} from '../../lib/builder-session';
+} from '../../lib/builder/session';
 import type { AgentPlan, PlanItemStatus } from '../../lib/agent-plan';
 import type { BrowserWindow } from 'electron';
 

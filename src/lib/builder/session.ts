@@ -1,5 +1,5 @@
 /**
- * lib/builder-session.ts
+ * lib/builder/session.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Renderer-safe Builder session summaries and normalized live activity events.
  * OpenCode client payloads are translated into these shapes in the main process.
@@ -9,9 +9,9 @@
 import type {
   BuilderFormRequest,
   BuilderPermissionRequest,
-} from './builder-interactions';
-import type { BuilderWorkspace } from './builder-workspace';
-import type { AgentPlan, PlanItemStatus } from './agent-plan';
+} from './interactions';
+import type { BuilderWorkspace } from './workspace';
+import type { AgentPlan, PlanItemStatus } from '../agent-plan';
 
 export interface BuilderSessionSummary {
   id: string;

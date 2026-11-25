@@ -10,7 +10,7 @@
 import '@testing-library/jest-dom';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { BuilderChatPanel } from '@/components/builder/BuilderChatPanel';
-import type { BuilderWorkspace } from '@/lib/builder-workspace';
+import type { BuilderWorkspace } from '@/lib/builder/workspace';
 
 const connected = {
   state: 'connected' as const,

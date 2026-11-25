@@ -11,7 +11,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { BuilderFormCard } from '@/components/builder/tools/BuilderFormCard';
 import { BuilderPermissionCard } from '@/components/builder/tools/BuilderPermissionCard';
 import { BuilderToolCall } from '@/components/builder/tools/BuilderToolCall';
-import type { BuilderFormRequest } from '@/lib/builder-interactions';
+import type { BuilderFormRequest } from '@/lib/builder/interactions';
 import type { ToolPart } from '@/components/ai-elements/tool';
 
 jest.mock('@/components/ai-elements/tool', () => ({

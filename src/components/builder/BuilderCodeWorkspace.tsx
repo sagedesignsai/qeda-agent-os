@@ -50,7 +50,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import type { BuilderFile, BuilderFileNode } from '@/lib/builder-workspace';
+import type { BuilderFile, BuilderFileNode } from '@/lib/builder/workspace';
 
 interface BuilderCodeWorkspaceProps {
   files?: BuilderFileNode[];

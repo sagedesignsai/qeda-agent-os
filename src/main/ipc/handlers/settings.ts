@@ -21,7 +21,7 @@ import {
 import { performChatGPTSignIn } from '../../ai/chatgpt-auth';
 import { mcpManager } from '../../ai/mcp/manager';
 import { listServiceStatuses } from '../../services/keys';
-import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '../../../lib/builder-engine';
+import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '../../../lib/builder/engine';
 import { type ProviderInfo } from '../channels';
 import { resetAgents } from '../agent-runtime';
 

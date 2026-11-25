@@ -30,7 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import type {
   BuilderPermissionDecision,
   BuilderPermissionRequest,
-} from '@/lib/builder-interactions';
+} from '@/lib/builder/interactions';
 
 interface BuilderPermissionCardProps {
   request: BuilderPermissionRequest;

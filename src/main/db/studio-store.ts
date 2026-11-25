@@ -364,8 +364,8 @@ export function saveStudioTake(take: {
   const now = Math.floor(Date.now() / 1000);
 
   const existingRow = db
-    .prepare('SELECT created_at FROM studio_takes WHERE id = ?')
-    .get(take.id) as { created_at: number } | undefined;
+    .prepare('SELECT created_at, video_path FROM studio_takes WHERE id = ?')
+    .get(take.id) as { created_at: number; video_path: string } | undefined;
 
   if (existingRow) {
     const columns: Partial<Record<keyof typeof take, string>> = {
@@ -406,9 +406,20 @@ export function saveStudioTake(take: {
         Object.prototype.hasOwnProperty.call(take, key) &&
         take[key as keyof typeof take] !== undefined,
     );
+    const videoPathChanged =
+      take.videoPath !== undefined && take.videoPath !== existingRow.video_path;
 
     if (updates.length > 0) {
       const setClauses = updates.map(([, column]) => `${column} = ?`);
+      if (videoPathChanged) {
+        setClauses.push(
+          'probe_json = NULL',
+          'optimized_path = NULL',
+          'filmstrip_path = NULL',
+          'waveform_path = NULL',
+          'media_ready_at = NULL',
+        );
+      }
       const values = updates.map(([key]) => {
         const value = take[key as keyof typeof take];
         if (!jsonFields.has(key)) return value;

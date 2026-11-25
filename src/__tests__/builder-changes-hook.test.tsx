@@ -9,8 +9,8 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useBuilderChanges } from '@/hooks/use-builder-changes';
-import type { BuilderSessionEvent } from '@/lib/builder-session';
-import type { BuilderFileChange } from '@/lib/builder-workspace';
+import type { BuilderSessionEvent } from '@/lib/builder/session';
+import type { BuilderFileChange } from '@/lib/builder/workspace';
 
 const CHANGES: BuilderFileChange[] = [
   {

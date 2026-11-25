@@ -15,8 +15,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { BuilderSessionEvent } from '@/lib/builder-session';
-import type { BuilderFileChange } from '@/lib/builder-workspace';
+import type { BuilderSessionEvent } from '@/lib/builder/session';
+import type { BuilderFileChange } from '@/lib/builder/workspace';
 
 export function useBuilderChanges(
   sessionId: string | undefined,

@@ -8,8 +8,8 @@
 
 import path from 'node:path';
 import type { V2Event } from '@opencode/client';
-import type { BuilderFormField } from '../../lib/builder-interactions';
-import type { BuilderSessionEvent } from '../../lib/builder-session';
+import type { BuilderFormField } from '../../lib/builder/interactions';
+import type { BuilderSessionEvent } from '../../lib/builder/session';
 
 export interface NormalizeBuilderEventOptions {
   /** Active worktree/source directory used to scope global filesystem events. */

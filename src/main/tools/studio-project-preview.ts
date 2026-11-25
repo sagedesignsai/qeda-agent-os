@@ -10,7 +10,7 @@ import {
   choosePreviewScript,
   detectPackageManager,
   type BuilderPreviewStatus,
-} from '../../lib/builder-preview.js';
+} from '../../lib/builder/preview.js';
 import {
   getProject,
   type Project,

@@ -8,8 +8,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import type { BuilderSessionEvent } from '@/lib/builder-session';
-import type { BuilderFileNode } from '@/lib/builder-workspace';
+import type { BuilderSessionEvent } from '@/lib/builder/session';
+import type { BuilderFileNode } from '@/lib/builder/workspace';
 
 export function useBuilderFiles(
   sessionId: string | undefined,

@@ -1,5 +1,5 @@
 /**
- * lib/builder-interactions.ts
+ * lib/builder/interactions.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Renderer-safe interaction contracts for OpenCode tool approvals and forms.
  * These mirror OpenCode v2 payloads without exposing its transport/client types

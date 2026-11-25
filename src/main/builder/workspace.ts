@@ -24,7 +24,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { BuilderWorkspace } from '../../lib/builder-workspace';
+import type { BuilderWorkspace } from '../../lib/builder/workspace';
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
@@ -260,12 +260,12 @@ const MAX_TREE_NODES = 2_000;
  */
 export async function readWorkspaceFiles(
   directory: string,
-): Promise<import('../../lib/builder-workspace.js').BuilderFileNode[]> {
+): Promise<import('../../lib/builder/workspace.js').BuilderFileNode[]> {
   type BuilderFileNode =
-    import('../../lib/builder-workspace.js').BuilderFileNode;
-  type BuilderFile = import('../../lib/builder-workspace.js').BuilderFile;
+    import('../../lib/builder/workspace.js').BuilderFileNode;
+  type BuilderFile = import('../../lib/builder/workspace.js').BuilderFile;
   type BuilderDirectory =
-    import('../../lib/builder-workspace.js').BuilderDirectory;
+    import('../../lib/builder/workspace.js').BuilderDirectory;
 
   // `ls-files --others --exclude-standard` gives untracked-but-not-ignored.
   // Combining with tracked files gives the full relevant set.
@@ -424,11 +424,11 @@ const MAX_CHANGED_FILES = 200;
  */
 export async function readWorkspaceChanges(
   directory: string,
-): Promise<import('../../lib/builder-workspace.js').BuilderFileChange[]> {
+): Promise<import('../../lib/builder/workspace.js').BuilderFileChange[]> {
   type BuilderFileChange =
-    import('../../lib/builder-workspace.js').BuilderFileChange;
+    import('../../lib/builder/workspace.js').BuilderFileChange;
   type BuilderChangeKind =
-    import('../../lib/builder-workspace.js').BuilderChangeKind;
+    import('../../lib/builder/workspace.js').BuilderChangeKind;
 
   /**
    * Read `--numstat` into a path → counts map.
@@ -865,8 +865,8 @@ async function dirSize(dir: string): Promise<number> {
 export async function listBuilderWorktrees(
   parentDirectory: string,
   registeredWorktrees: Set<string>,
-): Promise<import('../../lib/builder-session.js').BuilderWorktreeEntry[]> {
-  const entries: import('../../lib/builder-session').BuilderWorktreeEntry[] = [];
+): Promise<import('../../lib/builder/session.js').BuilderWorktreeEntry[]> {
+  const entries: import('../../lib/builder/session').BuilderWorktreeEntry[] = [];
   try {
     const dirs = await fs.readdir(parentDirectory, { withFileTypes: true });
     for (const dir of dirs) {

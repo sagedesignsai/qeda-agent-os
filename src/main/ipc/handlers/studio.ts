@@ -52,7 +52,11 @@ import {
   getActiveStudioRecordingState,
   stopStudioRecording,
 } from '../../studio-recorder.js';
-import { probeTake, ensureOptimizedMedia } from '../../studio-media-prep.js';
+import {
+  claimAutomaticMediaPrepAttempt,
+  probeTake,
+  ensureOptimizedMedia,
+} from '../../studio-media-prep.js';
 import { compositionDurationMs } from '../../../lib/studio/timeline/ripple.js';
 import {
   generateFilmstrip,
@@ -111,6 +115,7 @@ export function registerStudioHandlers({
   };
 
   const mediaPrepInFlight = new Map<string, Promise<void>>();
+  const autoMediaPrepAttemptedPath = new Map<string, string>();
   const prepMediaPipeline = (
     take: StudioTake,
     force = false,
@@ -197,7 +202,8 @@ export function registerStudioHandlers({
     'studio:get-take',
     (_e, { id }: { id: string }): StudioTake | null => {
       const take = getStudioTake(id);
-      if (take && !take.mediaReadyAt) {
+      if (take && claimAutomaticMediaPrepAttempt(take, autoMediaPrepAttemptedPath)) {
+        // Editor saves reload the take; only retry automatic prep for a new source.
         // Trigger lazy backfill prep in the background without blocking the return
         void (async () => {
           try {

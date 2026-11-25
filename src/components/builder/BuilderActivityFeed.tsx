@@ -51,9 +51,9 @@ import { PromptCapsule } from '@/components/agent-ui/PromptCapsule';
 import { BuilderFormCard } from '@/components/builder/tools/BuilderFormCard';
 import { BuilderPermissionCard } from '@/components/builder/tools/BuilderPermissionCard';
 import { Button } from '@/components/ui/button';
-import type { BuilderPermissionDecision } from '@/lib/builder-interactions';
-import type { BuilderSessionEvent } from '@/lib/builder-session';
-import type { BuilderWorkspace } from '@/lib/builder-workspace';
+import type { BuilderPermissionDecision } from '@/lib/builder/interactions';
+import type { BuilderSessionEvent } from '@/lib/builder/session';
+import type { BuilderWorkspace } from '@/lib/builder/workspace';
 
 type TimelineItem =
   | { kind: 'user'; key: string; text: string; createdAt: number }

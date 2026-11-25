@@ -5,7 +5,7 @@ jest.mock('ai', () => ({
 import {
   EMPTY_PREVIEW_STATUS,
   type BuilderPreviewStatus,
-} from '../lib/builder-preview';
+} from '../lib/builder/preview';
 import type { Project } from '../main/db/projects';
 import type { CodeProject } from '../main/db/code-projects';
 import { createStudioProjectPreviewTools } from '../main/tools/studio-project-preview';

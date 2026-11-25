@@ -226,18 +226,13 @@ export function useStudio(
 
   // Listen for native media prep progress events
   useIpcEvent('studio:media-progress', (payload: unknown) => {
-    const data = payload as { takeId: string; stage: string; message?: string };
+    const data = payload as { takeId: string; stage: string; error?: string };
     if (!data?.takeId || !data.stage) return;
     setMediaPrepProgress({
       takeId: data.takeId,
       stage: data.stage as
-        | 'probing'
-        | 'optimizing'
-        | 'filmstrip'
-        | 'waveform'
-        | 'ready'
-        | 'error',
-      message: data.message,
+        'probing' | 'optimizing' | 'filmstrip' | 'waveform' | 'ready' | 'error',
+      message: data.error,
     });
     // Auto-clear on ready/error after a short delay
     if (data.stage === 'ready' || data.stage === 'error') {

@@ -1,5 +1,5 @@
 /**
- * lib/builder-preview.ts
+ * lib/builder/preview.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * The shared contract for the Builder's preview process, plus every *pure*
  * decision behind it: which package script to run, which package manager to run
@@ -24,8 +24,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { extractLocalhostUrls } from './terminal-input';
-import type { BuilderSessionEvent } from './builder-session';
+import { extractLocalhostUrls } from '../terminal-input';
+import type { BuilderSessionEvent } from './session';
 
 /** Who owns the process a status describes. */
 export type BuilderPreviewOwner = 'qeda' | 'detected';

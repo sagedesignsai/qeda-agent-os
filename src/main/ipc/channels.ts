@@ -129,7 +129,7 @@ import type {
   McpToolSummary,
   McpTransportKind,
   McpServerPreset,
-} from '../../lib/builder-engine.js';
+} from '../../lib/builder/engine.js';
 import type {
   Contact,
   ContactChannel,
@@ -272,7 +272,7 @@ export type { SerperImage, ImageFormatFilter, DownloadResourceResult };
 import type {
   BuilderConnectionStatus,
   BuilderModelOption,
-} from '../../lib/builder-types.js';
+} from '../../lib/builder/types.js';
 import type {
   BuilderActiveSessionSummary,
   BuilderSessionEvent,
@@ -280,23 +280,23 @@ import type {
   BuilderSessionStart,
   BuilderSessionState,
   BuilderWorktreeEntry,
-} from '../../lib/builder-session.js';
+} from '../../lib/builder/session.js';
 import type {
   BuilderWorkspace,
   BuilderFileNode,
   BuilderFileChange,
-} from '../../lib/builder-workspace.js';
-import type { BuilderPreviewStatus } from '../../lib/builder-preview.js';
+} from '../../lib/builder/workspace.js';
+import type { BuilderPreviewStatus } from '../../lib/builder/preview.js';
 export type {
   BuilderPreviewOwner,
   BuilderPreviewState,
   BuilderPreviewStatus,
-} from '../../lib/builder-preview.js';
+} from '../../lib/builder/preview.js';
 export type {
   BuilderConnectionStatus,
   BuilderConnectionState,
   BuilderModelOption,
-} from '../../lib/builder-types.js';
+} from '../../lib/builder/types.js';
 export type {
   BuilderActiveSessionSummary,
   BuilderSessionEvent,
@@ -306,14 +306,14 @@ export type {
   BuilderSessionSummary,
   BuilderFormReply,
   BuilderWorktreeEntry,
-} from '../../lib/builder-session.js';
+} from '../../lib/builder/session.js';
 export type {
   BuilderWorkspace,
   BuilderFile,
   BuilderFileChange,
   BuilderFileNode,
   BuilderChangeKind,
-} from '../../lib/builder-workspace.js';
+} from '../../lib/builder/workspace.js';
 import type {
   AgentPlan,
   PlanItem,

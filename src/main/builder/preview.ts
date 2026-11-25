@@ -41,7 +41,7 @@ import {
   detectPackageManager,
   previewArgv,
   type BuilderPreviewStatus,
-} from '../../lib/builder-preview.js';
+} from '../../lib/builder/preview.js';
 
 /** How long a live process may stay silent before we say so. Never fatal. */
 const READY_HINT_MS = 30_000;

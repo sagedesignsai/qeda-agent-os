@@ -17,7 +17,7 @@ import {
   DEFAULT_E2B_SANDBOX_TEMPLATE,
   type BuilderEngine,
   type McpServerSettings,
-} from '../../lib/builder-engine';
+} from '../../lib/builder/engine';
 import type { TtsSettings } from '../../lib/tts/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

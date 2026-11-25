@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils';
 import type {
   BuilderChangeKind,
   BuilderFileChange,
-} from '@/lib/builder-workspace';
+} from '@/lib/builder/workspace';
 
 type ChangeFilter = 'all' | BuilderChangeKind;
 

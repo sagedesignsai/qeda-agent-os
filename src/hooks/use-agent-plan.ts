@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { UIMessage } from 'ai';
 import type { AgentPlan, AgentPlanEvent } from '@/lib/agent-plan';
-import type { BuilderSessionEvent } from '@/lib/builder-session';
+import type { BuilderSessionEvent } from '@/lib/builder/session';
 import { useIpcEvent } from './use-ipc';
 
 /**

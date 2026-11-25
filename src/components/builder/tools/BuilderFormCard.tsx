@@ -34,7 +34,7 @@ import {
   type BuilderFormField,
   type BuilderFormOption,
   type BuilderFormRequest,
-} from '@/lib/builder-interactions';
+} from '@/lib/builder/interactions';
 
 interface BuilderFormCardProps {
   form: BuilderFormRequest;

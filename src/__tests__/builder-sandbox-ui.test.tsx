@@ -11,7 +11,7 @@
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
 import { BuilderCanvas } from '@/components/builder/BuilderCanvas';
-import type { BuilderWorkspace } from '@/lib/builder-workspace';
+import type { BuilderWorkspace } from '@/lib/builder/workspace';
 
 const sandboxWorkspace: BuilderWorkspace = {
   directory: '/home/user/repo',

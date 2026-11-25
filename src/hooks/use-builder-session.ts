@@ -20,7 +20,7 @@ import type {
   BuilderSessionSummary,
   BuilderWorkspace,
 } from '@/main/ipc/channels';
-import type { BuilderPermissionDecision } from '@/lib/builder-interactions';
+import type { BuilderPermissionDecision } from '@/lib/builder/interactions';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

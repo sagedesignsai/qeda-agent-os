@@ -27,7 +27,7 @@ import type { BuilderEngine, McpServerSettings } from '@/main/ipc/channels';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
   DEFAULT_E2B_SANDBOX_TEMPLATE,
-} from '@/lib/builder-engine';
+} from '@/lib/builder/engine';
 
 /** The subset of `settings:get` the sections actually read. */
 export interface SettingsSnapshot {

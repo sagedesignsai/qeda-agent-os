@@ -17,6 +17,7 @@ import {
   getStudioTake,
   saveStudioTake,
   deleteStudioTake,
+  updateStudioTakeMediaPrep,
 } from '../main/db/studio-store';
 
 describe('Showcase Studio Database Store', () => {
@@ -128,6 +129,35 @@ describe('Showcase Studio Database Store', () => {
     expect(updated?.videoPath).toBe('/tmp/patch.webm');
     expect(updated?.zooms).toHaveLength(1);
     expect(updated?.zooms[0].id).toBe('z-keep');
+  });
+
+  it('invalidates prepared media when the base video source changes', () => {
+    saveStudioTake({
+      id: 'take-media-prep',
+      videoPath: '/tmp/original.webm',
+    });
+    updateStudioTakeMediaPrep('take-media-prep', {
+      probeJson: '{}',
+      optimizedPath: '/tmp/optimized.mp4',
+      filmstripPath: '/tmp/filmstrip.webp',
+      waveformPath: '/tmp/peaks.bin',
+      mediaReadyAt: 123,
+    });
+
+    saveStudioTake({ id: 'take-media-prep', title: 'Edited title' });
+    expect(getStudioTake('take-media-prep')?.mediaReadyAt).toBe(123);
+
+    saveStudioTake({
+      id: 'take-media-prep',
+      videoPath: '/tmp/replacement.webm',
+    });
+
+    const updated = getStudioTake('take-media-prep');
+    expect(updated?.mediaReadyAt).toBeNull();
+    expect(updated?.probeJson).toBeNull();
+    expect(updated?.optimizedPath).toBeNull();
+    expect(updated?.filmstripPath).toBeNull();
+    expect(updated?.waveformPath).toBeNull();
   });
 
   it('filters takes by project scope', () => {

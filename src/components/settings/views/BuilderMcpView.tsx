@@ -80,7 +80,7 @@ import {
   DEFAULT_E2B_SANDBOX_TEMPLATE,
   MCP_SERVER_PRESETS,
   normalizeBuilderMaxSteps,
-} from '@/lib/builder-engine';
+} from '@/lib/builder/engine';
 import { nanoid } from 'nanoid';
 
 // ─── Engine toggle ────────────────────────────────────────────────────────────

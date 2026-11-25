@@ -25,7 +25,7 @@ import type {
   McpServerStatus,
   McpTestResult,
   McpToolSummary,
-} from '../../../lib/builder-engine';
+} from '../../../lib/builder/engine';
 
 interface ActiveClientEntry {
   client: Awaited<ReturnType<typeof createMCPClient>>;

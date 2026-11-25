@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createWorkspaceCodingTools } from '@/main/builder/tools/coding-tools';
-import type { BuilderPermissionDecision } from '@/lib/builder-interactions';
+import type { BuilderPermissionDecision } from '@/lib/builder/interactions';
 
 let dir: string;
 

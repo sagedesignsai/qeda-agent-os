@@ -33,7 +33,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
-import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '../../lib/builder-engine.js';
+import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '../../lib/builder/engine.js';
 import { resolveServiceKey } from '../services/keys.js';
 
 const execFileAsync = promisify(execFile);

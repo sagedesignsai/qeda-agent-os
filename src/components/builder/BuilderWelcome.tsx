@@ -59,7 +59,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { CodeProject } from '@/main/ipc/channels';
-import type { BuilderConnectionStatus } from '@/lib/builder-types';
+import type { BuilderConnectionStatus } from '@/lib/builder/types';
 
 interface Suggestion {
   label: string;

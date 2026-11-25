@@ -14,11 +14,11 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { McpServerSettings } from '../../lib/builder-engine';
+import type { McpServerSettings } from '../../lib/builder/engine';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
   normalizeBuilderMaxSteps,
-} from '../../lib/builder-engine';
+} from '../../lib/builder/engine';
 
 /** Must match plugins/qeda-builder/package.json. */
 export const QEDA_OPENCODE_PLUGIN_VERSION = '0.2.0';

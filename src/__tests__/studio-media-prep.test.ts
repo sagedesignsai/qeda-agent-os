@@ -22,9 +22,44 @@ import {
   ensureOptimizedMedia,
   parseFps,
   MIN_OPTIMIZE_DURATION_MS,
+  claimAutomaticMediaPrepAttempt,
 } from '../main/studio-media-prep';
 
 describe('studio-media-prep', () => {
+  describe('claimAutomaticMediaPrepAttempt', () => {
+    it('claims once per unprepared source and allows a changed source', () => {
+      const attemptedPaths = new Map<string, string>();
+      const take = {
+        id: 'take-1',
+        videoPath: '/video/original.mp4',
+        mediaReadyAt: null,
+      };
+
+      expect(claimAutomaticMediaPrepAttempt(null, attemptedPaths)).toBe(false);
+      expect(
+        claimAutomaticMediaPrepAttempt(
+          { ...take, videoPath: '' },
+          attemptedPaths,
+        ),
+      ).toBe(false);
+      expect(
+        claimAutomaticMediaPrepAttempt(
+          { ...take, mediaReadyAt: 123 },
+          attemptedPaths,
+        ),
+      ).toBe(false);
+
+      expect(claimAutomaticMediaPrepAttempt(take, attemptedPaths)).toBe(true);
+      expect(claimAutomaticMediaPrepAttempt(take, attemptedPaths)).toBe(false);
+      expect(
+        claimAutomaticMediaPrepAttempt(
+          { ...take, videoPath: '/video/replacement.mp4' },
+          attemptedPaths,
+        ),
+      ).toBe(true);
+    });
+  });
+
   describe('parseFps', () => {
     it('parses fractional ratio strings', () => {
       expect(parseFps('30/1')).toBe(30);

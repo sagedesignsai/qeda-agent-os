@@ -102,9 +102,9 @@ import {
 } from '../../db/builder-sessions';
 import { getSettings } from '../../ai/settings';
 import type { ModelMessage } from 'ai';
-import { EMPTY_PREVIEW_STATUS } from '../../../lib/builder-preview';
-import type { BuilderPreviewStatus } from '../../../lib/builder-preview';
-import type { BuilderWorkspace } from '../../../lib/builder-workspace';
+import { EMPTY_PREVIEW_STATUS } from '../../../lib/builder/preview';
+import type { BuilderPreviewStatus } from '../../../lib/builder/preview';
+import type { BuilderWorkspace } from '../../../lib/builder/workspace';
 import type {
   BuilderSessionEvent,
   BuilderSessionStart,
@@ -112,7 +112,7 @@ import type {
   BuilderSessionSummary,
   BuilderSessionHistoryEntry,
   BuilderWorktreeEntry,
-} from '../../../lib/builder-session';
+} from '../../../lib/builder/session';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -1697,7 +1697,7 @@ export function registerBuilderHandlers({
   ipcMain.handle(
     'builder:workspace-files',
     async (): Promise<
-      import('../../../lib/builder-workspace.js').BuilderFileNode[]
+      import('../../../lib/builder/workspace.js').BuilderFileNode[]
     > => {
       assertNotSandboxWorkspace();
       const mgr = getFocusedManager();
@@ -1711,7 +1711,7 @@ export function registerBuilderHandlers({
   ipcMain.handle(
     'builder:workspace-changes',
     async (): Promise<
-      import('../../../lib/builder-workspace.js').BuilderFileChange[]
+      import('../../../lib/builder/workspace.js').BuilderFileChange[]
     > => {
       assertNotSandboxWorkspace();
       const mgr = getFocusedManager();
@@ -2051,8 +2051,8 @@ export function registerBuilderHandlers({
 
   ipcMain.handle(
     'builder:sessions:active-list',
-    async (): Promise<import('../../../lib/builder-session.js').BuilderActiveSessionSummary[]> => {
-      const summaries: import('../../../lib/builder-session.js').BuilderActiveSessionSummary[] = [];
+    async (): Promise<import('../../../lib/builder/session.js').BuilderActiveSessionSummary[]> => {
+      const summaries: import('../../../lib/builder/session.js').BuilderActiveSessionSummary[] = [];
       for (const [id, mgr] of sessions.entries()) {
         if (!mgr.session) continue;
         summaries.push({

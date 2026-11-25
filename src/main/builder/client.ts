@@ -16,7 +16,7 @@ import {
 import {
   isSupportedOpenCodeVersion,
   type BuilderConnectionStatus,
-} from '../../lib/builder-types';
+} from '../../lib/builder/types';
 
 export interface BuilderRuntime {
   client: OpenCodeClient;

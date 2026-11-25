@@ -23,8 +23,8 @@ import {
   latestLocalUrl,
   previewArgv,
   type BuilderPreviewStatus,
-} from '@/lib/builder-preview';
-import type { BuilderSessionEvent } from '@/lib/builder-session';
+} from '@/lib/builder/preview';
+import type { BuilderSessionEvent } from '@/lib/builder/session';
 
 describe('choosePreviewScript', () => {
   it('prefers dev over the other scaffolds', () => {

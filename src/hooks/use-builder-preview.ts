@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   EMPTY_PREVIEW_STATUS,
   type BuilderPreviewStatus,
-} from '@/lib/builder-preview';
+} from '@/lib/builder/preview';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

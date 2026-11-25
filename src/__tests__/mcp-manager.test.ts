@@ -7,7 +7,7 @@
  */
 
 import { mcpManager } from '../main/ai/mcp/manager';
-import type { McpServerSettings } from '../lib/builder-engine';
+import type { McpServerSettings } from '../lib/builder/engine';
 
 import { createMCPClient } from '@ai-sdk/mcp';
 

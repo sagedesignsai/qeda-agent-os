@@ -9,7 +9,7 @@ import type { UIMessage } from 'ai';
 import {
   extractPlanFromMessages,
 } from '../hooks/use-agent-plan';
-import type { BuilderSessionEvent } from '../lib/builder-session';
+import type { BuilderSessionEvent } from '../lib/builder/session';
 
 describe('extractPlanFromMessages', () => {
   it('extracts plan from folded assistant tool call parts', () => {

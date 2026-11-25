@@ -23,7 +23,7 @@ import { BuilderCodeWorkspace } from '@/components/builder/BuilderCodeWorkspace'
 import type {
   BuilderFileChange,
   BuilderFileNode,
-} from '@/lib/builder-workspace';
+} from '@/lib/builder/workspace';
 
 // Single source of truth for the fixture's document text. The component reads
 // it back over IPC, so the stub below serves exactly this string.

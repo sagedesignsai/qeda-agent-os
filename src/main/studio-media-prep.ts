@@ -23,6 +23,16 @@ const execFileAsync = promisify(execFile);
 /** Minimum take duration in milliseconds to justify generating an optimized intermediate. */
 export const MIN_OPTIMIZE_DURATION_MS = 20_000;
 
+export function claimAutomaticMediaPrepAttempt(
+  take: Pick<StudioTake, 'id' | 'videoPath' | 'mediaReadyAt'> | null,
+  attemptedPathByTake: Map<string, string>,
+): boolean {
+  if (!take?.videoPath || take.mediaReadyAt) return false;
+  if (attemptedPathByTake.get(take.id) === take.videoPath) return false;
+  attemptedPathByTake.set(take.id, take.videoPath);
+  return true;
+}
+
 export type FfprobeRunner = (args: string[]) => Promise<string>;
 export type FfmpegRunner = (args: string[]) => Promise<void>;
 

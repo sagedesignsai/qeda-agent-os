@@ -24,7 +24,7 @@ import type {
   BuilderSessionSummary,
   BuilderWorkspace,
 } from '../ipc/channels';
-import type { BuilderPermissionDecision } from '../../lib/builder-interactions';
+import type { BuilderPermissionDecision } from '../../lib/builder/interactions';
 import { getSettings } from '../ai/settings';
 import { resolveModel } from '../ai/provider';
 import { mcpManager } from '../ai/mcp/manager';
@@ -40,7 +40,7 @@ import type { AgentPlan, PlanItemStatus } from '../../lib/agent-plan';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
   normalizeBuilderMaxSteps,
-} from '../../lib/builder-engine';
+} from '../../lib/builder/engine';
 
 const CODING_INSTRUCTIONS = `
 You are Qeda's Local Builder Agent, an expert software engineer pair-programming inside the user's workspace.

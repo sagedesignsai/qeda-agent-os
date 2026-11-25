@@ -5,12 +5,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { isSupportedOpenCodeVersion } from '@/lib/builder-types';
+import { isSupportedOpenCodeVersion } from '@/lib/builder/types';
 import {
   DEFAULT_BUILDER_MAX_STEPS,
   MAX_BUILDER_MAX_STEPS,
   normalizeBuilderMaxSteps,
-} from '@/lib/builder-engine';
+} from '@/lib/builder/engine';
 
 describe('isSupportedOpenCodeVersion', () => {
   it.each(['2.0.18', '2.0.24', '2.1.0'])('accepts OpenCode %s', (version) => {

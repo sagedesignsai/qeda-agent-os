@@ -19,7 +19,7 @@ import { BuilderPermissionCard } from './BuilderPermissionCard';
 import type {
   BuilderPermissionDecision,
   BuilderPermissionRequest,
-} from '@/lib/builder-interactions';
+} from '@/lib/builder/interactions';
 
 export interface BuilderToolCallProps {
   part: ToolPart;

@@ -1,5 +1,5 @@
 /**
- * lib/builder-types.ts
+ * lib/builder/types.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * Renderer-safe Builder domain shapes shared by the route and typed IPC
  * contract. Keep OpenCode client/provider types in the main process.

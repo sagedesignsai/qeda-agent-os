@@ -125,13 +125,13 @@ import type {
 import type {
   BuilderPreviewOwner,
   BuilderPreviewStatus,
-} from '@/lib/builder-preview';
+} from '@/lib/builder/preview';
 import type {
   BuilderFileChange,
   BuilderFileNode,
   BuilderWorkspace,
-} from '@/lib/builder-workspace';
-import type { BuilderConnectionStatus } from '@/lib/builder-types';
+} from '@/lib/builder/workspace';
+import type { BuilderConnectionStatus } from '@/lib/builder/types';
 
 interface BuilderCanvasProps {
   surface: BuilderSurface;

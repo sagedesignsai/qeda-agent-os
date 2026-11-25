@@ -25,7 +25,7 @@ import {
   createSandbox,
   applyPatchLocally,
 } from '@/main/sandbox/e2b';
-import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '@/lib/builder-engine';
+import { DEFAULT_E2B_SANDBOX_TEMPLATE } from '@/lib/builder/engine';
 
 jest.mock('e2b', () => ({
   Sandbox: { create: jest.fn() },

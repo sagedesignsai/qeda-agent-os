@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import type { BuilderConnectionStatus } from '@/lib/builder-types';
+import type { BuilderConnectionStatus } from '@/lib/builder/types';
 
 export function useBuilderRuntime() {
   const [status, setStatus] = useState<BuilderConnectionStatus | null>(null);

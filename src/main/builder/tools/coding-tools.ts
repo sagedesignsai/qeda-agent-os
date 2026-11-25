@@ -29,7 +29,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
-import type { BuilderPermissionDecision } from '../../../lib/builder-interactions';
+import type { BuilderPermissionDecision } from '../../../lib/builder/interactions';
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 15_000;

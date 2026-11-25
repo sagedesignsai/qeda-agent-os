@@ -49,7 +49,7 @@ import { useBuilderPreview } from '@/hooks/use-builder-preview';
 import {
   latestLocalUrl,
   type BuilderPreviewOwner,
-} from '@/lib/builder-preview';
+} from '@/lib/builder/preview';
 import {
   AlertDialog,
   AlertDialogAction,

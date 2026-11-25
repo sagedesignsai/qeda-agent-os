@@ -68,12 +68,12 @@ import { BuilderActivityFeed } from '@/components/builder/BuilderActivityFeed';
 import { PlanPanel } from '@/components/plan/PlanPanel';
 import { useBuilderPlan } from '@/hooks/use-agent-plan';
 import { cn } from '@/lib/utils';
-import type { BuilderPermissionDecision } from '@/lib/builder-interactions';
+import type { BuilderPermissionDecision } from '@/lib/builder/interactions';
 import type {
   BuilderSessionEvent,
   BuilderSessionSummary,
-} from '@/lib/builder-session';
-import type { BuilderWorkspace } from '@/lib/builder-workspace';
+} from '@/lib/builder/session';
+import type { BuilderWorkspace } from '@/lib/builder/workspace';
 import {
   PromptInput,
   PromptInputBody,
@@ -82,7 +82,7 @@ import {
   PromptInputTextarea,
   PromptInputTools,
 } from '@/components/ai-elements/prompt-input';
-import type { BuilderConnectionStatus } from '@/lib/builder-types';
+import type { BuilderConnectionStatus } from '@/lib/builder/types';
 import type { BuilderModelOption } from '@/main/ipc/channels';
 
 /**

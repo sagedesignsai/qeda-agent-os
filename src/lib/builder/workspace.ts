@@ -1,5 +1,5 @@
 /**
- * lib/builder-workspace.ts
+ * lib/builder/workspace.ts
  * ─────────────────────────────────────────────────────────────────────────────
  * UI-facing shapes for the Builder's file explorer and review surface. These
  * are renderer-safe view models; a later service adapter can map OpenCode/Git
