@@ -119,7 +119,10 @@ export type StudioEffectType =
   | 'neon-glow'
   | 'vignette'
   | 'film-grain'
-  | 'scanlines';
+  | 'scanlines'
+  | 'color-grade'
+  | 'chroma-key'
+  | 'motion-blur';
 
 /** A timed visual effect pass composited over the framed video. */
 export interface StudioEffect {
@@ -838,7 +841,7 @@ export interface TextAnimator {
 export interface ClipEffect {
   /** Unique ID for this effect instance on the clip. */
   id: string;
-  /** Effect type (spotlight, neon-glow, vignette, film-grain, scanlines). */
+  /** Effect type (spotlight, neon-glow, vignette, film-grain, scanlines, …). */
   type: StudioEffectType;
   /**
    * Base intensity (0–1). Keyframed via universal keyframes with property
@@ -854,6 +857,7 @@ export interface ClipEffect {
    *   - Vignette: { falloff: 0.5 }
    *   - Film-Grain: { grainSize: 1.0 }
    *   - Scanlines: { lineSpacing: 2.0 }
+   *   - Chroma-Key: { keyColor: '#00ff00', tolerance: 0.28 }
    */
   params: Record<string, number | string | boolean>;
   /**

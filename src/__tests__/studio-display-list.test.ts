@@ -70,7 +70,7 @@ function fullStackTracks(): TimelineTrack[] {
           durationMs: 5000,
           sourceStartMs: 0,
           sourceDurationMs: 5000,
-          payload: { effectType: 'zoom', scale: 2, targetX: 0.5, targetY: 0.5 },
+          payload: { effectType: 'neon-glow', intensity: 0.7 },
         },
       ],
     },
@@ -178,8 +178,9 @@ describe('display list — ordering contract', () => {
     const ops = build(fullStackTracks()).ops;
     expect(ops[0].clip).toBe('window');
     expect(ops[1].clip).toBe('window');
-    // Neon bloom would be amputated by a content clip; the rest stay inside it.
-    expect(ops[2].clip).toBe('content');
+    // Neon bloom would be amputated by a content clip, so it stays window
+    // clipped; the rest of the canvas effects sit inside the content box.
+    expect(ops[2].clip).toBe('window');
     expect(ops[3].clip).toBe('window');
     expect(ops[4].clip).toBe('none');
   });

@@ -156,6 +156,22 @@ export type MediaSource =
   | { kind: 'asset'; assetId: string; clipId?: string }
   | { kind: 'recorded' };
 
+/**
+ * Resolved chroma-key settings for a media op.
+ *
+ * Keying is a *source* filter, so it lives on the media op rather than being
+ * emitted as a standalone `EffectDrawOp`: the key has to run before the clip is
+ * composited, while the background it reveals is still intact.
+ */
+export interface ChromaKeyParams {
+  keyColor: string;
+  tolerance: number;
+  softness: number;
+  spill: number;
+  /** Keyframed 0..1 strength; 0 disables keying. */
+  intensity: number;
+}
+
 export interface MediaDrawOp extends BaseDrawOp {
   kind: 'video' | 'image';
   source: MediaSource;
@@ -168,6 +184,8 @@ export interface MediaDrawOp extends BaseDrawOp {
     cornerRadius: number;
   };
   deviceFrame?: ClipDeviceFrame;
+  /** Present when a `chroma-key` effect is attached to this clip. */
+  chromaKey?: ChromaKeyParams;
 }
 
 export type VideoDrawOp = MediaDrawOp & { kind: 'video' };

@@ -144,6 +144,12 @@ function effectLabel(type: StudioEffectType): string {
       return 'Film Grain';
     case 'scanlines':
       return 'Scanlines';
+    case 'color-grade':
+      return 'Color Grade';
+    case 'motion-blur':
+      return 'Motion Blur';
+    case 'chroma-key':
+      return 'Chroma Key';
   }
 }
 

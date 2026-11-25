@@ -220,6 +220,162 @@ export const SCANLINES_PARAM_SCHEMA: EffectParamSchema = {
 };
 
 /**
+ * Colour grading parameters (WebGL 2 pass):
+ * - exposure: stops of exposure (-2 to +2)
+ * - contrast: 1 = neutral
+ * - saturation: 1 = neutral
+ * - temperature: blue → warm white balance (-1 cool .. 1 warm)
+ * - tint: green → magenta white balance (-1 green .. 1 magenta)
+ */
+export const COLOR_GRADE_PARAM_SCHEMA: EffectParamSchema = {
+  effectType: 'color-grade',
+  params: {
+    exposure: {
+      name: 'exposure',
+      type: 'number',
+      default: 0,
+      min: -2,
+      max: 2,
+      step: 0.05,
+      label: 'Exposure',
+      description: 'Stops of exposure (-2 to +2)',
+    },
+    contrast: {
+      name: 'contrast',
+      type: 'number',
+      default: 1,
+      min: 0,
+      max: 2,
+      step: 0.05,
+      label: 'Contrast',
+      description: '1 is neutral',
+    },
+    saturation: {
+      name: 'saturation',
+      type: 'number',
+      default: 1,
+      min: 0,
+      max: 2,
+      step: 0.05,
+      label: 'Saturation',
+      description: '1 is neutral, 0 is monochrome',
+    },
+    temperature: {
+      name: 'temperature',
+      type: 'number',
+      default: 0,
+      min: -1,
+      max: 1,
+      step: 0.05,
+      label: 'Temperature',
+      description: 'White balance: -1 cool, 1 warm',
+    },
+    tint: {
+      name: 'tint',
+      type: 'number',
+      default: 0,
+      min: -1,
+      max: 1,
+      step: 0.05,
+      label: 'Tint',
+      description: 'White balance: -1 green, 1 magenta',
+    },
+  },
+};
+
+/**
+ * Chroma key parameters (WebGL 2 source pass):
+ * - keyColor: the background colour to remove
+ * - tolerance: RGB distance that still counts as background (0–1)
+ * - softness: width of the falloff edge (0–1)
+ * - spill: how strongly the keyed hue is desaturated in kept pixels (0–1)
+ */
+export const CHROMA_KEY_PARAM_SCHEMA: EffectParamSchema = {
+  effectType: 'chroma-key',
+  params: {
+    keyColor: {
+      name: 'keyColor',
+      type: 'color',
+      default: '#00ff00',
+      label: 'Key Colour',
+      description: 'Background colour to remove',
+    },
+    tolerance: {
+      name: 'tolerance',
+      type: 'number',
+      default: 0.28,
+      min: 0,
+      max: 1,
+      step: 0.02,
+      label: 'Tolerance',
+      description: 'Colour distance treated as background (0–1)',
+    },
+    softness: {
+      name: 'softness',
+      type: 'number',
+      default: 0.12,
+      min: 0,
+      max: 1,
+      step: 0.02,
+      label: 'Edge Softness',
+      description: 'Width of the keyed edge falloff (0–1)',
+    },
+    spill: {
+      name: 'spill',
+      type: 'number',
+      default: 0.6,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      label: 'Spill Suppression',
+      description: 'Desaturates keyed hue left on the subject (0–1)',
+    },
+  },
+};
+
+/**
+ * Motion blur parameters (WebGL 2 pass):
+ * - distance: smear length in pixels
+ * - angle: direction in degrees
+ * - samples: number of taps (2–24)
+ */
+export const MOTION_BLUR_PARAM_SCHEMA: EffectParamSchema = {
+  effectType: 'motion-blur',
+  params: {
+    distance: {
+      name: 'distance',
+      type: 'number',
+      default: 12,
+      min: 0,
+      max: 64,
+      step: 1,
+      label: 'Distance',
+      description: 'Smear length in pixels',
+    },
+    angle: {
+      name: 'angle',
+      type: 'number',
+      default: 0,
+      min: -180,
+      max: 180,
+      step: 1,
+      label: 'Angle',
+      description: 'Direction of the smear in degrees',
+    },
+    samples: {
+      name: 'samples',
+      type: 'number',
+      default: 8,
+      min: 2,
+      max: 24,
+      step: 1,
+      label: 'Samples',
+      description: 'Number of blur taps (2–24)',
+    },
+  },
+};
+
+/**
  * Complete catalog of all effect parameter schemas.
  */
 const PARAM_SCHEMAS: Map<StudioEffectType, EffectParamSchema> = new Map([
@@ -228,6 +384,9 @@ const PARAM_SCHEMAS: Map<StudioEffectType, EffectParamSchema> = new Map([
   ['vignette', VIGNETTE_PARAM_SCHEMA],
   ['film-grain', FILM_GRAIN_PARAM_SCHEMA],
   ['scanlines', SCANLINES_PARAM_SCHEMA],
+  ['color-grade', COLOR_GRADE_PARAM_SCHEMA],
+  ['chroma-key', CHROMA_KEY_PARAM_SCHEMA],
+  ['motion-blur', MOTION_BLUR_PARAM_SCHEMA],
 ]);
 
 /**

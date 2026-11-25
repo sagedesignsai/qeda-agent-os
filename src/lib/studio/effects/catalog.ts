@@ -11,12 +11,23 @@
  * This module is pure data + pure functions: no canvas, no React. The UI builds
  * its preset grid from `STUDIO_EFFECTS`, and the timeline/convert layer uses the
  * same definitions to round-trip clips.
+ *
+ * Three of the entries (`color-grade`, `chroma-key`, `motion-blur`) are executed
+ * by the WebGL 2 pass in `../render/gl-effect-pass.ts`; the rest are Canvas 2D
+ * primitives. The catalog does not distinguish them — resolution happens at
+ * render time, with a Canvas 2D fallback per effect.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import type { StudioEffect, StudioEffectType } from '../types';
 
-export type StudioEffectCategory = 'Light' | 'Film' | 'Retro';
+export type StudioEffectCategory =
+  | 'Light'
+  | 'Film'
+  | 'Retro'
+  | 'Color'
+  | 'Keying'
+  | 'Motion';
 
 export interface StudioEffectDefinition {
   type: StudioEffectType;
@@ -76,6 +87,36 @@ export const STUDIO_EFFECTS: StudioEffectDefinition[] = [
     defaultIntensity: 0.4,
     defaultDurationMs: 5000,
     accent: '#22d3ee',
+  },
+  // ── GPU passes (WebGL 2, see `render/gl-effect-pass.ts`) ────────────────────
+  {
+    type: 'color-grade',
+    label: 'Cinematic Grade',
+    category: 'Color',
+    description:
+      'GPU colour grade: exposure, contrast, saturation and white balance.',
+    defaultIntensity: 0.8,
+    defaultDurationMs: 6000,
+    accent: '#0ea5e9',
+  },
+  {
+    type: 'chroma-key',
+    label: 'Chroma Key',
+    category: 'Keying',
+    description:
+      'Removes a solid background colour (green/blue screen) with spill suppression.',
+    defaultIntensity: 1,
+    defaultDurationMs: 8000,
+    accent: '#22c55e',
+  },
+  {
+    type: 'motion-blur',
+    label: 'Motion Blur',
+    category: 'Motion',
+    description: 'Directional smear across the frame for speed and whip-pans.',
+    defaultIntensity: 0.6,
+    defaultDurationMs: 3000,
+    accent: '#f97316',
   },
 ];
 

@@ -47,6 +47,8 @@ import {
   usesStudioFreeTextClip,
 } from './text-style';
 import { drawStudioEffects, drawStudioEffectPass } from './effects';
+import { drawKeyedSource } from './gl-effect-pass';
+import { findChromaKeyEffect, resolveChromaKeyParams } from './chroma-key';
 import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
 import { computeStudioCanvasFrame } from './geometry';
 
@@ -222,6 +224,10 @@ export function drawStudioFrame(
       for (const effect of [...effects].sort(
         (a, b) => a.stackOrder - b.stackOrder,
       )) {
+        // Keying needs the overlay's own pixels before compositing. The overlay
+        // renderer owns that draw, so a lane-level/overlay key is a no-op here
+        // rather than a readback that would key the frame below it.
+        if (effect.type === 'chroma-key') continue;
         drawStudioEffectPass(ctx, {
           type: effect.type,
           intensity: evaluateEffectIntensity(
@@ -478,6 +484,17 @@ function drawMultiTrackClips(
     ctx.globalAlpha = (kf.opacity ?? payload?.opacity ?? 1) * anim.opacity * transitionOpacity;
 
     const radius = Math.max(0, payload?.cornerRadius ?? 0);
+
+    // A key is a source filter: resolve it before the clip is composited and
+    // suppress the matching adjustment-layer pass below.
+    const chromaKeyEffect = findChromaKeyEffect(payload?.effects);
+    const chromaKey = chromaKeyEffect
+      ? resolveChromaKeyParams(
+          chromaKeyEffect,
+          evaluateEffectIntensity(clip, chromaKeyEffect, localTimeMs),
+        )
+      : undefined;
+
     ctx.save();
     if (pairedTransition && transitionType === 'blur') {
       const blurPx = Math.sin(transitionProgress * Math.PI) * 12;
@@ -486,17 +503,46 @@ function drawMultiTrackClips(
     ctx.beginPath();
     ctx.roundRect(drawX, drawY, width, height, radius);
     ctx.clip();
-    ctx.drawImage(
-      source,
-      sourceRect.x,
-      sourceRect.y,
-      sourceRect.width,
-      sourceRect.height,
-      drawX,
-      drawY,
-      width,
-      height,
-    );
+
+    const keyed = chromaKey
+      ? drawKeyedSource(
+          ctx,
+          { x: drawX, y: drawY, width, height },
+          chromaKey,
+          (layerCtx) => {
+            layerCtx.beginPath();
+            layerCtx.roundRect(drawX, drawY, width, height, radius);
+            layerCtx.save();
+            layerCtx.clip();
+            layerCtx.drawImage(
+              source,
+              sourceRect.x,
+              sourceRect.y,
+              sourceRect.width,
+              sourceRect.height,
+              drawX,
+              drawY,
+              width,
+              height,
+            );
+            layerCtx.restore();
+          },
+        )
+      : false;
+
+    if (!keyed) {
+      ctx.drawImage(
+        source,
+        sourceRect.x,
+        sourceRect.y,
+        sourceRect.width,
+        sourceRect.height,
+        drawX,
+        drawY,
+        width,
+        height,
+      );
+    }
     ctx.restore();
 
     if (payload?.deviceFrame) drawClipDeviceFrame(ctx, payload.deviceFrame, width, height, radius);
@@ -510,6 +556,8 @@ function drawMultiTrackClips(
       );
 
       for (const effect of sortedEffects) {
+        // Resolved onto the clip draw above, not painted as an effect pass.
+        if (effect.type === 'chroma-key') continue;
         const intensity = evaluateEffectIntensity(
           clip,
           effect,

@@ -17,6 +17,7 @@ import {
   filterToCss,
   type BlendMode,
   type ChromeDrawOp,
+  type ChromaKeyParams,
   type ClipDomain,
   type DrawOp,
   type EffectDrawOp,
@@ -38,6 +39,7 @@ import {
 } from './text-style';
 import { drawClipDeviceFrame } from './clip-device-frame';
 import { drawStudioEffectPass } from './effects';
+import { drawKeyedSource } from './gl-effect-pass';
 import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
 import { drawMotionCard } from '@/components/studio/renderers/motion-cards';
 import {
@@ -204,16 +206,12 @@ function applyCompositing(ctx: CanvasRenderingContext2D, op: DrawOp): void {
 
 // ── Op renderers ──────────────────────────────────────────────────────────────
 
-function renderMediaOp(
+function drawMediaElement(
   ctx: CanvasRenderingContext2D,
   op: MediaDrawOp,
-  registry: RasterAssetRegistry,
+  element: CanvasImageSource,
 ): void {
-  const element = resolveMediaSource(op.source, registry);
-  if (!element) return;
   const { x, y, width, height, cornerRadius } = op.destRect;
-  if (width <= 0 || height <= 0) return;
-
   ctx.beginPath();
   ctx.roundRect(x, y, width, height, cornerRadius);
   ctx.save();
@@ -230,6 +228,43 @@ function renderMediaOp(
     height,
   );
   ctx.restore();
+}
+
+/**
+ * Chroma key is a *source* filter, so it cannot be a destination readback: by
+ * the time the clip is composited, the background it should reveal has already
+ * been overwritten. `drawKeyedSource` draws the clip into a scratch layer at
+ * device resolution, keys it on the GPU, and composites the keyed layer in its
+ * place.
+ *
+ * Returns false when the key could not run (no WebGL, no scratch canvas), which
+ * leaves the normal draw to paint the clip unkeyed.
+ */
+function renderKeyedMedia(
+  ctx: CanvasRenderingContext2D,
+  op: MediaDrawOp,
+  element: CanvasImageSource,
+  chromaKey: ChromaKeyParams,
+): boolean {
+  return drawKeyedSource(ctx, op.destRect, chromaKey, (layerCtx) => {
+    drawMediaElement(layerCtx, op, element);
+  });
+}
+
+function renderMediaOp(
+  ctx: CanvasRenderingContext2D,
+  op: MediaDrawOp,
+  registry: RasterAssetRegistry,
+): void {
+  const element = resolveMediaSource(op.source, registry);
+  if (!element) return;
+  const { width, height, cornerRadius } = op.destRect;
+  if (width <= 0 || height <= 0) return;
+
+  const keyed = op.chromaKey
+    ? renderKeyedMedia(ctx, op, element, op.chromaKey)
+    : false;
+  if (!keyed) drawMediaElement(ctx, op, element);
 
   if (op.deviceFrame) {
     drawClipDeviceFrame(ctx, op.deviceFrame, width, height, cornerRadius);

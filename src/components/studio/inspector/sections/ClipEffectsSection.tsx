@@ -29,6 +29,7 @@ import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
 import { getDefaultParams } from '@/lib/studio/effects/params';
 import { StudioPanelSection } from '../components';
 import { EffectKeyframeEditorSection } from './EffectKeyframeEditorSection';
+import { EffectParamsEditorSection } from './EffectParamsEditorSection';
 import { nanoid } from 'nanoid';
 
 interface ClipEffectsSectionProps {
@@ -226,7 +227,12 @@ export function ClipEffectsSection({
 
                 {/* Keyframe Editor (shown when selected) */}
                 {selectedEffectId === effect.id && (
-                  <div className="border-l-2 border-primary/30 pl-2">
+                  <div className="space-y-2 border-l-2 border-primary/30 pl-2">
+                    <EffectParamsEditorSection
+                      clip={clip}
+                      effect={effect}
+                      onUpdateClip={onUpdateClip}
+                    />
                     <EffectKeyframeEditorSection
                       clip={clip}
                       effect={effect}

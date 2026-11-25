@@ -36,6 +36,11 @@ import { isStudioEffectActive } from '../effects/catalog';
 import type { StudioEffect, StudioEffectType } from '../types';
 import type { StudioWindowFrame } from './geometry';
 import { filmGrainOffset, GRAIN_TILE_SEED, mulberry32 } from './prng';
+import {
+  isGpuEffectType,
+  renderGpuEffectPass,
+  type GpuEffectType,
+} from './gl-effect-pass';
 
 const GRAIN_TILE_SIZE = 256;
 
@@ -138,6 +143,19 @@ export function drawStudioEffectPass(
   if (intensity <= 0) return;
   const box = rect ?? contentRect(frame);
   if (box.width <= 0 || box.height <= 0) return;
+
+  // Colour work is per-pixel and belongs on the GPU. Resolution happens here —
+  // the single point every render path already funnels through — so preview,
+  // export and the legacy compositor all behave identically.
+  if (isGpuEffectType(type)) {
+    if (
+      renderGpuEffectPass(ctx, { type, intensity, frame, timeMs, params, rect })
+    ) {
+      return;
+    }
+    drawGpuEffectFallback(ctx, type, box, intensity, params);
+    return;
+  }
 
   switch (type) {
     case 'spotlight':
@@ -332,6 +350,137 @@ function drawScanlines(
   for (let y = box.y - spacing + roll; y < box.y + box.height; y += spacing) {
     if (y < box.y) continue;
     ctx.fillRect(box.x, y, box.width, Math.max(1, spacing / 2));
+  }
+  ctx.restore();
+}
+
+// ── Canvas 2D fallbacks for the GPU passes ────────────────────────────────────
+//
+// These run only when a WebGL 2 context cannot be created (headless/jsdom,
+// `--disable-gpu`, context loss). They are deliberately approximate: Canvas 2D
+// cannot express per-pixel maths, so the frame still moves in the right
+// direction instead of the effect silently vanishing.
+
+function drawGpuEffectFallback(
+  ctx: CanvasRenderingContext2D,
+  type: GpuEffectType,
+  box: EffectRect,
+  intensity: number,
+  params?: StudioEffectParams,
+): void {
+  switch (type) {
+    case 'color-grade':
+      drawColorGradeFallback(ctx, box, intensity, params);
+      break;
+    case 'motion-blur':
+      drawMotionBlurFallback(ctx, box, intensity, params);
+      break;
+    case 'chroma-key':
+      // Keying needs the clip's own pixels before compositing. With no GPU the
+      // media op draws unkeyed rather than wrongly graded; see rasterize-2d.
+      break;
+  }
+}
+
+/**
+ * Exposure / contrast / saturation map onto `ctx.filter`; white balance has no
+ * filter equivalent, so temperature and tint are applied as a soft-light wash.
+ */
+function drawColorGradeFallback(
+  ctx: CanvasRenderingContext2D,
+  box: EffectRect,
+  intensity: number,
+  params?: StudioEffectParams,
+): void {
+  const exposure = numberParam(params, 'exposure', 0);
+  const contrast = numberParam(params, 'contrast', 1);
+  const saturation = numberParam(params, 'saturation', 1);
+  const temperature = clamp(numberParam(params, 'temperature', 0), -1, 1);
+  const tint = clamp(numberParam(params, 'tint', 0), -1, 1);
+
+  const brightness = Math.pow(2, exposure * intensity);
+  const contrastValue = 1 + (contrast - 1) * intensity;
+  const saturationValue = 1 + (saturation - 1) * intensity;
+  const canvas = ctx.canvas as CanvasImageSource | undefined;
+
+  if (canvas && typeof ctx.drawImage === 'function') {
+    try {
+      ctx.save();
+      ctx.filter = `brightness(${brightness.toFixed(3)}) contrast(${contrastValue.toFixed(3)}) saturate(${saturationValue.toFixed(3)})`;
+      ctx.drawImage(
+        canvas,
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+      );
+      ctx.restore();
+    } catch {
+      // Canvas implementations without filters or self-draw.
+    }
+  }
+
+  const wash = (color: string, amount: number) => {
+    const alpha = clamp(amount * intensity * 0.5, 0, 0.5);
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha *= alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(box.x, box.y, box.width, box.height);
+    ctx.restore();
+  };
+  if (temperature !== 0) {
+    wash(temperature > 0 ? '#ffaa5a' : '#5aaaff', Math.abs(temperature));
+  }
+  if (tint !== 0) {
+    wash(tint > 0 ? '#dc78ff' : '#78ffa0', Math.abs(tint));
+  }
+}
+
+/**
+ * A directional smear built from repeated offset self-draws. Unlike the shader
+ * taps this accumulates, which is why the per-tap alpha is kept low.
+ */
+function drawMotionBlurFallback(
+  ctx: CanvasRenderingContext2D,
+  box: EffectRect,
+  intensity: number,
+  params?: StudioEffectParams,
+): void {
+  const canvas = ctx.canvas as CanvasImageSource | undefined;
+  if (!canvas || typeof ctx.drawImage !== 'function') return;
+
+  const distance = clamp(numberParam(params, 'distance', 12), 0, 64) * intensity;
+  if (distance <= 0.5) return;
+  const angle = (numberParam(params, 'angle', 0) * Math.PI) / 180;
+  const samples = Math.round(clamp(numberParam(params, 'samples', 8), 2, 16));
+  const stepX = Math.cos(angle);
+  const stepY = Math.sin(angle);
+
+  ctx.save();
+  ctx.globalAlpha *= 0.4;
+  for (let index = 1; index < samples; index += 1) {
+    const offset = (index / (samples - 1) - 0.5) * distance;
+    try {
+      ctx.drawImage(
+        canvas,
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+        box.x + stepX * offset,
+        box.y + stepY * offset,
+        box.width,
+        box.height,
+      );
+    } catch {
+      break;
+    }
   }
   ctx.restore();
 }

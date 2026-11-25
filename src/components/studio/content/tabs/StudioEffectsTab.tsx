@@ -24,6 +24,9 @@ import {
   FilmIcon,
   ScanLineIcon,
   ArrowLeftRightIcon,
+  PaletteIcon,
+  PipetteIcon,
+  WindIcon,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import {
@@ -53,6 +56,9 @@ const EFFECT_ICONS: Record<StudioEffectType, ReactNode> = {
   vignette: <ApertureIcon className="w-6 h-6 text-slate-300" />,
   'film-grain': <FilmIcon className="w-6 h-6 text-stone-300" />,
   scanlines: <ScanLineIcon className="w-6 h-6 text-cyan-300" />,
+  'color-grade': <PaletteIcon className="w-6 h-6 text-sky-300" />,
+  'chroma-key': <PipetteIcon className="w-6 h-6 text-emerald-300" />,
+  'motion-blur': <WindIcon className="w-6 h-6 text-orange-300" />,
 };
 
 function buildPresets(): EffectPreset[] {

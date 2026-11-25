@@ -33,6 +33,7 @@ import {
 import { LEGACY_VIDEO_TRACK_ID } from '../timeline/layers';
 import type { EditorTimelineFrame, EvaluatedTimelineClip } from '../timeline/evaluate';
 import { cameraSourceRect, type StudioCameraState } from './camera';
+import { resolveChromaKeyParams } from './chroma-key';
 import { computeStudioCanvasFrame } from './geometry';
 import {
   composeMatrices,
@@ -385,6 +386,18 @@ function buildMediaOp(
     ? { kind: 'asset', assetId: payload.mediaAssetId, clipId: clip.id }
     : { kind: 'recorded' };
 
+  // Keying has to run before the clip is composited, so it is resolved onto the
+  // media op here; `buildClipEffectOps` suppresses the matching effect op.
+  const chromaKeyEffect = payload?.effects?.find(
+    (effect) => effect.type === 'chroma-key',
+  );
+  const chromaKey = chromaKeyEffect
+    ? resolveChromaKeyParams(
+        chromaKeyEffect,
+        evaluateEffectIntensity(clip, chromaKeyEffect, localTimeMs),
+      )
+    : undefined;
+
   return {
     id: `media:${clip.id}`,
     clipId: clip.id,
@@ -407,6 +420,7 @@ function buildMediaOp(
       cornerRadius: Math.max(0, payload?.cornerRadius ?? 0),
     },
     deviceFrame: payload?.deviceFrame,
+    chromaKey,
   };
 }
 
@@ -477,6 +491,8 @@ function buildEffectOps(input: BuildFrameProgramInput): EffectDrawOp[] {
     if (item.itemType !== 'effect') continue;
     const effectType = effectTypeFromPayload(item.clip.payload);
     if (!effectType) continue;
+    // A key needs the clip's own pixels; a lane-level pass has none to reveal.
+    if (effectType === 'chroma-key') continue;
     const intensity =
       evaluateClipKeyframeValues(item.clip, item.localTimeMs).intensity ??
       item.clip.payload?.intensity ??
@@ -523,6 +539,8 @@ function buildClipEffectOps(
   const sorted = [...effects].sort((a, b) => a.stackOrder - b.stackOrder);
 
   for (const effect of sorted) {
+    // Keying is resolved onto the media op (it must run before compositing).
+    if (effect.type === 'chroma-key') continue;
     const intensity = evaluateEffectIntensity(
       item.clip,
       effect,
