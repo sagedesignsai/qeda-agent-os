@@ -59,6 +59,7 @@ import {
   PlusIcon,
   Wand2Icon,
   ZoomInIcon,
+  ClapperboardIcon,
 } from 'lucide-react';
 import type { TimelineClip, TimelineTrack, StudioEffectType } from '@/lib/studio/types';
 import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
@@ -102,6 +103,12 @@ interface StudioCommandBarProps {
   onOpenTransformRange?: () => void;
   onOpenEffectsStudio?: () => void;
   onAddZoomAtPlayhead?: () => void;
+  onAddScene?: () => void;
+  onDuplicateScene?: () => void;
+  onPlayStory?: () => void;
+  onExportScene?: () => void;
+  sceneCount?: number;
+  isStoryPlaying?: boolean;
   onOpenEffectPicker?: () => void;
   onAddEffect?: (effectType: StudioEffectType) => void;
   onOpenTextAnimator?: () => void;
@@ -145,6 +152,12 @@ export function StudioCommandBar({
   onOpenTransformRange,
   onOpenEffectsStudio,
   onAddZoomAtPlayhead,
+  onAddScene,
+  onDuplicateScene,
+  onPlayStory,
+  onExportScene,
+  sceneCount = 1,
+  isStoryPlaying = false,
   onOpenEffectPicker,
   onAddEffect,
   onOpenTextAnimator,
@@ -592,6 +605,50 @@ export function StudioCommandBar({
                 <CommandShortcut>⇧K</CommandShortcut>
               </CommandItem>
             )}
+            {onAddScene && (
+              <CommandItem
+                onSelect={() => run(onAddScene)}
+                className="cursor-pointer"
+                keywords={['scene', 'add', 'chapter', 'story']}
+              >
+                <PlusIcon className="size-4 text-emerald-400" />
+                <span>Add Scene</span>
+              </CommandItem>
+            )}
+            {onDuplicateScene && (
+              <CommandItem
+                onSelect={() => run(onDuplicateScene)}
+                className="cursor-pointer"
+                keywords={['scene', 'duplicate', 'copy']}
+              >
+                <CopyIcon className="size-4" />
+                <span>Duplicate Current Scene</span>
+              </CommandItem>
+            )}
+            {onPlayStory && sceneCount > 1 && (
+              <CommandItem
+                onSelect={() => run(onPlayStory)}
+                className="cursor-pointer"
+                keywords={['play', 'story', 'scenes', 'sequence']}
+              >
+                {isStoryPlaying ? (
+                  <PauseIcon className="size-4 text-primary" />
+                ) : (
+                  <PlayIcon className="size-4 text-primary" />
+                )}
+                <span>{isStoryPlaying ? 'Stop Story Preview' : 'Play Story'}</span>
+              </CommandItem>
+            )}
+            {onExportScene && sceneCount > 1 && (
+              <CommandItem
+                onSelect={() => run(onExportScene)}
+                className="cursor-pointer"
+                keywords={['export', 'scene', 'current', 'mp4']}
+              >
+                <ClapperboardIcon className="size-4" />
+                <span>Export Current Scene…</span>
+              </CommandItem>
+            )}
             {onExport && (
               <CommandItem
                 onSelect={() => run(onExport)}
@@ -599,7 +656,7 @@ export function StudioCommandBar({
                 keywords={['export', 'render', 'mp4', 'video']}
               >
                 <DownloadIcon className="size-4" />
-                <span>Export MP4</span>
+                <span>{sceneCount > 1 ? 'Export Story (MP4)' : 'Export MP4'}</span>
                 <CommandShortcut>⇧E</CommandShortcut>
               </CommandItem>
             )}

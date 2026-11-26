@@ -775,9 +775,15 @@ export function registerStudioHandlers({
         const renderedHasAudio = hasComposedRender
           ? await detectAudioStream(effectiveInputPath)
           : false;
+        // Multi-scene stories have their own per-scene timing; merging the
+        // project recording with the active scene's cuts would desync audio.
+        // The renderer mixes scene audio into the WebM, so a missing stream
+        // means the story is silent rather than wrong.
+        const isMultiScene = (take.scenes?.length ?? 0) > 1;
         const audioInputPath =
           hasComposedRender &&
           !renderedHasAudio &&
+          !isMultiScene &&
           take.videoPath &&
           take.videoPath !== effectiveInputPath
             ? take.videoPath
@@ -794,8 +800,10 @@ export function registerStudioHandlers({
           // ranges. A raw fallback keeps its own length, cuts and all.
           // If the rendered WebM already has audio (multitrack mix), no cuts
           // are needed — the audio is already mixed at the right length.
-          cuts: hasComposedRender && !renderedHasAudio ? take.cuts : undefined,
-          durationMs: hasComposedRender ? compositionDurationMs(take.durationMs, take.cuts ?? []) : undefined,
+          cuts: hasComposedRender && !renderedHasAudio && !isMultiScene ? take.cuts : undefined,
+          durationMs: hasComposedRender && !isMultiScene
+            ? compositionDurationMs(take.durationMs, take.cuts ?? [])
+            : undefined,
         });
 
         // Clean up temporary rendered composition WebM

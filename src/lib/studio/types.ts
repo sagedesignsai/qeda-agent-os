@@ -509,6 +509,61 @@ export interface StudioTrack {
   clips: StudioClip[];
 }
 
+/**
+ * One independently addressable composition inside a Studio project.
+ *
+ * A scene owns its own timeline scope (tracks, cuts, zooms, captions, effects,
+ * overlays) and composition duration. Project-level things — media pool, canvas
+ * styling, aspect ratio — stay on `StudioTake` so every scene shares the same
+ * brand and output format.
+ */
+export interface StudioScene {
+  id: string;
+  name: string;
+  /** Composition duration of this scene, after cuts. */
+  durationMs: number;
+  /** Multi-track timeline content. */
+  tracks?: StudioTrack[];
+  /**
+   * Source recording for the scene. Only the project's main recording normally
+   * has one; additional scenes are built from the shared media pool.
+   */
+  videoPath?: string;
+  videoCrop?: StudioVideoCrop;
+  cuts?: StudioCut[];
+  zooms?: StudioZoom[];
+  captions?: StudioCaption[];
+  effects?: StudioEffect[];
+  overlays?: StudioOverlay[];
+}
+
+export type StudioSequenceTransitionType = 'cut' | 'crossfade' | 'dip';
+
+export interface StudioSequenceTransition {
+  type: StudioSequenceTransitionType;
+  durationMs: number;
+  /** Backdrop colour for dip transitions. */
+  color?: string;
+}
+
+/** One scene placed on the master story sequence. */
+export interface StudioSequenceItem {
+  id: string;
+  sceneId: string;
+  startMs: number;
+  durationMs: number;
+  transitionIn?: StudioSequenceTransition;
+  transitionOut?: StudioSequenceTransition;
+}
+
+/**
+ * Master story order. When absent, scenes play in array order. Explicit
+ * sequence data is optional so reordering scenes remains the simple default.
+ */
+export interface StudioSequence {
+  items: StudioSequenceItem[];
+}
+
 export interface StudioTake {
   id: string;
   projectId: string | null;
@@ -557,6 +612,15 @@ export interface StudioTake {
   mediaAssets?: StudioMediaAsset[];
   /** Named media and effect tracks holding the project's clips. */
   tracks?: StudioTrack[];
+  /**
+   * Scenes inside this project. Absent means the project is a single implicit
+   * scene built from the legacy take fields above.
+   */
+  scenes?: StudioScene[];
+  /** Active scene id. Absent means the first scene. */
+  activeSceneId?: string;
+  /** Optional explicit master-story ordering. Absent means scene array order. */
+  sequence?: StudioSequence;
 }
 
 export interface StudioTakeSummary {
@@ -578,6 +642,8 @@ export interface StudioTakeSummary {
   updatedAt: number;
   /** True when the take uses the multi-track model (tracks_json is valid JSON). */
   isMultiTrack: boolean;
+  /** Number of scenes in the project (1 for legacy projects). */
+  sceneCount?: number;
 }
 
 // ── Layer-based showcase compositions ────────────────────────────────────────

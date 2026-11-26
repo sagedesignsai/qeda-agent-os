@@ -110,6 +110,8 @@ import type {
   StudioClip,
   StudioTrack,
   StudioTrackType,
+  StudioScene,
+  StudioSequence,
   ClipTransform,
   ClipAnimation,
   ClipDeviceFrame,
@@ -258,6 +260,8 @@ export type {
   StudioClip,
   StudioTrack,
   StudioTrackType,
+  StudioScene,
+  StudioSequence,
   ClipTransform,
   ClipAnimation,
   ClipDeviceFrame,
@@ -1750,8 +1754,14 @@ export interface IpcChannels {
       captions?: StudioCaption[];
       effects?: StudioEffect[];
       overlays?: StudioOverlay[];
+      videoCrop?: StudioVideoCrop;
       styling?: StudioStyling;
       socialKit?: StudioSocialKit | null;
+      mediaAssets?: StudioMediaAsset[];
+      tracks?: StudioTrack[];
+      scenes?: StudioScene[];
+      activeSceneId?: string;
+      sequence?: StudioSequence;
     };
     res: StudioTake;
   };

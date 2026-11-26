@@ -30,7 +30,19 @@ import type {
   StudioRecordingSnapshot,
   StudioTrack,
   StudioMediaAsset,
+  StudioScene,
 } from '@/main/ipc/channels';
+import {
+  cloneStudioScene,
+  createStudioSceneFromTemplate,
+  getActiveStudioScene,
+  getStudioScenes,
+  projectStudioScene,
+  reorderStudioScenes,
+  updateStudioScene,
+  type StudioSceneContentPatch,
+  type StudioSceneTemplateId,
+} from '@/lib/studio/scenes';
 import { DEFAULT_STUDIO_STYLING } from '@/main/ipc/channels';
 
 const STUDIO_TAKE_PAGE_SIZE = 50;
@@ -137,8 +149,11 @@ export function useStudio(
         'studio:get-take',
         { id },
       );
-      setActiveTake(take);
-      return take;
+      const projected = take?.scenes?.length
+        ? projectStudioScene(take, getActiveStudioScene(take))
+        : take;
+      setActiveTake(projected);
+      return projected;
     } catch (err) {
       console.error(`Failed to load take ${id}:`, err);
       return null;
@@ -517,74 +532,83 @@ export function useStudio(
     [activeTake],
   );
 
-  // ── Update Zooms ──────────────────────────────────────────────────────────
+  // ── Scene-aware content updates ───────────────────────────────────────────
+
+  type StudioTakeContentPatch = Partial<
+    Pick<
+      StudioTake,
+      'tracks' | 'cuts' | 'zooms' | 'captions' | 'effects' | 'overlays'
+    >
+  >;
+
+  /**
+   * Update the active scene's content together with the take's top-level
+   * projection. Legacy single-scene projects keep writing the top-level fields
+   * only; the first scene operation materializes the scene array.
+   */
+  const persistContentPatch = useCallback(
+    async (patch: StudioTakeContentPatch) => {
+      if (!activeTake) return;
+      const scenes = activeTake.scenes?.length
+        ? updateStudioScene(
+            activeTake,
+            activeTake.activeSceneId ?? activeTake.scenes[0].id,
+            patch,
+          ).scenes
+        : undefined;
+      setActiveTake((prev) => {
+        if (!prev) return null;
+        const next = { ...prev, ...patch };
+        if (!prev.scenes?.length) return next;
+        const updated = updateStudioScene(
+          prev,
+          prev.activeSceneId ?? prev.scenes[0].id,
+          patch,
+        );
+        return { ...next, scenes: updated.scenes };
+      });
+      await window.electron.ipc.invoke('studio:save-take', {
+        id: activeTake.id,
+        ...patch,
+        ...(scenes ? { scenes } : {}),
+      });
+    },
+    [activeTake],
+  );
 
   const updateZooms = useCallback(
     async (zooms: StudioZoom[]) => {
-      if (!activeTake) return;
-      setActiveTake((prev) => (prev ? { ...prev, zooms } : null));
-      await window.electron.ipc.invoke('studio:save-take', {
-        id: activeTake.id,
-        zooms,
-      });
+      await persistContentPatch({ zooms });
     },
-    [activeTake],
+    [persistContentPatch],
   );
-
-  // ── Update Cuts ───────────────────────────────────────────────────────────
 
   const updateCuts = useCallback(
     async (cuts: StudioCut[]) => {
-      if (!activeTake) return;
-      setActiveTake((prev) => (prev ? { ...prev, cuts } : null));
-      await window.electron.ipc.invoke('studio:save-take', {
-        id: activeTake.id,
-        cuts,
-      });
+      await persistContentPatch({ cuts });
     },
-    [activeTake],
+    [persistContentPatch],
   );
-
-  // ── Update Captions ───────────────────────────────────────────────────────
 
   const updateCaptions = useCallback(
     async (captions: StudioCaption[]) => {
-      if (!activeTake) return;
-      setActiveTake((prev) => (prev ? { ...prev, captions } : null));
-      await window.electron.ipc.invoke('studio:save-take', {
-        id: activeTake.id,
-        captions,
-      });
+      await persistContentPatch({ captions });
     },
-    [activeTake],
+    [persistContentPatch],
   );
-
-  // ── Update Canvas Effects ─────────────────────────────────────────────────
 
   const updateEffects = useCallback(
     async (effects: StudioEffect[]) => {
-      if (!activeTake) return;
-      setActiveTake((prev) => (prev ? { ...prev, effects } : null));
-      await window.electron.ipc.invoke('studio:save-take', {
-        id: activeTake.id,
-        effects,
-      });
+      await persistContentPatch({ effects });
     },
-    [activeTake],
+    [persistContentPatch],
   );
-
-  // ── Update Media Overlays ─────────────────────────────────────────────────
 
   const updateOverlays = useCallback(
     async (overlays: StudioOverlay[]) => {
-      if (!activeTake) return;
-      setActiveTake((prev) => (prev ? { ...prev, overlays } : null));
-      await window.electron.ipc.invoke('studio:save-take', {
-        id: activeTake.id,
-        overlays,
-      });
+      await persistContentPatch({ overlays });
     },
-    [activeTake],
+    [persistContentPatch],
   );
 
   const updateTimelineData = useCallback(
@@ -596,26 +620,190 @@ export function useStudio(
       overlays: StudioOverlay[];
       tracks?: StudioTrack[];
     }) => {
+      await persistContentPatch(data);
+    },
+    [persistContentPatch],
+  );
+
+  const updateTracks = useCallback(
+    async (tracks: StudioTrack[]) => {
+      await persistContentPatch({ tracks });
+    },
+    [persistContentPatch],
+  );
+
+  // ── Scenes ────────────────────────────────────────────────────────────────
+
+  const saveScenes = useCallback(
+    async (
+      scenes: StudioScene[],
+      activeSceneId: string,
+      projected: StudioTake,
+    ) => {
       if (!activeTake) return;
-      setActiveTake((prev) => (prev ? { ...prev, ...data } : null));
       await window.electron.ipc.invoke('studio:save-take', {
         id: activeTake.id,
-        ...data,
+        scenes,
+        activeSceneId,
+        cuts: projected.cuts ?? [],
+        zooms: projected.zooms ?? [],
+        captions: projected.captions ?? [],
+        effects: projected.effects ?? [],
+        overlays: projected.overlays ?? [],
+        videoCrop: projected.videoCrop,
+        tracks: projected.tracks,
       });
+      setActiveTake(projected);
     },
     [activeTake],
   );
 
-  // ── Update Multi-track Tracks ─────────────────────────────────────────────
+  /** Switch the editing scope to another scene. */
+  const switchScene = useCallback(
+    async (
+      sceneId: string,
+      currentPatch?: StudioTakeContentPatch,
+    ): Promise<StudioTake | null> => {
+      if (!activeTake) return null;
+      const scenes = getStudioScenes(activeTake);
+      const currentId = activeTake.activeSceneId ?? scenes[0].id;
+      const patched = currentPatch
+        ? updateStudioScene(
+            { ...activeTake, scenes },
+            currentId,
+            currentPatch,
+          )
+        : { ...activeTake, scenes };
+      const nextScenes = patched.scenes ?? scenes;
+      const target = nextScenes.find((scene) => scene.id === sceneId);
+      if (!target) return null;
+      const projected = projectStudioScene(
+        { ...patched, activeSceneId: sceneId },
+        target,
+      );
+      await saveScenes(nextScenes, sceneId, projected);
+      return projected;
+    },
+    [activeTake, saveScenes],
+  );
 
-  const updateTracks = useCallback(
-    async (tracks: StudioTrack[]) => {
-      if (!activeTake) return;
-      setActiveTake((prev) => (prev ? { ...prev, tracks } : null));
+  /** Add a scene from a template, or duplicate the current scene. */
+  const addScene = useCallback(
+    async (options: {
+      name: string;
+      templateId?: StudioSceneTemplateId;
+      duplicateCurrent?: boolean;
+      currentPatch?: StudioTakeContentPatch;
+    }): Promise<StudioTake | null> => {
+      if (!activeTake) return null;
+      const scenes = getStudioScenes(activeTake);
+      const currentId = activeTake.activeSceneId ?? scenes[0].id;
+      const base = options.currentPatch
+        ? updateStudioScene(
+            { ...activeTake, scenes },
+            currentId,
+            options.currentPatch,
+          )
+        : { ...activeTake, scenes };
+      const baseScenes = base.scenes ?? scenes;
+      const current = baseScenes.find((scene) => scene.id === currentId) ?? baseScenes[0];
+      const scene = options.duplicateCurrent
+        ? cloneStudioScene(current, options.name)
+        : createStudioSceneFromTemplate(
+            options.templateId ?? 'blank',
+            options.name,
+          );
+      const nextScenes = [...baseScenes, scene];
+      const projected = projectStudioScene(
+        { ...base, scenes: nextScenes, activeSceneId: scene.id },
+        scene,
+      );
+      await saveScenes(nextScenes, scene.id, projected);
+      return projected;
+    },
+    [activeTake, saveScenes],
+  );
+
+  const renameScene = useCallback(
+    async (sceneId: string, name: string): Promise<boolean> => {
+      if (!activeTake) return false;
+      const trimmed = name.trim();
+      if (!trimmed) return false;
+      const scenes = getStudioScenes(activeTake);
+      if (!scenes.some((scene) => scene.id === sceneId)) return false;
+      const nextScenes = scenes.map((scene) =>
+        scene.id === sceneId ? { ...scene, name: trimmed } : scene,
+      );
+      setActiveTake((prev) => (prev ? { ...prev, scenes: nextScenes } : null));
       await window.electron.ipc.invoke('studio:save-take', {
         id: activeTake.id,
-        tracks,
+        scenes: nextScenes,
       });
+      return true;
+    },
+    [activeTake],
+  );
+
+  const deleteScene = useCallback(
+    async (
+      sceneId: string,
+    ): Promise<{
+      take: StudioTake;
+      deletedScene: StudioScene;
+      index: number;
+    } | null> => {
+      if (!activeTake) return null;
+      const scenes = getStudioScenes(activeTake);
+      if (scenes.length <= 1) return null;
+      const index = scenes.findIndex((scene) => scene.id === sceneId);
+      if (index < 0) return null;
+      const deletedScene = scenes[index];
+      const nextScenes = scenes.filter((scene) => scene.id !== sceneId);
+      const activeId = activeTake.activeSceneId ?? scenes[0].id;
+      const nextActiveId =
+        activeId === sceneId
+          ? nextScenes[Math.min(index, nextScenes.length - 1)].id
+          : activeId;
+      const target =
+        nextScenes.find((scene) => scene.id === nextActiveId) ?? nextScenes[0];
+      const projected = projectStudioScene(
+        { ...activeTake, scenes: nextScenes, activeSceneId: nextActiveId },
+        target,
+      );
+      await saveScenes(nextScenes, nextActiveId, projected);
+      return { take: projected, deletedScene, index };
+    },
+    [activeTake, saveScenes],
+  );
+
+  /** Restore a deleted scene (used by the undo toast). */
+  const restoreScene = useCallback(
+    async (scene: StudioScene, index: number): Promise<StudioTake | null> => {
+      if (!activeTake) return null;
+      const scenes = getStudioScenes(activeTake).slice();
+      const insertAt = Math.max(0, Math.min(index, scenes.length));
+      scenes.splice(insertAt, 0, scene);
+      const projected = projectStudioScene(
+        { ...activeTake, scenes, activeSceneId: scene.id },
+        scene,
+      );
+      await saveScenes(scenes, scene.id, projected);
+      return projected;
+    },
+    [activeTake, saveScenes],
+  );
+
+  const reorderScenes = useCallback(
+    async (fromIndex: number, toIndex: number): Promise<boolean> => {
+      if (!activeTake) return false;
+      const next = reorderStudioScenes(activeTake, fromIndex, toIndex);
+      if (next === activeTake) return false;
+      setActiveTake(next);
+      await window.electron.ipc.invoke('studio:save-take', {
+        id: activeTake.id,
+        scenes: next.scenes,
+      });
+      return true;
     },
     [activeTake],
   );
@@ -643,7 +831,11 @@ export function useStudio(
         'studio:process-draft',
         { takeId: activeTake.id, force: true },
       );
-      setActiveTake(processed);
+      setActiveTake(
+        processed.scenes?.length
+          ? projectStudioScene(processed, getActiveStudioScene(processed))
+          : processed,
+      );
       toast.success('Magic Draft updated!');
     } catch (err) {
       toast.error('Magic draft failed: ' + (err as Error).message);
@@ -677,7 +869,10 @@ export function useStudio(
   // ── Export Video ──────────────────────────────────────────────────────────
 
   const exportVideo = useCallback(
-    async (format: 'mp4' | 'gif' | 'webm' = 'mp4') => {
+    async (
+      format: 'mp4' | 'gif' | 'webm' = 'mp4',
+      scope: 'story' | 'scene' = 'story',
+    ) => {
       if (!activeTake) return;
       try {
         // 1. Prompt user for save destination
@@ -696,10 +891,15 @@ export function useStudio(
         setExportProgress({
           isExporting: true,
           progress: 0.05,
-          statusText: 'Rendering composition with camera zooms & subtitles...',
+          statusText:
+            scope === 'story'
+              ? 'Rendering story scenes with camera zooms & subtitles...'
+              : 'Rendering the current scene...',
         });
 
         await renderComposedStudioVideo(activeTake, {
+          scope,
+          sceneId: activeTake.activeSceneId,
           onProgress: (ratio, text) => {
             setExportProgress({
               isExporting: true,
@@ -803,6 +1003,12 @@ export function useStudio(
     updateTimelineData,
     updateTracks,
     updateMediaAssets,
+    switchScene,
+    addScene,
+    renameScene,
+    deleteScene,
+    restoreScene,
+    reorderScenes,
     runMagicDraft,
     generateSocialKit,
     exportVideo,

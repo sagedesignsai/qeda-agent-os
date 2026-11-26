@@ -58,9 +58,17 @@ import {
   drawDeviceFrameFooter,
 } from '@/components/studio/renderers/device-frames';
 import { drawMotionCard } from '@/components/studio/renderers/motion-cards';
-import type { StudioMediaAsset, StudioTake, TimelineTrack } from '../types';
+import type { StudioMediaAsset, StudioTake, TimelineTrack, StudioScene, StudioCut, StudioZoom } from '../types';
 import {
-  compositionDurationMs,
+  getStudioScenes,
+  getActiveStudioScene,
+  projectStudioScene,
+  resolveStudioSequence,
+  sampleStudioSequence,
+  studioSceneContentDurationMs,
+  type StudioResolvedSequence,
+} from '../scenes';
+import {
   normalizeCuts,
   sourceFromComp,
 } from '../timeline/ripple';
@@ -75,6 +83,36 @@ export interface RenderComposedVideoOptions {
   signal?: AbortSignal;
   /** Export frame rate. Defaults to 30. */
   fps?: number;
+  /** Export the whole story (default) or only the active scene. */
+  scope?: 'story' | 'scene';
+  /** The active scene when `scope` is `scene`. */
+  sceneId?: string;
+}
+
+interface ExportSceneContext {
+  take: StudioTake;
+  video: HTMLVideoElement | null;
+  cuts: StudioCut[];
+  tracks: TimelineTrack[];
+  zooms: StudioZoom[];
+  overlayAssets: Map<string, StudioOverlayAsset>;
+  clipInstances: Map<string, StudioOverlayAsset>;
+  camera: StudioCameraState;
+}
+
+async function loadExportVideoElement(
+  src: string,
+  crossOrigin = false,
+): Promise<HTMLVideoElement | null> {
+  const video = document.createElement('video');
+  if (crossOrigin) video.crossOrigin = 'anonymous';
+  video.preload = 'auto';
+  video.muted = true;
+  video.src = src;
+  return new Promise((resolve) => {
+    video.onloadedmetadata = () => resolve(video);
+    video.onerror = () => resolve(null);
+  });
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -167,114 +205,53 @@ export async function renderComposedStudioVideo(
     throw new Error('Could not create 2D canvas context for showcase export');
   }
 
-  // 2. Load source video
-  let video: HTMLVideoElement | null = null;
-  let totalDurationMs: number;
-
-  if (take.videoPath) {
-    options?.onProgress?.(0.05, 'Loading source video media...');
-    video = document.createElement('video');
-    video.crossOrigin = 'anonymous';
-    video.preload = 'auto';
-    video.muted = true; // Muted for frame-seek; audio comes from source file via ffmpeg
-    const variantParam =
-      take.optimizedPath || take.mediaReadyAt ? '?variant=optimized' : '';
-    video.src = `qeda-media://studio/${encodeURIComponent(take.id)}${variantParam}`;
-
-    await new Promise<void>((resolve, reject) => {
-      const onLoaded = () => {
-        video!.removeEventListener('loadedmetadata', onLoaded);
-        video!.removeEventListener('error', onError);
-        resolve();
-      };
-      const onError = () => {
-        video!.removeEventListener('loadedmetadata', onLoaded);
-        video!.removeEventListener('error', onError);
-        reject(new Error('Failed to load showcase video source for export'));
-      };
-      video!.addEventListener('loadedmetadata', onLoaded);
-      video!.addEventListener('error', onError);
-    });
-
-    const rawDuration =
-      video && Number.isFinite(video.duration) ? video.duration * 1000 : 0;
-    totalDurationMs = safeDurationMs(rawDuration, take.durationMs);
-  } else {
-    totalDurationMs = safeDurationMs(0, take.durationMs);
-  }
-
-  if (totalDurationMs <= 0) {
-    throw new Error('Showcase take has zero duration');
-  }
-
-  // Dead-air cuts excise source ranges. The output length, the frame count and
-  // every encoded timestamp are composition time; only the video seeks use the
-  // source. An all-cut take has nothing to render.
-  const cuts = normalizeCuts(take.cuts ?? [], totalDurationMs);
-  const timelineTracks = convertTakeToTimeline(take);
-  const timelineZooms = extractZoomsFromTracks(
-    timelineTracks.filter((track) => track.visible),
-    cuts,
+  // 2. Resolve the render plan. Story export walks the master sequence; scene
+  //    export renders exactly one scope. Idle scenes are still valid frames.
+  const sceneScope = options?.scope === 'scene';
+  const allScenes = getStudioScenes(take);
+  const selectedScene = options?.sceneId
+    ? allScenes.find((scene) => scene.id === options.sceneId) ?? getActiveStudioScene(take)
+    : getActiveStudioScene(take);
+  const selectedSceneDurationMs = Math.max(
+    1000,
+    studioSceneContentDurationMs(
+      selectedScene.tracks,
+      selectedScene.durationMs,
+    ),
   );
-  const sequenceDurationMs = take.tracks === undefined
-    ? compositionDurationMs(totalDurationMs, cuts)
-    : Math.max(
-        1000,
-        ...timelineTracks.flatMap((track) =>
-          track.clips.map((clip) => clip.startMs + clip.durationMs),
-        ),
-      );
-  const compositionDuration = sequenceDurationMs;
-  if (compositionDuration <= 0) {
-    throw new Error('Showcase take has no content left after cuts');
-  }
-
-  // 3. Preload overlay assets
-  options?.onProgress?.(0.08, 'Preloading overlays and motion assets...');
-  const overlayAssets = new Map<string, StudioOverlayAsset>();
-
-  for (const overlay of take.overlays ?? []) {
-    const url = studioOverlayMediaUrl(overlay.id);
-    if (overlay.kind === 'image') {
-      await new Promise<void>((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          if (img.naturalWidth > 0) {
-            overlayAssets.set(overlay.id, {
-              element: img,
-              width: img.naturalWidth,
-              height: img.naturalHeight,
-            });
-          }
-          resolve();
-        };
-        img.onerror = () => resolve();
-        img.src = url;
-      });
-    } else {
-      // Video overlays: load metadata so dimensions are known; we'll seek them
-      // in sync with the main video during the frame loop.
-      await new Promise<void>((resolve) => {
-        const ovVid = document.createElement('video');
-        ovVid.muted = true;
-        ovVid.preload = 'auto';
-        ovVid.src = url;
-        ovVid.onloadedmetadata = () => {
-          if (ovVid.videoWidth > 0) {
-            overlayAssets.set(overlay.id, {
-              element: ovVid,
-              width: ovVid.videoWidth,
-              height: ovVid.videoHeight,
-            });
-          }
-          resolve();
-        };
-        ovVid.onerror = () => resolve();
-      });
+  const sequence: StudioResolvedSequence = sceneScope
+    ? {
+        items: [
+          {
+            id: 'scene-export',
+            sceneId: selectedScene.id,
+            startMs: 0,
+            durationMs: selectedSceneDurationMs,
+            transitionIn: { type: 'cut', durationMs: 0 },
+          },
+        ],
+        durationMs: selectedSceneDurationMs,
+      }
+    : resolveStudioSequence(take);
+  const scenesById = new Map(allScenes.map((scene) => [scene.id, scene]));
+  for (const item of sequence.items) {
+    if (!scenesById.has(item.sceneId)) {
+      throw new Error(`Showcase scene "${item.sceneId}" is missing from this project`);
     }
   }
+  if (sequence.durationMs <= 0) {
+    throw new Error('Showcase story has zero duration');
+  }
+  const compositionDuration = sequence.durationMs;
 
+  // 3. Preload the shared project media pool once. Scenes reference these
+  //    assets by id, so decoding/loading per scene would duplicate work.
+  options?.onProgress?.(0.05, 'Preloading project media...');
   const clipAssets = new Map<string, StudioOverlayAsset>();
+  const mediaAssetById = new Map<string, StudioMediaAsset>();
+  for (const asset of take.mediaAssets ?? []) {
+    mediaAssetById.set(asset.id, asset);
+  }
   for (const asset of take.mediaAssets ?? []) {
     if (asset.kind === 'audio') continue;
     const url = studioMediaAssetUrl(asset.id);
@@ -282,111 +259,213 @@ export async function renderComposedStudioVideo(
       await new Promise<void>((resolve) => {
         const image = new Image();
         image.onload = () => {
-          if (image.naturalWidth) clipAssets.set(asset.id, { element: image, width: image.naturalWidth, height: image.naturalHeight });
+          if (image.naturalWidth) {
+            clipAssets.set(asset.id, {
+              element: image,
+              width: image.naturalWidth,
+              height: image.naturalHeight,
+            });
+          }
           resolve();
         };
         image.onerror = () => resolve();
         image.src = url;
       });
     } else {
-      await new Promise<void>((resolve) => {
-        const clipVideo = document.createElement('video');
-        clipVideo.muted = true;
-        clipVideo.preload = 'auto';
-        clipVideo.onloadedmetadata = () => {
-          if (clipVideo.videoWidth) clipAssets.set(asset.id, { element: clipVideo, width: clipVideo.videoWidth, height: clipVideo.videoHeight });
-          resolve();
-        };
-        clipVideo.onerror = () => resolve();
-        clipVideo.src = url;
-      });
+      const clipVideo = await loadExportVideoElement(url, true);
+      if (clipVideo && clipVideo.videoWidth > 0) {
+        clipAssets.set(asset.id, {
+          element: clipVideo,
+          width: clipVideo.videoWidth,
+          height: clipVideo.videoHeight,
+        });
+      }
     }
   }
 
-  // A clip placement owns its decoder during export. The same source can be
-  // used on both sides of a transition at different source times, so sharing
-  // one video element by asset ID would make the clips seek over one another.
-  const clipInstances = new Map<string, StudioOverlayAsset>();
-  const mediaAssetById = new Map<string, StudioMediaAsset>();
-  for (const asset of take.mediaAssets ?? []) mediaAssetById.set(asset.id, asset);
-  const transitionParticipantIds = new Set(
-    timelineTracks
-      .filter((track) => track.type === 'transitions')
-      .flatMap((track) => track.clips.flatMap((clip) => [
-        clip.payload?.fromClipId,
-        clip.payload?.toClipId,
-      ]))
-      .filter((clipId): clipId is string => Boolean(clipId)),
-  );
-  const videoClips = timelineTracks
-    .filter((track) => track.type === 'video')
-    .flatMap((track) => track.clips.map((clip) => ({ track, clip })))
-    .filter(({ clip }) => clip.itemType !== 'image' && transitionParticipantIds.has(clip.id));
-  await Promise.all(videoClips.map(async ({ track, clip }) => {
-    const assetId = clip.payload?.mediaAssetId;
-    const asset = assetId ? mediaAssetById.get(assetId) : undefined;
-    const sourceUrl = asset?.kind === 'video'
-      ? studioMediaAssetUrl(asset.id)
-      : !assetId && track.id === 'track-video' && video
-        ? video.src
-        : null;
-    if (!sourceUrl) return;
+  // 3.5. Build a frame context for every scene used by the plan. Each context
+  //      owns its own timebase, cuts, tracks, zooms, camera history and clip
+  //      decoders, so switching scenes never leaks one scene's time into another.
+  options?.onProgress?.(0.07, 'Preparing scenes...');
+  const sourceVideoCache = new Map<string, Promise<HTMLVideoElement | null>>();
+  const loadSceneSourceVideo = (scene: StudioScene): Promise<HTMLVideoElement | null> => {
+    if (!scene.videoPath) return Promise.resolve(null);
+    const key = `${take.id}:${scene.videoPath}`;
+    const cached = sourceVideoCache.get(key);
+    if (cached) return cached;
+    const variantParam =
+      take.optimizedPath || take.mediaReadyAt ? '?variant=optimized' : '';
+    const promise = loadExportVideoElement(
+      `qeda-media://studio/${encodeURIComponent(take.id)}${variantParam}`,
+    );
+    sourceVideoCache.set(key, promise);
+    return promise;
+  };
 
-    await new Promise<void>((resolve) => {
-      const clipVideo = document.createElement('video');
-      clipVideo.crossOrigin = 'anonymous';
-      clipVideo.muted = true;
-      clipVideo.preload = 'auto';
-      clipVideo.onloadedmetadata = () => {
-        if (clipVideo.videoWidth > 0) {
+  const contexts = new Map<string, ExportSceneContext>();
+  for (const item of sequence.items) {
+    if (contexts.has(item.sceneId)) continue;
+    const scene = scenesById.get(item.sceneId)!;
+    const projected = projectStudioScene(take, scene);
+    const video = await loadSceneSourceVideo(scene);
+    const rawDuration =
+      video && Number.isFinite(video.duration) ? video.duration * 1000 : 0;
+    const sourceDurationMs = safeDurationMs(
+      rawDuration,
+      scene.videoPath ? take.durationMs : scene.durationMs,
+    );
+    const cuts = normalizeCuts(projected.cuts ?? [], sourceDurationMs);
+    const tracks = convertTakeToTimeline(projected);
+    const zooms = extractZoomsFromTracks(
+      tracks.filter((track) => track.visible),
+      cuts,
+    );
+
+    const overlayAssets = new Map<string, StudioOverlayAsset>();
+    for (const overlay of projected.overlays ?? []) {
+      const url = studioOverlayMediaUrl(overlay.id);
+      if (overlay.kind === 'image') {
+        await new Promise<void>((resolve) => {
+          const image = new Image();
+          image.onload = () => {
+            if (image.naturalWidth > 0) {
+              overlayAssets.set(overlay.id, {
+                element: image,
+                width: image.naturalWidth,
+                height: image.naturalHeight,
+              });
+            }
+            resolve();
+          };
+          image.onerror = () => resolve();
+          image.src = url;
+        });
+      } else {
+        const overlayVideo = await loadExportVideoElement(url);
+        if (overlayVideo && overlayVideo.videoWidth > 0) {
+          overlayAssets.set(overlay.id, {
+            element: overlayVideo,
+            width: overlayVideo.videoWidth,
+            height: overlayVideo.videoHeight,
+          });
+        }
+      }
+    }
+
+    // A clip placement owns its decoder: the same source can appear twice in a
+    // transition at different source times. A per-clip element keeps the seeks
+    // independent, and the `track-video` fallback keeps legacy recordings exact.
+    const clipInstances = new Map<string, StudioOverlayAsset>();
+    for (const track of tracks) {
+      if (track.type !== 'video') continue;
+      for (const clip of track.clips) {
+        if (clip.itemType === 'image' || clip.payload?.kind === 'image') continue;
+        const assetId = clip.payload?.mediaAssetId;
+        const asset = assetId ? mediaAssetById.get(assetId) : undefined;
+        const sourceUrl = asset?.kind === 'video'
+          ? studioMediaAssetUrl(asset.id)
+          : !assetId && track.id === 'track-video' && video
+            ? video.src
+            : null;
+        if (!sourceUrl) continue;
+        const clipVideo = await loadExportVideoElement(sourceUrl, true);
+        if (clipVideo && clipVideo.videoWidth > 0) {
           clipInstances.set(clip.id, {
             element: clipVideo,
             width: clipVideo.videoWidth,
             height: clipVideo.videoHeight,
           });
         }
-        resolve();
-      };
-      clipVideo.onerror = () => resolve();
-      clipVideo.src = sourceUrl;
-    });
-  }));
-
-  // 3.5. Decode audio for all audio clips on the timeline
-  const audioSampleRate = 48000;
-  const audioChannels = 2;
-  let hasAudioClips = timelineTracks.some(
-    (track) => track.type === 'audio' && track.clips.length > 0 && !track.muted,
-  );
-
-  if (hasAudioClips) {
-    options?.onProgress?.(0.08, 'Decoding audio tracks...');
-    const audioDecodePromises: Promise<void>[] = [];
-    for (const track of timelineTracks) {
-      if (track.type !== 'audio' || track.muted) continue;
-      for (const clip of track.clips) {
-        const assetId = clip.payload?.mediaAssetId;
-        if (!assetId || clip.payload?.audioBuffer) continue;
-        const asset = mediaAssetById.get(assetId);
-        if (!asset) continue;
-        const url = studioMediaAssetUrl(asset.id);
-        audioDecodePromises.push(
-          decodeAudioSource(url, audioSampleRate)
-            .then((buffer) => {
-              if (buffer) {
-                clip.payload = clip.payload || {};
-                clip.payload.audioBuffer = buffer;
-                // Pre-compute waveform peaks for timeline visualization
-                clip.payload.waveformPeaks = computeWaveformPeaks(buffer);
-              }
-            })
-            .catch(() => {
-              // Skip clips that fail to decode
-            }),
-        );
       }
     }
+
+    contexts.set(scene.id, {
+      take: projected,
+      video,
+      cuts,
+      tracks,
+      zooms,
+      overlayAssets,
+      clipInstances,
+      camera: { ...IDLE_CAMERA },
+    });
+  }
+
+  // 3.6. Decode audio once per asset and share the buffer across scene clips.
+  const audioSampleRate = 48000;
+  const audioChannels = 2;
+  const audioBuffers = new Map<string, AudioBuffer | null>();
+  const audioDecodePromises: Promise<void>[] = [];
+  const legacyAudioTargets: Array<{
+    clip: TimelineTrack['clips'][number];
+    video: HTMLVideoElement;
+  }> = [];
+  for (const context of contexts.values()) {
+    for (const track of context.tracks) {
+      if (track.type !== 'audio' || track.muted) continue;
+      for (const clip of track.clips) {
+        if (clip.payload?.audioBuffer) continue;
+        const assetId = clip.payload?.mediaAssetId;
+        if (!assetId) {
+          if (context.video) {
+            legacyAudioTargets.push({ clip, video: context.video });
+          }
+          continue;
+        }
+        const asset = mediaAssetById.get(assetId);
+        if (!asset) continue;
+        if (!audioBuffers.has(assetId)) {
+          audioBuffers.set(assetId, null);
+          const url = studioMediaAssetUrl(asset.id);
+          audioDecodePromises.push(
+            decodeAudioSource(url, audioSampleRate)
+              .then((buffer) => {
+                audioBuffers.set(assetId, buffer);
+              })
+              .catch(() => {
+                // A broken audio asset must not fail the whole export.
+              }),
+          );
+        }
+      }
+    }
+  }
+  if (legacyAudioTargets.length > 0) {
+    const legacyBuffers = new Map<string, Promise<AudioBuffer | null>>();
+    for (const target of legacyAudioTargets) {
+      const key = target.video.src;
+      if (!key) continue;
+      if (!legacyBuffers.has(key)) {
+        legacyBuffers.set(key, decodeAudioSource(key, audioSampleRate));
+      }
+      audioDecodePromises.push(
+        legacyBuffers.get(key)!.then((buffer) => {
+          if (!buffer) return;
+          target.clip.payload = target.clip.payload || {};
+          target.clip.payload.audioBuffer = buffer;
+        }).catch(() => {
+          // Fall back to the source audio merge in the main process.
+        }),
+      );
+    }
+  }
+  if (audioDecodePromises.length > 0) {
+    options?.onProgress?.(0.08, 'Decoding audio tracks...');
     await Promise.all(audioDecodePromises);
+  }
+  let hasAudioClips = false;
+  for (const context of contexts.values()) {
+    for (const track of context.tracks) {
+      if (track.type !== 'audio' || track.muted) continue;
+      for (const clip of track.clips) {
+        const buffer = clip.payload?.audioBuffer ?? null;
+        if (buffer && clip.payload) {
+          clip.payload.waveformPeaks =
+            clip.payload.waveformPeaks ?? computeWaveformPeaks(buffer);
+          hasAudioClips = true;
+        }
+      }
+    }
   }
 
   // 4. Detect VideoEncoder codec
@@ -499,18 +578,11 @@ export async function renderComposedStudioVideo(
     }
   }
 
-  // 7. Dead-air cuts, pre-mapped from composition time back to source time.
-  //    Sorting is done by `normalizeCuts`, which also merges overlaps so a
-  //    seek can never land between two adjacent cut entries.
-
-  // 8. Pre-simulate camera state from t=0 to handle history-dependent easing.
-  //    We run the camera forward at the export fps without rendering anything,
-  //    so that by the time we start drawing we have a warmed-up camera state.
-  //    (The camera is a low-pass filter — it needs history to be correct.)
+  // 7. Camera history, easing and canvas setup.
+  //    Each scene owns its camera state; easing is a low-pass filter, so a
+  //    scene's motion warms up naturally while it is on screen.
   const easingKey = take.styling.cameraEasing ?? 'smooth';
   const frameDeltaMs = 1000 / fps;
-
-  let camera: StudioCameraState = { ...IDLE_CAMERA };
 
   // Radial glow gradient (created once, used each frame)
   const radialGlow = ctx.createRadialGradient(
@@ -524,10 +596,9 @@ export async function renderComposedStudioVideo(
   radialGlow.addColorStop(0, 'rgba(99, 102, 241, 0.18)');
   radialGlow.addColorStop(1, 'rgba(99, 102, 241, 0)');
 
-  // 9. Frame-by-frame rendering loop.
-  //    Composition time drives everything the viewer sees — frame count, encoded
-  //    timestamps, motion cards — while only the media seeks are translated back
-  //    to source time. This is what makes a cut actually shorten the file.
+  // 8. Frame-by-frame rendering loop.
+  //    Composition time drives frame count, encoded timestamps and the active
+  //    scene. Only media seeks are translated back to each scene's source time.
   const totalFrames = Math.ceil((compositionDuration / 1000) * fps);
   const frameIntervalMs = 1000 / fps;
   const keyframeInterval = fps * 2; // Keyframe every 2 seconds
@@ -552,6 +623,35 @@ export async function renderComposedStudioVideo(
       }
     : null;
 
+  const drawWindowChrome = (
+    chromeCtx: CanvasRenderingContext2D,
+    frame: import('./geometry').StudioWindowFrame,
+  ) => {
+    const deviceFrame = take.styling.deviceFrame;
+    if (deviceFrame && deviceFrame.type !== 'none') {
+      drawDeviceFrameHeader(chromeCtx, {
+        frame: deviceFrame,
+        winX: frame.x,
+        winY: frame.y,
+        winW: frame.width,
+        winH: frame.height,
+        headerH: frame.headerHeight,
+        radius: frame.radius,
+      });
+      drawDeviceFrameFooter(chromeCtx, {
+        frame: deviceFrame,
+        winX: frame.x,
+        winY: frame.y,
+        winW: frame.width,
+        winH: frame.height,
+        headerH: frame.headerHeight,
+        radius: frame.radius,
+      });
+    } else {
+      drawStudioWindowChrome(chromeCtx, frame);
+    }
+  };
+
   for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
     if (options?.signal?.aborted) {
       encoder.close();
@@ -566,152 +666,154 @@ export async function renderComposedStudioVideo(
       frameIndex * frameIntervalMs,
       compositionDuration,
     );
-    const sourceMs = sourceFromComp(currentTimeMs, cuts);
+    const resolvedFrame = sceneScope
+      ? {
+          layers: [
+            {
+              item: sequence.items[0],
+              scene: selectedScene,
+              sceneTimeMs: Math.min(sequence.durationMs, currentTimeMs),
+            },
+          ],
+        }
+      : sampleStudioSequence(take, currentTimeMs);
+    // v1 story editing authors cuts. If an explicit crossfade is present in a
+    // project, render the incoming scene on top rather than failing the export.
+    const layer = resolvedFrame.layers[resolvedFrame.layers.length - 1] ?? null;
+    const context = layer ? contexts.get(layer.scene.id) : undefined;
 
     const tSeek0 = profileTimings ? performance.now() : 0;
-    // Seek video and overlay videos to this exact frame
-    if (video) {
-      const seekSec = Math.min(sourceMs / 1000, video.duration);
-      await seekTo(video, seekSec, options?.signal);
-    }
+    let evaluatedTimeline: ReturnType<typeof evaluateEditorTimeline> | null = null;
 
-    // Overlay media clocks start at their own `startMs`, so an overlay that
-    // appears at 10s shows its first frame there instead of its tenth second.
-    for (const overlay of take.overlays ?? []) {
-      const asset = overlayAssets.get(overlay.id);
-      if (!asset || !(asset.element instanceof HTMLVideoElement)) continue;
-      const ovVid = asset.element;
-      if (!(ovVid.duration > 0)) continue;
-      const offsetSec = (sourceMs - overlay.startMs) / 1000;
-      const seekSec = Math.max(0, Math.min(offsetSec, ovVid.duration - 0.05));
-      if (Math.abs(ovVid.currentTime - seekSec) > 0.01) {
-        try {
-          await seekTo(ovVid, seekSec, options?.signal);
-        } catch (error) {
-          if (options?.signal?.aborted) throw error;
-          // A broken overlay should not fail the whole export.
+    if (context) {
+      const sceneTimeMs = layer?.sceneTimeMs ?? 0;
+      const sourceMs = sourceFromComp(sceneTimeMs, context.cuts);
+
+      // Seek the scene's source recording, when it has one.
+      if (context.video) {
+        const seekSec = Math.min(sourceMs / 1000, context.video.duration);
+        await seekTo(context.video, seekSec, options?.signal);
+      }
+
+      // Overlay media clocks start at their own `startMs`, on scene time.
+      for (const overlay of context.take.overlays ?? []) {
+        const asset = context.overlayAssets.get(overlay.id);
+        if (!asset || !(asset.element instanceof HTMLVideoElement)) continue;
+        const ovVid = asset.element;
+        if (!(ovVid.duration > 0)) continue;
+        const offsetSec = (sceneTimeMs - overlay.startMs) / 1000;
+        const seekSec = Math.max(0, Math.min(offsetSec, ovVid.duration - 0.05));
+        if (Math.abs(ovVid.currentTime - seekSec) > 0.01) {
+          try {
+            await seekTo(ovVid, seekSec, options?.signal);
+          } catch (error) {
+            if (options?.signal?.aborted) throw error;
+            // A broken overlay should not fail the whole export.
+          }
         }
       }
-    }
-    const evaluatedTimeline = evaluateEditorTimeline(
-      timelineTracks ?? [],
-      currentTimeMs,
-    );
-    for (const item of evaluatedTimeline.video) {
-      if (item.itemType !== 'video') continue;
-      const media = item.clip.payload?.mediaAssetId
-        ? clipInstances.get(item.clip.id)?.element ?? clipAssets.get(item.clip.payload.mediaAssetId)?.element
-        : item.track.id === 'track-video'
-          ? clipInstances.get(item.clip.id)?.element ?? undefined
-          : undefined;
-      if (!(media instanceof HTMLVideoElement) || !(media.duration > 0))
-        continue;
-      const seekSeconds = item.sourceTimeMs / 1000;
-      await seekTo(
-        media,
-        Math.max(0, Math.min(seekSeconds, Math.max(0, media.duration - 0.05))),
-        options?.signal,
+
+      evaluatedTimeline = evaluateEditorTimeline(context.tracks, sceneTimeMs);
+      for (const item of evaluatedTimeline.video) {
+        if (item.itemType !== 'video') continue;
+        const media =
+          context.clipInstances.get(item.clip.id)?.element ??
+          (item.clip.payload?.mediaAssetId
+            ? clipAssets.get(item.clip.payload.mediaAssetId)?.element
+            : item.track.id === 'track-video'
+              ? context.video
+              : undefined);
+        if (!(media instanceof HTMLVideoElement) || !(media.duration > 0)) continue;
+        const seekSeconds = item.sourceTimeMs / 1000;
+        await seekTo(
+          media,
+          Math.max(0, Math.min(seekSeconds, Math.max(0, media.duration - 0.05))),
+          options?.signal,
+        );
+      }
+
+      // Update this scene's canvas camera for the frame.
+      const target = context.take.videoCrop
+        ? { ...IDLE_CAMERA }
+        : computeCameraTarget({
+            zooms: context.zooms,
+            timeMs: sourceMs,
+            zoomIntensity: take.styling.zoomIntensity,
+          });
+      context.camera = stepCameraWithDelta(
+        context.camera,
+        target,
+        easingKey,
+        frameDeltaMs,
       );
+
+      const input: StudioComposeInput = {
+        width: dims.width,
+        height: dims.height,
+        styling: take.styling,
+        timeMs: sourceMs,
+        video: context.video,
+        videoReady: Boolean(context.video && context.video.readyState >= 2),
+        // Zoom clips are global to the scene: they scale the whole composed
+        // canvas, not the source video crop.
+        camera: IDLE_CAMERA,
+        canvasCamera: context.camera,
+        effects: context.take.effects ?? [],
+        captions: context.take.captions ?? [],
+        overlays: context.take.overlays ?? [],
+        overlayAssets: context.overlayAssets,
+        videoCrop: context.take.videoCrop,
+        glowGradient: radialGlow,
+        tracks: context.tracks,
+        clipAssets,
+        clipInstances: context.clipInstances,
+        compTimeMs: sceneTimeMs,
+        drawWindowChrome,
+      };
+
+      const tDraw0 = profileTimings ? performance.now() : 0;
+      renderStudioFrame(ctx, input);
+
+      // Legacy Motion Cards survive only for single-scene projects. New scenes
+      // are the replacement and must not be covered by a global overlay.
+      if (!take.scenes?.length) {
+        if (take.styling.introCard?.enabled) {
+          drawMotionCard(ctx, {
+            card: take.styling.introCard,
+            cardType: 'intro',
+            currentTimeMs,
+            totalDurationMs: compositionDuration,
+            cw: dims.width,
+            ch: dims.height,
+          });
+        }
+        if (take.styling.outroCard?.enabled) {
+          drawMotionCard(ctx, {
+            card: take.styling.outroCard,
+            cardType: 'outro',
+            currentTimeMs,
+            totalDurationMs: compositionDuration,
+            cw: dims.width,
+            ch: dims.height,
+          });
+        }
+      }
+      if (profileTimings) {
+        profileTimings.drawMs.push(performance.now() - tDraw0);
+      }
+    } else {
+      // A gap in an explicit sequence renders as a clean background frame.
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, dims.width, dims.height);
     }
+
     if (profileTimings) {
       profileTimings.seekMs.push(performance.now() - tSeek0);
-    }
-
-    // Update camera state for this frame
-    const target = take.videoCrop
-      ? { ...IDLE_CAMERA }
-      : computeCameraTarget({
-          zooms: timelineZooms,
-          timeMs: sourceMs,
-          zoomIntensity: take.styling.zoomIntensity,
-        });
-    camera = stepCameraWithDelta(camera, target, easingKey, frameDeltaMs);
-
-    // Draw the full composition
-    const input: StudioComposeInput = {
-      width: dims.width,
-      height: dims.height,
-      styling: take.styling,
-      timeMs: sourceMs,
-      video: video || null,
-      videoReady: Boolean(video && video.readyState >= 2),
-      // Zoom clips are global: they scale the whole canvas, not the source
-      // video crop. Keep the content camera idle for exports.
-      camera: IDLE_CAMERA,
-      canvasCamera: camera,
-      effects: take.effects ?? [],
-      captions: take.captions ?? [],
-      overlays: take.overlays ?? [],
-      overlayAssets,
-      videoCrop: take.videoCrop,
-      glowGradient: radialGlow,
-      tracks: timelineTracks,
-      clipAssets,
-      clipInstances,
-      compTimeMs: currentTimeMs,
-      drawWindowChrome: (chromeCtx, frame) => {
-        const deviceFrame = take.styling.deviceFrame;
-        if (
-          deviceFrame &&
-          deviceFrame.type !== 'none'
-        ) {
-          drawDeviceFrameHeader(chromeCtx, {
-            frame: deviceFrame,
-            winX: frame.x,
-            winY: frame.y,
-            winW: frame.width,
-            winH: frame.height,
-            headerH: frame.headerHeight,
-            radius: frame.radius,
-          });
-          drawDeviceFrameFooter(chromeCtx, {
-            frame: deviceFrame,
-            winX: frame.x,
-            winY: frame.y,
-            winW: frame.width,
-            winH: frame.height,
-            headerH: frame.headerHeight,
-            radius: frame.radius,
-          });
-        } else {
-          drawStudioWindowChrome(chromeCtx, frame);
-        }
-      },
-    };
-
-    const tDraw0 = profileTimings ? performance.now() : 0;
-    renderStudioFrame(ctx, input);
-
-    // Intro & Outro Motion Cards
-    if (take.styling.introCard?.enabled) {
-      drawMotionCard(ctx, {
-        card: take.styling.introCard,
-        cardType: 'intro',
-        currentTimeMs,
-        totalDurationMs: compositionDuration,
-        cw: dims.width,
-        ch: dims.height,
-      });
-    }
-
-    if (take.styling.outroCard?.enabled) {
-      drawMotionCard(ctx, {
-        card: take.styling.outroCard,
-        cardType: 'outro',
-        currentTimeMs,
-        totalDurationMs: compositionDuration,
-        cw: dims.width,
-        ch: dims.height,
-      });
-    }
-    if (profileTimings) {
-      profileTimings.drawMs.push(performance.now() - tDraw0);
     }
 
     // Capture the drawn canvas as a VideoFrame and encode it
     const tEnc0 = profileTimings ? performance.now() : 0;
     const videoFrame = new VideoFrame(canvas, {
-      // Composition time: the muxer's timeline must match the shorter output.
       timestamp: Math.round(currentTimeMs * 1000), // μs
     });
     const isKeyframe = frameIndex % keyframeInterval === 0;
@@ -725,50 +827,50 @@ export async function renderComposedStudioVideo(
     // Mix and encode audio for this frame
     if (hasAudioClips && audioEncoder && !audioEncoderError) {
       const framesPerSample = Math.round(audioSampleRate / fps);
-      const audioClips = evaluatedTimeline.audio;
       let mixedSamples: Float32Array | null = null;
 
-      if (audioClips.length > 0) {
+      if (context && evaluatedTimeline && evaluatedTimeline.audio.length > 0) {
         mixedSamples = mixAudioSamples(
-          audioClips,
-          timelineTracks,
+          evaluatedTimeline.audio,
+          context.tracks,
           audioSampleRate,
           framesPerSample,
         );
-      } else {
+      }
+
+      if (!mixedSamples) {
         // Emit silence for frames with no active audio clips to keep the
         // Opus stream timestamp continuous — gaps cause playback artifacts.
         mixedSamples = new Float32Array(framesPerSample * audioChannels);
       }
 
-      if (mixedSamples) {
-        // Convert interleaved Float32Array to s16-planar ArrayBuffer for AudioData.
-        // s16-planar stores each channel in a contiguous plane:
-        //   [ch0_sample0, ch0_sample1, ..., ch1_sample0, ch1_sample1, ...]
-        const numSamples = framesPerSample;
-        const totalBytes = numSamples * audioChannels * 2; // 2 bytes per sample per channel
-        const planeBuffer = new ArrayBuffer(totalBytes);
-        const int16View = new Int16Array(planeBuffer);
-        for (let ch = 0; ch < audioChannels; ch++) {
-          const planeOffset = ch * numSamples;
-          for (let i = 0; i < numSamples; i++) {
-            const sample = Math.max(-1, Math.min(1, mixedSamples[(i * audioChannels) + ch] || 0));
-            int16View[planeOffset + i] = sample < 0 ? Math.floor(sample * 0x8000) : Math.floor(sample * 0x7FFF);
-          }
+      // Convert interleaved Float32Array to s16-planar ArrayBuffer for AudioData.
+      const numSamples = framesPerSample;
+      const totalBytes = numSamples * audioChannels * 2;
+      const planeBuffer = new ArrayBuffer(totalBytes);
+      const int16View = new Int16Array(planeBuffer);
+      for (let ch = 0; ch < audioChannels; ch++) {
+        const planeOffset = ch * numSamples;
+        for (let i = 0; i < numSamples; i++) {
+          const sample = Math.max(
+            -1,
+            Math.min(1, mixedSamples[(i * audioChannels) + ch] || 0),
+          );
+          int16View[planeOffset + i] =
+            sample < 0 ? Math.floor(sample * 0x8000) : Math.floor(sample * 0x7fff);
         }
-        const audioFrame = new AudioData({
-          format: 's16-planar' as const,
-          sampleRate: audioSampleRate,
-          numberOfChannels: audioChannels,
-          numberOfFrames: numSamples,
-          timestamp: Math.round(currentTimeMs * 1000), // μs
-          data: planeBuffer,
-        });
-        audioEncoder.encode(audioFrame);
-        audioFrame.close();
       }
+      const audioFrame = new AudioData({
+        format: 's16-planar' as const,
+        sampleRate: audioSampleRate,
+        numberOfChannels: audioChannels,
+        numberOfFrames: numSamples,
+        timestamp: Math.round(currentTimeMs * 1000), // μs
+        data: planeBuffer,
+      });
+      audioEncoder.encode(audioFrame);
+      audioFrame.close();
     }
-
     // Drain encoder and flush muxer every ENCODE_BATCH frames to stream data
     if (frameIndex % ENCODE_BATCH === 0 || frameIndex === totalFrames - 1) {
       const tDrain0 = profileTimings ? performance.now() : 0;

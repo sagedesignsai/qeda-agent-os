@@ -338,6 +338,11 @@ export const StudioProjectCard = memo(function StudioProjectCard({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 text-[10px]">
+            {(take.sceneCount ?? 1) > 1 && (
+              <span className="text-emerald-400 font-mono">
+                {take.sceneCount} scenes
+              </span>
+            )}
             {take.cutCount > 0 && (
               <span className="text-muted-foreground/80 font-mono">
                 {take.cutCount} {take.cutCount === 1 ? 'cut' : 'cuts'}

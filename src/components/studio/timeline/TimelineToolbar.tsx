@@ -10,7 +10,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   MousePointerIcon,
   ScissorsIcon,
@@ -45,6 +45,8 @@ interface TimelineToolbarProps {
   onRestartPlayback: () => void;
   onZoomToFit: () => void;
   collapsed?: boolean;
+  /** Scene scope switcher, rendered next to the transport. */
+  sceneSelector?: ReactNode;
 }
 
 function formatTimecode(ms: number): string {
@@ -92,6 +94,7 @@ export function TimelineToolbar({
   onRestartPlayback,
   onZoomToFit,
   collapsed = false,
+  sceneSelector,
 }: TimelineToolbarProps) {
   const {
     activeTool,
@@ -271,8 +274,10 @@ export function TimelineToolbar({
         </Tooltip>
       </div>
 
-      {/* ── Center: Transport Controls & Timecode ────────────────────────────── */}
-      <div className="flex items-center gap-1.5">
+      {/* ── Center: Scene scope, Transport Controls & Timecode ───────────────── */}
+      <div className="flex min-w-0 items-center gap-1.5">
+        {sceneSelector}
+        {sceneSelector && <div className="h-3 w-px bg-border/40" />}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

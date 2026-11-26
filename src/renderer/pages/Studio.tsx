@@ -69,6 +69,12 @@ import { StudioContentPanel } from '@/components/studio/content/StudioContentPan
 import type { ContentTab } from '@/components/studio/content/StudioContentPanel';
 import { StudioCopilotPanel } from '@/components/studio/copilot/StudioCopilotPanel';
 import { StudioCommandBar } from '@/components/studio/StudioCommandBar';
+import { StudioSceneSelector } from '@/components/studio/scenes/StudioSceneSelector';
+import { StudioSceneStrip } from '@/components/studio/scenes/StudioSceneStrip';
+import {
+  StudioSceneDialog,
+  type StudioSceneDialogMode,
+} from '@/components/studio/scenes/StudioSceneDialog';
 import { BlendModeDialog } from '@/components/studio/features/BlendModeDialog';
 import { TextAnimatorDialog } from '@/components/studio/features/TextAnimatorDialog';
 import { ShapeEditorDialog } from '@/components/studio/features/ShapeEditorDialog';
@@ -79,6 +85,17 @@ import { ClipEffectsStudioDialog } from '@/components/studio/inspector/ClipEffec
 import { StudioCanvasBackgroundAddonDialog } from '@/components/studio/addons/StudioCanvasBackgroundAddonDialog';
 import { staticValueForProperty } from '@/lib/studio/timeline/keyframes-ui';
 import { isStudioZoomClip, STUDIO_ZOOM_PRESETS } from '@/lib/studio/effects/zoom-presets';
+import {
+  getActiveStudioScene,
+  getStudioSceneIndex,
+  getStudioScenes,
+  resolveStudioSequence,
+  sceneIsEmpty,
+} from '@/lib/studio/scenes';
+import type {
+  StudioSceneContentPatch,
+  StudioSceneTemplateId,
+} from '@/lib/studio/scenes';
 import { inferTimelineItemType } from '@/lib/studio/timeline/item-type';
 import { StudioCompositionCreateDialog } from '@/components/studio/StudioCompositionCreateDialog';
 import { ShowcaseProjectDialog, type ShowcaseProjectSourceType } from '@/components/studio/ShowcaseProjectDialog';
@@ -185,6 +202,12 @@ export default function Studio() {
     updateTimelineData,
     updateTracks,
     updateMediaAssets,
+    switchScene,
+    addScene,
+    renameScene,
+    deleteScene,
+    restoreScene,
+    reorderScenes,
     generateSocialKit,
     exportVideo,
     deleteTake,
@@ -269,7 +292,44 @@ export default function Studio() {
     () => normalizeCuts(activeTake?.cuts ?? [], sourceDurationMs),
     [activeTake?.cuts, sourceDurationMs],
   );
-  const effectiveDurationMs = compositionDurationMs(sourceDurationMs, cuts);
+
+  const scenes = useMemo(
+    () => (activeTake ? getStudioScenes(activeTake) : []),
+    [activeTake],
+  );
+  const activeScene = useMemo(
+    () => (activeTake ? getActiveStudioScene(activeTake) : null),
+    [activeTake],
+  );
+  const hasMultipleScenes = scenes.length > 1;
+  const sequence = useMemo(
+    () =>
+      activeTake
+        ? resolveStudioSequence(activeTake)
+        : { items: [], durationMs: 0 },
+    [activeTake],
+  );
+  const sceneTracksDurationMs = useMemo(
+    () =>
+      Math.max(
+        0,
+        ...timelineTracks.flatMap((track) =>
+          track.clips.map((clip) => clip.startMs + clip.durationMs),
+        ),
+      ),
+    [timelineTracks],
+  );
+  // A scene is its own timeline scope. The project source length and cuts only
+  // apply to the implicit/legacy single-scene path.
+  const effectiveDurationMs = activeTake?.scenes?.length
+    ? Math.max(
+        1000,
+        activeScene?.durationMs ?? 0,
+        sceneTracksDurationMs,
+      )
+    : compositionDurationMs(sourceDurationMs, cuts);
+  const activeSceneHasSourceVideo =
+    !activeTake?.scenes?.length || Boolean(activeScene?.videoPath);
 
   // Modals & Copilot
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
@@ -293,6 +353,15 @@ export default function Studio() {
   const [backgroundStudioOpen, setBackgroundStudioOpen] = useState(false);
   const [activeAddonId, setActiveAddonId] = useState<StudioAddonId | null>(null);
   const [addonTargetClipId, setAddonTargetClipId] = useState<string | null>(null);
+  // Scene scope + story playback
+  const [sceneDialogOpen, setSceneDialogOpen] = useState(false);
+  const [sceneDialogMode, setSceneDialogMode] =
+    useState<StudioSceneDialogMode>('add');
+  const [sceneDialogName, setSceneDialogName] = useState('');
+  const [storyPlaying, setStoryPlaying] = useState(false);
+  const storyPlayingRef = useRef(false);
+  const storyPlayPendingRef = useRef(false);
+  const latestScenePatchRef = useRef<StudioSceneContentPatch | null>(null);
 
   const openStudioAddon = useCallback(
     (addonId: StudioAddonId, clipId?: string) => {
@@ -610,7 +679,7 @@ export default function Studio() {
     let cancelled = false;
 
     void (async () => {
-      if (!activeTake?.id) {
+      if (!activeTake?.id || !activeSceneHasSourceVideo) {
         if (!cancelled) setVideoUrl(null);
         return;
       }
@@ -633,7 +702,7 @@ export default function Studio() {
     return () => {
       cancelled = true;
     };
-  }, [activeTake?.id, activeTake?.videoPath]);
+  }, [activeTake?.id, activeTake?.videoPath, activeSceneHasSourceVideo]);
 
   // Synchronize timeline track structural edits back to active take
   const handleTimelineTracksChange = useCallback(
@@ -648,13 +717,22 @@ export default function Studio() {
       // Persist both the compatibility fields (zooms, captions, cuts, etc.)
       // and any multi-track layers or per-clip edits (transform, deviceFrame,
       // effects, keyframes, animations) in a single atomic save.
-      void updateTimelineData({
+      const data: StudioSceneContentPatch = {
         zooms: extractZoomsFromTracks(tracks, cuts),
         captions: extractCaptionsFromTracks(tracks, cuts),
         cuts: extractCutsFromTracks(tracks, activeTake.durationMs),
         effects: extractEffectsFromTracks(tracks, cuts),
         overlays: extractOverlaysFromTracks(tracks, cuts),
         ...(extracted ? { tracks: extracted.tracks } : {}),
+      };
+      latestScenePatchRef.current = data;
+      void updateTimelineData({
+        zooms: data.zooms ?? [],
+        captions: data.captions ?? [],
+        cuts: data.cuts ?? [],
+        effects: data.effects ?? [],
+        overlays: data.overlays ?? [],
+        ...(data.tracks ? { tracks: data.tracks } : {}),
       }).catch((error: unknown) => {
         console.error('[Studio] Failed to save timeline data.', error);
         toast.error('Could not save the latest timeline changes.');
@@ -686,32 +764,237 @@ export default function Studio() {
     timelineStore.seek(ms, false);
   }, []);
 
-  const handleTogglePlayback = useCallback(() => {
-    const nextPlaying = !isPlaying;
+  // ── Scene scope ───────────────────────────────────────────────────────────
+
+  const stopPlayback = useCallback(() => {
+    storyPlayPendingRef.current = false;
+    previewVideoRef.current?.pause();
+    setIsPlaying(false);
+    timelineStore.setPlaying(false);
+  }, []);
+
+  const startPlayback = useCallback(() => {
     const video = previewVideoRef.current;
     const isMultiTrack = timelineStore.getState().isMultiTrack;
-    if (nextPlaying) {
-      // Start from the button's user gesture; the canvas also keeps playback
-      // synchronized when state changes or the video element mounts later.
-      // The playhead lives in composition time, the element in source time.
-      if (!isMultiTrack) {
-        const playheadMs = timelineStore.getState().currentTimeMs;
-        const sourceMs = sourceFromComp(playheadMs, cuts);
-        if (video && Math.abs(video.currentTime * 1000 - sourceMs) > 50) {
-          video.currentTime = sourceMs / 1000;
-        }
-        void video?.play().catch((error: unknown) => {
-          console.warn('[Studio] Timeline playback request failed.', error);
-          setIsPlaying(false);
-          timelineStore.setPlaying(false);
-        });
+    if (!isMultiTrack) {
+      const playheadMs = timelineStore.getState().currentTimeMs;
+      const sourceMs = sourceFromComp(playheadMs, cuts);
+      if (video && Math.abs(video.currentTime * 1000 - sourceMs) > 50) {
+        video.currentTime = sourceMs / 1000;
       }
-    } else {
-      video?.pause();
+      void video?.play().catch((error: unknown) => {
+        console.warn('[Studio] Timeline playback request failed.', error);
+        if (storyPlayingRef.current) {
+          storyPlayingRef.current = false;
+          storyPlayPendingRef.current = false;
+          setStoryPlaying(false);
+        }
+        setIsPlaying(false);
+        timelineStore.setPlaying(false);
+      });
     }
-    setIsPlaying(nextPlaying);
-    timelineStore.setPlaying(nextPlaying);
-  }, [isPlaying, cuts]);
+    setIsPlaying(true);
+    timelineStore.setPlaying(true);
+  }, [cuts]);
+
+  const handleSwitchScene = useCallback(
+    async (sceneId: string, options?: { keepStory?: boolean }) => {
+      if (!activeTake) return;
+      if (sceneId === (activeTake.activeSceneId ?? scenes[0]?.id)) return;
+      if (!options?.keepStory) {
+        const wasStory = storyPlayingRef.current;
+        storyPlayingRef.current = false;
+        storyPlayPendingRef.current = false;
+        setStoryPlaying(false);
+        if (wasStory) stopPlayback();
+      }
+      const patch = latestScenePatchRef.current ?? undefined;
+      latestScenePatchRef.current = null;
+      try {
+        const next = await switchScene(sceneId, patch);
+        if (!next) {
+          storyPlayingRef.current = false;
+          storyPlayPendingRef.current = false;
+          setStoryPlaying(false);
+        }
+      } catch (error) {
+        console.error('[Studio] Failed to switch scenes.', error);
+        storyPlayingRef.current = false;
+        storyPlayPendingRef.current = false;
+        setStoryPlaying(false);
+        toast.error('Could not switch scenes.');
+      }
+    },
+    [activeTake, scenes, stopPlayback, switchScene],
+  );
+
+  const handleOpenAddScene = useCallback(() => {
+    setSceneDialogMode('add');
+    setSceneDialogName(`Scene ${scenes.length + 1}`);
+    setSceneDialogOpen(true);
+  }, [scenes.length]);
+
+  const handleOpenRenameScene = useCallback(() => {
+    setSceneDialogMode('rename');
+    setSceneDialogName(activeScene?.name ?? '');
+    setSceneDialogOpen(true);
+  }, [activeScene?.name]);
+
+  const handleSceneDialogSubmit = useCallback(
+    (name: string, templateId?: StudioSceneTemplateId) => {
+      if (sceneDialogMode === 'rename') {
+        if (!activeScene) return;
+        void renameScene(activeScene.id, name).then((ok) => {
+          if (ok) toast.success(`Renamed scene to “${name}”.`);
+        }).catch((error) => {
+          console.error('[Studio] Failed to rename scene.', error);
+          toast.error('Could not rename the scene.');
+        });
+        return;
+      }
+      if (storyPlayingRef.current) {
+        storyPlayingRef.current = false;
+        storyPlayPendingRef.current = false;
+        setStoryPlaying(false);
+        stopPlayback();
+      }
+      const patch = latestScenePatchRef.current ?? undefined;
+      latestScenePatchRef.current = null;
+      void addScene({
+        name,
+        templateId,
+        currentPatch: patch,
+      }).then((next) => {
+        if (next) toast.success(`Added “${name}”.`);
+      }).catch((error) => {
+        console.error('[Studio] Failed to add scene.', error);
+        toast.error('Could not add the scene.');
+      });
+    },
+    [activeScene, addScene, renameScene, sceneDialogMode, stopPlayback],
+  );
+
+  const handleDuplicateScene = useCallback(() => {
+    if (!activeScene) return;
+    if (storyPlayingRef.current) {
+      storyPlayingRef.current = false;
+      storyPlayPendingRef.current = false;
+      setStoryPlaying(false);
+      stopPlayback();
+    }
+    const name = `${activeScene.name} copy`;
+    const patch = latestScenePatchRef.current ?? undefined;
+    latestScenePatchRef.current = null;
+    void addScene({
+      name,
+      duplicateCurrent: true,
+      currentPatch: patch,
+    }).then((next) => {
+      if (next) toast.success(`Duplicated “${activeScene.name}”.`);
+    }).catch((error) => {
+      console.error('[Studio] Failed to duplicate scene.', error);
+      toast.error('Could not duplicate the scene.');
+    });
+  }, [activeScene, addScene, stopPlayback]);
+
+  const handleDeleteScene = useCallback(() => {
+    if (!activeScene || scenes.length <= 1) return;
+    const confirmed = window.confirm(
+      `Delete “${activeScene.name}”? Its timeline content will be removed from the project.`,
+    );
+    if (!confirmed) return;
+    storyPlayingRef.current = false;
+    storyPlayPendingRef.current = false;
+    setStoryPlaying(false);
+    stopPlayback();
+    latestScenePatchRef.current = null;
+    void deleteScene(activeScene.id).then((result) => {
+      if (!result) return;
+      toast('Scene deleted', {
+        description: result.deletedScene.name,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void restoreScene(result.deletedScene, result.index).then(() => {
+              toast.success('Scene restored.');
+            }).catch((error) => {
+              console.error('[Studio] Failed to restore scene.', error);
+              toast.error('Could not restore the scene.');
+            });
+          },
+        },
+      });
+    }).catch((error) => {
+      console.error('[Studio] Failed to delete scene.', error);
+      toast.error('Could not delete the scene.');
+    });
+  }, [activeScene, deleteScene, restoreScene, scenes.length, stopPlayback]);
+
+  const handleReorderScene = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (storyPlayingRef.current) {
+        storyPlayingRef.current = false;
+        storyPlayPendingRef.current = false;
+        setStoryPlaying(false);
+        stopPlayback();
+      }
+      void reorderScenes(fromIndex, toIndex).catch((error) => {
+        console.error('[Studio] Failed to reorder scenes.', error);
+        toast.error('Could not reorder scenes.');
+      });
+    },
+    [reorderScenes, stopPlayback],
+  );
+
+  const handleExportScene = useCallback(() => {
+    void exportVideo('mp4', 'scene');
+  }, [exportVideo]);
+
+  const handleToggleStoryPlayback = useCallback(() => {
+    if (storyPlayingRef.current) {
+      storyPlayingRef.current = false;
+      setStoryPlaying(false);
+      stopPlayback();
+      return;
+    }
+    if (!hasMultipleScenes || !activeTake) return;
+    storyPlayingRef.current = true;
+    setStoryPlaying(true);
+    const first = scenes[0];
+    if (!first) return;
+    if ((activeTake.activeSceneId ?? scenes[0].id) !== first.id) {
+      storyPlayPendingRef.current = true;
+      void handleSwitchScene(first.id, { keepStory: true });
+    } else {
+      timelineStore.seek(0, false);
+      startPlayback();
+    }
+  }, [
+    activeTake,
+    handleSwitchScene,
+    hasMultipleScenes,
+    scenes,
+    startPlayback,
+    stopPlayback,
+  ]);
+
+  // Start the next scene once the timeline store has swapped scopes.
+  useEffect(() => {
+    if (!storyPlaying || !storyPlayPendingRef.current) return;
+    storyPlayPendingRef.current = false;
+    const timer = window.setTimeout(() => startPlayback(), 150);
+    return () => window.clearTimeout(timer);
+  }, [activeTake?.activeSceneId, startPlayback, storyPlaying]);
+
+  const handleTogglePlayback = useCallback(() => {
+    if (isPlaying) {
+      storyPlayingRef.current = false;
+      setStoryPlaying(false);
+      stopPlayback();
+    } else {
+      startPlayback();
+    }
+  }, [isPlaying, startPlayback, stopPlayback]);
 
   const handlePreviewVideoElement = useCallback(
     (video: HTMLVideoElement | null) => {
@@ -729,7 +1012,18 @@ export default function Studio() {
   const handlePlaybackEnded = useCallback(() => {
     timelineStore.setPlaying(false);
     setIsPlaying(false);
-  }, []);
+    if (!storyPlayingRef.current || !activeTake) return;
+    const currentScenes = getStudioScenes(activeTake);
+    const index = getStudioSceneIndex(activeTake);
+    const next = currentScenes[index + 1];
+    if (next) {
+      storyPlayPendingRef.current = true;
+      void handleSwitchScene(next.id, { keepStory: true });
+      return;
+    }
+    storyPlayingRef.current = false;
+    setStoryPlaying(false);
+  }, [activeTake, handleSwitchScene]);
 
   const handleRunMagicDraftViaCopilot = () => {
     setCopilotInitialPrompt(
@@ -1557,10 +1851,19 @@ export default function Studio() {
                         onSelect: () => setSourcePickerOpen(true),
                       },
                       {
-                        label: 'Export MP4',
+                        label: scenes.length > 1 ? 'Export Story (MP4)' : 'Export MP4',
                         icon: <DownloadIcon className="size-3.5" />,
                         onSelect: () => void exportVideo('mp4'),
                       },
+                      ...(scenes.length > 1
+                        ? [
+                            {
+                              label: 'Export Current Scene (MP4)',
+                              icon: <DownloadIcon className="size-3.5" />,
+                              onSelect: () => void exportVideo('mp4', 'scene'),
+                            },
+                          ]
+                        : []),
                       {
                         label: 'Delete take',
                         icon: <Trash2Icon className="size-3.5" />,
@@ -1632,9 +1935,10 @@ export default function Studio() {
                 >
                   <main className="flex-1 flex flex-col overflow-hidden h-full w-full">
                     {/* 60fps Real-Time Video Preview Canvas — full container, no padding */}
-                    <div className="flex-1 w-full h-full flex items-center justify-center min-h-0 overflow-hidden">
+                    <div className="relative flex-1 w-full h-full flex items-center justify-center min-h-0 overflow-hidden">
                       <StudioCanvas
-                        videoUrl={videoUrl}
+                        key={activeTake.activeSceneId ?? activeTake.id}
+                        videoUrl={activeSceneHasSourceVideo ? videoUrl : null}
                         styling={activeTake.styling}
                         zooms={activeTake.zooms}
                         captions={activeTake.captions}
@@ -1654,7 +1958,30 @@ export default function Studio() {
                         onVideoElement={handlePreviewVideoElement}
                         tracks={timelineTracks}
                         mediaAssets={activeTake.mediaAssets ?? []}
+                        showMotionCards={!activeTake.scenes?.length}
                       />
+                      {storyPlaying && activeScene && (
+                        <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-white/10 bg-black/65 px-2 py-1 text-[10px] font-medium text-white shadow-sm backdrop-blur-sm">
+                          Scene {getStudioSceneIndex(activeTake, activeScene.id) + 1} of {scenes.length}
+                        </div>
+                      )}
+                      {(activeTake.scenes?.length ?? 0) > 0 &&
+                        activeScene &&
+                        !storyPlaying &&
+                        sceneIsEmpty(activeScene) &&
+                        !activeSceneHasSourceVideo && (
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+                            <div className="max-w-xs rounded-lg border border-border/60 bg-background/80 px-4 py-3 text-center shadow-sm backdrop-blur-sm">
+                              <p className="text-xs font-medium text-foreground">
+                                Empty scene
+                              </p>
+                              <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                                Add media, text, or an effect from the panels to
+                                start this part of the story.
+                              </p>
+                            </div>
+                          </div>
+                        )}
                     </div>
                   </main>
                 </ResizablePanel>
@@ -1708,7 +2035,7 @@ export default function Studio() {
             >
               <StudioCanvasTimeline
                 activeTake={activeTake}
-                videoUrl={videoUrl}
+                videoUrl={activeSceneHasSourceVideo ? videoUrl : null}
                 durationMs={effectiveDurationMs}
                 isPlaying={isPlaying}
                 onSeek={handlePreviewTimeUpdate}
@@ -1722,6 +2049,38 @@ export default function Studio() {
                   openStudioAddon(addonId, clipId)
                 }
                 collapsed={timelineCollapsed}
+                sceneSelector={
+                  activeTake ? (
+                    <StudioSceneSelector
+                      scenes={scenes}
+                      activeSceneId={activeTake.activeSceneId ?? activeScene?.id}
+                      onSelectScene={(sceneId) => {
+                        void handleSwitchScene(sceneId);
+                      }}
+                      onAddScene={handleOpenAddScene}
+                      onDuplicateScene={handleDuplicateScene}
+                      onRenameScene={handleOpenRenameScene}
+                      onDeleteScene={handleDeleteScene}
+                      onExportScene={handleExportScene}
+                    />
+                  ) : null
+                }
+                storyStrip={
+                  hasMultipleScenes ? (
+                    <StudioSceneStrip
+                      scenes={scenes}
+                      activeSceneId={activeTake?.activeSceneId ?? activeScene?.id}
+                      totalDurationMs={sequence.durationMs}
+                      isStoryPlaying={storyPlaying}
+                      onSelectScene={(sceneId) => {
+                        void handleSwitchScene(sceneId);
+                      }}
+                      onReorderScene={handleReorderScene}
+                      onAddScene={handleOpenAddScene}
+                      onToggleStoryPlayback={handleToggleStoryPlayback}
+                    />
+                  ) : null
+                }
               />
             </ResizablePanel>
           </ResizablePanelGroup>
@@ -1916,6 +2275,15 @@ export default function Studio() {
         />
       )}
 
+      <StudioSceneDialog
+        open={sceneDialogOpen}
+        mode={sceneDialogMode}
+        initialName={sceneDialogName}
+        sceneCount={scenes.length}
+        onOpenChange={setSceneDialogOpen}
+        onSubmit={handleSceneDialogSubmit}
+      />
+
       {/* ── Studio Command Bar ─────────────────────────────────────────────── */}
       {activeTake && (
         <StudioCommandBar
@@ -1935,6 +2303,12 @@ export default function Studio() {
           }}
           onRecord={() => setSourcePickerOpen(true)}
           onExport={() => void exportVideo('mp4')}
+          onExportScene={handleExportScene}
+          onAddScene={handleOpenAddScene}
+          onDuplicateScene={handleDuplicateScene}
+          onPlayStory={handleToggleStoryPlayback}
+          sceneCount={scenes.length}
+          isStoryPlaying={storyPlaying}
           onSocialKit={handleOpenSocialKit}
           onMagicDraft={handleRunMagicDraftViaCopilot}
           onAIDirector={() => {

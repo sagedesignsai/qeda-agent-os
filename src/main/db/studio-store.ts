@@ -23,6 +23,8 @@ import type {
   StudioEffect,
   StudioMediaAsset,
   StudioOverlay,
+  StudioScene,
+  StudioSequence,
   StudioTrack,
   StudioVideoCrop,
   StudioStyling,
@@ -43,6 +45,8 @@ export type {
   StudioEffect,
   StudioMediaAsset,
   StudioOverlay,
+  StudioScene,
+  StudioSequence,
   StudioTrack,
   StudioVideoCrop,
   StudioStyling,
@@ -84,6 +88,9 @@ interface StudioTakeRow {
   // Multi-track project fields
   media_assets_json: string | null;
   tracks_json: string | null;
+  scenes_json: string | null;
+  active_scene_id: string | null;
+  sequence_json: string | null;
 }
 
 function parseJsonSafe<T>(json: string | null, fallback: T): T {
@@ -138,6 +145,15 @@ function rowToTake(row: StudioTakeRow): StudioTake {
       row.tracks_json,
       undefined,
     ),
+    scenes: parseJsonSafe<StudioScene[] | undefined>(
+      row.scenes_json,
+      undefined,
+    ),
+    activeSceneId: row.active_scene_id ?? undefined,
+    sequence: parseJsonSafe<StudioSequence | undefined>(
+      row.sequence_json,
+      undefined,
+    ),
   };
 }
 
@@ -164,6 +180,18 @@ export function listStudioTakes(
        CASE WHEN json_valid(t.overlays_json) THEN json_array_length(t.overlays_json)
             ELSE 0 END AS overlay_count,
        CASE WHEN json_valid(t.tracks_json) THEN 1 ELSE 0 END AS is_multi_track,
+       CASE WHEN json_valid(t.scenes_json)
+            THEN CASE WHEN json_array_length(t.scenes_json) > 0
+                      THEN json_array_length(t.scenes_json) ELSE 1 END
+            ELSE 1 END AS scene_count,
+       CASE WHEN json_valid(t.scenes_json)
+            THEN CASE WHEN json_array_length(t.scenes_json) > 0
+                      THEN COALESCE((
+                        SELECT SUM(MAX(1000, COALESCE(CAST(json_extract(s.value, '$.durationMs') AS INTEGER), 1000)))
+                          FROM json_each(t.scenes_json) AS s
+                      ), t.duration_ms)
+                      ELSE t.duration_ms END
+            ELSE t.duration_ms END AS story_duration_ms,
        t.created_at, t.updated_at
        FROM studio_takes t LEFT JOIN projects p ON p.id = t.project_id`;
   let rows: Array<{
@@ -180,6 +208,8 @@ export function listStudioTakes(
     effect_count: number;
     overlay_count: number;
     is_multi_track: number;
+    scene_count: number;
+    story_duration_ms: number;
     created_at: number;
     updated_at: number;
   }>;
@@ -206,12 +236,13 @@ export function listStudioTakes(
     description: r.description,
     sourceType: (r.source_type as 'screen' | 'window') || 'screen',
     sourceName: r.source_name,
-    durationMs: r.duration_ms,
+    durationMs: r.story_duration_ms ?? r.duration_ms,
     cutCount: r.cut_count,
     zoomCount: r.zoom_count,
     effectCount: r.effect_count,
     overlayCount: r.overlay_count,
     isMultiTrack: r.is_multi_track === 1,
+    sceneCount: r.scene_count ?? 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
@@ -359,6 +390,9 @@ export function saveStudioTake(take: {
   socialKit?: StudioSocialKit | null;
   mediaAssets?: StudioMediaAsset[];
   tracks?: StudioTrack[];
+  scenes?: StudioScene[];
+  activeSceneId?: string;
+  sequence?: StudioSequence;
 }): StudioTake {
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
@@ -388,6 +422,9 @@ export function saveStudioTake(take: {
       socialKit: 'social_kit_json',
       mediaAssets: 'media_assets_json',
       tracks: 'tracks_json',
+      scenes: 'scenes_json',
+      activeSceneId: 'active_scene_id',
+      sequence: 'sequence_json',
     };
     const jsonFields = new Set([
       'cuts',
@@ -400,6 +437,8 @@ export function saveStudioTake(take: {
       'socialKit',
       'mediaAssets',
       'tracks',
+      'scenes',
+      'sequence',
     ]);
     const updates = Object.entries(columns).filter(
       ([key]) =>
@@ -454,6 +493,9 @@ export function saveStudioTake(take: {
     socialKit: take.socialKit ?? null,
     mediaAssets: take.mediaAssets ?? [],
     tracks: take.tracks ?? [],
+    scenes: take.scenes,
+    activeSceneId: take.activeSceneId,
+    sequence: take.sequence,
   };
 
   db.prepare(
@@ -464,8 +506,9 @@ export function saveStudioTake(take: {
         video_crop_json,
         styling_json, social_kit_json,
         media_assets_json, tracks_json,
+        scenes_json, active_scene_id, sequence_json,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         project_id        = excluded.project_id,
         title             = excluded.title,
@@ -486,6 +529,9 @@ export function saveStudioTake(take: {
         social_kit_json   = excluded.social_kit_json,
         media_assets_json = excluded.media_assets_json,
         tracks_json       = excluded.tracks_json,
+        scenes_json       = excluded.scenes_json,
+        active_scene_id   = excluded.active_scene_id,
+        sequence_json     = excluded.sequence_json,
         updated_at        = excluded.updated_at`,
   ).run(
     take.id,
@@ -508,6 +554,9 @@ export function saveStudioTake(take: {
     merged.socialKit ? JSON.stringify(merged.socialKit) : null,
     JSON.stringify(merged.mediaAssets),
     JSON.stringify(merged.tracks),
+    merged.scenes ? JSON.stringify(merged.scenes) : null,
+    merged.activeSceneId ?? null,
+    merged.sequence ? JSON.stringify(merged.sequence) : null,
     now,
     now,
   );

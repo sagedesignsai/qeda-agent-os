@@ -248,6 +248,14 @@ export const StudioProjectRow = memo(function StudioProjectRow({
             </span>
             <span>•</span>
             <span>{formattedRelativeDate}</span>
+            {(take.sceneCount ?? 1) > 1 && (
+              <>
+                <span>•</span>
+                <span className="font-mono text-emerald-400">
+                  {take.sceneCount} scenes
+                </span>
+              </>
+            )}
             {take.cutCount > 0 && (
               <>
                 <span>•</span>

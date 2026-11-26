@@ -105,6 +105,29 @@ describe('Showcase Studio Database Store', () => {
     expect(loaded?.captions[0].text).toBe('Building intelligent local agents');
   });
 
+  it('persists scenes and reports the story duration in the project list', () => {
+    saveStudioTake({
+      id: 'take-scenes',
+      title: 'Multi-scene Demo',
+      videoPath: '/tmp/scenes.webm',
+      durationMs: 8000,
+      scenes: [
+        { id: 's1', name: 'Intro', durationMs: 2500, tracks: [] },
+        { id: 's2', name: 'Demo', durationMs: 6000, tracks: [] },
+      ],
+      activeSceneId: 's2',
+    });
+
+    const loaded = getStudioTake('take-scenes');
+    expect(loaded?.scenes).toHaveLength(2);
+    expect(loaded?.activeSceneId).toBe('s2');
+    expect(loaded?.scenes?.[1].name).toBe('Demo');
+
+    const summary = listStudioTakes().find((take) => take.id === 'take-scenes');
+    expect(summary?.sceneCount).toBe(2);
+    expect(summary?.durationMs).toBe(8500);
+  });
+
   it('applies partial updates without clearing untouched take fields', () => {
     saveStudioTake({
       id: 'take-patch',

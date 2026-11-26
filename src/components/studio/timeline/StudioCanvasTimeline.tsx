@@ -11,7 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { timelineStore, useTimelineState } from '@/hooks/use-timeline-store';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimelineTrackHeaders } from './TimelineTrackHeaders';
@@ -23,6 +23,7 @@ import {
   type StudioTake,
   type TimelineTrack,
 } from '@/lib/studio-types';
+import { getActiveStudioScene } from '@/lib/studio/scenes';
 import type {
   StudioAddonDefinition,
   StudioAddonId,
@@ -44,6 +45,10 @@ interface StudioCanvasTimelineProps {
   addons?: readonly StudioAddonDefinition[];
   onRunAddon?: (addonId: StudioAddonId, clipId: string) => void;
   collapsed?: boolean;
+  /** Scene scope controls rendered in the transport toolbar. */
+  sceneSelector?: ReactNode;
+  /** Story strip rendered below the toolbar when a project has 2+ scenes. */
+  storyStrip?: ReactNode;
 }
 
 const TRACK_HEIGHT = 48;
@@ -63,6 +68,8 @@ export function StudioCanvasTimeline({
   addons = [],
   onRunAddon,
   collapsed = false,
+  sceneSelector,
+  storyStrip,
 }: StudioCanvasTimelineProps) {
   const { durationMs: storeDurationMs, isMultiTrack, expandedTrackIds } =
     useTimelineState();
@@ -80,6 +87,7 @@ export function StudioCanvasTimeline({
 
   // Take sync tracking to prevent feedback loops between timeline edits and parent state
   const currentTakeIdRef = useRef<string | null>(null);
+  const currentSceneIdRef = useRef<string | null>(null);
   const lastSyncTimestampRef = useRef<number>(0);
 
   const handleTrackHeadersWheel = (e: React.WheelEvent) => {
@@ -163,19 +171,24 @@ export function StudioCanvasTimeline({
   useEffect(() => {
     if (!activeTake) return;
     const isNewTake = activeTake.id !== currentTakeIdRef.current;
+    const sceneId = activeTake.activeSceneId ?? null;
+    const sceneChanged = sceneId !== currentSceneIdRef.current;
     const isExternalUpdate =
       activeTake.updatedAt &&
       activeTake.updatedAt > lastSyncTimestampRef.current + 800;
 
-    if (isNewTake || isExternalUpdate) {
+    if (isNewTake || sceneChanged || isExternalUpdate) {
       currentTakeIdRef.current = activeTake.id;
+      currentSceneIdRef.current = sceneId;
       lastSyncTimestampRef.current = activeTake.updatedAt || Date.now();
       const tracks = convertTakeToTimeline(activeTake);
       const cuts = normalizeCuts(activeTake.cuts ?? [], activeTake.durationMs);
       const isMultiTrack = activeTake.tracks !== undefined;
+      const sceneDuration = getActiveStudioScene(activeTake).durationMs;
       const editorDurationMs = isMultiTrack
         ? Math.max(
             1000,
+            sceneDuration,
             ...tracks.flatMap((track) =>
               track.clips.map((clip) => clip.startMs + clip.durationMs),
             ),
@@ -184,7 +197,7 @@ export function StudioCanvasTimeline({
       timelineStore.setTracksAndDuration(
         tracks,
         editorDurationMs,
-        isNewTake,
+        isNewTake || sceneChanged,
         isMultiTrack,
       );
     }
@@ -225,7 +238,10 @@ export function StudioCanvasTimeline({
         onRestartPlayback={onRestartPlayback}
         onZoomToFit={handleZoomToFit}
         collapsed={collapsed}
+        sceneSelector={sceneSelector}
       />
+
+      {!collapsed && storyStrip}
 
       {/* ── Main Multi-Track Body: Left Headers + Right 60fps Canvas ───────── */}
       {!collapsed && (

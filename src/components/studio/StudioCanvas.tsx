@@ -101,6 +101,8 @@ interface StudioCanvasProps {
   /** Timeline tracks for per-clip animation evaluation (multi-track model). */
   tracks?: TimelineTrack[];
   mediaAssets?: StudioMediaAsset[];
+  /** Motion Cards are legacy single-scene overlays; scenes replace them. */
+  showMotionCards?: boolean;
 }
 
 interface StudioClipCanvasGeometry {
@@ -274,6 +276,7 @@ export function StudioCanvas({
   onVideoElement,
   tracks,
   mediaAssets = [],
+  showMotionCards = true,
 }: StudioCanvasProps) {
   const {
     durationMs: editorDurationMs,
@@ -1004,7 +1007,7 @@ export function StudioCanvas({
         playbackDurationMs ||
         (video && video.duration ? video.duration * 1000 : 30000);
 
-      if (style.introCard?.enabled) {
+      if (showMotionCards && style.introCard?.enabled) {
         drawMotionCard(ctx, {
           card: style.introCard,
           cardType: 'intro',
@@ -1015,7 +1018,7 @@ export function StudioCanvas({
         });
       }
 
-      if (style.outroCard?.enabled) {
+      if (showMotionCards && style.outroCard?.enabled) {
         drawMotionCard(ctx, {
           card: style.outroCard,
           cardType: 'outro',
