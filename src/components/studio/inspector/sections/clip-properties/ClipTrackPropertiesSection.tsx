@@ -4,9 +4,13 @@ import {
   ChevronDownIcon,
   FilmIcon,
   ImageIcon,
+  LayersIcon,
+  ShapesIcon,
+  TypeIcon,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
@@ -32,6 +36,16 @@ import {
 } from '@/lib/studio/render/text-style';
 import { timelineStore } from '@/hooks/use-timeline-store';
 import {
+  getBlendModeOption,
+  isNonDefaultBlendMode,
+  STUDIO_BLEND_MODES,
+} from '@/lib/studio/blend-modes';
+import type { StudioShapeKind } from '@/lib/studio/types';
+import { BlendModeDialog } from '../../../features/BlendModeDialog';
+import { ShapeEditorDialog } from '../../../features/ShapeEditorDialog';
+import { TextAnimatorDialog } from '../../../features/TextAnimatorDialog';
+import { ClipEffectsStudioDialog } from '../../ClipEffectsStudioDialog';
+import {
   InspectorCoordinatePad,
   StudioFieldRow,
   StudioPanelSection,
@@ -40,6 +54,20 @@ import {
 
 type SectionToggle = (section: string) => (open: boolean) => void;
 type UpdateClip = (clipId: string, patch: Partial<TimelineClip>) => void;
+
+const TEXT_ANIMATOR_LABELS: Record<string, string> = {
+  typewriter: 'Typewriter',
+  'fade-words': 'Fade Words',
+  'slide-up': 'Slide Up',
+};
+
+const SHAPE_KIND_LABELS: Record<string, string> = {
+  rect: 'Rectangle',
+  circle: 'Circle',
+  arrow: 'Arrow',
+  callout: 'Callout',
+  path: 'Custom path',
+};
 
 function formatAssetDuration(durationMs: number): string {
   if (durationMs <= 0) return 'Still image';
@@ -322,8 +350,92 @@ export function ClipTrackPropertiesSection({
   );
   const playbackSpeed = getPlaybackSpeed(clip);
 
+  const isVisualTrack = track.type === 'video' || track.type === 'overlays';
+  const shapePayload = clip.payload as
+    | (NonNullable<TimelineClip['payload']> & {
+        shapeKind?: StudioShapeKind;
+        pathData?: string;
+        fill?: string;
+        stroke?: { color: string; width: number };
+        trim?: { start: number; end: number; offset: number };
+        pathLengthPx?: number;
+      })
+    | undefined;
+  const isShapeClip =
+    clip.itemType === 'shape' || typeof shapePayload?.shapeKind === 'string';
+  const blendModeOption = getBlendModeOption(clip.payload?.blendMode);
+  const textAnimator = clip.payload?.textAnimator;
+
+  const [blendDialogOpen, setBlendDialogOpen] = React.useState(false);
+  const [textAnimatorOpen, setTextAnimatorOpen] = React.useState(false);
+  const [shapeEditorOpen, setShapeEditorOpen] = React.useState(false);
+  const [zoomStudioOpen, setZoomStudioOpen] = React.useState(false);
+
   return (
     <>
+      {(isVisualTrack || isShapeClip) && (
+        <StudioPanelSection
+          title="Compositing"
+          open={activeSection === 'Compositing'}
+          onOpenChange={onSectionToggle('Compositing')}
+        >
+          <StudioFieldRow label="Blend">
+            <Select
+              value={blendModeOption.value}
+              onValueChange={(value) =>
+                onUpdateClip(clip.id, { payload: { blendMode: value } })
+              }
+            >
+              <SelectTrigger className="h-7 text-xs" aria-label="Blend mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STUDIO_BLEND_MODES.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </StudioFieldRow>
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium ${
+                isNonDefaultBlendMode(clip.payload?.blendMode)
+                  ? 'bg-sky-500/15 text-sky-300'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              <LayersIcon className="size-2.5" />
+              {isNonDefaultBlendMode(clip.payload?.blendMode)
+                ? `Blend: ${blendModeOption.label}`
+                : 'Normal compositing'}
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-6 px-2 text-[10px]"
+              onClick={() => setBlendDialogOpen(true)}
+            >
+              More Modes…
+            </Button>
+          </div>
+          <p className="text-[9px] leading-relaxed text-muted-foreground">
+            {blendModeOption.description}
+          </p>
+          <BlendModeDialog
+            open={blendDialogOpen}
+            onOpenChange={setBlendDialogOpen}
+            clipName={clip.name}
+            value={clip.payload?.blendMode}
+            onApply={(blendMode) =>
+              onUpdateClip(clip.id, { payload: { blendMode } })
+            }
+          />
+        </StudioPanelSection>
+      )}
+
       {track.type === 'transitions' && (
         <StudioPanelSection
           title="Transition"
@@ -410,7 +522,7 @@ export function ClipTrackPropertiesSection({
 
       {track.type === 'effects' && isZoomClip && (
         <StudioPanelSection
-          title="Zoom"
+          title="Canvas Zoom"
           open={activeSection === 'Zoom'}
           onOpenChange={onSectionToggle('Zoom')}
         >
@@ -439,6 +551,16 @@ export function ClipTrackPropertiesSection({
               })
             }
           />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="mt-1 h-7 w-full gap-1 text-xs"
+            onClick={() => setZoomStudioOpen(true)}
+          >
+            <LayersIcon className="h-3 w-3 text-violet-400" />
+            Zoom Keyframes Studio…
+          </Button>
         </StudioPanelSection>
       )}
 
@@ -536,6 +658,72 @@ export function ClipTrackPropertiesSection({
         </StudioPanelSection>
       )}
 
+      {isShapeClip && (
+        <StudioPanelSection
+          title="Shape"
+          open={activeSection === 'Shape'}
+          onOpenChange={onSectionToggle('Shape')}
+        >
+          <div className="flex items-center gap-2 rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
+            <span className="flex size-8 items-center justify-center rounded bg-background/70 ring-1 ring-border/50">
+              <svg viewBox="-60 -60 120 120" className="size-6">
+                <path
+                  d={shapePayload?.pathData ?? ''}
+                  fill={shapePayload?.fill ?? '#ffffff'}
+                  stroke={shapePayload?.stroke?.color ?? '#0f172a'}
+                  strokeWidth={Math.max(1, (shapePayload?.stroke?.width ?? 2) / 1.5)}
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[11px] font-medium text-foreground">
+                {SHAPE_KIND_LABELS[shapePayload?.shapeKind ?? 'path'] ??
+                  shapePayload?.shapeKind ??
+                  'Shape'}
+              </span>
+              <span className="block text-[9px] text-muted-foreground">
+                {shapePayload?.trim
+                  ? `Trim ${shapePayload.trim.start.toFixed(2)} → ${shapePayload.trim.end.toFixed(2)}`
+                  : 'Vector path'}
+                {shapePayload?.stroke
+                  ? ` · ${shapePayload.stroke.width}px stroke`
+                  : ''}
+              </span>
+            </span>
+            <ShapesIcon className="size-3.5 text-amber-400" />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-1.5 h-7 w-full gap-1 text-[11px]"
+            onClick={() => setShapeEditorOpen(true)}
+          >
+            <ShapesIcon className="size-3" />
+            Edit Shape…
+          </Button>
+          <ShapeEditorDialog
+            open={shapeEditorOpen}
+            onOpenChange={setShapeEditorOpen}
+            clipName={clip.name}
+            value={{
+              shapeKind: shapePayload?.shapeKind ?? 'rect',
+              pathData: shapePayload?.pathData ?? '',
+              fill: shapePayload?.fill,
+              stroke: shapePayload?.stroke,
+              trim: shapePayload?.trim,
+              pathLengthPx: shapePayload?.pathLengthPx,
+            }}
+            onApply={(next) =>
+              onUpdateClip(clip.id, {
+                payload: next as unknown as NonNullable<TimelineClip['payload']>,
+              })
+            }
+          />
+        </StudioPanelSection>
+      )}
+
       {track.type === 'captions' && (
         <StudioPanelSection
           title="Caption"
@@ -624,6 +812,45 @@ export function ClipTrackPropertiesSection({
               </SelectContent>
             </Select>
           </StudioFieldRow>
+          <div className="mt-1 rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
+                <TypeIcon className="size-3 shrink-0 text-teal-400" />
+                <span className="truncate">
+                  {textAnimator
+                    ? `Text animator: ${TEXT_ANIMATOR_LABELS[textAnimator.mode] ?? textAnimator.mode}`
+                    : 'No text animation'}
+                </span>
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 shrink-0 px-2 text-[10px]"
+                onClick={() => setTextAnimatorOpen(true)}
+              >
+                Text Animation…
+              </Button>
+            </div>
+            {textAnimator && (
+              <p className="mt-1 text-[9px] text-muted-foreground">
+                {textAnimator.charDurationMs ?? 120}ms per character ·{' '}
+                {textAnimator.easing ?? 'ease-out'}
+              </p>
+            )}
+          </div>
+          <TextAnimatorDialog
+            open={textAnimatorOpen}
+            onOpenChange={setTextAnimatorOpen}
+            clipName={clip.name}
+            text={clip.payload?.text ?? clip.name}
+            value={textAnimator}
+            onApply={(animator) =>
+              onUpdateClip(clip.id, {
+                payload: { textAnimator: animator },
+              })
+            }
+          />
           <p className="text-[10px] text-muted-foreground">
             Drag the text on the canvas to position it.
           </p>
@@ -726,6 +953,16 @@ export function ClipTrackPropertiesSection({
             playbackSpeed={playbackSpeed}
           />
         </StudioPanelSection>
+      )}
+
+      {track.type === 'effects' && isZoomClip && (
+        <ClipEffectsStudioDialog
+          open={zoomStudioOpen}
+          onOpenChange={setZoomStudioOpen}
+          clip={clip}
+          mediaAssets={mediaAssets}
+          onUpdateClip={onUpdateClip}
+        />
       )}
     </>
   );

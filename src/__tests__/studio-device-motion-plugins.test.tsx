@@ -253,24 +253,19 @@ describe('Showcase Studio Device Mockups & Motion Cards', () => {
     });
   });
 
-  describe('Studio Inspector Device & Motion Accordions', () => {
-    it('renders Device Mockup Frame & Intro/Outro Cards sections in Inspector', () => {
+  describe('Studio Inspector Global Sections', () => {
+    it('renders Canvas & Framing and Wallpaper sections in Inspector', () => {
       const onUpdateStyling = jest.fn();
 
       render(
         <StudioInspector
           styling={DEFAULT_STUDIO_STYLING}
-          isProcessingDraft={false}
-          isGeneratingSocialKit={false}
           onUpdateStyling={onUpdateStyling}
-          onRunMagicDraft={jest.fn()}
-          onGenerateSocialKit={jest.fn()}
-          onExportVideo={jest.fn()}
         />,
       );
 
-      expect(screen.getByText('Device Mockup Frame')).toBeInTheDocument();
-      expect(screen.getByText('Intro & Outro Cards')).toBeInTheDocument();
+      expect(screen.getByText('Canvas & Framing')).toBeInTheDocument();
+      expect(screen.getByText('Wallpaper & Background')).toBeInTheDocument();
     });
   });
 });

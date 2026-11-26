@@ -292,6 +292,10 @@ export interface ClipKeyframeValues {
   rotation?: number;
   opacity?: number;
   intensity?: number;
+  /** Kinetic camera zoom properties (effect-track zoom clips). */
+  zoomScale?: number;
+  zoomTargetX?: number;
+  zoomTargetY?: number;
 }
 
 const CLIP_VALUE_PROPERTIES = [
@@ -301,6 +305,9 @@ const CLIP_VALUE_PROPERTIES = [
   'rotation',
   'opacity',
   'intensity',
+  'zoomScale',
+  'zoomTargetX',
+  'zoomTargetY',
 ] as const;
 
 /**

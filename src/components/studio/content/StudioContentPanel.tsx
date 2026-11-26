@@ -2,7 +2,7 @@
  * components/studio/content/StudioContentPanel.tsx
  * ─────────────────────────────────────────────────────────────────────────────
  * CapCut-inspired left library dock for Studio Editor:
- *   - Tab switcher: Media, Text, Effects, Audio
+ *   - Tab switcher: Media, Text, Effects, Shapes, Audio
  *   - Direct 1-click "+" and drag-and-drop ingestion into Timeline tracks
  *   - Collapsible panel with smooth transition
  * ─────────────────────────────────────────────────────────────────────────────
@@ -14,6 +14,7 @@ import {
   TypeIcon,
   SparklesIcon,
   MusicIcon,
+  ShapesIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
 } from 'lucide-react';
@@ -22,10 +23,11 @@ import { StudioMediaTab } from './tabs/StudioMediaTab';
 import { StudioTextTab } from './tabs/StudioTextTab';
 import { StudioEffectsTab } from './tabs/StudioEffectsTab';
 import { StudioAudioTab } from './tabs/StudioAudioTab';
+import { StudioShapesTab } from './tabs/StudioShapesTab';
 import type { ContentItemPayload } from './items/ContentCardItem';
 import type { StudioTakeSummary } from '@/lib/studio-types';
 
-export type ContentTab = 'media' | 'text' | 'effects' | 'audio';
+export type ContentTab = 'media' | 'text' | 'effects' | 'shapes' | 'audio';
 
 interface StudioContentPanelProps {
   takes: StudioTakeSummary[];
@@ -34,6 +36,9 @@ interface StudioContentPanelProps {
   projectId?: string | null;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** Controlled active tab, so the command bar can reveal Shapes. */
+  activeTab?: ContentTab;
+  onActiveTabChange?: (tab: ContentTab) => void;
 }
 
 export function StudioContentPanel({
@@ -43,8 +48,15 @@ export function StudioContentPanel({
   projectId,
   isCollapsed = false,
   onToggleCollapse,
+  activeTab: controlledTab,
+  onActiveTabChange,
 }: StudioContentPanelProps) {
-  const [activeTab, setActiveTab] = useState<ContentTab>('media');
+  const [internalTab, setInternalTab] = useState<ContentTab>('media');
+  const activeTab = controlledTab ?? internalTab;
+  const setActiveTab = (tab: ContentTab) => {
+    if (controlledTab === undefined) setInternalTab(tab);
+    onActiveTabChange?.(tab);
+  };
 
   if (isCollapsed) {
     return (
@@ -96,6 +108,18 @@ export function StudioContentPanel({
           title="Effects"
         >
           <SparklesIcon className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            setActiveTab('shapes');
+            onToggleCollapse?.();
+          }}
+          className={`h-8 w-8 ${activeTab === 'shapes' ? 'text-primary bg-primary/10' : 'text-muted-foreground'}`}
+          title="Shapes"
+        >
+          <ShapesIcon className="w-4 h-4" />
         </Button>
         <Button
           variant="ghost"
@@ -161,6 +185,20 @@ export function StudioContentPanel({
           </Button>
 
           <Button
+            variant={activeTab === 'shapes' ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveTab('shapes')}
+            className={`h-6 px-2 text-xs gap-1 font-medium transition-all duration-200 ${
+              activeTab === 'shapes'
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+            }`}
+          >
+            <ShapesIcon className="w-3 h-3" />
+            <span className="hidden sm:inline">Shapes</span>
+          </Button>
+
+          <Button
             variant={activeTab === 'audio' ? 'secondary' : 'ghost'}
             size="sm"
             onClick={() => setActiveTab('audio')}
@@ -201,6 +239,7 @@ export function StudioContentPanel({
         )}
         {activeTab === 'text' && <StudioTextTab onAddClip={onAddClip} />}
         {activeTab === 'effects' && <StudioEffectsTab onAddClip={onAddClip} />}
+        {activeTab === 'shapes' && <StudioShapesTab onAddClip={onAddClip} />}
         {activeTab === 'audio' && (
           <StudioAudioTab onAddClip={onAddClip} projectId={projectId} />
         )}

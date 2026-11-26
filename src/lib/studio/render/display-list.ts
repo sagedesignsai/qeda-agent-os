@@ -103,7 +103,11 @@ export type BlendMode =
   | 'soft-light'
   | 'difference'
   | 'exclusion'
-  | 'lighter';
+  | 'lighter'
+  | 'hue'
+  | 'saturation'
+  | 'color'
+  | 'luminosity';
 
 export type ClipDomain = 'none' | 'window' | 'content';
 

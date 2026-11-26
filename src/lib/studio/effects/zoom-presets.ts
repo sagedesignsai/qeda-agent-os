@@ -8,6 +8,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import type { TimelineClip } from '../types';
+
 export interface StudioZoomPreset {
   id: string;
   label: string;
@@ -17,6 +19,28 @@ export interface StudioZoomPreset {
   targetY: number;
   durationMs: number;
   accent: string;
+}
+
+/**
+ * True for a kinetic-camera zoom clip on the effects track.
+ *
+ * Canvas effects always carry a recognized `effectType`; zooms carry `'zoom'`
+ * or (for older projects) none at all.
+ */
+export function isStudioZoomClip(
+  clip: Pick<TimelineClip, 'itemType' | 'payload'>,
+): boolean {
+  const effectType = clip.payload?.effectType;
+  if (effectType === 'zoom') return true;
+  if (effectType) return false;
+  return clip.itemType === 'effect';
+}
+
+/** True when a payload describes a kinetic zoom (regardless of item type). */
+export function isStudioZoomPayload(
+  payload: { effectType?: string } | undefined,
+): boolean {
+  return !payload?.effectType || payload.effectType === 'zoom';
 }
 
 export const STUDIO_ZOOM_PRESETS: StudioZoomPreset[] = [

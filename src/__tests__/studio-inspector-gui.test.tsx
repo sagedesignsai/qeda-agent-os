@@ -211,12 +211,7 @@ describe('Master StudioInspector Component', () => {
 
   const defaultProps = {
     styling: mockStyling,
-    isProcessingDraft: false,
-    isGeneratingSocialKit: false,
     onUpdateStyling: jest.fn(),
-    onRunMagicDraft: jest.fn(),
-    onGenerateSocialKit: jest.fn(),
-    onExportVideo: jest.fn(),
     onAddZoomAtPlayhead: jest.fn(),
     onToggleCollapse: jest.fn(),
   };
@@ -231,9 +226,9 @@ describe('Master StudioInspector Component', () => {
 
     expect(screen.getByText('Global Settings')).toBeInTheDocument();
     expect(screen.getByText('GLOBAL')).toBeInTheDocument();
-    expect(screen.getByText('Magic Agent & Export')).toBeInTheDocument();
     expect(screen.getByText('Canvas & Framing')).toBeInTheDocument();
     expect(screen.getByText('Wallpaper & Background')).toBeInTheDocument();
+    expect(screen.getByText('Camera & Kinetic Motion')).toBeInTheDocument();
   });
 
   it('triggers onUpdateStyling when aspect ratio is clicked', () => {
@@ -253,35 +248,36 @@ describe('Master StudioInspector Component', () => {
   it('keeps one global section expanded at a time', () => {
     render(<StudioInspector {...defaultProps} />);
 
-    // Agent actions are open on mount.
-    expect(
-      screen.getByRole('button', { name: /re-run magic draft/i }),
-    ).toBeInTheDocument();
+    // No sections are expanded on mount; framing content is hidden.
+    expect(screen.queryByText('Aspect Ratio')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Canvas & Framing'));
+    expect(screen.getByText('Aspect Ratio')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Wallpaper & Background'));
 
-    expect(
-      screen.queryByRole('button', { name: /re-run magic draft/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Aspect Ratio')).not.toBeInTheDocument();
     expect(screen.getByText('Wallpaper & Background')).toBeInTheDocument();
   });
 
-  it('triggers onRunMagicDraft when Re-Run Magic Draft button is clicked', () => {
+  it('triggers onAddZoomAtPlayhead from the Camera & Kinetic Motion section', () => {
     render(<StudioInspector {...defaultProps} />);
 
-    const magicBtn = screen.getByRole('button', { name: /re-run magic draft/i });
-    fireEvent.click(magicBtn);
+    fireEvent.click(screen.getByText('Camera & Kinetic Motion'));
+    fireEvent.click(
+      screen.getByRole('button', { name: /add zoom at playhead/i }),
+    );
 
-    expect(defaultProps.onRunMagicDraft).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onAddZoomAtPlayhead).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers onExportVideo when Export MP4 is clicked', () => {
+  it('exposes the zoom intensity dial in the camera section', () => {
     render(<StudioInspector {...defaultProps} />);
 
-    const exportBtn = screen.getByRole('button', { name: /export mp4/i });
-    fireEvent.click(exportBtn);
+    fireEvent.click(screen.getByText('Camera & Kinetic Motion'));
 
-    expect(defaultProps.onExportVideo).toHaveBeenCalledWith('mp4');
+    expect(screen.getByText('Zoom Intensity')).toBeInTheDocument();
+    expect(screen.getByText('Easing Curve')).toBeInTheDocument();
   });
 
   it('edits text clip transforms without replacing typography settings', () => {

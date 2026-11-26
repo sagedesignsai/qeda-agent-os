@@ -15,6 +15,7 @@ import {
   PlusIcon,
   SparklesIcon,
   Trash2Icon,
+  ZoomInIcon,
 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,10 @@ import {
 import { timelineStore } from '@/hooks/use-timeline-store';
 import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
 import { getDefaultParams } from '@/lib/studio/effects/params';
+import {
+  isStudioZoomClip,
+  STUDIO_ZOOM_PRESETS,
+} from '@/lib/studio/effects/zoom-presets';
 import { evaluateKeyframesAt } from '@/lib/studio/keyframes';
 import type {
   ClipEffect,
@@ -62,6 +67,8 @@ interface ClipEffectsStudioDialogProps {
   onOpenChange: (open: boolean) => void;
   clip: TimelineClip;
   initialEffectId?: string | null;
+  /** Open with a fresh effect of this type in the draft stack. */
+  initialEffectType?: StudioEffectType | null;
   mediaAssets?: StudioMediaAsset[];
   onUpdateClip: (clipId: string, patch: Partial<TimelineClip>) => void;
 }
@@ -73,15 +80,22 @@ export function ClipEffectsStudioDialog({
   onOpenChange,
   clip,
   initialEffectId = null,
+  initialEffectType = null,
   mediaAssets = [],
   onUpdateClip,
 }: ClipEffectsStudioDialogProps) {
   const clipRef = useRef(clip);
   clipRef.current = clip;
   const durationMs = Math.max(100, clip.durationMs || 5000);
+  const isZoomClip = isStudioZoomClip(clip);
 
   const [draftEffects, setDraftEffects] = useState<ClipEffect[]>([]);
   const [draftKeyframes, setDraftKeyframes] = useState<StudioKeyframe[]>([]);
+  const [draftZoom, setDraftZoom] = useState({
+    scale: 1.5,
+    targetX: 0.5,
+    targetY: 0.5,
+  });
   const [draftMask, setDraftMask] = useState<
     NonNullable<TimelineClip['payload']>['mask']
   >(undefined);
@@ -113,20 +127,47 @@ export function ClipEffectsStudioDialog({
     const keyframes = ((activeClip.payload?.keyframes ?? []) as StudioKeyframe[]).map(
       (k) => ({ ...k }),
     );
-    setDraftEffects(effects);
+    // Command-bar entry points such as "Effects → Add Spotlight" open the
+    // studio with an uncommitted draft so the user can preview before Apply.
+    const seededEffect =
+      initialEffectType && !effects.some((e) => e.type === initialEffectType)
+        ? ({
+            id: `effect-${nanoid(8)}`,
+            type: initialEffectType,
+            intensity: 0.6,
+            params: getDefaultParams(initialEffectType),
+            stackOrder: effects.length,
+          } satisfies ClipEffect)
+        : null;
+    const nextEffects = seededEffect ? [...effects, seededEffect] : effects;
+    setDraftEffects(nextEffects);
     setDraftKeyframes(keyframes);
+    setDraftZoom({
+      scale:
+        typeof activeClip.payload?.scale === 'number'
+          ? activeClip.payload.scale
+          : 1.5,
+      targetX:
+        typeof activeClip.payload?.targetX === 'number'
+          ? activeClip.payload.targetX
+          : 0.5,
+      targetY:
+        typeof activeClip.payload?.targetY === 'number'
+          ? activeClip.payload.targetY
+          : 0.5,
+    });
     setDraftMask(activeClip.payload?.mask ? { ...activeClip.payload.mask } : undefined);
     setSelectedEffectId(
-      initialEffectId && effects.some((e) => e.id === initialEffectId)
+      initialEffectId && nextEffects.some((e) => e.id === initialEffectId)
         ? initialEffectId
-        : (effects[0]?.id ?? null),
+        : (seededEffect?.id ?? nextEffects[0]?.id ?? null),
     );
     setIsAddingEffect(false);
     const currentTimeMs = timelineStore.getState().currentTimeMs;
     setLocalTimeMs(
       Math.max(0, Math.min(activeDurationMs, currentTimeMs - activeClip.startMs)),
     );
-  }, [open, clip.id, initialEffectId]);
+  }, [open, clip.id, initialEffectId, initialEffectType]);
 
   // Playback loop for clip-local preview.
   useEffect(() => {
@@ -157,12 +198,20 @@ export function ClipEffectsStudioDialog({
       ...clip,
       payload: {
         ...clip.payload,
+        ...(isZoomClip
+          ? {
+              effectType: clip.payload?.effectType ?? 'zoom',
+              scale: draftZoom.scale,
+              targetX: draftZoom.targetX,
+              targetY: draftZoom.targetY,
+            }
+          : {}),
         effects: draftEffects,
         keyframes: draftKeyframes,
         mask: draftMask,
       },
     }),
-    [clip, draftEffects, draftKeyframes, draftMask],
+    [clip, draftEffects, draftKeyframes, draftMask, draftZoom, isZoomClip],
   );
 
   const selectedEffect = useMemo(
@@ -274,6 +323,32 @@ export function ClipEffectsStudioDialog({
     }
   };
 
+  const zoomValueAt = (
+    property: 'zoomScale' | 'zoomTargetX' | 'zoomTargetY',
+    fallback: number,
+  ) => evaluateKeyframesAt(draftKeyframes, localTimeMs, property) ?? fallback;
+
+  const zoomScaleValue = zoomValueAt('zoomScale', draftZoom.scale);
+  const zoomTargetXValue = zoomValueAt('zoomTargetX', draftZoom.targetX);
+  const zoomTargetYValue = zoomValueAt('zoomTargetY', draftZoom.targetY);
+
+  const handleZoomChange = (
+    key: 'scale' | 'targetX' | 'targetY',
+    value: number,
+  ) => {
+    const property =
+      key === 'scale'
+        ? 'zoomScale'
+        : key === 'targetX'
+          ? 'zoomTargetX'
+          : 'zoomTargetY';
+    setDraftZoom((prev) => ({ ...prev, [key]: value }));
+    const hasKeyframes = draftKeyframes.some((k) => k.property === property);
+    if (autoKeyframe || hasKeyframes) {
+      upsertKeyframe(property, localTimeMs, value);
+    }
+  };
+
   const handlePickKeyColor = (hex: string) => {
     if (!selectedEffect || selectedEffect.type !== 'chroma-key') return;
     setDraftEffects((prev) =>
@@ -290,6 +365,14 @@ export function ClipEffectsStudioDialog({
     onUpdateClip(clip.id, {
       payload: {
         ...clip.payload,
+        ...(isZoomClip
+          ? {
+              effectType: clip.payload?.effectType ?? 'zoom',
+              scale: draftZoom.scale,
+              targetX: draftZoom.targetX,
+              targetY: draftZoom.targetY,
+            }
+          : {}),
         effects: draftEffects,
         keyframes: draftKeyframes,
         mask: draftMask,
@@ -303,9 +386,13 @@ export function ClipEffectsStudioDialog({
       <DialogContent className="flex h-[88vh] max-w-[92vw] flex-col gap-0 overflow-hidden p-0 sm:max-w-[92vw]">
         <DialogHeader className="flex flex-row items-center justify-between border-b border-border/60 px-4 py-2.5">
           <div className="flex items-center gap-2.5">
-            <SparklesIcon className="size-4 text-sky-400" />
+            {isZoomClip ? (
+              <ZoomInIcon className="size-4 text-violet-400" />
+            ) : (
+              <SparklesIcon className="size-4 text-sky-400" />
+            )}
             <DialogTitle className="text-sm font-semibold">
-              Effects &amp; Keyframes — {clip.name}
+              {isZoomClip ? 'Zoom' : 'Effects'} &amp; Keyframes — {clip.name}
             </DialogTitle>
             <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
               {(durationMs / 1000).toFixed(2)}s
@@ -330,175 +417,266 @@ export function ClipEffectsStudioDialog({
 
           {/* Right Effect Stack & Params Inspector */}
           <aside className="flex w-80 shrink-0 flex-col border-l border-border/60 bg-background">
-            <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
-              <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Effects ({draftEffects.length}/5)
-              </span>
-              {!isAddingEffect && draftEffects.length < 5 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 gap-1 px-2 text-[11px]"
-                  onClick={() => setIsAddingEffect(true)}
-                >
-                  <PlusIcon className="size-3" />
-                  Add Effect
-                </Button>
-              )}
-            </div>
-
-            {isAddingEffect && (
-              <div className="space-y-1.5 border-b border-border/50 bg-muted/20 p-2.5">
-                <Select
-                  onValueChange={(v) => addEffect(v as StudioEffectType)}
-                >
-                  <SelectTrigger className="h-7 text-xs">
-                    <SelectValue placeholder="Choose an effect…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STUDIO_EFFECTS.map((def) => (
-                      <SelectItem key={def.type} value={def.type}>
-                        {def.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 w-full text-[11px]"
-                  onClick={() => setIsAddingEffect(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            )}
-
-            <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
-              {/* Effect Stack List */}
-              {draftEffects.length === 0 ? (
-                <p className="rounded-md border border-dashed border-border/60 p-3 text-center text-[11px] text-muted-foreground">
-                  No effects applied. Click <strong>Add Effect</strong> to start.
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  {[...draftEffects]
-                    .sort((a, b) => a.stackOrder - b.stackOrder)
-                    .map((effect, idx, arr) => {
-                      const def = STUDIO_EFFECTS.find(
-                        (e) => e.type === effect.type,
-                      );
-                      const isSelected = effect.id === selectedEffectId;
-                      return (
-                        <div
-                          key={effect.id}
-                          onClick={() => setSelectedEffectId(effect.id)}
-                          className={cn(
-                            'flex cursor-pointer items-center justify-between rounded-md border px-2 py-1.5 text-xs transition-colors',
-                            isSelected
-                              ? 'border-sky-500/60 bg-sky-500/10'
-                              : 'border-border/50 hover:bg-muted/40',
-                          )}
-                        >
-                          <span className="truncate font-medium">
-                            {def?.label ?? effect.type}
-                          </span>
-                          <div className="flex items-center gap-0.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-5"
-                              aria-label="Move effect up"
-                              disabled={idx === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveEffect(effect.id, 'up');
-                              }}
-                            >
-                              <ArrowUpIcon className="size-3" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-5"
-                              aria-label="Move effect down"
-                              disabled={idx === arr.length - 1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveEffect(effect.id, 'down');
-                              }}
-                            >
-                              <ArrowDownIcon className="size-3" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="size-5 text-destructive hover:text-destructive"
-                              aria-label={`Remove ${def?.label ?? effect.type}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeEffect(effect.id);
-                              }}
-                            >
-                              <Trash2Icon className="size-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
+            {isZoomClip ? (
+              <>
+                <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    <ZoomInIcon className="size-3.5 text-violet-400" />
+                    Canvas Zoom
+                  </span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    {zoomScaleValue.toFixed(2)}×
+                  </span>
                 </div>
-              )}
 
-              {/* Selected Effect Intensity + Schema Params */}
-              {selectedEffect && (
-                <div className="space-y-2 border-t border-border/50 pt-2">
-                  <StudioFieldRow label="Intensity">
-                    <StudioScrubField
-                      label="Intensity"
-                      value={currentIntensity}
-                      min={0}
-                      max={1}
-                      step={0.02}
-                      onChange={handleIntensityChange}
-                    />
-                  </StudioFieldRow>
-                  <EffectParamsEditorSection
-                    clip={draftClip}
-                    effect={selectedEffect}
-                    onUpdateClip={handleDraftPatch}
+                <div className="flex-1 space-y-3 overflow-y-auto p-2.5">
+                  <div className="space-y-2 rounded-md border border-border/50 bg-muted/10 p-2.5">
+                    <StudioFieldRow label="Scale">
+                      <StudioScrubField
+                        label="Zoom Scale"
+                        value={zoomScaleValue}
+                        min={1.1}
+                        max={5}
+                        step={0.05}
+                        suffix="x"
+                        onChange={(value) => handleZoomChange('scale', value)}
+                      />
+                    </StudioFieldRow>
+                    <StudioFieldRow label="Position X">
+                      <StudioScrubField
+                        label="Zoom Position X"
+                        value={zoomTargetXValue}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        onChange={(value) =>
+                          handleZoomChange('targetX', value)
+                        }
+                      />
+                    </StudioFieldRow>
+                    <StudioFieldRow label="Position Y">
+                      <StudioScrubField
+                        label="Zoom Position Y"
+                        value={zoomTargetYValue}
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        onChange={(value) =>
+                          handleZoomChange('targetY', value)
+                        }
+                      />
+                    </StudioFieldRow>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                      Zoom Presets
+                    </span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {STUDIO_ZOOM_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            handleZoomChange('scale', preset.scale);
+                            handleZoomChange('targetX', preset.targetX);
+                            handleZoomChange('targetY', preset.targetY);
+                          }}
+                          className="rounded-md border border-border/50 px-2 py-1.5 text-left text-[10px] font-medium transition-colors hover:border-violet-400/50 hover:bg-violet-500/10"
+                        >
+                          <span className="block truncate text-foreground">
+                            {preset.label}
+                          </span>
+                          <span className="mt-0.5 block text-[9px] text-muted-foreground">
+                            {preset.scale.toFixed(1)}× ·{' '}
+                            {Math.round(preset.targetX * 100)}%,
+                            {Math.round(preset.targetY * 100)}%
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <p className="rounded-md border border-dashed border-border/60 p-2.5 text-[10px] leading-relaxed text-muted-foreground">
+                    Auto-K records <strong>Scale</strong>, <strong>X</strong> and{' '}
+                    <strong>Y</strong> keyframes at the playhead. Add or drag
+                    keyframes in the timeline below to animate the camera push.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+                  <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    Effects ({draftEffects.length}/5)
+                  </span>
+                  {!isAddingEffect && draftEffects.length < 5 && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-6 gap-1 px-2 text-[11px]"
+                      onClick={() => setIsAddingEffect(true)}
+                    >
+                      <PlusIcon className="size-3" />
+                      Add Effect
+                    </Button>
+                  )}
+                </div>
+
+                {isAddingEffect && (
+                  <div className="space-y-1.5 border-b border-border/50 bg-muted/20 p-2.5">
+                    <Select
+                      onValueChange={(v) => addEffect(v as StudioEffectType)}
+                    >
+                      <SelectTrigger className="h-7 text-xs">
+                        <SelectValue placeholder="Choose an effect…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STUDIO_EFFECTS.map((def) => (
+                          <SelectItem key={def.type} value={def.type}>
+                            {def.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-full text-[11px]"
+                      onClick={() => setIsAddingEffect(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-3">
+                  {/* Effect Stack List */}
+                  {draftEffects.length === 0 ? (
+                    <p className="rounded-md border border-dashed border-border/60 p-3 text-center text-[11px] text-muted-foreground">
+                      No effects applied. Click <strong>Add Effect</strong> to start.
+                    </p>
+                  ) : (
+                    <div className="space-y-1">
+                      {[...draftEffects]
+                        .sort((a, b) => a.stackOrder - b.stackOrder)
+                        .map((effect, idx, arr) => {
+                          const def = STUDIO_EFFECTS.find(
+                            (e) => e.type === effect.type,
+                          );
+                          const isSelected = effect.id === selectedEffectId;
+                          return (
+                            <div
+                              key={effect.id}
+                              onClick={() => setSelectedEffectId(effect.id)}
+                              className={cn(
+                                'flex cursor-pointer items-center justify-between rounded-md border px-2 py-1.5 text-xs transition-colors',
+                                isSelected
+                                  ? 'border-sky-500/60 bg-sky-500/10'
+                                  : 'border-border/50 hover:bg-muted/40',
+                              )}
+                            >
+                              <span className="truncate font-medium">
+                                {def?.label ?? effect.type}
+                              </span>
+                              <div className="flex items-center gap-0.5">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-5"
+                                  aria-label="Move effect up"
+                                  disabled={idx === 0}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveEffect(effect.id, 'up');
+                                  }}
+                                >
+                                  <ArrowUpIcon className="size-3" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-5"
+                                  aria-label="Move effect down"
+                                  disabled={idx === arr.length - 1}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    moveEffect(effect.id, 'down');
+                                  }}
+                                >
+                                  <ArrowDownIcon className="size-3" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-5 text-destructive hover:text-destructive"
+                                  aria-label={`Remove ${def?.label ?? effect.type}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeEffect(effect.id);
+                                  }}
+                                >
+                                  <Trash2Icon className="size-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+
+                  {/* Selected Effect Intensity + Schema Params */}
+                  {selectedEffect && (
+                    <div className="space-y-2 border-t border-border/50 pt-2">
+                      <StudioFieldRow label="Intensity">
+                        <StudioScrubField
+                          label="Intensity"
+                          value={currentIntensity}
+                          min={0}
+                          max={1}
+                          step={0.02}
+                          onChange={handleIntensityChange}
+                        />
+                      </StudioFieldRow>
+                      <EffectParamsEditorSection
+                        clip={draftClip}
+                        effect={selectedEffect}
+                        onUpdateClip={handleDraftPatch}
+                      />
+                    </div>
+                  )}
+
+                  {/* Film LUTs & Live Color Scopes */}
+                  <ColorScopesPanel
+                    sampleRgba={sampleRgba}
+                    onApplyLut={
+                      selectedEffect?.type === 'color-grade'
+                        ? (lutParams) => {
+                            setDraftEffects((prev) =>
+                              prev.map((e) =>
+                                e.id === selectedEffect.id
+                                  ? { ...e, params: { ...e.params, ...lutParams } }
+                                  : e,
+                              ),
+                            );
+                          }
+                        : undefined
+                    }
+                  />
+
+                  {/* GPU Shape Mask */}
+                  <ClipMaskEditorSection
+                    mask={draftMask}
+                    onChange={setDraftMask}
                   />
                 </div>
-              )}
-
-              {/* Film LUTs & Live Color Scopes */}
-              <ColorScopesPanel
-                sampleRgba={sampleRgba}
-                onApplyLut={
-                  selectedEffect?.type === 'color-grade'
-                    ? (lutParams) => {
-                        setDraftEffects((prev) =>
-                          prev.map((e) =>
-                            e.id === selectedEffect.id
-                              ? { ...e, params: { ...e.params, ...lutParams } }
-                              : e,
-                          ),
-                        );
-                      }
-                    : undefined
-                }
-              />
-
-              {/* GPU Shape Mask */}
-              <ClipMaskEditorSection
-                mask={draftMask}
-                onChange={setDraftMask}
-              />
-            </div>
+              </>
+            )}
           </aside>
         </div>
 

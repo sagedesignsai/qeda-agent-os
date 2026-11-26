@@ -16,6 +16,8 @@
 import type { StudioOverlay } from '../types';
 import type { TimelineTrack } from '../types';
 import { evaluateClipAtTime } from '../animation-evaluator';
+import { evaluateClipKeyframeValues, type ClipKeyframeValues } from '../keyframes';
+import { blendModeToComposite } from '../blend-modes';
 import { drawClipDeviceFrame } from './clip-device-frame';
 import type { StudioWindowFrame } from './geometry';
 
@@ -50,20 +52,37 @@ export function drawStudioOverlays(
     const centerY = frame.contentY + overlay.y * frame.contentHeight;
     const timelineClip = tracks?.flatMap((track) => track.clips).find((clip) => clip.id === overlay.id);
     const transform = timelineClip?.payload?.transform;
+    const localTimeMs = timelineClip
+      ? Math.max(0, compTimeMs - timelineClip.startMs)
+      : 0;
+    const kf: ClipKeyframeValues = timelineClip
+      ? evaluateClipKeyframeValues(timelineClip, localTimeMs)
+      : {};
     const anim = timelineClip
-      ? evaluateClipAtTime(timelineClip.durationMs, timelineClip.payload?.enterAnimation, timelineClip.payload?.exitAnimation, compTimeMs - timelineClip.startMs)
+      ? evaluateClipAtTime(timelineClip.durationMs, timelineClip.payload?.enterAnimation, timelineClip.payload?.exitAnimation, localTimeMs)
       : null;
-    const scaleX = transform?.scale?.x ?? 1;
-    const scaleY = transform?.scale?.y ?? 1;
+    const keyframeScale = kf.scale ?? 1;
+    const scaleX = (transform?.scale?.x ?? 1) * keyframeScale;
+    const scaleY = (transform?.scale?.y ?? 1) * keyframeScale;
 
     ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(1, overlay.opacity));
-    ctx.translate(centerX, centerY);
+    ctx.globalCompositeOperation = blendModeToComposite(
+      timelineClip?.payload?.blendMode,
+    );
+    ctx.globalAlpha = Math.max(
+      0,
+      Math.min(
+        1,
+        overlay.opacity *
+          (kf.opacity ?? 1) *
+          (anim ? anim.opacity : 1),
+      ),
+    );
+    ctx.translate(centerX + (kf.x ?? 0), centerY + (kf.y ?? 0));
     ctx.translate(transform?.position?.x ?? 0, transform?.position?.y ?? 0);
-    ctx.rotate(((overlay.rotation + (transform?.rotation ?? 0) + (anim?.rotation ?? 0)) * Math.PI) / 180);
+    ctx.rotate(((overlay.rotation + (transform?.rotation ?? 0) + (kf.rotation ?? 0) + (anim?.rotation ?? 0)) * Math.PI) / 180);
     if (anim) ctx.scale(anim.scale * scaleX, anim.scale * scaleY);
     else ctx.scale(scaleX, scaleY);
-    if (anim) ctx.globalAlpha *= anim.opacity;
 
     const radius = Math.max(0, overlay.cornerRadius);
     ctx.beginPath();

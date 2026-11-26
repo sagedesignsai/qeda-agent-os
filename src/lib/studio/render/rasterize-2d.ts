@@ -30,13 +30,9 @@ import {
   type TextDrawOp,
   type TextLayout,
 } from './display-list';
-import type { StudioCaption } from '@/lib/studio/types';
 import { drawStudioBackground } from './background';
 import { drawStudioCaption } from './captions';
-import {
-  applyStudioTextAnimator,
-  drawStudioFreeText,
-} from './text-style';
+import { drawStudioFreeText } from './text-style';
 import { drawClipDeviceFrame } from './clip-device-frame';
 import { drawStudioEffectPass } from './effects';
 import { drawKeyedSource } from './gl-effect-pass';
@@ -83,6 +79,10 @@ const BLEND_MODE_COMPOSITE: Record<BlendMode, GlobalCompositeOperation> = {
   difference: 'difference',
   exclusion: 'exclusion',
   lighter: 'lighter',
+  hue: 'hue',
+  saturation: 'saturation',
+  color: 'color',
+  luminosity: 'luminosity',
 };
 
 function clamp01(value: number): number {
@@ -326,36 +326,22 @@ function renderTextOp(
   if (op.layout.mode === 'caption') {
     if (!program.windowFrame) return;
 
-    // Handle text animator for captions
-    let caption = op.layout.caption;
-    if (op.animator) {
-      caption = applyStudioTextAnimator(caption, op.animator);
-    }
-
     drawStudioCaption(ctx, {
-      caption,
+      caption: op.layout.caption,
       style: op.layout.style,
       frame: program.windowFrame,
       timeMs: op.layout.timeMs,
+      animator: op.animator,
     });
     return;
   }
-  const caption: StudioCaption = {
-    id: op.clipId ?? op.id,
-    startMs: 0,
-    endMs: 0,
-    text: op.layout.text,
-    ...(op.layout.words ? { words: op.layout.words } : {}),
-  };
-  const text = op.animator
-    ? applyStudioTextAnimator(caption, op.animator).text
-    : op.layout.text;
-  renderFreeText(ctx, { ...op.layout, text });
+  renderFreeText(ctx, op.layout, op.animator);
 }
 
 function renderFreeText(
   ctx: CanvasRenderingContext2D,
   layout: Extract<TextLayout, { mode: 'free' }>,
+  animator?: TextDrawOp['animator'],
 ): void {
   const { text, style, anchor } = layout;
   if (!text) return;
@@ -365,18 +351,23 @@ function renderFreeText(
   if (layout.rotationDeg) {
     ctx.rotate((layout.rotationDeg * Math.PI) / 180);
   }
-  drawStudioFreeText(ctx, text, {
-    fontFamily: style.fontFamily,
-    fontSize: style.fontSize,
-    fontWeight: style.fontWeight,
-    color: style.fill,
-    align: style.align,
-    letterSpacing: style.letterSpacing,
-    lineHeight: style.lineHeight,
-    maxWidth: style.maxWidth,
-    stroke: style.stroke,
-    shadow: style.shadow,
-  });
+  drawStudioFreeText(
+    ctx,
+    text,
+    {
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      color: style.fill,
+      align: style.align,
+      letterSpacing: style.letterSpacing,
+      lineHeight: style.lineHeight,
+      maxWidth: style.maxWidth,
+      stroke: style.stroke,
+      shadow: style.shadow,
+    },
+    animator,
+  );
 
   ctx.restore();
 }

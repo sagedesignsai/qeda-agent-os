@@ -10,6 +10,7 @@
  */
 
 import type { StudioCameraEasing, StudioZoom } from '../types';
+import { evaluateKeyframesAt } from '../keyframes';
 
 export interface StudioCameraState {
   scale: number;
@@ -63,11 +64,48 @@ export function computeCameraTarget({
     );
   }
 
-  const scaleBoost = (active.scale - 1) * (zoomIntensity / 1.5);
+  const values = resolveZoomValues(active, timeMs);
+  const scaleBoost = (values.scale - 1) * (zoomIntensity / 1.5);
   return {
     scale: 1 + scaleBoost * progress,
-    panX: 0.5 + (active.targetX - 0.5) * progress,
-    panY: 0.5 + (active.targetY - 0.5) * progress,
+    panX: 0.5 + (values.targetX - 0.5) * progress,
+    panY: 0.5 + (values.targetY - 0.5) * progress,
+  };
+}
+
+/**
+ * Static zoom values, or the keyframed ones at `timeMs` when the zoom clip
+ * carries `zoomScale` / `zoomTargetX` / `zoomTargetY` keyframes.
+ *
+ * Keyframe times are clip-local, so the composition-time sample is offset by
+ * the zoom's start.
+ */
+function resolveZoomValues(
+  zoom: StudioZoom,
+  timeMs: number,
+): Pick<StudioZoom, 'scale' | 'targetX' | 'targetY'> {
+  const keyframes = zoom.keyframes;
+  if (!keyframes || keyframes.length === 0) {
+    return {
+      scale: zoom.scale,
+      targetX: zoom.targetX,
+      targetY: zoom.targetY,
+    };
+  }
+  const localTimeMs = Math.max(
+    0,
+    Math.min(zoom.endMs - zoom.startMs, timeMs - zoom.startMs),
+  );
+  return {
+    scale:
+      evaluateKeyframesAt(keyframes, localTimeMs, 'zoomScale', undefined) ??
+      zoom.scale,
+    targetX:
+      evaluateKeyframesAt(keyframes, localTimeMs, 'zoomTargetX', undefined) ??
+      zoom.targetX,
+    targetY:
+      evaluateKeyframesAt(keyframes, localTimeMs, 'zoomTargetY', undefined) ??
+      zoom.targetY,
   };
 }
 

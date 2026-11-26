@@ -25,7 +25,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { useTimelineState } from '@/hooks/use-timeline-store';
 import { studioMediaAssetUrl } from '@/lib/studio/media';
-import { IDLE_CAMERA } from '@/lib/studio/render/camera';
+import {
+  computeCameraTarget,
+  IDLE_CAMERA,
+} from '@/lib/studio/render/camera';
+import { isStudioZoomClip } from '@/lib/studio/effects/zoom-presets';
 import { renderStudioFrame } from '@/lib/studio/render/frame-renderer';
 import type { StudioComposeInput } from '@/lib/studio/render/compose';
 import type { StudioOverlayAsset } from '@/lib/studio/render/overlays';
@@ -84,6 +88,13 @@ export function ClipEffectsPreviewCanvas({
   const [assetRevision, setAssetRevision] = useState(0);
   const { tracks } = useTimelineState();
   const [zoomPercent, setZoomPercent] = useState<number | 'fit'>('fit');
+
+  const isZoomClip = isStudioZoomClip(draftClip);
+  // A zoom clip has no pixels of its own — isolating it would render an empty
+  // track, so the camera workspace always previews the full composite.
+  const effectivePreviewMode: EffectsPreviewMode = isZoomClip
+    ? 'composite'
+    : previewMode;
 
   const compTimeMs = draftClip.startMs + Math.max(0, localTimeMs);
 
@@ -149,7 +160,7 @@ export function ClipEffectsPreviewCanvas({
   }, []);
 
   const patchedTracks = useMemo<TimelineTrack[]>(() => {
-    if (previewMode === 'isolated' || tracks.length === 0) {
+    if (effectivePreviewMode === 'isolated' || tracks.length === 0) {
       return [
         {
           id: draftClip.trackId || 'preview-track',
@@ -186,7 +197,7 @@ export function ClipEffectsPreviewCanvas({
       ];
     }
     return next;
-  }, [tracks, draftClip, previewMode]);
+  }, [tracks, draftClip, effectivePreviewMode]);
 
   // Seek the clip's video decoder when localTimeMs changes.
   useEffect(() => {
@@ -226,13 +237,31 @@ export function ClipEffectsPreviewCanvas({
       ctx.clearRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
 
       const styling =
-        previewMode === 'isolated'
+        effectivePreviewMode === 'isolated'
           ? {
               ...DEFAULT_STUDIO_STYLING,
               background: 'transparent',
               padding: 0,
             }
           : DEFAULT_STUDIO_STYLING;
+
+      const camera = isZoomClip
+        ? computeCameraTarget({
+            zooms: [
+              {
+                id: draftClip.id,
+                startMs: draftClip.startMs,
+                endMs: draftClip.startMs + Math.max(1, draftClip.durationMs),
+                scale: draftClip.payload?.scale ?? 1.5,
+                targetX: draftClip.payload?.targetX ?? 0.5,
+                targetY: draftClip.payload?.targetY ?? 0.5,
+                keyframes: draftClip.payload?.keyframes,
+              },
+            ],
+            timeMs: compTimeMs,
+            zoomIntensity: styling.zoomIntensity,
+          })
+        : IDLE_CAMERA;
 
       const input: StudioComposeInput = {
         width: PREVIEW_WIDTH,
@@ -243,6 +272,7 @@ export function ClipEffectsPreviewCanvas({
         video: null,
         videoReady: false,
         camera: IDLE_CAMERA,
+        canvasCamera: isZoomClip ? camera : undefined,
         effects: [],
         captions: [],
         overlays: [],
@@ -293,7 +323,7 @@ export function ClipEffectsPreviewCanvas({
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [patchedTracks, compTimeMs, previewMode, assetRevision, onFrameSample]);
+  }, [patchedTracks, compTimeMs, effectivePreviewMode, assetRevision, onFrameSample, isZoomClip, draftClip.id, draftClip.startMs, draftClip.durationMs, draftClip.payload?.scale, draftClip.payload?.targetX, draftClip.payload?.targetY, draftClip.payload?.keyframes]);
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (!eyedropperActive || !onPickColor) return;
@@ -335,6 +365,7 @@ export function ClipEffectsPreviewCanvas({
           className={cn(
             'relative overflow-hidden rounded-md border border-border/50 shadow-2xl',
             previewMode === 'isolated' &&
+              !isZoomClip &&
               'bg-[linear-gradient(45deg,#1f2937_25%,transparent_25%),linear-gradient(-45deg,#1f2937_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#1f2937_75%),linear-gradient(-45deg,transparent_75%,#1f2937_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0] bg-zinc-900',
           )}
           style={
@@ -400,7 +431,7 @@ export function ClipEffectsPreviewCanvas({
 
         <Button
           type="button"
-          variant={previewMode === 'composite' ? 'secondary' : 'ghost'}
+          variant={effectivePreviewMode === 'composite' ? 'secondary' : 'ghost'}
           size="sm"
           className="h-6 gap-1 rounded-full px-2 text-[11px]"
           onClick={() => onPreviewModeChange('composite')}
@@ -408,16 +439,18 @@ export function ClipEffectsPreviewCanvas({
           <LayersIcon className="size-3" />
           Composite
         </Button>
-        <Button
-          type="button"
-          variant={previewMode === 'isolated' ? 'secondary' : 'ghost'}
-          size="sm"
-          className="h-6 gap-1 rounded-full px-2 text-[11px]"
-          onClick={() => onPreviewModeChange('isolated')}
-        >
-          <GridIcon className="size-3" />
-          Isolated
-        </Button>
+        {!isZoomClip && (
+          <Button
+            type="button"
+            variant={effectivePreviewMode === 'isolated' ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-6 gap-1 rounded-full px-2 text-[11px]"
+            onClick={() => onPreviewModeChange('isolated')}
+          >
+            <GridIcon className="size-3" />
+            Isolated
+          </Button>
+        )}
 
         {eyedropperAvailable && onToggleEyedropper && (
           <>

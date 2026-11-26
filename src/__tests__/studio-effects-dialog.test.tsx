@@ -36,6 +36,30 @@ function makeClip(
   } as unknown as TimelineClip;
 }
 
+function makeZoomClip(
+  keyframes: StudioKeyframe[] = [],
+  patch: Partial<TimelineClip> = {},
+): TimelineClip {
+  return {
+    id: 'zoom-1',
+    trackId: 'track-effects',
+    itemType: 'effect',
+    name: '1.5x Focus Zoom',
+    startMs: 1000,
+    durationMs: 2000,
+    sourceStartMs: 0,
+    sourceDurationMs: 2000,
+    payload: {
+      effectType: 'zoom',
+      scale: 1.5,
+      targetX: 0.5,
+      targetY: 0.5,
+      keyframes,
+    },
+    ...patch,
+  } as unknown as TimelineClip;
+}
+
 describe('ClipEffectsStudioDialog', () => {
   it('renders preview controls, effect params, and keyframe timeline', () => {
     const effect: ClipEffect = {
@@ -231,5 +255,87 @@ describe('ClipEffectsStudioDialog', () => {
       enabled: true,
       shape: 'circle',
     });
+  });
+});
+
+describe('ClipEffectsStudioDialog · kinetic zoom', () => {
+  it('shows zoom controls and zoom keyframe rows instead of the effect stack', () => {
+    render(
+      <ClipEffectsStudioDialog
+        open={true}
+        onOpenChange={jest.fn()}
+        clip={makeZoomClip()}
+        onUpdateClip={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Zoom & Keyframes — 1.5x Focus Zoom/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Canvas Zoom')).toBeInTheDocument();
+    expect(screen.getByLabelText('Zoom Scale')).toBeInTheDocument();
+    expect(screen.getByLabelText('Zoom Position X')).toBeInTheDocument();
+    expect(screen.getByTestId('kf-track-zoomScale')).toBeInTheDocument();
+    expect(screen.getByTestId('kf-track-zoomTargetX')).toBeInTheDocument();
+    expect(screen.getByTestId('kf-track-zoomTargetY')).toBeInTheDocument();
+    expect(screen.queryByText(/No effects applied/)).not.toBeInTheDocument();
+  });
+
+  it('Auto-K records a zoom scale keyframe and Apply persists it', () => {
+    const onUpdateClip = jest.fn();
+    const onOpenChange = jest.fn();
+
+    render(
+      <ClipEffectsStudioDialog
+        open={true}
+        onOpenChange={onOpenChange}
+        clip={makeZoomClip()}
+        onUpdateClip={onUpdateClip}
+      />,
+    );
+
+    const scaleInput = screen.getByLabelText('Zoom Scale');
+    fireEvent.change(scaleInput, { target: { value: '2.4' } });
+    fireEvent.blur(scaleInput);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(onUpdateClip).toHaveBeenCalledTimes(1);
+    const [clipId, patch] = onUpdateClip.mock.calls[0];
+    expect(clipId).toBe('zoom-1');
+    expect(patch.payload).toMatchObject({ scale: 2.4 });
+    const savedKeyframes = patch.payload.keyframes as StudioKeyframe[];
+    expect(savedKeyframes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          property: 'zoomScale',
+          value: 2.4,
+        }),
+      ]),
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('clears zoom keyframes from the shared keyframe rows', () => {
+    render(
+      <ClipEffectsStudioDialog
+        open={true}
+        onOpenChange={jest.fn()}
+        clip={makeZoomClip([
+          { id: 'kf-zoom', property: 'zoomScale', timeMs: 0, value: 2, easing: 'linear' },
+        ])}
+        onUpdateClip={jest.fn()}
+      />,
+    );
+
+    const diamond = screen.getByRole('button', {
+      name: 'Zoom Scale keyframe at 0ms',
+    });
+    fireEvent.pointerDown(diamond);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Delete selected keyframe' }),
+    );
+    expect(
+      screen.queryByRole('button', { name: 'Zoom Scale keyframe at 0ms' }),
+    ).not.toBeInTheDocument();
   });
 });

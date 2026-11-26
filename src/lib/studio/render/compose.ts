@@ -22,6 +22,7 @@
 import { resolveActiveStudioCaption } from '../captions/presets';
 import type {
   StudioCaption,
+  ClipAnimation,
   ClipTransform,
   ClipEffect,
   StudioEffect,
@@ -29,6 +30,7 @@ import type {
   StudioOverlay,
   StudioStyling,
   StudioVideoCrop,
+  TextAnimatorMode,
   TimelineTrack,
 } from '../types';
 import { effectTypeFromPayload } from '../effects/catalog';
@@ -41,7 +43,7 @@ import { drawStudioBackground } from './background';
 import { cameraSourceRect, type StudioCameraState } from './camera';
 import { drawStudioCaption } from './captions';
 import {
-  applyStudioTextAnimator,
+  computeStudioTextAnimatorProgress,
   drawStudioFreeText,
   resolveStudioTextStyle,
   usesStudioFreeTextClip,
@@ -55,6 +57,7 @@ import {
   renderGpuTransitionPass,
 } from './gl-transitions';
 import { findChromaKeyEffect, resolveChromaKeyParams } from './chroma-key';
+import { blendModeToComposite } from '../blend-modes';
 import { drawStudioWindowChrome, drawStudioWindowShadow } from './frame';
 import { computeStudioCanvasFrame } from './geometry';
 
@@ -98,6 +101,12 @@ export interface StudioComposeInput {
   video: HTMLVideoElement | null;
   videoReady: boolean;
   camera: StudioCameraState;
+  /**
+   * Global canvas camera. Unlike `camera` (which crops the source video inside
+   * the framed window), this scales/pans the *entire* composed canvas, like a
+   * virtual camera over the finished frame. Used by timeline zoom clips.
+   */
+  canvasCamera?: StudioCameraState;
   effects: readonly StudioEffect[];
   captions: readonly StudioCaption[];
   overlays: readonly StudioOverlay[];
@@ -277,6 +286,12 @@ export function drawStudioFrame(
     }
   }
 
+  // Vector shape clips live on any visual track (usually overlays) and paint
+  // inside the window, below the chrome.
+  if (timelineFrame && input.tracks) {
+    drawTimelineShapes(ctx, timelineFrame, frame, compTime);
+  }
+
   // Legacy path: apply global effects (only when not using tracks)
   // When using tracks, effects are per-clip and applied in drawMultiTrackClips()
   if (!input.tracks) {
@@ -296,7 +311,7 @@ export function drawStudioFrame(
   );
 
   if (styling.showCaptions) {
-    for (const { clip } of freeTextItems) {
+    for (const { clip, localTimeMs } of freeTextItems) {
       const style = resolveStudioTextStyle(clip.payload?.textStyle);
       const baseCaption: StudioCaption = {
         id: clip.id,
@@ -306,33 +321,57 @@ export function drawStudioFrame(
         ...(clip.payload?.words?.length ? { words: clip.payload.words } : {}),
       };
       const textAnimator = clip.payload?.textAnimator;
-      const relativeTimeMs = Math.max(0, compTime - clip.startMs);
-      const text = textAnimator
-        ? applyStudioTextAnimator(baseCaption, {
+      const textAnimatorState = textAnimator
+        ? {
             mode: textAnimator.mode,
-            progress: Math.min(
-              1,
-              relativeTimeMs / (clip.durationMs || 1),
+            progress: computeStudioTextAnimatorProgress(
+              baseCaption.text,
+              textAnimator,
+              Math.max(0, compTime - clip.startMs),
             ),
-          }).text
-        : baseCaption.text;
+          }
+        : undefined;
       const transform = input.clipTransformPreview?.clipId === clip.id
         ? input.clipTransformPreview.transform
         : clip.payload?.transform;
+      const kf = evaluateClipKeyframeValues(clip, localTimeMs);
+      const anim = evaluateClipAtTime(
+        clip.durationMs,
+        clip.payload?.enterAnimation,
+        clip.payload?.exitAnimation,
+        localTimeMs,
+      );
       const centerX =
         frame.contentX +
         (clip.payload?.x ?? 0.5) * frame.contentWidth +
-        (transform?.position?.x ?? 0);
+        (transform?.position?.x ?? 0) +
+        (kf.x ?? 0) +
+        (anim.x ?? 0);
       const centerY =
         frame.contentY +
         (clip.payload?.y ?? 0.5) * frame.contentHeight +
-        (transform?.position?.y ?? 0);
+        (transform?.position?.y ?? 0) +
+        (kf.y ?? 0) +
+        (anim.y ?? 0);
 
       ctx.save();
+      ctx.globalCompositeOperation = blendModeToComposite(
+        clip.payload?.blendMode,
+      );
+      ctx.globalAlpha =
+        (kf.opacity ?? clip.payload?.opacity ?? 1) * (anim.opacity ?? 1);
       ctx.translate(centerX, centerY);
-      ctx.rotate(((transform?.rotation ?? 0) * Math.PI) / 180);
-      ctx.scale(transform?.scale?.x ?? 1, transform?.scale?.y ?? 1);
-      drawStudioFreeText(ctx, text, { ...style, fontWeight: 600 });
+      ctx.rotate(
+        (((transform?.rotation ?? 0) + (kf.rotation ?? anim.rotation ?? 0)) *
+          Math.PI) /
+          180,
+      );
+      const textScale = kf.scale ?? anim.scale ?? 1;
+      ctx.scale(
+        (transform?.scale?.x ?? 1) * textScale,
+        (transform?.scale?.y ?? 1) * textScale,
+      );
+      drawStudioFreeText(ctx, baseCaption.text, { ...style, fontWeight: 600 }, textAnimatorState);
       ctx.restore();
     }
   }
@@ -364,12 +403,132 @@ export function drawStudioFrame(
     ? resolveActiveStudioCaption(captionPool, usingTracks ? compTime : timeMs)
     : null;
   if (caption) {
+    let captionAnimator: { mode: TextAnimatorMode; progress: number } | undefined;
+    if (usingTracks) {
+      const activeItem = trackTextItems.find(
+        ({ clip }) => clip.id === caption.id,
+      );
+      const animator = activeItem?.clip.payload?.textAnimator;
+      if (activeItem && animator) {
+        captionAnimator = {
+          mode: animator.mode,
+          progress: computeStudioTextAnimatorProgress(
+            caption.text,
+            animator,
+            Math.max(0, compTime - activeItem.clip.startMs),
+          ),
+        };
+      }
+    }
     drawStudioCaption(ctx, {
       caption,
       style: styling.captionStyle,
       frame,
       timeMs: usingTracks ? compTime : timeMs,
+      animator: captionAnimator,
     });
+  }
+}
+
+/** Paint `itemType: 'shape'` clips as live SVG paths inside the window. */
+function drawTimelineShapes(
+  ctx: CanvasRenderingContext2D,
+  timelineFrame: EditorTimelineFrame,
+  frame: import('./geometry').StudioWindowFrame,
+  compTimeMs: number,
+): void {
+  if (typeof Path2D === 'undefined') return;
+  const items = [
+    ...timelineFrame.video,
+    ...timelineFrame.overlays,
+    ...timelineFrame.captions,
+  ];
+  for (const item of items) {
+    if (item.itemType !== 'shape') continue;
+    const payload = item.clip.payload as unknown as
+      | {
+          pathData?: string;
+          shapeKind?: string;
+          fill?: string;
+          stroke?: { color: string; width: number };
+          trim?: { start: number; end: number; offset: number };
+          pathLengthPx?: number;
+          transform?: ClipTransform;
+          enterAnimation?: ClipAnimation;
+          exitAnimation?: ClipAnimation;
+          x?: number;
+          y?: number;
+          opacity?: number;
+          blendMode?: string;
+        }
+      | undefined;
+    if (!payload?.pathData) continue;
+
+    let path: Path2D;
+    try {
+      path = new Path2D(payload.pathData);
+    } catch {
+      continue;
+    }
+
+    const anim = evaluateClipAtTime(
+      item.clip.durationMs,
+      payload.enterAnimation,
+      payload.exitAnimation,
+      item.localTimeMs,
+    );
+    const kf = evaluateClipKeyframeValues(item.clip, item.localTimeMs);
+    const transform = payload.transform;
+    const centerX =
+      frame.contentX +
+      (payload.x ?? 0.5) * frame.contentWidth +
+      (transform?.position?.x ?? 0) +
+      (kf.x ?? 0) +
+      (anim.x ?? 0);
+    const centerY =
+      frame.contentY +
+      (payload.y ?? 0.5) * frame.contentHeight +
+      (transform?.position?.y ?? 0) +
+      (kf.y ?? 0) +
+      (anim.y ?? 0);
+    const scale =
+      (transform?.scale?.x ?? 1) *
+      (kf.scale ?? anim.scale ?? 1);
+    const rotation =
+      ((transform?.rotation ?? 0) + (kf.rotation ?? anim.rotation ?? 0)) *
+      (Math.PI / 180);
+
+    ctx.save();
+    ctx.globalCompositeOperation = blendModeToComposite(payload.blendMode);
+    ctx.translate(centerX, centerY);
+    ctx.scale(scale, scale);
+    ctx.rotate(rotation);
+    ctx.globalAlpha = Math.max(
+      0,
+      Math.min(1, (payload.opacity ?? 1) * (kf.opacity ?? anim.opacity ?? 1)),
+    );
+
+    if (payload.fill) {
+      ctx.fillStyle = payload.fill;
+      ctx.fill(path);
+    }
+    if (payload.stroke) {
+      const total = payload.pathLengthPx ?? 0;
+      const trim = payload.trim;
+      if (trim && total > 0) {
+        const start = Math.max(0, Math.min(1, trim.start)) * total;
+        const end = Math.max(0, Math.min(1, trim.end)) * total;
+        const visible = Math.max(1, end - start);
+        ctx.setLineDash([visible, Math.max(total, visible + 1)]);
+        ctx.lineDashOffset = -start - trim.offset * total;
+      }
+      ctx.strokeStyle = payload.stroke.color;
+      ctx.lineWidth = payload.stroke.width;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke(path);
+    }
+    ctx.restore();
   }
 }
 
@@ -527,6 +686,7 @@ function drawMultiTrackClips(
     ctx.rotate(((kf.rotation ?? anim.rotation ?? 0) + (transform?.rotation ?? 0)) * Math.PI / 180);
     ctx.translate(-pivotX, -pivotY);
     ctx.globalAlpha = (kf.opacity ?? payload?.opacity ?? 1) * anim.opacity * transitionOpacity;
+    ctx.globalCompositeOperation = blendModeToComposite(payload?.blendMode);
 
     const radius = Math.max(0, payload?.cornerRadius ?? 0);
 

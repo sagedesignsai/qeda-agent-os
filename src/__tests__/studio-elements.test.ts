@@ -24,7 +24,9 @@ import {
   extractZoomsFromTracks,
   DEFAULT_STUDIO_STYLING,
   type StudioTake,
+  type StudioZoom,
 } from '../lib/studio-types';
+import { computeCameraTarget } from '../lib/studio/render/camera';
 import {
   STUDIO_EFFECTS,
   effectTypeFromPayload,
@@ -36,9 +38,12 @@ import {
 } from '../lib/studio/captions/presets';
 
 describe('effective catalog', () => {
-  it('defines all five canvas effects with sane defaults', () => {
+  it('defines every canvas effect with sane defaults', () => {
     expect(STUDIO_EFFECTS.map((effect) => effect.type).sort()).toEqual([
+      'chroma-key',
+      'color-grade',
       'film-grain',
+      'motion-blur',
       'neon-glow',
       'scanlines',
       'spotlight',
@@ -182,6 +187,57 @@ describe('take ↔ timeline round-trip for effects and overlays', () => {
     const zooms = extractZoomsFromTracks(tracks);
     expect(zooms.map((zoom) => zoom.id)).toEqual(['zoom-1']);
     expect(zooms[0].scale).toBe(1.8);
+  });
+});
+
+describe('kinetic zoom keyframes', () => {
+  it('animates camera scale and pan from zoom keyframes', () => {
+    const zoom: StudioZoom = {
+      id: 'zoom-kf',
+      startMs: 1000,
+      endMs: 4000,
+      scale: 1.5,
+      targetX: 0.5,
+      targetY: 0.5,
+      keyframes: [
+        { id: 'k1', property: 'zoomScale', timeMs: 0, value: 1, easing: 'linear' },
+        { id: 'k2', property: 'zoomScale', timeMs: 3000, value: 3, easing: 'linear' },
+        { id: 'k3', property: 'zoomTargetX', timeMs: 0, value: 0.2, easing: 'linear' },
+        { id: 'k4', property: 'zoomTargetX', timeMs: 3000, value: 0.8, easing: 'linear' },
+        { id: 'k5', property: 'zoomTargetY', timeMs: 0, value: 0.4, easing: 'linear' },
+        { id: 'k6', property: 'zoomTargetY', timeMs: 3000, value: 0.6, easing: 'linear' },
+      ],
+    };
+
+    const mid = computeCameraTarget({
+      zooms: [zoom],
+      timeMs: 2500,
+      zoomIntensity: 1.5,
+    });
+
+    expect(mid.scale).toBeCloseTo(2);
+    expect(mid.panX).toBeCloseTo(0.5);
+    expect(mid.panY).toBeCloseTo(0.5);
+  });
+
+  it('falls back to the static zoom values without keyframes', () => {
+    const camera = computeCameraTarget({
+      zooms: [
+        {
+          id: 'zoom-static',
+          startMs: 0,
+          endMs: 2000,
+          scale: 2,
+          targetX: 0.25,
+          targetY: 0.75,
+        },
+      ],
+      timeMs: 1000,
+      zoomIntensity: 1.5,
+    });
+    expect(camera.scale).toBeCloseTo(2);
+    expect(camera.panX).toBeCloseTo(0.25);
+    expect(camera.panY).toBeCloseTo(0.75);
   });
 });
 

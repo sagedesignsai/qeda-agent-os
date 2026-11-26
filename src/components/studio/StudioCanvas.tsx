@@ -290,6 +290,7 @@ export function StudioCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const cameraRef = useRef<StudioCameraState>({ ...IDLE_CAMERA });
+  const canvasCameraRef = useRef<StudioCameraState>({ ...IDLE_CAMERA });
   const cameraPrevFrameRef = useRef<number | null>(null);
   const overlayAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
   const clipAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
@@ -804,6 +805,14 @@ export function StudioCanvas({
         style.cameraEasing,
         frameDeltaMs,
       );
+      // Timeline zoom clips drive a *canvas* camera: the finished frame
+      // (wallpaper, window, captions) scales and pans, not the source video.
+      canvasCameraRef.current = stepCameraWithDelta(
+        canvasCameraRef.current,
+        target,
+        style.cameraEasing,
+        frameDeltaMs,
+      );
 
       let glow = glowRef.current;
       if (!glow || glow.width !== canvas.width || glow.height !== canvas.height) {
@@ -915,7 +924,8 @@ export function StudioCanvas({
         timeMs: sourceMs,
         video: video,
         videoReady: ready,
-        camera: cameraRef.current,
+        camera: IDLE_CAMERA,
+        canvasCamera: canvasCameraRef.current,
         effects: fx,
         captions: c,
         overlays: ov,

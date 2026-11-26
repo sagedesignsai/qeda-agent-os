@@ -26,7 +26,7 @@ import {
   drawEffectKeyframeCircle,
   drawKeyframeDiamond,
   findClipKeyframeDiamond,
-  defaultAddKeyframePropertyForTrack,
+  defaultAddKeyframePropertyForClip,
   keyframeUiInfoFor,
   staticValueForProperty,
 } from '@/lib/studio/timeline/keyframes-ui';
@@ -1811,7 +1811,7 @@ export function TimelineCanvasViewport({
       0,
       Math.min(hit.clip.durationMs, clipTimeMs - hit.clip.startMs),
     );
-    const property = defaultAddKeyframePropertyForTrack(hit.track.type);
+    const property = defaultAddKeyframePropertyForClip(hit.track.type, hit.clip);
     if (!property) return;
     const values = evaluateClipKeyframeValues(hit.clip, localTimeMs);
     const value =

@@ -19,6 +19,7 @@ import type {
   TimelineTrack,
 } from '../types';
 import { staticSpeed } from '../keyframes';
+import { isStudioZoomClip } from '../effects/zoom-presets';
 
 export interface KeyframeUiInfo {
   /** Keyframe property namespace (see `StudioKeyframe.property`). */
@@ -50,10 +51,17 @@ export function keyframeUiRowProperties(
   switch (trackType) {
     case 'video':
       return ['x', 'y', 'scale', 'rotation', 'speed', 'opacity'];
+    case 'overlays':
+    case 'captions':
+      // Universal keyframes cover every visual track, not just video.
+      return ['x', 'y', 'scale', 'rotation', 'opacity'];
     case 'audio':
       return ['speed'];
     case 'effects':
-      return ['intensity'];
+      // Effects track holds canvas-effect intensity plus kinetic-zoom
+      // scale/pan keyframes (zoom clips never have intensity keyframes and
+      // vice-versa, so the shared rows never collide in practice).
+      return ['intensity', 'zoomScale', 'zoomTargetX', 'zoomTargetY'];
     default:
       return [];
   }
@@ -66,6 +74,9 @@ export function defaultAddKeyframePropertyForTrack(
   switch (trackType) {
     case 'video':
       return 'x';
+    case 'overlays':
+    case 'captions':
+      return 'x';
     case 'audio':
       return 'speed';
     case 'effects':
@@ -73,6 +84,23 @@ export function defaultAddKeyframePropertyForTrack(
     default:
       return null;
   }
+}
+
+/**
+ * Like `defaultAddKeyframePropertyForTrack`, but returns `zoomScale` for
+ * kinetic-camera zoom clips so double-clicking a zoom adds a meaningful key.
+ */
+export function defaultAddKeyframePropertyForClip(
+  trackType: TimelineTrack['type'],
+  clip: Pick<TimelineClip, 'itemType' | 'payload'>,
+): string | null {
+  if (
+    trackType === 'effects' &&
+    isStudioZoomClip(clip)
+  ) {
+    return 'zoomScale';
+  }
+  return defaultAddKeyframePropertyForTrack(trackType);
 }
 
 export function keyframeUiInfoFor(property: string): KeyframeUiInfo | undefined {
@@ -87,6 +115,9 @@ const KEYFRAME_UI_INFO: Record<string, KeyframeUiInfo> = {
   opacity: { property: 'opacity', label: 'Opacity', color: '#f87171', min: 0, max: 1, suffix: '%', step: 0.02, unitsPerPixelDown: 0.02, rowOffset: 6 },
   speed: { property: 'speed', label: 'Speed', color: '#2dd4bf', min: 0.05, max: 20, suffix: 'x', step: 0.05, unitsPerPixelDown: 0.05, rowOffset: 6 },
   intensity: { property: 'intensity', label: 'Intensity', color: '#4ade80', min: 0, max: 1, suffix: '%', step: 0.02, unitsPerPixelDown: 0.02, rowOffset: 0 },
+  zoomScale: { property: 'zoomScale', label: 'Zoom Scale', color: '#c084fc', min: 1, max: 5, suffix: 'x', step: 0.05, unitsPerPixelDown: 0.02, rowOffset: 0 },
+  zoomTargetX: { property: 'zoomTargetX', label: 'Zoom X', color: '#fb923c', min: 0, max: 1, suffix: '', step: 0.01, unitsPerPixelDown: 0.004, rowOffset: 0 },
+  zoomTargetY: { property: 'zoomTargetY', label: 'Zoom Y', color: '#a3e635', min: 0, max: 1, suffix: '', step: 0.01, unitsPerPixelDown: 0.004, rowOffset: 0 },
 };
 
 // ── Effect keyframe colors (visual distinction) ────────────────────────────
@@ -152,6 +183,12 @@ export function staticValueForProperty(clip: TimelineClip, property: string): nu
       return staticSpeed(clip);
     case 'intensity':
       return clip.payload?.intensity ?? 0.6;
+    case 'zoomScale':
+      return clip.payload?.scale ?? 1.5;
+    case 'zoomTargetX':
+      return clip.payload?.targetX ?? 0.5;
+    case 'zoomTargetY':
+      return clip.payload?.targetY ?? 0.5;
     default:
       return 0;
   }

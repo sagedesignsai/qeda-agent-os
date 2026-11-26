@@ -9,7 +9,7 @@
  */
 
 import React, { useState } from 'react';
-import { PaletteIcon, PipetteIcon, CheckIcon } from 'lucide-react';
+import { PaletteIcon, PipetteIcon, CheckIcon, SparklesIcon } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   getBackgroundPreviewCss,
   isGenerativeBackground,
 } from '@/lib/studio/render/background-generator';
+import { StudioCanvasBackgroundAddonDialog } from '../../addons/StudioCanvasBackgroundAddonDialog';
 import { InspectorSection } from '../components/InspectorSection';
 
 interface GlobalWallpaperSectionProps {
@@ -86,6 +87,7 @@ export function GlobalWallpaperSection({
   defaultOpen = true,
 }: GlobalWallpaperSectionProps) {
   const [customInput, setCustomInput] = useState(styling.background);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const generativeActive = isGenerativeBackground(styling.background);
 
   const handleApplyCustom = (color: string) => {
@@ -230,6 +232,25 @@ export function GlobalWallpaperSection({
               Apply
             </Button>
           </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setAdvancedOpen(true)}
+            className="h-8 w-full gap-1.5 text-xs"
+          >
+            <SparklesIcon className="size-3.5 text-sky-400" />
+            Advanced Editor…
+          </Button>
+          <StudioCanvasBackgroundAddonDialog
+            open={advancedOpen}
+            onOpenChange={setAdvancedOpen}
+            styling={styling}
+            onApply={(background) => {
+              setCustomInput(background);
+              onUpdateStyling({ background });
+            }}
+          />
         </TabsContent>
       </Tabs>
     </InspectorSection>

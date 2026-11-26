@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
+import { isStudioZoomClip } from '@/lib/studio/effects/zoom-presets';
 import { evaluateKeyframesAt } from '@/lib/studio/keyframes';
 import {
   keyframeUiInfoFor,
@@ -129,6 +130,7 @@ export function ClipEffectsKeyframeTimeline({
   onUpdateKeyframeEasing,
 }: ClipEffectsKeyframeTimelineProps) {
   const durationMs = Math.max(100, clip.durationMs || 5000);
+  const isZoomClip = isStudioZoomClip(clip);
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [transformExpanded, setTransformExpanded] = useState(true);
   const [selectedKeyframeId, setSelectedKeyframeId] = useState<string | null>(null);
@@ -152,6 +154,19 @@ export function ClipEffectsKeyframeTimeline({
   }, [keyframes]);
 
   const effectRows = useMemo<KeyframePropertyRow[]>(() => {
+    if (isZoomClip) {
+      return (['zoomScale', 'zoomTargetX', 'zoomTargetY'] as const).map(
+        (property) => {
+          const info = keyframeUiInfoFor(property);
+          return {
+            property,
+            label: info?.label ?? property,
+            color: info?.color ?? '#c084fc',
+            fallbackValue: staticValueForProperty(clip, property),
+          };
+        },
+      );
+    }
     return [...effects]
       .sort((a, b) => a.stackOrder - b.stackOrder)
       .map((effect) => {
@@ -164,9 +179,10 @@ export function ClipEffectsKeyframeTimeline({
           fallbackValue: effect.intensity,
         };
       });
-  }, [effects]);
+  }, [effects, clip, isZoomClip]);
 
   const transformRows = useMemo<KeyframePropertyRow[]>(() => {
+    if (isZoomClip) return [];
     return TRANSFORM_PROPERTIES.map((prop) => {
       const info = keyframeUiInfoFor(prop);
       return {
@@ -463,19 +479,23 @@ export function ClipEffectsKeyframeTimeline({
             effectRows.map(renderLabelRow)
           )}
 
-          <button
-            type="button"
-            onClick={() => setTransformExpanded((prev) => !prev)}
-            className="flex h-6 w-full items-center gap-1 border-b border-border/40 bg-muted/20 px-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase hover:bg-muted/40"
-          >
-            {transformExpanded ? (
-              <ChevronDownIcon className="size-3" />
-            ) : (
-              <ChevronRightIcon className="size-3" />
-            )}
-            Transform &amp; Appearance
-          </button>
-          {transformExpanded && transformRows.map(renderLabelRow)}
+          {!isZoomClip && (
+            <>
+              <button
+                type="button"
+                onClick={() => setTransformExpanded((prev) => !prev)}
+                className="flex h-6 w-full items-center gap-1 border-b border-border/40 bg-muted/20 px-2 text-[10px] font-semibold tracking-wider text-muted-foreground uppercase hover:bg-muted/40"
+              >
+                {transformExpanded ? (
+                  <ChevronDownIcon className="size-3" />
+                ) : (
+                  <ChevronRightIcon className="size-3" />
+                )}
+                Transform &amp; Appearance
+              </button>
+              {transformExpanded && transformRows.map(renderLabelRow)}
+            </>
+          )}
         </div>
 
         {/* Right Timeline Ruler & Keyframe Rows */}
@@ -512,8 +532,12 @@ export function ClipEffectsKeyframeTimeline({
             )}
 
             {/* Transform & Appearance Header Spacer + Rows */}
-            <div className="h-6 border-b border-border/40 bg-muted/10" />
-            {transformExpanded && transformRows.map(renderTrackRow)}
+            {!isZoomClip && (
+              <>
+                <div className="h-6 border-b border-border/40 bg-muted/10" />
+                {transformExpanded && transformRows.map(renderTrackRow)}
+              </>
+            )}
 
             {/* Playhead Line */}
             <div

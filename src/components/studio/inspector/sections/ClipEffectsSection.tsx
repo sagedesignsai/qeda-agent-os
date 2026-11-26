@@ -15,21 +15,19 @@ import {
   SparklesIcon,
   GripVerticalIcon,
   ChevronDownIcon,
+  ZoomInIcon,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import type { TimelineClip, ClipEffect } from '@/lib/studio-types';
 import type { StudioMediaAsset } from '@/lib/studio/types';
 import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
+import { STUDIO_ZOOM_PRESETS } from '@/lib/studio/effects/zoom-presets';
 import { getDefaultParams } from '@/lib/studio/effects/params';
+import { timelineStore } from '@/hooks/use-timeline-store';
 import { StudioPanelSection } from '../components';
 import { ClipEffectsStudioDialog } from '../ClipEffectsStudioDialog';
+import { EffectPickerDialog } from '../../features/EffectPickerDialog';
 import { EffectKeyframeEditorSection } from './EffectKeyframeEditorSection';
 import { EffectParamsEditorSection } from './EffectParamsEditorSection';
 import { nanoid } from 'nanoid';
@@ -45,7 +43,7 @@ export function ClipEffectsSection({
   onUpdateClip,
   mediaAssets = [],
 }: ClipEffectsSectionProps) {
-  const [isAddingEffect, setIsAddingEffect] = useState(false);
+  const [effectPickerOpen, setEffectPickerOpen] = useState(false);
   const [selectedEffectId, setSelectedEffectId] = useState<string | null>(null);
   const [studioOpen, setStudioOpen] = useState(false);
 
@@ -67,8 +65,6 @@ export function ClipEffectsSection({
         effects: [...effects, newEffect],
       },
     });
-
-    setIsAddingEffect(false);
   };
 
   const updateEffect = (effectId: string, updates: Partial<ClipEffect>) => {
@@ -114,6 +110,25 @@ export function ClipEffectsSection({
     return STUDIO_EFFECTS.find((e) => e.type === type)?.label ?? type;
   };
 
+  const addZoomAtPlayhead = () => {
+    const preset = STUDIO_ZOOM_PRESETS[0];
+    const startMs = timelineStore.getState().currentTimeMs;
+    timelineStore.addClip('effects', {
+      name: preset.label,
+      durationMs: preset.durationMs,
+      startMs,
+      color: preset.accent,
+      itemType: 'effect',
+      payload: {
+        effectType: 'zoom',
+        scale: preset.scale,
+        targetX: preset.targetX,
+        targetY: preset.targetY,
+      },
+    });
+    toast.success('Zoom added on the Effects track.');
+  };
+
   return (
     <StudioPanelSection
       title="✦ Effects"
@@ -122,15 +137,15 @@ export function ClipEffectsSection({
       <div className="space-y-2">
         {/* Add Effect & Studio Buttons */}
         <div className="flex gap-1.5">
-          {!isAddingEffect && effects.length < 5 && (
+          {effects.length < 5 && (
             <Button
               size="sm"
               variant="outline"
               className="flex-1 h-7 text-xs"
-              onClick={() => setIsAddingEffect(true)}
+              onClick={() => setEffectPickerOpen(true)}
             >
               <PlusIcon className="w-3 h-3 mr-1" />
-              Add Effect
+              Add Effect…
             </Button>
           )}
           <Button
@@ -144,6 +159,26 @@ export function ClipEffectsSection({
           </Button>
         </div>
 
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 w-full gap-1 border-dashed text-xs"
+          onClick={addZoomAtPlayhead}
+        >
+          <ZoomInIcon className="w-3 h-3 text-violet-400" />
+          Add Zoom at Playhead
+        </Button>
+
+        <EffectPickerDialog
+          open={effectPickerOpen}
+          onOpenChange={setEffectPickerOpen}
+          clipName={clip.name}
+          onSelect={(effectType) => {
+            addEffect(effectType);
+            setEffectPickerOpen(false);
+          }}
+        />
+
         <ClipEffectsStudioDialog
           open={studioOpen}
           onOpenChange={setStudioOpen}
@@ -152,34 +187,6 @@ export function ClipEffectsSection({
           mediaAssets={mediaAssets}
           onUpdateClip={onUpdateClip}
         />
-
-        {/* Add Effect Dropdown */}
-        {isAddingEffect && (
-          <div className="space-y-2 p-2 border rounded-md bg-muted/50">
-            <Select onValueChange={addEffect}>
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue placeholder="Select effect type..." />
-              </SelectTrigger>
-              <SelectContent>
-                {STUDIO_EFFECTS.map((effect) => (
-                  <SelectItem key={effect.type} value={effect.type}>
-                    {effect.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                className="flex-1 h-6 text-xs"
-                onClick={() => setIsAddingEffect(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
 
         {/* Effects List */}
         {effects.length > 0 && (
@@ -271,7 +278,7 @@ export function ClipEffectsSection({
         )}
 
         {/* Empty State */}
-        {effects.length === 0 && !isAddingEffect && (
+        {effects.length === 0 && (
           <div className="text-center py-4 text-muted-foreground text-xs">
             No effects yet
           </div>

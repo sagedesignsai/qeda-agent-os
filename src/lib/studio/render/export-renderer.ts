@@ -635,7 +635,10 @@ export async function renderComposedStudioVideo(
       timeMs: sourceMs,
       video: video || null,
       videoReady: Boolean(video && video.readyState >= 2),
-      camera,
+      // Zoom clips are global: they scale the whole canvas, not the source
+      // video crop. Keep the content camera idle for exports.
+      camera: IDLE_CAMERA,
+      canvasCamera: camera,
       effects: take.effects ?? [],
       captions: take.captions ?? [],
       overlays: take.overlays ?? [],

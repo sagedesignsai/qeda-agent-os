@@ -23,7 +23,11 @@ import type {
   StudioStyling,
   StudioVideoCrop,
 } from '../types';
-import { resolveStudioTextStyle, usesStudioFreeTextClip } from './text-style';
+import {
+  computeStudioTextAnimatorProgress,
+  resolveStudioTextStyle,
+  usesStudioFreeTextClip,
+} from './text-style';
 import { evaluateClipAtTime } from '../animation-evaluator';
 import { effectTypeFromPayload } from '../effects/catalog';
 import {
@@ -446,19 +450,27 @@ function buildOverlayOp(
   const centerY = frame.contentY + record.y * frame.contentHeight;
 
   const transform = clip.payload?.transform;
+  const keyframes = evaluateClipKeyframeValues(clip, item.localTimeMs);
   const anim = evaluateClipAtTime(
     clip.durationMs,
     clip.payload?.enterAnimation,
     clip.payload?.exitAnimation,
     item.localTimeMs,
   );
-  const scaleX = (transform?.scale?.x ?? 1) * anim.scale;
-  const scaleY = (transform?.scale?.y ?? 1) * anim.scale;
+  const keyframeScale = keyframes.scale ?? 1;
+  const scaleX = (transform?.scale?.x ?? 1) * anim.scale * keyframeScale;
+  const scaleY = (transform?.scale?.y ?? 1) * anim.scale * keyframeScale;
   const rotationDeg =
-    record.rotation + (transform?.rotation ?? 0) + anim.rotation;
+    record.rotation +
+    (transform?.rotation ?? 0) +
+    (keyframes.rotation ?? 0) +
+    anim.rotation;
 
   const matrix = composeMatrices(
-    translationMatrix(centerX, centerY),
+    translationMatrix(
+      centerX + (keyframes.x ?? 0),
+      centerY + (keyframes.y ?? 0),
+    ),
     translationMatrix(transform?.position?.x ?? 0, transform?.position?.y ?? 0),
     rotationMatrix((rotationDeg * Math.PI) / 180),
     scaleMatrix(scaleX, scaleY),
@@ -469,7 +481,10 @@ function buildOverlayOp(
     clipId: clip.id,
     kind: 'overlay',
     transform: matrix,
-    opacity: clamp01(record.opacity) * anim.opacity,
+    opacity:
+      clamp01(record.opacity) *
+      anim.opacity *
+      (keyframes.opacity ?? 1),
     blendMode: (clip.payload?.blendMode ?? 'source-over') as any,
     clip: 'window',
     source: { kind: 'asset', assetId: record.id, clipId: clip.id },
@@ -599,6 +614,10 @@ function buildShapeOps(input: BuildFrameProgramInput): DrawOp[] {
       transform?: ClipTransform;
       enterAnimation?: ClipAnimation;
       exitAnimation?: ClipAnimation;
+      x?: number;
+      y?: number;
+      opacity?: number;
+      blendMode?: string;
     };
 
     if (!shapePayload.pathData) continue;
@@ -613,10 +632,29 @@ function buildShapeOps(input: BuildFrameProgramInput): DrawOp[] {
 
     // Build affine transform
     const transform = shapePayload.transform;
-    const centerX = (transform?.position?.x ?? 0) + (anim.x ?? 0);
-    const centerY = (transform?.position?.y ?? 0) + (anim.y ?? 0);
-    const scale = (transform?.scale?.x ?? 1) * (anim.scale ?? 1);
-    const rotationRad = (((transform?.rotation ?? 0) + (anim.rotation ?? 0)) * Math.PI) / 180;
+    const keyframes = evaluateClipKeyframeValues(clip, localTimeMs);
+    const centerX =
+      (shapePayload.x !== undefined
+        ? shapePayload.x * input.width
+        : input.width / 2) +
+      (transform?.position?.x ?? 0) +
+      (keyframes.x ?? 0) +
+      (anim.x ?? 0);
+    const centerY =
+      (shapePayload.y !== undefined
+        ? shapePayload.y * input.height
+        : input.height / 2) +
+      (transform?.position?.y ?? 0) +
+      (keyframes.y ?? 0) +
+      (anim.y ?? 0);
+    const scale =
+      (transform?.scale?.x ?? 1) *
+      (keyframes.scale ?? anim.scale ?? 1);
+    const rotationRad =
+      (((transform?.rotation ?? 0) +
+        (keyframes.rotation ?? anim.rotation ?? 0)) *
+        Math.PI) /
+      180;
 
     const matrix = composeMatrices(
       translationMatrix(centerX, centerY),
@@ -624,7 +662,10 @@ function buildShapeOps(input: BuildFrameProgramInput): DrawOp[] {
       rotationMatrix(rotationRad),
     );
 
-    const opacity = (anim.opacity ?? 1) * (clip.payload?.opacity ?? 1);
+    const opacity =
+      (anim.opacity ?? 1) *
+      (shapePayload.opacity ?? 1) *
+      (keyframes.opacity ?? 1);
 
     ops.push({
       id: `shape:${clip.id}`,
@@ -632,8 +673,7 @@ function buildShapeOps(input: BuildFrameProgramInput): DrawOp[] {
       kind: 'shape' as const,
       transform: matrix,
       opacity,
-      blendMode: ((shapePayload as { blendMode?: string }).blendMode ??
-        'source-over') as any,
+      blendMode: (shapePayload.blendMode ?? 'source-over') as any,
       clip: 'window',
       pathData: shapePayload.pathData,
       fill: shapePayload.fill,
@@ -676,9 +716,10 @@ function buildTextOps(
         0,
         input.compTimeMs - clip.startMs,
       );
-      const animator_progress = Math.min(
-        1,
-        relativeTimeMs / (clip.durationMs || 1),
+      const animator_progress = computeStudioTextAnimatorProgress(
+        caption.text,
+        textAnimConfig,
+        relativeTimeMs,
       );
       animator = {
         mode: textAnimConfig.mode,
@@ -691,18 +732,30 @@ function buildTextOps(
     const clipTransform = input.clipTransformPreview?.clipId === clip.id
       ? input.clipTransformPreview.transform
       : clip.payload?.transform;
+    const textKeyframes = evaluateClipKeyframeValues(clip, item.localTimeMs);
+    const textScale = textKeyframes.scale ?? 1;
     const centerX =
       frame.contentX +
       (clip.payload?.x ?? 0.5) * frame.contentWidth +
-      (clipTransform?.position?.x ?? 0);
+      (clipTransform?.position?.x ?? 0) +
+      (textKeyframes.x ?? 0);
     const centerY =
       frame.contentY +
       (clip.payload?.y ?? 0.5) * frame.contentHeight +
-      (clipTransform?.position?.y ?? 0);
+      (clipTransform?.position?.y ?? 0) +
+      (textKeyframes.y ?? 0);
     const transform = composeMatrices(
       translationMatrix(centerX, centerY),
-      rotationMatrix(((clipTransform?.rotation ?? 0) * Math.PI) / 180),
-      scaleMatrix(clipTransform?.scale?.x ?? 1, clipTransform?.scale?.y ?? 1),
+      rotationMatrix(
+        (((clipTransform?.rotation ?? 0) +
+          (textKeyframes.rotation ?? 0)) *
+          Math.PI) /
+          180,
+      ),
+      scaleMatrix(
+        (clipTransform?.scale?.x ?? 1) * textScale,
+        (clipTransform?.scale?.y ?? 1) * textScale,
+      ),
     );
 
     ops.push({
@@ -710,7 +763,9 @@ function buildTextOps(
       clipId: clip.id,
       kind: 'text',
       transform: freeText ? transform : IDENTITY_MATRIX,
-      opacity: 1,
+      opacity: freeText
+        ? (textKeyframes.opacity ?? clip.payload?.opacity ?? 1)
+        : 1,
       blendMode: (clip.payload?.blendMode ?? 'source-over') as any,
       // Captions are painted outside the window clip — the historical look.
       clip: 'none',

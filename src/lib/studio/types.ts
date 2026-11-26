@@ -29,6 +29,12 @@ export interface StudioZoom {
   targetX: number; // 0..1 normalized to video width
   targetY: number; // 0..1 normalized to video height
   scale: number;
+  /**
+   * Optional keyframed zoom animation, in clip-local time.
+   * Properties: `zoomScale`, `zoomTargetX`, `zoomTargetY`.
+   * When absent the static scale/target values are used.
+   */
+  keyframes?: StudioKeyframe[];
 }
 
 export interface StudioCaptionWord {

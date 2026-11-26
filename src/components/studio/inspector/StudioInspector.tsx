@@ -21,13 +21,9 @@ import type { StudioStyling } from '@/lib/studio-types';
 import type { StudioEffectType, StudioMediaAsset } from '@/lib/studio/types';
 import { useSelectedClip, timelineStore } from '@/hooks/use-timeline-store';
 import {
-  MagicActionsSection,
   GlobalFramingSection,
-  GlobalDeviceFrameSection,
-  GlobalMotionCardsSection,
   GlobalWallpaperSection,
   GlobalCameraSection,
-  GlobalCaptionsSection,
   ClipPropertiesSection,
   EffectsPalette,
 } from './sections';
@@ -35,27 +31,17 @@ import { InspectorAccordionContext } from './components/InspectorSection';
 
 export interface StudioInspectorProps {
   styling: StudioStyling;
-  isProcessingDraft: boolean;
-  isGeneratingSocialKit: boolean;
   onUpdateStyling: (updates: Partial<StudioStyling>) => void;
-  onRunMagicDraft: () => void;
-  onGenerateSocialKit: () => void;
-  onExportVideo: (format: 'mp4' | 'gif') => void;
-  onAddZoomAtPlayhead?: () => void;
   onToggleCollapse?: () => void;
+  onAddZoomAtPlayhead?: () => void;
   mediaAssets?: StudioMediaAsset[];
 }
 
 export function StudioInspector({
   styling,
-  isProcessingDraft,
-  isGeneratingSocialKit,
   onUpdateStyling,
-  onRunMagicDraft,
-  onGenerateSocialKit,
-  onExportVideo,
-  onAddZoomAtPlayhead,
   onToggleCollapse,
+  onAddZoomAtPlayhead,
   mediaAssets = [],
 }: StudioInspectorProps) {
   const selectedClipData = useSelectedClip();
@@ -166,6 +152,14 @@ export function StudioInspector({
             <GlobalWallpaperSection
               styling={styling}
               onUpdateStyling={onUpdateStyling}
+              defaultOpen={false}
+            />
+
+            {/* 3. Camera & Kinetic Motion (zoom intensity, easing, add zoom) */}
+            <GlobalCameraSection
+              styling={styling}
+              onUpdateStyling={onUpdateStyling}
+              onAddZoomAtPlayhead={onAddZoomAtPlayhead}
               defaultOpen={false}
             />
 

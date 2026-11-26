@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
+import { Move3dIcon } from 'lucide-react';
 import type {
   ClipTransform,
   TimelineClip,
   TimelineTrack,
 } from '@/lib/studio-types';
+import { Button } from '@/components/ui/button';
+import { TransformRangeDialog } from '../../../features/TransformRangeDialog';
 import {
   InspectorCoordinatePad,
   StudioFieldRow,
@@ -38,6 +41,7 @@ export function ClipTransformSection({
   const anchorPoint = transform?.anchorPoint ?? { x: 0.5, y: 0.5 };
   const scaleLinked = Math.abs(scale.x - scale.y) < 0.01;
   const [scaleLink, setScaleLink] = useState(scaleLinked);
+  const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
   if (!isVisualTrack && !isTextClip) return null;
 
   const setTransform = (partial: Partial<ClipTransform>) => {
@@ -82,8 +86,8 @@ export function ClipTransformSection({
               value={position.x}
               prefix="X"
               tone="x"
-              min={-500}
-              max={500}
+              min={-2000}
+              max={2000}
               step={5}
               suffix="px"
               onChange={(x) => setTransform({ position: { ...position, x } })}
@@ -95,8 +99,8 @@ export function ClipTransformSection({
               value={position.y}
               prefix="Y"
               tone="y"
-              min={-500}
-              max={500}
+              min={-2000}
+              max={2000}
               step={5}
               suffix="px"
               onChange={(y) => setTransform({ position: { ...position, y } })}
@@ -113,7 +117,7 @@ export function ClipTransformSection({
               prefix="X"
               tone="x"
               min={0.1}
-              max={3}
+              max={20}
               step={0.1}
               suffix="x"
               onChange={handleScaleX}
@@ -126,7 +130,7 @@ export function ClipTransformSection({
               prefix="Y"
               tone="y"
               min={0.1}
-              max={3}
+              max={20}
               step={0.1}
               suffix="x"
               onChange={handleScaleY}
@@ -145,8 +149,8 @@ export function ClipTransformSection({
         <StudioScrubField
           label="Rotation"
           value={rotation}
-          min={-180}
-          max={180}
+          min={-360}
+          max={360}
           step={1}
           suffix="°"
           onChange={(nextRotation) => setTransform({ rotation: nextRotation })}
@@ -157,6 +161,26 @@ export function ClipTransformSection({
         targetX={anchorPoint.x}
         targetY={anchorPoint.y}
         onChange={(x, y) => setTransform({ anchorPoint: { x, y } })}
+      />
+      <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-border/30 pt-1.5">
+        <span className="text-[9px] text-muted-foreground">
+          Position ±2000px · Scale 0.1–20×
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-6 gap-1 px-2 text-[10px]"
+          onClick={() => setRangeDialogOpen(true)}
+        >
+          <Move3dIcon className="size-3" />
+          Advanced Transform…
+        </Button>
+      </div>
+      <TransformRangeDialog
+        open={rangeDialogOpen}
+        onOpenChange={setRangeDialogOpen}
+        clipName={clip.name}
       />
     </StudioPanelSection>
   );

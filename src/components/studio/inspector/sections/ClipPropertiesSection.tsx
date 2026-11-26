@@ -20,6 +20,10 @@ import {
 import { Button } from '@/components/ui/button';
 import type { TimelineClip, TimelineTrack } from '@/lib/studio-types';
 import type { StudioMediaAsset } from '@/lib/studio/types';
+import {
+  getBlendModeOption,
+  isNonDefaultBlendMode,
+} from '@/lib/studio/blend-modes';
 import { TimecodeNudgeInput, StudioPanelSection } from '../components';
 import { UniversalKeyframesSection } from './UniversalKeyframesSection';
 import { ClipEffectsSection } from './ClipEffectsSection';
@@ -85,7 +89,7 @@ export function ClipPropertiesSection({
       case 'audio':
         return 'AUDIO';
       case 'overlays':
-        return 'OVERLAY';
+        return clip.itemType === 'shape' ? 'SHAPE' : 'OVERLAY';
       case 'transitions':
         return `${clip.payload?.transitionType ?? 'FADE'} TRANSITION`;
       default:
@@ -125,6 +129,22 @@ export function ClipPropertiesSection({
         <span className="flex-1 truncate text-[11px] font-semibold text-foreground">
           {clip.name}
         </span>
+        {isNonDefaultBlendMode(clip.payload?.blendMode) && (
+          <span
+            title={`Blend mode: ${getBlendModeOption(clip.payload?.blendMode).label}`}
+            className="shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-medium text-sky-300"
+          >
+            Blend: {getBlendModeOption(clip.payload?.blendMode).label}
+          </span>
+        )}
+        {clip.payload?.textAnimator && (
+          <span
+            title={`Text animator: ${clip.payload.textAnimator.mode}`}
+            className="shrink-0 rounded bg-teal-500/15 px-1.5 py-0.5 text-[9px] font-medium text-teal-300"
+          >
+            Text Animator
+          </span>
+        )}
         <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary">
           {getBadgeText()}
         </span>

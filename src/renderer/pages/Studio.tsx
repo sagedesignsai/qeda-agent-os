@@ -66,8 +66,19 @@ import { StudioSourcePicker } from '@/components/studio/StudioSourcePicker';
 import { StudioRecordingBar } from '@/components/studio/StudioRecordingBar';
 import { StudioSocialKitModal } from '@/components/studio/StudioSocialKitModal';
 import { StudioContentPanel } from '@/components/studio/content/StudioContentPanel';
+import type { ContentTab } from '@/components/studio/content/StudioContentPanel';
 import { StudioCopilotPanel } from '@/components/studio/copilot/StudioCopilotPanel';
 import { StudioCommandBar } from '@/components/studio/StudioCommandBar';
+import { BlendModeDialog } from '@/components/studio/features/BlendModeDialog';
+import { TextAnimatorDialog } from '@/components/studio/features/TextAnimatorDialog';
+import { ShapeEditorDialog } from '@/components/studio/features/ShapeEditorDialog';
+import type { ShapeEditorValue } from '@/components/studio/features/ShapeEditorDialog';
+import { EffectPickerDialog } from '@/components/studio/features/EffectPickerDialog';
+import { TransformRangeDialog } from '@/components/studio/features/TransformRangeDialog';
+import { ClipEffectsStudioDialog } from '@/components/studio/inspector/ClipEffectsStudioDialog';
+import { StudioCanvasBackgroundAddonDialog } from '@/components/studio/addons/StudioCanvasBackgroundAddonDialog';
+import { staticValueForProperty } from '@/lib/studio/timeline/keyframes-ui';
+import { isStudioZoomClip, STUDIO_ZOOM_PRESETS } from '@/lib/studio/effects/zoom-presets';
 import { inferTimelineItemType } from '@/lib/studio/timeline/item-type';
 import { StudioCompositionCreateDialog } from '@/components/studio/StudioCompositionCreateDialog';
 import { ShowcaseProjectDialog, type ShowcaseProjectSourceType } from '@/components/studio/ShowcaseProjectDialog';
@@ -182,6 +193,29 @@ export default function Studio() {
   // Timeline tracks for per-clip animation evaluation on the preview canvas
   const timelineTracks = useTimelineTracks();
   const selectedClipData = useSelectedClip();
+  const selectedClip = selectedClipData?.clip ?? null;
+  const selectedTrack = selectedClipData?.track ?? null;
+  const selectedShapePayload = selectedClip?.payload as
+    | (NonNullable<TimelineClip['payload']> & {
+        shapeKind?: string;
+        pathData?: string;
+        fill?: string;
+        stroke?: { color: string; width: number };
+        trim?: { start: number; end: number; offset: number };
+        pathLengthPx?: number;
+      })
+    | undefined;
+  const isSelectedShape =
+    selectedClip?.itemType === 'shape' ||
+    typeof selectedShapePayload?.shapeKind === 'string';
+  const shapeEditorValue: ShapeEditorValue = {
+    shapeKind: (selectedShapePayload?.shapeKind ?? 'rect') as ShapeEditorValue['shapeKind'],
+    pathData: selectedShapePayload?.pathData ?? '',
+    fill: selectedShapePayload?.fill,
+    stroke: selectedShapePayload?.stroke,
+    trim: selectedShapePayload?.trim,
+    pathLengthPx: selectedShapePayload?.pathLengthPx,
+  };
   const { canUndo, canRedo, undo, redo } = useTimelineTools();
   const availableAddons = useMemo(
     () => BUILTIN_STUDIO_ADDONS.filter((addon) =>
@@ -246,6 +280,17 @@ export default function Studio() {
   >(null);
   const [videoCropDialogOpen, setVideoCropDialogOpen] = useState(false);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
+  const [contentTab, setContentTab] = useState<ContentTab>('media');
+  // Feature dialogs opened from the command bar / inline entry points.
+  const [blendDialogOpen, setBlendDialogOpen] = useState(false);
+  const [textAnimatorDialogOpen, setTextAnimatorDialogOpen] = useState(false);
+  const [shapeEditorOpen, setShapeEditorOpen] = useState(false);
+  const [transformRangeOpen, setTransformRangeOpen] = useState(false);
+  const [effectPickerOpen, setEffectPickerOpen] = useState(false);
+  const [effectsStudioOpen, setEffectsStudioOpen] = useState(false);
+  const [pendingEffectType, setPendingEffectType] =
+    useState<StudioEffectType | null>(null);
+  const [backgroundStudioOpen, setBackgroundStudioOpen] = useState(false);
   const [activeAddonId, setActiveAddonId] = useState<StudioAddonId | null>(null);
   const [addonTargetClipId, setAddonTargetClipId] = useState<string | null>(null);
 
@@ -312,6 +357,94 @@ export default function Studio() {
     },
     [activeTake, updateStyling],
   );
+
+  const updateSelectedClipPayload = useCallback(
+    (payload: NonNullable<TimelineClip['payload']>) => {
+      if (!selectedClip) return;
+      timelineStore.updateClip(
+        selectedClip.id,
+        { payload },
+        selectedTrack?.id,
+      );
+    },
+    [selectedClip, selectedTrack?.id],
+  );
+
+  const openShapesLibrary = () => {
+    if (contentPanelCollapsed) toggleLeftPanel();
+    setContentTab('shapes');
+  };
+
+  const openEffectsStudioForType = useCallback((effectType: StudioEffectType) => {
+    setPendingEffectType(effectType);
+    setEffectsStudioOpen(true);
+  }, []);
+
+  const handleAddPositionKeyframe = useCallback(() => {
+    if (!selectedClip) return;
+    const localTimeMs = Math.max(
+      0,
+      timelineStore.getState().currentTimeMs - selectedClip.startMs,
+    );
+    const property =
+      selectedTrack?.type === 'effects' && isStudioZoomClip(selectedClip)
+        ? 'zoomScale'
+        : 'x';
+    timelineStore.addClipKeyframe(
+      selectedClip.id,
+      property,
+      localTimeMs,
+      staticValueForProperty(selectedClip, property),
+    );
+    toast.success(
+      property === 'zoomScale'
+        ? 'Zoom keyframe added at the playhead.'
+        : 'Position keyframe added at the playhead.',
+    );
+  }, [selectedClip, selectedTrack?.type]);
+
+  const handleAddZoomAtPlayhead = useCallback(() => {
+    const preset = STUDIO_ZOOM_PRESETS[0];
+    const startMs = timelineStore.getState().currentTimeMs;
+    const durationMs = Math.min(
+      preset.durationMs,
+      Math.max(600, effectiveDurationMs - startMs),
+    );
+    timelineStore.addClip('effects', {
+      name: preset.label,
+      durationMs,
+      startMs,
+      color: preset.accent,
+      itemType: 'effect',
+      payload: {
+        effectType: 'zoom',
+        scale: preset.scale,
+        targetX: preset.targetX,
+        targetY: preset.targetY,
+      },
+    });
+    toast.success(
+      'Zoom added on the Effects track. Open its Effects Studio to keyframe it.',
+    );
+  }, [effectiveDurationMs]);
+
+  const handleClearKeyframes = useCallback(() => {
+    if (!selectedClip) return;
+    const keyframes = selectedClip.payload?.keyframes ?? [];
+    for (const keyframe of [...keyframes]) {
+      timelineStore.removeClipKeyframe(selectedClip.id, keyframe.id);
+    }
+    toast.success('Clip keyframes cleared.');
+  }, [selectedClip]);
+
+  const handleCopyKeyframes = useCallback(() => {
+    const keyframes = selectedClip?.payload?.keyframes ?? [];
+    if (keyframes.length === 0) return;
+    void navigator.clipboard
+      ?.writeText(JSON.stringify(keyframes, null, 2))
+      .then(() => toast.success('Keyframes copied to clipboard.'))
+      .catch(() => toast.error('Could not copy keyframes.'));
+  }, [selectedClip]);
 
   // Content library & inspector panel states & refs
   const [contentPanelCollapsed, setContentPanelCollapsed] = useState(false);
@@ -389,6 +522,58 @@ export default function Studio() {
       // Only handle other shortcuts if we're in an active take
       if (!activeTake) return;
 
+      // Feature-dialog shortcuts. They are ignored while any modal owns the
+      // screen so typing in a dialog can never trigger a background action.
+      const modalOpen =
+        commandBarOpen ||
+        blendDialogOpen ||
+        textAnimatorDialogOpen ||
+        shapeEditorOpen ||
+        transformRangeOpen ||
+        effectPickerOpen ||
+        effectsStudioOpen ||
+        backgroundStudioOpen ||
+        videoCropDialogOpen ||
+        sourcePickerOpen ||
+        socialKitModalOpen ||
+        copilotOpen;
+      if (modalOpen) return;
+
+      if (selectedClip && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const visualSelected =
+          selectedTrack?.type === 'video' ||
+          selectedTrack?.type === 'overlays' ||
+          isSelectedShape;
+        const textSelected =
+          selectedTrack?.type === 'captions' ||
+          selectedClip.itemType === 'text';
+        const zoomSelected =
+          selectedTrack?.type === 'effects' && isStudioZoomClip(selectedClip);
+
+        if (e.shiftKey) {
+          const key = e.key.toLowerCase();
+          if (key === 'b' && visualSelected) {
+            e.preventDefault();
+            setBlendDialogOpen(true);
+          } else if (key === 'f' && visualSelected) {
+            e.preventDefault();
+            setEffectPickerOpen(true);
+          } else if (key === 't' && textSelected) {
+            e.preventDefault();
+            setTextAnimatorDialogOpen(true);
+          } else if (key === 's' && isSelectedShape) {
+            e.preventDefault();
+            setShapeEditorOpen(true);
+          }
+        } else if (
+          e.key.toLowerCase() === 'k' &&
+          (visualSelected || textSelected || zoomSelected)
+        ) {
+          e.preventDefault();
+          handleAddPositionKeyframe();
+        }
+      }
+
       // Space: Play/Pause (only if not in an input field)
       if (e.code === 'Space' && target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
         e.preventDefault();
@@ -399,7 +584,26 @@ export default function Studio() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTake, isPlaying]);
+  }, [
+    activeTake,
+    backgroundStudioOpen,
+    blendDialogOpen,
+    commandBarOpen,
+    copilotOpen,
+    effectPickerOpen,
+    effectsStudioOpen,
+    handleAddPositionKeyframe,
+    isPlaying,
+    isSelectedShape,
+    selectedClip,
+    selectedTrack?.type,
+    shapeEditorOpen,
+    socialKitModalOpen,
+    sourcePickerOpen,
+    textAnimatorDialogOpen,
+    transformRangeOpen,
+    videoCropDialogOpen,
+  ]);
 
   // Resolve a lightweight streaming URL when the active take changes.
   useEffect(() => {
@@ -474,21 +678,6 @@ export default function Studio() {
     if (newTakeId) {
       navigate(withScope(`/studio/${newTakeId}`));
     }
-  };
-
-  const handleAddZoomAtPlayhead = () => {
-    if (!activeTake) return;
-    const currentPlayhead = timelineStore.getState().currentTimeMs;
-    const newZoom = {
-      id: Math.random().toString(36).slice(2, 9),
-      startMs: Math.max(0, currentPlayhead - 200),
-      endMs: Math.min(effectiveDurationMs, currentPlayhead + 2000),
-      targetX: 0.5,
-      targetY: 0.5,
-      scale: 1.6,
-    };
-    updateZooms([...activeTake.zooms, newZoom]);
-    toast.success('Added zoom keyframe at playhead');
   };
 
   // The timeline store owns the playhead; canvas playback does not update page
@@ -1426,6 +1615,8 @@ export default function Studio() {
                     projectId={projectId}
                     isCollapsed={contentPanelCollapsed}
                     onToggleCollapse={toggleLeftPanel}
+                    activeTab={contentTab}
+                    onActiveTabChange={setContentTab}
                   />
                 </ResizablePanel>
 
@@ -1488,6 +1679,7 @@ export default function Studio() {
                     styling={activeTake.styling}
                     onUpdateStyling={updateStyling}
                     onToggleCollapse={toggleRightPanel}
+                    onAddZoomAtPlayhead={handleAddZoomAtPlayhead}
                     mediaAssets={activeTake.mediaAssets ?? []}
                   />
                 </ResizablePanel>
@@ -1639,6 +1831,91 @@ export default function Studio() {
         />
       )}
 
+      {/* ── Feature Dialogs (command bar + inline entry points) ─────────────── */}
+      {selectedClip && (
+        <BlendModeDialog
+          open={blendDialogOpen}
+          onOpenChange={setBlendDialogOpen}
+          clipName={selectedClip.name}
+          value={selectedClip.payload?.blendMode}
+          onApply={(blendMode) =>
+            updateSelectedClipPayload({ blendMode })
+          }
+        />
+      )}
+
+      {selectedClip && (
+        <TextAnimatorDialog
+          open={textAnimatorDialogOpen}
+          onOpenChange={setTextAnimatorDialogOpen}
+          clipName={selectedClip.name}
+          text={selectedClip.payload?.text ?? selectedClip.name}
+          value={selectedClip.payload?.textAnimator}
+          onApply={(textAnimator) =>
+            updateSelectedClipPayload({ textAnimator })
+          }
+        />
+      )}
+
+      {selectedClip && isSelectedShape && (
+        <ShapeEditorDialog
+          open={shapeEditorOpen}
+          onOpenChange={setShapeEditorOpen}
+          clipName={selectedClip.name}
+          value={shapeEditorValue}
+          onApply={(next) =>
+            updateSelectedClipPayload(
+              next as unknown as NonNullable<TimelineClip['payload']>,
+            )
+          }
+        />
+      )}
+
+      {selectedClip && (
+        <TransformRangeDialog
+          open={transformRangeOpen}
+          onOpenChange={setTransformRangeOpen}
+          clipName={selectedClip.name}
+        />
+      )}
+
+      {selectedClip && (
+        <EffectPickerDialog
+          open={effectPickerOpen}
+          onOpenChange={setEffectPickerOpen}
+          clipName={selectedClip.name}
+          onSelect={(effectType) => {
+            setEffectPickerOpen(false);
+            openEffectsStudioForType(effectType);
+          }}
+        />
+      )}
+
+      {selectedClip && (
+        <ClipEffectsStudioDialog
+          open={effectsStudioOpen}
+          onOpenChange={(next) => {
+            setEffectsStudioOpen(next);
+            if (!next) setPendingEffectType(null);
+          }}
+          clip={selectedClip}
+          initialEffectType={pendingEffectType}
+          mediaAssets={activeTake?.mediaAssets ?? []}
+          onUpdateClip={(clipId, patch) =>
+            timelineStore.updateClip(clipId, patch, selectedTrack?.id)
+          }
+        />
+      )}
+
+      {activeTake && (
+        <StudioCanvasBackgroundAddonDialog
+          open={backgroundStudioOpen}
+          onOpenChange={setBackgroundStudioOpen}
+          styling={activeTake.styling}
+          onApply={applyStudioCanvasBackground}
+        />
+      )}
+
       {/* ── Studio Command Bar ─────────────────────────────────────────────── */}
       {activeTake && (
         <StudioCommandBar
@@ -1676,6 +1953,85 @@ export default function Studio() {
           onDeleteClip={() => {
             /* Delete selected clip */
           }}
+          selectedClip={selectedClip}
+          selectedTrack={selectedTrack}
+          onOpenBlendMode={
+            selectedClip &&
+            (selectedTrack?.type === 'video' ||
+              selectedTrack?.type === 'overlays' ||
+              isSelectedShape)
+              ? () => setBlendDialogOpen(true)
+              : undefined
+          }
+          onOpenTransformRange={
+            selectedClip &&
+            (selectedTrack?.type === 'video' ||
+              selectedTrack?.type === 'overlays' ||
+              selectedTrack?.type === 'captions')
+              ? () => setTransformRangeOpen(true)
+              : undefined
+          }
+          onOpenEffectsStudio={
+            selectedClip &&
+            (selectedTrack?.type === 'video' ||
+              selectedTrack?.type === 'overlays' ||
+              (selectedTrack?.type === 'effects' &&
+                isStudioZoomClip(selectedClip)))
+              ? () => {
+                  setPendingEffectType(null);
+                  setEffectsStudioOpen(true);
+                }
+              : undefined
+          }
+          onAddZoomAtPlayhead={handleAddZoomAtPlayhead}
+          onOpenEffectPicker={
+            selectedClip &&
+            (selectedTrack?.type === 'video' ||
+              selectedTrack?.type === 'overlays')
+              ? () => setEffectPickerOpen(true)
+              : undefined
+          }
+          onAddEffect={
+            selectedClip &&
+            (selectedTrack?.type === 'video' ||
+              selectedTrack?.type === 'overlays')
+              ? openEffectsStudioForType
+              : undefined
+          }
+          onOpenTextAnimator={
+            selectedClip &&
+            (selectedTrack?.type === 'captions' ||
+              selectedClip.itemType === 'text')
+              ? () => setTextAnimatorDialogOpen(true)
+              : undefined
+          }
+          onOpenShapeEditor={
+            selectedClip && isSelectedShape
+              ? () => setShapeEditorOpen(true)
+              : undefined
+          }
+          onShowShapesTab={openShapesLibrary}
+          onOpenBackgroundStudio={() => setBackgroundStudioOpen(true)}
+          onAddKeyframe={
+            selectedClip &&
+            (selectedTrack?.type === 'video' ||
+              selectedTrack?.type === 'overlays' ||
+              selectedTrack?.type === 'captions' ||
+              (selectedTrack?.type === 'effects' &&
+                isStudioZoomClip(selectedClip)))
+              ? handleAddPositionKeyframe
+              : undefined
+          }
+          onClearKeyframes={
+            selectedClip?.payload?.keyframes?.length
+              ? handleClearKeyframes
+              : undefined
+          }
+          onCopyKeyframes={
+            selectedClip?.payload?.keyframes?.length
+              ? handleCopyKeyframes
+              : undefined
+          }
           addons={availableAddons}
           onRunAddon={(addonId) => openStudioAddon(addonId)}
           activeTool="select"

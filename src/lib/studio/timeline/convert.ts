@@ -133,6 +133,9 @@ export function convertTakeToTracks(take: StudioTake): TimelineTrack[] {
           scale: zoom.scale,
           targetX: zoom.targetX,
           targetY: zoom.targetY,
+          ...(zoom.keyframes && zoom.keyframes.length > 0
+            ? { keyframes: zoom.keyframes.map((kf) => ({ ...kf })) }
+            : {}),
         },
       },
     ];
@@ -416,6 +419,7 @@ export function extractZoomsFromTracks(
     })
     .map((clip) => {
       const span = roundSpan(clipSourceSpan(clip, cuts));
+      const keyframes = clip.payload?.keyframes;
       return {
         id: clip.id,
         startMs: span.startMs,
@@ -423,6 +427,9 @@ export function extractZoomsFromTracks(
         scale: numberOr(clip.payload?.scale, 1.5),
         targetX: numberOr(clip.payload?.targetX, 0.5),
         targetY: numberOr(clip.payload?.targetY, 0.5),
+        ...(keyframes && keyframes.length > 0
+          ? { keyframes: keyframes.map((kf) => ({ ...kf })) }
+          : {}),
       };
     });
 }

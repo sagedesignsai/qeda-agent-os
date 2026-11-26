@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import { LayersIcon, SparklesIcon } from 'lucide-react';
 import {
   drawGenerativeBackground,
   type GenerativeBackgroundConfig,
@@ -65,22 +64,6 @@ export function BackgroundPreviewStage({
           aria-label="Canvas background preview"
         />
       )}
-
-      <div className="relative z-10 flex aspect-video w-[56%] items-center justify-center rounded-lg border border-white/25 bg-black/55 shadow-2xl backdrop-blur-[2px]">
-        <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-black/50 px-2.5 py-1 text-[10px] font-medium text-white/80">
-          {mode === 'generative' && genConfig.animated ? (
-            <>
-              <SparklesIcon className="size-3 text-primary" />
-              Live Animated Backdrop
-            </>
-          ) : (
-            <>
-              <LayersIcon className="size-3 text-white/70" />
-              Showcase Frame Preview
-            </>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

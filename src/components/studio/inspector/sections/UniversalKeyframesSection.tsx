@@ -26,6 +26,7 @@ import {
   type KeyframeUiInfo,
 } from '@/lib/studio/timeline/keyframes-ui';
 import type { TimelineClip, TimelineTrack } from '@/lib/studio/types';
+import { isStudioZoomClip } from '@/lib/studio/effects/zoom-presets';
 import { StudioPanelSection, StudioScrubField } from '../components';
 
 type PropertyDef = KeyframeUiInfo & { staticValue: number };
@@ -70,15 +71,31 @@ export function UniversalKeyframesSection({
         propertyDefs.push({ ...info, staticValue: staticValueForProperty(live, property) });
       }
     }
+  } else if (track.type === 'overlays' || track.type === 'captions') {
+    // Universal keyframes now cover every visual track: overlay media, free
+    // text and caption clips animate with the same x/y/scale/rotation/opacity
+    // properties as video clips.
+    for (const property of ['x', 'y', 'scale', 'rotation', 'opacity']) {
+      const info = keyframeUiInfoFor(property);
+      if (info) {
+        propertyDefs.push({ ...info, staticValue: staticValueForProperty(live, property) });
+      }
+    }
   } else if (track.type === 'audio') {
     const info = keyframeUiInfoFor('speed');
     if (info) {
       propertyDefs.push({ ...info, staticValue: staticValueForProperty(live, 'speed') });
     }
   } else if (track.type === 'effects') {
-    const info = keyframeUiInfoFor('intensity');
-    if (info) {
-      propertyDefs.push({ ...info, staticValue: staticValueForProperty(live, 'intensity') });
+    const zoom = isStudioZoomClip(live);
+    const properties = zoom
+      ? ['zoomScale', 'zoomTargetX', 'zoomTargetY']
+      : ['intensity'];
+    for (const property of properties) {
+      const info = keyframeUiInfoFor(property);
+      if (info) {
+        propertyDefs.push({ ...info, staticValue: staticValueForProperty(live, property) });
+      }
     }
   }
 
@@ -112,6 +129,12 @@ export function UniversalKeyframesSection({
         return { payload: { ...payload, speed: next } };
       case 'intensity':
         return { payload: { ...payload, intensity: next } };
+      case 'zoomScale':
+        return { payload: { ...payload, scale: next } };
+      case 'zoomTargetX':
+        return { payload: { ...payload, targetX: next } };
+      case 'zoomTargetY':
+        return { payload: { ...payload, targetY: next } };
       default:
         return { payload: { ...payload, [def.property]: next } };
     }

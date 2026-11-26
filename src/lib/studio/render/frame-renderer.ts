@@ -77,6 +77,40 @@ export function renderStudioFrame(
   ctx: CanvasRenderingContext2D,
   input: StudioComposeInput,
 ): void {
+  const canvasCamera = input.canvasCamera;
+  const scale = canvasCamera?.scale ?? 1;
+  const hasCanvasCamera = Number.isFinite(scale) && scale > 1.001;
+
+  if (hasCanvasCamera) {
+    const width = input.width;
+    const height = input.height;
+    // Clamp the pan so a scaled-up composition never exposes an empty edge.
+    const halfSpan = 0.5 / scale;
+    const panX = Math.max(
+      halfSpan,
+      Math.min(1 - halfSpan, canvasCamera?.panX ?? 0.5),
+    );
+    const panY = Math.max(
+      halfSpan,
+      Math.min(1 - halfSpan, canvasCamera?.panY ?? 0.5),
+    );
+
+    ctx.save();
+    ctx.translate(width / 2, height / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-panX * width, -panY * height);
+    renderStudioFrameBody(ctx, input);
+    ctx.restore();
+    return;
+  }
+
+  renderStudioFrameBody(ctx, input);
+}
+
+function renderStudioFrameBody(
+  ctx: CanvasRenderingContext2D,
+  input: StudioComposeInput,
+): void {
   if (!isDisplayListRendererEnabled() || !input.tracks) {
     drawStudioFrame(ctx, input);
     return;

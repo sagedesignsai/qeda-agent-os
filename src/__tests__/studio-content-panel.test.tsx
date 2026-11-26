@@ -90,7 +90,7 @@ describe('Studio Content Panel & Blank Project Flow', () => {
     } as unknown as typeof window.electron;
   });
 
-  it('renders StudioContentPanel with 4 tabs and defaults to Media tab', () => {
+  it('renders StudioContentPanel with 5 tabs and defaults to Media tab', () => {
     render(
       <TooltipProvider>
         <StudioContentPanel takes={mockTakes} onAddClip={jest.fn()} />
@@ -103,6 +103,9 @@ describe('Studio Content Panel & Blank Project Flow', () => {
     expect(screen.getByRole('button', { name: /^Text$/i })).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /^Effects$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^Shapes$/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /^Audio$/i }),
@@ -165,6 +168,38 @@ describe('Studio Content Panel & Blank Project Flow', () => {
         trackType: 'effects',
         name: '1.5x Focus Zoom',
         durationMs: 2500,
+      }),
+    );
+  });
+
+  it('switches to Shapes tab and inserts a vector shape payload', () => {
+    const onAddClip = jest.fn();
+
+    render(
+      <TooltipProvider>
+        <StudioContentPanel takes={mockTakes} onAddClip={onAddClip} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Shapes$/i }));
+    expect(screen.getByText('Rectangle')).toBeInTheDocument();
+    expect(screen.getByText('Custom Path')).toBeInTheDocument();
+
+    const addButtons = screen.getAllByRole('button', {
+      name: /Add to timeline at playhead/i,
+    });
+    fireEvent.click(addButtons[0]);
+
+    expect(onAddClip).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackType: 'overlays',
+        itemType: 'shape',
+        payload: expect.objectContaining({
+          shapeKind: 'rect',
+          fill: '#ffffff',
+          stroke: expect.objectContaining({ width: 3 }),
+          trim: { start: 0, end: 1, offset: 0 },
+        }),
       }),
     );
   });

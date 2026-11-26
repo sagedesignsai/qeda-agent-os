@@ -8,6 +8,7 @@
  */
 
 import {
+  defaultAddKeyframePropertyForClip,
   defaultAddKeyframePropertyForTrack,
   findClipKeyframeDiamond,
   keyframeUiInfoFor,
@@ -74,8 +75,20 @@ describe('keyframeUiRowProperties', () => {
       expect.arrayContaining(['x', 'y', 'scale', 'rotation', 'speed', 'opacity']),
     );
     expect(keyframeUiRowProperties('audio')).toEqual(['speed']);
-    expect(keyframeUiRowProperties('effects')).toEqual(['intensity']);
-    expect(keyframeUiRowProperties('captions')).toEqual([]);
+    expect(keyframeUiRowProperties('effects')).toEqual(
+      expect.arrayContaining([
+        'intensity',
+        'zoomScale',
+        'zoomTargetX',
+        'zoomTargetY',
+      ]),
+    );
+    expect(keyframeUiRowProperties('captions')).toEqual(
+      expect.arrayContaining(['x', 'y', 'scale', 'rotation', 'opacity']),
+    );
+    expect(keyframeUiRowProperties('overlays')).toEqual(
+      expect.arrayContaining(['x', 'y', 'scale', 'rotation', 'opacity']),
+    );
   });
 });
 
@@ -84,7 +97,19 @@ describe('defaultAddKeyframePropertyForTrack', () => {
     expect(defaultAddKeyframePropertyForTrack('video')).toBe('x');
     expect(defaultAddKeyframePropertyForTrack('audio')).toBe('speed');
     expect(defaultAddKeyframePropertyForTrack('effects')).toBe('intensity');
-    expect(defaultAddKeyframePropertyForTrack('captions')).toBeNull();
+    expect(defaultAddKeyframePropertyForTrack('captions')).toBe('x');
+    expect(defaultAddKeyframePropertyForTrack('overlays')).toBe('x');
+  });
+
+  it('picks zoomScale for kinetic zoom clips', () => {
+    const zoomClip = makeClip({
+      itemType: 'effect',
+      payload: { effectType: 'zoom', scale: 1.8, targetX: 0.3, targetY: 0.6 },
+    });
+    expect(defaultAddKeyframePropertyForClip('effects', zoomClip)).toBe(
+      'zoomScale',
+    );
+    expect(defaultAddKeyframePropertyForClip('video', zoomClip)).toBe('x');
   });
 });
 
@@ -184,13 +209,16 @@ describe('findClipKeyframeDiamond', () => {
     expect(miss).toBeNull();
   });
 
-  it('returns null for track types without keyframe rows', () => {
+  it('returns a keyframe diamond for caption and overlay tracks', () => {
     const captionsClip = makeClip({
       payload: { keyframes: [{ id: 'k1', timeMs: 0, property: 'x', value: 1, easing: 'linear' }] },
     });
     expect(
       findClipKeyframeDiamond(makeTrack('captions'), captionsClip, CLIP_X, CLIP_Y, CLIP_H, 0, CENTER_Y, ZOOM),
-    ).toBeNull();
+    ).toMatchObject({ property: 'x' });
+    expect(
+      findClipKeyframeDiamond(makeTrack('overlays'), captionsClip, CLIP_X, CLIP_Y, CLIP_H, 0, CENTER_Y, ZOOM),
+    ).toMatchObject({ property: 'x' });
   });
 
   it('prefers the closest diamond when multiple overlap', () => {

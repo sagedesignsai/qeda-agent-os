@@ -18,6 +18,11 @@ import {
 } from '../captions/presets';
 import type { StudioCaption, StudioCaptionStyle } from '../types';
 import type { StudioWindowFrame } from './geometry';
+import {
+  layoutStudioTextAnimator,
+  studioTextAnimatorUnitState,
+  type StudioTextAnimatorRenderState,
+} from './text-style';
 
 export const CAPTION_FONT_STACK = 'Inter, system-ui, sans-serif';
 const FONT_STACK = CAPTION_FONT_STACK;
@@ -49,11 +54,13 @@ export function drawStudioCaption(
     style,
     frame,
     timeMs,
+    animator,
   }: {
     caption: StudioCaption;
     style: StudioCaptionStyle;
     frame: StudioWindowFrame;
     timeMs: number;
+    animator?: StudioTextAnimatorRenderState;
   },
 ): void {
   const fontSize = captionFontSizeForFrame(frame.width, frame.height);
@@ -65,21 +72,77 @@ export function drawStudioCaption(
 
   switch (style) {
     case 'minimal':
-      drawMinimal(ctx, caption.text, fontSize, centerX, baselineY);
+      drawMinimal(ctx, caption.text, fontSize, centerX, baselineY, animator);
       break;
     case 'karaoke':
       if (
-        drawKaraoke(ctx, caption, fontSize, centerX, baselineY, timeMs, frame)
+        drawKaraoke(
+          ctx,
+          caption,
+          fontSize,
+          centerX,
+          baselineY,
+          timeMs,
+          frame,
+          animator,
+        )
       ) {
         return;
       }
-      drawBadge(ctx, caption.text, fontSize, centerX, baselineY);
+      drawBadge(ctx, caption.text, fontSize, centerX, baselineY, animator);
       break;
     case 'badge':
     default:
-      drawBadge(ctx, caption.text, fontSize, centerX, baselineY);
+      drawBadge(ctx, caption.text, fontSize, centerX, baselineY, animator);
       break;
   }
+}
+
+/**
+ * Paint a caption's tokens with the current animator state.
+ *
+ * The surrounding pill/band is measured from the full text so its size stays
+ * stable while characters/words reveal inside it, which avoids the jitter of
+ * re-measuring partially revealed text on every frame.
+ */
+function drawAnimatedCaptionTokens(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  fontSize: number,
+  centerX: number,
+  centerY: number,
+  animator: StudioTextAnimatorRenderState,
+): void {
+  const layout = layoutStudioTextAnimator(ctx, text, animator.mode);
+  if (layout.unitCount === 0) return;
+  const startX = centerX - layout.boxWidth / 2;
+  const lineHeight = fontSize * 1.2;
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+
+  layout.lines.forEach((tokens, lineIndex) => {
+    const y =
+      centerY +
+      (lineIndex - (layout.lines.length - 1) / 2) * lineHeight;
+    tokens.forEach((token) => {
+      const state = studioTextAnimatorUnitState(
+        animator.mode,
+        animator.progress,
+        token.unitIndex,
+        layout.unitCount,
+      );
+      if (!token.text || state.alpha <= 0) return;
+      ctx.save();
+      ctx.globalAlpha *= state.alpha;
+      ctx.fillText(
+        token.text,
+        startX + token.x,
+        y + state.rise * fontSize * 0.35,
+      );
+      ctx.restore();
+    });
+  });
 }
 
 function setCaptionFont(
@@ -96,6 +159,7 @@ function drawBadge(
   fontSize: number,
   centerX: number,
   centerY: number,
+  animator?: StudioTextAnimatorRenderState,
 ): void {
   if (!text) return;
   setCaptionFont(ctx, fontSize);
@@ -121,10 +185,14 @@ function drawBadge(
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, centerX, centerY);
+  if (animator) {
+    drawAnimatedCaptionTokens(ctx, text, fontSize, centerX, centerY, animator);
+  } else {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, centerX, centerY);
+  }
   ctx.restore();
 }
 
@@ -134,13 +202,12 @@ function drawMinimal(
   fontSize: number,
   centerX: number,
   centerY: number,
+  animator?: StudioTextAnimatorRenderState,
 ): void {
   if (!text) return;
   setCaptionFont(ctx, fontSize, 600);
 
   ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
 
   // Dark backing band improves contrast over busy video.
   const width = ctx.measureText(text).width;
@@ -160,7 +227,14 @@ function drawMinimal(
   ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
   ctx.shadowBlur = 12;
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(text, centerX, centerY);
+
+  if (animator) {
+    drawAnimatedCaptionTokens(ctx, text, fontSize, centerX, centerY, animator);
+  } else {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, centerX, centerY);
+  }
   ctx.restore();
 }
 
@@ -172,6 +246,7 @@ function drawKaraoke(
   centerY: number,
   timeMs: number,
   frame: StudioWindowFrame,
+  animator?: StudioTextAnimatorRenderState,
 ): boolean {
   const words = resolveCaptionWordTimings(caption);
   if (words.length === 0) return false;
@@ -209,6 +284,25 @@ function drawKaraoke(
   words.forEach((word, index) => {
     const width = widths[index];
     const wordCenter = cursor + width / 2;
+    const animatorState = animator
+      ? studioTextAnimatorUnitState(
+          animator.mode,
+          animator.progress,
+          index,
+          words.length,
+        )
+      : undefined;
+    if (animatorState && animatorState.alpha <= 0) {
+      cursor += width + gap;
+      return;
+    }
+
+    ctx.save();
+    if (animatorState && animatorState.alpha < 1) {
+      ctx.globalAlpha *= animatorState.alpha;
+    }
+    const offsetY = animatorState?.rise ? animatorState.rise * fontSize * 0.35 : 0;
+    const drawY = centerY + offsetY;
 
     if (index === activeIndex) {
       ctx.save();
@@ -216,7 +310,7 @@ function drawKaraoke(
       ctx.beginPath();
       ctx.roundRect(
         cursor - wordPadX,
-        centerY - fontSize / 2 - wordPadY,
+        drawY - fontSize / 2 - wordPadY,
         width + wordPadX * 2,
         fontSize + wordPadY * 2,
         (fontSize + wordPadY * 2) / 2,
@@ -228,7 +322,8 @@ function drawKaraoke(
       ctx.fillStyle = index < activeIndex ? '#ffffff' : 'rgba(255,255,255,0.72)';
     }
 
-    ctx.fillText(word.word, wordCenter, centerY);
+    ctx.fillText(word.word, wordCenter, drawY);
+    ctx.restore();
     cursor += width + gap;
   });
 
