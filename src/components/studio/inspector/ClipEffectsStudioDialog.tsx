@@ -8,7 +8,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useTimelineState } from '@/hooks/use-timeline-store';
+import { timelineStore } from '@/hooks/use-timeline-store';
 import { STUDIO_EFFECTS } from '@/lib/studio/effects/catalog';
 import { getDefaultParams } from '@/lib/studio/effects/params';
 import { evaluateKeyframesAt } from '@/lib/studio/keyframes';
@@ -76,7 +76,8 @@ export function ClipEffectsStudioDialog({
   mediaAssets = [],
   onUpdateClip,
 }: ClipEffectsStudioDialogProps) {
-  const { currentTimeMs } = useTimelineState();
+  const clipRef = useRef(clip);
+  clipRef.current = clip;
   const durationMs = Math.max(100, clip.durationMs || 5000);
 
   const [draftEffects, setDraftEffects] = useState<ClipEffect[]>([]);
@@ -103,26 +104,29 @@ export function ClipEffectsStudioDialog({
       setEyedropperActive(false);
       return;
     }
-    const effects = ((clip.payload?.effects ?? []) as ClipEffect[]).map((e) => ({
+    const activeClip = clipRef.current;
+    const activeDurationMs = Math.max(100, activeClip.durationMs || 5000);
+    const effects = ((activeClip.payload?.effects ?? []) as ClipEffect[]).map((e) => ({
       ...e,
       params: { ...e.params },
     }));
-    const keyframes = ((clip.payload?.keyframes ?? []) as StudioKeyframe[]).map(
+    const keyframes = ((activeClip.payload?.keyframes ?? []) as StudioKeyframe[]).map(
       (k) => ({ ...k }),
     );
     setDraftEffects(effects);
     setDraftKeyframes(keyframes);
-    setDraftMask(clip.payload?.mask ? { ...clip.payload.mask } : undefined);
+    setDraftMask(activeClip.payload?.mask ? { ...activeClip.payload.mask } : undefined);
     setSelectedEffectId(
       initialEffectId && effects.some((e) => e.id === initialEffectId)
         ? initialEffectId
         : (effects[0]?.id ?? null),
     );
     setIsAddingEffect(false);
+    const currentTimeMs = timelineStore.getState().currentTimeMs;
     setLocalTimeMs(
-      Math.max(0, Math.min(durationMs, currentTimeMs - clip.startMs)),
+      Math.max(0, Math.min(activeDurationMs, currentTimeMs - activeClip.startMs)),
     );
-  }, [open, clip, initialEffectId, currentTimeMs, durationMs]);
+  }, [open, clip.id, initialEffectId]);
 
   // Playback loop for clip-local preview.
   useEffect(() => {

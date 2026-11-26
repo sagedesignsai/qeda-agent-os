@@ -418,6 +418,7 @@ describe('GPU pass execution with mocked WebGL2', () => {
       FLOAT: 0x1406,
       TRIANGLE_STRIP: 0x0005,
       COLOR_BUFFER_BIT: 0x4000,
+      SCISSOR_TEST: 0x0c11,
       UNPACK_FLIP_Y_WEBGL: 0x9240,
       UNPACK_PREMULTIPLY_ALPHA_WEBGL: 0x9241,
       TEXTURE_WRAP_S: 0x2802,
@@ -431,6 +432,7 @@ describe('GPU pass execution with mocked WebGL2', () => {
       createBuffer: jest.fn(() => ({})),
       bindBuffer: jest.fn(),
       bufferData: jest.fn(),
+      bufferSubData: jest.fn(),
       createShader: jest.fn(() => ({})),
       shaderSource: jest.fn(),
       compileShader: jest.fn(),
@@ -456,6 +458,9 @@ describe('GPU pass execution with mocked WebGL2', () => {
       ),
       getParameter: jest.fn(() => 4096),
       viewport: jest.fn(),
+      enable: jest.fn(),
+      disable: jest.fn(),
+      scissor: jest.fn(),
       clearColor: jest.fn(),
       clear: jest.fn(),
       createTexture: jest.fn(() => ({})),
@@ -464,6 +469,7 @@ describe('GPU pass execution with mocked WebGL2', () => {
       pixelStorei: jest.fn(),
       texParameteri: jest.fn(),
       texImage2D: jest.fn(),
+      texSubImage2D: jest.fn(),
       drawArrays: jest.fn(),
     };
     return { gl, uniforms };
@@ -539,6 +545,8 @@ describe('GPU pass execution with mocked WebGL2', () => {
       expect(uniforms.get('u_angle')).toBeCloseTo(Math.PI / 2);
       expect(uniforms.get('u_samples')).toBe(6);
       expect(drawImage).toHaveBeenCalledTimes(2);
+      expect(gl.texImage2D).toHaveBeenCalledTimes(1);
+      expect(gl.texSubImage2D).toHaveBeenCalledTimes(1);
     });
   });
 

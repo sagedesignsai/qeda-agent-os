@@ -83,7 +83,8 @@ export function renderStudioFrame(
   }
 
   const compTimeMs = input.compTimeMs ?? input.timeMs;
-  const evaluatedFrame = evaluateEditorTimeline(input.tracks, compTimeMs);
+  const evaluatedFrame = input.evaluatedTimeline ??
+    evaluateEditorTimeline(input.tracks, compTimeMs);
 
   const program = buildFrameProgram({
     width: input.width,

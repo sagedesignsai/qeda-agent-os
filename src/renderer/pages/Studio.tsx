@@ -1486,13 +1486,7 @@ export default function Studio() {
                 >
                   <StudioInspector
                     styling={activeTake.styling}
-                    isProcessingDraft={isProcessingDraft}
-                    isGeneratingSocialKit={isGeneratingSocialKit}
                     onUpdateStyling={updateStyling}
-                    onRunMagicDraft={handleRunMagicDraftViaCopilot}
-                    onGenerateSocialKit={handleOpenSocialKitViaCopilot}
-                    onExportVideo={exportVideo}
-                    onAddZoomAtPlayhead={handleAddZoomAtPlayhead}
                     onToggleCollapse={toggleRightPanel}
                     mediaAssets={activeTake.mediaAssets ?? []}
                   />

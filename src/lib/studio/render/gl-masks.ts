@@ -16,6 +16,7 @@ import {
   getGlEngine,
   getGlProgram,
   intersectBounds,
+  prepareGlCanvas,
   uploadGlTexture,
   type AffineLike,
   type QuadCorner,
@@ -64,12 +65,7 @@ export function applyLumaKeyCanvas(
   const program = getGlProgram(current, 'mask:luma-key', FRAGMENT_LUMA_KEY);
   if (!program) return null;
 
-  const { gl } = current;
-  current.canvas.width = width;
-  current.canvas.height = height;
-  gl.viewport(0, 0, width, height);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  prepareGlCanvas(current, width, height);
 
   if (!uploadGlTexture(current, source, 0)) return null;
 
@@ -108,12 +104,7 @@ export function applyShapeMaskCanvas(
   const program = getGlProgram(current, 'mask:shape', FRAGMENT_SHAPE_MASK);
   if (!program) return null;
 
-  const { gl } = current;
-  current.canvas.width = width;
-  current.canvas.height = height;
-  gl.viewport(0, 0, width, height);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  prepareGlCanvas(current, width, height);
 
   if (!uploadGlTexture(current, source, 0)) return null;
 
@@ -201,7 +192,17 @@ export function drawMaskedSource(
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(masked, region.x, region.y, region.width, region.height);
+  ctx.drawImage(
+    masked,
+    0,
+    0,
+    region.width,
+    region.height,
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+  );
   ctx.restore();
   return true;
 }

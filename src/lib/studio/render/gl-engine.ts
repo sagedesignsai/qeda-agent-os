@@ -41,12 +41,22 @@ export type UniformValue =
   | readonly [number, number, number]
   | readonly [number, number, number, number];
 
+interface GlProgramLocations {
+  position: number;
+  uv: number;
+  uniforms: Map<string, WebGLUniformLocation | null>;
+}
+
 export interface GlEngine {
   canvas: HTMLCanvasElement;
   gl: WebGL2RenderingContext;
   quad: WebGLBuffer;
+  quadData: Float32Array;
   textures: Map<number, WebGLTexture>;
+  textureSizes: Map<number, { width: number; height: number }>;
   programs: Map<string, WebGLProgram | null>;
+  locations: Map<WebGLProgram, GlProgramLocations>;
+  maxTextureSize: number;
 }
 
 const VERTEX_SHADER = `#version 300 es
@@ -66,6 +76,7 @@ const VERTEX_SHADER = `#version 300 es
 
 let engine: GlEngine | null = null;
 let probed = false;
+const DEFAULT_SAMPLERS = { u_texture: 0 };
 
 /**
  * Lazily create the shared offscreen WebGL 2 context.
@@ -91,14 +102,21 @@ export function getGlEngine(): GlEngine | null {
     if (!gl) return null;
     const quad = gl.createBuffer();
     if (!quad) return null;
+    const quadData = new Float32Array(16);
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(16), gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, quadData, gl.DYNAMIC_DRAW);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     engine = {
       canvas,
       gl,
       quad,
+      quadData,
       textures: new Map(),
+      textureSizes: new Map(),
       programs: new Map(),
+      locations: new Map(),
+      maxTextureSize: Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 4096,
     };
     return engine;
   } catch {
@@ -189,23 +207,55 @@ export function uploadGlTexture(
       texture = gl.createTexture();
       if (!texture) return null;
       current.textures.set(unit, texture);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     }
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texImage2D(
-      gl.TEXTURE_2D,
-      0,
-      gl.RGBA,
-      gl.RGBA,
-      gl.UNSIGNED_BYTE,
-      source as TexImageSource,
-    );
+    const image = source as TexImageSource & {
+      width?: number;
+      height?: number;
+      naturalWidth?: number;
+      naturalHeight?: number;
+      videoWidth?: number;
+      videoHeight?: number;
+    };
+    const width = Number(image.videoWidth || image.naturalWidth || image.width);
+    const height = Number(image.videoHeight || image.naturalHeight || image.height);
+    const size = current.textureSizes.get(unit);
+    if (
+      width > 0 &&
+      height > 0 &&
+      Number.isFinite(width) &&
+      Number.isFinite(height) &&
+      size?.width === width &&
+      size.height === height
+    ) {
+      gl.texSubImage2D(
+        gl.TEXTURE_2D,
+        0,
+        0,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        source as TexImageSource,
+      );
+    } else {
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        source as TexImageSource,
+      );
+      if (width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height)) {
+        current.textureSizes.set(unit, { width, height });
+      }
+    }
     return texture;
   } catch {
     return null;
@@ -222,21 +272,35 @@ export function drawGlQuad(
   height: number,
   corners: readonly QuadCorner[],
   uniforms: Record<string, UniformValue>,
-  samplers: Record<string, number> = { u_texture: 0 },
+  samplers: Record<string, number> = DEFAULT_SAMPLERS,
 ): void {
   const { gl } = current;
   gl.viewport(0, 0, width, height);
   gl.useProgram(program);
 
   gl.bindBuffer(gl.ARRAY_BUFFER, current.quad);
-  const data = new Float32Array(16);
-  corners.forEach((corner, index) => {
-    data.set([corner.x, corner.y, corner.u, corner.v], index * 4);
-  });
-  gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+  const data = current.quadData;
+  for (let index = 0; index < corners.length; index += 1) {
+    const corner = corners[index];
+    const offset = index * 4;
+    data[offset] = corner.x;
+    data[offset + 1] = corner.y;
+    data[offset + 2] = corner.u;
+    data[offset + 3] = corner.v;
+  }
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
 
-  const position = gl.getAttribLocation(program, 'a_pos');
-  const uv = gl.getAttribLocation(program, 'a_uv');
+  let locations = current.locations.get(program);
+  if (!locations) {
+    locations = {
+      position: gl.getAttribLocation(program, 'a_pos'),
+      uv: gl.getAttribLocation(program, 'a_uv'),
+      uniforms: new Map(),
+    };
+    current.locations.set(program, locations);
+  }
+  const position = locations.position;
+  const uv = locations.uv;
   if (position >= 0) {
     gl.enableVertexAttribArray(position);
     gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 16, 0);
@@ -246,9 +310,17 @@ export function drawGlQuad(
     gl.vertexAttribPointer(uv, 2, gl.FLOAT, false, 16, 8);
   }
 
-  gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), width, height);
-  for (const [name, value] of Object.entries(uniforms)) {
+  const getUniformLocation = (name: string) => {
+    if (locations.uniforms.has(name)) return locations.uniforms.get(name) ?? null;
     const location = gl.getUniformLocation(program, name);
+    locations.uniforms.set(name, location);
+    return location;
+  };
+  const resolution = getUniformLocation('u_resolution');
+  if (resolution) gl.uniform2f(resolution, width, height);
+  for (const name in uniforms) {
+    const value = uniforms[name];
+    const location = getUniformLocation(name);
     if (!location) continue;
     if (typeof value === 'number') {
       gl.uniform1f(location, value);
@@ -260,12 +332,44 @@ export function drawGlQuad(
       gl.uniform4f(location, value[0], value[1], value[2], value[3]);
     }
   }
-  for (const [samplerName, unit] of Object.entries(samplers)) {
-    const location = gl.getUniformLocation(program, samplerName);
+  for (const samplerName in samplers) {
+    const location = getUniformLocation(samplerName);
+    const unit = samplers[samplerName];
     if (location) gl.uniform1i(location, unit);
   }
 
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/** Grow the reusable draw buffer only when a pass exceeds its current size. */
+export function ensureGlCanvasSize(
+  current: GlEngine,
+  width: number,
+  height: number,
+): void {
+  const nextWidth = Math.max(current.canvas.width, width);
+  const nextHeight = Math.max(current.canvas.height, height);
+  if (nextWidth === current.canvas.width && nextHeight === current.canvas.height) {
+    return;
+  }
+  current.canvas.width = nextWidth;
+  current.canvas.height = nextHeight;
+}
+
+/** Prepare only the requested viewport while retaining the larger backbuffer. */
+export function prepareGlCanvas(
+  current: GlEngine,
+  width: number,
+  height: number,
+): void {
+  ensureGlCanvasSize(current, width, height);
+  const { gl } = current;
+  gl.viewport(0, 0, width, height);
+  gl.clearColor(0, 0, 0, 0);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(0, 0, width, height);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.SCISSOR_TEST);
 }
 
 // ── Shared Geometry & Scratch Layer Helpers ───────────────────────────────────

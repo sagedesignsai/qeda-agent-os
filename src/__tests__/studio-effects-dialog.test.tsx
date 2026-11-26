@@ -12,6 +12,7 @@
 import '@testing-library/jest-dom';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { ClipEffectsStudioDialog } from '../components/studio/inspector/ClipEffectsStudioDialog';
+import { timelineStore } from '../hooks/use-timeline-store';
 import type { ClipEffect, StudioKeyframe, TimelineClip } from '@/lib/studio/types';
 
 function makeClip(
@@ -99,6 +100,32 @@ describe('ClipEffectsStudioDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onUpdateClip).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('preserves draft edits when the playhead moves and the parent rerenders', () => {
+    const effect: ClipEffect = {
+      id: 'fx-1',
+      type: 'color-grade',
+      intensity: 0.5,
+      params: {},
+      stackOrder: 0,
+    };
+    const props = {
+      open: true,
+      onOpenChange: jest.fn(),
+      clip: makeClip([effect]),
+      onUpdateClip: jest.fn(),
+    };
+    const { rerender } = render(<ClipEffectsStudioDialog {...props} />);
+
+    fireEvent.change(screen.getByLabelText('Intensity'), {
+      target: { value: '0.9' },
+    });
+    timelineStore.seek(2500, true);
+    rerender(<ClipEffectsStudioDialog {...props} clip={makeClip([effect])} />);
+
+    expect(screen.getByLabelText('Intensity')).toHaveValue('0.9');
+    timelineStore.seek(0, true);
   });
 
   it('records a keyframe when Auto-K is enabled and commits on Apply', () => {

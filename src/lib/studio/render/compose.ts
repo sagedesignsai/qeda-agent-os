@@ -62,7 +62,33 @@ import { computeStudioCanvasFrame } from './geometry';
 export { computeStudioCanvasFrame };
 import { drawClipDeviceFrame } from './clip-device-frame';
 import { drawStudioOverlays, type StudioOverlayAsset } from './overlays';
-import { evaluateEditorTimeline, type EvaluatedTimelineClip } from '../timeline/evaluate';
+import {
+  evaluateEditorTimeline,
+  type EditorTimelineFrame,
+  type EvaluatedTimelineClip,
+} from '../timeline/evaluate';
+
+const sortedEffectsCache = new WeakMap<object, readonly ClipEffect[]>();
+const overlayIndexCache = new WeakMap<object, ReadonlyMap<string, StudioOverlay>>();
+
+function sortedEffects(effects: readonly ClipEffect[]): readonly ClipEffect[] {
+  const cached = sortedEffectsCache.get(effects);
+  if (cached) return cached;
+  const sorted = [...effects].sort((a, b) => a.stackOrder - b.stackOrder);
+  sortedEffectsCache.set(effects, sorted);
+  return sorted;
+}
+
+function indexOverlays(
+  overlays: readonly StudioOverlay[] | undefined,
+): ReadonlyMap<string, StudioOverlay> {
+  if (!overlays) return new Map();
+  const cached = overlayIndexCache.get(overlays);
+  if (cached) return cached;
+  const index = new Map(overlays.map((overlay) => [overlay.id, overlay]));
+  overlayIndexCache.set(overlays, index);
+  return index;
+}
 
 export interface StudioComposeInput {
   width: number;
@@ -86,6 +112,8 @@ export interface StudioComposeInput {
   ) => void;
   /** Ordered editor tracks used to composite the current frame. */
   tracks?: readonly TimelineTrack[];
+  /** Timeline evaluation shared by callers that already resolved this frame. */
+  evaluatedTimeline?: EditorTimelineFrame;
   clipAssets?: ReadonlyMap<string, StudioOverlayAsset>;
   /** Independent video elements keyed by timeline clip ID. */
   clipInstances?: ReadonlyMap<string, StudioOverlayAsset>;
@@ -103,9 +131,9 @@ export function drawStudioFrame(
   const showcaseMode = styling.canvasMode !== 'edit';
   // Animation evaluation uses composition time, not source time
   const compTime = input.compTimeMs ?? timeMs;
-  const timelineFrame = input.tracks
+  const timelineFrame = input.evaluatedTimeline ?? (input.tracks
     ? evaluateEditorTimeline(input.tracks, compTime)
-    : null;
+    : null);
 
   drawStudioBackground(ctx, {
     width,
@@ -199,13 +227,16 @@ export function drawStudioFrame(
     );
   }
 
-  const visibleOverlayIds = timelineFrame?.overlays
-    .filter(({ itemType }) => itemType === 'overlay')
-    .map(({ clip }) => clip.id);
+  const visibleOverlayIds = new Set(
+    (timelineFrame?.overlays ?? [])
+      .filter(({ itemType }) => itemType === 'overlay')
+      .map(({ clip }) => clip.id),
+  );
   const hasOverlayTracks = input.tracks?.some((track) => track.type === 'overlays');
   const overlays = input.tracks && hasOverlayTracks
-    ? (input.overlays ?? []).filter((overlay) => visibleOverlayIds?.includes(overlay.id))
+    ? (input.overlays ?? []).filter((overlay) => visibleOverlayIds.has(overlay.id))
     : input.overlays;
+  const overlayById = indexOverlays(input.overlays);
   drawStudioOverlays(ctx, overlays, input.overlayAssets, frame, timeMs, input.tracks, compTime);
 
   // Overlay clips can carry clip-attached effects too. They are drawn in
@@ -213,9 +244,7 @@ export function drawStudioFrame(
   // the same space the display-list overlay op uses.
   if (timelineFrame) {
     for (const item of timelineFrame.overlays) {
-      const record = input.overlays?.find(
-        (overlay) => overlay.id === item.clip.id,
-      );
+      const record = overlayById.get(item.clip.id);
       if (!record) continue;
       const effects = item.clip.payload?.effects;
       if (!effects || effects.length === 0) continue;
@@ -227,9 +256,7 @@ export function drawStudioFrame(
         width,
         height,
       };
-      for (const effect of [...effects].sort(
-        (a, b) => a.stackOrder - b.stackOrder,
-      )) {
+      for (const effect of sortedEffects(effects)) {
         // Keying needs the overlay's own pixels before compositing. The overlay
         // renderer owns that draw, so a lane-level/overlay key is a no-op here
         // rather than a readback that would key the frame below it.
@@ -620,11 +647,7 @@ function drawMultiTrackClips(
     // the clip, inside the clip's transform and local draw box, so the pass
     // follows the clip through transforms and PiP layouts.
     if (payload?.effects && payload.effects.length > 0) {
-      const sortedEffects = [...payload.effects].sort(
-        (a, b) => a.stackOrder - b.stackOrder,
-      );
-
-      for (const effect of sortedEffects) {
+      for (const effect of sortedEffects(payload.effects)) {
         // Resolved onto the clip draw above, not painted as an effect pass.
         if (effect.type === 'chroma-key') continue;
         const intensity = evaluateEffectIntensity(

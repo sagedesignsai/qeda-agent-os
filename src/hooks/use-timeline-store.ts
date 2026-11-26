@@ -105,6 +105,9 @@ class TimelineStore {
     durationMs: number;
     isMultiTrack: boolean;
   }> = [];
+  private undoTransactionActive = false;
+  private transactionSnapshotRecorded = false;
+  private pendingTrackCommit = false;
 
   getState = (): TimelineState => {
     return this.state;
@@ -208,7 +211,24 @@ class TimelineStore {
 
   // ── Undo / Redo Management ────────────────────────────────────────────────
 
+  beginUndoTransaction = () => {
+    if (this.undoTransactionActive) return;
+    this.undoTransactionActive = true;
+    this.transactionSnapshotRecorded = false;
+    this.pendingTrackCommit = false;
+  };
+
+  endUndoTransaction = () => {
+    if (!this.undoTransactionActive) return;
+    const shouldCommitTracks = this.pendingTrackCommit;
+    this.undoTransactionActive = false;
+    this.transactionSnapshotRecorded = false;
+    this.pendingTrackCommit = false;
+    if (shouldCommitTracks) this.commitTrackChange();
+  };
+
   recordSnapshot = () => {
+    if (this.undoTransactionActive && this.transactionSnapshotRecorded) return;
     try {
       const snapshot = JSON.parse(
         JSON.stringify({
@@ -222,7 +242,11 @@ class TimelineStore {
         this.undoStack.shift();
       }
       this.redoStack = [];
-      this.notify();
+      if (this.undoTransactionActive) {
+        this.transactionSnapshotRecorded = true;
+      } else {
+        this.notify();
+      }
     } catch {
       // Ignore
     }
@@ -233,6 +257,10 @@ class TimelineStore {
     if (tracks !== this.state.tracks) {
       this.state = { ...this.state, tracks };
       this.notify();
+    }
+    if (this.undoTransactionActive) {
+      this.pendingTrackCommit = true;
+      return;
     }
     this.notifyTracks(this.state.tracks);
   };

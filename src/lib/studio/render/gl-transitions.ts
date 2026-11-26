@@ -17,6 +17,7 @@ import {
   drawGlQuad,
   getGlEngine,
   getGlProgram,
+  prepareGlCanvas,
   uploadGlTexture,
   type QuadCorner,
 } from './gl-engine';
@@ -74,11 +75,7 @@ export function renderGpuTransitionPass(
   if (!program) return false;
 
   const { gl } = current;
-  current.canvas.width = width;
-  current.canvas.height = height;
-  gl.viewport(0, 0, width, height);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  prepareGlCanvas(current, width, height);
 
   if (!uploadGlTexture(current, request.fromSource, 0)) return false;
   if (!uploadGlTexture(current, request.toSource, 1)) return false;
@@ -103,6 +100,10 @@ export function renderGpuTransitionPass(
   ctx.save();
   ctx.drawImage(
     current.canvas,
+    0,
+    0,
+    width,
+    height,
     request.rect.x,
     request.rect.y,
     request.rect.width,

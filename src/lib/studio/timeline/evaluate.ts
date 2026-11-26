@@ -128,6 +128,7 @@ export function evaluateEditorTimeline(
   timeMs: number,
 ): EditorTimelineFrame {
   const evaluated = new Map<TrackType, EvaluatedTimelineClip[]>();
+  const videoClipsById = new Map<string, { track: TimelineTrack; clip: TimelineClip }>();
   for (const type of TRACK_TYPES) evaluated.set(type, []);
 
   for (const track of tracks) {
@@ -136,6 +137,7 @@ export function evaluateEditorTimeline(
     if (!activeItems) continue;
 
     for (const clip of track.clips) {
+      if (track.type === 'video') videoClipsById.set(clip.id, { track, clip });
       const item = evaluateClip(track, clip, timeMs);
       if (item) activeItems.push(item);
     }
@@ -153,14 +155,8 @@ export function evaluateEditorTimeline(
     const toClipId = transition.clip.payload?.toClipId;
     if (!fromClipId || !toClipId) continue;
 
-    const from = tracks
-      .filter((track) => track.type === 'video' && track.visible)
-      .map((track) => ({ track, clip: track.clips.find((clip) => clip.id === fromClipId) }))
-      .find((entry) => entry.clip);
-    const to = tracks
-      .filter((track) => track.type === 'video' && track.visible)
-      .map((track) => ({ track, clip: track.clips.find((clip) => clip.id === toClipId) }))
-      .find((entry) => entry.clip);
+    const from = videoClipsById.get(fromClipId);
+    const to = videoClipsById.get(toClipId);
     if (!from?.clip || !to?.clip) continue;
     const cutMs = from.clip.startMs + from.clip.durationMs;
     if (

@@ -30,6 +30,7 @@ import {
   hexToRgbNormalized,
   intersectBounds,
   isGlAvailable,
+  prepareGlCanvas,
   uploadGlTexture,
   type AffineLike,
   type DeviceBounds,
@@ -140,17 +141,13 @@ export function renderGpuEffectPass(
   if (!clipped || clipped.width < 2 || clipped.height < 2) return false;
 
   const { gl } = current;
-  const maxTexture = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 4096;
+  const maxTexture = current.maxTextureSize;
   if (clipped.width > maxTexture || clipped.height > maxTexture) return false;
 
   const program = getGlProgram(current, `fx:${type}`, SHADERS[type]);
   if (!program) return false;
 
-  current.canvas.width = clipped.width;
-  current.canvas.height = clipped.height;
-  gl.viewport(0, 0, clipped.width, clipped.height);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  prepareGlCanvas(current, clipped.width, clipped.height);
 
   const texture = uploadGlTexture(current, canvas, 0);
   if (!texture) return false;
@@ -202,6 +199,10 @@ export function renderGpuEffectPass(
   }
   ctx.drawImage(
     current.canvas,
+    0,
+    0,
+    clipped.width,
+    clipped.height,
     clipped.x,
     clipped.y,
     clipped.width,
@@ -239,11 +240,7 @@ export function applyChromaKeyCanvas(
   );
   if (!program) return null;
 
-  current.canvas.width = width;
-  current.canvas.height = height;
-  gl.viewport(0, 0, width, height);
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  prepareGlCanvas(current, width, height);
 
   const texture = uploadGlTexture(current, source, 0);
   if (!texture) return null;
@@ -331,7 +328,17 @@ export function drawKeyedSource(
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(keyed, region.x, region.y, region.width, region.height);
+  ctx.drawImage(
+    keyed,
+    0,
+    0,
+    region.width,
+    region.height,
+    region.x,
+    region.y,
+    region.width,
+    region.height,
+  );
   ctx.restore();
   return true;
 }

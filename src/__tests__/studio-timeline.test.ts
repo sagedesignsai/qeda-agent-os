@@ -360,6 +360,48 @@ describe('Studio Multi-Track Timeline Engine', () => {
   });
 });
 
+describe('Timeline edit transactions', () => {
+  it('batches drag persistence and records one undo snapshot', () => {
+    const track = {
+      id: 'track-video-transaction',
+      type: 'video' as const,
+      name: 'Video',
+      locked: false,
+      visible: true,
+      clips: [
+        {
+          id: 'clip-transaction',
+          trackId: 'track-video-transaction',
+          itemType: 'video' as const,
+          name: 'Clip',
+          startMs: 0,
+          durationMs: 5000,
+          sourceStartMs: 0,
+          sourceDurationMs: 5000,
+          color: '#334155',
+        },
+      ],
+    };
+    timelineStore.setTracksAndDuration([track], 5000, true, true);
+    const commits: number[] = [];
+    const unsubscribe = timelineStore.subscribeTracks(() => commits.push(1));
+
+    timelineStore.beginUndoTransaction();
+    timelineStore.moveClip(track.id, 'clip-transaction', 1000);
+    timelineStore.moveClip(track.id, 'clip-transaction', 2000);
+
+    expect(commits).toHaveLength(0);
+    expect(timelineStore.findClip('clip-transaction')?.clip.startMs).toBe(2000);
+
+    timelineStore.endUndoTransaction();
+    unsubscribe();
+
+    expect(commits).toHaveLength(1);
+    timelineStore.undo();
+    expect(timelineStore.findClip('clip-transaction')?.clip.startMs).toBe(0);
+  });
+});
+
 describe('Cut-centered transitions', () => {
   beforeEach(() => {
     timelineStore.setTracksAndDuration([], 0, true);

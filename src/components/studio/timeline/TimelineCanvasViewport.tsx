@@ -1139,6 +1139,7 @@ export function TimelineCanvasViewport({
         cancelAnimationFrame(scrollRafRef.current);
         scrollRafRef.current = null;
       }
+      timelineStore.endUndoTransaction();
     };
   }, []);
 
@@ -1440,6 +1441,7 @@ export function TimelineCanvasViewport({
             initialValue: kf.value,
           }
         : null;
+      if (keyframeDragRef.current) timelineStore.beginUndoTransaction();
       dragModeRef.current = { type: 'none' };
       return;
     }
@@ -1464,7 +1466,7 @@ export function TimelineCanvasViewport({
 
       // Select clip & record snapshot for undo
       timelineStore.setSelectedClipId(hit.clip.id);
-      timelineStore.recordSnapshot();
+      timelineStore.beginUndoTransaction();
 
       // Start clip move drag
       const pointerTimeMs = (hit.pointerX + scrollX) / zoomPxPerMs;
@@ -1483,7 +1485,7 @@ export function TimelineCanvasViewport({
       if (activeTool === 'blade') return;
 
       timelineStore.setSelectedClipId(hit.clip.id);
-      timelineStore.recordSnapshot();
+      timelineStore.beginUndoTransaction();
       dragModeRef.current = {
         type: 'trim_edge',
         trackId: hit.track.id,
@@ -1766,9 +1768,13 @@ export function TimelineCanvasViewport({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    const target = e.target as HTMLElement;
+    if (target.hasPointerCapture(e.pointerId)) {
+      target.releasePointerCapture(e.pointerId);
+    }
     if (keyframeDragRef.current) {
       keyframeDragRef.current = null;
+      timelineStore.endUndoTransaction();
       renderCanvas();
       return;
     }
@@ -1779,7 +1785,7 @@ export function TimelineCanvasViewport({
     snapLineMsRef.current = null;
     timelineStore.setSnapLine(null);
     if (wasDragging) {
-      timelineStore.commitTrackChange();
+      timelineStore.endUndoTransaction();
     }
     renderCanvas();
   };
@@ -1928,6 +1934,7 @@ export function TimelineCanvasViewport({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             onPointerLeave={handlePointerLeave}
             onDoubleClick={handleDoubleClick}
             className="sticky left-0 top-0 block touch-none z-10 pointer-events-auto"

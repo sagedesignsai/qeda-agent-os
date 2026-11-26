@@ -17,6 +17,21 @@ import {
 
 export type StudioBackgroundPaint = string | CanvasGradient;
 
+const generativeBackgroundCache = new Map<
+  string,
+  ReturnType<typeof parseGenerativeBackground>
+>();
+
+function cachedGenerativeBackground(background: string) {
+  if (generativeBackgroundCache.has(background)) {
+    return generativeBackgroundCache.get(background) ?? null;
+  }
+  const parsed = parseGenerativeBackground(background);
+  if (generativeBackgroundCache.size >= 32) generativeBackgroundCache.clear();
+  generativeBackgroundCache.set(background, parsed);
+  return parsed;
+}
+
 /** Parse `linear-gradient(<angle|to-dir>, stops…)` into a CanvasGradient. */
 export function parseLinearGradient(
   ctx: CanvasRenderingContext2D,
@@ -154,7 +169,7 @@ export function drawStudioBackground(
     timeMs?: number;
   },
 ): void {
-  const generative = parseGenerativeBackground(background);
+  const generative = cachedGenerativeBackground(background);
   if (generative) {
     drawGenerativeBackground(ctx, {
       width,

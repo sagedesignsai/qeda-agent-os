@@ -55,7 +55,10 @@ import { renderStudioFrame } from '@/lib/studio/render/frame-renderer';
 import { computeCameraMotionBlur } from '@/lib/studio/render/gl-camera-fx';
 import { renderGpuEffectPass } from '@/lib/studio/render/gl-effect-pass';
 import { isGenerativeBackground } from '@/lib/studio/render/background-generator';
-import { evaluateEditorTimeline } from '@/lib/studio/timeline/evaluate';
+import {
+  evaluateEditorTimeline,
+  type EditorTimelineFrame,
+} from '@/lib/studio/timeline/evaluate';
 import { StudioAudioMixer } from '@/lib/studio/audio/mixer';
 import {
   studioOverlayMediaUrl,
@@ -203,8 +206,9 @@ function activeVideoAspectAtTime(
   mediaAssets: readonly StudioMediaAsset[],
   recordedVideo: HTMLVideoElement | null,
   videoCrop?: StudioVideoCrop,
+  evaluatedTimeline?: EditorTimelineFrame,
 ): number {
-  const activeItems = evaluateEditorTimeline(tracks, timeMs).video;
+  const activeItems = (evaluatedTimeline ?? evaluateEditorTimeline(tracks, timeMs)).video;
   const active = activeItems[activeItems.length - 1];
   if (!active) {
     return recordedVideo?.videoWidth && recordedVideo.videoHeight
@@ -322,7 +326,10 @@ export function StudioCanvas({
   );
 
   const [videoLoaded, setVideoLoaded] = useState(false);
-  const [, setClipAssetRevision] = useState(0);
+  const [clipAssetRevision, setClipAssetRevision] = useState(0);
+  const [activeVideoAspect, setActiveVideoAspect] = useState(16 / 9);
+  const activeVideoAspectRef = useRef(activeVideoAspect);
+  activeVideoAspectRef.current = activeVideoAspect;
   const [selectedClipActive, setSelectedClipActive] = useState(() => {
     const selected = selectedTimelineClip;
     const time = timelineStore.getState().currentTimeMs;
@@ -439,6 +446,7 @@ export function StudioCanvas({
               width: image.naturalWidth,
               height: image.naturalHeight,
             });
+            setClipAssetRevision((revision) => revision + 1);
           }
         };
         image.src = url;
@@ -455,6 +463,7 @@ export function StudioCanvas({
               width: video.videoWidth,
               height: video.videoHeight,
             });
+            setClipAssetRevision((revision) => revision + 1);
           }
         };
         video.src = url;
@@ -686,15 +695,19 @@ export function StudioCanvas({
 
   // ── Main 60fps render loop (delegates to the compose module) ──────────────
   useEffect(() => {
-    let animId: number;
+    let animId: number | null = null;
+    let disposed = false;
+
+    const scheduleRender = () => {
+      if (disposed || document.hidden || animId !== null) return;
+      animId = requestAnimationFrame(render);
+    };
 
     const render = (now: number) => {
+      animId = null;
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
-      if (!canvas || !ctx) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
+      if (!canvas || !ctx || disposed || document.hidden) return;
 
       const { styling: style, zooms: z, captions: c, effects: fx, overlays: ov, videoCrop: vc } =
         renderInputsRef.current;
@@ -809,6 +822,19 @@ export function StudioCanvas({
       }
 
       const evaluatedTimeline = evaluateEditorTimeline(tracksRef.current, compMs);
+      const nextVideoAspect = activeVideoAspectAtTime(
+        tracksRef.current,
+        compMs,
+        clipAssetsRef.current,
+        mediaAssets,
+        video,
+        vc,
+        evaluatedTimeline,
+      );
+      if (Math.abs(activeVideoAspectRef.current - nextVideoAspect) > 0.001) {
+        activeVideoAspectRef.current = nextVideoAspect;
+        setActiveVideoAspect(nextVideoAspect);
+      }
 
       // ── Audio playback ──────────────────────────────────────────────
       if (isMultiTrackRef.current && evaluatedTimeline.audio.length > 0) {
@@ -897,6 +923,7 @@ export function StudioCanvas({
         videoCrop: vc,
         glowGradient: glow.value,
         tracks: tracksRef.current,
+        evaluatedTimeline,
         clipAssets: clipAssetsRef.current,
         clipInstances: clipInstanceAssetsRef.current,
         compTimeMs:
@@ -989,12 +1016,75 @@ export function StudioCanvas({
         });
       }
 
-      animId = requestAnimationFrame(render);
+      const cameraIsMoving =
+        Math.abs(cameraRef.current.scale - target.scale) > 0.0005 ||
+        Math.abs(cameraRef.current.panX - target.panX) > 0.0005 ||
+        Math.abs(cameraRef.current.panY - target.panY) > 0.0005;
+      if (
+        isPlayingRef.current ||
+        isGenerativeBackground(style.background) ||
+        cameraIsMoving
+      ) {
+        scheduleRender();
+      }
     };
 
-    animId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animId);
-  }, [onTimeUpdate, playbackDurationMs, onEnded]);
+    const unsubscribeTime = timelineStore.subscribeTime((timeMs) => {
+      currentTimeRef.current = timeMs;
+      scheduleRender();
+    });
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (animId !== null) cancelAnimationFrame(animId);
+        animId = null;
+      } else {
+        scheduleRender();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    const mediaElements = new Set<HTMLVideoElement>([
+      ...(videoRef.current ? [videoRef.current] : []),
+      ...clipVideosRef.current.values(),
+      ...clipInstanceVideosRef.current.values(),
+      ...overlayVideoRefs.current.values(),
+    ]);
+    for (const media of mediaElements) {
+      media.addEventListener('seeked', scheduleRender);
+      media.addEventListener('loadeddata', scheduleRender);
+    }
+
+    scheduleRender();
+    return () => {
+      disposed = true;
+      if (animId !== null) cancelAnimationFrame(animId);
+      unsubscribeTime();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      for (const media of mediaElements) {
+        media.removeEventListener('seeked', scheduleRender);
+        media.removeEventListener('loadeddata', scheduleRender);
+      }
+    };
+  }, [
+    captions,
+    clipAssetRevision,
+    cuts,
+    effects,
+    isMultiTrack,
+    isPlaying,
+    mediaAssets,
+    onEnded,
+    onTimeUpdate,
+    overlays,
+    playbackDurationMs,
+    playbackRate,
+    styling,
+    tracks,
+    videoCrop,
+    videoLoaded,
+    videoUrl,
+    zooms,
+  ]);
 
   const handleCanvasPointerDown = useCallback((event: PointerEvent<HTMLCanvasElement>) => {
     if (isPlayingRef.current || event.button !== 0) return;
@@ -1007,6 +1097,7 @@ export function StudioCanvas({
       y: ((event.clientY - rect.top) / rect.height) * canvas.height,
     };
     const compTime = timelineStore.getState().currentTimeMs;
+    const evaluated = evaluateEditorTimeline(tracksRef.current, compTime);
     const frameAspect = activeVideoAspectAtTime(
       tracksRef.current,
       compTime,
@@ -1014,10 +1105,9 @@ export function StudioCanvas({
       mediaAssets,
       videoRef.current,
       videoCrop,
+      evaluated,
     );
     let hit: { track: TimelineTrack; clip: TimelineTrack['clips'][number] } | null = null;
-
-    const evaluated = evaluateEditorTimeline(tracksRef.current, compTime);
 
     // The highest painted active clip is the first hit candidate. Once
     // selected, the Trace gizmo owns transform drags and commits them as one
@@ -1139,14 +1229,7 @@ export function StudioCanvas({
 
     let sourceWidth = 0;
     let sourceHeight = 0;
-    const frameAspect = activeVideoAspectAtTime(
-      tracksRef.current,
-      timelineStore.getState().currentTimeMs,
-      clipAssetsRef.current,
-      mediaAssets,
-      videoRef.current,
-      videoCrop,
-    );
+    const frameAspect = activeVideoAspect;
 
     if (selected.track.type === 'overlays' || selected.track.type === 'video') {
       // Media assets: image or video

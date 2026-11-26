@@ -155,54 +155,15 @@ export function StudioInspector({
           value={{ openTitle: openSection, setOpenTitle: setOpenSection }}
         >
           <div className="flex flex-col">
-            {/* 1. Magic Agent & Export */}
-            <MagicActionsSection
-              isProcessingDraft={isProcessingDraft}
-              isGeneratingSocialKit={isGeneratingSocialKit}
-              onRunMagicDraft={onRunMagicDraft}
-              onGenerateSocialKit={onGenerateSocialKit}
-              onExportVideo={onExportVideo}
-              defaultOpen={false}
-            />
-
-            {/* 2. Canvas & Framing */}
+            {/* 1. Canvas & Framing */}
             <GlobalFramingSection
               styling={styling}
               onUpdateStyling={onUpdateStyling}
               defaultOpen={false}
             />
 
-            {/* 3. Device Mockup Frame */}
-            <GlobalDeviceFrameSection
-              styling={styling}
-              onUpdateStyling={onUpdateStyling}
-              defaultOpen={false}
-            />
-
-            {/* 4. Motion Cards (Intro / Outro) */}
-            <GlobalMotionCardsSection
-              styling={styling}
-              onUpdateStyling={onUpdateStyling}
-              defaultOpen={false}
-            />
-
-            {/* 5. Wallpaper & Theme */}
+            {/* 2. Wallpaper & Theme */}
             <GlobalWallpaperSection
-              styling={styling}
-              onUpdateStyling={onUpdateStyling}
-              defaultOpen={false}
-            />
-
-            {/* 4. Camera & Kinetic Motion */}
-            <GlobalCameraSection
-              styling={styling}
-              onUpdateStyling={onUpdateStyling}
-              onAddZoomAtPlayhead={onAddZoomAtPlayhead}
-              defaultOpen={false}
-            />
-
-            {/* 5. Subtitles & Typography */}
-            <GlobalCaptionsSection
               styling={styling}
               onUpdateStyling={onUpdateStyling}
               defaultOpen={false}

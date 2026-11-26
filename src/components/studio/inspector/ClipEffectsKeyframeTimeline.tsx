@@ -138,6 +138,18 @@ export function ClipEffectsKeyframeTimeline({
     () => keyframes.find((k) => k.id === selectedKeyframeId) ?? null,
     [keyframes, selectedKeyframeId],
   );
+  const keyframesByProperty = useMemo(() => {
+    const grouped = new Map<string, StudioKeyframe[]>();
+    for (const keyframe of keyframes) {
+      const propertyKeyframes = grouped.get(keyframe.property);
+      if (propertyKeyframes) {
+        propertyKeyframes.push(keyframe);
+      } else {
+        grouped.set(keyframe.property, [keyframe]);
+      }
+    }
+    return grouped;
+  }, [keyframes]);
 
   const effectRows = useMemo<KeyframePropertyRow[]>(() => {
     return [...effects]
@@ -230,7 +242,7 @@ export function ClipEffectsKeyframeTimeline({
   };
 
   const renderTrackRow = (row: KeyframePropertyRow) => {
-    const rowKeyframes = keyframes.filter((k) => k.property === row.property);
+    const rowKeyframes = keyframesByProperty.get(row.property) ?? [];
     return (
       <div
         key={row.property}
@@ -264,7 +276,7 @@ export function ClipEffectsKeyframeTimeline({
   };
 
   const renderLabelRow = (row: KeyframePropertyRow) => {
-    const count = keyframes.filter((k) => k.property === row.property).length;
+    const count = keyframesByProperty.get(row.property)?.length ?? 0;
     const isEffectSelected = row.effectId && row.effectId === selectedEffectId;
     return (
       <div

@@ -54,6 +54,9 @@ interface ClipEffectsPreviewCanvasProps {
 
 const PREVIEW_WIDTH = 1280;
 const PREVIEW_HEIGHT = 720;
+const SAMPLE_WIDTH = 160;
+const SAMPLE_HEIGHT = 90;
+const SAMPLE_INTERVAL_MS = 150;
 
 function toHex(r: number, g: number, b: number): string {
   const hex = (n: number) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
@@ -73,6 +76,9 @@ export function ClipEffectsPreviewCanvas({
   onFrameSample,
 }: ClipEffectsPreviewCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const sampleContextRef = useRef<CanvasRenderingContext2D | null>(null);
+  const lastSampledAtRef = useRef(Number.NEGATIVE_INFINITY);
   const clipAssetsRef = useRef<Map<string, StudioOverlayAsset>>(new Map());
   const clipVideosRef = useRef<Map<string, HTMLVideoElement>>(new Map());
   const [assetRevision, setAssetRevision] = useState(0);
@@ -80,29 +86,6 @@ export function ClipEffectsPreviewCanvas({
   const [zoomPercent, setZoomPercent] = useState<number | 'fit'>('fit');
 
   const compTimeMs = draftClip.startMs + Math.max(0, localTimeMs);
-
-  // Load image/video elements for referenced media-pool assets.
-  // Seek the clip's video decoder when localTimeMs changes.
-  useEffect(() => {
-    const assetId = draftClip.payload?.mediaAssetId as string | undefined;
-    if (!assetId) return;
-    const video = clipVideosRef.current.get(assetId);
-    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
-    const sourceSec = Math.max(
-      0,
-      Math.min(
-        video.duration,
-        ((draftClip.sourceStartMs ?? 0) + Math.max(0, localTimeMs)) / 1000,
-      ),
-    );
-    if (Math.abs(video.currentTime - sourceSec) > 0.02) {
-      try {
-        video.currentTime = sourceSec;
-      } catch {
-        // Ignore seek errors before metadata is ready.
-      }
-    }
-  }, [draftClip.payload?.mediaAssetId, draftClip.sourceStartMs, localTimeMs]);
 
   useEffect(() => {
     const activeIds = new Set(mediaAssets.map((a) => a.id));
@@ -153,29 +136,6 @@ export function ClipEffectsPreviewCanvas({
       }
     }
   }, [mediaAssets]);
-
-  // Clean up video elements on unmount.
-  // Seek the clip's video decoder when localTimeMs changes.
-  useEffect(() => {
-    const assetId = draftClip.payload?.mediaAssetId as string | undefined;
-    if (!assetId) return;
-    const video = clipVideosRef.current.get(assetId);
-    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
-    const sourceSec = Math.max(
-      0,
-      Math.min(
-        video.duration,
-        ((draftClip.sourceStartMs ?? 0) + Math.max(0, localTimeMs)) / 1000,
-      ),
-    );
-    if (Math.abs(video.currentTime - sourceSec) > 0.02) {
-      try {
-        video.currentTime = sourceSec;
-      } catch {
-        // Ignore seek errors before metadata is ready.
-      }
-    }
-  }, [draftClip.payload?.mediaAssetId, draftClip.sourceStartMs, localTimeMs]);
 
   useEffect(() => {
     const videos = clipVideosRef.current;
@@ -255,13 +215,13 @@ export function ClipEffectsPreviewCanvas({
     if (!canvas) return;
     let ctx: CanvasRenderingContext2D | null = null;
     try {
-      ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx = canvas.getContext('2d');
     } catch {
       ctx = null;
     }
     if (!ctx) return;
 
-    const raf = requestAnimationFrame(() => {
+    const raf = requestAnimationFrame((now) => {
       if (!ctx) return;
       ctx.clearRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
 
@@ -293,9 +253,39 @@ export function ClipEffectsPreviewCanvas({
 
       try {
         renderStudioFrame(ctx, input);
-        if (onFrameSample) {
-          const sample = ctx.getImageData(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT).data;
-          onFrameSample(sample);
+        if (
+          onFrameSample &&
+          now - lastSampledAtRef.current >= SAMPLE_INTERVAL_MS
+        ) {
+          let sampleCanvas = sampleCanvasRef.current;
+          if (!sampleCanvas) {
+            sampleCanvas = document.createElement('canvas');
+            sampleCanvas.width = SAMPLE_WIDTH;
+            sampleCanvas.height = SAMPLE_HEIGHT;
+            sampleCanvasRef.current = sampleCanvas;
+            sampleContextRef.current = sampleCanvas.getContext('2d', {
+              willReadFrequently: true,
+            });
+          }
+          const sampleContext = sampleContextRef.current;
+          if (sampleContext) {
+            sampleContext.drawImage(
+              canvas,
+              0,
+              0,
+              SAMPLE_WIDTH,
+              SAMPLE_HEIGHT,
+            );
+            onFrameSample(
+              sampleContext.getImageData(
+                0,
+                0,
+                SAMPLE_WIDTH,
+                SAMPLE_HEIGHT,
+              ).data,
+            );
+            lastSampledAtRef.current = now;
+          }
         }
       } catch {
         // Ignore transient render errors during headless/test runs.
@@ -314,7 +304,7 @@ export function ClipEffectsPreviewCanvas({
 
     const px = Math.floor(((event.clientX - rect.left) / rect.width) * canvas.width);
     const py = Math.floor(((event.clientY - rect.top) / rect.height) * canvas.height);
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     try {
