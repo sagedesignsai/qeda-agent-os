@@ -25,6 +25,10 @@ import {
   ChevronUpIcon,
   SparklesIcon,
   Circle,
+  Undo2Icon,
+  Redo2Icon,
+  SaveIcon,
+  CheckIcon,
 } from 'lucide-react';
 import {
   ResizablePanelGroup,
@@ -54,6 +58,7 @@ import { StudioVideoCropDialog } from '@/components/studio/plugins/StudioVideoCr
 import {
   timelineStore,
   useSelectedClip,
+  useTimelineTools,
   useTimelineTracks,
 } from '@/hooks/use-timeline-store';
 import { StudioInspector } from '@/components/studio/StudioInspector';
@@ -177,6 +182,7 @@ export default function Studio() {
   // Timeline tracks for per-clip animation evaluation on the preview canvas
   const timelineTracks = useTimelineTracks();
   const selectedClipData = useSelectedClip();
+  const { canUndo, canRedo, undo, redo } = useTimelineTools();
   const availableAddons = useMemo(
     () => BUILTIN_STUDIO_ADDONS.filter((addon) =>
       addon.scope === 'canvas' ||
@@ -430,54 +436,27 @@ export default function Studio() {
     (tracks: TimelineTrack[]) => {
       if (!activeTake) return;
 
-      // Multi-track model: extract clips directly from tracks
-      const isMultiTrack = activeTake.tracks !== undefined || timelineStore.getState().isMultiTrack;
-      if (isMultiTrack) {
-        // Legacy tracks remain the editable base; persist their data alongside
-        // the media-backed layer tracks instead of replacing it.
-        void updateTimelineData({
-          zooms: extractZoomsFromTracks(tracks, cuts),
-          captions: extractCaptionsFromTracks(tracks, cuts),
-          cuts: extractCutsFromTracks(tracks, activeTake.durationMs),
-          effects: extractEffectsFromTracks(tracks, cuts),
-          overlays: extractOverlaysFromTracks(tracks, cuts),
-        }).catch((error: unknown) => {
-          console.error('[Studio] Failed to save timeline data.', error);
-          toast.error('Could not save the latest timeline changes.');
-        });
-        const extracted = extractClipsFromTracks(tracks);
-        if (extracted) {
-          void updateTracks(extracted.tracks).catch((error: unknown) => {
-            console.error('[Studio] Failed to save timeline tracks.', error);
-            toast.error('Could not save the latest timeline changes.');
-          });
-        }
-        return;
-      }
+      const preserveTrackIds = new Set(
+        (activeTake.tracks ?? []).map((track) => track.id),
+      );
+      const extracted = extractClipsFromTracks(tracks, { preserveTrackIds });
 
-      // Legacy single-recording model: derive zooms, captions, cuts, etc.
-      // The timeline speaks composition time; the model is authored in source
-      // time, so every derived span is mapped back through the current cuts.
-      const updatedZooms = extractZoomsFromTracks(tracks, cuts);
-      const updatedCaptions = extractCaptionsFromTracks(tracks, cuts);
-      const updatedCuts = extractCutsFromTracks(tracks, activeTake.durationMs);
-      const updatedEffects = extractEffectsFromTracks(tracks, cuts);
-      const updatedOverlays = extractOverlaysFromTracks(tracks, cuts);
-
-      // Timeline commits arrive on pointer release, so persist the full
-      // structural delta as one narrow database update.
+      // Persist both the compatibility fields (zooms, captions, cuts, etc.)
+      // and any multi-track layers or per-clip edits (transform, deviceFrame,
+      // effects, keyframes, animations) in a single atomic save.
       void updateTimelineData({
-        zooms: updatedZooms,
-        captions: updatedCaptions,
-        cuts: updatedCuts,
-        effects: updatedEffects,
-        overlays: updatedOverlays,
+        zooms: extractZoomsFromTracks(tracks, cuts),
+        captions: extractCaptionsFromTracks(tracks, cuts),
+        cuts: extractCutsFromTracks(tracks, activeTake.durationMs),
+        effects: extractEffectsFromTracks(tracks, cuts),
+        overlays: extractOverlaysFromTracks(tracks, cuts),
+        ...(extracted ? { tracks: extracted.tracks } : {}),
       }).catch((error: unknown) => {
         console.error('[Studio] Failed to save timeline data.', error);
         toast.error('Could not save the latest timeline changes.');
       });
     },
-    [activeTake, cuts, updateTimelineData, updateTracks],
+    [activeTake, cuts, updateTimelineData],
   );
 
 
@@ -608,20 +587,102 @@ export default function Studio() {
     [activeTake, loadTake],
   );
 
-  const handleRenameTake = async (id: string, newTitle: string) => {
-    try {
-      await window.electron.ipc.invoke('studio:save-take', {
-        id,
-        title: newTitle,
-      });
-      toast.success('Project renamed');
-      if (activeTake && activeTake.id === id) {
-        await loadTake(id);
+  const handleRenameTake = useCallback(
+    async (id: string, newTitle: string) => {
+      try {
+        await window.electron.ipc.invoke('studio:save-take', {
+          id,
+          title: newTitle,
+        });
+        toast.success('Project renamed');
+        if (activeTake && activeTake.id === id) {
+          await loadTake(id);
+        }
+      } catch {
+        toast.error('Failed to rename project');
       }
-    } catch {
-      toast.error('Failed to rename project');
+    },
+    [activeTake, loadTake],
+  );
+
+  const [projectTitleDraft, setProjectTitleDraft] = useState(
+    activeTake?.title ?? '',
+  );
+  const [isSavingProject, setIsSavingProject] = useState(false);
+  const [justSavedProject, setJustSavedProject] = useState(false);
+
+  useEffect(() => {
+    setProjectTitleDraft(activeTake?.title ?? '');
+  }, [activeTake?.id, activeTake?.title]);
+
+  const handleCommitProjectTitle = useCallback(async () => {
+    if (!activeTake) return;
+    const trimmed = projectTitleDraft.trim();
+    if (!trimmed) {
+      setProjectTitleDraft(activeTake.title);
+      return;
     }
-  };
+    if (trimmed === activeTake.title) return;
+    await handleRenameTake(activeTake.id, trimmed);
+  }, [activeTake, handleRenameTake, projectTitleDraft]);
+
+  const handleSaveProject = useCallback(async () => {
+    if (!activeTake || isSavingProject) return;
+    setIsSavingProject(true);
+    try {
+      const trimmedTitle = projectTitleDraft.trim();
+      const nextTitle = trimmedTitle || activeTake.title;
+      if (!trimmedTitle) {
+        setProjectTitleDraft(activeTake.title);
+      }
+
+      const currentTracks = timelineStore.getState().tracks;
+      const preserveTrackIds = new Set(
+        (activeTake.tracks ?? []).map((track) => track.id),
+      );
+      const extractedClips = extractClipsFromTracks(currentTracks, {
+        preserveTrackIds,
+      });
+
+      await window.electron.ipc.invoke('studio:save-take', {
+        id: activeTake.id,
+        title: nextTitle,
+        styling: activeTake.styling,
+        zooms: extractZoomsFromTracks(currentTracks, cuts),
+        captions: extractCaptionsFromTracks(currentTracks, cuts),
+        cuts: extractCutsFromTracks(currentTracks, activeTake.durationMs),
+        effects: extractEffectsFromTracks(currentTracks, cuts),
+        overlays: extractOverlaysFromTracks(currentTracks, cuts),
+        ...(extractedClips ? { tracks: extractedClips.tracks } : {}),
+      });
+
+      if (nextTitle !== activeTake.title) {
+        await loadTake(activeTake.id);
+      }
+
+      setJustSavedProject(true);
+      window.setTimeout(() => setJustSavedProject(false), 1800);
+      toast.success('Project saved');
+    } catch (error) {
+      console.error('[Studio] Failed to save project.', error);
+      toast.error('Failed to save project');
+    } finally {
+      setIsSavingProject(false);
+    }
+  }, [activeTake, cuts, isSavingProject, loadTake, projectTitleDraft]);
+
+  // Cmd+S / Ctrl+S: Save project
+  useEffect(() => {
+    if (!activeTake) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        void handleSaveProject();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeTake, handleSaveProject]);
 
   // ── Showcase Project Dialog Handlers ──────────────────────────────────────
 
@@ -1098,16 +1159,77 @@ export default function Studio() {
           {/* ── Top Header Bar (Dense h-10) ─────────────────────────────────────── */}
           <PageHeader
             className="select-none"
-            crumbs={[
-              { label: 'Showcase Studio', to: '/studio' },
-              { label: activeTake ? activeTake.title : 'No take selected' },
-            ]}
+            crumbs={[]}
             title={
-              <span className="truncate font-semibold">
-                {activeTake ? activeTake.title : 'Showcase Studio'}
-              </span>
+              <input
+                type="text"
+                value={projectTitleDraft}
+                onChange={(e) => setProjectTitleDraft(e.target.value)}
+                onBlur={() => void handleCommitProjectTitle()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.currentTarget.blur();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setProjectTitleDraft(activeTake.title);
+                    e.currentTarget.blur();
+                  }
+                }}
+                aria-label="Project name"
+                title="Edit project name"
+                placeholder="Untitled project"
+                className="h-7 w-40 sm:w-56 truncate rounded-md border border-transparent bg-transparent px-2 text-sm font-semibold tracking-tight text-foreground transition-colors hover:border-border/60 hover:bg-secondary/30 focus:border-primary/60 focus:bg-secondary/40 focus:outline-none"
+              />
             }
-            nav={null}
+            nav={
+              <div className="flex items-center gap-1">
+                <div className="mx-0.5 h-3.5 w-px shrink-0 bg-border/60" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  title="Undo (Z)"
+                  aria-label="Undo"
+                >
+                  <Undo2Icon className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  onClick={redo}
+                  disabled={!canRedo}
+                  title="Redo (Shift+Z)"
+                  aria-label="Redo"
+                >
+                  <Redo2Icon className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-7 shrink-0 gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground',
+                    justSavedProject && 'text-emerald-400 hover:text-emerald-400',
+                  )}
+                  onClick={() => void handleSaveProject()}
+                  disabled={isSavingProject}
+                  title="Save project (⌘S)"
+                  aria-label="Save project"
+                >
+                  {justSavedProject ? (
+                    <CheckIcon className="w-3.5 h-3.5" />
+                  ) : (
+                    <SaveIcon className="w-3.5 h-3.5" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {isSavingProject ? 'Saving…' : justSavedProject ? 'Saved' : 'Save'}
+                  </span>
+                </Button>
+              </div>
+            }
             center={
               /* Command Bar - Searchable Input */
               activeTake && (

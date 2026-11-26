@@ -10,7 +10,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { TooltipProvider } from '../components/ui/tooltip';
 import { SidebarProvider } from '../components/ui/sidebar';
@@ -135,6 +135,7 @@ describe('Studio Resizable Panels Layout', () => {
         canvas: { width: 800, height: 400 },
         measureText: jest.fn(() => ({ width: 50 })),
         createLinearGradient: jest.fn(() => gradient),
+        createRadialGradient: jest.fn(() => gradient),
       };
       return new Proxy(ctx, {
         get: (target, prop: string) => {
@@ -149,6 +150,12 @@ describe('Studio Resizable Panels Layout', () => {
         invoke: jest.fn().mockImplementation((channel: string) => {
           if (channel === 'studio:read-video-data') {
             return Promise.resolve('qeda-media://studio/take-res-1');
+          }
+          if (
+            channel === 'studio:composition-list' ||
+            channel === 'studio:composition-template-list'
+          ) {
+            return Promise.resolve([]);
           }
           return Promise.resolve(null);
         }),
@@ -177,11 +184,16 @@ describe('Studio Resizable Panels Layout', () => {
   it('renders the resizable structure with top workspace and bottom timeline', () => {
     renderStudioEditor();
 
-    // Verify header title and controls
-    expect(screen.getByText('Showcase Studio')).toBeInTheDocument();
+    // Verify header has project name input (no breadcrumbs) and Undo/Redo/Save controls
+    expect(screen.queryByText('Showcase Studio')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Project name')).toHaveValue(
+      'Showcase Resizable Test Take',
+    );
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeInTheDocument();
     expect(
-      screen.getAllByText('Showcase Resizable Test Take').length,
-    ).toBeGreaterThan(0);
+      screen.getByRole('button', { name: 'Save project' }),
+    ).toBeInTheDocument();
 
     // Verify left content dock tabs
     expect(screen.getByRole('button', { name: 'Media' })).toBeInTheDocument();
@@ -221,6 +233,38 @@ describe('Studio Resizable Panels Layout', () => {
     // Clicking again expands it back
     fireEvent.click(screen.getByTitle('Show Content Library'));
     expect(screen.getByTitle('Hide Content Library')).toBeInTheDocument();
+  });
+
+  it('supports editing project name and saving via header controls', async () => {
+    const ipcInvoke = window.electron.ipc.invoke as jest.Mock;
+    ipcInvoke.mockClear();
+
+    renderStudioEditor();
+
+    const nameInput = screen.getByLabelText('Project name');
+    fireEvent.change(nameInput, { target: { value: 'Updated Showcase Title' } });
+    fireEvent.blur(nameInput);
+
+    await waitFor(() => {
+      expect(ipcInvoke).toHaveBeenCalledWith('studio:save-take', {
+        id: 'take-res-1',
+        title: 'Updated Showcase Title',
+      });
+    });
+
+    ipcInvoke.mockClear();
+    const saveButton = screen.getByRole('button', { name: 'Save project' });
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(ipcInvoke).toHaveBeenCalledWith(
+        'studio:save-take',
+        expect.objectContaining({
+          id: 'take-res-1',
+          title: 'Updated Showcase Title',
+        }),
+      );
+    });
   });
 
   it('allows collapsing inspector via header toggle', () => {

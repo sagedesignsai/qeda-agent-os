@@ -11,6 +11,7 @@ import { evaluateEffectIntensity } from '../lib/studio/keyframes';
 import { DEFAULT_STUDIO_STYLING, type StudioTake } from '../lib/studio-types';
 import {
   convertTakeToTimeline,
+  extractClipsFromTracks,
   studioClipToTimelineClip,
 } from '../lib/studio/timeline/convert';
 
@@ -161,5 +162,81 @@ describe('track and clip guards', () => {
     expect(
       timeline.flatMap((track) => track.clips).some((clip) => clip.id === 'cap-1'),
     ).toBe(false);
+  });
+
+  it('persists and round-trips transform, deviceFrame, effects, and keyframes on recorded video clips', () => {
+    const take = legacyTake();
+    const initialTracks = convertTakeToTimeline(take);
+    expect(extractClipsFromTracks(initialTracks)).toBeNull();
+
+    const editedTracks = initialTracks.map((track) =>
+      track.type === 'video'
+        ? {
+            ...track,
+            clips: track.clips.map((clip) => ({
+              ...clip,
+              payload: {
+                ...clip.payload,
+                opacity: 0.85,
+                transform: {
+                  x: 0.25,
+                  y: -0.1,
+                  scale: { x: 1.2, y: 1.2 },
+                  rotation: 4,
+                  anchorX: 0.5,
+                  anchorY: 0.5,
+                },
+                deviceFrame: {
+                  type: 'macbook' as const,
+                  color: '#1e293b',
+                  padding: 16,
+                  shadow: true,
+                },
+                enterAnimation: {
+                  type: 'slide-up' as const,
+                  durationMs: 400,
+                },
+                effects: [
+                  {
+                    id: 'fx-1',
+                    type: 'vignette' as const,
+                    intensity: 0.5,
+                    enabled: true,
+                    params: {},
+                    stackOrder: 0,
+                  },
+                ],
+                keyframes: [
+                  {
+                    id: 'kf-1',
+                    timeMs: 500,
+                    property: 'opacity',
+                    value: 0.5,
+                    easing: 'ease-out' as const,
+                  },
+                ],
+              },
+            })),
+          }
+        : track,
+    );
+
+    const extracted = extractClipsFromTracks(editedTracks);
+    expect(extracted).not.toBeNull();
+    expect(extracted?.tracks).toHaveLength(1);
+
+    const reloaded = convertTakeToTimeline({
+      ...take,
+      tracks: extracted!.tracks,
+    });
+    const reloadedVideoTrack = reloaded.find((t) => t.type === 'video');
+    expect(reloadedVideoTrack?.clips).toHaveLength(1);
+    const reloadedClip = reloadedVideoTrack!.clips[0];
+    expect(reloadedClip.payload?.opacity).toBe(0.85);
+    expect(reloadedClip.payload?.transform?.scale).toEqual({ x: 1.2, y: 1.2 });
+    expect(reloadedClip.payload?.deviceFrame?.type).toBe('macbook');
+    expect(reloadedClip.payload?.enterAnimation?.type).toBe('slide-up');
+    expect(reloadedClip.payload?.effects).toHaveLength(1);
+    expect(reloadedClip.payload?.keyframes).toHaveLength(1);
   });
 });

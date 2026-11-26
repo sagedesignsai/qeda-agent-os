@@ -607,6 +607,24 @@ export function convertProjectToTracks(
   return timelineTracks;
 }
 
+function clipHasPersistableEdits(clip: TimelineClip): boolean {
+  const payload = clip.payload;
+  if (!payload) return false;
+  return Boolean(
+    payload.mediaAssetId ||
+    payload.transform ||
+    payload.deviceFrame ||
+    payload.enterAnimation ||
+    payload.exitAnimation ||
+    (typeof payload.opacity === 'number' && payload.opacity !== 1) ||
+    (typeof payload.speed === 'number' && payload.speed !== 1) ||
+    (typeof payload.volume === 'number' && payload.volume !== 1) ||
+    (Array.isArray(payload.effects) && payload.effects.length > 0) ||
+    (Array.isArray(payload.keyframes) && payload.keyframes.length > 0) ||
+    payload.transitionType,
+  );
+}
+
 /**
  * Convert `TimelineTrack[]` back to `StudioTrack[]` for the multi-track model.
  *
@@ -615,35 +633,47 @@ export function convertProjectToTracks(
  * enter/exit animations, device frame) stored in `payload` — and maps them
  * back to `StudioClip` fields so edits survive a reload.
  *
- * Returns `null` when the tracks array is empty, signaling the caller to
- * fall back to the legacy extract functions.
+ * Returns `null` when no multi-track layers or per-clip edits exist, signaling
+ * the caller to fall back to the legacy extract functions.
  */
 export function extractClipsFromTracks(
   tracks: TimelineTrack[],
+  options?: { preserveTrackIds?: ReadonlySet<string> },
 ): { tracks: StudioTrack[] } | null {
   if (tracks.length === 0) return null;
 
+  const preserveTrackIds = options?.preserveTrackIds;
   const studioTracks: StudioTrack[] = [];
 
   for (const track of tracks) {
-    // Legacy video/audio lanes can also receive imported media. Persist those
-    // independent placements as ordinary project tracks while leaving the
-    // source recording and legacy effect fields on their compatibility path.
+    // Legacy `track-*` lanes are projected from take fields (`videoPath`,
+    // `zooms`, `captions`, etc.). Only persist them into `take.tracks` when
+    // they carry imported media, per-clip properties (`transform`,
+    // `deviceFrame`, `effects`, `keyframes`, animations, opacity, speed,
+    // volume), or were already persisted in `take.tracks`.
     const isLegacyTrack = track.id.startsWith('track-');
     let sourceTrack = track;
     if (isLegacyTrack) {
-      if (track.type !== 'video' && track.type !== 'audio') continue;
-      const importedClips = track.clips.filter((clip) => clip.payload?.mediaAssetId);
-      if (importedClips.length === 0) continue;
-      sourceTrack = {
-        ...track,
-        id: `layer-imported-${track.type}-${track.id}`,
-        name: `${track.type === 'video' ? 'Video' : 'Audio'} media`,
-        clips: importedClips.map((clip) => ({
-          ...clip,
-          trackId: `layer-imported-${track.type}-${track.id}`,
-        })),
-      };
+      const alreadyPersisted = Boolean(preserveTrackIds?.has(track.id));
+      const editedClips = track.clips.filter(clipHasPersistableEdits);
+      if (!alreadyPersisted && editedClips.length === 0) continue;
+
+      const importedOnly =
+        !alreadyPersisted &&
+        (track.type === 'video' || track.type === 'audio') &&
+        editedClips.every((clip) => Boolean(clip.payload?.mediaAssetId));
+
+      if (importedOnly) {
+        sourceTrack = {
+          ...track,
+          id: `layer-imported-${track.type}-${track.id}`,
+          name: `${track.type === 'video' ? 'Video' : 'Audio'} media`,
+          clips: editedClips.map((clip) => ({
+            ...clip,
+            trackId: `layer-imported-${track.type}-${track.id}`,
+          })),
+        };
+      }
     }
 
     const clips: StudioClip[] = sourceTrack.clips.map((clip) => {

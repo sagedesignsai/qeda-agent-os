@@ -594,6 +594,7 @@ export function useStudio(
       cuts: StudioCut[];
       effects: StudioEffect[];
       overlays: StudioOverlay[];
+      tracks?: StudioTrack[];
     }) => {
       if (!activeTake) return;
       setActiveTake((prev) => (prev ? { ...prev, ...data } : null));
