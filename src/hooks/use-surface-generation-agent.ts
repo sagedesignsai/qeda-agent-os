@@ -32,7 +32,7 @@ export function useSurfaceGenerationAgent(
   const [proposal, setProposal] = useState<SurfaceGenerationProposal | null>(null);
 
   const context = useMemo(
-    () => request ?? ({} as SurfaceGenerationRequest),
+    () => (request ?? {}) as unknown as Record<string, unknown>,
     [request],
   );
 

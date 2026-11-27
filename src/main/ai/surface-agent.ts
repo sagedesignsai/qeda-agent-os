@@ -296,7 +296,7 @@ export function createSurfaceAgent(
 - Allowed properties: ${ANIMATABLE_PROPERTIES.join(', ')}.
 - Use 2–${SURFACE_GENERATION_LIMITS.maxKeyframesPerTrack} keyframes per track, times inside 0–${durationMs} ms, strictly ascending.
 - Numeric properties need finite numbers; fill, stroke, strokeDasharray and d need strings. Opacity 0–1; scale 0.05–6; rotation within ±720.
-- ${loop ? 'This surface must loop seamlessly: every continuous track (x, y, rotation, scale, opacity, fill, stroke, strokeWidth) MUST start and end on the same value.' : 'This surface is one-shot; tracks may end on a different value.'}
+- ${loop ? 'This surface must loop seamlessly: every continuous track (x, y, rotation, scale, opacity, fill, stroke, strokeWidth) MUST start and end on the same value; rotation may finish a full 360° turn later.' : 'This surface is one-shot; tracks may end on a different value.'}
 - Prefer 4–16 tracks on 3–8 focal layers. Ambient motion only: no high-frequency jitter. Movement should read as slow drift, breathing or orbit over the full ${durationMs} ms.
 - Stroke-dash tracks only on layers that actually have a stroke.
 

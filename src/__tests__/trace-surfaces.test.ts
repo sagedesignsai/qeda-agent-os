@@ -1,6 +1,7 @@
 import {
   TRACE_BLOCKS,
   blockDefaults,
+  blockPreviewSvg,
   getBlock,
   instantiateBlock,
   searchBlocks,
@@ -99,6 +100,11 @@ describe('Trace Surfaces add-on', () => {
   });
 
   it('serialises structured gradients and filters into the SVG defs', () => {
+    const auroraPreview = blockPreviewSvg(getBlock('surface-aurora')!);
+    expect(auroraPreview).toContain('feGaussianBlur');
+    expect(auroraPreview).toContain('radialGradient');
+    expect(blockPreviewSvg(getBlock('surface-grain')!)).toContain('feTurbulence');
+
     const aurora = instantiateBlock('surface-aurora', {}, {
       canvas: { width: 1280, height: 720 },
       idFactory: idFactory(),

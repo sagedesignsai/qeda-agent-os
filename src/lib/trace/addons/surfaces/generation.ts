@@ -155,6 +155,26 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * A loop is visually seamless when the value returns to its start. Rotation is
+ * modulo 360, so a full turn (0 → 360) is also seamless.
+ */
+function trackLoopsSeamlessly(
+  property: SvgAnimationProperty,
+  first: number | string,
+  last: number | string,
+): boolean {
+  if (
+    property === 'rotation' &&
+    typeof first === 'number' &&
+    typeof last === 'number'
+  ) {
+    const delta = Math.abs(last - first) % 360;
+    return delta < 1e-6 || Math.abs(delta - 360) < 1e-6;
+  }
+  return first === last;
+}
+
 function normalizeTracks(
   tracks: SurfaceTrackCandidate[] | undefined,
   fragment: TraceAssetFragment,
@@ -288,10 +308,14 @@ function normalizeTracks(
     if (
       loop &&
       LOOPING_PROPERTIES.has(track.property) &&
-      values[0] !== values[values.length - 1]
+      !trackLoopsSeamlessly(
+        track.property,
+        values[0],
+        values[values.length - 1],
+      )
     ) {
       throw new Error(
-        `Looping track "${track.property}" on "${track.elementId}" must end at its starting value. Match the first and last keyframes, or set loop=false for a one-shot surface.`,
+        `Looping track "${track.property}" on "${track.elementId}" must end at its starting value (rotation may end a full 360° turn later). Match the first and last keyframes, or set loop=false for a one-shot surface.`,
       );
     }
 

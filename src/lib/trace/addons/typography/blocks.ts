@@ -721,7 +721,6 @@ export const typewriterBlock: TraceBlockDefinition = {
               true,
             ),
           ],
-          { x: 0, y: 0 },
         ),
       },
       canvas.width,

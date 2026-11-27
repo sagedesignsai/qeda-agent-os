@@ -689,7 +689,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
       const w = parseFloat(node.getAttribute('width') || '100');
       const h = parseFloat(node.getAttribute('height') || '100');
       const rx = parseFloat(node.getAttribute('rx') || '0') || 0;
-      const ry = parseFloat(node.getAttribute('ry') || rx) || rx;
+      const ry = parseFloat(node.getAttribute('ry') || '') || rx;
 
       if (matrixIsTranslationOnly(currentMatrix)) {
         // Keep the native editable rect. The body is drawn at local (0,0) with

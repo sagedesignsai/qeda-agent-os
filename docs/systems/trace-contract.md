@@ -116,8 +116,9 @@ author to them directly so the first proposal is accepted:
   do not survive import.
 - Start with a full-bleed base rect, build depth with gradients and low-opacity
   glows, and keep one calm focal area if foreground copy will sit on top.
-- Continuous loop tracks must start and end on the same value. One-shot work
-  must be explicitly requested (`loop=false`).
+- Continuous loop tracks must start and end on the same value. Rotation may
+  finish a full `360°` turn later. One-shot work must be explicitly requested
+  (`loop=false`).
 - Hard compiler limits: 500 elements, 24 tracks, 12 keyframes per track, 300 KB
   SVG, 200 KB defs. Aim well below them (≈120 elements, 4–16 tracks) for editor
   performance and taste.

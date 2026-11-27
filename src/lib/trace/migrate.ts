@@ -738,7 +738,7 @@ function repairLegacyRingGeometry(
   ) {
     return element;
   }
-  const nextAttributes = {
+  const nextAttributes: Record<string, any> = {
     ...attributes,
     x: strokeWidth / 2,
     y: strokeWidth / 2,

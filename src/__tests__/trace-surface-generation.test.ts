@@ -142,6 +142,23 @@ describe('Surface generation compiler', () => {
     ).toThrow(/must end at its starting value/);
   });
 
+  it('accepts a full-turn rotation as a seamless loop', () => {
+    const proposal = compileSurfaceProposal(REQUEST, {
+      ...candidate(),
+      tracks: [
+        {
+          elementId: 'orb',
+          property: 'rotation',
+          keyframes: [
+            { timeMs: 0, value: 0, easing: 'linear' },
+            { timeMs: 4000, value: 360, easing: 'linear' },
+          ],
+        },
+      ],
+    });
+    expect(proposal.tracks[0].keyframes.at(-1)?.value).toBe(360);
+  });
+
   it('allows one-shot surfaces when loop is false', () => {
     const proposal = compileSurfaceProposal(
       { ...REQUEST, loop: false },
