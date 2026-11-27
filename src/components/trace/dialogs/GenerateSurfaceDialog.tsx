@@ -61,6 +61,11 @@ import {
 import type { TraceSurfaceSummary } from '@/main/ipc/channels';
 import type { TraceProject } from '@/lib/trace/types';
 import { cn } from '@/lib/utils';
+import { staticSvgMarkup } from '@/lib/trace/serialize/svg-markup';
+import type { SvgAnimationProperty } from '@/lib/trace/animation-plan';
+import { RecipeFieldControl } from '@/components/trace/dialogs/RecipeSetupDialog';
+import { SURFACE_BLOCKS } from '@/lib/trace/addons';
+import { blockDefaults, blockPreviewSvg, getBlock, instantiateBlock } from '@/lib/trace/blocks';
 
 export type GenerateSurfaceDialogProps = {
   open: boolean;
@@ -96,6 +101,13 @@ export function GenerateSurfaceDialog({
     id: string;
     proposal: SurfaceGenerationProposal;
   } | null>(null);
+  const [view, setView] = useState<'templates' | 'generate'>('templates');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
+    SURFACE_BLOCKS[0]?.id ?? null,
+  );
+  const [templateValues, setTemplateValues] = useState<Record<string, unknown>>(
+    {},
+  );
   const previewTimeRef = useRef(0);
   const lastUiUpdateRef = useRef(0);
   const stageContainerRef = useRef<HTMLDivElement | null>(null);
@@ -118,6 +130,11 @@ export function GenerateSurfaceDialog({
     };
   }, [project, intensity, loop]);
 
+  useEffect(() => {
+    const block = selectedTemplateId ? getBlock(selectedTemplateId) : null;
+    if (block) setTemplateValues(blockDefaults(block));
+  }, [selectedTemplateId]);
+
   const {
     messages,
     status,
@@ -132,7 +149,65 @@ export function GenerateSurfaceDialog({
   const isStreaming = status === 'streaming';
   // A saved surface selected from history stands in until a fresh proposal
   // arrives (the staged event replaces it mid-turn).
-  const activeProposal = proposal ?? historySelection?.proposal ?? null;
+  const templateProposal = useMemo(() => {
+    if (view !== 'templates' || !project || !selectedTemplateId) return null;
+    const block = getBlock(selectedTemplateId);
+    if (!block) return null;
+    try {
+      const { fragment } = instantiateBlock(selectedTemplateId, templateValues, {
+        canvas: { width: project.width, height: project.height },
+        ...(project.style ? { style: project.style } : {}),
+      });
+      const tracks = Object.values(fragment.elements).flatMap((element: any) =>
+        (element.tracks ?? []).map((track: any) => ({
+          elementId: element.id,
+          property: track.property as SvgAnimationProperty,
+          keyframes: track.keyframes.map((keyframe: any) => ({
+            timeMs: keyframe.timeMs,
+            value: keyframe.value,
+            easing: keyframe.easing,
+          })),
+        })),
+      );
+      const proposal: SurfaceGenerationProposal = {
+        summary: block.title,
+        width: project.width,
+        height: project.height,
+        durationMs: project.durationMs,
+        loop: true,
+        fragment,
+        tracks,
+        report: {
+          width: project.width,
+          height: project.height,
+          elementCount: Object.keys(fragment.elements).length,
+          droppedTags: {},
+          droppedAttributes: {},
+          expandedUses: 0,
+          warnings: [],
+        },
+        warnings: [],
+        previewSvg: '',
+        previewTimeMs: block.previewTimeMs ?? 1400,
+        visualReview: {
+          performed: false,
+          notes: 'Predefined surface template.',
+        },
+      };
+      proposal.previewSvg = staticSvgMarkup(
+        surfaceProposalProject(proposal),
+        block.previewTimeMs ?? 1400,
+      );
+      return proposal;
+    } catch {
+      return null;
+    }
+  }, [view, project, selectedTemplateId, templateValues]);
+
+  const activeProposal =
+    view === 'templates'
+      ? templateProposal
+      : proposal ?? historySelection?.proposal ?? null;
   const previewProject = useMemo(
     () => (activeProposal ? surfaceProposalProject(activeProposal) : null),
     [activeProposal],
@@ -276,6 +351,7 @@ export function GenerateSurfaceDialog({
     clearProposal();
     setHistorySelection(null);
     resetPreview();
+    setView('templates');
   }, [open, clearProposal, resetPreview]);
 
   // Show the most recent persisted surface while the session is idle, so the
@@ -389,6 +465,32 @@ export function GenerateSurfaceDialog({
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-2">
+              <div className="flex items-center rounded-md border border-border/70 bg-background/40 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setView('templates')}
+                  className={cn(
+                    'rounded px-2 py-1 text-[10px] font-medium transition-colors',
+                    view === 'templates'
+                      ? 'bg-sky-500/15 text-sky-200'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  Templates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('generate')}
+                  className={cn(
+                    'rounded px-2 py-1 text-[10px] font-medium transition-colors',
+                    view === 'generate'
+                      ? 'bg-sky-500/15 text-sky-200'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  Generate
+                </button>
+              </div>
               {isStreaming ? (
                 <Badge variant="outline" className="border-sky-400/30 text-sky-300">
                   Working
@@ -453,12 +555,14 @@ export function GenerateSurfaceDialog({
                     </span>
                     <div>
                       <p className="text-sm font-medium text-foreground">
-                        Describe a surface
+                        {view === 'templates'
+                          ? 'Select a template'
+                          : 'Describe a surface'}
                       </p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        The specialist designs vector layers, stages editable
-                        tracks, validates the import and reviews rendered frames
-                        before anything is inserted.
+                        {view === 'templates'
+                          ? 'Pick a predefined surface on the right to preview and insert it.'
+                          : 'The specialist designs vector layers, stages editable tracks, validates the import and reviews rendered frames before anything is inserted.'}
                       </p>
                     </div>
                   </div>
@@ -608,6 +712,82 @@ export function GenerateSurfaceDialog({
             className="flex min-h-[420px] w-full shrink-0 flex-col border-t border-border/60 md:w-[400px] md:min-w-[400px] md:border-l md:border-t-0"
             aria-label="Surface generation copilot"
           >
+            {view === 'templates' ? (
+              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-foreground">
+                    Surface templates
+                  </p>
+                  <span className="text-[10px] text-muted-foreground">
+                    {SURFACE_BLOCKS.length} predefined
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {SURFACE_BLOCKS.map((block) => {
+                    const preview = blockPreviewSvg(
+                      block,
+                      blockDefaults(block),
+                      block.previewTimeMs ?? 1400,
+                      project?.style,
+                    );
+                    return (
+                      <button
+                        key={block.id}
+                        type="button"
+                        onClick={() => setSelectedTemplateId(block.id)}
+                        className={cn(
+                          'overflow-hidden rounded-md border bg-[#070b14] text-left transition-colors',
+                          selectedTemplateId === block.id
+                            ? 'border-sky-400/60 ring-1 ring-sky-400/40'
+                            : 'border-border/70 hover:border-sky-400/40',
+                        )}
+                      >
+                        <div
+                          className="aspect-video w-full [&>svg]:h-full [&>svg]:w-full"
+                          dangerouslySetInnerHTML={{ __html: preview }}
+                        />
+                        <div className="px-2 py-1.5">
+                          <p className="truncate text-[10px] font-medium text-foreground">
+                            {block.title}
+                          </p>
+                          <p className="line-clamp-2 text-[9px] leading-snug text-muted-foreground/70">
+                            {block.description}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {selectedTemplateId ? (
+                  <div className="rounded-lg border border-border/60 bg-background/30 p-3">
+                    <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                      Options
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {getBlock(selectedTemplateId)?.fields.map((field) => (
+                        <RecipeFieldControl
+                          key={field.key}
+                          field={field}
+                          value={templateValues[field.key]}
+                          onChange={(value) =>
+                            setTemplateValues((current) => ({
+                              ...current,
+                              [field.key]: value,
+                            }))
+                          }
+                        />
+                      ))}
+                      {(getBlock(selectedTemplateId)?.fields.length ?? 0) === 0 ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          No adjustable options.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <>
             <div className="shrink-0 border-b border-border/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -825,6 +1005,8 @@ export function GenerateSurfaceDialog({
                 </PromptInputFooter>
               </PromptInput>
             </SidebarFooter>
+              </>
+            )}
           </aside>
         </div>
       </DialogContent>
