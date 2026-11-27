@@ -239,6 +239,21 @@ describe('Trace fragment insertion', () => {
           r: 0.5,
         },
       },
+      filters: {
+        glow: {
+          id: 'glow',
+          label: 'Glow',
+          kind: 'glow',
+          primitives: [
+            {
+              id: 'blur',
+              kind: 'feGaussianBlur',
+              in: 'SourceGraphic',
+              params: { stdDeviation: 4 },
+            },
+          ],
+        },
+      },
     }
 
     const result = applyOps(emptyProject(), [
@@ -248,6 +263,7 @@ describe('Trace fragment insertion', () => {
     expect(result.ok).toBe(true)
     expect(result.project.defs).toContain('linearGradient')
     expect(result.project.gradients?.g).toBeDefined()
+    expect(result.project.filters?.glow).toBeDefined()
     expect(result.project.rootElementIds).toHaveLength(1)
   })
 })

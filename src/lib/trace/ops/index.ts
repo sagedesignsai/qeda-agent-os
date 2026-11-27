@@ -792,6 +792,13 @@ function opInsertFragment(
       ...(project.gradients ?? {}),
     };
   }
+  if (fragment.filters && Object.keys(fragment.filters).length > 0) {
+    // Same collision policy as gradients: the open project is authoritative.
+    project.filters = {
+      ...deepClone(fragment.filters),
+      ...(project.filters ?? {}),
+    };
+  }
 }
 
 function opSetDefs(

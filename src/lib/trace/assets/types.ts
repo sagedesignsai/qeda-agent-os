@@ -12,6 +12,7 @@
  */
 
 import type { TraceElement, TraceGradient, TraceProject } from '../types';
+import type { TraceFilter } from '../filters/types';
 
 export type TraceAssetKind = 'vector' | 'scene' | 'character' | 'part' | 'pose';
 
@@ -26,6 +27,8 @@ export interface TraceAssetFragment {
   rootElementIds: string[];
   defs?: string;
   gradients?: Record<string, TraceGradient>;
+  /** Structured filters referenced by elements as `filter="url(#id)"`. */
+  filters?: Record<string, TraceFilter>;
 }
 
 export interface TraceAssetMetadata {
@@ -56,5 +59,6 @@ export function toTraceProject(
     rootElementIds: fragment.rootElementIds,
     defs: fragment.defs,
     gradients: fragment.gradients,
+    filters: fragment.filters,
   };
 }
