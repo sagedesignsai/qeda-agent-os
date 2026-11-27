@@ -22,7 +22,7 @@ import { app } from 'electron';
 
 import { applyOps } from '../../lib/trace/ops';
 import type { TraceOp, TraceElementSpec } from '../../lib/trace/ops/types';
-import type { TraceNarration, TraceProject } from '../../lib/trace/types';
+import type { TraceNarration, TraceProject, TraceStyle } from '../../lib/trace/types';
 import {
   buildNarrationTimingOps,
   hasMeasuredDurations,
@@ -34,6 +34,29 @@ import {
   CAMERA_LABELS,
   resolveCameraAtTime,
 } from '../../lib/trace/runtime/camera';
+import {
+  describeBlockParameters,
+  getBlock,
+  instantiateBlock,
+  searchBlocks,
+  TRACE_BLOCKS,
+} from '../../lib/trace/blocks';
+import {
+  applyLookToElements,
+  getLook,
+  listLooks,
+  styleFonts,
+  styleFromLook,
+  styleMotion,
+  stylePalette,
+} from '../../lib/trace/look';
+import {
+  addReviewNote,
+  reviewNoteSummary,
+  sortReviewNotes,
+  updateReviewNote,
+} from '../../lib/trace/review';
+import { createTraceQaTool } from './trace-qa-tool';
 import { staticSvgMarkup } from '../../lib/trace/serialize/svg-markup';
 import { getTraceProjectStore } from '../trace/service';
 import { TraceProjectError } from '../trace/trace-project-store';
@@ -180,6 +203,15 @@ function summarizeProject(project: TraceProject): Record<string, any> {
           tracks: project.camera.tracks?.length ?? 0,
         }
       : null,
+    style: project.style
+      ? {
+          lookId: project.style.lookId ?? null,
+          palette: stylePalette(project.style),
+          fonts: styleFonts(project.style),
+          motion: styleMotion(project.style),
+        }
+      : null,
+    reviewNotes: reviewNoteSummary(project.reviewNotes),
   };
 }
 
@@ -689,19 +721,444 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
     },
   });
 
+  // ── Block registry ─────────────────────────────────────────────────────────
+
+  const searchBlocksTool = tool({
+    description:
+      'Search the Trace block registry for insertable named visuals (title cards, lower thirds, quotes, bullet lists, counters, charts, callouts, device frames, logo end cards, background treatments). Call this BEFORE hand-building a named visual; blocks land as ordinary editable layers. Returns id, description, category, layer and the parameters each builder reads.',
+    inputSchema: z.object({
+      query: z
+        .string()
+        .optional()
+        .describe('Free-text search, e.g. "lower third", "quote", "chart", "background".'),
+      category: z
+        .string()
+        .optional()
+        .describe('Optional category filter: Titles, Lower thirds, Data, Callouts, Social, Backgrounds.'),
+      limit: z.number().min(1).max(30).optional().describe('Default 12.'),
+    }),
+    execute: ({ query, category, limit }) => {
+      const blocks = searchBlocks(query ?? '', {
+        ...(category ? { category } : {}),
+        limit: limit ?? 12,
+      });
+      return {
+        blocks: blocks.map((block) => ({
+          id: block.id,
+          title: block.title,
+          description: block.description,
+          category: block.category,
+          tags: block.tags,
+          layer: block.layer ?? 'foreground',
+          parameters: describeBlockParameters(block),
+        })),
+        total: TRACE_BLOCKS.length,
+      };
+    },
+  });
+
+  const insertBlock = tool({
+    description:
+      'Insert a registry block into the active scene. The block becomes ordinary layers and tracks; adjust its copy, colour and timing afterwards with updateElements/setTracks. Returns the new root id and the applied options. Use searchBlocks first when unsure of the id or parameter names.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      blockId: z.string().describe('Registry id from searchBlocks, e.g. "title-card".'),
+      options: z
+        .record(z.string(), z.any())
+        .optional()
+        .describe('Block parameters, matching the fields searchBlocks reports.'),
+      x: z.number().optional().describe('Optional placement override in canvas px.'),
+      y: z.number().optional().describe('Optional placement override in canvas px.'),
+      sceneId: z
+        .string()
+        .optional()
+        .describe('Target scene; defaults to the active scene.'),
+    }),
+    execute: async ({ projectId, blockId, options, x, y, sceneId }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      const block = getBlock(blockId);
+      if (!block) {
+        return {
+          error: `Unknown block "${blockId}".`,
+          available: TRACE_BLOCKS.map((entry) => entry.id),
+        };
+      }
+
+      let instantiated;
+      try {
+        instantiated = instantiateBlock(
+          blockId,
+          {
+            ...(options ?? {}),
+            ...(x !== undefined ? { x } : {}),
+            ...(y !== undefined ? { y } : {}),
+          },
+          {
+            canvas: { width: project.width, height: project.height },
+            ...(project.style ? { style: project.style } : {}),
+          },
+        );
+      } catch (error) {
+        return {
+          error:
+            error instanceof Error ? error.message : String(error),
+        };
+      }
+
+      const targetScene =
+        sceneId ??
+        project.storyboard?.activeSceneId ??
+        project.storyboard?.scenes[0]?.id ??
+        null;
+
+      const result = applyOps(project, [
+        {
+          type: 'insertFragment',
+          fragment: instantiated.fragment,
+          sceneId: targetScene,
+          position: block.layer === 'background' ? 'back' : 'front',
+          suffix: nextId('block'),
+        },
+      ]);
+      if (!result.ok) {
+        return {
+          error: 'Block insertion failed.',
+          diagnostics: result.diagnostics.filter(
+            (diagnostic) => diagnostic.severity === 'error',
+          ),
+          applied: result.applied,
+        };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+
+      return {
+        ok: true,
+        blockId,
+        title: block.title,
+        rootElementId: result.diff.added[0] ?? null,
+        addedIds: result.diff.added,
+        options: instantiated.options,
+        applied: result.applied,
+        lint: summarizeLint(result.project),
+        hint: 'The block is ordinary layers now — adjust with updateElements / setTracks.',
+      };
+    },
+  });
+
+  // ── Look & style ───────────────────────────────────────────────────────────
+
+  const listLooksTool = tool({
+    description:
+      'List the Trace look presets: palette, heading/body fonts and motion tokens (easing, duration, stagger). Use before choosing colours or easing, or when the user asks for a style. The active project look is reported by getProject.',
+    inputSchema: z.object({}),
+    execute: () => ({
+      looks: listLooks().map((look) => ({
+        id: look.id,
+        label: look.label,
+        description: look.description,
+        palette: look.palette,
+        fonts: look.fonts,
+        motion: look.motion,
+      })),
+    }),
+  });
+
+  const setLook = tool({
+    description:
+      'Set or clear the project look: palette, fonts and motion tokens. Accepts a preset lookId or a custom style; style: null clears it. Existing layers are only restyled when applyToElements is true (role-matched fills/strokes and text fonts); applyBackground sets every scene background to the look background. Use listLooks first when no look is set.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      lookId: z.string().optional(),
+      style: z
+        .object({
+          lookId: z.string().optional(),
+          palette: z
+            .object({
+              background: z.string().optional(),
+              surface: z.string().optional(),
+              text: z.string().optional(),
+              muted: z.string().optional(),
+              accent: z.string().optional(),
+              accentAlt: z.string().optional(),
+            })
+            .optional(),
+          fonts: z
+            .object({
+              heading: z.string().optional(),
+              body: z.string().optional(),
+            })
+            .optional(),
+          motion: z
+            .object({
+              easing: z.string().optional(),
+              durationMs: z.number().min(1).max(10000).optional(),
+              staggerMs: z.number().min(0).max(2000).optional(),
+            })
+            .optional(),
+        })
+        .nullable()
+        .optional()
+        .describe('Custom tokens. Use lookId for a preset.'),
+      applyToElements: z
+        .boolean()
+        .optional()
+        .describe('Restyle role-matched existing layers and set text fonts. Default false.'),
+      applyBackground: z
+        .boolean()
+        .optional()
+        .describe('Set every scene background to the look background. Default false.'),
+    }),
+    execute: async ({
+      projectId,
+      lookId,
+      style,
+      applyToElements,
+      applyBackground,
+    }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      let nextStyle: TraceStyle | null = null;
+      if (style === null) {
+        nextStyle = null;
+      } else if (style) {
+        nextStyle = {
+          ...(style as TraceStyle),
+          ...(lookId ? { lookId } : {}),
+        };
+      } else if (lookId) {
+        if (!getLook(lookId)) {
+          return {
+            error: `Unknown look "${lookId}".`,
+            available: listLooks().map((look) => look.id),
+          };
+        }
+        nextStyle = styleFromLook(lookId);
+      }
+
+      if (!nextStyle && style !== null) {
+        return {
+          error:
+            'Provide lookId, a style object, or style: null to clear the look.',
+        };
+      }
+
+      const ops: TraceOp[] = [{ type: 'setStyle', style: nextStyle }];
+      let restyledElements = 0;
+      let restyledScenes = 0;
+
+      if (nextStyle && (applyToElements || applyBackground)) {
+        const restyleOps = applyLookToElements(project, nextStyle, {
+          background: applyBackground === true,
+        });
+        if (applyToElements) {
+          const fills = restyleOps.filter(
+            (op) => op.type === 'updateElement',
+          );
+          ops.push(...fills);
+          restyledElements = fills.length;
+        }
+        if (applyBackground) {
+          const scenes = restyleOps.filter(
+            (op) => op.type === 'updateScene',
+          );
+          ops.push(...scenes);
+          restyledScenes = scenes.length;
+        }
+      }
+
+      const result = applyOps(project, ops);
+      if (!result.ok) {
+        return {
+          error: 'Look batch failed.',
+          diagnostics: result.diagnostics.filter(
+            (diagnostic) => diagnostic.severity === 'error',
+          ),
+          applied: result.applied,
+        };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+
+      return {
+        ok: true,
+        cleared: nextStyle === null,
+        lookId: nextStyle?.lookId ?? null,
+        palette: nextStyle ? stylePalette(nextStyle) : null,
+        fonts: nextStyle ? styleFonts(nextStyle) : null,
+        motion: nextStyle ? styleMotion(nextStyle) : null,
+        restyledElements,
+        restyledScenes,
+        lint: summarizeLint(result.project),
+      };
+    },
+  });
+
+  // ── Review notes & audit ────────────────────────────────────────────────────
+
+  const getReviewNotes = tool({
+    description:
+      'Read the project review notes: timestamped comments left by the user or a previous pass. Notes are the review layer of the cut — read them before editing and resolve them only after verifying the fix. Unresolved notes are returned by default.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      includeResolved: z.boolean().optional().describe('Default false.'),
+    }),
+    execute: async ({ projectId, includeResolved }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+      const all = sortReviewNotes(project.reviewNotes ?? []);
+      const notes = all.filter((note) => includeResolved || !note.resolved);
+      return {
+        notes: notes.map((note) => ({
+          id: note.id,
+          text: note.text,
+          timeMs: note.timeMs,
+          resolved: Boolean(note.resolved),
+          scene:
+            project.storyboard?.scenes.find(
+              (scene) => scene.id === note.sceneId,
+            )?.name ?? null,
+          element: note.elementId
+            ? project.elements[note.elementId]?.name ?? null
+            : null,
+        })),
+        total: all.length,
+        unresolved: all.filter((note) => !note.resolved).length,
+      };
+    },
+  });
+
+  const addReviewNoteTool = tool({
+    description:
+      'Add a timestamped review note. Use it when a moment needs attention but is out of scope for the current change, or when the user asks you to note something for later. Notes are not a substitute for fixing what you were asked to fix.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      text: z.string().min(1).max(800),
+      timeMs: z
+        .number()
+        .min(0)
+        .optional()
+        .describe('Moment being reviewed, in ms. Defaults to 0.'),
+      sceneId: z.string().optional(),
+      elementId: z.string().optional(),
+    }),
+    execute: async ({ projectId, text, timeMs, sceneId, elementId }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      const before = new Set((project.reviewNotes ?? []).map((note) => note.id));
+      const notes = addReviewNote(project.reviewNotes, {
+        text,
+        timeMs: Math.min(
+          project.durationMs,
+          Math.max(0, Math.round(timeMs ?? 0)),
+        ),
+        ...(sceneId ? { sceneId } : {}),
+        ...(elementId ? { elementId } : {}),
+      });
+      const added = notes.find((note) => !before.has(note.id)) ?? null;
+
+      const result = applyOps(project, [
+        { type: 'setReviewNotes', notes },
+      ]);
+      if (!result.ok) {
+        return {
+          error: 'Could not add the review note.',
+          diagnostics: result.diagnostics.filter(
+            (diagnostic) => diagnostic.severity === 'error',
+          ),
+        };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+      return {
+        ok: true,
+        note: added,
+        unresolved: (result.project.reviewNotes ?? []).filter(
+          (note) => !note.resolved,
+        ).length,
+      };
+    },
+  });
+
+  const resolveReviewNotes = tool({
+    description:
+      'Mark review notes resolved (or unresolved again). Resolve only after the named issue is actually fixed and verified; never delete notes to make the audit clean.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      noteIds: z.array(z.string()).min(1).max(50),
+      resolved: z.boolean().optional().describe('Default true.'),
+    }),
+    execute: async ({ projectId, noteIds, resolved }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      let notes = project.reviewNotes ?? [];
+      for (const id of noteIds) {
+        notes = updateReviewNote(notes, id, { resolved: resolved !== false });
+      }
+
+      const result = applyOps(project, [
+        { type: 'setReviewNotes', notes },
+      ]);
+      if (!result.ok) {
+        return {
+          error: 'Could not update the review notes.',
+          diagnostics: result.diagnostics.filter(
+            (diagnostic) => diagnostic.severity === 'error',
+          ),
+        };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+      return {
+        ok: true,
+        updated: noteIds.length,
+        unresolved: (result.project.reviewNotes ?? []).filter(
+          (note) => !note.resolved,
+        ).length,
+      };
+    },
+  });
+
+  const qaTool = createTraceQaTool();
+
   // ── Storyboard ─────────────────────────────────────────────────────────────
 
   const addScene = tool({
     description:
-      'Add a storyboard scene to the project. Scenes partition the timeline for planning and can carry a director intent note.',
+      'Add a storyboard scene to the project. Scenes partition the timeline for planning; they can carry an entrance (cut/fade/slide), a background and a director intent note. Adding a scene shifts later scenes; startMs is derived from order.',
     inputSchema: z.object({
       projectId: z.string(),
       name: z.string().optional().describe('Scene name'),
       durationMs: z.number().optional().describe('Scene duration in ms (default 1500)'),
       intent: z.string().optional().describe('Director note describing what happens in this scene'),
+      transitionIn: z
+        .enum(['cut', 'fade', 'slide'])
+        .optional()
+        .describe('Scene entrance veil; default cut'),
       background: z.string().optional().describe('Scene background color'),
+      afterSceneId: z
+        .string()
+        .optional()
+        .describe('Insert after this scene; defaults to the end'),
     }),
-    execute: async ({ projectId, name, durationMs, intent, background }) => {
+    execute: async ({
+      projectId,
+      name,
+      durationMs,
+      intent,
+      background,
+      transitionIn,
+      afterSceneId,
+    }) => {
       const project = await resolveProject(projectId);
       if (!project) return { error: `Project "${projectId}" not found.` };
 
@@ -711,6 +1168,8 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
         ...(durationMs !== undefined ? { durationMs } : {}),
         ...(intent ? { intent } : {}),
         ...(background ? { background } : {}),
+        ...(transitionIn ? { transitionIn } : {}),
+        ...(afterSceneId ? { afterSceneId } : {}),
       }];
 
       const result = applyOps(project, ops);
@@ -723,6 +1182,83 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
       return {
         addedSceneIds: result.diff.scenes.added,
         project: summarizeProject(result.project),
+      };
+    },
+  });
+
+  const updateScene = tool({
+    description:
+      'Update a storyboard scene: name, duration, entrance (cut/fade/slide), background, or director note. Durations re-lay every scene start time contiguously, so the canvas may also be extended when needed. Set background/intent to null to clear them.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      sceneId: z.string().describe('Scene id (from getProject or addScene)'),
+      name: z.string().optional(),
+      durationMs: z.number().min(100).optional(),
+      intent: z.string().nullable().optional().describe('null clears the note'),
+      transitionIn: z.enum(['cut', 'fade', 'slide']).optional(),
+      background: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('null restores the project default background'),
+    }),
+    execute: async ({ projectId, sceneId, ...patch }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      const result = applyOps(project, [
+        { type: 'updateScene', id: sceneId, ...patch },
+      ]);
+      if (!result.ok) {
+        return { error: 'Failed to update scene.', diagnostics: result.diagnostics };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+      return {
+        ok: true,
+        scenes: result.project.storyboard?.scenes.map((scene) => ({
+          id: scene.id,
+          name: scene.name,
+          startMs: scene.startMs,
+          durationMs: scene.durationMs,
+          transitionIn: scene.transitionIn ?? 'cut',
+          background: scene.background ?? null,
+        })),
+      };
+    },
+  });
+
+  const reorderScene = tool({
+    description:
+      'Move a storyboard scene to a new position. Scene order is the timeline: every startMs is re-derived contiguously, and layers keep their scene assignment.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      sceneId: z.string(),
+      index: z.number().min(0).describe('Zero-based destination index'),
+    }),
+    execute: async ({ projectId, sceneId, index }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      const result = applyOps(project, [
+        { type: 'reorderScene', id: sceneId, index },
+      ]);
+      if (!result.ok) {
+        return { error: 'Failed to reorder scene.', diagnostics: result.diagnostics };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+      return {
+        ok: true,
+        scenes: result.project.storyboard?.scenes.map((scene, position) => ({
+          index: position,
+          id: scene.id,
+          name: scene.name,
+          startMs: scene.startMs,
+          durationMs: scene.durationMs,
+        })),
       };
     },
   });
@@ -1087,7 +1623,17 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
     deleteElements,
     setDefs,
     applyRecipe,
+    searchBlocks: searchBlocksTool,
+    insertBlock,
+    listLooks: listLooksTool,
+    setLook,
+    getReviewNotes,
+    addReviewNote: addReviewNoteTool,
+    resolveReviewNotes,
+    auditComposition: qaTool,
     addScene,
+    updateScene,
+    reorderScene,
     exportSvg,
     getTraceCapability,
     dispatchOps,

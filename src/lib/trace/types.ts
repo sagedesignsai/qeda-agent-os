@@ -236,6 +236,57 @@ export interface TraceCamera {
   tracks?: PropertyTrack[];
 }
 
+/**
+ * A timestamped review note. Notes are the human review layer over the
+ * composition: they point at a moment (and optionally a scene/layer), and the
+ * copilot reads them before making changes. Resolution is a flag, never a
+ * delete, so the history of what was asked stays intact.
+ */
+export interface TraceReviewNote {
+  id: string;
+  text: string;
+  /** Project time the note refers to, in ms. */
+  timeMs: number;
+  sceneId?: string | null;
+  elementId?: string | null;
+  createdAt: string;
+  resolved?: boolean;
+}
+
+/**
+ * Project-level look tokens. They are authoring defaults, not a stylesheet:
+ * blocks and the copilot use them when a value is not specified, and lint checks
+ * motion taste against them. Existing layers are only restyled when the caller
+ * explicitly applies the look.
+ */
+export interface TraceStylePalette {
+  background?: string;
+  surface?: string;
+  text?: string;
+  muted?: string;
+  accent?: string;
+  accentAlt?: string;
+}
+
+export interface TraceStyleFonts {
+  heading?: string;
+  body?: string;
+}
+
+export interface TraceStyleMotion {
+  easing?: EasingType;
+  durationMs?: number;
+  staggerMs?: number;
+}
+
+export interface TraceStyle {
+  /** Preset id this style came from, when it did. */
+  lookId?: string;
+  palette?: TraceStylePalette;
+  fonts?: TraceStyleFonts;
+  motion?: TraceStyleMotion;
+}
+
 import type { TraceFilter } from './filters/types';
 
 export interface TraceProject {
@@ -259,6 +310,10 @@ export interface TraceProject {
   narration?: TraceNarration;
   /** Optional 2D camera framing; absent means the full artboard is the frame. */
   camera?: TraceCamera;
+  /** Optional project look: palette, fonts and motion defaults for new work. */
+  style?: TraceStyle;
+  /** Timestamped review notes; the copilot reads these before editing. */
+  reviewNotes?: TraceReviewNote[];
 }
 
 export type TraceEmbedPlacement = 'inline' | 'hero' | 'sidebar';

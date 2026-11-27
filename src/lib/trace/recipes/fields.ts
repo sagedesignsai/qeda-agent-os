@@ -31,6 +31,8 @@ export type RecipeFieldSpec =
       kind: 'text';
       placeholder?: string;
       maxLength?: number;
+      /** Render a textarea: used for lists / multi-line copy. */
+      multiline?: boolean;
     }
   | {
       key: string;

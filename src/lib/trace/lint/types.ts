@@ -45,6 +45,10 @@ export type DiagnosticCode =
   // Camera
   | 'CAMERA_TRACK_INVALID'
   | 'CAMERA_ZOOM_INVALID'
+  // Motion / look taste
+  | 'STYLE_LINEAR_MOTION'
+  | 'STYLE_PURE_BLACK'
+  | 'STYLE_UNIFORM_TIMING'
   // Content
   | 'TEXT_OVERFLOW'
   | 'AUDIO_UNRESOLVED';

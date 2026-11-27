@@ -68,6 +68,14 @@ import {
 } from '@/lib/trace/runtime/camera';
 import { getElementPosition, positionPatch } from '@/lib/trace/resolve';
 import {
+  TRACE_LOOKS,
+  applyLookToElements,
+  styleFonts,
+  styleFromLook,
+  styleMotion,
+  stylePalette,
+} from '@/lib/trace/look';
+import {
   findElementDom,
   measureElementBBox,
 } from '@/lib/trace/runtime/dom-renderer';
@@ -1523,6 +1531,106 @@ function CameraSection() {
   );
 }
 
+/* ── Look ──────────────────────────────────────────────────────────────────── */
+
+function LookSection() {
+  const project = useTraceStore((state) => state.project);
+  if (!project) return null;
+
+  const style = project.style;
+  const palette = stylePalette(style);
+  const fonts = styleFonts(style);
+  const motion = styleMotion(style);
+  const selected = style?.lookId ?? 'none';
+
+  const apply = (lookId: string) => {
+    useTraceStore.getState().dispatch([
+      {
+        type: 'setStyle',
+        style: lookId === 'none' ? null : styleFromLook(lookId),
+      },
+    ]);
+  };
+
+  const applyToLayers = () => {
+    if (!style) return;
+    const ops = applyLookToElements(project, style, { background: true });
+    if (ops.length > 0) useTraceStore.getState().dispatch(ops);
+  };
+
+  return (
+    <PanelSection title="Look">
+      <Select value={selected} onValueChange={apply}>
+        <SelectTrigger
+          aria-label="Project look"
+          className="h-7 w-full bg-muted/20 text-[11px]"
+        >
+          <SelectValue placeholder="No look" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">No look</SelectItem>
+          {TRACE_LOOKS.map((look) => (
+            <SelectItem key={look.id} value={look.id}>
+              {look.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <div className="grid grid-cols-6 gap-1 pt-1">
+        {(
+          ['background', 'surface', 'text', 'muted', 'accent', 'accentAlt'] as const
+        ).map((role) => (
+          <div
+            key={role}
+            title={`${role} · ${palette[role]}`}
+            className="h-5 rounded-sm ring-1 ring-black/30 ring-inset"
+            style={{ backgroundColor: palette[role] }}
+          />
+        ))}
+      </div>
+
+      <div className="space-y-0.5 text-[10px] leading-relaxed text-muted-foreground">
+        <p>
+          Type · {fonts.heading.split(',')[0]} / {fonts.body.split(',')[0]}
+        </p>
+        <p>
+          Motion · {motion.easing} · {motion.durationMs}ms ·{' '}
+          {motion.staggerMs}ms stagger
+        </p>
+      </div>
+
+      <div className="flex items-center gap-1 pt-1">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-6 flex-1 px-2 text-[10px]"
+          onClick={applyToLayers}
+          disabled={!style}
+        >
+          Apply to layers
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+          onClick={() => apply('none')}
+          disabled={!style}
+        >
+          Clear
+        </Button>
+      </div>
+
+      <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+        Tokens guide new blocks and the copilot. Applying restyles role-matched
+        fills and text fonts, and sets scene backgrounds.
+      </p>
+    </PanelSection>
+  );
+}
+
 /* ── Canvas (no selection) ─────────────────────────────────────────────────── */
 
 function CanvasInspector() {
@@ -1589,6 +1697,8 @@ function CanvasInspector() {
           }
         />
       </PanelSection>
+
+      <LookSection />
 
       <PanelSection title="Document">
         <dl className="space-y-1.5 text-[11px]">

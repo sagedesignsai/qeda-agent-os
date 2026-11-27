@@ -73,6 +73,8 @@ function emptyDiff(): TraceOpDiff {
     canvasChanged: false,
     narrationChanged: false,
     cameraChanged: false,
+    styleChanged: false,
+    notesChanged: false,
   };
 }
 
@@ -101,6 +103,8 @@ function snapshotOf(project: TraceProject): TraceProjectSnapshot {
     audioTracks: clone.audioTracks,
     narration: clone.narration,
     camera: clone.camera,
+    style: clone.style,
+    reviewNotes: clone.reviewNotes,
   };
 }
 
@@ -614,24 +618,23 @@ function opUpdateScene(
 
   project.storyboard = {
     ...storyboard,
-    scenes: storyboard.scenes.map((scene) =>
-      scene.id === op.id
-        ? {
-            ...scene,
-            ...(op.name !== undefined ? { name: op.name } : {}),
-            ...(op.intent !== undefined ? { intent: op.intent } : {}),
-            ...(op.durationMs !== undefined
-              ? { durationMs: Math.max(1, Math.round(op.durationMs)) }
-              : {}),
-            ...(op.transitionIn !== undefined
-              ? { transitionIn: op.transitionIn }
-              : {}),
-            ...(op.background !== undefined
-              ? { background: op.background }
-              : {}),
-          }
-        : scene,
-    ),
+    scenes: storyboard.scenes.map((scene) => {
+      if (scene.id !== op.id) return scene;
+      const next = { ...scene };
+      if (op.name !== undefined) next.name = op.name;
+      if (op.durationMs !== undefined)
+        next.durationMs = Math.max(1, Math.round(op.durationMs));
+      if (op.transitionIn !== undefined) next.transitionIn = op.transitionIn;
+      if (op.intent !== undefined) {
+        if (op.intent === null) delete next.intent;
+        else next.intent = op.intent;
+      }
+      if (op.background !== undefined) {
+        if (op.background === null) delete next.background;
+        else next.background = op.background;
+      }
+      return next;
+    }),
   };
 }
 
@@ -756,7 +759,10 @@ function opInsertFragment(
       if (element) element.parentId = group.id;
     }
   } else {
-    project.rootElementIds = [...(project.rootElementIds ?? []), ...roots];
+    project.rootElementIds =
+      op.position === 'back'
+        ? [...roots, ...(project.rootElementIds ?? [])]
+        : [...(project.rootElementIds ?? []), ...roots];
   }
 }
 
@@ -844,6 +850,33 @@ function opSetCamera(
 }
 
 /**
+ * Set or clear the project look tokens. Purely declarative: restyling existing
+ * layers is a separate, explicit op batch built by `applyLookToElements`.
+ */
+function opSetStyle(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'setStyle' }>,
+): void {
+  if (op.style === null) {
+    delete project.style;
+    return;
+  }
+  project.style = deepClone(op.style);
+}
+
+/** Replace or clear the review notes. Resolution is a flag on the note. */
+function opSetReviewNotes(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'setReviewNotes' }>,
+): void {
+  if (op.notes === null) {
+    delete project.reviewNotes;
+    return;
+  }
+  project.reviewNotes = deepClone(op.notes);
+}
+
+/**
  * Set scene durations and re-lay the storyboard contiguously from zero.
  * The storyboard's invariant is that array order IS timeline order, so a
  * duration change must re-derive every following `startMs` in the same batch.
@@ -896,6 +929,8 @@ function opRestore(
   project.audioTracks = snapshot.audioTracks;
   project.narration = snapshot.narration;
   project.camera = snapshot.camera;
+  project.style = snapshot.style;
+  project.reviewNotes = snapshot.reviewNotes;
 }
 
 function applyOne(
@@ -985,6 +1020,12 @@ function applyOne(
     case 'setCamera':
       opSetCamera(project, op);
       return;
+    case 'setStyle':
+      opSetStyle(project, op);
+      return;
+    case 'setReviewNotes':
+      opSetReviewNotes(project, op);
+      return;
     case 'setSceneDurations':
       opSetSceneDurations(project, op);
       return;
@@ -1047,6 +1088,12 @@ function diffProjects(before: TraceProject, after: TraceProject): TraceOpDiff {
   diff.cameraChanged =
     JSON.stringify(before.camera ?? null) !==
     JSON.stringify(after.camera ?? null);
+  diff.styleChanged =
+    JSON.stringify(before.style ?? null) !==
+    JSON.stringify(after.style ?? null);
+  diff.notesChanged =
+    JSON.stringify(before.reviewNotes ?? null) !==
+    JSON.stringify(after.reviewNotes ?? null);
 
   return diff;
 }

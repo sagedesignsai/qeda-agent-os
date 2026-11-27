@@ -17,6 +17,9 @@ export const createStoryboardSlice: TraceSliceCreator<
         name: options.name,
         durationMs: options.durationMs,
         intent: options.intent,
+        transitionIn: options.transitionIn,
+        background: options.background,
+        afterSceneId: options.afterSceneId,
       },
     ]);
     const added = result?.diff.scenes.added[0];
@@ -27,11 +30,18 @@ export const createStoryboardSlice: TraceSliceCreator<
     get().dispatch([{ type: 'updateScene', id: sceneId, ...patch }]);
   },
 
+  reorderScene: (sceneId, index) => {
+    get().dispatch([{ type: 'reorderScene', id: sceneId, index }]);
+  },
+
   removeScene: (sceneId) => {
     get().dispatch([{ type: 'removeScene', id: sceneId }]);
     const project = get().project;
-    const nextScene = project?.storyboard?.scenes[0];
-    if (nextScene) get().setActiveScene(nextScene.id);
+    const remaining = project?.storyboard?.scenes ?? [];
+    const nextScene =
+      remaining.find((scene) => scene.id === get().selection.activeSceneId) ??
+      remaining[0];
+    get().setActiveScene(nextScene?.id ?? null);
   },
 
   focusScene: (sceneId) => {

@@ -15,12 +15,15 @@ import {
   CameraIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  ClapperboardIcon,
   ClockIcon,
   CornerDownLeftIcon,
+  MessageSquareIcon,
   PauseIcon,
   PlayIcon,
   RepeatIcon,
   RotateCcwIcon,
+  Settings2Icon,
   SkipBackIcon,
   Trash2Icon,
   ZoomInIcon,
@@ -86,7 +89,11 @@ function keyframeKey(
   return `${elementId}:${track.id}:${keyframe.id}`;
 }
 
-export function TraceTimeline() {
+export function TraceTimeline({
+  onConfigureScenes,
+}: {
+  onConfigureScenes?: () => void;
+} = {}) {
   const project = useTraceStore((state) => state.project);
   const playback = useTraceStore((state) => state.playback);
   const selection = useTraceStore((state) => state.selection);
@@ -283,6 +290,19 @@ export function TraceTimeline() {
         </span>
 
         <div className="ml-auto flex items-center gap-2">
+          {onConfigureScenes ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 gap-1 px-2 text-[11px] text-muted-foreground hover:bg-accent/30 hover:text-foreground"
+              onClick={onConfigureScenes}
+              title="Configure scenes, transitions and backgrounds"
+            >
+              <ClapperboardIcon className="size-3.5" />
+              Scenes
+            </Button>
+          ) : null}
           <ZoomInIcon className="size-3.5 text-muted-foreground" />
           <Slider
             aria-label="Timeline zoom"
@@ -354,10 +374,21 @@ export function TraceTimeline() {
           {project.storyboard?.scenes?.length ? (
             <div className="flex border-b border-border/50">
               <div
-                className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-border bg-card px-2 text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
+                className="sticky left-0 z-20 flex shrink-0 items-center justify-between gap-1 border-r border-border bg-card px-2 text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
                 style={{ width: LABEL_WIDTH, height: ROW_HEIGHT }}
               >
-                Scenes
+                <span>Scenes</span>
+                {onConfigureScenes ? (
+                  <button
+                    type="button"
+                    onClick={onConfigureScenes}
+                    title="Configure scenes, transitions and backgrounds"
+                    aria-label="Configure scenes"
+                    className="rounded p-0.5 normal-case tracking-normal text-muted-foreground/70 transition-colors hover:bg-accent/30 hover:text-foreground"
+                  >
+                    <Settings2Icon className="size-3" />
+                  </button>
+                ) : null}
               </div>
               <div
                 className="relative"
@@ -479,6 +510,45 @@ export function TraceTimeline() {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Review notes */}
+          {project.reviewNotes?.length ? (
+            <div className="flex border-b border-border/50">
+              <div
+                className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-border bg-card px-2 text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
+                style={{ width: LABEL_WIDTH, height: ROW_HEIGHT }}
+                title="Timestamped review notes — click to seek"
+              >
+                <MessageSquareIcon className="size-3 text-amber-300" />
+                Notes
+              </div>
+              <div
+                className="relative"
+                style={{ width: laneWidth, height: ROW_HEIGHT }}
+              >
+                {project.reviewNotes.map((note) => (
+                  <button
+                    key={note.id}
+                    type="button"
+                    onClick={() => {
+                      seekTracePlayback(note.timeMs, { commit: true });
+                      setPlayhead(note.timeMs);
+                    }}
+                    title={`${note.resolved ? 'Resolved' : 'Open'} · ${Math.round(
+                      note.timeMs,
+                    )}ms · ${note.text}`}
+                    className={
+                      'absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px] ' +
+                      (note.resolved
+                        ? 'bg-emerald-400/70 hover:bg-emerald-300'
+                        : 'bg-amber-400/90 hover:bg-amber-300')
+                    }
+                    style={{ left: note.timeMs * pxPerMs }}
+                  />
+                ))}
               </div>
             </div>
           ) : null}

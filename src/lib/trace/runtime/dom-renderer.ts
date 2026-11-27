@@ -67,8 +67,14 @@ function cssEscape(value: string): string {
 const pathLengthCache = new Map<string, number>();
 
 function pathLengthOf(path: SVGPathElement, data: string): number {
-  const cached = pathLengthCache.get(data);
-  if (cached !== undefined) return cached;
+  // `data` is the geometry key. Non-path shapes (circle/ellipse/rect/line/
+  // polyline) have no `d`, so they must not share a cache slot — two rings of
+  // different radii would otherwise reuse the first one's length.
+  const cacheKey = data || null;
+  if (cacheKey) {
+    const cached = pathLengthCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+  }
 
   let length = 0;
   try {
@@ -78,8 +84,8 @@ function pathLengthOf(path: SVGPathElement, data: string): number {
     length = 0;
   }
 
-  if (length > 0 && pathLengthCache.size < 500)
-    pathLengthCache.set(data, length);
+  if (cacheKey && length > 0 && pathLengthCache.size < 500)
+    pathLengthCache.set(cacheKey, length);
   return length;
 }
 
@@ -108,6 +114,35 @@ function applyTrim(
 /** Minimum opacity for selected elements so they stay visible on stage. */
 const SELECTED_MIN_OPACITY = 0.4;
 
+const SHAPE_SELECTOR =
+  'path,rect,circle,ellipse,line,polyline,polygon,text,image,use';
+
+/**
+ * The node that actually carries the element's paint and geometry.
+ *
+ * The editor mounts every element as a `<g>` wrapper containing its serialized
+ * body (the static serializer emits the shape directly inside the same wrapper).
+ * Geometry properties are not inheritable and the body writes explicit paint
+ * attributes, so a track must be written to the shape itself: setting
+ * `height`/`d`/`fill` on the wrapper `<g>` is a silent no-op. That is why a bar
+ * or a trimmed path used to animate only when a React re-render repainted the
+ * body (scrubbing/paused), never during playback.
+ */
+function bodyNodeFor(node: SVGElement): SVGElement {
+  const first = node.firstElementChild as SVGElement | null;
+  // A group element (`type: group`) has no body: its first child is another
+  // element wrapper, never a paint node.
+  if (!first || first.hasAttribute('data-trace-id')) return node;
+  if (first.tagName.toLowerCase() !== 'g') return first;
+  return (first.querySelector(SHAPE_SELECTOR) as SVGElement | null) ?? node;
+}
+
+/** The element's path node, when it has one (used by `d` and trim tracks). */
+function pathNodeFor(node: SVGElement, shape: SVGElement): SVGElement | null {
+  if (shape.tagName.toLowerCase() === 'path') return shape;
+  return (node.querySelector('path') as SVGElement | null) ?? null;
+}
+
 /** Write a single animated value to the property's correct DOM slot. */
 function applyTrackValue(
   node: SVGElement,
@@ -116,9 +151,11 @@ function applyTrackValue(
   value: string | number,
   attributes: Record<string, any>,
   selectedIds?: Set<string>,
+  body?: SVGElement,
 ): void {
-  const style = (node as SVGElement & { style?: CSSStyleDeclaration }).style;
-  const tag = node.tagName.toLowerCase();
+  const target = body ?? bodyNodeFor(node);
+  const tag = target.tagName.toLowerCase();
+  const style = (target as SVGElement & { style?: CSSStyleDeclaration }).style;
 
   switch (property) {
     case 'x':
@@ -133,71 +170,74 @@ function applyTrackValue(
       if (selectedIds?.has(element.id)) {
         opacityValue = Math.max(opacityValue, SELECTED_MIN_OPACITY);
       }
-      if (style) style.opacity = String(opacityValue);
+      node.style.opacity = String(opacityValue);
       node.setAttribute('opacity', String(opacityValue));
       return;
     }
     case 'fill':
-      node.setAttribute('fill', String(value));
+      target.setAttribute('fill', String(value));
       return;
     case 'fillOpacity':
-      node.setAttribute('fill-opacity', String(value));
+      target.setAttribute('fill-opacity', String(value));
       return;
     case 'stroke':
-      node.setAttribute('stroke', String(value));
+      target.setAttribute('stroke', String(value));
       return;
     case 'strokeWidth':
-      node.setAttribute('stroke-width', String(value));
+      target.setAttribute('stroke-width', String(value));
       return;
     case 'strokeDashoffset':
-      node.setAttribute('stroke-dashoffset', String(value));
+      target.setAttribute('stroke-dashoffset', String(value));
       if (style) style.strokeDashoffset = String(value);
       return;
     case 'strokeDasharray':
-      node.setAttribute('stroke-dasharray', String(value));
+      target.setAttribute('stroke-dasharray', String(value));
       return;
-    case 'd':
-      if (tag === 'path') node.setAttribute('d', String(value));
+    case 'd': {
+      const pathNode = pathNodeFor(node, target);
+      pathNode?.setAttribute('d', String(value));
       return;
+    }
     case 'width': {
       const width = Number(value);
-      node.setAttribute('width', String(width));
-      if (tag === 'circle') node.setAttribute('r', String(width / 2));
-      if (tag === 'ellipse') node.setAttribute('rx', String(width / 2));
+      target.setAttribute('width', String(width));
+      if (tag === 'circle') target.setAttribute('r', String(width / 2));
+      if (tag === 'ellipse') target.setAttribute('rx', String(width / 2));
       return;
     }
     case 'height': {
       const height = Number(value);
-      node.setAttribute('height', String(height));
-      if (tag === 'ellipse') node.setAttribute('ry', String(height / 2));
+      target.setAttribute('height', String(height));
+      if (tag === 'ellipse') target.setAttribute('ry', String(height / 2));
       return;
     }
     case 'rx':
-      node.setAttribute('rx', String(value));
+      target.setAttribute('rx', String(value));
       return;
     case 'ry':
-      node.setAttribute('ry', String(value));
+      target.setAttribute('ry', String(value));
       return;
     case 'x1':
     case 'y1':
     case 'x2':
     case 'y2':
-      node.setAttribute(property, String(value));
+      target.setAttribute(property, String(value));
       return;
     case 'points':
-      node.setAttribute('points', String(value));
+      target.setAttribute('points', String(value));
       return;
     case 'fontSize':
-      node.setAttribute('font-size', String(value));
+      target.setAttribute('font-size', String(value));
       if (style) style.fontSize = `${value}px`;
       return;
     case 'letterSpacing':
-      node.setAttribute('letter-spacing', String(value));
+      target.setAttribute('letter-spacing', String(value));
       if (style) style.letterSpacing = `${value}px`;
       return;
     case 'text': {
-      const target = node.querySelector('text') ?? node;
-      target.textContent = String(value);
+      const textNode =
+        tag === 'text' ? target : (node.querySelector('text') ?? node);
+      textNode.textContent = String(value);
       return;
     }
     case 'pathProgress': {
@@ -205,33 +245,39 @@ function applyTrackValue(
       if (textPath) textPath.setAttribute('startOffset', `${Number(value)}%`);
       return;
     }
-    case 'trimStart':
+    case 'trimStart': {
+      const pathNode = pathNodeFor(node, target) ?? target;
       applyTrim(
-        node,
+        pathNode,
         String(attributes.d ?? ''),
         Number(value),
         Number(attributes.trimEnd ?? 100),
         Number(attributes.trimOffset ?? 0),
       );
       return;
-    case 'trimEnd':
+    }
+    case 'trimEnd': {
+      const pathNode = pathNodeFor(node, target) ?? target;
       applyTrim(
-        node,
+        pathNode,
         String(attributes.d ?? ''),
         Number(attributes.trimStart ?? 0),
         Number(value),
         Number(attributes.trimOffset ?? 0),
       );
       return;
-    case 'trimOffset':
+    }
+    case 'trimOffset': {
+      const pathNode = pathNodeFor(node, target) ?? target;
       applyTrim(
-        node,
+        pathNode,
         String(attributes.d ?? ''),
         Number(attributes.trimStart ?? 0),
         Number(attributes.trimEnd ?? 100),
         Number(value),
       );
       return;
+    }
     case 'filter':
       if (value === '' || value === null || value === undefined) {
         node.removeAttribute('filter');
@@ -254,11 +300,22 @@ export function applyElementAnimationAtTime(
 ): void {
   const { attributes, transform } = resolveElementAtTime(element, timeMs);
 
+  // Resolve the paint/geometry node once per frame, not per track.
+  const body = bodyNodeFor(node);
+
   // Track-driven attributes first.
   for (const track of element.tracks ?? []) {
     const resolved = attributes[track.property];
     if (resolved === undefined) continue;
-    applyTrackValue(node, element, track.property, resolved, attributes, selectedIds);
+    applyTrackValue(
+      node,
+      element,
+      track.property,
+      resolved,
+      attributes,
+      selectedIds,
+      body,
+    );
   }
 
   // Base attributes apply where no track animates them.

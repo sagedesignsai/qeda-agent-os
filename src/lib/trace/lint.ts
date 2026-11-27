@@ -393,6 +393,86 @@ export function lintTraceProject(
     }
   }
 
+  // ── Motion taste ───────────────────────────────────────────────────────────
+  const motionProperties = new Set<AnimatableProperty>([
+    'x',
+    'y',
+    'scaleX',
+    'scaleY',
+    'rotation',
+  ]);
+  const timingSignatures = new Map<string, string[]>();
+
+  for (const [, element] of Object.entries(elements)) {
+    for (const track of element.tracks ?? []) {
+      if (!motionProperties.has(track.property)) continue;
+
+      const keyframes = [...(track.keyframes ?? [])].sort(
+        (a, b) => a.timeMs - b.timeMs,
+      );
+
+      if (keyframes.some((keyframe) => keyframe.easing === 'linear')) {
+        add(
+          'STYLE_LINEAR_MOTION',
+          'warning',
+          `Track "${trackLabel(track)}" on "${element.name}" uses linear easing for movement.`,
+          {
+            elementId: element.id,
+            fix: 'Use power2.out/power3.out for movement; reserve linear for continuous progress.',
+          },
+        );
+      }
+
+      if (keyframes.length >= 2) {
+        const signature = `${keyframes[0].timeMs}:${keyframes[keyframes.length - 1].timeMs}`;
+        const names = timingSignatures.get(signature) ?? [];
+        names.push(`${element.name}/${track.property}`);
+        timingSignatures.set(signature, names);
+      }
+    }
+  }
+
+  for (const names of timingSignatures.values()) {
+    if (names.length < 4) continue;
+    add(
+      'STYLE_UNIFORM_TIMING',
+      'warning',
+      `${names.length} motion tracks share the same start and end time.`,
+      {
+        fix: 'Stagger entrances by ~80–160 ms; a uniform block of motion reads mechanical.',
+      },
+    );
+  }
+
+  for (const [elementId, element] of Object.entries(elements)) {
+    if (
+      element.type !== 'rect' &&
+      element.type !== 'circle' &&
+      element.type !== 'ellipse'
+    ) {
+      continue;
+    }
+    const fill = String(element.attributes?.fill ?? '')
+      .trim()
+      .toLowerCase();
+    if (fill !== '#000000' && fill !== '#000' && fill !== 'black') continue;
+    const width = Number(element.attributes?.width ?? 0);
+    const height = Number(element.attributes?.height ?? 0);
+    const largeFill =
+      width * height >= canvasWidth * canvasHeight * 0.5 ||
+      width >= canvasWidth * 0.8;
+    if (!largeFill) continue;
+    add(
+      'STYLE_PURE_BLACK',
+      'warning',
+      `Element "${element.name}" paints a large pure-black fill.`,
+      {
+        elementId,
+        fix: 'Use the project look’s near-black/slate; pure black flattens depth.',
+      },
+    );
+  }
+
   // ── Bounds & content ───────────────────────────────────────────────────────
   for (const [elementId, element] of Object.entries(elements)) {
     const position = elementPosition(element);

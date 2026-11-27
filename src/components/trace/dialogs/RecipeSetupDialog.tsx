@@ -92,7 +92,7 @@ export function RecipeSetupDialog({
           className="flex flex-col gap-2"
         >
           {setup.fields.map((field) => (
-            <FieldControl
+            <RecipeFieldControl
               key={field.key}
               field={field}
               value={values[field.key]}
@@ -132,7 +132,7 @@ export function RecipeSetupDialog({
 
 /* ── Fields ───────────────────────────────────────────────────────────────── */
 
-function FieldControl({
+export function RecipeFieldControl({
   field,
   value,
   onChange,
@@ -158,15 +158,28 @@ function FieldControl({
       <FieldLabel>{field.label}</FieldLabel>
 
       {field.kind === 'text' ? (
-        <Input
-          value={String(value ?? '')}
-          maxLength={field.maxLength}
-          placeholder={field.placeholder}
-          onChange={(event) => onChange(event.target.value)}
-          aria-label={field.label}
-          spellCheck={false}
-          className="h-7 bg-muted/20 text-[11px]"
-        />
+        field.multiline ? (
+          <textarea
+            value={String(value ?? '')}
+            maxLength={field.maxLength}
+            placeholder={field.placeholder}
+            onChange={(event) => onChange(event.target.value)}
+            aria-label={field.label}
+            spellCheck={false}
+            rows={3}
+            className="min-h-16 w-full resize-y rounded-md border border-input bg-muted/20 px-2 py-1.5 text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          />
+        ) : (
+          <Input
+            value={String(value ?? '')}
+            maxLength={field.maxLength}
+            placeholder={field.placeholder}
+            onChange={(event) => onChange(event.target.value)}
+            aria-label={field.label}
+            spellCheck={false}
+            className="h-7 bg-muted/20 text-[11px]"
+          />
+        )
       ) : null}
 
       {field.kind === 'number' ? (

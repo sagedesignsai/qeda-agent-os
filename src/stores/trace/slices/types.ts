@@ -128,7 +128,7 @@ export type TraceSelectionActions = {
   toggleCollapseElement: (elementId: string) => void;
   collapseAllElements: () => void;
   expandAllElements: () => void;
-  setActiveScene: (sceneId: string) => void;
+  setActiveScene: (sceneId: string | null) => void;
   startPathEdit: (elementId: string) => void;
   endPathEdit: () => void;
 };
@@ -171,17 +171,25 @@ export type TraceStoryboardActions = {
     name?: string;
     durationMs?: number;
     intent?: string;
+    transitionIn?: SceneTransition;
+    background?: string;
+    afterSceneId?: string;
   }) => void;
   updateScene: (
     sceneId: string,
     patch: {
       name?: string;
       durationMs?: number;
-      intent?: string;
+      /** `null` clears the director note. */
+      intent?: string | null;
       transitionIn?: SceneTransition;
+      /** `null` restores the project's default background. */
+      background?: string | null;
     },
   ) => void;
   removeScene: (sceneId: string) => void;
+  /** Move a scene to a new position; start times are re-laid out contiguously. */
+  reorderScene: (sceneId: string, index: number) => void;
   focusScene: (sceneId: string) => void;
 };
 

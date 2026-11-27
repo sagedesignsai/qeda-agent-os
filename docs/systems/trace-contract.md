@@ -49,7 +49,8 @@ right in the editor and wrong in the export.
 3. **Scenes partition the timeline.** A scene is a contiguous `startMs`/
    `durationMs` range; it is not a second element graph. Elements may carry a
    `sceneId`; content for one scene must not start before that scene does.
-   `startMs` is derived from scene order — never hand-set it. `transitionIn`
+   `startMs` is derived from scene order — never hand-set it. Change scenes with
+   `addScene` / `updateScene` / `reorderScene`. `transitionIn`
    (`cut`/`fade`/`slide`) and `background` are rendered by the engine as a
    450ms frame-level veil over the composition; they never mutate the document,
    never touch element tracks, and need no undo step.
@@ -75,6 +76,19 @@ right in the editor and wrong in the export.
    point at the centre of the frame, `zoom` 1 = 100%, `rotation` in degrees.
    Animate through camera tracks (x/y/zoom/rotation), never by re-laying the
    composition.
+10. **Search before building named visuals.** Call `searchBlocks` before
+    hand-building a title card, lower third, quote, list, chart, callout, device
+    frame, end card or background treatment. Insert with `insertBlock`, then
+    adjust its copy, colour and timing — blocks are ordinary layers.
+11. **Honour the project look.** When `project.style` is set, use its palette,
+    heading/body fonts and easing/stagger as defaults for new work. Establish one
+    with `listLooks`/`setLook` only when the user wants a defined style. Avoid
+    linear easing for movement, large pure-black fills, and uniform motion
+    timing; lint reports all three.
+12. **Audit before delivery.** Read review notes with `getReviewNotes` before
+    editing. Before calling a cut finished, run `auditComposition`, fix the named
+    errors/warnings, then audit again. Resolve a note only after the fix is
+    verified; never delete notes to make the audit clean.
 
 ## 4. Budgets
 

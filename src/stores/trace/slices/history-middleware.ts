@@ -82,6 +82,10 @@ export function traceHistoryMiddleware(
         keyframeCount(before.project) !== keyframeCount(after.project) ||
         cameraKeyframeCount(before.project) !==
           cameraKeyframeCount(after.project) ||
+        JSON.stringify(before.project.style ?? null) !==
+          JSON.stringify(after.project.style ?? null) ||
+        JSON.stringify(before.project.reviewNotes ?? null) !==
+          JSON.stringify(after.project.reviewNotes ?? null) ||
         before.project.width !== after.project.width ||
         before.project.height !== after.project.height ||
         before.project.durationMs !== after.project.durationMs ||

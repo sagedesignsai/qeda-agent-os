@@ -33,6 +33,7 @@ import {
 } from '@dnd-kit/core';
 import {
   ActivityIcon,
+  BlocksIcon,
   BringToFrontIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -949,8 +950,10 @@ function RootDropZone({ active }: { active: boolean }) {
 
 export function TraceElementsTree({
   onAnimateSvg,
+  onOpenBlocks,
 }: {
   onAnimateSvg?: (elementId: string) => void;
+  onOpenBlocks?: () => void;
 }) {
   const project = useTraceStore((state) => state.project);
   const selection = useTraceStore((state) => state.selection);
@@ -1214,6 +1217,18 @@ export function TraceElementsTree({
                   {recipe.label}
                 </DropdownMenuItem>
               ))}
+              {onOpenBlocks ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={onOpenBlocks}
+                    className="text-[11px]"
+                  >
+                    <BlocksIcon className="size-3 text-sky-400/80" /> Block
+                    library…
+                  </DropdownMenuItem>
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

@@ -51,6 +51,8 @@ export interface TraceProjectSnapshot {
   audioTracks?: AudioTrack[];
   narration?: TraceNarration;
   camera?: TraceProject['camera'];
+  style?: TraceProject['style'];
+  reviewNotes?: TraceProject['reviewNotes'];
 }
 
 /**
@@ -158,10 +160,12 @@ export type TraceOp =
       type: 'updateScene';
       id: string;
       name?: string;
-      intent?: string;
+      /** `null` clears the director note. */
+      intent?: string | null;
       durationMs?: number;
       transitionIn?: SceneTransition;
-      background?: string;
+      /** `null` restores the project's default background. */
+      background?: string | null;
     }
   | { type: 'removeScene'; id: string }
   | { type: 'reorderScene'; id: string; index: number }
@@ -174,6 +178,8 @@ export type TraceOp =
       sceneId?: string | null;
       groupId?: string;
       suffix?: string;
+      /** Paint order for the inserted roots. Backgrounds insert at the back. */
+      position?: 'front' | 'back';
     }
   | {
       type: 'applyRecipe';
@@ -201,6 +207,16 @@ export type TraceOp =
    */
   | { type: 'setCamera'; camera: TraceProject['camera'] | null }
   /**
+   * Set or clear the project look tokens. `null` removes the style; existing
+   * layers are not restyled by this op (see `applyLookToElements`).
+   */
+  | { type: 'setStyle'; style: TraceProject['style'] | null }
+  /**
+   * Replace the review-note list. `null` clears it. Notes are timestamped and
+   * resolved by flag, never deleted implicitly.
+   */
+  | { type: 'setReviewNotes'; notes: TraceProject['reviewNotes'] | null }
+  /**
    * Replaces document state from a snapshot. Used to express the inverse of a
    * batch; agents should not need to call this directly.
    */
@@ -221,6 +237,10 @@ export interface TraceOpDiff {
   narrationChanged?: boolean;
   /** The camera block changed. Optional so older diff producers stay valid. */
   cameraChanged?: boolean;
+  /** The style/look tokens changed. Optional so older diff producers stay valid. */
+  styleChanged?: boolean;
+  /** Review notes changed. Optional so older diff producers stay valid. */
+  notesChanged?: boolean;
 }
 
 export interface TraceApplyOpsOptions {

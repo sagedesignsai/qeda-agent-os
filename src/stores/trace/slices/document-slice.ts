@@ -42,7 +42,9 @@ function diffIsEmpty(result: TraceApplyOpsResult): boolean {
     diff.scenes.removed.length === 0 &&
     !diff.canvasChanged &&
     !diff.narrationChanged &&
-    !diff.cameraChanged
+    !diff.cameraChanged &&
+    !diff.styleChanged &&
+    !diff.notesChanged
   );
 }
 

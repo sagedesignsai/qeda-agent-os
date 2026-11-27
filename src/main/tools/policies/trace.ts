@@ -60,8 +60,24 @@ export const traceToolPolicies: ToolPolicyMap = {
   // ── Recipes (additive — instantiates new elements) ────────────────────────
   applyRecipe: t('write-local'),
 
+  // ── Block registry (search + insert; both additive) ──────────────────────
+  searchBlocks: t('read'),
+  insertBlock: t('write-local'),
+
+  // ── Look & style (tokens; restyling is opt-in but additive) ──────────────
+  listLooks: t('read'),
+  setLook: t('write-local'),
+
+  // ── Review notes & readiness audit ───────────────────────────────────────
+  getReviewNotes: t('read'),
+  addReviewNote: t('write-local'),
+  resolveReviewNotes: t('write-local'),
+  auditComposition: t('read'),
+
   // ── Storyboard (additive scene planning) ──────────────────────────────────
   addScene: t('write-local'),
+  updateScene: t('write-local'),
+  reorderScene: t('write-local'),
 
   // ── Narration (voice-first timing; stores lines + retimes scenes) ─────────
   setNarration: t('write-local'),

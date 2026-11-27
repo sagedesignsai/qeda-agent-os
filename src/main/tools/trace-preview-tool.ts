@@ -12,7 +12,7 @@
  * Read-only: it never mutates the project.
  */
 
-import { generateText, tool } from 'ai';
+import { tool } from 'ai';
 import { z } from 'zod';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
@@ -24,11 +24,7 @@ import { getTraceProjectStore } from '../trace/service';
 import { lintTraceProject } from '../../lib/trace/lint';
 import { sceneAtTime } from '../../lib/trace/runtime/scenes';
 import { staticSvgMarkup } from '../../lib/trace/serialize/svg-markup';
-import {
-  resolveVisionModel,
-  selectVisionModel,
-  type VisionModelSelection,
-} from '../ai/vision-provider';
+import { reviewCompositionFrames } from '../trace/vision-review';
 
 const MAX_PREVIEW_FRAMES = 4;
 const PREVIEW_MAX_EDGE = 900;
@@ -42,106 +38,6 @@ interface RenderedFrame {
 function clampTime(projectDurationMs: number, value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(projectDurationMs, Math.round(value)));
-}
-
-/**
- * Ask a vision model what the frames actually show. Degrades to "not performed"
- * when no vision provider is configured — never to a false success.
- */
-async function reviewFrames(
-  projectName: string,
-  canvas: { width: number; height: number },
-  frames: RenderedFrame[],
-  lint: ReturnType<typeof lintTraceProject>,
-  abortSignal?: AbortSignal,
-): Promise<{ performed: boolean; model: string | null; notes: string }> {
-  let selection: VisionModelSelection | null;
-  try {
-    selection = await selectVisionModel('composition-validation');
-  } catch {
-    selection = null;
-  }
-  if (!selection) {
-    return {
-      performed: false,
-      model: null,
-      notes:
-        'No vision model is configured. The frames were rendered but not visually inspected.',
-    };
-  }
-
-  const model = resolveVisionModel(selection.providerId, selection.modelId);
-  if (!model) {
-    return {
-      performed: false,
-      model: null,
-      notes: `The configured vision model "${selection.modelName}" could not be resolved. The frames were not inspected.`,
-    };
-  }
-
-  const frameLines = frames
-    .map(
-      (frame) =>
-        `- ${frame.timeMs}ms${frame.scene ? ` (scene: ${frame.scene})` : ''}`,
-    )
-    .join('\n');
-
-  try {
-    const review = await generateText({
-      model: model as any,
-      abortSignal,
-      system:
-        `You are reviewing rendered frames from the Nova Trace composition "${projectName}" ` +
-        `(${canvas.width}×${canvas.height}). Inspect clipping, overlap, contrast, empty frames, ` +
-        'missing focal content, and collisions with the subtitle band at the bottom. A frame that ' +
-        'is mostly one solid colour is a scene entrance veil — say that rather than reporting ' +
-        'missing content. Do not invent elements you cannot see. Return 2–5 short, actionable ' +
-        'bullet points, each prefixed with the frame time. If everything looks correct, say so plainly.',
-      prompt: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `Frames:\n${frameLines}\n\n` +
-                `Lint: ${lint.errorCount} error(s), ${lint.warningCount} warning(s).\n` +
-                lint.diagnostics
-                  .slice(0, 6)
-                  .map((entry) => `- [${entry.code}] ${entry.message}`)
-                  .join('\n'),
-            },
-            ...frames.flatMap((frame) => [
-              {
-                type: 'text' as const,
-                text: `Frame at ${frame.timeMs}ms${frame.scene ? ` (${frame.scene})` : ''}`,
-              },
-              {
-                type: 'image' as const,
-                image: new Uint8Array(frame.png),
-              },
-            ]),
-          ],
-        },
-      ],
-    });
-
-    const notes = review.text.trim();
-    return {
-      performed: true,
-      model: `${selection.providerId}/${selection.modelId}`,
-      notes: notes || 'The vision model returned no notes.',
-    };
-  } catch (error) {
-    if (abortSignal?.aborted) throw error;
-    return {
-      performed: false,
-      model: `${selection.providerId}/${selection.modelId}`,
-      notes:
-        `The vision review failed: ` +
-        (error instanceof Error ? error.message : String(error)),
-    };
-  }
 }
 
 export function createTracePreviewTool() {
@@ -218,13 +114,20 @@ export function createTracePreviewTool() {
         }
 
         const lint = lintTraceProject(project);
-        const visualReview = await reviewFrames(
-          project.name,
-          { width: project.width, height: project.height },
-          frames,
-          lint,
+        const visualReview = await reviewCompositionFrames({
+          projectName: project.name,
+          canvas: { width: project.width, height: project.height },
+          frames: frames.map((frame) => ({
+            timeMs: frame.timeMs,
+            label: frame.scene,
+            png: frame.png,
+          })),
+          focus:
+            'Inspect clipping, overlap, contrast, empty frames, missing focal content and collisions ' +
+            'with the subtitle band at the bottom. A frame that is mostly one solid colour is a scene ' +
+            'entrance veil — say that rather than reporting missing content.',
           abortSignal,
-        );
+        });
 
         return {
           success: true as const,

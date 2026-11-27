@@ -15,7 +15,7 @@ export to animated SVG or GSAP code.
 ### TraceProject
 ```
 { id, name, width, height, durationMs, fps, elements: Record<id, TraceElement>, rootElementIds,
-  defs?, gradients?, audioTracks?, storyboard?, camera? }
+  defs?, gradients?, audioTracks?, storyboard?, camera?, style?, reviewNotes? }
 ```
 - Default canvas: 1920×1080 @ 60fps, 6000ms duration
 - Other common sizes: 1280×720, 1080×1920 (vertical/reels)
@@ -128,7 +128,8 @@ All document mutations are **ops** — pure data applied atomically by `applyOps
 | `setTrack` | Set/replace a property track with keyframes |
 | `deleteTrack` | Remove a property track |
 | `addScene` | Add storyboard scene |
-| `updateScene` | Update scene name, intent, duration, transition |
+| `reorderScene` | Move a scene; start times are re-derived |
+| `updateScene` | Update scene name, intent, duration, transition, background |
 | `removeScene` | Remove scene + its elements |
 | `setDefs` | Set SVG defs (gradients, filters, patterns) |
 | `setFilters` | Set structured SVG filters (editor-authored, serialized into defs) |
@@ -162,6 +163,30 @@ Filter primitives supported structurally: `feGaussianBlur`, `feOffset`, `feFlood
 | `counter` | Number text + caption | Number steps through exact values from start to end |
 
 Recipes are inserted as an ordinary group of primitive children, so every layer and track stays editable. A track can set `discrete: true` to hold each keyframe instead of interpolating; the counter uses this so its text never passes through the typewriter interpolator.
+
+## Blocks (Registry)
+
+The block registry is the single searchable catalogue of insertable visuals. It wraps the five recipes and adds first-party blocks. Every block becomes ordinary layers and tracks; nothing is locked or special after insertion.
+
+| Block id | Category | What it builds |
+|----------|----------|----------------|
+| `title-card` | Titles | Kicker + oversized headline + growing accent rule |
+| `kinetic-text` | Titles | Word-by-word headline reveal (recipe) |
+| `quote-card` | Titles | Quotation glyph, wrapped statement, attribution |
+| `bullet-list` | Titles | Staggered points, one per row in the `items` field |
+| `lower-third` | Lower thirds | Speaker card with accent bar (recipe) |
+| `counter` | Data | KPI number that steps to a target (recipe) |
+| `progress-ring` | Data | Arc that draws to a percentage (recipe) |
+| `bar-chart` | Data | Bars that grow in sequence (recipe) |
+| `callout` | Callouts | Pill label, pulsing dot and connector |
+| `device-frame` | Social | Phone/browser frame with an app panel |
+| `logo-end-card` | Social | Badge, wordmark and tagline |
+| `background-treatment` | Backgrounds | Base, glow pools and edge shading (inserts at the back) |
+
+- Discover with `searchBlocks` (free text + category); insert with `insertBlock`.
+- Each block declares the parameters its builder reads; `searchBlocks` returns them with defaults, kinds and select options.
+- Layout is canvas-relative, so blocks land correctly on 16:9, 1:1 and 9:16.
+- `layer: 'background'` blocks insert at the back of the root stack so they never cover existing art.
 
 ## Templates
 
@@ -213,6 +238,13 @@ Scenes are contiguous time ranges within a project:
   video exporter falls back to the first scene's background (or slate) behind
   the frame.
 
+Scene editing lives in the **Scenes** dialog (command bar → “Scenes & transitions”,
+or the gear in the timeline’s Scenes lane). It can add, rename, re-time, reorder
+and delete scenes, choose the entrance, set a custom background, and write the
+director note. Reordering or changing a duration re-lays every `startMs`; deleting
+a scene prunes its assigned layers after a named confirmation. Adding a scene
+places it after the active one and focuses it.
+
 ## Camera
 
 `project.camera` frames the whole element graph. Absent means the full artboard.
@@ -233,6 +265,43 @@ Scenes are contiguous time ranges within a project:
   translate(-x, -y)`.
 - Set or animate with the `setCamera` tool/op; `null` clears it. The inspector's
   Camera section edits the base values and adds keyframes at the playhead.
+
+## Look & Style
+
+`project.style` holds authoring tokens. They are defaults, not a stylesheet:
+
+```
+{ lookId?, palette?: { background, surface, text, muted, accent, accentAlt },
+  fonts?: { heading, body },
+  motion?: { easing, durationMs, staggerMs } }
+```
+
+Presets (`listLooks`, `setLook`): `nova-dark`, `clean-tech`, `editorial`, `warm-film`, `noir`, `neon`.
+
+- New blocks inherit the palette for colour options the caller leaves unset, and their text takes the look's heading/body font.
+- The copilot reads the resolved look from `getProject` and uses it for new layers.
+- `setLook` only restyles existing layers when `applyToElements` is true: role-matched fills/strokes are remapped and text fonts switch to the heading/body pairing. `applyBackground` sets every scene background to the look background.
+- `setLook` with `style: null` clears the style.
+- Motion taste is linted: linear easing on x/y/scale/rotation, large pure-black fills and four or more motion tracks sharing the same start/end are warnings.
+
+## Review Notes & QA
+
+`project.reviewNotes` holds timestamped review comments:
+
+```
+[{ id, text, timeMs, sceneId?, elementId?, createdAt, resolved? }]
+```
+
+- Add notes in the editor (Notes dialog at the playhead) or with `addReviewNote`; read them with `getReviewNotes`; resolve with `resolveReviewNotes`. Resolution is a flag, never a delete.
+- `auditComposition` (tool) and the QA dialog run the measurable readiness pass:
+  - lint issues (validity)
+  - scene coverage (canvas time not covered / scenes overrunning)
+  - narration readiness (unmeasured lines, missing voice assets)
+  - large-text contrast against the scene background (WCAG 3:1 for ≥40px text)
+  - open review notes
+  - motion metrics (tracks, keyframes, linear-motion tracks)
+- The contact-sheet frame list shows each scene settled and mid, plus every note time, deduped and capped at 9 frames.
+- The audit tool also has a vision model review the rendered contact sheet and returns a written review with `performed`/`model`/`notes`.
 
 ## Export
 
@@ -304,4 +373,5 @@ Scenes are contiguous time ranges within a project:
 - Groups have `childrenIds`; children reference parent via `parentId`
 - Root elements are listed in `rootElementIds` (paint order, bottom = first)
 - Use `applyRecipe` to instantiate pre-built compositions (lower-third, kinetic-text, etc.)
+- Use `searchBlocks` before hand-building a named visual, then `insertBlock`; blocks are ordinary layers afterwards
 - Gradients need entries in both `project.gradients` and serialized `defs`

@@ -5,7 +5,17 @@
  */
 
 import { useState } from 'react';
-import { AudioLinesIcon, DownloadIcon, SearchIcon, SparklesIcon, UploadIcon } from 'lucide-react';
+import {
+  AudioLinesIcon,
+  BlocksIcon,
+  ClapperboardIcon,
+  DownloadIcon,
+  MessageSquareIcon,
+  SearchIcon,
+  ShieldCheckIcon,
+  SparklesIcon,
+  UploadIcon,
+} from 'lucide-react';
 
 import {
   Command,
@@ -27,6 +37,10 @@ export type TraceCommandBarProps = {
   onNarration: () => void;
   onImportSvg: () => void;
   onExport: () => void;
+  onBlocks: () => void;
+  onScenes: () => void;
+  onNotes: () => void;
+  onQa: () => void;
 };
 
 export function TraceCommandBar({
@@ -34,6 +48,10 @@ export function TraceCommandBar({
   onNarration,
   onImportSvg,
   onExport,
+  onBlocks,
+  onScenes,
+  onNotes,
+  onQa,
 }: TraceCommandBarProps) {
   const [open, setOpen] = useState(false);
 
@@ -71,7 +89,29 @@ export function TraceCommandBar({
               </CommandItem>
             </CommandGroup>
             <CommandSeparator />
+            <CommandGroup heading="Storyboard">
+              <CommandItem onSelect={() => run(onScenes)}>
+                <ClapperboardIcon className="text-sky-300" />
+                <span>Scenes &amp; transitions</span>
+              </CommandItem>
+            </CommandGroup>
+            <CommandSeparator />
+            <CommandGroup heading="Review">
+              <CommandItem onSelect={() => run(onNotes)}>
+                <MessageSquareIcon className="text-amber-300" />
+                <span>Review notes</span>
+              </CommandItem>
+              <CommandItem onSelect={() => run(onQa)}>
+                <ShieldCheckIcon className="text-emerald-300" />
+                <span>Composition QA</span>
+              </CommandItem>
+            </CommandGroup>
+            <CommandSeparator />
             <CommandGroup heading="Artwork">
+              <CommandItem onSelect={() => run(onBlocks)}>
+                <BlocksIcon className="text-sky-300" />
+                <span>Insert block…</span>
+              </CommandItem>
               <CommandItem onSelect={() => run(onImportSvg)}>
                 <UploadIcon />
                 <span>Import SVG</span>

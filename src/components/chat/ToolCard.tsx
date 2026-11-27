@@ -83,6 +83,43 @@ function getFriendlyToolSummary(
     case 'listBlocks':
       title = 'Check scheduled time blocks';
       break;
+    case 'searchBlocks':
+      title = 'Search Trace blocks';
+      break;
+    case 'insertBlock': {
+      const blockId = typeof input.blockId === 'string' ? input.blockId : '';
+      title = blockId ? `Insert ${blockId}` : 'Insert Trace block';
+      break;
+    }
+    case 'listLooks':
+      title = 'Browse Trace looks';
+      break;
+    case 'setLook': {
+      const lookId = typeof input.lookId === 'string' ? input.lookId : '';
+      title = lookId ? `Set look: ${lookId}` : 'Set custom look';
+      break;
+    }
+    case 'addScene':
+      title = 'Add scene';
+      break;
+    case 'updateScene':
+      title = 'Configure scene';
+      break;
+    case 'reorderScene':
+      title = 'Reorder scenes';
+      break;
+    case 'getReviewNotes':
+      title = 'Read review notes';
+      break;
+    case 'addReviewNote':
+      title = 'Add review note';
+      break;
+    case 'resolveReviewNotes':
+      title = 'Resolve review notes';
+      break;
+    case 'auditComposition':
+      title = 'Audit composition';
+      break;
     case 'createTask': {
       const t = typeof input.title === 'string' ? input.title : '';
       title = t

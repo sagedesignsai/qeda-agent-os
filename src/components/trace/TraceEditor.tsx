@@ -39,6 +39,10 @@ import { TraceTimeline } from '@/components/trace/TraceTimeline';
 import { ExportDialog } from '@/components/trace/dialogs/ExportDialog';
 import { AnimateSvgDialog } from '@/components/trace/dialogs/AnimateSvgDialog';
 import { NarrationDialog } from '@/components/trace/dialogs/NarrationDialog';
+import { BlockLibraryDialog } from '@/components/trace/dialogs/BlockLibraryDialog';
+import { ReviewNotesDialog } from '@/components/trace/dialogs/ReviewNotesDialog';
+import { CompositionQaDialog } from '@/components/trace/dialogs/CompositionQaDialog';
+import { ScenesDialog } from '@/components/trace/dialogs/ScenesDialog';
 import { TraceCommandBar } from '@/components/trace/TraceCommandBar';
 import { TraceCopilotSheet } from '@/components/trace/copilot';
 import {
@@ -122,6 +126,10 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [animateSvgOpen, setAnimateSvgOpen] = useState(false);
   const [narrationOpen, setNarrationOpen] = useState(false);
+  const [blocksOpen, setBlocksOpen] = useState(false);
+  const [scenesOpen, setScenesOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [qaOpen, setQaOpen] = useState(false);
   const [animateTargetId, setAnimateTargetId] = useState<string | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
@@ -575,6 +583,10 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
             onNarration={() => setNarrationOpen(true)}
             onImportSvg={handleImportSvg}
             onExport={() => setExportOpen(true)}
+            onBlocks={() => setBlocksOpen(true)}
+            onScenes={() => setScenesOpen(true)}
+            onNotes={() => setNotesOpen(true)}
+            onQa={() => setQaOpen(true)}
           />
         </div>
 
@@ -687,7 +699,10 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        <TraceElementsTree onAnimateSvg={openAnimateSvg} />
+        <TraceElementsTree
+          onAnimateSvg={openAnimateSvg}
+          onOpenBlocks={() => setBlocksOpen(true)}
+        />
         <TraceStage
           project={project}
           timeMs={playback.currentTimeMs}
@@ -750,11 +765,25 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
         </div>
       ) : (
         <div className="h-[246px] shrink-0">
-          <TraceTimeline />
+          <TraceTimeline onConfigureScenes={() => setScenesOpen(true)} />
         </div>
       )}
 
       <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+
+      <BlockLibraryDialog
+        open={blocksOpen}
+        onOpenChange={setBlocksOpen}
+      />
+
+      <ScenesDialog open={scenesOpen} onOpenChange={setScenesOpen} />
+
+      <ReviewNotesDialog
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+      />
+
+      <CompositionQaDialog open={qaOpen} onOpenChange={setQaOpen} />
 
       <NarrationDialog
         open={narrationOpen}

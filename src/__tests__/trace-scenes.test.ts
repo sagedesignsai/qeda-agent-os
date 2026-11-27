@@ -1,4 +1,5 @@
 import { migrateTraceProject } from '@/lib/trace/migrate'
+import { applyOps } from '@/lib/trace/ops'
 import {
   DEFAULT_SCENE_BACKGROUND,
   sceneAtTime,
@@ -191,5 +192,55 @@ describe('Trace scene presentation', () => {
       scenePresentation: false,
     })
     expect(svg).not.toContain('data-trace-scene-veil')
+  })
+
+  it('clears scene intent and background through updateScene nulls', () => {
+    const project = emptyProject({
+      storyboard: {
+        scenes: [
+          scene('a', 0, 1000, { background: '#111111' }),
+        ],
+      },
+    })
+
+    const set = applyOps(project, [
+      { type: 'updateScene', id: 'a', intent: 'Open on the logo' },
+    ])
+    expect(set.project.storyboard?.scenes[0].intent).toBe('Open on the logo')
+
+    const cleared = applyOps(set.project, [
+      { type: 'updateScene', id: 'a', intent: null, background: null },
+    ])
+    const sceneAfter = cleared.project.storyboard?.scenes[0]
+    expect(sceneAfter?.intent).toBeUndefined()
+    expect(sceneAfter?.background).toBeUndefined()
+    expect(cleared.diff.scenes.updated).toContain('a')
+  })
+
+  it('re-lays start times when scenes are reordered', () => {
+    const project = emptyProject({
+      storyboard: {
+        scenes: [
+          scene('a', 0, 1000),
+          scene('b', 1000, 2000),
+          scene('c', 3000, 500),
+        ],
+      },
+    })
+
+    const result = applyOps(project, [
+      { type: 'reorderScene', id: 'c', index: 0 },
+    ])
+
+    expect(
+      result.project.storyboard?.scenes.map((entry) => [
+        entry.id,
+        entry.startMs,
+      ]),
+    ).toEqual([
+      ['c', 0],
+      ['a', 500],
+      ['b', 1500],
+    ])
   })
 })
