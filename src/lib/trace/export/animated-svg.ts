@@ -227,6 +227,18 @@ function animatedElementMarkup(
   const durationMs = project.durationMs;
   const { attributes, transform } = resolveElementAtTime(element, timeMs);
   const tracks = element.tracks ?? [];
+  const origin = element.origin ?? { x: 0, y: 0 };
+  const originX = Number(origin.x) || 0;
+  const originY = Number(origin.y) || 0;
+  const hasOrigin = originX !== 0 || originY !== 0;
+  const originOpen = hasOrigin
+    ? `<g transform="translate(${originX} ${originY})">`
+    : '';
+  const originClose = hasOrigin ? '</g>' : '';
+  const resetOpen = hasOrigin
+    ? `<g transform="translate(${-originX} ${-originY})">`
+    : '';
+  const resetClose = hasOrigin ? '</g>' : '';
 
   const xTracks = tracks.filter((track) => track.property === 'x');
   const yTracks = tracks.filter((track) => track.property === 'y');
@@ -374,10 +386,10 @@ function animatedElementMarkup(
     element.id,
   )}"${inheritedXml ? '' : ` opacity="${Number(attributes.opacity ?? 1)}"`}>
 <g transform="translate(${transform.x} ${transform.y})">${translateAnimations}
-<g transform="rotate(${transform.rotation})">${rotateAnimations}
+${originOpen}<g transform="rotate(${transform.rotation})">${rotateAnimations}
 <g transform="scale(${transform.scaleX} ${transform.scaleY})">${scaleAnimations}
-${inheritedXml ? `<g>${inheritedXml}` : ''}${body}${inheritedXml ? '</g>' : ''}${children}
-</g></g></g></g>`;
+${resetOpen}${inheritedXml ? `<g>${inheritedXml}` : ''}${body}${inheritedXml ? '</g>' : ''}${children}${resetClose}
+</g></g>${originClose}</g></g>`;
 
   return { markup, clip };
 }

@@ -250,10 +250,21 @@ export function elementMarkup(
   options: { includeTransform?: boolean } = {},
 ): string {
   const { attributes, transform } = resolveElementAtTime(element, timeMs);
+  const origin = element.origin ?? { x: 0, y: 0 };
+  const originX = num(origin.x);
+  const originY = num(origin.y);
+  const hasOrigin = originX !== 0 || originY !== 0;
+  // Match the live renderer's transform-origin: translate to the pivot, run
+  // rotate/scale there, then translate back. Without this, rotating groups fly
+  // around the SVG origin in static previews and exports.
   const transformAttr =
     options.includeTransform === false
       ? ''
-      : ` transform="translate(${transform.x} ${transform.y}) rotate(${transform.rotation}) scale(${transform.scaleX} ${transform.scaleY})"`;
+      : ` transform="translate(${transform.x} ${transform.y})${
+          hasOrigin ? ` translate(${originX} ${originY})` : ''
+        } rotate(${transform.rotation}) scale(${transform.scaleX} ${
+          transform.scaleY
+        })${hasOrigin ? ` translate(${-originX} ${-originY})` : ''}"`;
   const opacity =
     attributes.opacity !== undefined
       ? ` opacity="${num(attributes.opacity, 1)}"`
