@@ -75,6 +75,9 @@ function emptyDiff(): TraceOpDiff {
     cameraChanged: false,
     styleChanged: false,
     notesChanged: false,
+    defsChanged: false,
+    filtersChanged: false,
+    audioChanged: false,
   };
 }
 
@@ -616,26 +619,35 @@ function opUpdateScene(
     );
   }
 
-  project.storyboard = {
-    ...storyboard,
-    scenes: storyboard.scenes.map((scene) => {
-      if (scene.id !== op.id) return scene;
-      const next = { ...scene };
-      if (op.name !== undefined) next.name = op.name;
-      if (op.durationMs !== undefined)
-        next.durationMs = Math.max(1, Math.round(op.durationMs));
-      if (op.transitionIn !== undefined) next.transitionIn = op.transitionIn;
-      if (op.intent !== undefined) {
-        if (op.intent === null) delete next.intent;
-        else next.intent = op.intent;
-      }
-      if (op.background !== undefined) {
-        if (op.background === null) delete next.background;
-        else next.background = op.background;
-      }
-      return next;
-    }),
-  };
+  const nextScenes = storyboard.scenes.map((scene) => {
+    if (scene.id !== op.id) return scene;
+    const next = { ...scene };
+    if (op.name !== undefined) next.name = op.name;
+    if (op.durationMs !== undefined)
+      next.durationMs = Math.max(1, Math.round(op.durationMs));
+    if (op.transitionIn !== undefined) next.transitionIn = op.transitionIn;
+    if (op.intent !== undefined) {
+      if (op.intent === null) delete next.intent;
+      else next.intent = op.intent;
+    }
+    if (op.background !== undefined) {
+      if (op.background === null) delete next.background;
+      else next.background = op.background;
+    }
+    return next;
+  });
+
+  // Scene duration is a timeline edit, not just a field edit: later scenes must
+  // move with it so the storyboard stays contiguous.
+  const scenes = layoutScenes(nextScenes);
+  project.storyboard = { ...storyboard, scenes };
+  const last = scenes[scenes.length - 1];
+  if (last) {
+    project.durationMs = Math.max(
+      Math.max(1, project.durationMs ?? 1),
+      last.startMs + last.durationMs,
+    );
+  }
 }
 
 function opRemoveScene(
@@ -805,7 +817,7 @@ function opSetCamera(
   project: TraceProject,
   op: Extract<TraceOp, { type: 'setCamera' }>,
 ): void {
-  if (op.camera === null) {
+  if (op.camera == null) {
     delete project.camera;
     return;
   }
@@ -1094,6 +1106,13 @@ function diffProjects(before: TraceProject, after: TraceProject): TraceOpDiff {
   diff.notesChanged =
     JSON.stringify(before.reviewNotes ?? null) !==
     JSON.stringify(after.reviewNotes ?? null);
+  diff.defsChanged = (before.defs ?? '') !== (after.defs ?? '');
+  diff.filtersChanged =
+    JSON.stringify(before.filters ?? null) !==
+    JSON.stringify(after.filters ?? null);
+  diff.audioChanged =
+    JSON.stringify(before.audioTracks ?? null) !==
+    JSON.stringify(after.audioTracks ?? null);
 
   return diff;
 }

@@ -44,7 +44,10 @@ function diffIsEmpty(result: TraceApplyOpsResult): boolean {
     !diff.narrationChanged &&
     !diff.cameraChanged &&
     !diff.styleChanged &&
-    !diff.notesChanged
+    !diff.notesChanged &&
+    !diff.defsChanged &&
+    !diff.filtersChanged &&
+    !diff.audioChanged
   );
 }
 

@@ -68,7 +68,7 @@ type ProjectFile = {
 
 type IndexPort = Pick<
   TraceProjectIndex,
-  'list' | 'get' | 'upsert' | 'markMissing' | 'touch' | 'delete'
+  'list' | 'get' | 'upsert' | 'markMissing' | 'touch' | 'delete' | 'setThumbnail'
 >
 
 export class TraceProjectStore {
@@ -95,6 +95,12 @@ export class TraceProjectStore {
       .map(toSummary)
   }
 
+  /** Persist a rendered card preview without touching the document file. */
+  saveThumbnail(id: string, thumbnailSvg: string | null): void {
+    assertSafeProjectId(id)
+    this.index.setThumbnail(id, thumbnailSvg)
+  }
+
   /** Reconcile the catalog with what is actually on disk. */
   async rescan(): Promise<void> {
     await this.initialize()
@@ -117,7 +123,10 @@ export class TraceProjectStore {
           existing?.created_at ?? savedAt,
           savedAt,
         )
-        row.thumbnail_svg = existing?.thumbnail_svg ?? null
+        row.thumbnail_svg =
+          existing && existing.revision === file.revision
+            ? existing.thumbnail_svg
+            : null
         row.last_opened_at = existing?.last_opened_at ?? null
         this.index.upsert(row)
         discovered.add(entry.name)
@@ -161,13 +170,18 @@ export class TraceProjectStore {
     return toSummary(row)
   }
 
-  async openProject(id: string): Promise<TraceOpenResult> {
+  async openProject(
+    id: string,
+    options: { touch?: boolean } = {},
+  ): Promise<TraceOpenResult> {
     assertSafeProjectId(id)
     const row = this.index.get(id)
     const directory = row?.path ?? this.projectPath(id)
     const file = await this.readBundle(directory)
 
-    this.index.touch(id, this.now().toISOString())
+    if (options.touch !== false) {
+      this.index.touch(id, this.now().toISOString())
+    }
 
     return { project: migrateTraceProject(file.project), path: directory, revision: file.revision }
   }
@@ -202,9 +216,18 @@ export class TraceProjectStore {
       }
       await this.writeBundle(directory, file)
 
-      this.index.upsert(
-        toRow(file, directory, row?.created_at ?? savedAt, savedAt),
+      const nextRow = toRow(
+        file,
+        directory,
+        row?.created_at ?? savedAt,
+        savedAt,
       )
+      // A save invalidates the rendered preview but must not erase when the
+      // project was last opened. `toRow` is also used for new rows, where both
+      // columns are legitimately empty.
+      nextRow.thumbnail_svg = null
+      nextRow.last_opened_at = row?.last_opened_at ?? null
+      this.index.upsert(nextRow)
 
       return { revision: file.revision, savedAt }
     })

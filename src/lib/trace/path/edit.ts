@@ -62,6 +62,10 @@ export function segmentPoints(from: PathNode, to: PathNode) {
 /**
  * Nearest sampled point on a segment to `target` (32 samples). Good
  * enough for click-to-insert hit testing at editor zoom levels.
+ *
+ * Straight segments are projected exactly: the degenerate cubic used to
+ * represent a line has a non-linear parameterization, so uniform `t` sampling
+ * would miss the true closest point by several pixels on long segments.
  */
 export function nearestPointOnSegment(
   from: PathNode,
@@ -70,6 +74,34 @@ export function nearestPointOnSegment(
   samples = 32,
 ): { t: number; point: PathPoint; distance: number } {
   const { p0, c1, c2, p1 } = segmentPoints(from, to);
+  const same = (a: PathPoint, b: PathPoint) =>
+    Math.abs(a.x - b.x) <= 0.01 && Math.abs(a.y - b.y) <= 0.01;
+  if (same(c1, p0) && same(c2, p1)) {
+    const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const t =
+      lengthSquared === 0
+        ? 0
+        : Math.max(
+            0,
+            Math.min(
+              1,
+              ((target.x - p0.x) * dx + (target.y - p0.y) * dy) /
+                lengthSquared,
+            ),
+          );
+    const point = {
+      x: p0.x + dx * t,
+      y: p0.y + dy * t,
+    };
+    return {
+      t,
+      point,
+      distance: Math.hypot(point.x - target.x, point.y - target.y),
+    };
+  }
+
   let bestT = 0;
   let bestPoint = p0;
   let bestDistance = Infinity;

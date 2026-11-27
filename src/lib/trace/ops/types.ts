@@ -241,6 +241,12 @@ export interface TraceOpDiff {
   styleChanged?: boolean;
   /** Review notes changed. Optional so older diff producers stay valid. */
   notesChanged?: boolean;
+  /** Raw SVG defs changed. Optional so older diff producers stay valid. */
+  defsChanged?: boolean;
+  /** Structured SVG filters changed. Optional so older diff producers stay valid. */
+  filtersChanged?: boolean;
+  /** Audio tracks changed. Optional so older diff producers stay valid. */
+  audioChanged?: boolean;
 }
 
 export interface TraceApplyOpsOptions {

@@ -133,6 +133,31 @@ describe('Trace hierarchy ops', () => {
     expect(result.project.rootElementIds).toEqual(grouped.rootElementIds)
   })
 
+  it('adds a child directly into an existing group', () => {
+    const project = applyOps(emptyProject(), [
+      { type: 'addElement', element: { id: 'group', type: 'group', x: 0, y: 0 } },
+    ]).project
+    const result = applyOps(project, [
+      {
+        type: 'addElement',
+        element: {
+          id: 'child',
+          type: 'rect',
+          x: 10,
+          y: 10,
+          width: 20,
+          height: 20,
+          parentId: 'group',
+        },
+      },
+    ])
+
+    expect(result.ok).toBe(true)
+    expect(result.project.elements.child.parentId).toBe('group')
+    expect(result.project.elements.group.childrenIds).toEqual(['child'])
+    expect(result.project.rootElementIds).toEqual(['group'])
+  })
+
   it('groups into the topmost selected slot and preserves paint order', () => {
     const project = addElements(['a', 'b', 'c', 'd'])
 

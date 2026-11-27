@@ -73,6 +73,12 @@ export class TraceProjectIndex {
       .run(openedAt, id)
   }
 
+  setThumbnail(id: string, thumbnailSvg: string | null): void {
+    this.getDatabase()
+      .prepare('UPDATE trace_projects SET thumbnail_svg = ? WHERE id = ?')
+      .run(thumbnailSvg, id)
+  }
+
   markMissing(id: string, missing: boolean): void {
     this.getDatabase()
       .prepare('UPDATE trace_projects SET missing = ? WHERE id = ?')

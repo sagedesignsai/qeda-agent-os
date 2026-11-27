@@ -99,7 +99,9 @@ export function traceHistoryMiddleware(
       setHistoryOpActive(true);
       set({ past, future: [], canUndo: past.length > 0, canRedo: false });
       setHistoryOpActive(false);
-      lastSnapshotAt = now;
+      // A discrete edit is its own undo step. The next continuous edit must
+      // start another one instead of coalescing into the structural change.
+      lastSnapshotAt = discrete ? 0 : now;
     };
 
     return creator(trackingSet, get, api);

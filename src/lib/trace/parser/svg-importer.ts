@@ -211,8 +211,9 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
       stroke,
       strokeWidth,
       opacity,
-      strokeDasharray,
-      strokeDashoffset,
+      ...(strokeDasharray
+        ? { strokeDasharray, strokeDashoffset }
+        : {}),
     };
 
     const traceElem: TraceElement = {
@@ -257,8 +258,10 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
         const bbox = tempPath.getBBox();
         document.body.removeChild(tempSvg);
 
-        attributes.strokeDasharray = `${length} ${length}`;
-        attributes.strokeDashoffset = 0;
+        if (stroke !== 'none' && strokeWidth > 0) {
+          attributes.strokeDasharray = `${length} ${length}`;
+          attributes.strokeDashoffset = 0;
+        }
         if (bbox && (bbox.width > 0 || bbox.height > 0)) {
           traceElem.origin = {
             x: Math.round(bbox.x + bbox.width / 2),
@@ -266,8 +269,10 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
           };
         }
       } catch {
-        attributes.strokeDasharray = '500 500';
-        attributes.strokeDashoffset = 0;
+        if (stroke !== 'none' && strokeWidth > 0) {
+          attributes.strokeDasharray = '500 500';
+          attributes.strokeDashoffset = 0;
+        }
       }
     } else if (tagName === 'polygon' || tagName === 'polyline') {
       // Convert polygon/polyline to path for NovaTrace
@@ -311,8 +316,10 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
         const bbox = tempPath.getBBox();
         document.body.removeChild(tempSvg);
 
-        attributes.strokeDasharray = `${length} ${length}`;
-        attributes.strokeDashoffset = 0;
+        if (stroke !== 'none' && strokeWidth > 0) {
+          attributes.strokeDasharray = `${length} ${length}`;
+          attributes.strokeDashoffset = 0;
+        }
         if (bbox && (bbox.width > 0 || bbox.height > 0)) {
           traceElem.origin = {
             x: Math.round(bbox.x + bbox.width / 2),
@@ -320,8 +327,10 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
           };
         }
       } catch {
-        attributes.strokeDasharray = '500 500';
-        attributes.strokeDashoffset = 0;
+        if (stroke !== 'none' && strokeWidth > 0) {
+          attributes.strokeDasharray = '500 500';
+          attributes.strokeDashoffset = 0;
+        }
       }
     } else if (tagName === 'line') {
       // Convert line to path for NovaTrace
@@ -355,20 +364,25 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
       const cx = parseFloat(node.getAttribute('cx') || '50') + currentDx;
       const cy = parseFloat(node.getAttribute('cy') || '50') + currentDy;
       const r = parseFloat(node.getAttribute('r') || '25');
-      attributes.cx = cx;
-      attributes.cy = cy;
-      attributes.r = r;
-      traceElem.origin = { x: Math.round(cx), y: Math.round(cy) };
+      // The renderer derives a circle from its box: width/height is the
+      // diameter and x/y is the top-left corner of that box.
+      attributes.x = cx - r;
+      attributes.y = cy - r;
+      attributes.width = r * 2;
+      attributes.height = r * 2;
+      traceElem.origin = { x: Math.round(r), y: Math.round(r) };
     } else if (tagName === 'ellipse') {
       const cx = parseFloat(node.getAttribute('cx') || '50') + currentDx;
       const cy = parseFloat(node.getAttribute('cy') || '50') + currentDy;
       const rx = parseFloat(node.getAttribute('rx') || '25');
       const ry = parseFloat(node.getAttribute('ry') || '25');
-      attributes.cx = cx;
-      attributes.cy = cy;
+      attributes.x = cx - rx;
+      attributes.y = cy - ry;
+      attributes.width = rx * 2;
+      attributes.height = ry * 2;
       attributes.rx = rx;
       attributes.ry = ry;
-      traceElem.origin = { x: Math.round(cx), y: Math.round(cy) };
+      traceElem.origin = { x: Math.round(rx), y: Math.round(ry) };
     } else if (tagName === 'text') {
       const x = parseFloat(node.getAttribute('x') || '0') + currentDx;
       const y = parseFloat(node.getAttribute('y') || '0') + currentDy;

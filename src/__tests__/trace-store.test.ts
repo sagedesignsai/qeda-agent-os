@@ -44,6 +44,48 @@ describe('Trace store', () => {
     expect(Object.keys(state.project?.elements ?? {})).toHaveLength(1);
   });
 
+  it('keeps defs, filters and audio changes that touch no elements', () => {
+    loadBlank();
+
+    const filter = {
+      id: 'soft-blur',
+      label: 'Soft blur',
+      kind: 'blur' as const,
+      region: 10,
+      colorSpace: 'sRGB' as const,
+      primitives: [],
+    };
+    const audio = {
+      id: 'bed',
+      name: 'Bed',
+      url: 'data:audio/wav;base64,AA==',
+      durationMs: 1000,
+      startTimeMs: 0,
+      volume: 1,
+    };
+
+    expect(
+      useTraceStore.getState().dispatch([
+        { type: 'setDefs', defs: '<linearGradient id="g" />' },
+      ])?.ok,
+    ).toBe(true);
+    expect(
+      useTraceStore.getState().dispatch([
+        { type: 'setFilters', filters: { [filter.id]: filter } },
+      ])?.ok,
+    ).toBe(true);
+    expect(
+      useTraceStore.getState().dispatch([
+        { type: 'setAudio', tracks: [audio] },
+      ])?.ok,
+    ).toBe(true);
+
+    const project = useTraceStore.getState().project;
+    expect(project?.defs).toContain('linearGradient');
+    expect(project?.filters?.[filter.id]).toEqual(filter);
+    expect(project?.audioTracks?.[0].id).toBe('bed');
+  });
+
   it('undoes and redoes a batch', () => {
     loadBlank();
     useTraceStore

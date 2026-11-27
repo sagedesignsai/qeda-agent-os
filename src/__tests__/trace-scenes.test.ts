@@ -243,4 +243,34 @@ describe('Trace scene presentation', () => {
       ['b', 1500],
     ])
   })
+
+  it('re-lays later scenes and extends the canvas when a duration changes', () => {
+    const project = emptyProject({
+      storyboard: {
+        scenes: [
+          scene('a', 0, 1000),
+          scene('b', 1000, 1000),
+          scene('c', 2000, 1000),
+        ],
+      },
+    })
+
+    const result = applyOps(project, [
+      { type: 'updateScene', id: 'a', durationMs: 2000 },
+    ])
+
+    expect(
+      result.project.storyboard?.scenes.map((entry) => [
+        entry.id,
+        entry.startMs,
+        entry.durationMs,
+      ]),
+    ).toEqual([
+      ['a', 0, 2000],
+      ['b', 2000, 1000],
+      ['c', 3000, 1000],
+    ])
+    // The canvas follows an extension so scenes never overrun it.
+    expect(result.project.durationMs).toBe(4000)
+  })
 })

@@ -19,6 +19,8 @@ interface SpecBase {
   /** Caller-supplied id. Generated when omitted; always returned by the op. */
   id?: string;
   name?: string;
+  /** Parent group id. Omit or pass null to add the element at the root. */
+  parentId?: string | null;
   /** `null` keeps the element out of any scene. Omitted = active scene. */
   sceneId?: string | null;
   visible?: boolean;
@@ -128,6 +130,8 @@ function withScene(element: TraceElement, spec: SpecBase): TraceElement {
   return {
     ...element,
     sceneId: spec.sceneId ?? null,
+    parentId: spec.parentId ?? element.parentId ?? null,
+    childrenIds: element.childrenIds ?? [],
     visible: spec.visible ?? true,
     locked: spec.locked ?? false,
   };

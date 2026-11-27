@@ -63,7 +63,7 @@ describe('path parse / serialize', () => {
     const mid = cubicPointAt(
       { x: 0, y: 0 },
       { x: 20, y: 0 },
-      { x: 30, y: 20 },
+      { x: 30, y: 10 },
       { x: 30, y: 30 },
       0.5,
     );

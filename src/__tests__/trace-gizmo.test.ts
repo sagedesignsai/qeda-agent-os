@@ -84,9 +84,10 @@ describe('gizmo geometry: translate / rotate', () => {
       x: 120,
       y: 130,
     });
+    // Shift constrains to the dominant axis: dy (30) beats dx (20), so y moves.
     expect(
       translateTransform(START, { x: 20, y: 30 }, { axisLock: true }),
-    ).toMatchObject({ x: 120, y: 100 });
+    ).toMatchObject({ x: 100, y: 130 });
     expect(
       translateTransform(START, { x: 10, y: 30 }, { axisLock: true }),
     ).toMatchObject({ x: 100, y: 130 });

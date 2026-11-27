@@ -33,8 +33,11 @@ export function registerTraceHandlers({
       for (const summary of summaries) {
         if (!summary.missing && !summary.thumbnailSvg) {
           try {
-            const opened = await store.openProject(summary.id);
+            // Generating a card preview is a read: it must not change
+            // `last_opened_at` (that would poison the browser's recent sort).
+            const opened = await store.openProject(summary.id, { touch: false });
             summary.thumbnailSvg = generateProjectThumbnail(opened.project);
+            store.saveThumbnail(summary.id, summary.thumbnailSvg);
           } catch {
             // Skip thumbnail generation if project can't be opened
           }

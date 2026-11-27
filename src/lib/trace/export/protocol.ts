@@ -99,10 +99,17 @@ export function parseTraceExportProgress(value: unknown): TraceExportProgressReq
     throw new TraceExportProtocolError('Progress phase is invalid.', 'TRACE_EXPORT_PROGRESS_PHASE_INVALID');
   }
   const frame = request.frame;
-  if (frame !== undefined && (!Number.isSafeInteger(frame) || frame < 0)) {
+  if (
+    frame !== undefined &&
+    (typeof frame !== 'number' || !Number.isSafeInteger(frame) || frame < 0)
+  ) {
     throw new TraceExportProtocolError('Progress frame is invalid.', 'TRACE_EXPORT_PROGRESS_FRAME_INVALID');
   }
-  return { jobId: request.jobId, phase, ...(frame !== undefined ? { frame } : {}) };
+  return {
+    jobId: request.jobId,
+    phase,
+    ...(typeof frame === 'number' ? { frame } : {}),
+  };
 }
 
 export function parseTraceExportFailure(value: unknown): { jobId: string; message: string } {
