@@ -3,15 +3,23 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Surface Generator add-on workspace. Describe a backdrop, review the generated
  * layers over time, then insert the validated fragment at the back of the stack.
+ *
+ * The preview is realtime: the moment the specialist's proposeSurface tool
+ * compiles a valid proposal, the staged fragment streams in and plays. Playback
+ * drives the SVG DOM directly through the runtime renderer (mount once, mutate
+ * per frame) instead of re-rendering React at 60fps, which is what kept large
+ * surfaces laggy. Completed proposals are persisted, as is the chat itself.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  HistoryIcon,
   PauseIcon,
   PlayIcon,
   RotateCwIcon,
   SparklesIcon,
   WallpaperIcon,
+  XIcon,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -43,11 +51,15 @@ import { SidebarContent, SidebarFooter } from '@/components/ui/sidebar';
 import { TraceRenderer } from '@/components/trace/renderer/TraceRenderer';
 import { useTraceStore } from '@/stores/trace-store';
 import { useSurfaceGenerationAgent } from '@/hooks/use-surface-generation-agent';
+import { useIpcEvent } from '@/hooks/use-ipc';
+import { applyElementAnimationAtTime } from '@/lib/trace/runtime/dom-renderer';
 import {
   surfaceProposalProject,
   type SurfaceGenerationProposal,
   type SurfaceGenerationRequest,
 } from '@/lib/trace/addons/surfaces/generation';
+import type { TraceSurfaceSummary } from '@/main/ipc/channels';
+import type { TraceProject } from '@/lib/trace/types';
 import { cn } from '@/lib/utils';
 
 export type GenerateSurfaceDialogProps = {
@@ -63,6 +75,11 @@ const QUICK_PROMPTS = [
   'A soft halftone texture with a diagonal accent, editorial and quiet.',
 ];
 
+/** Preview DOM-sync cap. 40fps reads as smooth while staying cheap. */
+const PREVIEW_FRAME_MS = 25;
+/** UI state (timecode, slider, keyframe playhead) refresh interval. */
+const PREVIEW_UI_INTERVAL_MS = 120;
+
 export function GenerateSurfaceDialog({
   open,
   onOpenChange,
@@ -73,8 +90,17 @@ export function GenerateSurfaceDialog({
   const [loop, setLoop] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [previewTimeMs, setPreviewTimeMs] = useState(0);
-  const previewTimeRef = useRef(0);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [history, setHistory] = useState<TraceSurfaceSummary[]>([]);
+  const [historySelection, setHistorySelection] = useState<{
+    id: string;
+    proposal: SurfaceGenerationProposal;
+  } | null>(null);
+  const previewTimeRef = useRef(0);
+  const lastUiUpdateRef = useRef(0);
+  const stageContainerRef = useRef<HTMLDivElement | null>(null);
+  const nodeMapRef = useRef(new Map<string, SVGGElement>());
+  const previewProjectRef = useRef<TraceProject | null>(null);
 
   const request = useMemo<SurfaceGenerationRequest | null>(() => {
     if (!project) return null;
@@ -84,6 +110,7 @@ export function GenerateSurfaceDialog({
       durationMs: project.durationMs,
       fps: project.fps,
       prompt: '',
+      projectId: project.id,
       intensity: intensity[0],
       loop,
       projectName: project.name,
@@ -103,57 +130,202 @@ export function GenerateSurfaceDialog({
   } = useSurfaceGenerationAgent(request);
 
   const isStreaming = status === 'streaming';
+  // A saved surface selected from history stands in until a fresh proposal
+  // arrives (the staged event replaces it mid-turn).
+  const activeProposal = proposal ?? historySelection?.proposal ?? null;
   const previewProject = useMemo(
-    () => (proposal ? surfaceProposalProject(proposal) : null),
-    [proposal],
+    () => (activeProposal ? surfaceProposalProject(activeProposal) : null),
+    [activeProposal],
   );
-  const previewDurationMs = Math.max(1, proposal?.durationMs ?? project?.durationMs ?? 1);
+  const previewDurationMs = Math.max(
+    1,
+    activeProposal?.durationMs ?? project?.durationMs ?? 1,
+  );
 
-  const seekPreview = useCallback((timeMs: number) => {
-    previewTimeRef.current = timeMs;
-    setPreviewTimeMs(timeMs);
+  useEffect(() => {
+    previewProjectRef.current = previewProject;
+  }, [previewProject]);
+
+  // ── Durable chat session ────────────────────────────────────────────────
+  const chatSessionId = `trace-surface-generation:${project?.id ?? 'scratch'}`;
+  useEffect(() => {
+    if (!project) return;
+    // Idempotent: the persisted session's row must exist before the first
+    // turn saves messages (the message table has a foreign key).
+    window.electron.ipc
+      .invoke('sessions:ensure', {
+        id: chatSessionId,
+        title: 'Surface Generator',
+        projectId: project.id,
+      })
+      .catch(() => {
+        // Persistence is best-effort.
+      });
+  }, [chatSessionId, project]);
+
+  // ── Persisted surface history ────────────────────────────────────────────
+  const refreshHistory = useCallback(async () => {
+    try {
+      const result = await window.electron.ipc.invoke<{
+        surfaces: TraceSurfaceSummary[];
+      }>('trace-surface-generation:list', { limit: 24 });
+      setHistory(result?.surfaces ?? []);
+    } catch {
+      setHistory([]);
+    }
   }, []);
-
-  const resetPreview = useCallback(() => {
-    setPlaying(false);
-    seekPreview(0);
-    setApplyError(null);
-  }, [seekPreview]);
 
   useEffect(() => {
     if (!open) return;
-    clearProposal();
-    clearMessages();
-    resetPreview();
-  }, [open, clearProposal, clearMessages, resetPreview]);
+    void refreshHistory();
+  }, [open, refreshHistory]);
+
+  useIpcEvent(
+    'trace-surface-generation:saved',
+    (raw: unknown) => {
+      const payload = raw as { surface?: TraceSurfaceSummary };
+      if (!payload.surface) return;
+      const surface = payload.surface;
+      setHistory((current) => [
+        surface,
+        ...current.filter((entry) => entry.id !== surface.id),
+      ].slice(0, 24));
+    },
+    [],
+  );
+
+  const selectHistorySurface = useCallback(
+    async (id: string) => {
+      try {
+        const result = await window.electron.ipc.invoke<{
+          proposal: SurfaceGenerationProposal | null;
+        }>('trace-surface-generation:load', { id });
+        if (result?.proposal) {
+          clearProposal();
+          setHistorySelection({ id, proposal: result.proposal });
+        }
+      } catch {
+        // Ignore load failures; the card stays clickable.
+      }
+    },
+    [clearProposal],
+  );
+
+  const deleteHistorySurface = useCallback(
+    async (id: string) => {
+      setHistory((current) => current.filter((entry) => entry.id !== id));
+      setHistorySelection((current) =>
+        current?.id === id ? null : current,
+      );
+      try {
+        await window.electron.ipc.invoke('trace-surface-generation:delete', {
+          id,
+        });
+      } catch {
+        // Best-effort.
+      }
+    },
+    [],
+  );
+
+  // ── Fast preview: mount once, mutate the SVG DOM per frame ───────────────
+  const syncPreviewDom = useCallback((timeMs: number) => {
+    const doc = previewProjectRef.current;
+    if (!doc) return;
+    const nodeMap = nodeMapRef.current;
+    if (nodeMap.size === 0) return;
+    for (const element of Object.values(doc.elements)) {
+      const node = nodeMap.get(element.id);
+      if (node) applyElementAnimationAtTime(node, element, timeMs);
+    }
+  }, []);
+
+  const seekPreview = useCallback(
+    (timeMs: number) => {
+      previewTimeRef.current = timeMs;
+      setPreviewTimeMs(timeMs);
+      syncPreviewDom(timeMs);
+    },
+    [syncPreviewDom],
+  );
+
+  // Rebuild the node map whenever a new proposal mounts, then paint the
+  // current moment so the first frame is not the t=0 React render.
+  useEffect(() => {
+    const container = stageContainerRef.current;
+    nodeMapRef.current = new Map();
+    if (!container || !previewProject) return;
+    const nodes = container.querySelectorAll<SVGGElement>('[data-trace-id]');
+    for (const node of nodes) {
+      const id = node.getAttribute('data-trace-id');
+      if (id) nodeMapRef.current.set(id, node);
+    }
+    syncPreviewDom(previewTimeRef.current);
+  }, [previewProject, syncPreviewDom]);
+
+  const resetPreview = useCallback(() => {
+    setPlaying(false);
+    previewTimeRef.current = 0;
+    setPreviewTimeMs(0);
+    setApplyError(null);
+  }, []);
 
   useEffect(() => {
-    if (!proposal) return;
-    seekPreview(0);
-    setPlaying(true);
+    if (!open) return;
+    // The conversation persists across opens; only playback state resets.
+    clearProposal();
+    setHistorySelection(null);
+    resetPreview();
+  }, [open, clearProposal, resetPreview]);
+
+  // Show the most recent persisted surface while the session is idle, so the
+  // workspace is never an empty canvas after a reopen.
+  useEffect(() => {
+    if (!open || proposal || historySelection || history.length === 0) return;
+    void selectHistorySurface(history[0].id);
+  }, [open, proposal, historySelection, history, selectHistorySurface]);
+
+  useEffect(() => {
+    if (!activeProposal) return;
+    previewTimeRef.current = 0;
+    setPreviewTimeMs(0);
     setApplyError(null);
-  }, [proposal, seekPreview]);
+    setPlaying(true);
+    syncPreviewDom(0);
+  }, [activeProposal, syncPreviewDom]);
 
   useEffect(() => {
     if (!playing || !previewProject) return;
     let frame = 0;
     let previous = performance.now();
+    let syncAccumulator = 0;
     const tick = (now: number) => {
-      const elapsed = now - previous;
+      const elapsed = Math.min(120, now - previous);
       previous = now;
-      const next = previewTimeRef.current + elapsed;
-      seekPreview(next % previewDurationMs);
+      const next = (previewTimeRef.current + elapsed) % previewDurationMs;
+      previewTimeRef.current = next;
+
+      syncAccumulator += elapsed;
+      if (syncAccumulator >= PREVIEW_FRAME_MS) {
+        syncAccumulator = 0;
+        syncPreviewDom(next);
+      }
+      if (now - lastUiUpdateRef.current >= PREVIEW_UI_INTERVAL_MS) {
+        lastUiUpdateRef.current = now;
+        setPreviewTimeMs(next);
+      }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, previewProject, previewDurationMs, seekPreview]);
+  }, [playing, previewProject, previewDurationMs, syncPreviewDom]);
 
   const runPrompt = useCallback(
     (text: string) => {
       const value = text.trim();
       if (!value || !request || isStreaming) return;
       clearProposal();
+      setHistorySelection(null);
       resetPreview();
       sendMessage(value);
     },
@@ -166,8 +338,8 @@ export function GenerateSurfaceDialog({
   };
 
   const applySurface = () => {
-    if (!proposal) return;
-    const applied = onApplySurface(proposal);
+    if (!activeProposal) return;
+    const applied = onApplySurface(activeProposal);
     if (applied === false) {
       setApplyError(
         'The project changed before this surface could be inserted. Generate again from the latest document.',
@@ -181,6 +353,21 @@ export function GenerateSurfaceDialog({
     0,
     Math.min(1, previewTimeMs / previewDurationMs),
   );
+
+  // Mounted once per proposal; playback mutates the DOM, never React.
+  const stage = useMemo(() => {
+    if (!previewProject) return null;
+    return (
+      <TraceRenderer
+        project={previewProject}
+        timeMs={0}
+        interactive={false}
+        svgId="trace-surface-preview-svg"
+        elementIdPrefix="trace-surface-preview"
+        className="size-full"
+      />
+    );
+  }, [previewProject]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -207,7 +394,7 @@ export function GenerateSurfaceDialog({
                   Working
                 </Badge>
               ) : null}
-              {proposal ? (
+              {activeProposal ? (
                 <Button
                   type="button"
                   size="sm"
@@ -233,45 +420,50 @@ export function GenerateSurfaceDialog({
                 <span
                   className={cn(
                     'size-1.5 rounded-full',
-                    proposal
-                      ? 'bg-sky-400 shadow-[0_0_10px_#38bdf8]'
+                    activeProposal
+                      ? proposal
+                        ? 'bg-sky-400 shadow-[0_0_10px_#38bdf8]'
+                        : 'bg-sky-300/70'
                       : 'bg-slate-500',
                   )}
                 />
-                {proposal ? 'Surface preview' : 'Awaiting a brief'}
+                {activeProposal
+                  ? proposal
+                    ? isStreaming
+                      ? 'Live proposal'
+                      : 'Surface preview'
+                    : 'Saved surface'
+                  : 'Awaiting a brief'}
               </div>
-              {previewProject ? (
-                <div className="relative h-full w-full p-6 drop-shadow-[0_0_44px_rgba(56,189,248,0.14)]">
-                  <TraceRenderer
-                    project={previewProject}
-                    timeMs={previewTimeMs}
-                    interactive={false}
-                    svgId="trace-surface-preview-svg"
-                    elementIdPrefix="trace-surface-preview"
-                    className="size-full"
-                  />
-                  <div className="absolute bottom-3 right-3 rounded-md border border-white/10 bg-black/35 px-2 py-1 font-mono text-[10px] text-slate-300 backdrop-blur-sm">
-                    {(previewTimeMs / 1000).toFixed(2)}s /{' '}
-                    {(previewDurationMs / 1000).toFixed(2)}s
+              <div
+                ref={stageContainerRef}
+                className="relative h-full w-full p-6 drop-shadow-[0_0_44px_rgba(56,189,248,0.14)]"
+              >
+                {stage}
+                <div className="absolute bottom-3 right-3 rounded-md border border-white/10 bg-black/35 px-2 py-1 font-mono text-[10px] text-slate-300 backdrop-blur-sm">
+                  {(previewTimeMs / 1000).toFixed(2)}s /{' '}
+                  {(previewDurationMs / 1000).toFixed(2)}s
+                </div>
+              </div>
+              {!previewProject ? (
+                <div className="absolute inset-0 z-10 flex items-center justify-center">
+                  <div className="flex max-w-xs flex-col items-center gap-3 px-6 text-center">
+                    <span className="flex size-12 items-center justify-center rounded-xl border border-border bg-background/70 text-muted-foreground">
+                      <WallpaperIcon className="size-5" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        Describe a surface
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        The specialist designs vector layers, stages editable
+                        tracks, validates the import and reviews rendered frames
+                        before anything is inserted.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <div className="relative z-10 flex max-w-xs flex-col items-center gap-3 px-6 text-center">
-                  <span className="flex size-12 items-center justify-center rounded-xl border border-border bg-background/70 text-muted-foreground">
-                    <WallpaperIcon className="size-5" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      Describe a surface
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      The specialist designs vector layers, stages editable
-                      tracks, validates the import and reviews rendered frames
-                      before anything is inserted.
-                    </p>
-                  </div>
-                </div>
-              )}
+              ) : null}
               <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2">
                 <Button
                   type="button"
@@ -280,7 +472,7 @@ export function GenerateSurfaceDialog({
                   className="size-8 border border-white/10 bg-white/10 text-white hover:bg-white/15"
                   onClick={() => setPlaying((value) => !value)}
                   aria-label={playing ? 'Pause preview' : 'Play preview'}
-                  disabled={!proposal}
+                  disabled={!previewProject}
                 >
                   {playing ? (
                     <PauseIcon className="size-3.5" />
@@ -298,12 +490,16 @@ export function GenerateSurfaceDialog({
                     seekPreview(0);
                   }}
                   aria-label="Reset preview"
-                  disabled={!proposal}
+                  disabled={!previewProject}
                 >
                   <RotateCwIcon className="size-3.5" />
                 </Button>
                 <span className="text-[10px] text-slate-400">
-                  {playing ? 'Playing loop' : proposal ? 'Preview paused' : 'No preview yet'}
+                  {playing
+                    ? 'Playing loop'
+                    : activeProposal
+                      ? 'Preview paused'
+                      : 'No preview yet'}
                 </span>
               </div>
             </div>
@@ -315,18 +511,18 @@ export function GenerateSurfaceDialog({
                     Surface timeline
                   </p>
                   <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    {proposal
-                      ? `${proposal.tracks.length} editable tracks · ${Object.keys(proposal.fragment.elements).length} layers · ${(previewDurationMs / 1000).toFixed(1)}s`
+                    {activeProposal
+                      ? `${activeProposal.tracks.length} editable tracks · ${Object.keys(activeProposal.fragment.elements).length} layers · ${(previewDurationMs / 1000).toFixed(1)}s`
                       : 'Tracks appear here after a valid proposal.'}
                   </p>
                 </div>
-                {proposal?.visualReview ? (
+                {activeProposal?.visualReview ? (
                   <Badge variant="outline" className="shrink-0 border-border/80 text-[9px]">
-                    {proposal.visualReview.performed ? 'Frames reviewed' : 'Preview ready'}
+                    {activeProposal.visualReview.performed ? 'Frames reviewed' : 'Preview ready'}
                   </Badge>
                 ) : null}
               </div>
-              {proposal ? (
+              {activeProposal ? (
                 <>
                   <div className="mb-1 grid grid-cols-[110px_minmax(0,1fr)] gap-2 font-mono text-[9px] text-muted-foreground">
                     <span>TRACK</span>
@@ -338,7 +534,7 @@ export function GenerateSurfaceDialog({
                   </div>
                   <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-x-2">
                     <div className="space-y-2">
-                      {proposal.tracks.map((track, index) => (
+                      {activeProposal.tracks.map((track, index) => (
                         <div
                           key={`${track.elementId}-${track.property}-${index}`}
                           className="flex h-7 items-center truncate text-[10px] text-muted-foreground"
@@ -354,7 +550,7 @@ export function GenerateSurfaceDialog({
                         style={{ left: `${playheadProgress * 100}%` }}
                       />
                       <div className="space-y-2">
-                        {proposal.tracks.map((track, index) => (
+                        {activeProposal.tracks.map((track, index) => (
                           <div
                             key={`${track.elementId}-${track.property}-${index}`}
                             className="relative h-7 rounded-md border border-border/50 bg-background/50"
@@ -431,9 +627,10 @@ export function GenerateSurfaceDialog({
                   onClick={() => {
                     clearMessages();
                     clearProposal();
+                    setHistorySelection(null);
                     resetPreview();
                   }}
-                  disabled={messages.length === 0 && !proposal}
+                  disabled={messages.length === 0 && !activeProposal}
                 >
                   Clear
                 </Button>
@@ -449,6 +646,7 @@ export function GenerateSurfaceDialog({
                     onValueChange={(value) => {
                       setIntensity(value);
                       clearProposal();
+                      setHistorySelection(null);
                       resetPreview();
                     }}
                     min={0}
@@ -469,6 +667,7 @@ export function GenerateSurfaceDialog({
                   onClick={() => {
                     setLoop((value) => !value);
                     clearProposal();
+                    setHistorySelection(null);
                     resetPreview();
                   }}
                   disabled={isStreaming}
@@ -477,6 +676,46 @@ export function GenerateSurfaceDialog({
                 </Button>
               </div>
             </div>
+
+            {history.length > 0 ? (
+              <div className="shrink-0 border-b border-border/60 px-4 py-2.5">
+                <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/70">
+                  <HistoryIcon className="size-3" />
+                  Generated surfaces
+                </p>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                  {history.map((surface) => (
+                    <div
+                      key={surface.id}
+                      className="group relative shrink-0 overflow-hidden rounded-md border border-border/70 bg-[#070b14]"
+                      title={surface.summary}
+                    >
+                      <button
+                        type="button"
+                        className="block h-14 w-24"
+                        onClick={() => void selectHistorySurface(surface.id)}
+                        aria-label={`Preview ${surface.summary}`}
+                      >
+                        <img
+                          src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(surface.thumbnailSvg)}`}
+                          alt=""
+                          className="size-full object-cover"
+                          draggable={false}
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        className="absolute right-0.5 top-0.5 hidden size-4 items-center justify-center rounded-sm bg-black/70 text-slate-300 hover:text-red-300 group-hover:flex"
+                        onClick={() => void deleteHistorySurface(surface.id)}
+                        aria-label={`Delete ${surface.summary}`}
+                      >
+                        <XIcon className="size-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <SidebarContent className="min-h-0 flex-1 p-0">
               <Conversation className="h-full">
@@ -523,35 +762,32 @@ export function GenerateSurfaceDialog({
               </Conversation>
             </SidebarContent>
 
-            {proposal ? (
+            {activeProposal ? (
               <div className="shrink-0 border-t border-sky-400/20 bg-sky-400/[0.05] px-3 py-2.5">
                 <p className="text-[10px] font-medium text-foreground">
-                  {proposal.summary}
+                  {activeProposal.summary}
                 </p>
                 <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">
-                  {proposal.tracks.length} timeline tracks ·{' '}
-                  {Object.keys(proposal.fragment.elements).length} layers ·{' '}
-                  {proposal.report.expandedUses
-                    ? `${proposal.report.expandedUses} use refs expanded · `
-                    : ''}
-                  validated
+                  {activeProposal.tracks.length} timeline tracks ·{' '}
+                  {Object.keys(activeProposal.fragment.elements).length} layers ·{' '}
+                  {activeProposal.loop ? 'seamless loop' : 'one-shot'}
                 </p>
                 {applyError ? (
                   <p role="alert" className="mt-1 text-[9px] leading-relaxed text-red-300">
                     {applyError}
                   </p>
                 ) : null}
-                {proposal.visualReview?.performed ? (
+                {activeProposal.visualReview?.performed ? (
                   <p className="mt-1 line-clamp-3 text-[9px] leading-relaxed text-muted-foreground">
-                    {proposal.visualReview.notes}
+                    {activeProposal.visualReview.notes}
                   </p>
                 ) : null}
-                {proposal.visualReview && !proposal.visualReview.performed ? (
+                {activeProposal.visualReview && !activeProposal.visualReview.performed ? (
                   <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-amber-300">
-                    Visual review unavailable: {proposal.visualReview.notes}
+                    Visual review unavailable: {activeProposal.visualReview.notes}
                   </p>
                 ) : null}
-                {proposal.warnings.slice(0, 5).map((warning, index) => (
+                {activeProposal.warnings.slice(0, 4).map((warning, index) => (
                   <p
                     key={index}
                     className="mt-1 text-[9px] leading-relaxed text-amber-300"

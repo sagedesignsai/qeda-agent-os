@@ -17,6 +17,7 @@ import type {
   SurfaceGenerationProposal,
   SurfaceGenerationRequest,
 } from '../../lib/trace/addons/surfaces/generation';
+import type { TraceSurfaceSummary } from '../trace/trace-surface-store.js';
 import type { TraceExportSettings } from '../../lib/trace/export/presets';
 import type {
   TraceRenderJobPayload,
@@ -26,6 +27,7 @@ import type {
   TraceOpenResult,
   TraceProjectSummary,
 } from '../trace/trace-project-store.js';
+export type { TraceSurfaceSummary } from '../trace/trace-surface-store.js';
 export type { TraceOpenResult, TraceProjectSummary };
 import type { MotionAsset } from '../../lib/motion/types';
 import type { MotionAssetCommit, MotionImportError, MotionStagedAsset } from '../motion/asset-store.js';
@@ -537,6 +539,26 @@ export interface IpcChannels {
   'trace-surface-generation:stream-fallback': { data: { sessionId: string } };
   'trace-surface-generation:proposal': {
     data: { sessionId: string; proposal: SurfaceGenerationProposal };
+  };
+  /** Emitted the moment proposeSurface stages a valid proposal. */
+  'trace-surface-generation:staged': {
+    data: { sessionId: string; proposal: SurfaceGenerationProposal };
+  };
+  /** Emitted after a completed proposal has been persisted. */
+  'trace-surface-generation:saved': {
+    data: { sessionId: string; surface: TraceSurfaceSummary };
+  };
+  'trace-surface-generation:list': {
+    req: { limit?: number };
+    res: { surfaces: TraceSurfaceSummary[] };
+  };
+  'trace-surface-generation:load': {
+    req: { id: string };
+    res: { proposal: SurfaceGenerationProposal | null };
+  };
+  'trace-surface-generation:delete': {
+    req: { id: string };
+    res: { ok: boolean };
   };
   'trace:changed': void;
   'trace:playback-loop': { data: { projectId: string; looping: boolean } };

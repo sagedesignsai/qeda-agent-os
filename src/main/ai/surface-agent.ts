@@ -14,6 +14,7 @@
 import { ToolLoopAgent, generateText, isStepCount, tool } from 'ai';
 import { z } from 'zod';
 import sharp from 'sharp';
+import { DOMParser as XmlDomParser } from '@xmldom/xmldom';
 
 import {
   SURFACE_GENERATION_LIMITS,
@@ -85,6 +86,15 @@ const proposalSchema = z.object({
   warnings: z.array(z.string().max(240)).max(5).optional(),
 });
 
+/**
+ * Main-process XML parser. The SVG importer is shared with the renderer, where
+ * the native DOMParser is available; Electron main has no DOM.
+ */
+const mainProcessDomParser = {
+  parseFromString: (text: string, mimeType: string) =>
+    new XmlDomParser().parseFromString(text, mimeType),
+};
+
 function effectivePalette(request: SurfaceGenerationRequest) {
   const stylePalette = request.style?.palette ?? {};
   return {
@@ -113,9 +123,19 @@ function renderableMarkup(proposal: SurfaceGenerationProposal, timeMs: number) {
   });
 }
 
+/**
+ * Live feedback hooks. `onStaged` fires the instant `proposeSurface` compiles a
+ * valid proposal, so a UI can preview the artwork while the specialist is still
+ * reviewing frames or refining the brief.
+ */
+export interface SurfaceAgentHooks {
+  onStaged?: (proposal: SurfaceGenerationProposal) => void;
+}
+
 export function createSurfaceAgent(
   request: SurfaceGenerationRequest,
   target?: ModelTarget,
+  hooks: SurfaceAgentHooks = {},
 ) {
   if ((request.prompt?.length ?? 0) > 800) {
     throw new Error('Surface briefs must be 800 characters or fewer.');
@@ -181,9 +201,11 @@ export function createSurfaceAgent(
       const compiled = compileSurfaceProposal(
         { ...request, width, height, durationMs, loop },
         candidate as SurfaceProposalCandidate,
+        { domParser: mainProcessDomParser, measureWithDom: false },
       );
       proposal = compiled;
       visualReview = undefined;
+      hooks.onStaged?.(compiled);
       return {
         staged: true,
         summary: compiled.summary,

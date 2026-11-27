@@ -28,7 +28,7 @@ export interface UseSurfaceGenerationAgentReturn extends UseAgentChatReturn {
 export function useSurfaceGenerationAgent(
   request: SurfaceGenerationRequest | null,
 ): UseSurfaceGenerationAgentReturn {
-  const sessionId = `trace-surface-generation:${request?.projectName ?? 'none'}:${request?.width ?? 0}x${request?.height ?? 0}`;
+  const sessionId = `trace-surface-generation:${request?.projectId ?? 'scratch'}`;
   const [proposal, setProposal] = useState<SurfaceGenerationProposal | null>(null);
 
   const context = useMemo(
@@ -40,9 +40,27 @@ export function useSurfaceGenerationAgent(
     sessionId,
     transport: SURFACE_TRANSPORT,
     context,
-    persist: false,
-    hydrate: false,
+    // The conversation is part of the workspace: reopening the generator
+    // restores the brief and the back-and-forth that produced a surface.
+    persist: true,
+    hydrate: true,
   });
+
+  // The staged event arrives mid-turn, the moment the specialist compiles a
+  // valid proposal — that is what makes the preview realtime.
+  useIpcEvent(
+    'trace-surface-generation:staged',
+    (raw: unknown) => {
+      const payload = raw as {
+        sessionId?: string;
+        proposal?: SurfaceGenerationProposal;
+      };
+      if (payload.sessionId === sessionId && payload.proposal) {
+        setProposal(payload.proposal);
+      }
+    },
+    [sessionId],
+  );
 
   useIpcEvent(
     'trace-surface-generation:proposal',

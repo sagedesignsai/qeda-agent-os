@@ -34,7 +34,9 @@ import {
   type AffineMatrix,
 } from './path-transformer';
 import { parsePathData } from '../path/model';
+import { cubicPointAt, segmentPoints } from '../path/edit';
 import { scrubDangerousSvgMarkup } from './svg-scrub';
+import { DOMParser as XmldomParser } from '@xmldom/xmldom';
 
 let elementCounter = 0;
 function generateId(prefix: string = 'elem'): string {
@@ -59,6 +61,24 @@ export interface SvgImportReport {
 export interface SvgImportResult {
   fragment: TraceAssetFragment;
   report: SvgImportReport;
+}
+
+/**
+ * Minimal parser interface accepted from environments without a browser DOM.
+ * `@xmldom/xmldom`'s DOMParser satisfies it structurally.
+ */
+export interface SvgDomParserLike {
+  parseFromString(text: string, mimeType: string): unknown;
+}
+
+export interface SvgImportOptions {
+  /** Parser to use when no global `DOMParser` exists (Electron main). */
+  domParser?: SvgDomParserLike;
+  /**
+   * Measure paths with a detached DOM element. Disable in environments with no
+   * `document`; model-based bounds and sampled lengths are used instead.
+   */
+  measureWithDom?: boolean;
 }
 
 const SKIP_ROOT_TAGS = new Set(['defs', 'style', 'metadata', 'title', 'desc']);
@@ -131,36 +151,187 @@ interface PathMeasurement {
   bbox: { x: number; y: number; width: number; height: number } | null;
 }
 
-/** Measure path length and bounds in a detached SVG, with a pure fallback. */
-function measurePath(d: string): PathMeasurement {
-  try {
-    const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    tempSvg.setAttribute('width', '0');
-    tempSvg.setAttribute('height', '0');
-    tempSvg.style.position = 'absolute';
-    tempSvg.style.visibility = 'hidden';
-    tempSvg.style.pointerEvents = 'none';
+/* ── DOM compatibility ──────────────────────────────────────────────────────
+ * Generated artwork is compiled in the Electron main process, which has no
+ * browser DOM. These helpers keep the importer working with both a real DOM and
+ * `@xmldom/xmldom` (which lacks querySelector/children/getAttributeNames).
+ */
 
-    const tempPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    tempPath.setAttribute('d', d);
-    tempSvg.appendChild(tempPath);
-    document.body.appendChild(tempSvg);
-
-    const length = Math.round(tempPath.getTotalLength());
-    const bbox = tempPath.getBBox();
-    document.body.removeChild(tempSvg);
-
-    if (bbox && Number.isFinite(bbox.width) && (bbox.width > 0 || bbox.height > 0)) {
-      return {
-        length: Number.isFinite(length) && length > 0 ? length : null,
-        bbox: { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height },
-      };
-    }
-    return { length: Number.isFinite(length) && length > 0 ? length : null, bbox: null };
-  } catch {
-    const bbox = bboxFromPathData(d);
-    return { length: null, bbox };
+function elementChildren(node: unknown): Element[] {
+  const anyNode = node as {
+    children?: ArrayLike<Element>;
+    childNodes?: ArrayLike<{ nodeType?: number }>;
+  };
+  if (anyNode.children && typeof anyNode.children.length === 'number') {
+    return Array.from(anyNode.children);
   }
+  return Array.from(anyNode.childNodes ?? []).filter(
+    (child): child is Element => child?.nodeType === 1,
+  ) as Element[];
+}
+
+function elementsByTagName(node: unknown, tagName: string): Element[] {
+  const anyNode = node as {
+    getElementsByTagName?: (name: string) => ArrayLike<Element>;
+  };
+  if (typeof anyNode.getElementsByTagName !== 'function') return [];
+  return Array.from(anyNode.getElementsByTagName(tagName));
+}
+
+function attributeNames(node: unknown): string[] {
+  const anyNode = node as {
+    getAttributeNames?: () => string[];
+    attributes?: ArrayLike<{ name?: string }>;
+  };
+  if (typeof anyNode.getAttributeNames === 'function') {
+    return anyNode.getAttributeNames();
+  }
+  return Array.from(anyNode.attributes ?? [])
+    .map((attribute) => attribute.name)
+    .filter((name): name is string => Boolean(name));
+}
+
+function parentElementOf(node: unknown): Element | null {
+  const parent = (node as { parentNode?: { nodeType?: number } }).parentNode;
+  return parent && parent.nodeType === 1 ? (parent as Element) : null;
+}
+
+function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeXmlAttribute(value: string): string {
+  return escapeXmlText(value).replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
+
+/** Serialise a node from either DOM implementation, for raw `<defs>` markup. */
+function serializeXmlNode(node: unknown): string {
+  const anyNode = node as {
+    nodeType?: number;
+    nodeValue?: string | null;
+    tagName?: string;
+    nodeName?: string;
+    attributes?: ArrayLike<{ name?: string; value?: string }>;
+    childNodes?: ArrayLike<unknown>;
+  };
+  if (!anyNode) return '';
+  if (anyNode.nodeType === 3) return escapeXmlText(String(anyNode.nodeValue ?? ''));
+  if (anyNode.nodeType === 8) return `<!--${anyNode.nodeValue ?? ''}-->`;
+  if (anyNode.nodeType === 4) return `<![CDATA[${anyNode.nodeValue ?? ''}]]>`;
+  const tag = String(anyNode.tagName ?? anyNode.nodeName ?? '');
+  if (!tag) return '';
+  const attrs = Array.from(anyNode.attributes ?? [])
+    .map(
+      (attribute) =>
+        ` ${attribute.name}="${escapeXmlAttribute(String(attribute.value ?? ''))}"`,
+    )
+    .join('');
+  const children = Array.from(anyNode.childNodes ?? [])
+    .map(serializeXmlNode)
+    .join('');
+  return `<${tag}${attrs}>${children}</${tag}>`;
+}
+
+function rootSvgElement(doc: unknown): Element | null {
+  const documentElement = (doc as { documentElement?: { tagName?: string } })
+    .documentElement;
+  if (documentElement?.tagName?.toLowerCase() === 'svg') {
+    return documentElement as Element;
+  }
+  return elementsByTagName(doc, 'svg')[0] ?? null;
+}
+
+function buildIdMap(doc: unknown): Map<string, Element> {
+  const map = new Map<string, Element>();
+  const candidates = elementsByTagName(doc, '*');
+  const documentElement = (doc as { documentElement?: Element }).documentElement;
+  if (documentElement && !candidates.includes(documentElement)) {
+    candidates.unshift(documentElement);
+  }
+  for (const element of candidates) {
+    const id = element.getAttribute('id');
+    if (id) map.set(id, element);
+  }
+  return map;
+}
+
+/** Sample cubic segments to estimate path length without a DOM. */
+function pathLengthFromData(d: string): number | null {
+  try {
+    const model = parsePathData(d);
+    const samples = 12;
+    let total = 0;
+    for (const subpath of model.subpaths) {
+      const nodes = subpath.nodes;
+      const segmentCount = subpath.closed
+        ? nodes.length
+        : Math.max(0, nodes.length - 1);
+      for (let index = 0; index < segmentCount; index += 1) {
+        const from = nodes[index];
+        const to = nodes[(index + 1) % nodes.length];
+        const { p0, c1, c2, p1 } = segmentPoints(from, to);
+        let previous = p0;
+        for (let step = 1; step <= samples; step += 1) {
+          const point = cubicPointAt(p0, c1, c2, p1, step / samples);
+          total += Math.hypot(point.x - previous.x, point.y - previous.y);
+          previous = point;
+        }
+      }
+    }
+    return total > 0 ? Math.round(total) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Measure path length and bounds. Uses a detached SVG when a DOM is available,
+ * otherwise model bounds and sampled cubic lengths.
+ */
+function measurePath(d: string, useDom: boolean): PathMeasurement {
+  if (
+    useDom &&
+    typeof document !== 'undefined' &&
+    typeof document.createElementNS === 'function'
+  ) {
+    try {
+      const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      tempSvg.setAttribute('width', '0');
+      tempSvg.setAttribute('height', '0');
+      tempSvg.style.position = 'absolute';
+      tempSvg.style.visibility = 'hidden';
+      tempSvg.style.pointerEvents = 'none';
+
+      const tempPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      tempPath.setAttribute('d', d);
+      tempSvg.appendChild(tempPath);
+      document.body.appendChild(tempSvg);
+
+      const length = Math.round(tempPath.getTotalLength());
+      const bbox = tempPath.getBBox();
+      document.body.removeChild(tempSvg);
+
+      if (bbox && Number.isFinite(bbox.width) && (bbox.width > 0 || bbox.height > 0)) {
+        return {
+          length: Number.isFinite(length) && length > 0 ? length : null,
+          bbox: { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height },
+        };
+      }
+      return {
+        length: Number.isFinite(length) && length > 0 ? length : pathLengthFromData(d),
+        bbox: bboxFromPathData(d),
+      };
+    } catch {
+      // Fall through to the pure implementation.
+    }
+  }
+  return {
+    length: pathLengthFromData(d),
+    bbox: bboxFromPathData(d),
+  };
 }
 
 /** Conservative bounds from anchor and control points (no DOM required). */
@@ -228,7 +399,10 @@ function ellipseToPathD(cx: number, cy: number, rx: number, ry: number): string 
 /**
  * Parse an SVG string into a fragment plus a report of unsupported features.
  */
-export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
+export function parseSvgToFragmentDetailed(
+  svgString: string,
+  options: SvgImportOptions = {},
+): SvgImportResult {
   const report: SvgImportReport = {
     width: 600,
     height: 600,
@@ -239,22 +413,25 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
     warnings: [],
   };
 
-  if (typeof window === 'undefined') {
-    return {
-      fragment: { width: 600, height: 600, elements: {}, rootElementIds: [] },
-      report,
-    };
-  }
-
-  // Scrub active content before parsing. The `<defs>` and `<style>` innerHTML
+  // Scrub active content before parsing. The `<defs>` and `<style>` markup
   // captured below bypasses the element tag allowlist and is later persisted
   // into `fragment.defs`, which the stage injects via dangerouslySetInnerHTML —
   // so unsanitized input would carry hostile markup straight through import.
   const safeSvgString = scrubDangerousSvgMarkup(svgString);
 
-  const parser = new DOMParser();
+  // Main-process compilation has no global DOMParser; fall back to the pure-JS
+// XML DOM. The renderer keeps using the native parser.
+  const parser =
+    options.domParser ??
+    (typeof DOMParser !== 'undefined'
+      ? new DOMParser()
+      : (new XmldomParser() as unknown as SvgDomParserLike));
   const doc = parser.parseFromString(safeSvgString, 'image/svg+xml');
-  const svg = doc.querySelector('svg');
+  const svg = rootSvgElement(doc);
+  const useDomMeasurement =
+    options.measureWithDom !== false &&
+    typeof document !== 'undefined' &&
+    typeof document.createElementNS === 'function';
 
   if (!svg) {
     throw new Error('No valid <svg> element found in string');
@@ -262,19 +439,26 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
 
   // Extract <defs> and top-level <style> content if present.
   let defsHtml = '';
-  const defsElements = svg.querySelectorAll('defs');
-  defsElements.forEach((defs) => {
-    defsHtml += defs.innerHTML.trim() + '\n';
-  });
+  const defsElements = elementsByTagName(svg, 'defs');
+  for (const defs of defsElements) {
+    const inner = Array.from((defs as unknown as { childNodes?: ArrayLike<unknown> }).childNodes ?? [])
+      .map(serializeXmlNode)
+      .join('')
+      .trim();
+    if (inner) defsHtml += `${inner}\n`;
+  }
 
   // Retain any top-level <style> elements inside defsHtml so CSS custom
   // properties and animations apply cleanly.
-  const styleElements = svg.querySelectorAll('style');
-  styleElements.forEach((style) => {
-    if (style.parentElement?.tagName.toLowerCase() !== 'defs') {
+  const styleElements = elementsByTagName(svg, 'style');
+  for (const style of styleElements) {
+    const parent = parentElementOf(style);
+    if (parent?.tagName.toLowerCase() !== 'defs') {
       defsHtml += `<style>${style.textContent || ''}</style>\n`;
     }
-  });
+  }
+
+  const idMap = buildIdMap(doc);
 
   // Parse CSS custom properties from all <style> blocks (:root { --token: #val })
   const cssVars: Record<string, string> = {};
@@ -381,7 +565,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
   }
 
   function collectDroppedAttributes(node: Element): void {
-    for (const name of Array.from(node.getAttributeNames())) {
+    for (const name of attributeNames(node)) {
       const normalized = name.toLowerCase();
       if (DROPPED_ATTRIBUTES.has(normalized)) note(report.droppedAttributes, normalized);
     }
@@ -397,7 +581,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
     depth: number,
   ): string[] {
     const ids: string[] = [];
-    for (const child of Array.from(container.children)) {
+    for (const child of elementChildren(container)) {
       const id = processNode(
         child,
         parentId,
@@ -432,7 +616,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
 
     // Report SMIL animation on any node, including supported shapes whose
     // children are otherwise not traversed.
-    for (const child of Array.from(node.children)) {
+    for (const child of elementChildren(node)) {
       const childTag = child.tagName.toLowerCase();
       if (
         childTag === 'animate' ||
@@ -460,7 +644,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
         report.warnings.push(`A circular <use> reference to "${targetId}" was skipped.`);
         return null;
       }
-      const target = doc.getElementById(targetId);
+      const target = idMap.get(targetId);
       if (!target) {
         report.warnings.push(`A <use> reference to missing id "${targetId}" was skipped.`);
         return null;
@@ -479,7 +663,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
 
       const targetTag = target.tagName.toLowerCase();
       if (targetTag === 'symbol') {
-        if (target.hasAttribute('viewBox')) {
+        if (target.getAttribute('viewBox') != null) {
           report.warnings.push(
             `A <symbol> referenced by <use> had a viewBox, which is not remapped; its geometry was imported in place.`,
           );
@@ -537,10 +721,10 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
       );
     }
 
-    const elemId = uniqueElementId(node.id || null, tagName);
+    const elemId = uniqueElementId(node.getAttribute('id') || null, tagName);
     const name =
       node.getAttribute('name') ||
-      node.id ||
+      node.getAttribute('id') ||
       `${tagName}_${Object.keys(elements).length + 1}`;
 
     // Parse inline CSS style and XML presentation attributes.
@@ -581,6 +765,8 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
       inlineStyle.strokeLinecap || node.getAttribute('stroke-linecap') || undefined;
     const strokeLinejoin =
       inlineStyle.strokeLinejoin || node.getAttribute('stroke-linejoin') || undefined;
+    const filterAttr =
+      inlineStyle.filter || node.getAttribute('filter') || undefined;
 
     const localMatrix = parseSvgTransform(node.getAttribute('transform'));
     const currentMatrix = multiplyMatrices(parentMatrix, localMatrix);
@@ -594,6 +780,9 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
       opacity,
       ...(strokeLinecap ? { strokeLinecap } : {}),
       ...(strokeLinejoin ? { strokeLinejoin } : {}),
+      ...(filterAttr
+        ? { filter: resolveCssVar(filterAttr) || filterAttr }
+        : {}),
       ...(strokeDasharray
         ? {
             strokeDasharray: scaleDashArray(strokeDasharray, scale),
@@ -619,7 +808,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
       const hadDasharray =
         typeof attributes.strokeDasharray === 'string' &&
         attributes.strokeDasharray.trim() !== '';
-      const measurement = measurePath(d);
+      const measurement = measurePath(d, useDomMeasurement);
       if (stroke !== 'none' && Number(attributes.strokeWidth) > 0 && !hadDasharray) {
         const length = measurement.length ?? 500;
         attributes.strokeDasharray = `${length} ${length}`;
@@ -675,7 +864,7 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
         y: Math.round((y1 + y2) / 2),
       };
       if (!matrixIsTranslationOnly(currentMatrix)) {
-        const measurement = measurePath(attributes.d);
+        const measurement = measurePath(attributes.d, useDomMeasurement);
         if (measurement.bbox) {
           traceElem.origin = {
             x: Math.round(measurement.bbox.x + measurement.bbox.width / 2),
@@ -798,6 +987,11 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
         node.getAttribute('text-anchor') ||
         inlineStyle.textAnchor ||
         'start';
+      const fontStyle =
+        node.getAttribute('font-style') || inlineStyle.fontStyle || undefined;
+      const letterSpacingValue =
+        node.getAttribute('letter-spacing') ??
+        inlineStyle.letterSpacing;
       const textContent = node.textContent?.trim() || 'Text';
 
       attributes.baseX = round2(position.x);
@@ -811,6 +1005,11 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
       attributes.fontFamily = fontFamily;
       attributes.fontWeight = fontWeight;
       attributes.textAnchor = textAnchor;
+      if (fontStyle) attributes.fontStyle = fontStyle;
+      if (letterSpacingValue) {
+        const letterSpacing = parseFloat(letterSpacingValue);
+        if (Number.isFinite(letterSpacing)) attributes.letterSpacing = letterSpacing;
+      }
       if (Math.abs(rotation) > 0.01) attributes.rotation = round2(rotation);
       if (!similarity) {
         attributes.scaleX = round2(scaleX);
@@ -844,13 +1043,13 @@ export function parseSvgToFragmentDetailed(svgString: string): SvgImportResult {
   }
 
   const rootMatrix = translationMatrix(-minX, -minY);
-  Array.from(svg.children).forEach((child) => {
+  for (const child of elementChildren(svg)) {
     const tag = child.tagName.toLowerCase();
-    if (SKIP_ROOT_TAGS.has(tag)) return;
+    if (SKIP_ROOT_TAGS.has(tag)) continue;
 
     const id = processNode(child, null, rootMatrix);
     if (id) rootElementIds.push(id);
-  });
+  }
 
   // Unwrap single redundant root container groups if they only wrap child
   // elements without graphics.

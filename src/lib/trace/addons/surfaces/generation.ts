@@ -13,7 +13,7 @@
 
 import type { TraceAssetFragment } from '../../assets/types';
 import type { SvgAnimationProperty } from '../../animation-plan';
-import type { TraceProject, TraceStyle } from '../../types';
+import type { TraceProject, TraceStyle, TraceElement } from '../../types';
 import type { TraceOp } from '../../ops/types';
 import { applyOps } from '../../ops';
 import { validateTraceFragment } from '../../assets/validate';
@@ -21,6 +21,7 @@ import { lintTraceProject } from '../../lint';
 import { staticSvgMarkup } from '../../serialize/svg-markup';
 import {
   parseSvgToFragmentDetailed,
+  type SvgImportOptions,
   type SvgImportReport,
 } from '../../parser/svg-importer';
 
@@ -45,6 +46,8 @@ export interface SurfaceGenerationRequest {
   fps: number;
   /** The user's brief, in their words. */
   prompt: string;
+  /** Owning project, used for durable chat sessions. */
+  projectId?: string;
   /** 0–100; how energetic the motion may be. */
   intensity?: number;
   /** Keep the first and last keyframe values identical. Defaults to true. */
@@ -156,6 +159,27 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
+ * Models often wrap SVG in a markdown fence or leave a bare `&` in copy. Both
+ * are fatal to an XML parser but cheap to repair before validation.
+ */
+function normalizeGeneratedSvg(raw: string): string {
+  let svg = raw.trim();
+  const fenced = /```(?:svg|xml|html)?\s*([\s\S]*?)```/i.exec(svg);
+  if (fenced?.[1]) svg = fenced[1].trim();
+  const start = svg.indexOf('<svg');
+  const end = svg.lastIndexOf('</svg>');
+  if (start >= 0 && end > start) {
+    svg = svg.slice(start, end + '</svg>'.length);
+  }
+  // Escape bare ampersands while leaving entities and numeric references.
+  svg = svg.replace(
+    /&(?!(?:[a-zA-Z][a-zA-Z0-9]*|#\d+|#x[0-9a-fA-F]+);)/g,
+    '&amp;',
+  );
+  return svg.trim();
+}
+
+/**
  * A loop is visually seamless when the value returns to its start. Rotation is
  * modulo 360, so a full turn (0 → 360) is also seamless.
  */
@@ -194,6 +218,10 @@ function normalizeTracks(
   const warnings: string[] = [];
   const normalized: SurfaceTrackCandidate[] = [];
 
+  const noteRepair = (message: string) => {
+    if (!warnings.includes(message)) warnings.push(message);
+  };
+
   for (const track of tracks) {
     if (!ANIMATABLE_PROPERTIES.has(track.property)) {
       throw new Error(
@@ -214,9 +242,9 @@ function normalizeTracks(
     }
     seen.add(key);
 
-    if (!Array.isArray(track.keyframes) || track.keyframes.length < 2) {
+    if (!Array.isArray(track.keyframes) || track.keyframes.length === 0) {
       throw new Error(
-        `Track "${track.property}" on "${track.elementId}" needs at least two keyframes.`,
+        `Track "${track.property}" on "${track.elementId}" needs at least one keyframe.`,
       );
     }
     if (track.keyframes.length > SURFACE_GENERATION_LIMITS.maxKeyframesPerTrack) {
@@ -225,69 +253,120 @@ function normalizeTracks(
       );
     }
 
-    const keyframes = [...track.keyframes].sort((a, b) => a.timeMs - b.timeMs);
-    for (let index = 0; index < keyframes.length; index += 1) {
-      const keyframe = keyframes[index];
-      if (
-        !Number.isFinite(keyframe.timeMs) ||
-        keyframe.timeMs < 0 ||
-        keyframe.timeMs > durationMs
-      ) {
+    const stringProperty = STRING_PROPERTIES.has(track.property);
+    type NormalizedKeyframe = {
+      timeMs: number;
+      value: number | string;
+      easing: string;
+    };
+    const repaired: NormalizedKeyframe[] = [];
+
+    const sorted = [...track.keyframes].sort((a, b) => a.timeMs - b.timeMs);
+    for (const keyframe of sorted) {
+      if (!Number.isFinite(keyframe.timeMs)) {
         throw new Error(
-          `Track "${track.property}" on "${track.elementId}" has a keyframe outside 0–${durationMs} ms.`,
+          `Track "${track.property}" on "${track.elementId}" has a non-finite keyframe time.`,
         );
       }
-      if (
-        index > 0 &&
-        Math.abs(keyframe.timeMs - keyframes[index - 1].timeMs) < 1
-      ) {
-        throw new Error(
-          `Track "${track.property}" on "${track.elementId}" has duplicate keyframe times.`,
+      let timeMs = Math.round(
+        clamp(keyframe.timeMs, 0, durationMs),
+      );
+      if (timeMs !== Math.round(keyframe.timeMs)) {
+        noteRepair(
+          `Clamped a "${track.property}" keyframe on "${track.elementId}" into 0–${durationMs} ms.`,
         );
       }
-      if (STRING_PROPERTIES.has(track.property)) {
-        if (typeof keyframe.value !== 'string') {
+
+      let value: number | string;
+      if (stringProperty) {
+        if (
+          typeof keyframe.value !== 'string' &&
+          typeof keyframe.value !== 'number' &&
+          typeof keyframe.value !== 'boolean'
+        ) {
           throw new Error(
             `Track "${track.property}" on "${track.elementId}" requires string keyframe values.`,
           );
         }
-      } else if (
-        typeof keyframe.value !== 'number' ||
-        !Number.isFinite(keyframe.value)
+        value = String(keyframe.value);
+      } else {
+        const numeric =
+          typeof keyframe.value === 'number'
+            ? keyframe.value
+            : typeof keyframe.value === 'string' && keyframe.value.trim() !== ''
+              ? Number(keyframe.value)
+              : Number.NaN;
+        if (!Number.isFinite(numeric)) {
+          throw new Error(
+            `Track "${track.property}" on "${track.elementId}" requires finite numeric keyframe values.`,
+          );
+        }
+        value = numeric;
+      }
+
+      if (
+        (track.property === 'opacity' || track.property === 'fillOpacity') &&
+        typeof value === 'number' &&
+        (value < 0 || value > 1)
       ) {
-        throw new Error(
-          `Track "${track.property}" on "${track.elementId}" requires finite numeric keyframe values.`,
+        value = clamp(value, 0, 1);
+        noteRepair(
+          `Clamped "${track.property}" on "${track.elementId}" into 0–1.`,
         );
       }
+      if (
+        (track.property === 'scaleX' || track.property === 'scaleY') &&
+        typeof value === 'number' &&
+        (value < 0.05 || value > 6)
+      ) {
+        value = clamp(value, 0.05, 6);
+        noteRepair(
+          `Clamped scale on "${track.elementId}" into 0.05–6.`,
+        );
+      }
+      if (
+        track.property === 'rotation' &&
+        typeof value === 'number' &&
+        Math.abs(value) > 720
+      ) {
+        value = clamp(value, -720, 720);
+        noteRepair(`Clamped rotation on "${track.elementId}" into ±720°.`);
+      }
+
+      // Keep the later of two keyframes that land on the same millisecond.
+      const previous = repaired[repaired.length - 1];
+      if (previous && Math.abs(previous.timeMs - timeMs) < 1) {
+        previous.value = value;
+        previous.easing = keyframe.easing || previous.easing;
+        noteRepair(
+          `Merged duplicate "${track.property}" keyframes on "${track.elementId}".`,
+        );
+        continue;
+      }
+      repaired.push({
+        timeMs,
+        value,
+        easing: keyframe.easing || 'ease-in-out',
+      });
     }
 
-    const values = keyframes.map((keyframe) => keyframe.value);
-    if (
-      (track.property === 'opacity' || track.property === 'fillOpacity') &&
-      values.some((value) => typeof value !== 'number' || value < 0 || value > 1)
-    ) {
+    if (repaired.length === 0) {
       throw new Error(
-        `Opacity keyframes on "${track.elementId}" must stay between 0 and 1.`,
+        `Track "${track.property}" on "${track.elementId}" has no usable keyframes.`,
       );
     }
-    if (
-      (track.property === 'scaleX' || track.property === 'scaleY') &&
-      values.some(
-        (value) => typeof value !== 'number' || value < 0.05 || value > 6,
-      )
-    ) {
-      throw new Error(
-        `Scale keyframes on "${track.elementId}" must stay between 0.05 and 6.`,
+    if (repaired.length === 1) {
+      const only = repaired[0];
+      if (only.timeMs > 0) {
+        repaired.unshift({ ...only, timeMs: 0 });
+      } else if (only.timeMs < durationMs) {
+        repaired.push({ ...only, timeMs: durationMs });
+      }
+      noteRepair(
+        `Expanded a single-keyframe "${track.property}" track on "${track.elementId}" into a hold.`,
       );
     }
-    if (
-      track.property === 'rotation' &&
-      values.some((value) => typeof value !== 'number' || Math.abs(value) > 720)
-    ) {
-      throw new Error(
-        `Rotation keyframes on "${track.elementId}" must stay within ±720 degrees.`,
-      );
-    }
+
     if (track.property === 'd' && element.type !== 'path') {
       throw new Error(
         `The d property can only animate path elements; "${track.elementId}" is a ${element.type}.`,
@@ -305,32 +384,110 @@ function normalizeTracks(
       );
     }
 
+    const first = repaired[0];
+    const last = repaired[repaired.length - 1];
     if (
       loop &&
       LOOPING_PROPERTIES.has(track.property) &&
-      !trackLoopsSeamlessly(
-        track.property,
-        values[0],
-        values[values.length - 1],
-      )
+      !trackLoopsSeamlessly(track.property, first.value, last.value)
     ) {
-      throw new Error(
-        `Looping track "${track.property}" on "${track.elementId}" must end at its starting value (rotation may end a full 360° turn later). Match the first and last keyframes, or set loop=false for a one-shot surface.`,
+      // Repair rather than fail: the specialist's intent is ambient motion, and
+      // a generated one-way drift is almost always a forgotten loop endpoint.
+      if (last.timeMs >= durationMs - 1) {
+        last.value = first.value;
+      } else if (
+        repaired.length < SURFACE_GENERATION_LIMITS.maxKeyframesPerTrack
+      ) {
+        repaired.push({
+          timeMs: durationMs,
+          value: first.value,
+          easing: 'ease-in-out',
+        });
+      } else {
+        last.timeMs = durationMs;
+        last.value = first.value;
+      }
+      noteRepair(
+        `Closed looping track "${track.property}" on "${track.elementId}" back to its start value.`,
       );
     }
 
     normalized.push({
       elementId: track.elementId,
       property: track.property,
-      keyframes: keyframes.map((keyframe) => ({
-        timeMs: Math.round(keyframe.timeMs),
-        value: keyframe.value,
-        easing: keyframe.easing || 'ease-in-out',
-      })),
+      keyframes: repaired,
     });
   }
 
   return { tracks: normalized, warnings };
+}
+
+/**
+ * Fit a wrongly sized generated SVG to the target canvas. Models frequently
+ * emit a 1920×1080 viewBox for a 1280×720 project; rejecting the proposal for
+ * that wastes a whole turn. A wrapper group scales and centres the artwork,
+ * and the repair is surfaced as a warning.
+ */
+function fitFragmentToCanvas(
+  fragment: TraceAssetFragment,
+  width: number,
+  height: number,
+  report: SvgImportReport,
+): TraceAssetFragment {
+  const sourceWidth = Math.max(1, fragment.width);
+  const sourceHeight = Math.max(1, fragment.height);
+  if (
+    Math.abs(sourceWidth - width) <= 1 &&
+    Math.abs(sourceHeight - height) <= 1
+  ) {
+    return fragment;
+  }
+
+  // Cover the target canvas. The wrapper is a normal Trace group, so the
+  // artwork remains editable and exports through the same transform path.
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  const offsetX = (width - sourceWidth * scale) / 2;
+  const offsetY = (height - sourceHeight * scale) / 2;
+  let wrapperId = 'surface-fit-root';
+  let attempt = 1;
+  while (fragment.elements[wrapperId]) {
+    attempt += 1;
+    wrapperId = `surface-fit-root-${attempt}`;
+  }
+  const roots = [...fragment.rootElementIds];
+  const wrapper: TraceElement = {
+    id: wrapperId,
+    name: 'Scaled artwork',
+    type: 'group',
+    visible: true,
+    locked: false,
+    attributes: {
+      x: Number(offsetX.toFixed(2)),
+      y: Number(offsetY.toFixed(2)),
+      width: Number((sourceWidth * scale).toFixed(2)),
+      height: Number((sourceHeight * scale).toFixed(2)),
+      scaleX: Number(scale.toFixed(4)),
+      scaleY: Number(scale.toFixed(4)),
+    },
+    origin: { x: 0, y: 0 },
+    tracks: [],
+    parentId: null,
+    childrenIds: roots,
+  };
+  for (const rootId of roots) {
+    const root = fragment.elements[rootId];
+    if (root) root.parentId = wrapperId;
+  }
+  fragment.elements[wrapperId] = wrapper;
+  fragment.rootElementIds = [wrapperId];
+  fragment.width = width;
+  fragment.height = height;
+  report.width = width;
+  report.height = height;
+  report.warnings.push(
+    `Scaled the ${sourceWidth}×${sourceHeight} SVG to cover the ${width}×${height} canvas.`,
+  );
+  return fragment;
 }
 
 /**
@@ -340,13 +497,15 @@ function normalizeTracks(
 export function compileSurfaceProposal(
   request: SurfaceGenerationRequest,
   candidate: SurfaceProposalCandidate,
+  options: SvgImportOptions = {},
 ): SurfaceGenerationProposal {
   if (!candidate.svg || candidate.svg.length < 40) {
     throw new Error('The proposal did not include usable SVG artwork.');
   }
-  if (candidate.svg.length > SURFACE_GENERATION_LIMITS.maxSvgBytes) {
+  const svg = normalizeGeneratedSvg(candidate.svg);
+  if (svg.length > SURFACE_GENERATION_LIMITS.maxSvgBytes) {
     throw new Error(
-      `The SVG is ${candidate.svg.length} bytes; the limit is ${SURFACE_GENERATION_LIMITS.maxSvgBytes}. Reduce detail or reuse gradients.`,
+      `The SVG is ${svg.length} bytes; the limit is ${SURFACE_GENERATION_LIMITS.maxSvgBytes}. Reduce detail or reuse gradients.`,
     );
   }
 
@@ -355,13 +514,8 @@ export function compileSurfaceProposal(
   const durationMs = Math.max(1, Math.round(request.durationMs));
   const loop = request.loop !== false;
 
-  const { fragment, report } = parseSvgToFragmentDetailed(candidate.svg);
-
-  if (Math.abs(fragment.width - width) > 1 || Math.abs(fragment.height - height) > 1) {
-    throw new Error(
-      `The SVG must use the exact canvas size: viewBox="0 0 ${width} ${height}". Received ${fragment.width}×${fragment.height}.`,
-    );
-  }
+  const { fragment, report } = parseSvgToFragmentDetailed(svg, options);
+  fitFragmentToCanvas(fragment, width, height, report);
 
   const fatalTags = Object.keys(report.droppedTags).filter((tag) =>
     FATAL_DROPPED_TAGS.has(tag),

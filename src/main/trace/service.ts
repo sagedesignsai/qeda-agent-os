@@ -12,8 +12,10 @@ import path from 'node:path'
 
 import { TraceProjectIndex } from './trace-project-index.js'
 import { TraceProjectStore } from './trace-project-store.js'
+import { TraceSurfaceStore } from './trace-surface-store.js'
 
 let store: TraceProjectStore | null = null
+let surfaceStore: TraceSurfaceStore | null = null
 
 export function getTraceProjectStore(): TraceProjectStore {
   if (!store) {
@@ -21,4 +23,13 @@ export function getTraceProjectStore(): TraceProjectStore {
     store = new TraceProjectStore(directory, new TraceProjectIndex())
   }
   return store
+}
+
+export function getTraceSurfaceStore(): TraceSurfaceStore {
+  if (!surfaceStore) {
+    surfaceStore = new TraceSurfaceStore(
+      path.join(app.getPath('userData'), 'trace', 'surfaces'),
+    )
+  }
+  return surfaceStore
 }

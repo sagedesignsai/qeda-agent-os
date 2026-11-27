@@ -217,10 +217,18 @@ inserts behind existing art. Every block loops on a four-second canvas.
 The `generateSurface` specialist turns a brief into bespoke SVG plus editable
 tracks. The compiler parses the SVG with the real importer (baking transforms and
 `use` references), attaches tracks through the ops engine, validates the fragment,
-lints the result and renders review frames. It enforces the exact canvas size,
-the supported SVG subset, element/track/keyframe budgets and seamless-loop
-endpoints. The editor dialog previews the proposal and inserts it at the back on
+lints the result and renders review frames. It enforces the supported SVG
+subset, element/track/keyframe budgets and seamless-loop endpoints, and rescales
+a wrongly sized viewBox to cover the canvas instead of rejecting the proposal. The editor dialog previews the proposal and inserts it at the back on
 approval; the copilot tool inserts the validated fragment directly.
+
+The generation workspace is live and durable: a valid proposal streams to the
+preview the moment the `proposeSurface` tool compiles it (mid-turn), every
+completed proposal is persisted under `userData/trace/surfaces` with a thumbnail
+and can be re-inserted later, and the conversation itself is a persisted session
+(`sessions:ensure` + message upserts) so reopening the generator restores the
+brief history. Playback in the preview mutates the mounted SVG DOM through the
+runtime renderer instead of re-rendering React per frame.
 
 ### Typography add-on (6 blocks)
 

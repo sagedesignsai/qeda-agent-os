@@ -5,6 +5,7 @@ import {
 } from '@/lib/trace/parser/svg-importer';
 import { parsePathData } from '@/lib/trace/path/model';
 import { validateTraceFragment } from '@/lib/trace/assets/validate';
+import { DOMParser as XmlDomParser } from '@xmldom/xmldom';
 import type { TraceElement } from '@/lib/trace/types';
 
 function elementsOfType(type: TraceElement['type']): TraceElement[] {
@@ -65,7 +66,7 @@ describe('Trace SVG importer', () => {
     );
 
     expect(fillOnly.attributes.strokeDasharray).toBeUndefined();
-    expect(solid.attributes.strokeDasharray).toBe('500 500');
+    expect(solid.attributes.strokeDasharray).toBe('100 100');
     expect(dashed.attributes.strokeDasharray).toBe('5 3');
   });
 
@@ -192,6 +193,52 @@ describe('Trace SVG importer', () => {
     expect(text.attributes.baseY).toBeCloseTo(104.64, 1);
     expect(text.attributes.fontSize).toBe(20);
     expect(text.attributes.rotation).toBeCloseTo(30, 1);
+  });
+
+  it('preserves filter references and text style attributes', () => {
+    const fragment = parseSvgToFragment(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">
+        <defs>
+          <filter id="soft"><feGaussianBlur stdDeviation="4" /></filter>
+        </defs>
+        <circle id="glow" cx="50" cy="50" r="20" filter="url(#soft)" fill="#38bdf8" />
+        <text id="label" x="10" y="80" style="letter-spacing: 4px; font-style: italic">Hello</text>
+      </svg>`,
+    );
+
+    expect(fragment.elements.glow.attributes.filter).toBe('url(#soft)');
+    expect(fragment.elements.label.attributes.letterSpacing).toBe(4);
+    expect(fragment.elements.label.attributes.fontStyle).toBe('italic');
+  });
+
+  it('uses the XML fallback when no browser DOM is available', () => {
+    const { fragment, report } = parseSvgToFragmentDetailed(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#0f172a" />
+            <stop offset="100%" stop-color="#38bdf8" />
+          </linearGradient>
+        </defs>
+        <rect width="320" height="180" fill="url(#sky)" />
+        <g transform="translate(160 90)">
+          <circle cx="0" cy="0" r="40" fill="none" stroke="#fff" stroke-width="2" />
+          <path d="M -60 0 L 60 0" stroke="#fff" />
+        </g>
+      </svg>`,
+      {
+        domParser: new XmlDomParser(),
+        measureWithDom: false,
+      },
+    );
+
+    expect(report.elementCount).toBe(4);
+    expect(fragment.width).toBe(320);
+    expect(fragment.height).toBe(180);
+    expect(fragment.defs).toContain('linearGradient');
+    expect(Object.values(fragment.elements).some((element) => element.type === 'circle')).toBe(true);
+    const result = validateTraceFragment(fragment, { durationMs: 4000 });
+    expect(result.errors).toEqual([]);
   });
 
   it('produces fragments that pass the insertion validator', () => {

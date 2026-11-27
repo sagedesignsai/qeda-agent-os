@@ -5,6 +5,7 @@ import {
   type SurfaceProposalCandidate,
 } from '@/lib/trace/addons/surfaces/generation';
 import { staticSvgMarkup } from '@/lib/trace/serialize/svg-markup';
+import { DOMParser as XmlDomParser } from '@xmldom/xmldom';
 
 const REQUEST: SurfaceGenerationRequest = {
   width: 320,
@@ -66,13 +67,82 @@ describe('Surface generation compiler', () => {
     expect(mid).toContain('opacity="0.95"');
   });
 
-  it('rejects an SVG whose viewBox does not match the project canvas', () => {
-    expect(() =>
-      compileSurfaceProposal(REQUEST, {
-        ...candidate(),
-        svg: SVG.replace('viewBox="0 0 320 180"', 'viewBox="0 0 1920 1080"'),
-      }),
-    ).toThrow(/exact canvas size/);
+  it('compiles in the Electron main process using the XML fallback', () => {
+    // The main process has no browser DOM. This is the path the specialist uses.
+    const domParser = {
+      parseFromString: (text: string, mimeType: string) =>
+        new XmlDomParser().parseFromString(text, mimeType),
+    };
+    const proposal = compileSurfaceProposal(REQUEST, candidate(), {
+      domParser,
+      measureWithDom: false,
+    });
+
+    expect(proposal.fragment.elements.base).toBeDefined();
+    expect(proposal.fragment.elements.orb).toBeDefined();
+    expect(proposal.fragment.defs).toContain('radialGradient');
+    expect(proposal.fragment.elements.orb.tracks).toHaveLength(1);
+    expect(proposal.previewSvg).toContain('radialGradient');
+  });
+
+  it('expands use references without a browser DOM', () => {
+    const domParser = {
+      parseFromString: (text: string, mimeType: string) =>
+        new XmlDomParser().parseFromString(text, mimeType),
+    };
+    const withUse = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" width="320" height="180">
+      <defs>
+        <g id="dot"><circle id="dot-shape" cx="0" cy="0" r="8" fill="#38bdf8" /></g>
+      </defs>
+      <rect id="base" width="320" height="180" fill="#0b1120" />
+      <use href="#dot" x="80" y="90" />
+      <use href="#dot" x="220" y="90" transform="scale(2)" />
+    </svg>`;
+    const proposal = compileSurfaceProposal(
+      REQUEST,
+      { ...candidate(), svg: withUse, tracks: [] },
+      { domParser, measureWithDom: false },
+    );
+    expect(proposal.fragment.rootElementIds).toHaveLength(3);
+    expect(
+      Object.values(proposal.fragment.elements).filter(
+        (element) => element.type === 'circle',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('extracts a fenced SVG and repairs bare ampersands', () => {
+    const messy =
+      'Here is the surface:\n```svg\n' +
+      SVG.replace(
+        '</svg>',
+        '<text id="copy" x="12" y="24" font-size="14" fill="#fff">A & B</text></svg>',
+      ) +
+      '\n```';
+    const proposal = compileSurfaceProposal(REQUEST, {
+      ...candidate(),
+      svg: messy,
+      tracks: [],
+    });
+    expect(proposal.fragment.elements.copy).toBeDefined();
+    expect(proposal.fragment.elements.copy.attributes.text).toBe('A & B');
+  });
+
+  it('fits an SVG whose viewBox does not match the project canvas', () => {
+    const proposal = compileSurfaceProposal(REQUEST, {
+      ...candidate(),
+      svg: SVG.replace('viewBox="0 0 320 180"', 'viewBox="0 0 1920 1080"'),
+    });
+    expect(proposal.width).toBe(320);
+    expect(proposal.height).toBe(180);
+    expect(proposal.fragment.rootElementIds).toHaveLength(1);
+    const root = proposal.fragment.elements[proposal.fragment.rootElementIds[0]];
+    expect(root.type).toBe('group');
+    expect(Number(root.attributes.scaleX)).toBeGreaterThan(0);
+    expect(Number(root.attributes.scaleX)).toBeLessThan(1);
+    expect(proposal.warnings.some((warning) => /Scaled the/.test(warning))).toBe(
+      true,
+    );
   });
 
   it('rejects SMIL instead of silently dropping the animation', () => {
@@ -124,22 +194,47 @@ describe('Surface generation compiler', () => {
     ).toThrow(/unknown SVG element id "missing-layer"/);
   });
 
-  it('enforces seamlessness on continuous looping tracks', () => {
-    expect(() =>
-      compileSurfaceProposal(REQUEST, {
-        ...candidate(),
-        tracks: [
-          {
-            elementId: 'orb',
-            property: 'x',
-            keyframes: [
-              { timeMs: 0, value: 0 },
-              { timeMs: 4000, value: 24 },
-            ],
-          },
-        ],
-      }),
-    ).toThrow(/must end at its starting value/);
+  it('closes a drifting loop track instead of failing the turn', () => {
+    const proposal = compileSurfaceProposal(REQUEST, {
+      ...candidate(),
+      tracks: [
+        {
+          elementId: 'orb',
+          property: 'x',
+          keyframes: [
+            { timeMs: 0, value: 0 },
+            { timeMs: 4000, value: 24 },
+          ],
+        },
+      ],
+    });
+    expect(proposal.tracks[0].keyframes.at(-1)?.value).toBe(0);
+    expect(
+      proposal.warnings.some((warning) => /Closed looping track/.test(warning)),
+    ).toBe(true);
+  });
+
+  it('normalises string numbers, clamps ranges and merges duplicate times', () => {
+    const proposal = compileSurfaceProposal(REQUEST, {
+      ...candidate(),
+      tracks: [
+        {
+          elementId: 'orb',
+          property: 'opacity',
+          keyframes: [
+            { timeMs: 0, value: '0.2' },
+            { timeMs: 500, value: 1.8 },
+            { timeMs: 500, value: 1.4 },
+            { timeMs: 9000, value: 0.2 },
+          ],
+        },
+      ],
+    });
+    const keyframes = proposal.tracks[0].keyframes;
+    expect(keyframes).toHaveLength(3);
+    expect(keyframes[0].value).toBe(0.2);
+    expect(keyframes[1].value).toBe(1);
+    expect(keyframes.at(-1)?.timeMs).toBe(4000);
   });
 
   it('accepts a full-turn rotation as a seamless loop', () => {
