@@ -22,11 +22,21 @@ import { app } from 'electron';
 
 import { applyOps } from '../../lib/trace/ops';
 import type { TraceOp, TraceElementSpec } from '../../lib/trace/ops/types';
-import type { TraceProject } from '../../lib/trace/types';
+import type { TraceNarration, TraceProject } from '../../lib/trace/types';
+import {
+  buildNarrationTimingOps,
+  hasMeasuredDurations,
+} from '../../lib/trace/narration-timing';
+import { synthesizeNarrationLines } from '../trace/narration-service';
 import { createBlankTraceProject } from '../../lib/trace/defaults';
 import { lintTraceProject } from '../../lib/trace/lint';
+import {
+  CAMERA_LABELS,
+  resolveCameraAtTime,
+} from '../../lib/trace/runtime/camera';
 import { staticSvgMarkup } from '../../lib/trace/serialize/svg-markup';
 import { getTraceProjectStore } from '../trace/service';
+import { TraceProjectError } from '../trace/trace-project-store';
 import {
   expandRecipe,
   type RecipeId,
@@ -61,15 +71,78 @@ async function persistProject(
 ): Promise<{ projectId: string; revision: number; saved: boolean }> {
   const store = getTraceProjectStore();
   const expectedRevision = projectRevisions.get(basedOn);
-  const result = await store.saveProject(projectId, project, {
-    ...(expectedRevision !== undefined ? { expectedRevision } : {}),
-  });
-  projectRevisions.set(project, result.revision)
-  return {
-    projectId,
-    revision: result?.revision ?? 0,
-    saved: true,
-  };
+  try {
+    const result = await store.saveProject(projectId, project, {
+      ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+    });
+    projectRevisions.set(project, result.revision)
+    return {
+      projectId,
+      revision: result?.revision ?? 0,
+      saved: true,
+    };
+  } catch (err) {
+    if (
+      err instanceof TraceProjectError &&
+      err.code === 'TRACE_REVISION_CONFLICT'
+    ) {
+      // The user saved in the editor while the copilot was working. Keep their
+      // copy (the store rejected ours) and tell every window — never retry
+      // blindly, which would clobber the newer document.
+      notifyTraceDrift({
+        projectId,
+        expectedRevision,
+        message:
+          'The project changed in the editor while the copilot was working. ' +
+          'Your editor version was kept; the copilot changes were not saved. ' +
+          'Re-run the request to apply them on top of your latest edits.',
+      });
+      throw new Error(
+        'Revision conflict: the project changed in the editor while the copilot ' +
+          'was working. Your editor version was kept. Re-run the request to apply ' +
+          'the changes on top of the latest document.',
+      );
+    }
+    throw err;
+  }
+}
+
+/** Push a drift notice to every renderer window. Best-effort by design. */
+function notifyTraceDrift(payload: {
+  projectId: string;
+  expectedRevision?: number;
+  message: string;
+}): void {
+  try {
+    const { BrowserWindow } = require('electron');
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send('trace-copilot:drift', payload);
+      }
+    }
+  } catch {
+    // No window listening (headless/tests) — the thrown error still reaches the turn.
+  }
+}
+
+/**
+ * Read one copilot document (contract or capability map) from the app bundle,
+ * falling back to the source tree in dev. Missing docs degrade to null so the
+ * tool can report "not found" rather than failing the turn.
+ */
+async function readTraceDoc(fileName: string): Promise<string | null> {
+  const candidates = [
+    path.join(app.getAppPath(), 'docs', 'systems', fileName),
+    path.join(process.cwd(), 'docs', 'systems', fileName),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate, 'utf-8');
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
 }
 
 function summarizeProject(project: TraceProject): Record<string, any> {
@@ -97,6 +170,16 @@ function summarizeProject(project: TraceProject): Record<string, any> {
     sceneCount: project.storyboard?.scenes.length ?? 0,
     gradientCount: Object.keys(project.gradients ?? {}).length,
     hasAudio: (project.audioTracks?.length ?? 0) > 0,
+    narrationLineCount: project.narration?.lines.length ?? 0,
+    camera: project.camera
+      ? {
+          x: project.camera.x,
+          y: project.camera.y,
+          zoom: project.camera.zoom,
+          rotation: project.camera.rotation,
+          tracks: project.camera.tracks?.length ?? 0,
+        }
+      : null,
   };
 }
 
@@ -644,6 +727,249 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
     },
   });
 
+  // ── Narration (voice-first timing) ─────────────────────────────────────────
+
+  const generateNarrationVoice = tool({
+    description:
+      'Synthesize the voiceover audio for narration lines (metered TTS). Returns each line with a measured durationMs and ttsAssetId. Use this before setNarration when the composition should be narrated, then pass the returned durations and asset ids into setNarration so every scene and beat is timed to the real voice. Only call when the user asked for narration or approved the plan.',
+    inputSchema: z.object({
+      lines: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            text: z.string().min(1),
+          }),
+        )
+        .min(1)
+        .max(60),
+      provider: z
+        .enum(['deepgram', 'elevenlabs', 'cartesia'])
+        .optional()
+        .describe('Omit to use the first configured speech provider.'),
+      voiceId: z.string().optional(),
+    }),
+    execute: async ({ lines, provider, voiceId }) => {
+      try {
+        const result = await synthesizeNarrationLines(lines, {
+          ...(provider ? { provider } : {}),
+          ...(voiceId ? { voiceId } : {}),
+        });
+        return { ok: true, ...result };
+      } catch (error) {
+        return {
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    },
+  });
+
+  const setNarration = tool({
+    description:
+      'Set the spoken narration for the composition. Provide the script as one entry per spoken sentence or phrase. When every line carries a measured `durationMs` (from generated TTS), the default fitTimeline re-times every scene and the canvas to the voices so picture follows sound. Without measured durations the narration is stored as-is and `untimedLineIds` reports what still needs audio — generate the voiceover first, then call again to fit. Scenes without lines keep their current duration.',
+    inputSchema: z.object({
+      projectId: z.string(),
+      voiceId: z.string().optional(),
+      provider: z.string().optional(),
+      lines: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            text: z.string().min(1),
+            sceneId: z.string().optional().describe('Storyboard scene this line belongs to (defaults to the last scene).'),
+            durationMs: z.number().positive().optional().describe('Measured spoken duration from the generated voice asset.'),
+            ttsAssetId: z.string().optional().describe('Generated TTS asset id for this line.'),
+            speaker: z.string().optional().describe('Optional on-screen speaker label.'),
+          }),
+        )
+        .min(1),
+      fitTimeline: z.boolean().optional().describe('Re-time scenes and canvas to the measured voices. Default true when every line is measured.'),
+      lineGapMs: z.number().min(0).optional().describe('Silence between lines inside a scene, ms.'),
+      sceneTailMs: z.number().min(0).optional().describe('Hold after a scene\'s last line before the cut, ms.'),
+    }),
+    execute: async ({
+      projectId,
+      voiceId,
+      provider,
+      lines,
+      fitTimeline,
+      lineGapMs,
+      sceneTailMs,
+    }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      const narration: TraceNarration = {
+        ...(voiceId ? { voiceId } : {}),
+        ...(provider ? { provider } : {}),
+        lines: lines.map((line) => ({
+          id: line.id ?? nextId('narr'),
+          text: line.text,
+          ...(line.sceneId !== undefined ? { sceneId: line.sceneId } : {}),
+          ...(line.durationMs !== undefined
+            ? { durationMs: line.durationMs }
+            : {}),
+          ...(line.ttsAssetId !== undefined
+            ? { ttsAssetId: line.ttsAssetId }
+            : {}),
+          ...(line.speaker !== undefined ? { speaker: line.speaker } : {}),
+        })),
+      };
+
+      const untimedLineIds = narration.lines
+        .filter(
+          (line) =>
+            typeof line.durationMs !== 'number' || line.durationMs <= 0,
+        )
+        .map((line) => line.id);
+      const shouldFit = fitTimeline !== false && hasMeasuredDurations(narration);
+
+      const ops: TraceOp[] = shouldFit
+        ? buildNarrationTimingOps(project, narration, {
+            ...(lineGapMs !== undefined ? { lineGapMs } : {}),
+            ...(sceneTailMs !== undefined ? { sceneTailMs } : {}),
+          }).ops
+        : [{ type: 'setNarration', narration }];
+
+      const result = applyOps(project, ops);
+      if (!result.ok) {
+        return {
+          error: 'Narration batch failed.',
+          diagnostics: result.diagnostics.filter(
+            (diagnostic) => diagnostic.severity === 'error',
+          ),
+          applied: result.applied,
+        };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+      return {
+        ok: true,
+        applied: result.applied,
+        fitted: shouldFit,
+        lineCount: narration.lines.length,
+        untimedLineIds,
+        durationMs: result.project.durationMs,
+        scenes:
+          result.project.storyboard?.scenes.map((scene) => ({
+            id: scene.id,
+            name: scene.name,
+            startMs: scene.startMs,
+            durationMs: scene.durationMs,
+          })) ?? [],
+        lint: summarizeLint(result.project),
+      };
+    },
+  });
+
+  // ── Camera (screen-space framing) ──────────────────────────────────────────
+
+  const setCamera = tool({
+    description:
+      'Set or clear the composition camera. x/y name the canvas point that sits at the centre of the frame, zoom is a multiplier (1 = 100%), rotation is in degrees. Animate with tracks (x, y, zoom, rotation). The camera frames the element graph only: scene backgrounds, entrance veils and subtitles stay fixed. Pass null to restore the full artboard. Typical moves: push-in (zoom 1→1.15 with power2.inOut), pan (x/y from one subject to another), subtle Ken Burns (zoom 1→1.06 across the whole piece).',
+    inputSchema: z.object({
+      projectId: z.string(),
+      camera: z
+        .object({
+          x: z.number().optional().describe('Focus point X in canvas px (default: canvas centre).'),
+          y: z.number().optional().describe('Focus point Y in canvas px (default: canvas centre).'),
+          zoom: z.number().positive().max(20).optional().describe('Zoom multiplier; 1 = 100%.'),
+          rotation: z.number().optional().describe('Rotation in degrees.'),
+          tracks: z
+            .array(
+              z.object({
+                property: z.enum(['x', 'y', 'zoom', 'rotation']),
+                label: z.string().optional(),
+                keyframes: z
+                  .array(
+                    z.object({
+                      timeMs: z.number().min(0),
+                      value: z.number(),
+                      easing: z.string().optional().describe('Outgoing-keyframe ease (default power2.out).'),
+                    }),
+                  )
+                  .min(2)
+                  .max(200),
+              }),
+            )
+            .max(4)
+            .optional(),
+        })
+        .nullable(),
+    }),
+    execute: async ({ projectId, camera }) => {
+      const project = await resolveProject(projectId);
+      if (!project) return { error: `Project "${projectId}" not found.` };
+
+      const nextCamera = camera
+        ? {
+            ...(camera.x !== undefined ? { x: camera.x } : {}),
+            ...(camera.y !== undefined ? { y: camera.y } : {}),
+            ...(camera.zoom !== undefined ? { zoom: camera.zoom } : {}),
+            ...(camera.rotation !== undefined
+              ? { rotation: camera.rotation }
+              : {}),
+            ...(camera.tracks?.length
+              ? {
+                  tracks: camera.tracks.map((track) => ({
+                    id: `camera-${track.property}`,
+                    property: track.property,
+                    label: track.label ?? CAMERA_LABELS[track.property],
+                    keyframes: track.keyframes
+                      .map((keyframe, index) => ({
+                        id: `camera-${track.property}-${Math.round(keyframe.timeMs)}-${index}`,
+                        timeMs: Math.round(keyframe.timeMs),
+                        value: keyframe.value,
+                        easing: keyframe.easing ?? 'power2.out',
+                      }))
+                      .sort((a, b) => a.timeMs - b.timeMs),
+                  })),
+                }
+              : {}),
+          }
+        : null;
+
+      const result = applyOps(project, [{ type: 'setCamera', camera: nextCamera }]);
+      if (!result.ok) {
+        return {
+          error: 'Camera batch failed.',
+          diagnostics: result.diagnostics.filter(
+            (diagnostic) => diagnostic.severity === 'error',
+          ),
+          applied: result.applied,
+        };
+      }
+
+      await persistProject(projectId, result.project, project);
+      broadcast();
+
+      const duration = result.project.durationMs;
+      const samples = result.project.camera
+        ? [0, 0.5, 1].map((fraction) => {
+            const atMs = Math.round(duration * fraction);
+            const state = resolveCameraAtTime(result.project, atMs);
+            return {
+              atMs,
+              x: Math.round(state.x),
+              y: Math.round(state.y),
+              zoom: Number(state.zoom.toFixed(3)),
+              rotation: Number(state.rotation.toFixed(1)),
+            };
+          })
+        : [];
+
+      return {
+        ok: true,
+        applied: result.applied,
+        cleared: nextCamera === null,
+        trackCount: nextCamera?.tracks?.length ?? 0,
+        samples,
+        diff: result.diff,
+        lint: summarizeLint(result.project),
+      };
+    },
+  });
+
   // ── Export (read-only) ──────────────────────────────────────────────────────
 
   const exportSvg = tool({
@@ -670,43 +996,31 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
 
   const getTraceCapability = tool({
     description:
-      'Ask the NovaTrace capability agent how to achieve something. Returns structured guidance: available patterns, element types, animation properties, easing types, color palettes, and design patterns. Call this BEFORE generating complex compositions to ground your output in real system capabilities. Ask "How do I create a [pattern]?" or "What properties can I animate on [type]?"',
+      'Load the NovaTrace copilot contract and the capability map. Returns the NORMATIVE contract (rules, budgets, verification commands, "done means") plus structured capability guidance: patterns, element types, animation properties, easing types, color palettes, and design patterns. Call this BEFORE generating any composition of more than a couple of elements to ground your output in real system capabilities. Ask "How do I create a [pattern]?" or "What properties can I animate on [type]?"',
     inputSchema: z.object({
       query: z
         .string()
         .describe('What you want to know, e.g. "How do I create a logo stinger with staggered feature reveals?"'),
     }),
     execute: async ({ query }) => {
-      // Read the capability docs
-      const docsPath = path.join(
-        app.getAppPath(),
-        'docs',
-        'systems',
-        'novatrace-system.md',
-      );
-      try {
-        const docs = await readFile(docsPath, 'utf-8');
-        return { capability: query, docs, available: true };
-      } catch {
-        // Fallback: read from the source path in dev
-        const devPath = path.join(
-          process.cwd(),
-          'docs',
-          'systems',
-          'novatrace-system.md',
-        );
-        try {
-          const docs = await readFile(devPath, 'utf-8');
-          return { capability: query, docs, available: true };
-        } catch {
-          return {
-            capability: query,
-            docs: null,
-            available: false,
-            error: 'Capability docs not found. Use your knowledge of the TraceProject schema.',
-          };
-        }
+      const contract = await readTraceDoc('trace-contract.md');
+      const docs = await readTraceDoc('novatrace-system.md');
+      if (!docs && !contract) {
+        return {
+          capability: query,
+          docs: null,
+          contract: null,
+          available: false,
+          error:
+            'Capability docs not found. Use your knowledge of the TraceProject schema.',
+        };
       }
+      return {
+        capability: query,
+        contract,
+        docs,
+        available: true,
+      };
     },
   });
 
@@ -777,6 +1091,9 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
     exportSvg,
     getTraceCapability,
     dispatchOps,
+    generateNarrationVoice,
+    setNarration,
+    setCamera,
   };
 }
 

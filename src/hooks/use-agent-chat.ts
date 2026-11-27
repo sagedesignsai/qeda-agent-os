@@ -118,6 +118,18 @@ export interface FallbackNotice {
   reason: string;
 }
 
+/**
+ * Set when a copilot save lost a revision race with an editor save.
+ *
+ * The user's editor copy was kept and the copilot's changes were not applied.
+ * The UI must surface this rather than pretending the turn's edits landed.
+ */
+export interface AgentDriftNotice {
+  projectId?: string;
+  expectedRevision?: number;
+  message: string;
+}
+
 export interface UseAgentChatReturn {
   messages: UIMessage[];
   status: AgentStatus;

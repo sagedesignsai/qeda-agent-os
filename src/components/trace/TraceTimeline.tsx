@@ -11,6 +11,8 @@
 
 import { useMemo, useRef, useState } from 'react';
 import {
+  AudioLinesIcon,
+  CameraIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ClockIcon,
@@ -31,6 +33,10 @@ import { Toggle } from '@/components/ui/toggle';
 import { TRACK_LABELS } from '@/lib/trace/elements/registry';
 import { formatTraceTimecode } from '@/lib/trace/runtime/resolve-element';
 import { seekTracePlayback } from '@/lib/trace/runtime/playback-driver';
+import {
+  CAMERA_LABELS,
+  type CameraProperty,
+} from '@/lib/trace/runtime/camera';
 import type {
   Keyframe,
   PropertyTrack,
@@ -379,6 +385,97 @@ export function TraceTimeline() {
                       title={scene.intent || scene.name}
                     >
                       {scene.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Camera */}
+          {project.camera && (project.camera.tracks?.length ?? 0) > 0 ? (
+            <div className="flex border-b border-border/50">
+              <div
+                className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-border bg-card px-2 text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
+                style={{ width: LABEL_WIDTH, height: ROW_HEIGHT }}
+                title="Composition camera — framing applies to the whole graph"
+              >
+                <CameraIcon className="size-3 text-amber-400" />
+                Camera
+              </div>
+              <div
+                className="relative"
+                style={{ width: laneWidth, height: ROW_HEIGHT }}
+              >
+                {(project.camera.tracks ?? []).flatMap((track) =>
+                  track.keyframes.map((keyframe) => (
+                    <button
+                      key={`${track.id}-${keyframe.id}`}
+                      type="button"
+                      onClick={() => {
+                        seekTracePlayback(keyframe.timeMs, { commit: true });
+                        setPlayhead(keyframe.timeMs);
+                      }}
+                      title={`${
+                        CAMERA_LABELS[track.property as CameraProperty] ??
+                        track.label
+                      } · ${Math.round(keyframe.timeMs)}ms · ${keyframe.value}`}
+                      className="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px] bg-amber-400/80 hover:bg-amber-300"
+                      style={{ left: keyframe.timeMs * pxPerMs }}
+                    />
+                  )),
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Narration */}
+          {project.narration?.lines?.length ? (
+            <div className="flex border-b border-border/50">
+              <div
+                className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-border bg-card px-2 text-[9px] uppercase tracking-[0.16em] text-muted-foreground"
+                style={{ width: LABEL_WIDTH, height: ROW_HEIGHT }}
+                title="Spoken lines — durations are measured from the generated voice"
+              >
+                <AudioLinesIcon className="size-3 text-indigo-400" />
+                Voice
+              </div>
+              <div
+                className="relative"
+                style={{ width: laneWidth, height: ROW_HEIGHT }}
+              >
+                {project.narration.lines.map((line) => {
+                  const startMs =
+                    typeof line.startMs === 'number' ? line.startMs : null;
+                  const timed =
+                    typeof line.durationMs === 'number' && line.durationMs > 0;
+                  if (startMs === null) return null;
+                  return (
+                    <button
+                      key={line.id}
+                      type="button"
+                      onClick={() => {
+                        seekTracePlayback(startMs, { commit: true });
+                        setPlayhead(startMs);
+                      }}
+                      className={
+                        'absolute top-1 h-5 overflow-hidden rounded border px-1.5 text-left text-[9px] font-medium ' +
+                        (timed
+                          ? 'border-indigo-400/60 bg-indigo-500/15 text-indigo-200'
+                          : 'border-dashed border-border bg-accent/30 text-muted-foreground')
+                      }
+                      style={{
+                        left: startMs * pxPerMs,
+                        width: Math.max(
+                          24,
+                          (timed ? (line.durationMs ?? 0) : 600) * pxPerMs - 2,
+                        ),
+                      }}
+                      title={
+                        (line.speaker ? `${line.speaker}: ` : '') + line.text
+                      }
+                    >
+                      {line.text.trim() || '—'}
                     </button>
                   );
                 })}

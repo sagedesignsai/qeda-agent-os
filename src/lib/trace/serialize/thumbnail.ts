@@ -9,6 +9,7 @@
  */
 
 import { migrateTraceProject } from '../migrate';
+import { hasSceneBackground } from '../runtime/scenes';
 import { staticSvgMarkup } from './svg-markup';
 import type { TraceProject } from '../types';
 
@@ -39,14 +40,27 @@ export function generateProjectThumbnail(
     width,
     height,
     timeMs = Math.floor(migrated.durationMs / 2),
-    background = '#0f172a',
+    background,
   } = options;
 
   // Clamp time to project duration
   const clampedTime = Math.max(0, Math.min(timeMs, migrated.durationMs));
 
+  // A project that paints per-scene backgrounds must keep them in its card;
+  // only background-less projects take the neutral slate fallback.
+  const resolvedBackground =
+    background ?? (hasSceneBackground(migrated) ? undefined : '#0f172a');
+
   // Generate the static SVG markup
-  const svg = staticSvgMarkup(migrated, clampedTime, { background });
+  const svg = staticSvgMarkup(
+    migrated,
+    clampedTime,
+    {
+      ...(resolvedBackground ? { background: resolvedBackground } : {}),
+      // A card is a still: never bake a half-lifted entrance veil into it.
+      scenePresentation: false,
+    },
+  );
 
   // If target dimensions are provided, wrap in a container that scales the SVG
   if (width && height) {

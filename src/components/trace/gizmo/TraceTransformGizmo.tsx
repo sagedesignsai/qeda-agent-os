@@ -34,6 +34,8 @@ export interface TraceTransformGizmoProps {
   readout?: string | null;
   /** Canvas/artboard pixel dimensions for the SVG viewBox. */
   viewBox?: { width: number; height: number };
+  /** Camera transform from the composition; overlay content follows it. */
+  cameraTransform?: string;
   onHandlePointerDown?: (
     handle: GizmoHandle,
     event: React.PointerEvent<SVGElement>,
@@ -69,6 +71,7 @@ export function TraceTransformGizmo(props: TraceTransformGizmoProps) {
     previewOrigin = null,
     readout = null,
     viewBox,
+    cameraTransform,
     onHandlePointerDown,
     onHandlePointerMove,
     onHandlePointerUp,
@@ -129,6 +132,7 @@ export function TraceTransformGizmo(props: TraceTransformGizmoProps) {
         pointerEvents: 'none',
       }}
     >
+      <g transform={cameraTransform}>
       {/* Move hit area: the rotated frame interior. Transparent but
           hit-testable; click selects (via TraceRenderer) and drag moves. */}
       <polygon
@@ -219,6 +223,7 @@ export function TraceTransformGizmo(props: TraceTransformGizmoProps) {
           </text>
         </g>
       ) : null}
+      </g>
     </svg>
   );
 }

@@ -182,6 +182,8 @@ export function generateGsapCode(
   const name = toPascalCase(componentName || project.name || 'TraceScene');
   const markup = staticSvgMarkup(project, project.durationMs * 0.7, {
     size: true,
+    scenePresentation: false,
+    camera: false,
   });
   const needsTextPlugin = Object.values(project.elements).some((element) =>
     element.tracks?.some((track) => track.property === 'text'),

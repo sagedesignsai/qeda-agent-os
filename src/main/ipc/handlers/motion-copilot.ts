@@ -31,6 +31,7 @@ import { diffMotionDocuments } from '../../../lib/motion/diff.js';
 import type { AgentPlanEvent } from '../../../lib/agent-plan.js';
 import type { MotionDocument } from '../../../lib/motion/types.js';
 import { getMotionProjectStore } from '../../motion/service.js';
+import { MotionProjectError } from '../../motion/project-store.js';
 
 export function registerMotionCopilotHandlers({
   mainWindow,
@@ -145,7 +146,10 @@ export function registerMotionCopilotHandlers({
 
             if (mainWindow.isDestroyed()) return;
 
-            // Save the modified document back to disk
+            // Save the modified document back to disk. The user may have saved
+            // in the editor during the turn; the store's revision check makes
+            // that a conflict rather than a silent clobber. The user's copy
+            // wins and we tell the renderer to surface a drift notice.
             if (context.projectId && currentDoc.revision !== context.document.revision) {
               try {
                 const store = getMotionProjectStore();
@@ -153,9 +157,25 @@ export function registerMotionCopilotHandlers({
                   expectedRevision: context.document.revision,
                 });
               } catch (saveErr) {
-                // Save failure is non-fatal for the chat turn; the renderer
-                // will pick up the revision mismatch on next save.
-                console.error('Motion copilot save failed:', saveErr);
+                if (
+                  saveErr instanceof MotionProjectError &&
+                  saveErr.code === 'MOTION_SAVE_CONFLICT'
+                ) {
+                  if (!mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('motion-copilot:drift', {
+                      projectId: context.projectId,
+                      expectedRevision: context.document.revision,
+                      message:
+                        'The project changed in the editor while the copilot was working. ' +
+                        'Your editor version was kept; the copilot changes were not saved. ' +
+                        'Re-run the request to apply them on top of your latest edits.',
+                    });
+                  }
+                } else {
+                  // Save failure is non-fatal for the chat turn; the renderer
+                  // will pick up the revision mismatch on next save.
+                  console.error('Motion copilot save failed:', saveErr);
+                }
               }
             }
 

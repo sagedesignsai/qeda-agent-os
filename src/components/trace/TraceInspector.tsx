@@ -61,6 +61,11 @@ import {
   type PropertyDescriptor,
 } from '@/lib/trace/elements/registry';
 import { resolveElementAtTime } from '@/lib/trace/runtime/resolve-element';
+import {
+  CAMERA_LABELS,
+  resolveCameraAtTime,
+  type CameraProperty,
+} from '@/lib/trace/runtime/camera';
 import { getElementPosition, positionPatch } from '@/lib/trace/resolve';
 import {
   findElementDom,
@@ -70,6 +75,7 @@ import { getObbCorners } from '@/lib/trace/gizmo/geometry';
 import type {
   AnimatableProperty,
   Keyframe,
+  TraceCamera,
   TraceElement,
 } from '@/lib/trace/types';
 import { useTraceStore } from '@/stores/trace-store';
@@ -1345,6 +1351,178 @@ function PathDataSection({ element }: { element: TraceElement }) {
   );
 }
 
+/* ── Camera ─────────────────────────────────────────────────────────────────── */
+
+function upsertCameraKeyframe(
+  camera: TraceCamera,
+  property: CameraProperty,
+  value: number,
+  timeMs: number,
+): TraceCamera {
+  const at = Math.max(0, Math.round(timeMs));
+  const keyframe: Keyframe = {
+    id: `camera-${property}-${at}`,
+    timeMs: at,
+    value,
+    easing: 'power2.out',
+  };
+  const tracks = [...(camera.tracks ?? [])];
+  const index = tracks.findIndex((track) => track.property === property);
+  if (index === -1) {
+    tracks.push({
+      id: `camera-${property}`,
+      property,
+      label: CAMERA_LABELS[property],
+      keyframes: [keyframe],
+    });
+  } else {
+    const track = tracks[index];
+    const keyframes = track.keyframes.filter(
+      (entry) => Math.abs(entry.timeMs - at) > 1,
+    );
+    keyframes.push(keyframe);
+    keyframes.sort((a, b) => a.timeMs - b.timeMs);
+    tracks[index] = { ...track, keyframes };
+  }
+  return { ...camera, tracks };
+}
+
+function CameraSection() {
+  const project = useTraceStore((state) => state.project);
+  const timeMs = useTraceStore((state) => state.playback.currentTimeMs);
+  if (!project) return null;
+
+  const state = resolveCameraAtTime(project, timeMs);
+  const tracks = project.camera?.tracks ?? [];
+  const dispatch = (camera: TraceCamera | null) =>
+    useTraceStore.getState().dispatch([{ type: 'setCamera', camera }]);
+
+  const trackFor = (property: CameraProperty) =>
+    tracks.find((track) => track.property === property);
+  const keyedAtPlayhead = (property: CameraProperty) =>
+    (trackFor(property)?.keyframes ?? []).some(
+      (keyframe) => Math.abs(keyframe.timeMs - timeMs) < 1,
+    );
+
+  const setValue = (property: CameraProperty, value: number) => {
+    if (trackFor(property)) {
+      dispatch(
+        upsertCameraKeyframe(project.camera ?? {}, property, value, timeMs),
+      );
+      return;
+    }
+    dispatch({
+      ...(project.camera ?? {}),
+      [property]: value,
+    } as TraceCamera);
+  };
+
+  const addKeyframe = (property: CameraProperty) => {
+    const value =
+      property === 'zoom'
+        ? state.zoom
+        : property === 'rotation'
+          ? state.rotation
+          : property === 'x'
+            ? state.x
+            : state.y;
+    dispatch(
+      upsertCameraKeyframe(project.camera ?? {}, property, value, timeMs),
+    );
+  };
+
+  const keyButton = (property: CameraProperty) => (
+    <button
+      type="button"
+      onClick={() => addKeyframe(property)}
+      title={`${
+        keyedAtPlayhead(property) ? 'Replace' : 'Add'
+      } ${CAMERA_LABELS[property]} keyframe at ${Math.round(timeMs)}ms`}
+      aria-label={`Add ${CAMERA_LABELS[property]} keyframe`}
+      className={cn(
+        'flex size-5 items-center justify-center rounded transition-colors',
+        keyedAtPlayhead(property)
+          ? 'text-amber-300'
+          : 'text-muted-foreground/50 hover:text-foreground',
+      )}
+    >
+      <DiamondIcon className="size-3" />
+    </button>
+  );
+
+  return (
+    <PanelSection title="Camera">
+      <PairRow
+        left={
+          <ScrubField
+            label="Focus X"
+            prefix="X"
+            value={Math.round(state.x)}
+            step={10}
+            onChange={(value) => setValue('x', value)}
+            trailing={keyButton('x')}
+          />
+        }
+        right={
+          <ScrubField
+            label="Focus Y"
+            prefix="Y"
+            value={Math.round(state.y)}
+            step={10}
+            onChange={(value) => setValue('y', value)}
+            trailing={keyButton('y')}
+          />
+        }
+      />
+      <PairRow
+        left={
+          <ScrubField
+            label="Zoom"
+            suffix="%"
+            value={Math.round(state.zoom * 100)}
+            min={5}
+            max={2000}
+            step={5}
+            onChange={(value) =>
+              setValue('zoom', Math.max(0.05, value / 100))
+            }
+            trailing={keyButton('zoom')}
+          />
+        }
+        right={
+          <ScrubField
+            label="Rotation"
+            suffix="°"
+            value={Math.round(state.rotation)}
+            step={1}
+            onChange={(value) => setValue('rotation', value)}
+            trailing={keyButton('rotation')}
+          />
+        }
+      />
+      <div className="flex items-center justify-between gap-2 pt-1">
+        <span className="text-[10px] text-muted-foreground/70">
+          {tracks.length} camera track{tracks.length === 1 ? '' : 's'}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-[10px]"
+          onClick={() => dispatch(null)}
+          disabled={!project.camera}
+        >
+          Reset
+        </Button>
+      </div>
+      <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+        Frames the whole composition. Scene backgrounds, veils and subtitles
+        stay fixed.
+      </p>
+    </PanelSection>
+  );
+}
+
 /* ── Canvas (no selection) ─────────────────────────────────────────────────── */
 
 function CanvasInspector() {
@@ -1583,6 +1761,7 @@ export function TraceInspector({
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
+        <CameraSection />
         {!element ? (
           <CanvasInspector />
         ) : (

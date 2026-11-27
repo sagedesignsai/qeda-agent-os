@@ -10,7 +10,9 @@ import { BrowserWindow, ipcMain, shell } from 'electron';
 import { instantiateCompositionTemplate } from '../../../lib/trace/templates';
 import { generateProjectThumbnail } from '../../../lib/trace/serialize/thumbnail';
 import type { TraceProject } from '../../../lib/trace/types';
+import type { TtsProviderId } from '../../../lib/tts/types';
 import { getTraceProjectStore } from '../../trace/service.js';
+import { synthesizeNarrationLines } from '../../trace/narration-service.js';
 
 export function registerTraceHandlers({
   mainWindow,
@@ -124,4 +126,37 @@ export function registerTraceHandlers({
     },
   );
 
+  ipcMain.handle(
+    'trace:narration-generate',
+    async (
+      _event,
+      req: {
+        lines: Array<{ id?: string; text: string }>;
+        provider?: TtsProviderId;
+        voiceId?: string;
+        projectId?: string;
+      },
+    ) => {
+      try {
+        return await synthesizeNarrationLines(req.lines, {
+          ...(req.provider ? { provider: req.provider } : {}),
+          ...(req.voiceId ? { voiceId: req.voiceId } : {}),
+          ...(req.projectId ? { projectId: req.projectId } : {}),
+          label: 'Trace narration',
+          onProgress: (progress) => {
+            if (!mainWindow.isDestroyed()) {
+              mainWindow.webContents.send(
+                'trace:narration-progress',
+                progress,
+              );
+            }
+          },
+        });
+      } catch (cause) {
+        return {
+          error: cause instanceof Error ? cause.message : String(cause),
+        };
+      }
+    },
+  );
 }

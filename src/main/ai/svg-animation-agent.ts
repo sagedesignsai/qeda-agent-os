@@ -225,7 +225,11 @@ export function createSvgAnimationAgent(request: SvgAnimationRequest, target?: M
         detailBudget = 0;
         return truncated;
       });
-      const markup = staticSvgMarkup(request.project, 0, { size: true });
+      const markup = staticSvgMarkup(request.project, 0, {
+        size: true,
+        scenePresentation: false,
+        camera: false,
+      });
       let visualDescription: string | null = null;
       let visualInspectionWarning: string | null = null;
       if (Buffer.byteLength(markup, 'utf8') <= 2_000_000) {
@@ -302,10 +306,18 @@ export function createSvgAnimationAgent(request: SvgAnimationRequest, target?: M
       const sampleTimes = candidateTimes.length <= 6
         ? candidateTimes
         : Array.from({ length: 6 }, (_, index) => candidateTimes[Math.round(index * (candidateTimes.length - 1) / 5)]);
-      const baseSvg = staticSvgMarkup(request.project, 0, { size: true });
+      const baseSvg = staticSvgMarkup(request.project, 0, {
+        size: true,
+        scenePresentation: false,
+        camera: false,
+      });
       const basePng = await sharp(Buffer.from(baseSvg)).resize({ width: 900, height: 900, fit: 'inside' }).png().toBuffer();
       const frames = await Promise.all(sampleTimes.map(async (timeMs) => {
-        const svg = staticSvgMarkup(stagedProject, timeMs, { size: true });
+        const svg = staticSvgMarkup(stagedProject, timeMs, {
+          size: true,
+          scenePresentation: false,
+          camera: false,
+        });
         const png = await sharp(Buffer.from(svg)).resize({ width: 900, height: 900, fit: 'inside' }).png().toBuffer();
         return { timeMs, png };
       }));

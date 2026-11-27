@@ -8,7 +8,7 @@
  * process, in Jest and in the browser.
  */
 
-import { createScene } from '../storyboard';
+import { createScene, layoutScenes } from '../storyboard';
 import type { TraceElement, TraceProject, TraceGradient } from '../types';
 
 const WIDTH = 700;
@@ -526,7 +526,7 @@ export function createNovaTraceMarkProject(
       },
     },
     storyboard: {
-      scenes,
+      scenes: layoutScenes(scenes),
       activeSceneId: scenes[0].id,
       logline: 'A trace draws itself into a wordmark.',
       sourceRefs: [],

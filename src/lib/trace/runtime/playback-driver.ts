@@ -21,6 +21,7 @@ import type { TraceProject } from '../types';
 import { getTraceRuntimeBridge, requireTraceRuntimeBridge } from './bridge';
 import { syncTraceDomAtTime } from './dom-renderer';
 import { compileProjectToGsap } from './gsap-compiler';
+import { stopNarrationAudio, syncNarrationAudio } from './narration-audio';
 
 let activeTimeline: gsap.core.Timeline | null = null;
 let animationFrameId: number | null = null;
@@ -52,7 +53,9 @@ export function getOrCompileTraceTimeline(): gsap.core.Timeline | null {
     loop: false,
     onUpdate: (_progress, timeMs) => {
       currentPlaybackTimeMs = timeMs;
-      syncTraceDomAtTime(timeMs, activeProject());
+      const project = activeProject();
+      syncTraceDomAtTime(timeMs, project);
+      syncNarrationAudio(project, timeMs, getTraceRuntimeBridge()?.getPlayback().isPlaying ?? true);
     },
     onComplete: () => {
       const bridge = getTraceRuntimeBridge();
@@ -62,6 +65,7 @@ export function getOrCompileTraceTimeline(): gsap.core.Timeline | null {
         activeTimeline?.play();
         return;
       }
+      stopNarrationAudio();
       stopTracePlayback({ commit: false });
       bridge.setPlaying(false);
       bridge.commitTime(project.durationMs);
@@ -75,6 +79,7 @@ export function getOrCompileTraceTimeline(): gsap.core.Timeline | null {
         activeTimeline?.reverse();
         return;
       }
+      stopNarrationAudio();
       stopTracePlayback({ commit: false });
       bridge.setPlaying(false);
       bridge.commitTime(0);
@@ -130,6 +135,7 @@ function tickFallback(timestamp: number): void {
       bridge.setPlaying(false);
       bridge.commitTime(duration);
       syncTraceDomAtTime(duration, project);
+      stopNarrationAudio();
       animationFrameId = null;
       lastTimestamp = 0;
       return;
@@ -142,6 +148,7 @@ function tickFallback(timestamp: number): void {
       bridge.setPlaying(false);
       bridge.commitTime(0);
       syncTraceDomAtTime(0, project);
+      stopNarrationAudio();
       animationFrameId = null;
       lastTimestamp = 0;
       return;
@@ -149,6 +156,7 @@ function tickFallback(timestamp: number): void {
   }
 
   syncTraceDomAtTime(currentPlaybackTimeMs, project);
+  syncNarrationAudio(project, currentPlaybackTimeMs, true);
   animationFrameId = requestAnimationFrame(tickFallback);
 }
 
@@ -176,6 +184,7 @@ export function startTracePlayback(): void {
     else timeline.play();
 
     syncTraceDomAtTime(startTime, project);
+    syncNarrationAudio(project, startTime, true);
     return;
   }
 
@@ -202,6 +211,11 @@ export function stopTracePlayback(options: { commit?: boolean } = {}): void {
     const bridge = getTraceRuntimeBridge();
     bridge?.commitTime(currentPlaybackTimeMs);
     syncTraceDomAtTime(currentPlaybackTimeMs, bridge?.getProject() ?? null);
+    syncNarrationAudio(
+      bridge?.getProject() ?? null,
+      currentPlaybackTimeMs,
+      false,
+    );
   }
 }
 
@@ -224,6 +238,7 @@ export function seekTracePlayback(
   if (timeline) timeline.time(target / 1000);
 
   syncTraceDomAtTime(target, project);
+  syncNarrationAudio(project, target, false);
   if (options.commit) bridge?.commitTime(target);
 }
 

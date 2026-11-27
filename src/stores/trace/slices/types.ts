@@ -9,10 +9,13 @@
  */
 
 import type { TraceApplyOpsResult, TraceOp } from '@/lib/trace/ops/types';
+import type { NarrationTimingOptions } from '@/lib/trace/narration-timing';
 import type {
   AnimatableProperty,
   EasingType,
   SceneTransition,
+  TraceNarration,
+  TraceNarrationLine,
   TraceProject,
 } from '@/lib/trace/types';
 
@@ -182,6 +185,29 @@ export type TraceStoryboardActions = {
   focusScene: (sceneId: string) => void;
 };
 
+export type TraceNarrationActions = {
+  /** Replace the narration block. */
+  setNarration: (narration: TraceNarration) => void;
+  /** Patch one line. */
+  updateNarrationLine: (
+    lineId: string,
+    patch: Partial<Omit<TraceNarrationLine, 'id'>>,
+  ) => void;
+  /** Append a line; returns its id (null when no project is loaded). */
+  addNarrationLine: (input?: {
+    text?: string;
+    sceneId?: string | null;
+  }) => string | null;
+  removeNarrationLine: (lineId: string) => void;
+  /**
+   * Re-time scenes and the canvas to the measured voice durations.
+   * Returns the lines that still need audio, or null without narration.
+   */
+  fitNarrationTiming: (
+    options?: NarrationTimingOptions,
+  ) => { untimedLineIds: string[] } | null;
+};
+
 export type TraceHistoryActions = {
   undo: () => void;
   redo: () => void;
@@ -197,6 +223,7 @@ export type TraceStoreState = TraceDocumentState &
   TraceSelectionActions &
   TraceTrackActions &
   TraceStoryboardActions &
+  TraceNarrationActions &
   TraceHistoryActions;
 
 export type TraceStoreSet = {

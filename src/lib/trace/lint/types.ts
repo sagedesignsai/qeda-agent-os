@@ -42,6 +42,9 @@ export type DiagnosticCode =
   // Scenes
   | 'SCENE_NOT_FOUND'
   | 'SCENE_EMPTY'
+  // Camera
+  | 'CAMERA_TRACK_INVALID'
+  | 'CAMERA_ZOOM_INVALID'
   // Content
   | 'TEXT_OVERFLOW'
   | 'AUDIO_UNRESOLVED';

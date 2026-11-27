@@ -47,6 +47,13 @@ import {
   syncTraceDomAtTime,
 } from '@/lib/trace/runtime/dom-renderer';
 import { getAncestorOffsetAtTime } from '@/lib/trace/runtime/transform-resolver';
+import {
+  cameraForwardPoint,
+  cameraInversePoint,
+  cameraTransformString,
+  isCameraIdentity,
+  resolveCameraAtTime,
+} from '@/lib/trace/runtime/camera';
 import type { TraceProject } from '@/lib/trace/types';
 
 export type TraceStageProps = {
@@ -192,18 +199,29 @@ export function TraceStage(props: TraceStageProps) {
     });
   }, [selectedElement, project, timeMs]);
 
+  const camera = resolveCameraAtTime(project, timeMs);
+  const cameraActive = !isCameraIdentity(camera, project);
+  const cameraTransform = cameraActive
+    ? cameraTransformString(project, camera)
+    : undefined;
+
   const getArtboardPoint = useCallback(
     (clientX: number, clientY: number): GizmoPoint => {
       const canvas = canvasRef.current;
       if (!canvas) return { x: 0, y: 0 };
       const rect = canvas.getBoundingClientRect();
       if (!rect.width || !rect.height) return { x: 0, y: 0 };
-      return {
+      const framed = {
         x: ((clientX - rect.left) / rect.width) * project.width,
         y: ((clientY - rect.top) / rect.height) * project.height,
       };
+      // Handles and elements are displayed through the camera, so pointer
+      // positions must be un-framed before they meet world-space geometry.
+      return cameraActive
+        ? cameraInversePoint(project, camera, framed)
+        : framed;
     },
-    [project.width, project.height],
+    [project, camera, cameraActive],
   );
 
   const gizmoDisabled =
@@ -320,6 +338,13 @@ export function TraceStage(props: TraceStageProps) {
         ).topCenter
       : null;
 
+  const framedLabelPosition =
+    labelPosition && cameraActive
+      ? cameraForwardPoint(project, camera, labelPosition)
+      : labelPosition;
+
+  const directManipulationVisible = !(isPlaying && cameraActive);
+
   return (
     <div
       className="relative flex min-h-0 min-w-0 flex-1 flex-col"
@@ -364,25 +389,28 @@ export function TraceStage(props: TraceStageProps) {
           selectedElement &&
           selectedElement.id === editingPathElementId &&
           selectedTransform &&
-          isPathEditableType(selectedElement.type) ? (
+          isPathEditableType(selectedElement.type) &&
+          directManipulationVisible ? (
             <TracePathEditor
               element={selectedElement}
               transform={selectedTransform}
               origin={selectedOrigin}
-              zoom={viewport.zoom}
+              zoom={viewport.zoom * camera.zoom}
+              cameraTransform={cameraTransform}
               disabled={isPlaying || selectedElement.locked}
               getArtboardPoint={getArtboardPoint}
               onCommit={(model) =>
                 onCommitPath?.(selectedElement.id, model)
               }
             />
-          ) : selectedElement && selectedTransform ? (
+          ) : selectedElement && selectedTransform && directManipulationVisible ? (
             <TraceTransformGizmo
               element={selectedElement}
               bbox={selectionBBox}
               transform={selectedTransform}
               origin={selectedOrigin}
-              zoom={viewport.zoom}
+              zoom={viewport.zoom * camera.zoom}
+              cameraTransform={cameraTransform}
               disabled={gizmoDisabled}
               previewTransform={transformDrag.preview?.transform ?? null}
               previewOrigin={transformDrag.preview?.origin ?? null}
@@ -394,13 +422,13 @@ export function TraceStage(props: TraceStageProps) {
             />
           ) : null}
 
-          {selectedElement && labelPosition ? (
+          {selectedElement && framedLabelPosition && directManipulationVisible ? (
             <span
               data-stage-overlay
               className="pointer-events-none absolute whitespace-nowrap rounded bg-sky-500/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-950"
               style={{
-                left: labelPosition.x,
-                top: labelPosition.y,
+                left: framedLabelPosition.x,
+                top: framedLabelPosition.y,
                 transform: 'translate(-50%, -160%)',
               }}
             >

@@ -13,6 +13,11 @@ import type { AppSettings } from '../ai/settings.js';
 import type { MotionDocument } from '../../lib/motion/types';
 import type { TraceProject } from '../../lib/trace/types';
 import type { SvgAnimationRequest, TraceAnimationPlan } from '../../lib/trace/animation-plan';
+import type { TraceExportSettings } from '../../lib/trace/export/presets';
+import type {
+  TraceRenderJobPayload,
+  TraceRenderProgress,
+} from '../../lib/trace/export/protocol';
 import type {
   TraceOpenResult,
   TraceProjectSummary,
@@ -56,6 +61,7 @@ import type {
   TtsExportResult,
   TtsGenerateRequest,
   TtsProgress,
+  TtsProviderId,
   TtsResult,
   TtsVoiceCatalog,
   TtsVoiceQuery,
@@ -514,6 +520,65 @@ export interface IpcChannels {
   'trace-svg-animation:proposal': { data: { sessionId: string; plan: TraceAnimationPlan } };
   'trace:changed': void;
   'trace:playback-loop': { data: { projectId: string; looping: boolean } };
+  /**
+   * Synthesize voiceover for narration lines. One TTS asset per line, returned
+   * with the measured duration that drives the timeline.
+   */
+  'trace:narration-generate': {
+    req: {
+      lines: Array<{ id?: string; text: string }>;
+      provider?: TtsProviderId;
+      voiceId?: string;
+      projectId?: string;
+    };
+    res:
+      | {
+          lines: Array<{
+            id?: string;
+            text: string;
+            ttsAssetId: string;
+            durationMs: number;
+          }>;
+          warnings: string[];
+          provider: TtsProviderId;
+        }
+      | { error: string };
+  };
+  /** Per-line synthesis progress for the narration dialog. */
+  'trace:narration-progress': {
+    data: { completed: number; total: number; lineId?: string };
+  };
+
+  // ── Trace video export (hidden render window) ─────────────────────────────
+  /** Run a video export job. Chunks and progress come from the render window. */
+  'trace:export-start': {
+    req: {
+      projectId: string;
+      project: TraceProject;
+      presetId: string;
+      outputPath: string;
+    };
+    res: { jobId: string; outputPath: string; frameCount: number; settings: TraceExportSettings };
+  };
+  'trace:pick-export-path': {
+    req: { projectName: string; presetId?: string };
+    res: { path: string } | null;
+  };
+  'trace:reveal-export': { req: { path: string }; res: void };
+  'trace:export-cancel': { req: { jobId: string }; res: void };
+  'trace:export-progress': { data: TraceRenderProgress };
+  'trace:export-cancel-requested': { data: { jobId: string } };
+  'trace:export-job': { req: { jobId: string }; res: TraceRenderJobPayload };
+  'trace:export-chunk': {
+    req: { jobId: string; data: Uint8Array; position: number };
+    res: void;
+  };
+  'trace:export-report': {
+    req: { jobId: string; phase: 'prepare' | 'render' | 'finalize'; frame?: number };
+    res: TraceRenderProgress;
+  };
+  'trace:export-complete': { req: { jobId: string }; res: { outputPath: string } };
+  'trace:export-failed': { req: { jobId: string; message: string }; res: void };
   // Export: the editor starts/cancels; the hidden render window reports chunks.
   'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number; sequence?: boolean }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
   'motion:pick-export-path': { req: { projectName: string; presetId: string }; res: { path: string } | null };
@@ -2075,6 +2140,38 @@ export interface IpcChannels {
   /** Pushed when the studio copilot creates or updates its plan. */
   'studio-copilot:plan-event': { data: AgentPlanEvent };
 
+  // ── Trace Copilot (AI NovaTrace Composition Agent) ───────────────────────
+  /** Run one trace copilot turn. Streams back over `trace-copilot:stream-*`. */
+  'trace-copilot:chat': {
+    req: {
+      messages: UIMessage[];
+      context: {
+        projectId?: string;
+        traceProjectId?: string;
+      };
+    };
+    res: void;
+  };
+  'trace-copilot:stream-chunk': { data: string }; // JSON-serialised fullStream chunk
+  'trace-copilot:stream-done': { runId: string };
+  'trace-copilot:stream-error': { error: string };
+  'trace-copilot:stream-fallback': {
+    fromProvider: string;
+    fromModel: string;
+    toProvider: string;
+    toModel: string;
+    reason: string;
+  };
+  /** Pushed when the trace copilot creates or updates its plan. */
+  'trace-copilot:plan-event': { data: AgentPlanEvent };
+  /**
+   * Pushed when a copilot save loses a revision race with an editor save.
+   * The user's copy was kept; the copilot changes were not applied.
+   */
+  'trace-copilot:drift': {
+    data: { projectId?: string; expectedRevision?: number; message: string };
+  };
+
   // ── Motion Copilot (AI Motion Scene Director Agent) ──────────────────────
   /** Run one motion copilot turn. Streams back over `motion-copilot:stream-*`. */
   'motion-copilot:chat': {
@@ -2082,6 +2179,8 @@ export interface IpcChannels {
       messages: UIMessage[];
       context: {
         projectId?: string;
+        /** Document snapshot for this turn; the handler saves the mutated copy back. */
+        document: MotionDocument;
       };
     };
     res: void;
@@ -2098,6 +2197,13 @@ export interface IpcChannels {
   };
   /** Pushed when the motion copilot creates or updates its plan. */
   'motion-copilot:plan-event': { data: AgentPlanEvent };
+  /**
+   * Pushed when a copilot save loses a revision race with an editor save.
+   * The user's copy was kept; the copilot changes were not applied.
+   */
+  'motion-copilot:drift': {
+    data: { projectId?: string; expectedRevision?: number; message: string };
+  };
 
   // ── Model Builder (AI 3D Model Builder Agent) ────────────────────────────
   /** Run one model builder turn. Streams back over `model-builder:stream-*`. */

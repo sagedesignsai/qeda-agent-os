@@ -32,6 +32,14 @@ function keyframeCount(project: TraceStoreState['project']): number {
   );
 }
 
+function cameraKeyframeCount(project: TraceStoreState['project']): number {
+  if (!project) return 0;
+  return (project.camera?.tracks ?? []).reduce(
+    (total, track) => total + (track.keyframes?.length ?? 0),
+    0,
+  );
+}
+
 export function traceHistoryMiddleware(
   creator: TraceSliceCreator<TraceStoreState>,
 ): TraceSliceCreator<TraceStoreState> {
@@ -72,6 +80,8 @@ export function traceHistoryMiddleware(
         (before.project.storyboard?.scenes.length ?? 0) !==
           (after.project.storyboard?.scenes.length ?? 0) ||
         keyframeCount(before.project) !== keyframeCount(after.project) ||
+        cameraKeyframeCount(before.project) !==
+          cameraKeyframeCount(after.project) ||
         before.project.width !== after.project.width ||
         before.project.height !== after.project.height ||
         before.project.durationMs !== after.project.durationMs ||

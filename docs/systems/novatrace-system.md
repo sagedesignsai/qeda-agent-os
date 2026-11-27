@@ -15,7 +15,7 @@ export to animated SVG or GSAP code.
 ### TraceProject
 ```
 { id, name, width, height, durationMs, fps, elements: Record<id, TraceElement>, rootElementIds,
-  defs?, gradients?, audioTracks?, storyboard? }
+  defs?, gradients?, audioTracks?, storyboard?, camera? }
 ```
 - Default canvas: 1920×1080 @ 60fps, 6000ms duration
 - Other common sizes: 1280×720, 1080×1920 (vertical/reels)
@@ -195,15 +195,56 @@ Scenes are contiguous time ranges within a project:
 ```
 { id, name, startMs, durationMs, intent?, transitionIn?, background? }
 ```
+- `startMs` is **derived**: scenes are laid out back-to-back in array order, and
+  `migrateTraceProject` normalizes legacy documents whose scenes all started at
+  0. Never author `startMs` by hand.
 - Scenes partition the timeline for planning; they do NOT create separate element graphs
 - Elements have an optional `sceneId` linking them to a scene
-- `transitionIn`: 'cut' | 'fade' | 'slide'
+- `transitionIn`: 'cut' | 'fade' | 'slide'. Non-cut entrances run for 450ms
+  (clamped to the scene duration) and are a **frame-level veil**, never an
+  element mutation — the signature template choreographs its own entrances, so
+  multiplying element opacity at a boundary would blink authored content.
+  `fade` dips from the scene's background colour and lifts; `slide` carries the
+  same full-cover veil off the right edge, revealing the composition behind it.
+  The veil paints above the graph and below the subtitle layer.
+- `background` paints behind the graph for that scene. When both the outgoing
+  and incoming scenes define a background, the engine blends them across the
+  entrance. A scene without a background leaves the artboard transparent; the
+  video exporter falls back to the first scene's background (or slate) behind
+  the frame.
+
+## Camera
+
+`project.camera` frames the whole element graph. Absent means the full artboard.
+
+```
+{ x?, y?, zoom?, rotation?, tracks?: PropertyTrack[] }
+```
+
+- `x`/`y` — the canvas point that sits at the centre of the frame (default:
+  canvas centre).
+- `zoom` — multiplier, `1` = 100%; must be positive (render clamps to 0.05–20).
+- `rotation` — degrees.
+- `tracks` — one per property, animating `x`, `y`, `zoom` or `rotation` with the
+  same keyframe/easing model as elements.
+- The camera is **screen-space**: scene backgrounds, entrance veils and burned-in
+  subtitles do not move with it.
+- Transform order: `translate(centre) rotate(rotation) scale(zoom)
+  translate(-x, -y)`.
+- Set or animate with the `setCamera` tool/op; `null` clears it. The inspector's
+  Camera section edits the base values and adds keyframes at the playhead.
 
 ## Export
 
-- **Animated SVG**: Full SVG with inline GSAP timeline (self-contained, embeddable)
-- **GSAP code**: React component or vanilla JS with GSAP timeline
-- Both use the same `resolveElementAtTime` evaluation path
+- **Animated SVG**: self-contained SMIL document (no JavaScript), for embeds
+- **GSAP code**: React component or vanilla JS with a GSAP timeline
+- **Video**: frame-exact MP4 (H.264) or WebM (VP9/AV1) rendered in a hidden
+  window, with narration audio muxed in when voice lines exist
+- All paths evaluate the same document; the video path serializes each frame
+  with `staticSvgMarkup`, so camera framing, scene backgrounds, entrance veils
+  and burned-in subtitles match the editor stage. The animated-SVG and GSAP
+  artifacts remain approximations for parametric internals and do not author
+  camera moves or scene veils (their markup is generated without those layers).
 
 ## Design Patterns
 

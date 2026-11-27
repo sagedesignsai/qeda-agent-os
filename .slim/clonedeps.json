@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "updatedAt": "2026-11-27T00:00:00.000Z",
+  "dependencies": [
+    {
+      "name": "remotion-dev/skills",
+      "resolvedVersion": "a3f4098a2afd0e13f6a6f8c8760e275f75457ea9",
+      "repoUrl": "https://github.com/remotion-dev/skills.git",
+      "ref": "HEAD (main)",
+      "path": ".slim/clonedeps/repos/remotion-dev__skills",
+      "packagePath": "",
+      "reason": "Clean-room reference: official Remotion Agent Skills (best-practices, markup, maps, captions, elements, render, docs sub-skills) for pattern adoption into the Trace/Motion copilots"
+    },
+    {
+      "name": "Yusuke710/manim-skill",
+      "resolvedVersion": "a0048d9e265499038f34a9aa58ff16d306b5034c",
+      "repoUrl": "https://github.com/Yusuke710/manim-skill.git",
+      "ref": "HEAD (main)",
+      "path": ".slim/clonedeps/repos/Yusuke710__manim-skill",
+      "packagePath": "skills/manim-skill",
+      "reason": "Clean-room reference: narration-first TTS-to-timeline pipeline, timestamped video-notes review loop, session-folder layout for agent-generated video"
+    }
+  ]
+}

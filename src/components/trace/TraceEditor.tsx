@@ -38,6 +38,7 @@ import { TraceStage } from '@/components/trace/TraceStage';
 import { TraceTimeline } from '@/components/trace/TraceTimeline';
 import { ExportDialog } from '@/components/trace/dialogs/ExportDialog';
 import { AnimateSvgDialog } from '@/components/trace/dialogs/AnimateSvgDialog';
+import { NarrationDialog } from '@/components/trace/dialogs/NarrationDialog';
 import { TraceCommandBar } from '@/components/trace/TraceCommandBar';
 import { TraceCopilotSheet } from '@/components/trace/copilot';
 import {
@@ -120,6 +121,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
 
   const [exportOpen, setExportOpen] = useState(false);
   const [animateSvgOpen, setAnimateSvgOpen] = useState(false);
+  const [narrationOpen, setNarrationOpen] = useState(false);
   const [animateTargetId, setAnimateTargetId] = useState<string | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotInitialPrompt, setCopilotInitialPrompt] = useState<
@@ -570,6 +572,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
         <div className="mx-2 flex min-w-0 flex-1 justify-center">
           <TraceCommandBar
             onAnimateSvg={() => openAnimateSvg()}
+            onNarration={() => setNarrationOpen(true)}
             onImportSvg={handleImportSvg}
             onExport={() => setExportOpen(true)}
           />
@@ -752,6 +755,11 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
       )}
 
       <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+
+      <NarrationDialog
+        open={narrationOpen}
+        onOpenChange={setNarrationOpen}
+      />
       <AnimateSvgDialog
         open={animateSvgOpen}
         onOpenChange={setAnimateSvgOpen}

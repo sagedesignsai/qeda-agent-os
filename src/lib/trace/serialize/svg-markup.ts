@@ -12,7 +12,18 @@
 
 import { filtersToDefs } from '../filters/serialize';
 import { scrubDangerousSvgMarkup } from '../parser/svg-scrub';
+import {
+  cameraTransformString,
+  isCameraIdentity,
+  resolveCameraAtTime,
+} from '../runtime/camera';
 import { resolveElementAtTime } from '../runtime/resolve-element';
+import {
+  DEFAULT_SCENE_BACKGROUND,
+  sceneBackgroundAtTime,
+  sceneVeilAtTime,
+} from '../runtime/scenes';
+import { subtitleAtTime } from '../runtime/subtitles';
 import { migrateTraceProject } from '../migrate';
 import type { TraceElement, TraceGradient, TraceProject } from '../types';
 
@@ -273,18 +284,109 @@ export function elementTreeMarkup(
 export function staticSvgMarkup(
   inputProject: TraceProject,
   timeMs: number,
-  options: { background?: string; size?: boolean } = {},
+  options: {
+    background?: string;
+    size?: boolean;
+    subtitles?: boolean;
+    /**
+     * Paint the scene entrance veil. Exporters that bake their own animation
+     * (GSAP, SVG specialisation) disable it so a snapshot taken mid transition
+     * cannot freeze a cover panel into the artifact.
+     */
+    scenePresentation?: boolean;
+    /**
+     * Apply the composition camera to the graph. Exporters that bake their own
+     * animation (GSAP, SVG specialisation) disable it: they do not author a
+     * camera move, so baking one frame's framing would crop the artifact.
+     */
+    camera?: boolean;
+  } = {},
 ): string {
   const project = migrateTraceProject(inputProject);
   const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${scrubDangerousSvgMarkup(project.defs ?? '')}`;
   const roots = project.rootElementIds
     .map((elementId) => elementTreeMarkup(project, elementId, timeMs))
     .join('\n');
+  const camera = resolveCameraAtTime(project, timeMs);
+  const framedRoots =
+    roots && options.camera !== false && !isCameraIdentity(camera, project)
+      ? `<g data-trace-camera="true" transform="${cameraTransformString(
+          project,
+          camera,
+        )}">${roots}</g>`
+      : roots;
   const background = options.background
     ? `<rect width="${project.width}" height="${project.height}" fill="${escapeXml(options.background)}" />`
-    : '';
+    : sceneBackgroundMarkup(project, timeMs);
+  const veil =
+    options.background || options.scenePresentation === false
+      ? ''
+      : sceneVeilMarkup(project, timeMs);
+  const subtitles =
+    options.subtitles === false ? '' : subtitleMarkup(project, timeMs);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${project.width} ${project.height}"${
     options.size ? ` width="${project.width}" height="${project.height}"` : ''
-  }>${defs ? `<defs>${defs}</defs>` : ''}${background}${roots}</svg>`;
+  }>${defs ? `<defs>${defs}</defs>` : ''}${background}${framedRoots}${veil}${subtitles}</svg>`;
+}
+
+/** Per-scene background, blended across an entrance when both scenes set one. */
+function sceneBackgroundMarkup(
+  project: TraceProject,
+  timeMs: number,
+): string {
+  const background = sceneBackgroundAtTime(project, timeMs);
+  if (!background) return '';
+  return `<rect width="${project.width}" height="${project.height}" fill="${escapeXml(background.fill)}" />`;
+}
+
+/**
+ * The entrance veil sits above the graph and below the subtitle layer, so a
+ * dip never hides the narration. It is omitted entirely when settled.
+ */
+function sceneVeilMarkup(
+  project: TraceProject,
+  timeMs: number,
+): string {
+  const veil = sceneVeilAtTime(
+    project,
+    timeMs,
+    sceneBackgroundAtTime(project, 0)?.fill ?? DEFAULT_SCENE_BACKGROUND,
+  );
+  if (!veil) return '';
+
+  const offset = veil.translateX
+    ? ` transform="translate(${veil.translateX} 0)"`
+    : '';
+  return `<rect data-trace-scene-veil="true" width="${veil.width}" height="${veil.height}" fill="${escapeXml(veil.fill)}" opacity="${num(veil.opacity, 1)}"${offset} />`;
+}
+
+/**
+ * The engine-owned subtitle layer, serialized at a point in time.
+ *
+ * Width is estimated from the glyph count (no measured text metrics outside a
+ * DOM); the editor overlay measures live. Both share the same timing function,
+ * so a frame cannot say one thing on screen and another in the file. Nothing is
+ * emitted between lines, so exports at a silent frame (t=0 included) are clean.
+ */
+function subtitleMarkup(project: TraceProject, timeMs: number): string {
+  const frame = subtitleAtTime(project, timeMs);
+  if (!frame) return '';
+
+  const fontSize = Math.max(14, Math.round(project.height * 0.03));
+  const baseline = Math.round(project.height * 0.91);
+  const centerX = project.width / 2;
+  const label = frame.speaker
+    ? `${frame.speaker.toUpperCase()}  ${frame.text}`
+    : frame.text;
+  const textWidth = Math.max(fontSize, label.length * fontSize * 0.55);
+  const padX = Math.round(fontSize * 0.8);
+  const padY = Math.round(fontSize * 0.45);
+
+  return (
+    `<g id="trace-subtitle-group" pointer-events="none">` +
+    `<rect id="trace-subtitle-bg" x="${Math.round(centerX - textWidth / 2 - padX)}" y="${baseline - fontSize - padY}" width="${Math.round(textWidth + padX * 2)}" height="${Math.round(fontSize * 1.6 + padY)}" rx="${Math.round(fontSize * 0.35)}" fill="rgba(2, 6, 23, 0.72)" />` +
+    `<text id="trace-subtitle-text" x="${centerX}" y="${baseline}" text-anchor="middle" fill="#f8fafc" font-family="Inter, system-ui, sans-serif" font-weight="600" font-size="${fontSize}">${escapeXml(label)}</text>` +
+    `</g>`
+  );
 }

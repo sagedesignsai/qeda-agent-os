@@ -14,8 +14,10 @@
 import type { Keyframe, TraceElement, TraceProject } from '../types';
 import { lintTraceProject } from '../lint';
 import type { Diagnostic, LintOptions } from '../lint/types';
+import { isCameraProperty } from '../runtime/camera';
 import {
   ensureStoryboard,
+  layoutScenes,
   removeElementsForScene,
   type AddSceneInput,
 } from '../storyboard';
@@ -68,6 +70,9 @@ function emptyDiff(): TraceOpDiff {
     updated: [],
     removed: [],
     scenes: { added: [], updated: [], removed: [] },
+    canvasChanged: false,
+    narrationChanged: false,
+    cameraChanged: false,
   };
 }
 
@@ -94,6 +99,8 @@ function snapshotOf(project: TraceProject): TraceProjectSnapshot {
     gradients: clone.gradients,
     filters: clone.filters,
     audioTracks: clone.audioTracks,
+    narration: clone.narration,
+    camera: clone.camera,
   };
 }
 
@@ -774,6 +781,103 @@ function opSetAudio(
   project.audioTracks = deepClone(op.tracks);
 }
 
+function opSetNarration(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'setNarration' }>,
+): void {
+  project.narration = deepClone(op.narration);
+}
+
+/**
+ * Set or clear the composition camera.
+ *
+ * Validation happens here rather than in the linter so a bad batch fails
+ * atomically: camera tracks may only animate x/y/zoom/rotation, zoom must stay
+ * positive, and every track needs keyframes. Keyframes are sorted on write.
+ */
+function opSetCamera(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'setCamera' }>,
+): void {
+  if (op.camera === null) {
+    delete project.camera;
+    return;
+  }
+
+  const camera = deepClone(op.camera);
+  if (camera.zoom !== undefined) {
+    if (!Number.isFinite(camera.zoom) || camera.zoom <= 0) {
+      throw new TraceOpError(
+        'INVALID_CAMERA_ZOOM',
+        'Camera zoom must be a positive number (1 = 100%).',
+      );
+    }
+  }
+
+  const seenCameraProperties = new Set<string>();
+  for (const track of camera.tracks ?? []) {
+    if (!isCameraProperty(track.property)) {
+      throw new TraceOpError(
+        'INVALID_CAMERA_TRACK',
+        `Camera tracks may animate x, y, zoom or rotation (got "${track.property}").`,
+      );
+    }
+    if (seenCameraProperties.has(track.property)) {
+      throw new TraceOpError(
+        'INVALID_CAMERA_TRACK',
+        `Camera property "${track.property}" has more than one track.`,
+      );
+    }
+    seenCameraProperties.add(track.property);
+    if (!track.keyframes || track.keyframes.length === 0) {
+      throw new TraceOpError(
+        'INVALID_CAMERA_TRACK',
+        `Camera track "${track.property}" needs at least one keyframe.`,
+      );
+    }
+    track.keyframes = [...track.keyframes].sort(
+      (a, b) => a.timeMs - b.timeMs,
+    );
+  }
+
+  project.camera = camera;
+}
+
+/**
+ * Set scene durations and re-lay the storyboard contiguously from zero.
+ * The storyboard's invariant is that array order IS timeline order, so a
+ * duration change must re-derive every following `startMs` in the same batch.
+ */
+function opSetSceneDurations(
+  project: TraceProject,
+  op: Extract<TraceOp, { type: 'setSceneDurations' }>,
+): void {
+  const storyboard = ensureStoryboard(project);
+  const known = new Set(storyboard.scenes.map((scene) => scene.id));
+  for (const id of Object.keys(op.durations)) {
+    if (!known.has(id)) {
+      throw new TraceOpError(
+        'SCENE_NOT_FOUND',
+        `Scene "${id}" does not exist.`,
+      );
+    }
+  }
+
+  const scenes = storyboard.scenes.map((scene) => {
+    const durationMs = op.durations[scene.id];
+    if (durationMs === undefined) return scene;
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+      throw new TraceOpError(
+        'INVALID_SCENE_DURATION',
+        `Scene "${scene.id}" needs a positive duration.`,
+      );
+    }
+    return { ...scene, durationMs: Math.round(durationMs) };
+  });
+
+  project.storyboard = { ...storyboard, scenes: layoutScenes(scenes) };
+}
+
 function opRestore(
   project: TraceProject,
   op: Extract<TraceOp, { type: 'restore' }>,
@@ -790,6 +894,8 @@ function opRestore(
   project.gradients = snapshot.gradients;
   project.filters = snapshot.filters;
   project.audioTracks = snapshot.audioTracks;
+  project.narration = snapshot.narration;
+  project.camera = snapshot.camera;
 }
 
 function applyOne(
@@ -873,6 +979,15 @@ function applyOne(
     case 'setAudio':
       opSetAudio(project, op);
       return;
+    case 'setNarration':
+      opSetNarration(project, op);
+      return;
+    case 'setCamera':
+      opSetCamera(project, op);
+      return;
+    case 'setSceneDurations':
+      opSetSceneDurations(project, op);
+      return;
     case 'restore':
       opRestore(project, op);
       return;
@@ -920,6 +1035,18 @@ function diffProjects(before: TraceProject, after: TraceProject): TraceOpDiff {
   for (const scene of beforeScenes) {
     if (!afterSceneIds.has(scene.id)) diff.scenes.removed.push(scene.id);
   }
+
+  diff.canvasChanged =
+    before.width !== after.width ||
+    before.height !== after.height ||
+    before.durationMs !== after.durationMs ||
+    before.fps !== after.fps;
+  diff.narrationChanged =
+    JSON.stringify(before.narration ?? null) !==
+    JSON.stringify(after.narration ?? null);
+  diff.cameraChanged =
+    JSON.stringify(before.camera ?? null) !==
+    JSON.stringify(after.camera ?? null);
 
   return diff;
 }

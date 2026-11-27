@@ -4,23 +4,53 @@
  * getMotionCapability — the queryable capability surface over the Motion
  * engine (Trace getTraceCapability equivalent). Derived from the live
  * registry; never hand-written prose.
+ *
+ * Also serves the NORMATIVE copilot contract from `docs/motion-2/`. The
+ * contract is loaded from disk on every call (not baked into the prompt) so a
+ * docs edit changes agent behavior without a rebuild — the same
+ * "current documentation over memorized API" rule the Remotion skills use.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { app } from 'electron';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { discoverMotionCapability } from '../ai/motion-capability';
 
+/** Read the copilot contract from the app bundle, falling back to the source tree. */
+async function readMotionContract(): Promise<string | null> {
+  const candidates = [
+    path.join(app.getAppPath(), 'docs', 'motion-2', 'copilot-contract.md'),
+    path.join(process.cwd(), 'docs', 'motion-2', 'copilot-contract.md'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate, 'utf-8');
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
+}
+
 export function createMotionCapabilityTool() {
   return tool({
     description:
-      'Ask what the Motion system can do before building. Returns grounded guidance: ' +
-      'suggested composition patterns, matching node types, available recipes, and design practices. ' +
-      'Call this FIRST for complex briefs ("How do I build a product hero?", "What primitives express a chart?") ' +
-      'to ground output in real system capabilities. For simple tweaks, skip it and use motion.scene.director directly.',
+      'Load the Motion copilot contract and grounded capability guidance. Returns the NORMATIVE contract ' +
+      '(mutation rules, hard rules, budgets, verification commands, "done means") plus suggested composition ' +
+      'patterns, matching node types, available recipes, and design practices. ' +
+      'Call this FIRST for any new scene or multi-node change ("How do I build a product hero?") ' +
+      'to ground output in real system capabilities. For simple single-node tweaks, skip it.',
     inputSchema: z.object({
       query: z.string().min(3).max(500).describe('What you want to build or know, e.g. "How do I build a product hero shot?"'),
     }),
-    execute: async ({ query }) => discoverMotionCapability(query),
+    execute: async ({ query }) => {
+      const capability = discoverMotionCapability(query);
+      const contract = await readMotionContract();
+      return { ...capability, contract };
+    },
   });
 }
 

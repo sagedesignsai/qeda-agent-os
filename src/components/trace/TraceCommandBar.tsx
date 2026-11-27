@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { DownloadIcon, SearchIcon, SparklesIcon, UploadIcon } from 'lucide-react';
+import { AudioLinesIcon, DownloadIcon, SearchIcon, SparklesIcon, UploadIcon } from 'lucide-react';
 
 import {
   Command,
@@ -24,12 +24,14 @@ import {
 
 export type TraceCommandBarProps = {
   onAnimateSvg: () => void;
+  onNarration: () => void;
   onImportSvg: () => void;
   onExport: () => void;
 };
 
 export function TraceCommandBar({
   onAnimateSvg,
+  onNarration,
   onImportSvg,
   onExport,
 }: TraceCommandBarProps) {
@@ -62,6 +64,10 @@ export function TraceCommandBar({
               <CommandItem onSelect={() => run(onAnimateSvg)}>
                 <SparklesIcon className="text-orange-300" />
                 <span>Animate SVG</span>
+              </CommandItem>
+              <CommandItem onSelect={() => run(onNarration)}>
+                <AudioLinesIcon className="text-indigo-300" />
+                <span>Narration &amp; voiceover</span>
               </CommandItem>
             </CommandGroup>
             <CommandSeparator />

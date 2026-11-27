@@ -40,5 +40,9 @@ npm-debug.log.*
 
 # Deepwork progress state (git-local, never committed)
 .slim/deepwork/
+
+# BEGIN oh-my-opencode-slim clonedeps
+.slim/clonedeps/repos/
+# END oh-my-opencode-slim clonedeps
 .vercel
 .env*

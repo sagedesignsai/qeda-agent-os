@@ -18,6 +18,7 @@ export type TtsOrigin =
   | 'chat'
   | 'studio'
   | 'motion'
+  | 'trace'
   | 'settings'
   | 'api';
 

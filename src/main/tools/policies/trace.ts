@@ -63,10 +63,18 @@ export const traceToolPolicies: ToolPolicyMap = {
   // ── Storyboard (additive scene planning) ──────────────────────────────────
   addScene: t('write-local'),
 
+  // ── Narration (voice-first timing; stores lines + retimes scenes) ─────────
+  setNarration: t('write-local'),
+  // Metered TTS: gated by the default `cost` approval policy.
+  generateNarrationVoice: t('cost'),
+
+  // ── Camera (screen-space framing over the whole graph) ────────────────────
+  setCamera: t('write-local'),
+
   // ── Export (read-only — generates output, does not mutate) ────────────────
   exportSvg: t('read'),
 
-  // ── Visual verification (read-only — renders an SVG frame to temp) ───────
+  // ── Visual verification (read-only — vision-model review of rendered frames) ─
   renderTracePreview: t('read'),
 
   // ── Capability discovery (read-only — loads docs) ──────────────────────────

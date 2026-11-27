@@ -63,6 +63,9 @@ function buildMotionInstructions(
 ${sceneInfo}
 ${projectContext}
 
+## Contract — Normative
+\`getMotionCapability\` returns the grounded capability guidance AND the binding copilot contract (\`docs/motion-2/copilot-contract.md\`). The contract wins where it disagrees with anything below: op-only mutations, seconds-not-frames, key lighting for 3D scenes, bounded procedural counts, clip re-use, explicit cameras/lights, render explicitness, and "done means". Load it before any new scene or multi-node change.
+
 ## Available Engine Capabilities
 ${engineInfo}
 
@@ -98,9 +101,10 @@ You help users create, edit, and animate 3D motion scenes conversationally. You 
      hand-sequencing many scene ops when the task has many interdependent parts
 
 6. **Capability Discovery** (getMotionCapability tool):
-   - Call FIRST for complex briefs ("How do I build a product hero?").
-     Returns composition patterns, matching node types, recipes, design practices.
-   - For simple tweaks, skip it and edit directly.
+   - Call FIRST for complex briefs and any new scene. Returns composition
+     patterns, matching node types, recipes, design practices, and the binding
+     copilot contract.
+   - For simple single-node tweaks, skip it and edit directly.
 
 7. **Recipes** (applyMotionRecipe tool):
    - Senior-designer patterns as op batches: product-hero, stinger-3d, data-viz.
@@ -115,6 +119,9 @@ You help users create, edit, and animate 3D motion scenes conversationally. You 
 - When you execute tools, summarize what was added or changed in clean markdown.
 - Suggest next steps (e.g., "Would you like me to add keyframes to animate this?").
 - Avoid fluff; focus on making the scene look great.
+- **Completion contract:** never end a turn with a vague success. If the deliverable does not exist, state the exact blocker and what you need. If you could not check something (motion feel, timing rhythm, lighting taste, audio), say plainly that it was not checked.
+- **Render explicitness:** call \`renderMotionPreview\` to verify a change the user asked for or the plan requires — not to browse. Only export/render video when the user explicitly asks; it is the most expensive operation in the product.
+- **User edits win:** the renderer sends a document snapshot per turn. If saving back reports a conflict, the user's editor copy was kept. Tell the user and ask them to re-run — never retry blindly.
 
 ## Planning Protocol
 Before using any other tool, call \`createPlan\` with an ordered list of tasks

@@ -11,6 +11,7 @@ import type {
   PropertyTrack,
 } from './types';
 import { expandRecipe } from './recipes';
+import { layoutScenes } from './storyboard';
 
 const LEGACY_TYPES = new Set([
   'counter',
@@ -616,6 +617,27 @@ function migrateRetiredProperties(element: TraceElement): TraceElement {
 }
 
 /**
+ * Storyboard scenes are contiguous: `startMs` is derived from the scene order
+ * and the preceding durations. Older templates could persist several scenes at
+ * `startMs: 0`, which made the timeline overlap and `focusScene` seek to the
+ * wrong time. Normalizing here repairs those documents on load without
+ * touching any keyframe time.
+ */
+function normalizeStoryboard(project: TraceProject): TraceProject {
+  const storyboard = project.storyboard;
+  if (!storyboard || storyboard.scenes.length === 0) return project;
+
+  const laidOut = layoutScenes(storyboard.scenes);
+  const unchanged = laidOut.every(
+    (scene, index) =>
+      scene.startMs === storyboard.scenes[index].startMs &&
+      scene.durationMs === storyboard.scenes[index].durationMs,
+  );
+  if (unchanged) return project;
+  return { ...project, storyboard: { ...storyboard, scenes: laidOut } };
+}
+
+/**
  * Normalize retired attributes, then expand legacy macro elements while keeping
  * their ids and parent/root slots. A second invocation returns the same object
  * without allocating.
@@ -647,5 +669,5 @@ export function migrateTraceProject(project: TraceProject): TraceProject {
     }
   }
 
-  return changed ? { ...project, elements } : project;
+  return normalizeStoryboard(changed ? { ...project, elements } : project);
 }

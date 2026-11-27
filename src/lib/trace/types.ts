@@ -28,6 +28,7 @@ export type AnimatableProperty =
   | 'y'
   | 'scaleX'
   | 'scaleY'
+  | 'zoom'
   | 'rotation'
   | 'opacity'
   | 'fillOpacity'
@@ -187,6 +188,54 @@ export interface AudioTrack {
   type?: 'music' | 'sfx' | 'voiceover';
 }
 
+/**
+ * One spoken line in a narrated composition.
+ *
+ * `durationMs` is the MEASURED length of the generated voice asset — never an
+ * estimate — and `startMs` is derived by `buildNarrationTiming`. Scenes and
+ * keyframes are timed to these numbers; audio is never retimed to fit picture
+ * ("voices before pictures").
+ */
+export interface TraceNarrationLine {
+  id: string;
+  text: string;
+  /** Generated TTS asset id. `qeda-media://tts/<id>` resolves playback. */
+  ttsAssetId?: string;
+  /** Measured spoken duration, filled once the asset exists. */
+  durationMs?: number;
+  /** Absolute start on the project timeline, derived from measured audio. */
+  startMs?: number;
+  /** Storyboard scene this line belongs to. */
+  sceneId?: string | null;
+  /** Optional on-screen speaker label. */
+  speaker?: string;
+}
+
+/** Narrated voiceover for a composition. Optional: most projects have none. */
+export interface TraceNarration {
+  /** TTS provider voice used for every line. Changing it invalidates the cache. */
+  voiceId?: string;
+  provider?: string;
+  lines: TraceNarrationLine[];
+}
+
+/**
+ * A 2D composition camera. It is screen-space framing over the element graph:
+ * `x`/`y` name the canvas point that sits at the centre of the frame, `zoom`
+ * is a multiplier (1 = 100%) and `rotation` is in degrees.
+ *
+ * Framing is animatable through the same property tracks as elements, limited
+ * to x, y, zoom and rotation. Subtitles, scene backgrounds and the entrance
+ * veil are screen-space and are never moved by the camera.
+ */
+export interface TraceCamera {
+  x?: number;
+  y?: number;
+  zoom?: number;
+  rotation?: number;
+  tracks?: PropertyTrack[];
+}
+
 import type { TraceFilter } from './filters/types';
 
 export interface TraceProject {
@@ -206,6 +255,10 @@ export interface TraceProject {
   audioTracks?: AudioTrack[];
   /** Optional storyboard metadata. Legacy projects are migrated on load. */
   storyboard?: TraceStoryboard;
+  /** Optional spoken narration; scenes are timed to its measured durations. */
+  narration?: TraceNarration;
+  /** Optional 2D camera framing; absent means the full artboard is the frame. */
+  camera?: TraceCamera;
 }
 
 export type TraceEmbedPlacement = 'inline' | 'hero' | 'sidebar';

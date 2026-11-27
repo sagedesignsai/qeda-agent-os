@@ -586,6 +586,8 @@ function MotionCopilotContent({
     clearMessages,
     fallbackNotice,
     dismissFallbackNotice,
+    driftNotice,
+    dismissDriftNotice,
   } = useMotionCopilot({
     projectId: doc.meta.id,
     document: doc,
@@ -607,6 +609,8 @@ function MotionCopilotContent({
       clearMessages={clearMessages}
       fallbackNotice={fallbackNotice ?? null}
       dismissFallbackNotice={dismissFallbackNotice}
+      driftNotice={driftNotice}
+      dismissDriftNotice={dismissDriftNotice}
     />
   );
 }

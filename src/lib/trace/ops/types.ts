@@ -15,6 +15,7 @@ import type {
   AudioTrack,
   EasingType,
   TraceElement,
+  TraceNarration,
   TraceProject,
   TraceScene,
   TraceStoryboard,
@@ -48,6 +49,8 @@ export interface TraceProjectSnapshot {
   gradients?: TraceProject['gradients'];
   filters?: TraceProject['filters'];
   audioTracks?: AudioTrack[];
+  narration?: TraceNarration;
+  camera?: TraceProject['camera'];
 }
 
 /**
@@ -184,6 +187,19 @@ export type TraceOp =
   | { type: 'setDefs'; defs: string }
   | { type: 'setFilters'; filters: TraceProject['filters'] }
   | { type: 'setAudio'; tracks: AudioTrack[] }
+  /** Replace the spoken narration (lines, measured durations, scene assignment). */
+  | { type: 'setNarration'; narration: TraceNarration }
+  /**
+   * Set scene durations and re-lay the storyboard out contiguously from 0.
+   * Used by the narration timing builder: voices decide scene length, and the
+   * storyboard invariant (contiguous, array order) is preserved atomically.
+   */
+  | { type: 'setSceneDurations'; durations: Record<string, number> }
+  /**
+   * Set or clear the composition camera. `null` restores the full-artboard
+   * framing. Camera tracks animate x, y, zoom and rotation only.
+   */
+  | { type: 'setCamera'; camera: TraceProject['camera'] | null }
   /**
    * Replaces document state from a snapshot. Used to express the inverse of a
    * batch; agents should not need to call this directly.
@@ -199,6 +215,12 @@ export interface TraceOpDiff {
     updated: string[];
     removed: string[];
   };
+  /** Canvas fields (size/duration/fps) changed. */
+  canvasChanged?: boolean;
+  /** The narration block changed. Optional so older diff producers stay valid. */
+  narrationChanged?: boolean;
+  /** The camera block changed. Optional so older diff producers stay valid. */
+  cameraChanged?: boolean;
 }
 
 export interface TraceApplyOpsOptions {

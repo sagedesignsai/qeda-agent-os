@@ -102,6 +102,8 @@ export function TraceCopilotSheet({
     error,
     fallbackNotice,
     dismissFallbackNotice,
+    driftNotice,
+    dismissDriftNotice,
     sendMessage,
     respondToApproval,
     clearMessages,
@@ -243,6 +245,21 @@ export function TraceCopilotSheet({
               variant="ghost"
               className="size-5 shrink-0 text-amber-500 hover:text-amber-400"
               onClick={dismissFallbackNotice}
+            >
+              <XIcon className="size-3" />
+            </Button>
+          </div>
+        )}
+
+        {/* ── Revision Drift Notice ──────────────────────────────────────────── */}
+        {driftNotice && (
+          <div className="mx-3 my-2 flex items-start justify-between gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+            <span>{driftNotice.message}</span>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-5 shrink-0 text-destructive hover:text-destructive/80"
+              onClick={dismissDriftNotice}
             >
               <XIcon className="size-3" />
             </Button>

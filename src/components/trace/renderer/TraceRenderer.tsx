@@ -18,6 +18,24 @@ import {
   gradientsToDefs,
 } from '@/lib/trace/serialize/svg-markup';
 import { elementDomId } from '@/lib/trace/runtime/dom-renderer';
+import {
+  cameraDomId,
+  cameraTransformString,
+  isCameraIdentity,
+  resolveCameraAtTime,
+} from '@/lib/trace/runtime/camera';
+import {
+  DEFAULT_SCENE_BACKGROUND,
+  sceneBackgroundAtTime,
+  sceneBackgroundDomId,
+  sceneVeilAtTime,
+  sceneVeilDomId,
+} from '@/lib/trace/runtime/scenes';
+import {
+  TRACE_SUBTITLE_BG_ID,
+  TRACE_SUBTITLE_GROUP_ID,
+  TRACE_SUBTITLE_TEXT_ID,
+} from '@/lib/trace/runtime/subtitles';
 import { resolveElementAtTime } from '@/lib/trace/runtime/resolve-element';
 import type { TraceElement, TraceProject } from '@/lib/trace/types';
 
@@ -43,6 +61,8 @@ export type TraceRendererProps = {
   interactive?: boolean;
   /** Force a background paint for posters. */
   background?: string;
+  /** Draw the engine-owned subtitle layer (default true for narrated projects). */
+  showSubtitles?: boolean;
 };
 
 type ElementNodeProps = Omit<TraceRendererProps, 'project'> & {
@@ -142,11 +162,18 @@ export function TraceRenderer({
   style,
   interactive = true,
   background,
+  showSubtitles = true,
 }: TraceRendererProps) {
   const defs = `${gradientsToDefs(project.gradients)}${filtersToDefs(Object.values(project.filters ?? {}))}${scrubDangerousSvgMarkup(project.defs ?? '')}`;
   const roots = project.rootElementIds
     .map((elementId) => project.elements[elementId])
     .filter((element): element is TraceElement => Boolean(element));
+  const hasSubtitles = showSubtitles && (project.narration?.lines.length ?? 0) > 0;
+  const sceneFallbackFill =
+    sceneBackgroundAtTime(project, 0)?.fill ?? DEFAULT_SCENE_BACKGROUND;
+  const veil = background ? null : sceneVeilAtTime(project, timeMs, sceneFallbackFill);
+  const camera = resolveCameraAtTime(project, timeMs);
+  const cameraActive = !isCameraIdentity(camera, project);
 
   return (
     <svg
@@ -173,20 +200,89 @@ export function TraceRenderer({
           height={project.height}
           fill={background}
         />
-      ) : null}
-      {roots.map((element) => (
-        <ElementNode
-          key={element.id}
-          project={project}
-          element={element}
-          timeMs={timeMs}
-          elementIdPrefix={elementIdPrefix}
-          selectedElementId={selectedElementId}
-          onSelectElement={onSelectElement}
-          onDoubleClickElement={onDoubleClickElement}
-          interactive={interactive}
+      ) : (
+        // Scene backgrounds paint behind the graph; the runtime rewrites the
+        // fill when the storyboard crosses a scene boundary.
+        <rect
+          id={sceneBackgroundDomId(elementIdPrefix ?? 'trace-elem')}
+          data-trace-scene-background="true"
+          x={0}
+          y={0}
+          width={project.width}
+          height={project.height}
+          fill={sceneBackgroundAtTime(project, timeMs)?.fill ?? 'none'}
         />
-      ))}
+      )}
+      {/* The camera frames the element graph only: backgrounds, veils and
+          subtitles are screen-space and live outside this group. */}
+      <g
+        id={cameraDomId(elementIdPrefix ?? 'trace-elem')}
+        data-trace-camera="true"
+        transform={
+          cameraActive
+            ? cameraTransformString(project, camera)
+            : undefined
+        }
+      >
+        {roots.map((element) => {
+          return (
+            <ElementNode
+              key={element.id}
+              project={project}
+              element={element}
+              timeMs={timeMs}
+              elementIdPrefix={elementIdPrefix}
+              selectedElementId={selectedElementId}
+              onSelectElement={onSelectElement}
+              onDoubleClickElement={onDoubleClickElement}
+              interactive={interactive}
+            />
+          );
+        })}
+      </g>
+      {background ? null : (
+        // The scene entrance veil lives above the graph and below subtitles.
+        // It is always mounted so the runtime can find it across boundaries.
+        <rect
+          id={sceneVeilDomId(elementIdPrefix ?? 'trace-elem')}
+          data-trace-scene-veil="true"
+          x={0}
+          y={0}
+          width={project.width}
+          height={project.height}
+          fill={veil?.fill ?? 'none'}
+          opacity={veil?.opacity ?? 0}
+          transform={
+            veil && veil.translateX
+              ? `translate(${veil.translateX} 0)`
+              : undefined
+          }
+          pointerEvents="none"
+        />
+      )}
+      {hasSubtitles ? (
+        <g id={TRACE_SUBTITLE_GROUP_ID} pointerEvents="none" opacity={0}>
+          <rect
+            id={TRACE_SUBTITLE_BG_ID}
+            x={0}
+            y={0}
+            width={0}
+            height={0}
+            rx={10}
+            fill="rgba(2, 6, 23, 0.72)"
+          />
+          <text
+            id={TRACE_SUBTITLE_TEXT_ID}
+            x={project.width / 2}
+            y={Math.round(project.height * 0.91)}
+            textAnchor="middle"
+            fill="#f8fafc"
+            fontFamily="Inter, system-ui, sans-serif"
+            fontWeight={600}
+            fontSize={Math.max(14, Math.round(project.height * 0.03))}
+          />
+        </g>
+      ) : null}
     </svg>
   );
 }

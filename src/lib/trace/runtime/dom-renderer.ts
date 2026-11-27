@@ -19,6 +19,25 @@ import {
   formatTraceTimecode,
   resolveElementAtTime,
 } from './resolve-element';
+import {
+  DEFAULT_SCENE_BACKGROUND,
+  sceneBackgroundAtTime,
+  sceneBackgroundDomId,
+  sceneVeilAtTime,
+  sceneVeilDomId,
+} from './scenes';
+import {
+  cameraDomId,
+  cameraTransformString,
+  isCameraIdentity,
+  resolveCameraAtTime,
+} from './camera';
+import {
+  TRACE_SUBTITLE_BG_ID,
+  TRACE_SUBTITLE_GROUP_ID,
+  TRACE_SUBTITLE_TEXT_ID,
+  subtitleAtTime,
+} from './subtitles';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -346,7 +365,118 @@ export function syncTraceDomAtTime(
     applyElementAnimationAtTime(node, element, timeMs, selectedIds);
   }
 
+  syncPresentationAtTime(timeMs, doc);
+  syncTraceSubtitlesAtTime(timeMs, doc);
   updateTransportUi(timeMs, doc);
+}
+
+/**
+ * Write the presentation layer each frame: camera framing, the active scene
+ * background and the entrance veil. All three are presentation-only paint, so
+ * they never need an undo step or a document mutation.
+ */
+function syncPresentationAtTime(
+  timeMs: number,
+  project: TraceProject,
+): void {
+  if (typeof document === 'undefined') return;
+
+  const cameraNode = document.getElementById(cameraDomId());
+  if (cameraNode) {
+    const state = resolveCameraAtTime(project, timeMs);
+    if (isCameraIdentity(state, project)) {
+      cameraNode.removeAttribute('transform');
+    } else {
+      cameraNode.setAttribute(
+        'transform',
+        cameraTransformString(project, state),
+      );
+    }
+  }
+
+  const background = document.getElementById(sceneBackgroundDomId());
+  if (background) {
+    const state = sceneBackgroundAtTime(project, timeMs);
+    background.setAttribute('fill', state?.fill ?? 'none');
+  }
+
+  const veilNode = document.getElementById(sceneVeilDomId());
+  if (!veilNode) return;
+
+  const fallbackFill =
+    sceneBackgroundAtTime(project, 0)?.fill ?? DEFAULT_SCENE_BACKGROUND;
+  const veil = sceneVeilAtTime(project, timeMs, fallbackFill);
+  if (!veil) {
+    veilNode.setAttribute('opacity', '0');
+    veilNode.removeAttribute('transform');
+    return;
+  }
+
+  veilNode.setAttribute('fill', veil.fill);
+  veilNode.setAttribute('opacity', String(veil.opacity));
+  if (veil.translateX) {
+    veilNode.setAttribute('transform', `translate(${veil.translateX} 0)`);
+  } else {
+    veilNode.removeAttribute('transform');
+  }
+}
+
+/**
+ * Write the engine-owned subtitle layer. Subtitles live in the SVG (not an HTML
+ * overlay) so zoom and pan keep them registered to the artboard, and so the
+ * export renderer draws the identical frame.
+ */
+function syncTraceSubtitlesAtTime(
+  timeMs: number,
+  project: TraceProject,
+): void {
+  const group = document.getElementById(TRACE_SUBTITLE_GROUP_ID);
+  if (!group) return;
+  const text = document.getElementById(
+    TRACE_SUBTITLE_TEXT_ID,
+  ) as SVGTextElement | null;
+  const background = document.getElementById(
+    TRACE_SUBTITLE_BG_ID,
+  ) as SVGRectElement | null;
+  if (!text || !background) return;
+
+  const frame = subtitleAtTime(project, timeMs);
+  if (!frame) {
+    group.setAttribute('opacity', '0');
+    text.textContent = '';
+    return;
+  }
+
+  text.textContent = frame.speaker
+    ? `${frame.speaker.toUpperCase()}  ${frame.text}`
+    : frame.text;
+
+  const fontSize =
+    Number(text.getAttribute('font-size')) ||
+    Math.max(14, Math.round(project.height * 0.03));
+  const baseline = Math.round(project.height * 0.91);
+  const centerX = project.width / 2;
+  text.setAttribute('x', String(centerX));
+  text.setAttribute('y', String(baseline));
+
+  let textWidth = 0;
+  try {
+    textWidth = text.getComputedTextLength();
+  } catch {
+    textWidth = (text.textContent?.length ?? 0) * fontSize * 0.55;
+  }
+  if (!Number.isFinite(textWidth) || textWidth <= 0) {
+    textWidth = (text.textContent?.length ?? 0) * fontSize * 0.55;
+  }
+
+  const padX = Math.round(fontSize * 0.8);
+  const padY = Math.round(fontSize * 0.45);
+  background.setAttribute('x', String(centerX - textWidth / 2 - padX));
+  background.setAttribute('y', String(baseline - fontSize - padY));
+  background.setAttribute('width', String(textWidth + padX * 2));
+  background.setAttribute('height', String(fontSize * 1.6 + padY));
+  background.setAttribute('rx', String(Math.round(fontSize * 0.35)));
+  group.setAttribute('opacity', '1');
 }
 
 export interface TransformPreview {

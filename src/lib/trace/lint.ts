@@ -18,6 +18,7 @@ import type {
   TraceProject,
   PropertyTrack,
 } from './types';
+import { isCameraProperty } from './runtime/camera';
 import type {
   Diagnostic,
   DiagnosticCode,
@@ -309,6 +310,83 @@ export function lintTraceProject(
               elementId,
               fix: 'Match the first and last keyframe values for a seamless loop.',
             },
+          );
+        }
+      }
+    }
+  }
+
+  // ── Camera ─────────────────────────────────────────────────────────────────
+  const camera = project.camera;
+  if (camera) {
+    if (
+      typeof camera.zoom === 'number' &&
+      (!Number.isFinite(camera.zoom) || camera.zoom <= 0)
+    ) {
+      add(
+        'CAMERA_ZOOM_INVALID',
+        'error',
+        'Camera zoom must be a positive number (1 = 100%).',
+        { fix: 'Set zoom above 0, or clear the field to use 100%.' },
+      );
+    }
+    for (const track of camera.tracks ?? []) {
+      if (!isCameraProperty(track.property)) {
+        add(
+          'CAMERA_TRACK_INVALID',
+          'error',
+          `Camera track "${trackLabel(track)}" animates an unsupported property.`,
+          { fix: 'Camera tracks may animate x, y, zoom or rotation.' },
+        );
+        continue;
+      }
+
+      const keyframes = [...(track.keyframes ?? [])].sort(
+        (a, b) => a.timeMs - b.timeMs,
+      );
+      if (keyframes.length === 0) {
+        add(
+          'CAMERA_TRACK_INVALID',
+          'error',
+          `Camera track "${trackLabel(track)}" has no keyframes.`,
+          { fix: 'Add at least one keyframe or remove the track.' },
+        );
+        continue;
+      }
+
+      for (const keyframe of keyframes) {
+        if (
+          !isFiniteNumber(keyframe.timeMs) ||
+          keyframe.timeMs < 0 ||
+          keyframe.timeMs > durationMs
+        ) {
+          add(
+            'KEYFRAME_OUT_OF_BOUNDS',
+            'warning',
+            `Camera keyframe at ${Math.round(Number(keyframe.timeMs))}ms is outside 0–${durationMs}ms.`,
+            {
+              timeMs: Number.isFinite(keyframe.timeMs)
+                ? keyframe.timeMs
+                : undefined,
+              fix: 'Move the keyframe inside the project duration.',
+            },
+          );
+        }
+        if (typeof keyframe.value !== 'number') {
+          add(
+            'CAMERA_TRACK_INVALID',
+            'error',
+            `Camera track "${trackLabel(track)}" expects numeric keyframe values.`,
+            { fix: 'Use numbers for camera x, y, zoom and rotation.' },
+          );
+          continue;
+        }
+        if (track.property === 'zoom' && keyframe.value <= 0) {
+          add(
+            'CAMERA_ZOOM_INVALID',
+            'error',
+            `Camera zoom keyframe at ${Math.round(keyframe.timeMs)}ms must be greater than 0.`,
+            { timeMs: keyframe.timeMs, fix: 'Use a positive zoom multiplier.' },
           );
         }
       }

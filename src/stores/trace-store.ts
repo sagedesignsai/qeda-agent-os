@@ -25,6 +25,7 @@ import { traceHistoryMiddleware } from './trace/slices/history-middleware';
 import { createPlaybackSlice } from './trace/slices/playback-slice';
 import { createSelectionSlice } from './trace/slices/selection-slice';
 import { createStoryboardSlice } from './trace/slices/storyboard-slice';
+import { createNarrationSlice } from './trace/slices/narration-slice';
 import { createTracksSlice } from './trace/slices/tracks-slice';
 import type { TraceStoreState } from './trace/slices/types';
 
@@ -35,6 +36,7 @@ export const useTraceStore = create<TraceStoreState>()(
     ...createSelectionSlice(set, get, api),
     ...createTracksSlice(set, get, api),
     ...createStoryboardSlice(set, get, api),
+    ...createNarrationSlice(set, get, api),
     ...createHistorySlice(set, get, api),
   })) as unknown as StateCreator<TraceStoreState>,
 );

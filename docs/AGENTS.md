@@ -241,3 +241,17 @@ Match the surrounding file's convention. Don't rename identifiers across layers
 without asking: persisted rows, data migrations, and the packaged `appId` are all
 involved, and a code-only rename of a persisted value silently orphans the old rows
 (see `MIGRATE_RAG_URI_SCHEME` for the pattern that avoids that).
+
+## Cloned Dependency Source
+
+Read-only reference repositories are available under `.slim/clonedeps/repos/`
+for clean-room inspection. Do not edit these clones. See `.slim/clonedeps.json`
+for the structured manifest.
+
+- `.slim/clonedeps/repos/remotion-dev__skills/` — `remotion-dev/skills` at
+  `a3f4098`; the official Remotion Agent Skills, cloned to study how an engine
+  vendor teaches agents its API (sub-skill split, docs-grounding, render checks)
+  for adoption into the Trace/Motion copilots.
+- `.slim/clonedeps/repos/Yusuke710__manim-skill/` — `Yusuke710/manim-skill` at
+  `a0048d9`; narration-first TTS→timeline pipeline and the timestamped
+  video-notes review loop, cloned for the same purpose.

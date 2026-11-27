@@ -36,6 +36,8 @@ export interface TracePathEditorProps {
   transform: GizmoTransform;
   origin: GizmoPoint;
   zoom: number;
+  /** Camera transform from the composition; overlay content follows it. */
+  cameraTransform?: string;
   disabled?: boolean;
   getArtboardPoint: (clientX: number, clientY: number) => GizmoPoint;
   onCommit: (model: PathModel) => void;
@@ -47,6 +49,7 @@ export function TracePathEditor(props: TracePathEditorProps) {
     transform,
     origin,
     zoom,
+    cameraTransform,
     disabled = false,
     getArtboardPoint,
     onCommit,
@@ -167,6 +170,7 @@ export function TracePathEditor(props: TracePathEditorProps) {
         pointerEvents: 'none',
       }}
     >
+      <g transform={cameraTransform}>
       {/* Segment hit strokes first (under anchors). */}
       {model.subpaths.map((subpath, subpathIndex) => {
         const segments = subpath.closed
@@ -331,6 +335,7 @@ export function TracePathEditor(props: TracePathEditorProps) {
         Path edit: drag anchors/handles · click segment to add · double-click
         anchor for smooth · Delete removes · Esc exits
       </text>
+      </g>
     </svg>
   );
 }
