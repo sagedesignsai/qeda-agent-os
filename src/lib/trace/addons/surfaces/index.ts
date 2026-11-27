@@ -12,6 +12,16 @@ import {
   starfieldSurfaceBlock,
 } from './atmosphere';
 import {
+  auroraCurtainsSurfaceBlock,
+  bokehFieldSurfaceBlock,
+  dotWaveSurfaceBlock,
+  kaleidoscopeSurfaceBlock,
+  liquidBlobsSurfaceBlock,
+  nebulaSurfaceBlock,
+  neonHorizonSurfaceBlock,
+  skylineParallaxSurfaceBlock,
+} from './advanced';
+import {
   bauhausSurfaceBlock,
   blueprintSurfaceBlock,
   halftoneSurfaceBlock,
@@ -27,6 +37,14 @@ export {
   auroraSurfaceBlock,
   grainSurfaceBlock,
   starfieldSurfaceBlock,
+  auroraCurtainsSurfaceBlock,
+  bokehFieldSurfaceBlock,
+  dotWaveSurfaceBlock,
+  kaleidoscopeSurfaceBlock,
+  liquidBlobsSurfaceBlock,
+  nebulaSurfaceBlock,
+  neonHorizonSurfaceBlock,
+  skylineParallaxSurfaceBlock,
   bauhausSurfaceBlock,
   blueprintSurfaceBlock,
   halftoneSurfaceBlock,
@@ -47,6 +65,14 @@ export const SURFACE_BLOCKS: readonly TraceBlockDefinition[] = [
   halftoneSurfaceBlock,
   grainSurfaceBlock,
   speedlinesSurfaceBlock,
+  neonHorizonSurfaceBlock,
+  liquidBlobsSurfaceBlock,
+  bokehFieldSurfaceBlock,
+  auroraCurtainsSurfaceBlock,
+  nebulaSurfaceBlock,
+  kaleidoscopeSurfaceBlock,
+  dotWaveSurfaceBlock,
+  skylineParallaxSurfaceBlock,
 ];
 
 export const SURFACES_ADDON: TraceAddonDefinition = {

@@ -37,9 +37,9 @@ function emptyProject(): TraceProject {
 }
 
 describe('Trace Surfaces add-on', () => {
-  it('registers ten surface blocks in the shared catalogue', () => {
+  it('registers eighteen surface blocks in the shared catalogue', () => {
     expect(TRACE_ADDONS.map((addon) => addon.id)).toContain('surfaces');
-    expect(SURFACE_BLOCKS).toHaveLength(10);
+    expect(SURFACE_BLOCKS).toHaveLength(18);
     for (const block of SURFACE_BLOCKS) {
       expect(block.addonId).toBe('surfaces');
       expect(block.category).toBe('Backgrounds');
@@ -47,7 +47,7 @@ describe('Trace Surfaces add-on', () => {
       expect(TRACE_BLOCKS).toContain(block);
     }
     expect(getTraceAddon('surfaces')).toBe(SURFACES_ADDON);
-    expect(searchBlocks('background').length).toBeGreaterThanOrEqual(10);
+    expect(searchBlocks('background').length).toBeGreaterThanOrEqual(18);
   });
 
   it('builds every surface into a valid, insertable fragment', () => {

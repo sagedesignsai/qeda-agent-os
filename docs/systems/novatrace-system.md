@@ -195,7 +195,7 @@ searchable registry and may expose a generative specialist; it never introduces 
 parallel insertion path. Insertion, validation, undo and export stay the core
 Trace paths.
 
-### Surfaces add-on (10 blocks)
+### Surfaces add-on (18 blocks)
 
 Animated backgrounds built from ordinary rects, circles, paths, structured
 gradients, filters and tracks. Every block is `layer: 'background'` and therefore
@@ -213,6 +213,14 @@ inserts behind existing art. Every block loops on a four-second canvas.
 | `surface-halftone` | Focus-weighted dot matrix with an accent diagonal |
 | `surface-grain` | Film gradient, turbulence grain, scanlines, light leak and vignette |
 | `surface-speedlines` | Diagonal streaks with staggered opacity windows |
+| `surface-neon-horizon` | Synthwave sun, striped scan, horizon glow and perspective grid |
+| `surface-liquid-blobs` | Blurred gradient blobs on loop-safe lissajous paths |
+| `surface-bokeh-field` | Three parallax depth layers of defocused light discs |
+| `surface-aurora-curtains` | Translucent swaying light ribbons over a star field |
+| `surface-nebula` | Blurred cosmic clouds, bright core, seeded stars, heavy vignette |
+| `surface-kaleidoscope` | Counter-rotating mirrored wedge rings around a glowing core |
+| `surface-dot-wave` | Dot matrix riding a travelling sine wave (one wavelength per loop) |
+| `surface-skyline-parallax` | Three seeded skyline layers, moon, clouds and window flicker |
 
 The `generateSurface` specialist turns a brief into bespoke SVG plus editable
 tracks. The compiler parses the SVG with the real importer (baking transforms and

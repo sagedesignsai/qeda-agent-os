@@ -139,6 +139,21 @@ export function assembleSurface(
     if (id === root.id) continue;
     elements[id] = { ...child, parentId: child.parentId ?? root.id };
   }
+  // childrenIds is the render view; parentId is the inspector/migration view.
+  // Reconcile them so nested groups stay nested in both.
+  const parents = new Map<string, string>();
+  for (const [id, element] of Object.entries(elements)) {
+    for (const childId of element.childrenIds ?? []) {
+      if (elements[childId]) parents.set(childId, id);
+    }
+  }
+  for (const [id, element] of Object.entries(elements)) {
+    if (id === root.id) continue;
+    const parentId = parents.get(id) ?? root.id;
+    if (element.parentId !== parentId) {
+      elements[id] = { ...element, parentId };
+    }
+  }
   return {
     width,
     height,
