@@ -637,6 +637,150 @@ function normalizeStoryboard(project: TraceProject): TraceProject {
   return { ...project, storyboard: { ...storyboard, scenes: laidOut } };
 }
 
+const STROKE_DASH_PROPERTIES = new Set(['strokeDasharray', 'strokeDashoffset']);
+
+/** True when the element paints a stroke, including one inherited from a parent. */
+function hasStrokePaint(
+  elements: Record<string, TraceElement>,
+  element: TraceElement,
+): boolean {
+  let cursor: TraceElement | undefined = element;
+  const seen = new Set<string>();
+  while (cursor) {
+    if (seen.has(cursor.id)) return false;
+    seen.add(cursor.id);
+    const paint = cursor.attributes?.stroke;
+    if (typeof paint === 'string' && paint.trim()) {
+      // An explicit `none` overrides an inherited stroke.
+      return paint.trim().toLowerCase() !== 'none';
+    }
+    cursor = cursor.parentId ? elements[cursor.parentId] : undefined;
+  }
+  return false;
+}
+
+/**
+ * A legacy counter track is a text track whose values are all the same numeric
+ * format (`$0K`, `$68K`, …). Typewriter tracks interpolate words; counter tracks
+ * must hold exact values, so they are marked discrete on read.
+ */
+function isLegacyCounterTextTrack(
+  track: PropertyTrack,
+  element: TraceElement,
+  elements: Record<string, TraceElement>,
+): boolean {
+  if (track.property !== 'text' || track.discrete) return false;
+  if ((track.keyframes?.length ?? 0) < 6) return false;
+  const parent = element.parentId ? elements[element.parentId] : undefined;
+  const looksLikeCounter =
+    /counter/i.test(element.name) ||
+    /counter/i.test(parent?.name ?? '') ||
+    (track.label ?? '').trim().toLowerCase() === 'value';
+  if (!looksLikeCounter) return false;
+
+  let prefix: string | null = null;
+  let suffix: string | null = null;
+  const numbers: number[] = [];
+  for (const keyframe of track.keyframes) {
+    if (typeof keyframe.value !== 'string') return false;
+    const match = /^(\D*)([-+]?\d[\d,]*(?:\.\d+)?)(.*)$/.exec(keyframe.value);
+    if (!match) return false;
+    const nextPrefix = match[1];
+    const nextSuffix = match[3];
+    const numeric = Number(match[2].replace(/,/g, ''));
+    if (!Number.isFinite(numeric)) return false;
+    if (prefix === null) {
+      prefix = nextPrefix;
+      suffix = nextSuffix;
+    } else if (nextPrefix !== prefix || nextSuffix !== suffix) {
+      return false;
+    }
+    numbers.push(numeric);
+  }
+  return numbers.length > 1 && numbers[0] !== numbers[numbers.length - 1];
+}
+
+/**
+ * The first progress-ring recipe drew a circle using the outer box for both the
+ * geometry and the dash circumference, so `r` (width / 2) disagreed with the
+ * radius used for `strokeDasharray`. Restore the current box convention.
+ */
+function repairLegacyRingGeometry(
+  element: TraceElement,
+  elements: Record<string, TraceElement>,
+): TraceElement {
+  if (element.type !== 'circle') return element;
+  const attributes = element.attributes ?? {};
+  const radius = Number(attributes.radius);
+  if (!Number.isFinite(radius) || radius <= 0) return element;
+  // Progress rings carry a dash pattern (on the indicator, or on a sibling);
+  // a plain migrated tracer circle does not. Only the former used the outer box
+  // at the wrong radius.
+  const parent = element.parentId ? elements[element.parentId] : undefined;
+  const ringLike =
+    attributes.strokeDasharray !== undefined ||
+    /ring/i.test(parent?.name ?? '') ||
+    (parent?.childrenIds ?? []).some(
+      (id) => elements[id]?.attributes?.strokeDasharray !== undefined,
+    );
+  if (!ringLike) return element;
+  const strokeWidth = Number(attributes.strokeWidth ?? 0);
+  const outer = radius * 2 + strokeWidth;
+  const width = Number(attributes.width);
+  const height = Number(attributes.height);
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    Math.abs(width - outer) > 0.01 ||
+    Math.abs(height - outer) > 0.01 ||
+    Number(attributes.x ?? 0) !== 0 ||
+    Number(attributes.y ?? 0) !== 0
+  ) {
+    return element;
+  }
+  const nextAttributes = {
+    ...attributes,
+    x: strokeWidth / 2,
+    y: strokeWidth / 2,
+    width: radius * 2,
+    height: radius * 2,
+  };
+  delete nextAttributes.radius;
+  return { ...element, attributes: nextAttributes };
+}
+
+function repairLegacyRecipeElement(
+  element: TraceElement,
+  elements: Record<string, TraceElement>,
+): TraceElement {
+  let next = repairLegacyRingGeometry(element, elements);
+
+  const tracks = next.tracks ?? [];
+  if (
+    tracks.some((track) => STROKE_DASH_PROPERTIES.has(track.property)) &&
+    !tracks.some((track) => track.property === 'stroke') &&
+    !hasStrokePaint(elements, next)
+  ) {
+    next = {
+      ...next,
+      tracks: tracks.filter(
+        (track) => !STROKE_DASH_PROPERTIES.has(track.property),
+      ),
+    };
+  }
+
+  const currentTracks = next.tracks ?? [];
+  let counterRepaired = false;
+  const repairedTracks = currentTracks.map((track) => {
+    if (!isLegacyCounterTextTrack(track, next, elements)) return track;
+    counterRepaired = true;
+    return { ...track, discrete: true };
+  });
+  if (counterRepaired) next = { ...next, tracks: repairedTracks };
+
+  return next;
+}
+
 /**
  * Normalize retired attributes, then expand legacy macro elements while keeping
  * their ids and parent/root slots. A second invocation returns the same object
@@ -666,6 +810,17 @@ export function migrateTraceProject(project: TraceProject): TraceProject {
             ? [migrateSplineTracer(element)]
             : expandCompound(element, occupiedIds);
       for (const item of migrated) elements[item.id] = item;
+    }
+  }
+
+  // Retired recipe output is repaired on read as well: old progress rings drew
+  // the circle at the outer box radius, old counters lost their discrete flag,
+  // and old imports left dash tracks on fill-only artwork.
+  for (const [id, element] of Object.entries(elements)) {
+    const repaired = repairLegacyRecipeElement(element, elements);
+    if (repaired !== element) {
+      elements[id] = repaired;
+      changed = true;
     }
   }
 

@@ -154,7 +154,13 @@ function notifyTraceDrift(payload: {
  * tool can report "not found" rather than failing the turn.
  */
 async function readTraceDoc(fileName: string): Promise<string | null> {
+  const resourcesPath = (process as { resourcesPath?: string }).resourcesPath
   const candidates = [
+    // Packaged builds copy docs/systems through electron-builder's
+    // extraResources, so it lives beside app.asar rather than inside it.
+    ...(resourcesPath
+      ? [path.join(resourcesPath, 'docs', 'systems', fileName)]
+      : []),
     path.join(app.getAppPath(), 'docs', 'systems', fileName),
     path.join(process.cwd(), 'docs', 'systems', fileName),
   ];

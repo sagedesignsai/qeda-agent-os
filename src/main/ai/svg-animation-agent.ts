@@ -84,6 +84,23 @@ function stageTracks(project: TraceProject, plan: TraceAnimationPlan): TraceProj
   return result.project;
 }
 
+function elementHasStroke(project: TraceProject, element: TraceElement): boolean {
+  let cursor: TraceElement | undefined = element;
+  const seen = new Set<string>();
+  while (cursor) {
+    if (seen.has(cursor.id)) return false;
+    seen.add(cursor.id);
+    const paint =
+      typeof cursor.attributes.stroke === 'string'
+        ? cursor.attributes.stroke.trim().toLowerCase()
+        : '';
+    // `none` is an explicit override, not an inherited value.
+    if (paint) return paint !== 'none';
+    cursor = cursor.parentId ? project.elements[cursor.parentId] : undefined;
+  }
+  return false;
+}
+
 function validateProposal(
   request: SvgAnimationRequest,
   plan: TraceAnimationPlan,
@@ -116,6 +133,15 @@ function validateProposal(
     }
     const element = request.project.elements[track.elementId]!;
     const values = track.keyframes.map((frame) => frame.value);
+    if (
+      (track.property === 'strokeDashoffset' ||
+        track.property === 'strokeDasharray') &&
+      !elementHasStroke(request.project, element)
+    ) {
+      throw new Error(
+        `${track.property} needs a stroked layer; "${element.name}" has stroke="none". Animate its fill, transform or opacity instead.`,
+      );
+    }
     if (plan.playback === 'loop' && values[0] !== values.at(-1)) {
       throw new Error('Looping tracks must have matching start and end values. Choose one-shot playback for an intro or outro.');
     }

@@ -54,6 +54,35 @@ describe('Trace Templates Catalog', () => {
     expect(Object.keys(project.elements).length).toBeGreaterThan(0);
   });
 
+  it('scales storyboard scenes to cover a duration override', () => {
+    for (const id of ['nova-mark', 'kinetic-type', 'metrics', 'sponsor-card']) {
+      const project = instantiateCompositionTemplate(id, { durationMs: 9999 });
+      const scenes = project.storyboard?.scenes ?? [];
+      const covered = scenes.reduce(
+        (total, scene) => total + scene.durationMs,
+        0,
+      );
+      expect(project.durationMs).toBe(9999);
+      expect(covered).toBe(9999);
+    }
+  });
+
+  it('honours fps and duration on the nova-mark template', () => {
+    const project = instantiateCompositionTemplate('nova-mark', {
+      durationMs: 8000,
+      fps: 24,
+    });
+    expect(project.durationMs).toBe(8000);
+    expect(project.fps).toBe(24);
+  });
+
+  it('centres the sponsor-card logo on the artboard', () => {
+    const project = instantiateCompositionTemplate('sponsor-card', {});
+    const logo = project.elements['logo-mark'];
+    expect(logo.attributes.x).toBe(857);
+    expect(logo.attributes.y).toBe(397);
+  });
+
   it('maintains backward compatibility with existing templates', () => {
     const blank = instantiateCompositionTemplate('blank');
     expect(blank.name).toBe('Untitled Trace');

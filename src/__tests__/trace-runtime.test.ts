@@ -561,6 +561,71 @@ describe('Trace migration (Stage 4)', () => {
     expect(migratedTracer.tracks[0].property).toBe('pathProgress');
   });
 
+  test('repairs legacy ring geometry and counter tracks on read', () => {
+    const ring = legacyProject('circle', {
+      radius: 96,
+      strokeWidth: 14,
+      width: 206,
+      height: 206,
+      x: 0,
+      y: 0,
+      stroke: '#38bdf8',
+      strokeDasharray: '603.1857894892403',
+    });
+    const repairedRing = migrateTraceProject(ring).elements['el-1'];
+    expect(repairedRing.attributes.width).toBe(192);
+    expect(repairedRing.attributes.height).toBe(192);
+    expect(repairedRing.attributes.x).toBe(7);
+    expect(repairedRing.attributes.y).toBe(7);
+    expect(repairedRing.attributes.radius).toBeUndefined();
+
+    const counter = legacyProject('text', { text: '$0K' });
+    counter.elements['el-1'].name = 'Counter Value';
+    counter.elements['el-1'].tracks = [
+      {
+        id: 'counter-text',
+        property: 'text',
+        label: 'Value',
+        keyframes: ['$0K', '$68K', '$131K', '$238K', '$321K', '$428K'].map(
+          (value, index) => ({
+            id: `counter-${index}`,
+            timeMs: index * 100,
+            value,
+            easing: 'linear' as const,
+          }),
+        ),
+      },
+    ];
+    const repairedCounter = migrateTraceProject(counter).elements['el-1'];
+    expect(repairedCounter.tracks[0].discrete).toBe(true);
+
+    const once = migrateTraceProject(counter);
+    expect(migrateTraceProject(once)).toBe(once);
+  });
+
+  test('drops stroke-dash tracks from fill-only artwork', () => {
+    const project = legacyProject('path', {
+      d: 'M 0 0 L 10 0',
+      fill: '#ffffff',
+      stroke: 'none',
+    });
+    project.elements['el-1'].tracks = [
+      {
+        id: 'dash-track',
+        property: 'strokeDashoffset',
+        label: 'Dash',
+        keyframes: [
+          { id: 'dash-0', timeMs: 0, value: 0, easing: 'linear' },
+          { id: 'dash-1', timeMs: 1000, value: 50, easing: 'linear' },
+        ],
+      },
+    ];
+
+    const migrated = migrateTraceProject(project);
+    expect(migrated.elements['el-1'].tracks).toHaveLength(0);
+    expect(migrateTraceProject(migrated)).toBe(migrated);
+  });
+
   test('exports legacy documents through their primitive migration', () => {
     const project = legacyProject('counter', {
       startVal: 0,

@@ -109,8 +109,10 @@ export function instantiateSponsorCardTemplate(
       id: 'logo-mark',
       name: 'Qeda Logo',
       d: QEDA_LOGO_PATH,
-      x: 960,
-      y: 340,
+      // The path's own bounding box is centred at (102.9, 143.4); this
+      // placement puts its visual centre on the 1920×1080 artboard centre.
+      x: 857,
+      y: 397,
       fill: '#ffffff',
       visible: true,
     } as TraceElementSpec,

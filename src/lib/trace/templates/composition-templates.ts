@@ -6,7 +6,7 @@
  */
 
 import { createBlankTraceProject } from '../defaults';
-import { createScene } from '../storyboard';
+import { createScene, layoutScenes } from '../storyboard';
 import type { TraceElement, TraceProject } from '../types';
 import { createNovaTraceMarkProject } from './default-project';
 import { expandRecipe } from '../recipes';
@@ -35,12 +35,46 @@ export interface TemplateOptions {
 }
 
 function base(project: TraceProject, options: TemplateOptions): TraceProject {
-  return {
+  const durationMs = options.durationMs ?? project.durationMs;
+  const next: TraceProject = {
     ...project,
     name: options.name || project.name,
-    durationMs: options.durationMs ?? project.durationMs,
+    durationMs,
     fps: options.fps ?? project.fps,
   };
+
+  // A duration override is a canvas change, but the storyboard is a contiguous
+  // partition of that canvas. Scale the authored scenes so none of them are
+  // left outside the new duration.
+  const storyboard = project.storyboard;
+  if (
+    options.durationMs !== undefined &&
+    storyboard &&
+    storyboard.scenes.length > 0
+  ) {
+    const current = storyboard.scenes.reduce(
+      (total, scene) => total + scene.durationMs,
+      0,
+    );
+    if (current > 0 && current !== durationMs) {
+      const scale = durationMs / current;
+      let remaining = Math.max(1, Math.round(durationMs));
+      const scenes = storyboard.scenes.map((scene, index) => {
+        if (index === storyboard.scenes.length - 1) {
+          return { ...scene, durationMs: Math.max(1, remaining) };
+        }
+        const sceneDuration = Math.max(1, Math.round(scene.durationMs * scale));
+        remaining -= sceneDuration;
+        return { ...scene, durationMs: sceneDuration };
+      });
+      next.storyboard = {
+        ...storyboard,
+        scenes: layoutScenes(scenes),
+      };
+    }
+  }
+
+  return next;
 }
 
 function element(
@@ -394,7 +428,10 @@ export const COMPOSITION_TEMPLATES: CompositionTemplateMeta[] = [
     fps: 60,
     previewColor: '#22d3ee',
     create: (options) =>
-      createNovaTraceMarkProject(options.name || 'NovaTrace Mark'),
+      base(
+        createNovaTraceMarkProject(options.name || 'NovaTrace Mark'),
+        options,
+      ),
   },
   {
     id: 'kinetic-type',

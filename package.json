@@ -269,6 +269,10 @@
     "extraResources": [
       "./assets/**",
       {
+        "from": "docs/systems",
+        "to": "docs/systems"
+      },
+      {
         "from": "plugins/qeda-builder/dist",
         "to": "opencode-plugins/qeda-builder",
         "filter": [
