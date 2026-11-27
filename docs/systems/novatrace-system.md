@@ -188,6 +188,54 @@ The block registry is the single searchable catalogue of insertable visuals. It 
 - Layout is canvas-relative, so blocks land correctly on 16:9, 1:1 and 9:16.
 - `layer: 'background'` blocks insert at the back of the root stack so they never cover existing art.
 
+## Add-ons
+
+An add-on is a content + capability pack. It contributes blocks to the same
+searchable registry and may expose a generative specialist; it never introduces a
+parallel insertion path. Insertion, validation, undo and export stay the core
+Trace paths.
+
+### Surfaces add-on (10 blocks)
+
+Animated backgrounds built from ordinary rects, circles, paths, structured
+gradients, filters and tracks. Every block is `layer: 'background'` and therefore
+inserts behind existing art. Every block loops on a four-second canvas.
+
+| Block id | What it builds |
+|----------|----------------|
+| `surface-aurora` | Gradient base, three drifting blurred light pools, vignette |
+| `surface-waves` | Layered wave paths with vertical gradient fills and a sun glow |
+| `surface-bauhaus` | Seeded discs, rings, bars, triangles and arcs on flat stock |
+| `surface-blueprint` | Drafting grid that pans one cell per loop, brackets and a scan line |
+| `surface-orbit` | Counter-rotating rings, markers, ambient dots and an accent arc |
+| `surface-terrain` | Layered ridge paths, sunset gradient and a glowing sun |
+| `surface-starfield` | Seeded twinkling stars, blurred bokeh and slow parallax |
+| `surface-halftone` | Focus-weighted dot matrix with an accent diagonal |
+| `surface-grain` | Film gradient, turbulence grain, scanlines, light leak and vignette |
+| `surface-speedlines` | Diagonal streaks with staggered opacity windows |
+
+The `generateSurface` specialist turns a brief into bespoke SVG plus editable
+tracks. The compiler parses the SVG with the real importer (baking transforms and
+`use` references), attaches tracks through the ops engine, validates the fragment,
+lints the result and renders review frames. It enforces the exact canvas size,
+the supported SVG subset, element/track/keyframe budgets and seamless-loop
+endpoints. The editor dialog previews the proposal and inserts it at the back on
+approval; the copilot tool inserts the validated fragment directly.
+
+### Typography add-on (6 blocks)
+
+Text-first blocks that complement the core title, kinetic-type and lower-third
+recipes. Text stays real text, not outlines.
+
+| Block id | What it builds |
+|----------|----------------|
+| `text-split-title` | Editorial two-line title, kicker and growing accent rule |
+| `text-caption` | Speaker-labelled caption card in the subtitle-safe band |
+| `text-ticker` | Loop-safe marquee strip with a label chip |
+| `text-credits` | Vertical end-credit roll |
+| `text-typewriter` | Monospace line typed with discrete text keyframes and a cursor |
+| `text-agenda` | Numbered agenda with staggered row reveals |
+
 ## Templates
 
 | Template | Size | Duration | Description |

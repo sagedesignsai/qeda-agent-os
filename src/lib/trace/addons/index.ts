@@ -10,6 +10,7 @@
 
 import type { TraceAddonDefinition, TraceAddonId } from './types';
 import { SURFACES_ADDON } from './surfaces';
+import { TYPOGRAPHY_ADDON } from './typography';
 
 export type {
   TraceAddonDefinition,
@@ -18,9 +19,11 @@ export type {
 } from './types';
 
 export { SURFACES_ADDON, SURFACE_BLOCKS } from './surfaces';
+export { TYPOGRAPHY_ADDON, TYPOGRAPHY_BLOCKS } from './typography';
 
 export const TRACE_ADDONS: readonly TraceAddonDefinition[] = [
   SURFACES_ADDON,
+  TYPOGRAPHY_ADDON,
 ];
 
 const ADDON_BY_ID = new Map(

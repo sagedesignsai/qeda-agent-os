@@ -89,12 +89,47 @@ right in the editor and wrong in the export.
     editing. Before calling a cut finished, run `auditComposition`, fix the named
     errors/warnings, then audit again. Resolve a note only after the fix is
     verified; never delete notes to make the audit clean.
+13. **Generated artwork is static SVG plus tracks, validated before insertion.**
+    Never emit SMIL (`<animate>`, `<animateTransform>`, `<set>`), CSS animation,
+    raster `<image>`, `foreignObject`, `clip-path` or `mask` for a generated
+    surface; the importer cannot preserve them and the compiler rejects the
+    proposal. Prefer a prebuilt block first; when a custom surface is genuinely
+    needed, delegate to `generateSurface`.
+
+## 3.1 Generated artwork contract
+
+The Surfaces specialist and any future generative add-on compile through the same
+pipeline: SVG → real importer → ops engine → fragment validator → lint → visual
+review → insertion through `insertFragment`. The rules are enforced by code, but
+author to them directly so the first proposal is accepted:
+
+- The root must be `<svg xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 W H" width="W" height="H">` with the project's exact canvas.
+- Supported elements: `g`, `path`, `rect`, `circle`, `ellipse`, `line`,
+  `polygon`, `polyline`, `text`. Transforms are baked; `<use>` is expanded.
+- Gradients and filters belong in `<defs>` and are referenced with
+  `fill="url(#id)"` / `filter="url(#id)"`.
+- Give every animated layer a short unique `id`. Track `elementId` values refer
+  to those ids after import; missing ids reject the proposal with the available
+  list.
+- Presentation attributes or inline style only. CSS selectors and CSS animation
+  do not survive import.
+- Start with a full-bleed base rect, build depth with gradients and low-opacity
+  glows, and keep one calm focal area if foreground copy will sit on top.
+- Continuous loop tracks must start and end on the same value. One-shot work
+  must be explicitly requested (`loop=false`).
+- Hard compiler limits: 500 elements, 24 tracks, 12 keyframes per track, 300 KB
+  SVG, 200 KB defs. Aim well below them (≈120 elements, 4–16 tracks) for editor
+  performance and taste.
 
 ## 4. Budgets
 
 | Budget | Limit | Why |
 | --- | --- | --- |
 | Elements per composition | ~120 soft | Legibility and editor performance |
+| Generated surface | 500 hard, ~120 soft | The compiler rejects above 500; complex surfaces are hard to edit |
+| Generated tracks | 24 hard, 4–16 soft | Ambient motion needs few tracks; more is usually jitter |
+| Generated SVG | 300 KB hard | Above this the artwork should reuse defs or simplify |
 | Keyframes per track | ~24 soft | Beyond this, a recipe or a different property is usually the right answer |
 | Preview renders per turn | 12 | Previews are cheap per frame but a preview loop hides design problems |
 | `dispatchOps` calls | 1 per logical batch | Splitting an atomic intent across batches breaks all-or-nothing |
