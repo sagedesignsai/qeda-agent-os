@@ -24,12 +24,14 @@ import { resolveModel } from './provider.js';
 import { createTraceTools } from '../tools/trace.js';
 import { createTraceCompositionSubagentTool } from '../tools/trace-composition-subagent.js';
 import { createSvgAnimationSubagentTool } from './svg-animation-agent.js';
+import { createSurfaceGenerationSubagentTool } from './surface-agent.js';
 import { createTracePreviewTool } from '../tools/trace-preview-tool.js';
 import { createApprovalPolicy } from '../tools/capability.js';
 import { traceToolPolicies } from '../tools/policies/trace.js';
 import { createPlanTools } from '../tools/plan.js';
 import { PlanManager } from './plan-manager.js';
 import type { ModelTarget } from './fallback.js';
+import { traceAddonGuidance } from '../../lib/trace/addons';
 
 // ─── Step budget ─────────────────────────────────────────────────────────────
 
@@ -174,6 +176,8 @@ The project may carry timestamped review notes. Read them with \`getReviewNotes\
 ### Imported SVG animation
 For a selected layered SVG, flame, logo, or other vector asset, delegate motion design to \`animateSvg\`. Pass the user's actual direction in \`prompt\`; use \`motion\` only as a soft hint, and choose \`playback: "once"\` for an intro/stinger or \`"loop"\` for continuous motion when the user specifies it. The specialist visually inspects the artwork, stages editable tracks, and reviews the proposal. It does not mutate project artwork. If its result lists existing-track conflicts, tell the user exactly which tracks would be replaced and wait for their choice before calling \`setTracks\`. If there are no conflicts, apply the returned tracks in one \`setTracks\` call and call \`setTracePlaybackLooping\` using the returned playback mode, then lint and visually preview the result. If it reports a limitation or failure, explain it and ask before substituting a different effect.
 
+${traceAddonGuidance()}
+
 ## Tone & Output
 - Confident, concise, action-oriented.
 - When you execute tools, summarize what was created in clean markdown.
@@ -261,6 +265,14 @@ export function createTraceCopilotAgent(opts?: {
   const svgAnimationSubagent: any = opts?.forSubagent
     ? null
     : createSvgAnimationSubagentTool({ target: opts?.target });
+  const surfaceSubagent: any = opts?.forSubagent
+    ? null
+    : createSurfaceGenerationSubagentTool({
+        target: opts?.target,
+        ...(opts?.broadcastChanged
+          ? { broadcastChanged: opts.broadcastChanged }
+          : {}),
+      });
   const previewTool = createTracePreviewTool();
 
   return new ToolLoopAgent({
@@ -274,6 +286,7 @@ export function createTraceCopilotAgent(opts?: {
       renderTracePreview: previewTool,
       ...(compositionSubagent ? { buildComposition: compositionSubagent } : {}),
       ...(svgAnimationSubagent ? { animateSvg: svgAnimationSubagent } : {}),
+      ...(surfaceSubagent ? { generateSurface: surfaceSubagent } : {}),
       ...createPlanTools(planManager),
     },
     ...(opts?.forSubagent ? {} : { toolApproval: traceApproval }),

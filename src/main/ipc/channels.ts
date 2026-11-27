@@ -13,6 +13,10 @@ import type { AppSettings } from '../ai/settings.js';
 import type { MotionDocument } from '../../lib/motion/types';
 import type { TraceProject } from '../../lib/trace/types';
 import type { SvgAnimationRequest, TraceAnimationPlan } from '../../lib/trace/animation-plan';
+import type {
+  SurfaceGenerationProposal,
+  SurfaceGenerationRequest,
+} from '../../lib/trace/addons/surfaces/generation';
 import type { TraceExportSettings } from '../../lib/trace/export/presets';
 import type {
   TraceRenderJobPayload,
@@ -518,6 +522,22 @@ export interface IpcChannels {
   'trace-svg-animation:stream-error': { data: { sessionId: string; error: string } };
   'trace-svg-animation:stream-fallback': { data: { sessionId: string } };
   'trace-svg-animation:proposal': { data: { sessionId: string; plan: TraceAnimationPlan } };
+  'trace-surface-generation:chat': {
+    req: {
+      sessionId: string;
+      messages: UIMessage[];
+      context: SurfaceGenerationRequest;
+    };
+    res: void;
+  };
+  'trace-surface-generation:abort': { req: { sessionId?: string } | void; res: void };
+  'trace-surface-generation:stream-chunk': { data: string };
+  'trace-surface-generation:stream-done': { data: { sessionId: string } };
+  'trace-surface-generation:stream-error': { data: { sessionId: string; error: string } };
+  'trace-surface-generation:stream-fallback': { data: { sessionId: string } };
+  'trace-surface-generation:proposal': {
+    data: { sessionId: string; proposal: SurfaceGenerationProposal };
+  };
   'trace:changed': void;
   'trace:playback-loop': { data: { projectId: string; looping: boolean } };
   /**

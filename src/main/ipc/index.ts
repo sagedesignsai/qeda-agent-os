@@ -90,6 +90,7 @@ import { registerTtsHandlers } from './handlers/tts';
 import { registerMusicCopilotHandlers } from './handlers/music-copilot';
 import { registerTraceCopilotHandlers } from './handlers/trace-copilot';
 import { registerTraceSvgAnimationHandlers } from './handlers/trace-svg-animation';
+import { registerTraceSurfaceGenerationHandlers } from './handlers/trace-surface-generation';
 import { registerThemeHandlers } from './handlers/theme';
 import { registerAssetReferenceHandlers } from './handlers/asset-references';
 import { registerOllamaHandlers } from './handlers/ollama';
@@ -140,6 +141,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow): void {
   registerMusicCopilotHandlers({ mainWindow });
   registerTraceCopilotHandlers({ mainWindow });
   registerTraceSvgAnimationHandlers({ mainWindow });
+  registerTraceSurfaceGenerationHandlers({ mainWindow });
   registerThemeHandlers();
   registerAssetReferenceHandlers({ mainWindow });
   registerOllamaHandlers();

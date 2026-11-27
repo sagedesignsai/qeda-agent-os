@@ -15,6 +15,7 @@ import {
   ShieldCheckIcon,
   SparklesIcon,
   UploadIcon,
+  WallpaperIcon,
 } from 'lucide-react';
 
 import {
@@ -38,6 +39,7 @@ export type TraceCommandBarProps = {
   onImportSvg: () => void;
   onExport: () => void;
   onBlocks: () => void;
+  onGenerateSurface: () => void;
   onScenes: () => void;
   onNotes: () => void;
   onQa: () => void;
@@ -49,6 +51,7 @@ export function TraceCommandBar({
   onImportSvg,
   onExport,
   onBlocks,
+  onGenerateSurface,
   onScenes,
   onNotes,
   onQa,
@@ -82,6 +85,10 @@ export function TraceCommandBar({
               <CommandItem onSelect={() => run(onAnimateSvg)}>
                 <SparklesIcon className="text-orange-300" />
                 <span>Animate SVG</span>
+              </CommandItem>
+              <CommandItem onSelect={() => run(onGenerateSurface)}>
+                <WallpaperIcon className="text-sky-300" />
+                <span>Generate surface</span>
               </CommandItem>
               <CommandItem onSelect={() => run(onNarration)}>
                 <AudioLinesIcon className="text-indigo-300" />

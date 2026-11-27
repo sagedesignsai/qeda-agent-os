@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { BlocksIcon, PlusIcon, SearchIcon } from 'lucide-react';
+import { BlocksIcon, PlusIcon, SearchIcon, WallpaperIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -40,11 +40,14 @@ import { cn } from '@/lib/utils';
 export type BlockLibraryDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Opens the generative surface workspace from inside the library. */
+  onGenerateSurface?: () => void;
 };
 
 export function BlockLibraryDialog({
   open,
   onOpenChange,
+  onGenerateSurface,
 }: BlockLibraryDialogProps) {
   const project = useTraceStore((state) => state.project);
   const [query, setQuery] = useState('');
@@ -182,8 +185,13 @@ export function BlockLibraryDialog({
                             : 'text-muted-foreground hover:bg-accent/30 hover:text-foreground',
                         )}
                       >
-                        <span className="text-[11px] font-medium">
-                          {block.title}
+                        <span className="flex w-full items-center justify-between gap-2 text-[11px] font-medium">
+                          <span className="truncate">{block.title}</span>
+                          {block.addonId ? (
+                            <span className="shrink-0 rounded border border-sky-400/25 bg-sky-400/[0.06] px-1 py-px text-[8px] uppercase tracking-[0.12em] text-sky-300/80">
+                              add-on
+                            </span>
+                          ) : null}
                         </span>
                         <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground/70">
                           {block.description}
@@ -244,6 +252,21 @@ export function BlockLibraryDialog({
         </div>
 
         <DialogFooter>
+          {onGenerateSurface ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="mr-auto h-7 gap-1 text-[11px] text-sky-300/90 hover:bg-sky-400/10 hover:text-sky-200"
+              onClick={() => {
+                onOpenChange(false);
+                onGenerateSurface();
+              }}
+            >
+              <WallpaperIcon className="size-3.5" />
+              Generate a custom surface…
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="sm"

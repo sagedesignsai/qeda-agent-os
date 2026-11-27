@@ -162,6 +162,15 @@ export const auroraSurfaceBlock: TraceBlockDefinition = {
       );
     });
 
+    // x/y tracks are offsets: move each glow's authored box into baseX/baseY
+    // so the drift starts from the designed position, not the canvas origin.
+    for (const glow of Object.values(glows)) {
+      glow.attributes.baseX = glow.attributes.x;
+      glow.attributes.baseY = glow.attributes.y;
+      glow.attributes.x = 0;
+      glow.attributes.y = 0;
+    }
+
     return assembleSurface(
       surfaceGroup(
         rootId,
@@ -524,6 +533,13 @@ export const starfieldSurfaceBlock: TraceBlockDefinition = {
         ],
       );
     });
+
+    for (const glow of Object.values(bokeh)) {
+      glow.attributes.baseX = glow.attributes.x;
+      glow.attributes.baseY = glow.attributes.y;
+      glow.attributes.x = 0;
+      glow.attributes.y = 0;
+    }
 
     return assembleSurface(
       surfaceGroup(

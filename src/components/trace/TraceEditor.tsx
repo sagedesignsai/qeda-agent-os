@@ -38,6 +38,7 @@ import { TraceStage } from '@/components/trace/TraceStage';
 import { TraceTimeline } from '@/components/trace/TraceTimeline';
 import { ExportDialog } from '@/components/trace/dialogs/ExportDialog';
 import { AnimateSvgDialog } from '@/components/trace/dialogs/AnimateSvgDialog';
+import { GenerateSurfaceDialog } from '@/components/trace/dialogs/GenerateSurfaceDialog';
 import { NarrationDialog } from '@/components/trace/dialogs/NarrationDialog';
 import { BlockLibraryDialog } from '@/components/trace/dialogs/BlockLibraryDialog';
 import { ReviewNotesDialog } from '@/components/trace/dialogs/ReviewNotesDialog';
@@ -125,6 +126,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
 
   const [exportOpen, setExportOpen] = useState(false);
   const [animateSvgOpen, setAnimateSvgOpen] = useState(false);
+  const [generateSurfaceOpen, setGenerateSurfaceOpen] = useState(false);
   const [narrationOpen, setNarrationOpen] = useState(false);
   const [blocksOpen, setBlocksOpen] = useState(false);
   const [scenesOpen, setScenesOpen] = useState(false);
@@ -577,6 +579,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
             onImportSvg={handleImportSvg}
             onExport={() => setExportOpen(true)}
             onBlocks={() => setBlocksOpen(true)}
+            onGenerateSurface={() => setGenerateSurfaceOpen(true)}
             onScenes={() => setScenesOpen(true)}
             onNotes={() => setNotesOpen(true)}
             onQa={() => setQaOpen(true)}
@@ -767,6 +770,7 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
       <BlockLibraryDialog
         open={blocksOpen}
         onOpenChange={setBlocksOpen}
+        onGenerateSurface={() => setGenerateSurfaceOpen(true)}
       />
 
       <ScenesDialog open={scenesOpen} onOpenChange={setScenesOpen} />
@@ -790,6 +794,23 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           animateTargetId ? project.elements[animateTargetId]?.name : null
         }
         onApplyAnimation={applyAnimateSvgPlan}
+      />
+
+      <GenerateSurfaceDialog
+        open={generateSurfaceOpen}
+        onOpenChange={setGenerateSurfaceOpen}
+        onApplySurface={(proposal) => {
+          const result = dispatch([
+            {
+              type: 'insertFragment',
+              fragment: proposal.fragment,
+              position: 'back',
+              suffix: `surface-${Date.now().toString(36).slice(-6)}`,
+            },
+          ]);
+          if (result?.ok) useTraceStore.getState().setLooping(proposal.loop);
+          return result?.ok ?? false;
+        }}
       />
 
       <ProjectFileBrowserDialog
