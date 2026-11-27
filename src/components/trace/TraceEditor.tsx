@@ -215,15 +215,8 @@ export function TraceEditor({ onSave }: TraceEditorProps) {
           },
         ];
 
-        // Merge imported defs (gradients, filters, etc.) into the project
-        if (fragment.defs && fragment.defs.trim()) {
-          const currentDefs = currentProject?.defs ?? '';
-          const merged = currentDefs
-            ? currentDefs + '\n' + fragment.defs.trim()
-            : fragment.defs.trim();
-          ops.push({ type: 'setDefs', defs: merged });
-        }
-
+        // Imported defs travel with the fragment; `insertFragment` merges them
+        // into the project atomically with the element insertion.
         const result = dispatch(ops);
 
         if (result && result.diff.added.length > 0) {

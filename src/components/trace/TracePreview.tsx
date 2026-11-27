@@ -30,11 +30,15 @@ function TracePreviewImpl({
 }: TracePreviewProps) {
   if (svg) {
     return (
-      <div
-        style={{ width, height }}
-        className="overflow-hidden"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+      <div style={{ width, height }} className="overflow-hidden">
+        {/* Render previews as images so imported <defs>/<style> ids stay
+            scoped to the SVG document instead of leaking into the app DOM. */}
+        <img
+          src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        />
+      </div>
     );
   }
 

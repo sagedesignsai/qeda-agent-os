@@ -359,7 +359,9 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
       attributes.y = 0;
       if (rx) attributes.rx = rx;
       if (ry) attributes.ry = ry;
-      traceElem.origin = { x: Math.round(x + w / 2), y: Math.round(y + h / 2) };
+      // The body is drawn at local (0,0) with baseX/baseY carrying placement,
+      // so the transform origin must also be local.
+      traceElem.origin = { x: Math.round(w / 2), y: Math.round(h / 2) };
     } else if (tagName === 'circle') {
       const cx = parseFloat(node.getAttribute('cx') || '50') + currentDx;
       const cy = parseFloat(node.getAttribute('cy') || '50') + currentDy;
@@ -411,7 +413,7 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
       attributes.fontFamily = fontFamily;
       attributes.fontWeight = fontWeight;
       attributes.textAnchor = textAnchor;
-      traceElem.origin = { x: Math.round(x), y: Math.round(y) };
+      traceElem.origin = { x: 0, y: 0 };
     }
 
     // Process children if group

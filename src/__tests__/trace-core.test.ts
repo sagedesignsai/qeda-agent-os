@@ -9,6 +9,7 @@ import {
   layoutScenes,
 } from '@/lib/trace/storyboard'
 import type { PropertyTrack, TraceProject } from '@/lib/trace/types'
+import type { TraceAssetFragment } from '@/lib/trace/assets/types'
 
 function emptyProject(overrides: Partial<TraceProject> = {}): TraceProject {
   return {
@@ -202,5 +203,51 @@ describe('Trace lint', () => {
     ])
 
     expect(lintTraceProject(added.project).errorCount).toBe(0)
+  })
+})
+
+describe('Trace fragment insertion', () => {
+  it('merges fragment defs and structured gradients with the elements', () => {
+    const fragment: TraceAssetFragment = {
+      width: 100,
+      height: 100,
+      elements: {
+        badge: {
+          id: 'badge',
+          name: 'Badge',
+          type: 'rect',
+          visible: true,
+          locked: false,
+          sceneId: null,
+          origin: { x: 50, y: 50 },
+          attributes: { x: 0, y: 0, width: 100, height: 100, fill: 'url(#g)' },
+          tracks: [],
+          parentId: null,
+          childrenIds: [],
+        },
+      },
+      rootElementIds: ['badge'],
+      defs: '<linearGradient id="g"><stop offset="0" stop-color="#fff" /></linearGradient>',
+      gradients: {
+        g: {
+          id: 'g',
+          type: 'linear',
+          stops: [],
+          angle: 0,
+          cx: 0.5,
+          cy: 0.5,
+          r: 0.5,
+        },
+      },
+    }
+
+    const result = applyOps(emptyProject(), [
+      { type: 'insertFragment', fragment, suffix: 'one' },
+    ])
+
+    expect(result.ok).toBe(true)
+    expect(result.project.defs).toContain('linearGradient')
+    expect(result.project.gradients?.g).toBeDefined()
+    expect(result.project.rootElementIds).toHaveLength(1)
   })
 })

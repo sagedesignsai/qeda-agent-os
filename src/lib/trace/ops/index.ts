@@ -776,6 +776,22 @@ function opInsertFragment(
         ? [...roots, ...(project.rootElementIds ?? [])]
         : [...(project.rootElementIds ?? []), ...roots];
   }
+
+  // Fragments carry their own paint resources. Merge them here so calling
+  // `insertFragment` is sufficient and callers cannot forget `setDefs`.
+  if (fragment.defs?.trim()) {
+    project.defs = project.defs?.trim()
+      ? `${project.defs.trim()}\n${fragment.defs.trim()}`
+      : fragment.defs.trim();
+  }
+  if (fragment.gradients && Object.keys(fragment.gradients).length > 0) {
+    // Existing structured gradients win on an id collision: appended raw defs
+    // are also first-wins in the SVG document.
+    project.gradients = {
+      ...deepClone(fragment.gradients),
+      ...(project.gradients ?? {}),
+    };
+  }
 }
 
 function opSetDefs(
