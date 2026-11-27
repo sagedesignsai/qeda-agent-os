@@ -72,7 +72,7 @@ export function registerTraceHandlers({
   ipcMain.handle(
     'trace:open-project',
     async (_event, req: { projectId: string }) =>
-      store.openProject(req.projectId),
+      store.openProject(req.projectId, { repair: true }),
   );
 
   ipcMain.handle(

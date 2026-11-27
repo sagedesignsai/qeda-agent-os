@@ -46,3 +46,7 @@ npm-debug.log.*
 # END oh-my-opencode-slim clonedeps
 .vercel
 .env*
+
+# Runtime SQLite database (created in userData, never shipped)
+release/app/qeda.db
+release/app/qeda.db-*

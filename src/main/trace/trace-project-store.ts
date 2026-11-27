@@ -172,18 +172,36 @@ export class TraceProjectStore {
 
   async openProject(
     id: string,
-    options: { touch?: boolean } = {},
+    options: { touch?: boolean; repair?: boolean } = {},
   ): Promise<TraceOpenResult> {
     assertSafeProjectId(id)
     const row = this.index.get(id)
     const directory = row?.path ?? this.projectPath(id)
+    this.assertProjectDirectory(directory)
     const file = await this.readBundle(directory)
+    const project = migrateTraceProject(file.project)
+    let revision = file.revision
+
+    // Legacy documents are normalised on read. Opening one in the editor is a
+    // natural point to persist that repair so the bundle does not stay stale
+    // until the user happens to edit it.
+    if (options.repair && project !== file.project) {
+      try {
+        const saved = await this.saveProject(id, project, {
+          expectedRevision: file.revision,
+        })
+        revision = saved.revision
+      } catch {
+        // A concurrent writer or a read-only volume must not make the project
+        // unopenable; the in-memory migration still applies.
+      }
+    }
 
     if (options.touch !== false) {
       this.index.touch(id, this.now().toISOString())
     }
 
-    return { project: migrateTraceProject(file.project), path: directory, revision: file.revision }
+    return { project, path: directory, revision }
   }
 
   async saveProject(
@@ -195,6 +213,7 @@ export class TraceProjectStore {
     return this.withSaveLock(id, async () => {
       const row = this.index.get(id)
       const directory = row?.path ?? this.projectPath(id)
+      this.assertProjectDirectory(directory)
       const current = await this.readBundle(directory)
 
       if (
@@ -251,17 +270,37 @@ export class TraceProjectStore {
   }
 
   async deleteProject(id: string): Promise<boolean> {
+    assertSafeProjectId(id)
     const row = this.index.get(id)
-    if (!row) return false
+    const directory = row?.path ?? this.projectPath(id)
+    this.assertProjectDirectory(directory)
+    const exists = await fs
+      .access(directory)
+      .then(() => true)
+      .catch(() => false)
+    if (!row && !exists) return false
 
-    await fs.rm(row.path, { recursive: true, force: true })
-    this.index.delete(id)
+    await fs.rm(directory, { recursive: true, force: true })
+    if (row) this.index.delete(id)
     return true
   }
 
   projectPath(id: string): string {
     assertSafeProjectId(id)
     return path.join(this.projectsDirectory, id)
+  }
+
+  private assertProjectDirectory(directory: string): void {
+    const relative = path.relative(
+      path.resolve(this.projectsDirectory),
+      path.resolve(directory),
+    )
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new TraceProjectError(
+        'Trace project path is outside the Trace projects directory.',
+        'TRACE_INVALID_PATH',
+      )
+    }
   }
 
   private async withSaveLock<T>(id: string, action: () => Promise<T>): Promise<T> {
@@ -354,7 +393,7 @@ function toRow(
     duration_ms: project.durationMs,
     fps: project.fps,
     element_count: Object.keys(project.elements ?? {}).length,
-    scene_count: project.storyboard?.scenes.length ?? 1,
+    scene_count: project.storyboard?.scenes.length ?? 0,
     revision: file.revision,
     thumbnail_svg: null,
     last_opened_at: null,

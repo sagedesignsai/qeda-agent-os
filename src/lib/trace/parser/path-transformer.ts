@@ -65,6 +65,18 @@ export function translateSvgPath(d: string, dx: number, dy: number): string {
     } else if (cmd === 'V') {
       const translated = numbers.map((n) => Number((n + dy).toFixed(2)))
       result += cmd + ' ' + translated.join(' ') + ' '
+    } else if (cmd === 'A') {
+      // rx ry rotation large-arc sweep x y: only the endpoint moves.
+      if (numbers.length >= 7) {
+        const translated = [...numbers]
+        for (let i = 0; i + 6 < translated.length; i += 7) {
+          translated[i + 5] = Number((translated[i + 5] + dx).toFixed(2))
+          translated[i + 6] = Number((translated[i + 6] + dy).toFixed(2))
+        }
+        result += cmd + ' ' + translated.join(' ') + ' '
+      } else {
+        result += cmd + ' ' + argsStr + ' '
+      }
     } else {
       // Relative commands (c, l, h, v, s, q, t, a, z) keep relative deltas
       result += cmd + ' ' + argsStr + ' '

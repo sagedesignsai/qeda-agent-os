@@ -233,6 +233,11 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
       const rawD = node.getAttribute('d') || '';
       const translatedD = translateSvgPath(rawD, currentDx, currentDy);
       attributes.d = translatedD;
+      // A source dash pattern is authored intent; only synthesise a full-length
+      // dash for solid stroked paths that can be drawn on.
+      const hadDasharray =
+        typeof attributes.strokeDasharray === 'string' &&
+        attributes.strokeDasharray.trim() !== '';
 
       // Measure path length and bounding box accurately in detached SVG
       try {
@@ -258,7 +263,7 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
         const bbox = tempPath.getBBox();
         document.body.removeChild(tempSvg);
 
-        if (stroke !== 'none' && strokeWidth > 0) {
+        if (stroke !== 'none' && strokeWidth > 0 && !hadDasharray) {
           attributes.strokeDasharray = `${length} ${length}`;
           attributes.strokeDashoffset = 0;
         }
@@ -269,7 +274,7 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
           };
         }
       } catch {
-        if (stroke !== 'none' && strokeWidth > 0) {
+        if (stroke !== 'none' && strokeWidth > 0 && !hadDasharray) {
           attributes.strokeDasharray = '500 500';
           attributes.strokeDashoffset = 0;
         }
@@ -292,6 +297,9 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
         d += ' Z';
       }
       attributes.d = d;
+      const hadDasharray =
+        typeof attributes.strokeDasharray === 'string' &&
+        attributes.strokeDasharray.trim() !== '';
 
       try {
         const tempSvg = document.createElementNS(
@@ -316,7 +324,7 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
         const bbox = tempPath.getBBox();
         document.body.removeChild(tempSvg);
 
-        if (stroke !== 'none' && strokeWidth > 0) {
+        if (stroke !== 'none' && strokeWidth > 0 && !hadDasharray) {
           attributes.strokeDasharray = `${length} ${length}`;
           attributes.strokeDashoffset = 0;
         }
@@ -327,7 +335,7 @@ export function parseSvgToFragment(svgString: string): TraceAssetFragment {
           };
         }
       } catch {
-        if (stroke !== 'none' && strokeWidth > 0) {
+        if (stroke !== 'none' && strokeWidth > 0 && !hadDasharray) {
           attributes.strokeDasharray = '500 500';
           attributes.strokeDashoffset = 0;
         }
