@@ -1538,7 +1538,7 @@ export function createTraceTools(opts: CreateTraceToolsOptions = {}) {
 
   const getTraceCapability = tool({
     description:
-      'Load the NovaTrace copilot contract and the capability map. Returns the NORMATIVE contract (rules, budgets, verification commands, "done means") plus structured capability guidance: patterns, element types, animation properties, easing types, color palettes, and design patterns. Call this BEFORE generating any composition of more than a couple of elements to ground your output in real system capabilities. Ask "How do I create a [pattern]?" or "What properties can I animate on [type]?"',
+      'Load the NovaTrace copilot contract and the capability map. Returns the NORMATIVE contract (rules, budgets, verification commands, "done means") plus structured capability guidance: patterns, element types, animation properties, easing types, color palettes, design patterns, and the add-on block catalogues. Call this BEFORE generating any composition of more than a couple of elements to ground your output in real system capabilities. Ask "How do I create a [pattern]?" or "What properties can I animate on [type]?"',
     inputSchema: z.object({
       query: z
         .string()
