@@ -40,6 +40,7 @@ import type {
   TraceBlockDefinition,
 } from './types';
 import type { TraceStyle } from '../types';
+import { ADDON_BLOCKS, TRACE_ADDONS } from '../addons';
 
 export type {
   BlockBuildContext,
@@ -48,6 +49,14 @@ export type {
   BlockSearchOptions,
   TraceBlockDefinition,
 } from './types';
+
+export { TRACE_ADDONS };
+export { getTraceAddon } from '../addons';
+export type {
+  TraceAddonDefinition,
+  TraceAddonGenerator,
+  TraceAddonId,
+} from '../addons';
 
 export {
   backgroundTreatmentBlock,
@@ -87,6 +96,7 @@ export const TRACE_BLOCKS: readonly TraceBlockDefinition[] = [
   deviceFrameBlock,
   logoEndCardBlock,
   backgroundTreatmentBlock,
+  ...ADDON_BLOCKS,
 ];
 
 const BLOCK_BY_ID = new Map(

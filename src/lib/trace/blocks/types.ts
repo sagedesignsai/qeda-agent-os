@@ -42,6 +42,8 @@ export interface TraceBlockDefinition {
   title: string;
   description: string;
   category: BlockCategory;
+  /** Add-on that owns this block, when it was contributed by one. */
+  addonId?: string;
   tags: readonly string[];
   /** Extra search terms: synonyms a user or agent might type. */
   keywords?: readonly string[];

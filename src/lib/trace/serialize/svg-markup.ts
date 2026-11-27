@@ -234,7 +234,7 @@ export function elementBodyMarkup(
       return `<path d="${escapeXml(String(attributes.d ?? ''))}" ${paintAttrs(
         attributes,
         'none',
-      )} stroke-linecap="round" stroke-linejoin="round"${trimAttrs(attributes)} />`;
+      )}${attributes.strokeLinecap ? '' : ' stroke-linecap="round"'}${attributes.strokeLinejoin ? '' : ' stroke-linejoin="round"'}${trimAttrs(attributes)} />`;
 
     case 'group':
       return '';
