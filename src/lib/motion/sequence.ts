@@ -5,6 +5,7 @@
  */
 
 import type { MotionDocument, MotionScene, MotionSequence, MotionSequenceItem, MotionTransition } from './types';
+import type { MotionShaderTransitionName } from './transitions';
 
 export type MotionSequenceLayer = {
   item: MotionSequenceItem;
@@ -14,7 +15,13 @@ export type MotionSequenceLayer = {
 
 export type MotionSequenceFrame = {
   layers: MotionSequenceLayer[];
-  transition?: { type: 'crossfade' | 'dip'; progress: number; color?: string };
+  transition?: {
+    type: 'crossfade' | 'dip' | 'shader';
+    progress: number;
+    color?: string;
+    shader?: MotionShaderTransitionName;
+    accentColor?: string;
+  };
 };
 
 /** Use authored sequence timing, or make a temporary cut sequence from scenes. */
@@ -92,6 +99,12 @@ export function sampleMotionSequence(
           type: transition.type,
           progress,
           ...(transition.color ? { color: transition.color } : {}),
+          ...(transition.type === 'shader'
+            ? {
+                shader: transition.shader ?? ('domain-warp' as const),
+                ...(transition.accentColor ? { accentColor: transition.accentColor } : {}),
+              }
+            : {}),
         },
       };
     }

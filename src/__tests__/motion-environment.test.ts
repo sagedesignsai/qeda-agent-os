@@ -93,6 +93,32 @@ describe('scene world resolution', () => {
     });
   });
 
+  it('resolves a procedural studio without an HDRI asset', () => {
+    const doc = createStarterMotionDocument(NOW);
+    expect(
+      resolveSceneWorld(
+        {
+          ...doc.scenes[0],
+          background: {
+            type: 'studio',
+            variant: 'softbox',
+            color: '#e8e4dc',
+            intensity: 1.2,
+            rotation: 0.4,
+          },
+        },
+        doc.assets,
+        'prj_demo',
+      ),
+    ).toEqual({
+      kind: 'studio',
+      variant: 'softbox',
+      color: '#e8e4dc',
+      intensity: 1.2,
+      rotation: 0.4,
+    });
+  });
+
   it('reports an environment whose asset is gone instead of pretending it loaded', () => {
     const doc = createStarterMotionDocument(NOW);
     expect(

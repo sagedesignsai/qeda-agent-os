@@ -139,4 +139,53 @@ export const proceduralCurve: MotionNodeTypeDefinition = {
   },
 };
 
-export const proceduralNodes = [proceduralArray, proceduralRadial, proceduralGrid, proceduralScatter, proceduralCurve];
+export const proceduralGalaxy: MotionNodeTypeDefinition = {
+  id: 'procedural.galaxy',
+  label: 'Galaxy',
+  category: 'procedural',
+  description:
+    'A GPU particle galaxy with differential rotation — the core laps the rim and the arms wind up over time.',
+  propsSchema: z.object({
+    count: z.number().int().min(100).max(200_000),
+    radius: z.number().positive(),
+    branches: z.number().int().min(2).max(8),
+    spin: z.number().min(-10).max(10),
+    rate: z.number().min(-5).max(5),
+    size: z.number().positive(),
+    coreColor: z.string().min(1),
+    rimColor: z.string().min(1),
+    glow: z.number().min(0).max(3),
+    opacity: z.number().min(0).max(1),
+    seed: z.number().int().min(0),
+  }),
+  defaultProps: {
+    count: 12_000,
+    radius: 4,
+    branches: 3,
+    spin: 0.8,
+    rate: 0.15,
+    size: 2,
+    coreColor: '#ffd9a0',
+    rimColor: '#6aa8ff',
+    glow: 1.2,
+    opacity: 0.95,
+    seed: 7,
+  },
+  animatableProperties: { opacity: { description: 'Galaxy opacity.' } },
+  defaultName: 'Galaxy',
+  propertyHints: {
+    count: { label: 'Stars', control: 'number', min: 100, max: 200_000, step: 100, group: 'Field' },
+    radius: { label: 'Radius', control: 'number', min: 0.5, step: 0.1, group: 'Field' },
+    branches: { label: 'Arms', control: 'number', min: 2, max: 8, step: 1, group: 'Field' },
+    spin: { label: 'Arm twist', control: 'slider', min: -10, max: 10, step: 0.1, group: 'Motion' },
+    rate: { label: 'Winding speed', control: 'slider', min: -5, max: 5, step: 0.01, group: 'Motion' },
+    size: { label: 'Star size', control: 'slider', min: 0.2, max: 20, step: 0.1, group: 'Appearance' },
+    coreColor: { label: 'Core color', control: 'color', group: 'Appearance' },
+    rimColor: { label: 'Rim color', control: 'color', group: 'Appearance' },
+    glow: { label: 'Glow', control: 'slider', min: 0, max: 3, step: 0.01, group: 'Appearance' },
+    opacity: { label: 'Opacity', ...opacityHint },
+    seed: { label: 'Seed', control: 'number', min: 0, step: 1, group: 'Generation' },
+  },
+};
+
+export const proceduralNodes = [proceduralArray, proceduralRadial, proceduralGrid, proceduralScatter, proceduralCurve, proceduralGalaxy];

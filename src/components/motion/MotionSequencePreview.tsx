@@ -66,7 +66,8 @@ export function MotionSequencePreview({ doc, onClose }: { doc: MotionDocument; o
   }, [clockA, clockB, doc, sceneDocs, slots]);
 
   const progress = sequence.duration > 0 ? time / sequence.duration : 0;
-  const crossfade = slots.frame.transition?.type === 'crossfade';
+  const crossfade =
+    slots.frame.transition?.type === 'crossfade' || slots.frame.transition?.type === 'shader';
   const dip = slots.frame.transition?.type === 'dip';
   const outgoingSlot = slots.assigned[0]?.slot;
   const incomingSlot = slots.assigned[1]?.slot;
@@ -94,6 +95,9 @@ export function MotionSequencePreview({ doc, onClose }: { doc: MotionDocument; o
         <ClapperboardIcon className="size-3.5 text-primary" />
         <span className="text-[11px] font-medium">Sequence preview</span>
         <span className="text-[10px] tabular-nums text-muted-foreground">{sequence.items.length} shots · {time.toFixed(2)} / {sequence.duration.toFixed(2)}s</span>
+        {slots.frame.transition?.type === 'shader' && (
+          <span className="text-[9px] text-muted-foreground/80">shader previews as a crossfade; the export applies the shader</span>
+        )}
         <div className="flex-1" />
         <Button type="button" size="icon" variant="ghost" className="size-7" aria-label={sequenceClock.isPlaying() ? 'Pause sequence' : 'Play sequence'} onClick={() => sequenceClock.toggle()}>
           {sequenceClock.isPlaying() ? <PauseIcon data-icon /> : <PlayIcon data-icon />}

@@ -29,7 +29,9 @@ import { Slider } from '@/components/ui/slider';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { motionStore } from '@/hooks/use-motion-store';
 import {
+  DEFAULT_STUDIO_COLORS,
   MOTION_ENVIRONMENT_PRESETS,
+  MOTION_STUDIO_VARIANTS,
   activeEnvironmentPreset,
   buildEnvironmentPresetOps,
   describeResolvedWorld,
@@ -38,7 +40,7 @@ import {
   type MotionWorldMode,
 } from '@/lib/motion/environment';
 import { createMotionId } from '@/lib/motion/ids';
-import type { MotionDocument } from '@/lib/motion/types';
+import type { MotionDocument, MotionStudioWorldVariant } from '@/lib/motion/types';
 import { cn } from '@/lib/utils';
 
 export type MotionStageTone = 'graphite' | 'slate' | 'paper';
@@ -53,6 +55,7 @@ const MODES: Array<{ value: MotionWorldMode; label: string }> = [
   { value: 'color', label: 'Solid' },
   { value: 'transparent', label: 'Alpha' },
   { value: 'environment', label: 'HDRI' },
+  { value: 'studio', label: 'Studio' },
 ];
 
 const QUICK_COLORS = ['#0e1118', '#080a10', '#04060c', '#0b1020', '#c8d4e2', '#f2f4f8'];
@@ -88,12 +91,17 @@ export function MotionWorldPopover({
   const mode: MotionWorldMode =
     world?.kind === 'transparent' || world?.kind === 'color'
       ? world.kind
-      : world?.kind === 'environment' || world?.kind === 'unresolved-environment'
-        ? 'environment'
-        : 'color';
+      : world?.kind === 'studio'
+        ? 'studio'
+        : world?.kind === 'environment' || world?.kind === 'unresolved-environment'
+          ? 'environment'
+          : 'color';
 
   const environment =
     world?.kind === 'environment' ? world : null;
+  const studio = world?.kind === 'studio' ? world : null;
+  const solidColor =
+    world?.kind === 'color' || world?.kind === 'studio' ? world.color : '#0e1118';
 
   const setMode = (next: MotionWorldMode) => {
     if (!scene || next === mode) return;
@@ -107,7 +115,7 @@ export function MotionWorldPopover({
         // No HDRI in the bundle yet: keep the document valid, the picker below
         // explains where to get one.
         commitWorld(
-          { type: 'color', color: world?.kind === 'color' ? world.color : '#0e1118' },
+          { type: 'color', color: solidColor },
           'Set solid background',
         );
         return;
@@ -118,8 +126,22 @@ export function MotionWorldPopover({
       );
       return;
     }
+    if (next === 'studio') {
+      const variant: MotionStudioWorldVariant = studio?.variant ?? 'softbox';
+      commitWorld(
+        {
+          type: 'studio',
+          variant,
+          color: studio?.color ?? DEFAULT_STUDIO_COLORS[variant],
+          intensity: studio?.intensity ?? 1,
+          rotation: studio?.rotation ?? 0,
+        },
+        'Set studio background',
+      );
+      return;
+    }
     commitWorld(
-      { type: 'color', color: world?.kind === 'color' ? world.color : '#0e1118' },
+      { type: 'color', color: solidColor },
       'Set solid background',
     );
   };
@@ -147,9 +169,11 @@ export function MotionWorldPopover({
   const swatch =
     world?.kind === 'color'
       ? world.color
-      : world?.kind === 'environment'
-        ? 'linear-gradient(135deg, #2b3a5c, #0a0d16)'
-        : CHECKERBOARD;
+      : world?.kind === 'studio'
+        ? world.color
+        : world?.kind === 'environment'
+          ? 'linear-gradient(135deg, #2b3a5c, #0a0d16)'
+          : CHECKERBOARD;
 
   return (
     <Popover>
@@ -189,7 +213,12 @@ export function MotionWorldPopover({
               type="single"
               value={mode}
               onValueChange={(value) => {
-                if (value === 'color' || value === 'transparent' || value === 'environment') {
+                if (
+                  value === 'color' ||
+                  value === 'transparent' ||
+                  value === 'environment' ||
+                  value === 'studio'
+                ) {
                   setMode(value);
                 }
               }}
@@ -215,7 +244,7 @@ export function MotionWorldPopover({
                 <ColorField
                   id="motion-world-color"
                   label="Colour"
-                  value={world?.kind === 'color' ? world.color : '#0e1118'}
+                  value={solidColor}
                   onChange={(color) => commitWorld({ type: 'color', color })}
                 />
                 <div className="flex items-center gap-1">
@@ -233,6 +262,101 @@ export function MotionWorldPopover({
                     />
                   ))}
                 </div>
+              </div>
+            )}
+
+            {mode === 'studio' && (
+              <div className="mt-2.5 flex flex-col gap-2.5">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] text-muted-foreground">Lighting rig</span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {MOTION_STUDIO_VARIANTS.map((variant) => {
+                      const active = (studio?.variant ?? 'softbox') === variant.value;
+                      return (
+                        <button
+                          key={variant.value}
+                          type="button"
+                          title={variant.description}
+                          aria-pressed={active}
+                          onClick={() =>
+                            commitWorld(
+                              {
+                                type: 'studio',
+                                variant: variant.value,
+                                color: DEFAULT_STUDIO_COLORS[variant.value],
+                                intensity: studio?.intensity ?? 1,
+                                rotation: studio?.rotation ?? 0,
+                              },
+                              'Set studio lighting',
+                            )
+                          }
+                          className={cn(
+                            'h-7 rounded border px-1 text-[10px] outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring',
+                            active
+                              ? 'border-primary/70 bg-primary/10 text-foreground'
+                              : 'border-border/70 text-muted-foreground hover:border-border',
+                          )}
+                        >
+                          {variant.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <ColorField
+                  id="motion-world-studio-color"
+                  label="Backdrop"
+                  value={studio?.color ?? DEFAULT_STUDIO_COLORS[studio?.variant ?? 'softbox']}
+                  onChange={(color) =>
+                    commitWorld({
+                      type: 'studio',
+                      variant: studio?.variant ?? 'softbox',
+                      color,
+                      intensity: studio?.intensity ?? 1,
+                      rotation: studio?.rotation ?? 0,
+                    })
+                  }
+                />
+                <WorldSlider
+                  id="motion-world-studio-intensity"
+                  label="Reflection strength"
+                  value={studio?.intensity ?? 1}
+                  min={0}
+                  max={3}
+                  step={0.05}
+                  suffix="×"
+                  onCommit={(intensity) =>
+                    commitWorld({
+                      type: 'studio',
+                      variant: studio?.variant ?? 'softbox',
+                      color: studio?.color ?? DEFAULT_STUDIO_COLORS[studio?.variant ?? 'softbox'],
+                      intensity,
+                      rotation: studio?.rotation ?? 0,
+                    })
+                  }
+                />
+                <WorldSlider
+                  id="motion-world-studio-rotation"
+                  label="Rotate"
+                  value={Math.round(((studio?.rotation ?? 0) * 180) / Math.PI)}
+                  min={-180}
+                  max={180}
+                  step={1}
+                  suffix="°"
+                  onCommit={(degrees) =>
+                    commitWorld({
+                      type: 'studio',
+                      variant: studio?.variant ?? 'softbox',
+                      color: studio?.color ?? DEFAULT_STUDIO_COLORS[studio?.variant ?? 'softbox'],
+                      intensity: studio?.intensity ?? 1,
+                      rotation: (degrees * Math.PI) / 180,
+                    })
+                  }
+                />
+                <p className="text-[9px] leading-relaxed text-muted-foreground">
+                  A procedural softbox is captured into an environment map, so
+                  chrome, gold and glass reflect a studio without an HDRI file.
+                </p>
               </div>
             )}
 

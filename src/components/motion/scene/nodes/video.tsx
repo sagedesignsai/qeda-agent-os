@@ -11,11 +11,12 @@
  * exported frame — the element is seeked to the playhead.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { LinearFilter, SRGBColorSpace, VideoTexture } from 'three';
 
 import { motionAssetUrl } from '@/lib/motion/assets';
+import { trackMotionAsset } from '@/lib/motion/asset-readiness';
 import type { MotionDocument, MotionNode } from '@/lib/motion/types';
 
 import type { MotionNodeTimeSource } from '../renderer-registry';
@@ -57,6 +58,7 @@ export function VideoScreenRenderer({
     : null;
 
   const [failedSource, setFailedSource] = useState<string | null>(null);
+  const seeking = useRef<(() => void) | null>(null);
   // Created in an effect-free memo: an element is not a React child, only a source.
   const video = useMemo(() => {
     if (typeof window === 'undefined') return null;
@@ -71,10 +73,24 @@ export function VideoScreenRenderer({
     if (!video || !mediaSource) return undefined;
     const onError = () => setFailedSource(mediaSource);
     video.addEventListener('error', onError);
+    let settle: (() => void) | null = null;
+    trackMotionAsset(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+        if (video.readyState >= 2) resolve();
+      }),
+    );
+    const onReady = () => settle?.();
+    const onSettleError = () => settle?.();
+    video.addEventListener('loadeddata', onReady, { once: true });
+    video.addEventListener('error', onSettleError, { once: true });
     video.src = mediaSource;
     video.load();
     return () => {
+      settle?.();
       video.removeEventListener('error', onError);
+      video.removeEventListener('loadeddata', onReady);
+      video.removeEventListener('error', onSettleError);
       video.pause();
       video.removeAttribute('src');
       video.load();
@@ -87,6 +103,20 @@ export function VideoScreenRenderer({
     video.loop = loop;
     video.playbackRate = playbackRate;
   }, [loop, muted, playbackRate, video]);
+
+  useEffect(() => {
+    if (!video) return undefined;
+    const onSeeked = () => {
+      seeking.current?.();
+      seeking.current = null;
+    };
+    video.addEventListener('seeked', onSeeked);
+    return () => {
+      video.removeEventListener('seeked', onSeeked);
+      seeking.current?.();
+      seeking.current = null;
+    };
+  }, [video]);
 
   const texture = useMemo(() => {
     if (!video) return null;
@@ -122,6 +152,14 @@ export function VideoScreenRenderer({
     if (!video.paused) video.pause();
     if (Math.abs(video.currentTime - target) > PAUSED_SEEK_TOLERANCE) {
       video.currentTime = target;
+      if (!seeking.current) {
+        let resolve: (() => void) | null = null;
+        const pendingSeek = new Promise<void>((done) => {
+          resolve = done;
+        });
+        seeking.current = resolve;
+        trackMotionAsset(pendingSeek);
+      }
     }
   });
 

@@ -270,6 +270,10 @@
     "extraResources": [
       "./assets/**",
       {
+        "from": "src/assets/fonts/LiberationSans-OFL.txt",
+        "to": "fonts/LiberationSans-OFL.txt"
+      },
+      {
         "from": "docs/systems",
         "to": "docs/systems"
       },

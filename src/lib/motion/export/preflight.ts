@@ -107,7 +107,7 @@ export function preflightMotionExport(
       if (previousItem && item.start < previousEnd - 1e-9) {
         const transition = item.transitionIn ?? previousItem.transitionOut;
         if (!transition || transition.type === 'cut') {
-          add({ severity: 'warning', code: 'MOTION_SEQUENCE_OVERLAP_CUT', message: `Overlapping shot “${itemScene.name}” has no transition; the later shot will take over.`, sceneId: item.sceneId, action: 'Choose a crossfade or dip transition.' });
+          add({ severity: 'warning', code: 'MOTION_SEQUENCE_OVERLAP_CUT', message: `Overlapping shot “${itemScene.name}” has no transition; the later shot will take over.`, sceneId: item.sceneId, action: 'Choose a crossfade, dip or shader transition.' });
         }
       }
       previousEnd = Math.max(previousEnd, item.start + item.duration);

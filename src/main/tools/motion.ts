@@ -7,6 +7,7 @@ import {
   MOTION_ENVIRONMENT_PRESETS,
 } from '../../lib/motion/environment.js';
 import { createMotionId } from '../../lib/motion/ids.js';
+import { planMotionTrackImport } from '../../lib/motion/motion-track.js';
 import type { MotionDocument, MotionNodeTransform } from '../../lib/motion/types.js';
 import type { MotionOpRequest } from '../../lib/motion/ops.js';
 
@@ -264,7 +265,7 @@ export function createMotionTools(context: MotionToolContext) {
 
   const environment = tool({
     description:
-      'Set the scene world (solid colour, transparency, or an HDRI that lights the scene) and apply lighting/backdrop presets. ' +
+      'Set the scene world (solid colour, transparency, a procedural studio, or an HDRI that lights the scene) and apply lighting/backdrop presets. ' +
       'Prefer a preset over hand-building lights: it materializes a deterministic rig and re-applying it updates that rig in place. ' +
       'Import HDRI files as environment assets first; then tune individual nodes with motion.scene.director.',
     inputSchema: z.discriminatedUnion('action', [
@@ -280,6 +281,15 @@ export function createMotionTools(context: MotionToolContext) {
               assetId: z.string().min(1),
               intensity: z.number().min(0).max(10).optional(),
               blur: z.number().min(0).max(1).optional(),
+              rotation: z.number().optional(),
+            })
+            .strict(),
+          z
+            .object({
+              type: z.literal('studio'),
+              variant: z.enum(['softbox', 'room', 'dark']).optional(),
+              color: z.string().min(1).optional(),
+              intensity: z.number().min(0).max(10).optional(),
               rotation: z.number().optional(),
             })
             .strict(),
@@ -323,12 +333,44 @@ export function createMotionTools(context: MotionToolContext) {
     },
   });
 
+  const bakeMotion = tool({
+    description:
+      'Bake sampled camera/object motion (for example a Blender rig export) into ordinary Motion keyframes. ' +
+      'Input contract: { fps, duration?, coordinateSystem?: "three"|"blender", rotationUnit?: "degrees"|"radians", ' +
+      'tracks: [{ targetId, channels: { position|rotation|scale|fov|roll|opacity: [[time, value], ...] } }] }. ' +
+      'Positions from Blender coordinates are converted to Y-up; rotations are treated as Three axes. ' +
+      'The import extends the scene duration when the samples run past it, and adds a dedicated track so it can be retimed or removed independently.',
+    inputSchema: z.object({
+      ...motionToolContextSchema.shape,
+      motion: z.unknown().describe('Sampled motion contract; see the tool description.'),
+    }),
+    execute: async (input) => {
+      try {
+        const sceneError = requireActiveScene(context, input.sceneId);
+        if (sceneError) return errorResult(new Error(sceneError), 'motion.motion');
+        const operations = planMotionTrackImport(context.getDocument(), input.motion, createMotionId);
+        if (operations.length === 0) {
+          return {
+            success: false,
+            kind: 'motion-operation' as const,
+            namespace: 'motion.motion',
+            error: 'The motion data had no usable channels.',
+          };
+        }
+        return resultEnvelope(context, 'motion.motion', 'Bake sampled motion', operations);
+      } catch (error) {
+        return errorResult(error, 'motion.motion');
+      }
+    },
+  });
+
   return {
     'motion.scene.director': sceneDirector,
     'motion.environment': environment,
     'motion.scene.keyframe': keyframe,
     'motion.node.builder': nodeBuilder,
     'motion.procedural.model': proceduralModeling,
+    'motion.motion.bake': bakeMotion,
   };
 }
 

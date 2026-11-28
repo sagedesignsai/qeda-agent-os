@@ -3,8 +3,9 @@ import { buildTemplate, type TemplateSpec, type MotionTemplate, type MotionTempl
 export type { MotionTemplate, MotionTemplateCategory } from './template-spec';
 
 import { cinematicTemplates } from './cinematic';
+import { threeDTemplates } from './three-d';
 
-const ALL_SPECS: TemplateSpec[] = [...cinematicTemplates];
+const ALL_SPECS: TemplateSpec[] = [...cinematicTemplates, ...threeDTemplates];
 
 export const MOTION_TEMPLATES: readonly MotionTemplate[] = ALL_SPECS.map((spec) => ({
   id: spec.id,

@@ -73,4 +73,13 @@ describe('MotionWorldPopover', () => {
     });
     expect(renderChip(doc)).toHaveTextContent('Studio HDRI');
   });
+
+  it('names the procedural studio rig without requiring an HDRI asset', () => {
+    const doc = withWorld(createStarterMotionDocument(NOW), {
+      type: 'studio',
+      variant: 'softbox',
+      color: '#e8e4dc',
+    });
+    expect(renderChip(doc)).toHaveTextContent('Studio · Softbox');
+  });
 });

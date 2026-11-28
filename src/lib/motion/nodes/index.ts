@@ -21,6 +21,7 @@ import { sceneGroup } from './scene';
 import { shapeEllipse, shapeRect } from './shapes';
 import {
   stageBackdrop,
+  stageContactShadow,
   stageCyclorama,
   stageFog,
   stageGrid,
@@ -29,7 +30,7 @@ import {
   stagePedestal,
 } from './stage';
 import { screenImage, screenVideo } from './surfaces';
-import { textBody, textCaption, textQuote, textTitle } from './text';
+import { textBody, textCaption, textExtruded, textQuote, textTitle } from './text';
 import { uiNodes } from './ui';
 
 export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
@@ -47,10 +48,12 @@ export const MOTION_NODE_TYPES: readonly MotionNodeTypeDefinition[] = [
   textBody,
   textCaption,
   textQuote,
+  textExtruded,
   shapeRect,
   shapeEllipse,
   stageGround,
   stagePedestal,
+  stageContactShadow,
   stageBackdrop,
   stageCyclorama,
   stageGrid,

@@ -19,6 +19,7 @@ import {
   Box3,
   DoubleSide,
   MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   SRGBColorSpace,
@@ -30,6 +31,7 @@ import {
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import { motionStore } from '@/hooks/use-motion-store';
+import { trackMotionAsset } from '@/lib/motion/asset-readiness';
 import { motionAssetUrl } from '@/lib/motion/assets';
 import { createMotionGltfLoader } from '@/lib/motion/gltf-loader';
 import { parseGltfStructure } from '@/lib/motion/gltf-structure';
@@ -44,13 +46,15 @@ const modelCache = new Map<string, Promise<GLTF>>();
 function loadMotionModel(url: string): Promise<GLTF> {
   const cached = modelCache.get(url);
   if (cached) return cached;
-  const pending = createMotionGltfLoader().then(
-    (loader) =>
-      new Promise<GLTF>((resolve, reject) => {
-        loader.load(url, resolve, undefined, (error) => {
-          reject(error instanceof Error ? error : new Error(String(error)));
-        });
-      }),
+  const pending = trackMotionAsset(
+    createMotionGltfLoader().then(
+      (loader) =>
+        new Promise<GLTF>((resolve, reject) => {
+          loader.load(url, resolve, undefined, (error) => {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          });
+        }),
+    ),
   );
   modelCache.set(url, pending);
   // A failed load must not stay cached, or a relinked asset would never retry.
@@ -101,14 +105,20 @@ function PartDecal({
     if (!source) { setTexture(null); return undefined; }
     let cancelled = false;
     setTexture(null);
+    let settle: (() => void) | null = null;
+    trackMotionAsset(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
     const next = new TextureLoader().load(
       source,
-      (loaded) => { if (!cancelled) setTexture(loaded); },
+      (loaded) => { if (!cancelled) setTexture(loaded); settle?.(); },
       undefined,
-      () => { if (!cancelled) setTexture(null); },
+      () => { if (!cancelled) setTexture(null); settle?.(); },
     );
     next.colorSpace = SRGBColorSpace;
-    return () => { cancelled = true; next.dispose(); };
+    return () => { cancelled = true; settle?.(); next.dispose(); };
   }, [source]);
 
   if (!texture) return null;
@@ -216,6 +226,12 @@ export function ModelRenderer({
     const loaded = new Map<string, Texture>();
     let pending = entries.length;
     let cancelled = false;
+    let settle: (() => void) | null = null;
+    trackMotionAsset(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
     for (const [assetId, url] of entries) {
       const tex = new TextureLoader().load(
         url,
@@ -223,14 +239,20 @@ export function ModelRenderer({
           if (!cancelled) {
             loaded.set(assetId, t);
             pending--;
-            if (pending === 0) setLoadedReplaceTextures(new Map(loaded));
+            if (pending === 0) {
+              setLoadedReplaceTextures(new Map(loaded));
+              settle?.();
+            }
           }
         },
         undefined,
         () => {
           if (!cancelled) {
             pending--;
-            if (pending === 0) setLoadedReplaceTextures(new Map(loaded));
+            if (pending === 0) {
+              setLoadedReplaceTextures(new Map(loaded));
+              settle?.();
+            }
           }
         },
       );
@@ -238,6 +260,7 @@ export function ModelRenderer({
     }
     return () => {
       cancelled = true;
+      settle?.();
       loaded.forEach((t) => t.dispose());
     };
   }, [replaceTextures]);
@@ -292,6 +315,20 @@ export function ModelRenderer({
         if (override.metalness !== undefined) mat.metalness = override.metalness;
         if (override.emissive) mat.emissive.set(override.emissive);
         if (override.emissiveIntensity !== undefined) mat.emissiveIntensity = override.emissiveIntensity;
+        if (override.envMapIntensity !== undefined) mat.envMapIntensity = override.envMapIntensity;
+        if (mat instanceof MeshPhysicalMaterial) {
+          if (override.transmission !== undefined) mat.transmission = override.transmission;
+          if (override.thickness !== undefined) mat.thickness = override.thickness;
+          if (override.ior !== undefined) mat.ior = override.ior;
+          if (override.attenuationColor) mat.attenuationColor.set(override.attenuationColor);
+          if (override.attenuationDistance !== undefined) mat.attenuationDistance = override.attenuationDistance;
+          if (override.dispersion !== undefined) mat.dispersion = override.dispersion;
+          if (override.clearcoat !== undefined) mat.clearcoat = override.clearcoat;
+          if (override.clearcoatRoughness !== undefined) mat.clearcoatRoughness = override.clearcoatRoughness;
+          if (override.iridescence !== undefined) mat.iridescence = override.iridescence;
+          if (override.iridescenceIOR !== undefined) mat.iridescenceIOR = override.iridescenceIOR;
+          if (override.sheen !== undefined) mat.sheen = override.sheen;
+        }
       }
     });
 

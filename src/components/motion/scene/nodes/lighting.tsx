@@ -27,6 +27,8 @@ export function DirectionalLightRenderer({ node }: { node: MotionNode }) {
       castShadow={boolProp(node, 'castShadow', true)}
       shadow-mapSize-width={shadowMapSize}
       shadow-mapSize-height={shadowMapSize}
+      shadow-radius={numberProp(node, 'shadowRadius', 2)}
+      shadow-bias={numberProp(node, 'shadowBias', -0.0005)}
     />
   );
 }
@@ -59,6 +61,8 @@ export function SpotLightRenderer({ node }: { node: MotionNode }) {
       penumbra={penumbra}
       decay={decay}
       castShadow={castShadow}
+      shadow-radius={numberProp(node, 'shadowRadius', 2)}
+      shadow-bias={numberProp(node, 'shadowBias', -0.0005)}
     />
   );
 }

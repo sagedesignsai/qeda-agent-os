@@ -226,6 +226,32 @@ export const stageParticles: MotionNodeTypeDefinition = {
   },
 };
 
+export const stageContactShadow: MotionNodeTypeDefinition = {
+  id: 'stage.contact-shadow',
+  label: 'Contact shadow',
+  category: 'stage',
+  description:
+    'A baked elliptical shadow that grounds a product without shadow-map cost. Place it just above a floor or pedestal.',
+  propsSchema: z.object({
+    width: z.number().positive(),
+    depth: z.number().positive(),
+    color: z.string().min(1),
+    opacity: z.number().min(0).max(1),
+    softness: z.number().min(0).max(1),
+  }),
+  defaultProps: { width: 2.6, depth: 2.6, color: '#000000', opacity: 0.55, softness: 0.6 },
+  animatableProperties: { opacity: { description: 'Shadow opacity.' } },
+  defaultName: 'Contact shadow',
+  defaultTransform: { position: [0, 0.002, 0] },
+  propertyHints: {
+    width: { label: 'Width', control: 'number', min: 0.1, step: 0.05, group: 'Shape' },
+    depth: { label: 'Depth', control: 'number', min: 0.1, step: 0.05, group: 'Shape' },
+    softness: { label: 'Softness', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Shape' },
+    color: { label: 'Color', control: 'color', group: 'Appearance' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
 export const stageFog: MotionNodeTypeDefinition = {
   id: 'stage.fog',
   label: 'Atmosphere',

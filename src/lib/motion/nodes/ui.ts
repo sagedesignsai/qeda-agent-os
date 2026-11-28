@@ -72,6 +72,7 @@ export const uiCode: MotionNodeTypeDefinition = {
     width: z.number().positive(),
     height: z.number().positive(),
     depth: z.number().positive(),
+    bevel: z.number().nonnegative(),
     title: z.string(),
     language: z.string(),
     code: z.string(),
@@ -87,6 +88,7 @@ export const uiCode: MotionNodeTypeDefinition = {
     width: 2.4,
     height: 1.5,
     depth: 0.05,
+    bevel: 0.018,
     title: 'hero.tsx',
     language: 'TSX',
     code: [
@@ -111,6 +113,7 @@ export const uiCode: MotionNodeTypeDefinition = {
     code: { label: 'Code', control: 'textarea', group: 'Content' },
     ...sharedHints,
     depth: { label: 'Depth', control: 'number', min: 0.01, step: 0.01, group: 'Dimensions' },
+    bevel: { label: 'Bevel', control: 'number', min: 0, step: 0.002, group: 'Dimensions' },
     fontSize: { label: 'Font size', control: 'number', min: 0.02, step: 0.005, group: 'Typography' },
     lineHeight: { label: 'Line height', control: 'number', min: 0.8, step: 0.05, group: 'Typography' },
     showLineNumbers: { label: 'Line numbers', control: 'toggle', group: 'Typography' },
@@ -282,4 +285,56 @@ export const uiNotification: MotionNodeTypeDefinition = {
   },
 };
 
-export const uiNodes: readonly MotionNodeTypeDefinition[] = [uiBrowser, uiCode, uiAnnotation, uiTerminal, uiChat, uiCursor, uiNotification];
+export const uiCard: MotionNodeTypeDefinition = {
+  id: 'ui.card',
+  label: 'Feature card',
+  category: 'ui',
+  description:
+    'A rounded, bevelled 3D card with a printed face — the unit for carousels, feature walls and floating UI.',
+  propsSchema: z.object({
+    width: z.number().positive(),
+    height: z.number().positive(),
+    depth: z.number().positive(),
+    cornerRadius: z.number().nonnegative(),
+    bevel: z.number().nonnegative(),
+    tag: z.string(),
+    title: z.string(),
+    body: z.string(),
+    background: z.string().min(1),
+    color: z.string().min(1),
+    accentColor: z.string().min(1),
+    opacity: z.number().min(0).max(1),
+  }),
+  defaultProps: {
+    width: 2.2,
+    height: 2.9,
+    depth: 0.14,
+    cornerRadius: 0.14,
+    bevel: 0.03,
+    tag: 'MOTION',
+    title: 'Built for the frame',
+    body: 'A card that lives in the scene, catches the studio light and exports exactly as it looks.',
+    background: '#121821',
+    color: '#f2f6ff',
+    accentColor: '#7aa2ff',
+    opacity: 1,
+  },
+  animatableProperties: { opacity: { description: 'Card opacity.' } },
+  defaultName: 'Feature card',
+  propertyHints: {
+    tag: { label: 'Tag', control: 'text', group: 'Content' },
+    title: { label: 'Title', control: 'text', group: 'Content' },
+    body: { label: 'Body', control: 'textarea', group: 'Content' },
+    width: { label: 'Width', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },
+    height: { label: 'Height', control: 'number', min: 0.1, step: 0.01, group: 'Dimensions' },
+    depth: { label: 'Depth', control: 'number', min: 0.01, step: 0.01, group: 'Dimensions' },
+    cornerRadius: { label: 'Corner radius', control: 'number', min: 0, step: 0.01, group: 'Dimensions' },
+    bevel: { label: 'Bevel', control: 'number', min: 0, step: 0.005, group: 'Dimensions' },
+    background: { label: 'Background', control: 'color', group: 'Appearance' },
+    color: { label: 'Text color', control: 'color', group: 'Appearance' },
+    accentColor: { label: 'Accent', control: 'color', group: 'Appearance' },
+    opacity: { label: 'Opacity', control: 'slider', min: 0, max: 1, step: 0.01, group: 'Appearance' },
+  },
+};
+
+export const uiNodes: readonly MotionNodeTypeDefinition[] = [uiBrowser, uiCode, uiAnnotation, uiTerminal, uiChat, uiCursor, uiNotification, uiCard];

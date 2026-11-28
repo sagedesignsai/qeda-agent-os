@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { SRGBColorSpace, TextureLoader, type Texture } from 'three';
 
 import { motionAssetUrl } from '@/lib/motion/assets';
+import { trackMotionAsset } from '@/lib/motion/asset-readiness';
 import type { MotionDocument } from '@/lib/motion/types';
 
 export function useMotionAssetTexture(
@@ -32,19 +33,28 @@ export function useMotionAssetTexture(
     }
     let cancelled = false;
     setTexture(null);
+    let settle: (() => void) | null = null;
+    trackMotionAsset(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
     const next = new TextureLoader().load(
       source,
       (loaded) => {
         if (!cancelled) setTexture(loaded);
+        settle?.();
       },
       undefined,
       () => {
         if (!cancelled) setTexture(null);
+        settle?.();
       },
     );
     next.colorSpace = SRGBColorSpace;
     return () => {
       cancelled = true;
+      settle?.();
       next.dispose();
     };
   }, [source]);

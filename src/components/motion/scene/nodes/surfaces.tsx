@@ -19,6 +19,7 @@ import {
 
 import { createMotionScreenArtwork } from '@/components/motion/scene/create-motion-screen-artwork';
 import { motionStore } from '@/hooks/use-motion-store';
+import { trackMotionAsset } from '@/lib/motion/asset-readiness';
 import { motionAssetUrl } from '@/lib/motion/assets';
 import type { MotionDocument, MotionNode } from '@/lib/motion/types';
 
@@ -68,11 +69,23 @@ export function ImageScreenRenderer({
 
     if (!mediaSource) return null;
 
+    let settle: (() => void) | null = null;
+    trackMotionAsset(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
     const next = new TextureLoader().load(
       mediaSource,
-      () => setTextureLoaded(true),
+      () => {
+        setTextureLoaded(true);
+        settle?.();
+      },
       undefined,
-      () => setFailedSource(mediaSource),
+      () => {
+        setFailedSource(mediaSource);
+        settle?.();
+      },
     );
     next.colorSpace = SRGBColorSpace;
     next.magFilter = LinearFilter;

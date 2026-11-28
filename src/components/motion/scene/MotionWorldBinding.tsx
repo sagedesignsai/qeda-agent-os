@@ -18,10 +18,13 @@ import {
   Color,
   EquirectangularReflectionMapping,
   PMREMGenerator,
+  Scene,
   type Texture,
   type WebGLRenderTarget,
 } from 'three';
 import type { MotionResolvedWorld } from '@/lib/motion/environment';
+import { trackMotionAsset } from '@/lib/motion/asset-readiness';
+import { createStudioScene, disposeStudioScene } from './studio-environment';
 
 /** The slice of three's data-texture loaders this module needs. */
 type EnvironmentLoader = { loadAsync(url: string): Promise<Texture> };
@@ -77,9 +80,13 @@ export function MotionWorldBinding({ world, fallbackColor }: MotionWorldBindingP
   const color = world?.kind === 'color' ? world.color : null;
   const url = world?.kind === 'environment' ? world.url : null;
   const format = world?.kind === 'environment' ? world.format : null;
-  const intensity = world?.kind === 'environment' ? world.intensity : 1;
+  const intensity =
+    world?.kind === 'environment' || world?.kind === 'studio' ? world.intensity : 1;
   const blur = world?.kind === 'environment' ? world.blur : 0;
-  const rotation = world?.kind === 'environment' ? world.rotation : 0;
+  const rotation =
+    world?.kind === 'environment' || world?.kind === 'studio' ? world.rotation : 0;
+  const studioVariant = world?.kind === 'studio' ? world.variant : null;
+  const studioColor = world?.kind === 'studio' ? world.color : null;
   // Read at load time without making the loader depend on tuning values: a
   // slider drag must never re-download or re-convolve the HDRI.
   const tuning = useRef({ intensity, blur, rotation });
@@ -114,6 +121,79 @@ export function MotionWorldBinding({ world, fallbackColor }: MotionWorldBindingP
       };
     }
 
+    if (kind === 'studio' && studioVariant) {
+      gl.setClearAlpha(1);
+      const pmrem = new PMREMGenerator(gl);
+      // The visible backdrop is the authored colour; the PMREM scene only
+      // supplies reflections and diffuse environment light.
+      scene.background = new Color(studioColor ?? fallbackColor);
+      scene.backgroundBlurriness = 0;
+      scene.backgroundIntensity = 1;
+      scene.backgroundRotation.set(0, 0, 0);
+      scene.environment = null;
+      invalidate();
+
+      let studioScene: Scene | null = null;
+      void (async () => {
+        if (studioVariant === 'room') {
+          const { RoomEnvironment } = await import(
+            'three/examples/jsm/environments/RoomEnvironment.js'
+          );
+          const room = new RoomEnvironment();
+          room.traverse((object) => {
+            const light = object as unknown as { isLight?: boolean; intensity?: number };
+            if (light.isLight && typeof light.intensity === 'number') {
+              light.intensity *= 0.3;
+            }
+            const mesh = object as unknown as {
+              material?: { emissiveIntensity?: number };
+            };
+            if (
+              mesh.material &&
+              typeof mesh.material.emissiveIntensity === 'number'
+            ) {
+              mesh.material.emissiveIntensity *= 0.3;
+            }
+          });
+          studioScene = new Scene();
+          studioScene.add(room);
+        } else {
+          studioScene = createStudioScene(studioVariant);
+        }
+        if (cancelled) {
+          if (studioScene) disposeStudioScene(studioScene);
+          return;
+        }
+        releaseEnvironment();
+        environmentTarget.current = pmrem.fromScene(studioScene, 0.02);
+        const applied = tuning.current;
+        scene.environment = environmentTarget.current.texture;
+        scene.environmentIntensity = applied.intensity;
+        scene.environmentRotation.set(0, applied.rotation, 0);
+        disposeStudioScene(studioScene);
+        studioScene = null;
+        invalidate();
+      })()
+        .catch(() => {
+          if (cancelled) return;
+          // A failed studio capture keeps the authored backdrop rather than
+          // falling back to a black environment.
+          if (studioScene) {
+            disposeStudioScene(studioScene);
+            studioScene = null;
+          }
+          scene.environment = null;
+          invalidate();
+        })
+        .finally(() => pmrem.dispose());
+
+      return () => {
+        cancelled = true;
+        releaseEnvironment();
+        if (studioScene) disposeStudioScene(studioScene);
+      };
+    }
+
     if (kind !== 'environment' || !url || !format) {
       // No world at all falls back to editor tone; an unresolved environment is
       // missing media, and painting the fallback is the honest result.
@@ -125,7 +205,7 @@ export function MotionWorldBinding({ world, fallbackColor }: MotionWorldBindingP
 
     gl.setClearAlpha(1);
     const pmrem = new PMREMGenerator(gl);
-    loadEnvironmentTexture(url, format)
+    trackMotionAsset(loadEnvironmentTexture(url, format))
       .then((texture) => {
         if (cancelled) return;
         releaseEnvironment();
@@ -157,10 +237,20 @@ export function MotionWorldBinding({ world, fallbackColor }: MotionWorldBindingP
     };
     // Deliberately excludes intensity/blur/rotation: those are applied by the
     // tuning effect below, so dragging a slider never touches the loader.
-  }, [color, fallbackColor, format, gl, invalidate, kind, scene, url]);
+  }, [color, fallbackColor, format, gl, invalidate, kind, scene, studioColor, studioVariant, url]);
 
   // Live tuning without a re-decode.
   useEffect(() => {
+    if (kind === 'studio') {
+      scene.environmentIntensity = intensity;
+      scene.environmentRotation.set(0, rotation, 0);
+      scene.background = new Color(studioColor ?? fallbackColor);
+      scene.backgroundBlurriness = 0;
+      scene.backgroundIntensity = 1;
+      scene.backgroundRotation.set(0, 0, 0);
+      invalidate();
+      return;
+    }
     if (kind !== 'environment') return;
     scene.environmentIntensity = intensity;
     scene.environmentRotation.set(0, rotation, 0);
@@ -168,7 +258,7 @@ export function MotionWorldBinding({ world, fallbackColor }: MotionWorldBindingP
     scene.backgroundIntensity = Math.max(0, intensity);
     scene.backgroundRotation.set(0, rotation, 0);
     invalidate();
-  }, [blur, intensity, invalidate, kind, rotation, scene]);
+  }, [blur, fallbackColor, intensity, invalidate, kind, rotation, scene, studioColor]);
 
   return null;
 }

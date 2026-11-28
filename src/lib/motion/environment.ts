@@ -22,11 +22,12 @@ import type {
   MotionNode,
   MotionNodeTransform,
   MotionScene,
+  MotionStudioWorldVariant,
 } from './types';
 
 export type MotionSceneBackground = NonNullable<MotionScene['background']>;
 
-export type MotionWorldMode = 'color' | 'transparent' | 'environment';
+export type MotionWorldMode = 'color' | 'transparent' | 'environment' | 'studio';
 
 /**
  * A world the renderer can paint without asking any more questions.
@@ -36,6 +37,13 @@ export type MotionWorldMode = 'color' | 'transparent' | 'environment';
 export type MotionResolvedWorld =
   | { kind: 'color'; color: string }
   | { kind: 'transparent' }
+  | {
+      kind: 'studio';
+      variant: MotionStudioWorldVariant;
+      color: string;
+      intensity: number;
+      rotation: number;
+    }
   | {
       kind: 'environment';
       assetId: string;
@@ -55,6 +63,18 @@ export const DEFAULT_WORLD_INTENSITY = 1;
 export const DEFAULT_WORLD_BLUR = 0;
 export const DEFAULT_WORLD_ROTATION = 0;
 
+export const DEFAULT_STUDIO_COLORS: Record<MotionStudioWorldVariant, string> = {
+  softbox: '#e8e4dc',
+  room: '#15181f',
+  dark: '#06070a',
+};
+
+export const MOTION_STUDIO_VARIANTS: Array<{ value: MotionStudioWorldVariant; label: string; description: string }> = [
+  { value: 'softbox', label: 'Softbox', description: 'Neutral product stage with bright strip reflections.' },
+  { value: 'room', label: 'Room', description: 'Soft room light for general 3D scenes.' },
+  { value: 'dark', label: 'Dark', description: 'Moody stage with cool key and warm rim reflections.' },
+];
+
 export function isEnvironmentMedia(asset: Pick<MotionAsset, 'kind' | 'path'>): boolean {
   return asset.kind === 'environment' && /\.(hdr|exr)$/i.test(asset.path);
 }
@@ -69,6 +89,16 @@ export function resolveSceneWorld(
   if (!background) return null;
   if (background.type === 'transparent') return { kind: 'transparent' };
   if (background.type === 'color') return { kind: 'color', color: background.color };
+  if (background.type === 'studio') {
+    const variant = background.variant ?? 'softbox';
+    return {
+      kind: 'studio',
+      variant,
+      color: background.color ?? DEFAULT_STUDIO_COLORS[variant],
+      intensity: background.intensity ?? DEFAULT_WORLD_INTENSITY,
+      rotation: background.rotation ?? DEFAULT_WORLD_ROTATION,
+    };
+  }
   const asset = assets.find((item) => item.id === background.assetId);
   if (!asset) return { kind: 'unresolved-environment', assetId: background.assetId };
   return {
@@ -90,6 +120,13 @@ export function describeResolvedWorld(
   if (!world) return { label: 'Stage tone', detail: 'No scene world set — the editor tone shows.' };
   if (world.kind === 'transparent') return { label: 'Transparent', detail: 'Alpha background; WebM preserves it.' };
   if (world.kind === 'color') return { label: 'Solid', detail: world.color };
+  if (world.kind === 'studio') {
+    const variant = MOTION_STUDIO_VARIANTS.find((item) => item.value === world.variant);
+    return {
+      label: `Studio · ${variant?.label ?? world.variant}`,
+      detail: `${world.color} · ${world.intensity.toFixed(2)}× light`,
+    };
+  }
   const asset = assets.find((item) => item.id === world.assetId);
   if (world.kind === 'unresolved-environment') {
     return { label: 'Missing HDRI', detail: 'The background asset is not in this project.' };
@@ -130,12 +167,13 @@ export const MOTION_ENVIRONMENT_PRESETS: readonly MotionEnvironmentPreset[] = [
     label: 'Studio softbox',
     description: 'Neutral sweep, soft key and warm/cool rims — the safe product look.',
     swatch: ['#1a2434', '#070a10'],
-    background: { type: 'color', color: '#0e1118' },
+    background: { type: 'studio', variant: 'softbox', color: '#0e1118', intensity: 1 },
     nodes: [
       { slot: 'key', type: 'light.directional', name: 'Key light', transform: { position: [-4, 5, 4] }, props: { intensity: 2.6, color: '#ffffff', castShadow: true } },
       { slot: 'rim-cool', type: 'light.point', name: 'Cool rim', transform: { position: [4, 2, -2.5] }, props: { intensity: 6, color: '#8fb0ff', distance: 16 } },
       { slot: 'rim-warm', type: 'light.point', name: 'Warm rim', transform: { position: [-3, 1.2, 3] }, props: { intensity: 2.4, color: '#ffd9b0', distance: 12 } },
       { slot: 'ground', type: 'stage.ground', name: 'Sweep floor', transform: { position: [0, -1.5, 0] }, props: { size: 26, color: '#12161f', roughness: 0.6, metalness: 0.15 } },
+      { slot: 'contact-shadow', type: 'stage.contact-shadow', name: 'Contact shadow', transform: { position: [0, -1.49, 0] }, props: { width: 5, depth: 5, opacity: 0.3, softness: 0.7 } },
       { slot: 'backdrop', type: 'stage.backdrop', name: 'Backdrop', transform: { position: [0, 2, -5] }, props: { mode: 'gradient', width: 30, height: 16, topColor: '#1a2434', bottomColor: '#070a10' } },
     ],
   },
@@ -144,13 +182,14 @@ export const MOTION_ENVIRONMENT_PRESETS: readonly MotionEnvironmentPreset[] = [
     label: 'Product plinth',
     description: 'Dark plinth, top spot and coloured rims for a hero shot.',
     swatch: ['#161b26', '#05070c'],
-    background: { type: 'color', color: '#080a10' },
+    background: { type: 'studio', variant: 'room', color: '#080a10', intensity: 0.8 },
     nodes: [
       { slot: 'plinth', type: 'stage.pedestal', name: 'Plinth', transform: { position: [0, -1.5, 0] }, props: { radius: 1.6, height: 0.55, color: '#151a24', accentColor: '#6f8dff', roughness: 0.28, metalness: 0.24 } },
       { slot: 'key', type: 'light.spot', name: 'Top spot', transform: { position: [0, 5, 2.5] }, props: { intensity: 5, color: '#ffffff', angle: 0.5, penumbra: 0.45, castShadow: true } },
       { slot: 'rim-blue', type: 'light.point', name: 'Blue rim', transform: { position: [3, 0.5, -2] }, props: { intensity: 4, color: '#4f7bff', distance: 12 } },
       { slot: 'rim-warm', type: 'light.point', name: 'Warm kick', transform: { position: [-3, 0.6, 2] }, props: { intensity: 2, color: '#ffb27a', distance: 10 } },
       { slot: 'ground', type: 'stage.ground', name: 'Floor', transform: { position: [0, -1.5, 0] }, props: { size: 28, color: '#0c0f16', roughness: 0.5, metalness: 0.2 } },
+      { slot: 'contact-shadow', type: 'stage.contact-shadow', name: 'Contact shadow', transform: { position: [0, -1.49, 0] }, props: { width: 6, depth: 6, opacity: 0.35, softness: 0.7 } },
       { slot: 'backdrop', type: 'stage.backdrop', name: 'Backdrop', transform: { position: [0, 2, -6] }, props: { mode: 'gradient', width: 32, height: 18, topColor: '#151b2a', bottomColor: '#04060a' } },
     ],
   },

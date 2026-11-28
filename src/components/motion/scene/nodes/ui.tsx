@@ -8,7 +8,9 @@
  * front of the backing plane, exactly like a device screen.
  */
 
+import { useEffect, useMemo } from 'react';
 import { Text } from '@react-three/drei';
+import { CanvasTexture, ExtrudeGeometry, SRGBColorSpace } from 'three';
 
 import type { MotionNode } from '@/lib/motion/types';
 
@@ -120,6 +122,7 @@ export function CodeCardRenderer({ node }: { node: MotionNode }) {
   const width = numberProp(node, 'width', 2.4);
   const height = numberProp(node, 'height', 1.5);
   const depth = numberProp(node, 'depth', 0.05);
+  const bevel = Math.max(0, numberProp(node, 'bevel', 0.018));
   const title = stringProp(node, 'title', 'hero.tsx');
   const language = stringProp(node, 'language', 'TSX');
   const code = stringProp(node, 'code', '');
@@ -138,7 +141,7 @@ export function CodeCardRenderer({ node }: { node: MotionNode }) {
   const bottom = -height / 2 + step * 0.7;
   const maxLines = Math.max(1, Math.floor((contentTop - bottom) / step) + 1);
   const lines = code.split('\n').slice(0, maxLines);
-  const face = depth / 2 + 0.002;
+  const face = depth / 2 + bevel + 0.002;
   const codeX = -width / 2 + padX + gutter;
   const maxTextWidth = width - padX * 2 - gutter;
 
@@ -146,7 +149,17 @@ export function CodeCardRenderer({ node }: { node: MotionNode }) {
     <group>
       <mesh position={[0, 0, -depth / 2]} castShadow receiveShadow>
         <extrudeGeometry
-          args={[cardGeometry(width, height, 0.06), { depth, bevelEnabled: false, curveSegments: 8 }]}
+          args={[
+            cardGeometry(width, height, 0.06),
+            {
+              depth,
+              bevelEnabled: bevel > 0,
+              bevelSize: Math.min(bevel, width / 10, height / 10),
+              bevelThickness: Math.min(bevel, depth / 3),
+              bevelSegments: 3,
+              curveSegments: 8,
+            },
+          ]}
         />
         <meshStandardMaterial color={background} roughness={0.5} metalness={0.12} />
       </mesh>
@@ -405,4 +418,146 @@ export function NotificationRenderer({ node }: { node: MotionNode }) {
       <Text position={[-width / 2 + 0.16, -height * 0.15, 0.003]} fontSize={height * 0.18} color="#9aa7bd" anchorX="left" anchorY="middle" characters="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!? '()-:&%·—/">{body}</Text>
     </group>
   );
+}
+
+export function CardRenderer({ node }: { node: MotionNode }) {
+  const width = numberProp(node, 'width', 2.2);
+  const height = numberProp(node, 'height', 2.9);
+  const depth = numberProp(node, 'depth', 0.14);
+  const cornerRadius = numberProp(node, 'cornerRadius', 0.14);
+  const bevel = numberProp(node, 'bevel', 0.03);
+  const tag = stringProp(node, 'tag', 'MOTION');
+  const title = stringProp(node, 'title', 'Built for the frame');
+  const body = stringProp(node, 'body', 'A card that lives in the scene.');
+  const background = stringProp(node, 'background', '#121821');
+  const color = stringProp(node, 'color', '#f2f6ff');
+  const accent = stringProp(node, 'accentColor', '#7aa2ff');
+  const opacity = numberProp(node, 'opacity', 1);
+
+  const geometry = useMemo(() => {
+    const shape = roundedRectangle(width, height, Math.min(cornerRadius, width / 2, height / 2));
+    return new ExtrudeGeometry(shape, {
+      depth,
+      bevelEnabled: bevel > 0,
+      bevelSize: Math.min(bevel, width / 8, height / 8),
+      bevelThickness: Math.min(bevel, depth / 3),
+      bevelSegments: 3,
+      curveSegments: 16,
+      steps: 1,
+    });
+  }, [bevel, cornerRadius, depth, height, width]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = Math.max(256, Math.round((1024 * height) / width));
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    const w = canvas.width;
+    const h = canvas.height;
+    const pad = Math.round(w * 0.07);
+
+    context.fillStyle = background;
+    context.fillRect(0, 0, w, h);
+    const glow = context.createRadialGradient(w * 0.85, h * 0.05, 10, w * 0.85, h * 0.05, w * 0.7);
+    glow.addColorStop(0, `${accent}44`);
+    glow.addColorStop(1, 'transparent');
+    context.fillStyle = glow;
+    context.fillRect(0, 0, w, h);
+
+    context.textBaseline = 'top';
+    context.textAlign = 'left';
+    if (tag) {
+      context.font = '600 26px Inter, system-ui, sans-serif';
+      const tagWidth = context.measureText(tag.toUpperCase()).width + 34;
+      context.fillStyle = `${accent}22`;
+      context.strokeStyle = `${accent}88`;
+      context.lineWidth = 2;
+      const tagY = pad;
+      context.beginPath();
+      context.roundRect(pad, tagY, tagWidth, 46, 23);
+      context.fill();
+      context.stroke();
+      context.fillStyle = accent;
+      context.fillText(tag.toUpperCase(), pad + 17, tagY + 11);
+    }
+
+    let y = pad + 84;
+    context.fillStyle = color;
+    context.font = '650 62px Inter, system-ui, sans-serif';
+    const titleLines = wrapCanvasLines(context, title, w - pad * 2, 3);
+    for (const line of titleLines) {
+      context.fillText(line, pad, y);
+      y += 72;
+    }
+
+    y += 18;
+    context.fillStyle = '#a9b6c9';
+    context.font = '400 34px Inter, system-ui, sans-serif';
+    const bodyLines = wrapCanvasLines(context, body, w - pad * 2, 10);
+    for (const line of bodyLines) {
+      if (y > h - pad - 34) break;
+      context.fillText(line, pad, y);
+      y += 46;
+    }
+
+    context.fillStyle = accent;
+    context.fillRect(pad, h - pad - 8, Math.min(w * 0.3, 260), 8);
+    const next = new CanvasTexture(canvas);
+    next.colorSpace = SRGBColorSpace;
+    next.needsUpdate = true;
+    return next;
+  }, [accent, background, body, color, height, tag, title, width]);
+
+  useEffect(() => () => texture?.dispose(), [texture]);
+
+  const faceWidth = Math.max(0.01, width - bevel * 3);
+  const faceHeight = Math.max(0.01, height - bevel * 3);
+  return (
+    <group>
+      <mesh position={[0, 0, -depth / 2]} geometry={geometry} castShadow receiveShadow>
+        <meshStandardMaterial
+          color={background}
+          roughness={0.55}
+          metalness={0.12}
+          transparent={opacity < 1}
+          opacity={opacity}
+        />
+      </mesh>
+      <mesh position={[0, 0, depth / 2 + 0.002]}>
+        <planeGeometry args={[faceWidth, faceHeight]} />
+        <meshBasicMaterial
+          map={texture}
+          toneMapped={false}
+          transparent={opacity < 1}
+          opacity={opacity}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function wrapCanvasLines(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number,
+): string[] {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (context.measureText(candidate).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+      if (lines.length >= maxLines) break;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  return lines;
 }

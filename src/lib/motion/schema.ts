@@ -22,12 +22,8 @@ import {
   MotionNodeError,
   validateMotionNode,
 } from './node-registry';
-import {
-  MOTION_SCHEMA_VERSION,
-  type MotionAsset,
-  type MotionDocument,
-  type MotionNode,
-} from './types';
+import { MOTION_SCHEMA_VERSION, type MotionAsset, type MotionDocument, type MotionNode } from './types';
+import { MOTION_SHADER_TRANSITION_IDS } from './transitions';
 
 const cloneData = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -127,9 +123,11 @@ const assetSchema = z.object({
 }).strict();
 
 export const motionTransitionSchema = z.object({
-  type: z.enum(['cut', 'crossfade', 'dip']),
+  type: z.enum(['cut', 'crossfade', 'dip', 'shader']),
   duration: z.number().nonnegative(),
   color: z.string().optional(),
+  shader: z.enum(MOTION_SHADER_TRANSITION_IDS).optional(),
+  accentColor: z.string().optional(),
 });
 
 export const motionSequenceSchema = z.object({
@@ -159,6 +157,13 @@ const sceneV4Schema = z.object({
     z.object({ type: z.literal('color'), color: z.string() }),
     z.object({ type: z.literal('transparent') }),
     z.object({ type: z.literal('environment'), assetId: z.string(), intensity: z.number().optional(), blur: z.number().optional(), rotation: z.number().optional() }),
+    z.object({
+      type: z.literal('studio'),
+      variant: z.enum(['softbox', 'room', 'dark']).optional(),
+      color: z.string().optional(),
+      intensity: z.number().optional(),
+      rotation: z.number().optional(),
+    }),
   ]).optional(),
   stateMachines: z.array(z.unknown()).optional(),
 });

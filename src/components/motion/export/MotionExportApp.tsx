@@ -18,13 +18,21 @@ import {
   type MotionExportStage,
   type MotionExportTransport,
 } from '@/components/motion/export/run-motion-export';
+import {
+  MotionShaderCompositor,
+  shaderNameFor,
+} from '@/components/motion/export/shader-compositor';
+import { waitForMotionAssets } from '@/lib/motion/asset-readiness';
 import type { MotionRenderJobPayload } from '@/lib/motion/export/protocol';
 import { sampleMotionSequence, resolveMotionSequence } from '@/lib/motion/sequence';
 import { selectMotionScene } from '@/lib/motion/scene-select';
 import { PlaybackClock } from '@/lib/timeline/clock';
 
-/** Textures and troika fonts load outside React; frame 0 must see them. */
-const ASSET_SETTLE_MS = 1200;
+/**
+ * Troika/DOM text is not part of the asset-readiness registry, so a short
+ * settle still follows the real load barrier. It is not the barrier itself.
+ */
+const ASSET_SETTLE_MS = 400;
 
 function nextPaint(): Promise<void> {
   return new Promise((resolve) => {
@@ -50,6 +58,10 @@ export function MotionExportStageView({
   const secondSceneId = job.document.scenes.find((scene) => scene.id !== firstSceneId)?.id ?? firstSceneId;
   const needsSecondScene = Boolean(job.range.sequence && sequence.items.length > 1);
   const maxSceneDuration = Math.max(0, ...job.document.scenes.map((scene) => scene.timeline.duration));
+  const hasVideo = useMemo(
+    () => job.document.scenes.some((scene) => scene.nodes.some((node) => node.type === 'screen.video')),
+    [job.document],
+  );
   const clockA = useMemo(() => new PlaybackClock({ duration: () => maxSceneDuration }), [job, maxSceneDuration]);
   const clockB = useMemo(() => new PlaybackClock({ duration: () => maxSceneDuration }), [job, maxSceneDuration]);
   const [sceneDocs, setSceneDocs] = useState(() => [
@@ -60,6 +72,15 @@ export function MotionExportStageView({
   const sceneIdsRef = useRef<[string, string]>([firstSceneId, secondSceneId]);
   const settledSceneIdsRef = useRef(new Set([firstSceneId, secondSceneId]));
   const stageCreatedRef = useRef(false);
+  const shaderCompositorRef = useRef<MotionShaderCompositor | null>(null);
+
+  useEffect(
+    () => () => {
+      shaderCompositorRef.current?.dispose();
+      shaderCompositorRef.current = null;
+    },
+    [],
+  );
 
   const onSceneCanvas = useCallback((slot: 0 | 1, sceneCanvas: HTMLCanvasElement) => {
     canvasesRef.current[slot] = sceneCanvas;
@@ -117,10 +138,16 @@ export function MotionExportStageView({
         }
 
         if (needsAssetSettle) {
+          await waitForMotionAssets({ timeoutMs: 15_000 });
           await new Promise((resolve) => setTimeout(resolve, ASSET_SETTLE_MS));
           for (const layer of activeLayers) settledSceneIdsRef.current.add(layer.sceneId);
         }
         await nextPaint();
+        if (hasVideo) {
+          // A paused video seek is asynchronous. Let useFrame issue the seek,
+          // then wait for its `seeked` event before the canvas is read.
+          await waitForMotionAssets({ timeoutMs: 5_000, stableFrames: 1, minFrames: 2 });
+        }
         await nextPaint();
 
         context.globalAlpha = 1;
@@ -141,6 +168,31 @@ export function MotionExportStageView({
         const incomingCanvas = canvasesRef.current[incoming.slot];
         if (!outgoingCanvas || !incomingCanvas) return;
         const progress = frame.transition?.progress ?? 1;
+        if (frame.transition?.type === 'shader') {
+          shaderCompositorRef.current ??=
+            MotionShaderCompositor.create(job.settings.width, job.settings.height);
+        }
+        if (
+          frame.transition?.type === 'shader' &&
+          shaderCompositorRef.current
+        ) {
+          try {
+            const composed = shaderCompositorRef.current.draw({
+              from: outgoingCanvas,
+              to: incomingCanvas,
+              progress,
+              shader: shaderNameFor(frame.transition.shader),
+              accentColor:
+                frame.transition.accentColor ?? job.document.brand.colors.accent,
+            });
+            context.globalAlpha = 1;
+            context.drawImage(composed, 0, 0, canvas.width, canvas.height);
+            return;
+          } catch {
+            // A machine without a usable shader falls back to the crossfade
+            // path below rather than failing the whole export.
+          }
+        }
         if (frame.transition?.type === 'dip') {
           context.fillStyle = frame.transition.color ?? '#000000';
           context.fillRect(0, 0, canvas.width, canvas.height);
@@ -214,6 +266,9 @@ export function MotionExportApp({ job }: { job: MotionRenderJobPayload }) {
         if (typeof document !== 'undefined' && document.fonts?.ready) {
           await document.fonts.ready.catch(() => undefined);
         }
+        await nextPaint();
+        await nextPaint();
+        await waitForMotionAssets({ timeoutMs: 15_000 });
         await new Promise((resolve) => setTimeout(resolve, ASSET_SETTLE_MS));
         await runMotionExport(job, stage, transport);
         // Main renames the file and destroys this window; the reply may not land.

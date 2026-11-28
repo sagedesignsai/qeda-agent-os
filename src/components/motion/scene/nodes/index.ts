@@ -23,6 +23,7 @@ import {
   IcosahedronRenderer,
   PlaneRenderer,
   RingRenderer,
+  RoundedBoxRenderer,
   SphereRenderer,
   TorusKnotRenderer,
   TorusRenderer,
@@ -41,6 +42,7 @@ import { CameraRenderer, GroupRenderer } from './scene';
 import { ShapeRenderer } from './shapes';
 import {
   BackdropRenderer,
+  ContactShadowRenderer,
   CycloramaRenderer,
   FogRenderer,
   GridRenderer,
@@ -50,12 +52,13 @@ import {
 } from './stage';
 import { ImageScreenRenderer } from './surfaces';
 import { TextNodeRenderer } from './text';
-import { AnnotationRenderer, BrowserRenderer, ChatRenderer, CodeCardRenderer, CursorRenderer, NotificationRenderer, TerminalRenderer } from './ui';
+import { ExtrudedTextRenderer } from './text-extruded';
+import { AnnotationRenderer, BrowserRenderer, CardRenderer, ChatRenderer, CodeCardRenderer, CursorRenderer, NotificationRenderer, TerminalRenderer } from './ui';
 import { VideoScreenRenderer } from './video';
 import { ArrowRenderer, BadgeRenderer, LineRenderer, LowerThirdRenderer, ProgressRingRenderer, TickerRenderer, WaveformRenderer } from './graphics';
 import { BarChartRenderer, DonutChartRenderer, KpiRenderer, LineChartRenderer, ProgressBarRenderer, StatGridRenderer } from './data';
 import { CaptionRenderer, QuoteRenderer } from './text-extras';
-import { ProceduralRenderer } from './procedural';
+import { GalaxyRenderer, ProceduralRenderer } from './procedural';
 
 registerMotionThreeRenderer('scene.group', GroupRenderer);
 registerMotionThreeRenderer('camera.perspective', CameraRenderer);
@@ -64,6 +67,7 @@ registerMotionThreeRenderer('device.phone', DeviceRenderer);
 registerMotionThreeRenderer('device.laptop', DeviceRenderer);
 registerMotionThreeRenderer('device.monitor', DeviceRenderer);
 registerMotionThreeRenderer('geometry.box', BoxRenderer);
+registerMotionThreeRenderer('geometry.rounded-box', RoundedBoxRenderer);
 registerMotionThreeRenderer('geometry.sphere', SphereRenderer);
 registerMotionThreeRenderer('geometry.cylinder', CylinderRenderer);
 registerMotionThreeRenderer('geometry.torus', TorusRenderer);
@@ -77,12 +81,14 @@ registerMotionThreeRenderer('screen.image', ImageScreenRenderer);
 registerMotionThreeRenderer('screen.video', VideoScreenRenderer);
 registerMotionThreeRenderer('text.title', TextNodeRenderer);
 registerMotionThreeRenderer('text.body', TextNodeRenderer);
+registerMotionThreeRenderer('text.extruded', ExtrudedTextRenderer);
 registerMotionThreeRenderer('text.caption', CaptionRenderer);
 registerMotionThreeRenderer('text.quote', QuoteRenderer);
 registerMotionThreeRenderer('shape.rect', ShapeRenderer);
 registerMotionThreeRenderer('shape.ellipse', ShapeRenderer);
 registerMotionThreeRenderer('stage.ground', GroundRenderer);
 registerMotionThreeRenderer('stage.pedestal', PedestalRenderer);
+registerMotionThreeRenderer('stage.contact-shadow', ContactShadowRenderer);
 registerMotionThreeRenderer('stage.backdrop', BackdropRenderer);
 registerMotionThreeRenderer('stage.grid', GridRenderer);
 registerMotionThreeRenderer('stage.particles', ParticlesRenderer);
@@ -97,6 +103,7 @@ registerMotionThreeRenderer('product.jar', JarRenderer);
 registerMotionThreeRenderer('product.tube', TubeRenderer);
 registerMotionThreeRenderer('product.pouch', PouchRenderer);
 registerMotionThreeRenderer('ui.browser', BrowserRenderer);
+registerMotionThreeRenderer('ui.card', CardRenderer);
 registerMotionThreeRenderer('ui.code', CodeCardRenderer);
 registerMotionThreeRenderer('ui.annotation', AnnotationRenderer);
 registerMotionThreeRenderer('ui.terminal', TerminalRenderer);
@@ -126,3 +133,4 @@ registerMotionThreeRenderer('procedural.radial', ProceduralRenderer);
 registerMotionThreeRenderer('procedural.grid', ProceduralRenderer);
 registerMotionThreeRenderer('procedural.scatter', ProceduralRenderer);
 registerMotionThreeRenderer('procedural.curve', ProceduralRenderer);
+registerMotionThreeRenderer('procedural.galaxy', GalaxyRenderer);

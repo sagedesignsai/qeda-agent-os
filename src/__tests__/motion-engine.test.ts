@@ -175,6 +175,19 @@ describe('3D Motion engine', () => {
     ).toBe(true);
   });
 
+  it('publishes the new 3D primitives in the engine manifest', () => {
+    const manifest = describeMotionEngine();
+    for (const id of [
+      'geometry.rounded-box',
+      'stage.contact-shadow',
+      'procedural.galaxy',
+      'ui.card',
+      'text.extruded',
+    ]) {
+      expect(manifest.nodes.find((node) => node.id === id)).toBeDefined();
+    }
+  });
+
   it('publishes a complete JSON-serializable engine manifest', () => {
     const manifest = describeMotionEngine();
     const serialized = JSON.stringify(manifest);

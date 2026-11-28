@@ -215,6 +215,49 @@ export function CycloramaRenderer({ node }: { node: MotionNode }) {
 }
 
 /** Distance fog. The node renders nothing; it sets `scene.fog` while present. */
+export function ContactShadowRenderer({ node }: { node: MotionNode }) {
+  const width = numberProp(node, 'width', 2.6);
+  const depth = numberProp(node, 'depth', 2.6);
+  const color = stringProp(node, 'color', '#000000');
+  const opacity = numberProp(node, 'opacity', 0.55);
+  const softness = Math.min(0.95, Math.max(0, numberProp(node, 'softness', 0.6)));
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const context = canvas.getContext('2d');
+    if (!context) return null;
+    const gradient = context.createRadialGradient(128, 128, Math.max(1, 128 * (1 - softness)), 128, 128, 128);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.55, 'rgba(255,255,255,0.55)');
+    gradient.addColorStop(1, 'rgba(255,255,255,0)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 256, 256);
+    const next = new CanvasTexture(canvas);
+    next.colorSpace = SRGBColorSpace;
+    next.minFilter = LinearMipmapLinearFilter;
+    next.magFilter = LinearFilter;
+    return next;
+  }, [softness]);
+
+  useEffect(() => () => texture?.dispose(), [texture]);
+
+  if (!texture) return null;
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+      <planeGeometry args={[width, depth]} />
+      <meshBasicMaterial
+        map={texture}
+        color={color}
+        transparent
+        opacity={opacity}
+        depthWrite={false}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+}
+
 export function FogRenderer({ node }: { node: MotionNode }) {
   const scene = useThree((state) => state.scene);
   const invalidate = useThree((state) => state.invalidate);

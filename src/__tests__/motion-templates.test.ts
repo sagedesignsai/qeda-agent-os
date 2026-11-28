@@ -26,7 +26,7 @@ describe('Motion templates', () => {
       expect(document.scenes.length).toBe(template.sceneCount);
       documents.push(document);
     }
-    expect(MOTION_TEMPLATES).toHaveLength(4);
+    expect(MOTION_TEMPLATES.length).toBeGreaterThanOrEqual(4);
     expect(documents[0].scene.nodes).not.toBe(documents[1].scene.nodes);
   });
 
@@ -45,7 +45,7 @@ describe('Motion templates', () => {
   });
 
   it('ships nested effects and transitions in each cinematic composition', () => {
-    for (const template of MOTION_TEMPLATES) {
+    for (const template of MOTION_TEMPLATES.filter((item) => item.tags.includes('cinematic'))) {
       const document = createMotionTemplate(template.id);
       expect(document.scenes.every((scene) => scene.nodes.some((node) => node.type === 'fx.stack'))).toBe(true);
     }

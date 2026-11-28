@@ -48,6 +48,11 @@ import { resolveMotionSequence } from '@/lib/motion/sequence';
 import { countOffFrameKeyframes } from '@/lib/motion/quantize';
 import { sampleChannel } from '@/lib/motion/sample';
 import {
+  MOTION_SHADER_TRANSITIONS,
+  describeMotionTransition,
+  type MotionShaderTransitionName,
+} from '@/lib/motion/transitions';
+import {
   findPlacement,
   motionSelectionToTimeline,
   resolveKeyTarget,
@@ -229,7 +234,11 @@ export function MotionTimeline({
   const model = useMemo(() => toTimelineModel(doc, { dopeSheet }), [doc, dopeSheet]);
   const timelineSelection = useMemo(() => motionSelectionToTimeline(selection), [selection]);
 
-  const updateSequenceTransition = useCallback((itemId: string, type: 'cut' | 'crossfade' | 'dip') => {
+  const updateSequenceTransition = useCallback((itemId: string, value: string) => {
+    const shaderName = value.startsWith('shader:')
+      ? (value.slice('shader:'.length) as MotionShaderTransitionName)
+      : null;
+    const type = (shaderName ? 'shader' : value) as 'cut' | 'crossfade' | 'dip' | 'shader';
     let cursor = 0;
     const items = sequence.items.map((item, index) => {
       const selected = item.id === itemId;
@@ -237,7 +246,21 @@ export function MotionTimeline({
         ? (item.transitionIn?.duration ?? item.transitionOut?.duration ?? 0.45)
         : (item.transitionIn?.duration ?? 0.45);
       const transitionIn = selected
-        ? (type === 'cut' ? undefined : { type, duration, ...(type === 'dip' ? { color: '#000000' } : {}) })
+        ? (type === 'cut'
+            ? undefined
+            : {
+                type,
+                duration,
+                ...(type === 'dip' ? { color: '#000000' } : {}),
+                ...(type === 'shader'
+                  ? {
+                      shader: shaderName ?? 'domain-warp',
+                      ...(item.transitionIn?.accentColor
+                        ? { accentColor: item.transitionIn.accentColor }
+                        : {}),
+                    }
+                  : {}),
+              })
         : item.transitionIn;
       const overlap = index > 0 && transitionIn && transitionIn.type !== 'cut'
         ? Math.min(transitionIn.duration, sequence.items[index - 1].duration)
@@ -1089,14 +1112,25 @@ export function MotionTimeline({
                   {index > 0 && (
                     <select
                       aria-label={`Transition into shot ${index + 1}`}
-                      title={transition?.type === 'crossfade' ? 'Crossfade transition' : `${transition?.type ?? 'cut'} transition`}
-                      value={transition?.type ?? 'cut'}
-                      onChange={(event) => updateSequenceTransition(item.id, event.target.value as 'cut' | 'crossfade' | 'dip')}
-                      className="h-5 max-w-20 rounded border-0 bg-transparent px-1 text-[8px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      title={`${describeMotionTransition(transition?.type ?? 'cut', transition?.shader)} transition`}
+                      value={
+                        transition?.type === 'shader'
+                          ? `shader:${transition.shader ?? 'domain-warp'}`
+                          : transition?.type ?? 'cut'
+                      }
+                      onChange={(event) => updateSequenceTransition(item.id, event.target.value)}
+                      className="h-5 max-w-24 rounded border-0 bg-transparent px-1 text-[8px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
                       <option value="cut">Cut</option>
                       <option value="crossfade">Fade</option>
                       <option value="dip">Dip</option>
+                      <optgroup label="Shader">
+                        {MOTION_SHADER_TRANSITIONS.map((shader) => (
+                          <option key={shader.id} value={`shader:${shader.id}`}>
+                            {shader.label}
+                          </option>
+                        ))}
+                      </optgroup>
                     </select>
                   )}
                 </div>

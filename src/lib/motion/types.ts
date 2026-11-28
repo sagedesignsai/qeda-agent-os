@@ -146,6 +146,18 @@ export type MaterialOverride = {
   metalness?: number;
   emissive?: string;
   emissiveIntensity?: number;
+  transmission?: number;
+  thickness?: number;
+  ior?: number;
+  attenuationColor?: string;
+  attenuationDistance?: number;
+  dispersion?: number;
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  iridescence?: number;
+  iridescenceIOR?: number;
+  sheen?: number;
+  envMapIntensity?: number;
 };
 
 /** Override per-part properties (visibility, opacity, transform). */
@@ -219,16 +231,35 @@ export type MotionBrand = {
   defaults: { easing: MotionEasing; duration: number };
 };
 
+export type MotionStudioWorldVariant = 'softbox' | 'room' | 'dark';
+
+export type MotionSceneWorld =
+  | { type: 'color'; color: string }
+  | { type: 'transparent' }
+  | { type: 'environment'; assetId: string; intensity?: number; blur?: number; rotation?: number }
+  | {
+      type: 'studio';
+      variant?: MotionStudioWorldVariant;
+      /** Visible backdrop colour; the PMREM studio provides the reflections. */
+      color?: string;
+      intensity?: number;
+      rotation?: number;
+    };
+
 export type MotionScene = {
   id: string; name: string; nodes: MotionNode[]; timeline: Omit<MotionTimeline, 'loop'> & { loop?: MotionLoop };
-  cameraId: string | null; background?: { type: 'color'; color: string } | { type: 'transparent' } | { type: 'environment'; assetId: string; intensity?: number; blur?: number; rotation?: number };
+  cameraId: string | null; background?: MotionSceneWorld;
   stateMachines?: unknown[];
 };
 
 export type MotionTransition = {
-  type: 'cut' | 'crossfade' | 'dip';
+  type: 'cut' | 'crossfade' | 'dip' | 'shader';
   duration: number;
   color?: string;
+  /** Shader program for `type: 'shader'`; ignored by the other kinds. */
+  shader?: import('./transitions').MotionShaderTransitionName;
+  /** Optional accent override for shader glows; defaults to the brand accent. */
+  accentColor?: string;
 };
 
 export type MotionSequenceItem = {
