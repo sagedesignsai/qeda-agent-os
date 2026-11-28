@@ -7,6 +7,7 @@
 
 import { createMotionAutoKeyOps } from '@/lib/motion/auto-key';
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
+import { evaluateMotionFrame } from '@/lib/motion/evaluate';
 import { applyMotionOps } from '@/lib/motion/ops';
 
 function ids() {
@@ -38,7 +39,7 @@ describe('createMotionAutoKeyOps', () => {
     expect(next.scene.nodes.find((node) => node.id === 'product')?.transform.position[0]).toBe(0);
   });
 
-  it('creates track, clip, placement, channel, and key when the node has no animation', () => {
+  it('creates clip, placement, channel, and key when the playhead is outside the node animation', () => {
     const doc = createStarterMotionDocument('2026-01-01T00:00:00.000Z');
     const ops = createMotionAutoKeyOps(
       doc,
@@ -48,13 +49,34 @@ describe('createMotionAutoKeyOps', () => {
     );
     const next = applyMotionOps(doc, ops);
     const track = next.timeline.tracks.find((item) => item.targetId === 'title');
-    const placement = track?.placements[0];
+    const placement = track?.placements.find((item) => item.start === 2.5);
     const clip = next.timeline.clips.find((item) => item.id === placement?.clipId);
     const channel = clip?.channels.find((item) => item.property === 'position.x');
 
     expect(track).toBeDefined();
     expect(placement).toBeDefined();
-    expect(channel?.keyframes).toMatchObject([{ time: 2.5, value: 4 }]);
+    expect(placement?.start).toBe(2.5);
+    expect(channel?.keyframes).toMatchObject([{ time: 0, value: 4 }]);
+  });
+
+  it('starts a new clip in the gap instead of overlapping and hiding earlier animation', () => {
+    const doc = createStarterMotionDocument('2026-01-01T00:00:00.000Z');
+    const rotationAt = (document: typeof doc, time: number) =>
+      evaluateMotionFrame(document.scenes[0], time).nodes.find((node) => node.id === 'product')?.transform.rotation[1];
+    const before = rotationAt(doc, 3);
+
+    const ops = createMotionAutoKeyOps(
+      doc,
+      [{ nodeId: 'product', property: 'position.x', value: 2 }],
+      6,
+      ids(),
+    );
+    const next = applyMotionOps(doc, ops);
+    const track = next.timeline.tracks.find((item) => item.targetId === 'product');
+    const added = track?.placements.find((item) => item.id !== 'plc_product');
+
+    expect(added?.start).toBe(6);
+    expect(rotationAt(next, 3)).toBeCloseTo(before ?? 0, 9);
   });
 
   it('updates the existing key at the playhead instead of creating a duplicate', () => {

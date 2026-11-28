@@ -63,4 +63,36 @@ describe('MotionStore commit lifecycle', () => {
     expect(store.getSnapshot().pendingApproval).toBeNull();
     store.dispose();
   });
+
+  it('keeps a pending destructive batch alive across an unrelated edit', () => {
+    const store = new MotionStore(createStarterMotionDocument());
+    expect(store.commit('Remove track', [
+      { op: 'track.remove', trackId: 'trk_title' },
+    ]).status).toBe('pending');
+    expect(store.commit('Rename', [{ op: 'document.rename', name: 'Still here' }]).status).toBe('applied');
+    expect(store.getSnapshot().pendingApproval?.label).toBe('Remove track');
+    store.cancelPending();
+    store.dispose();
+  });
+
+  it('applies an external save only when the editor is still at the base revision', () => {
+    const store = new MotionStore(createStarterMotionDocument());
+    store.commit('Rename', [{ op: 'document.rename', name: 'Editor copy' }]);
+    const base = store.getDocument();
+    const external = {
+      ...base,
+      revision: base.revision + 1,
+      meta: { ...base.meta, name: 'Copilot copy' },
+    };
+
+    expect(store.applyExternalDocument(external, base.revision - 1)).toBe(false);
+    expect(store.getDocument()).toBe(base);
+
+    expect(store.applyExternalDocument(external, base.revision)).toBe(true);
+    expect(store.getDocument().meta.name).toBe('Copilot copy');
+    expect(store.getSnapshot().canUndo).toBe(true);
+    store.undo();
+    expect(store.getDocument().meta.name).toBe('Editor copy');
+    store.dispose();
+  });
 });

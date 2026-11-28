@@ -43,9 +43,11 @@ import {
 } from '@/components/ui/context-menu';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
+import { createMotionAutoKeyOps } from '@/lib/motion/auto-key';
 import { resolveSceneWorld } from '@/lib/motion/environment';
+import { evaluateMotionFrame } from '@/lib/motion/evaluate';
 import { createMotionId } from '@/lib/motion/ids';
-import { listMotionNodeTypes } from '@/lib/motion/node-registry';
+import { hasAnimatableProperty, listMotionNodeTypes } from '@/lib/motion/node-registry';
 import type { MotionNode } from '@/lib/motion/types';
 
 type StageTone = 'graphite' | 'slate' | 'paper';
@@ -101,10 +103,17 @@ export function MotionViewport() {
   // Keyboard shortcuts for viewport switching and transform mode
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is in an input field
-      const target = e.target;
-      const isInput = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+      // Don't intercept if user is in an input field.
+      const target = e.target as HTMLElement | null;
+      const targetElement = target && typeof target.closest === 'function' ? target : null;
+      const isInput =
+        targetElement instanceof HTMLInputElement ||
+        targetElement instanceof HTMLTextAreaElement ||
+        targetElement?.isContentEditable ||
+        targetElement?.tagName === 'SELECT';
       if (isInput) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (targetElement?.closest('[role="dialog"], [role="alertdialog"]')) return;
 
       switch (e.key) {
         case '1':
@@ -362,6 +371,42 @@ export function MotionViewport() {
                 });
               }}
               onTransformNode={(nodeId, transform: MotionNode['transform']) => {
+                const current = motionStore.getDocument();
+                const node = current.scene.nodes.find((candidate) => candidate.id === nodeId);
+                if (!node) return;
+                if (motionStore.getSnapshot().autoKeyEnabled) {
+                  const playhead = motionStore.clock.getTime();
+                  // Compare against the evaluated pose, not the rest pose: the
+                  // gizmo starts from the animated transform, so keying every
+                  // axis would freeze an axis the user never touched.
+                  const evaluated = evaluateMotionFrame(
+                    { id: current.activeSceneId, nodes: current.scene.nodes, timeline: current.timeline },
+                    playhead,
+                  ).nodes.find((candidate) => candidate.id === nodeId) ?? node;
+                  const axes = ['x', 'y', 'z'] as const;
+                  const changes = (['position', 'rotation', 'scale'] as const).flatMap((property) =>
+                    axes.flatMap((axis, index) => {
+                      const path = `${property}.${axis}`;
+                      if (!hasAnimatableProperty(node.type, path)) return [];
+                      const next = transform[property][index];
+                      if (Math.abs(next - evaluated.transform[property][index]) <= 1e-9) return [];
+                      return [{ nodeId, property: path, value: next }];
+                    }),
+                  );
+                  if (changes.length > 0) {
+                    const ops = createMotionAutoKeyOps(current, changes, playhead, {
+                      track: () => createMotionId('track'),
+                      clip: () => createMotionId('clip'),
+                      placement: () => createMotionId('placement'),
+                      channel: () => createMotionId('channel'),
+                      keyframe: () => createMotionId('keyframe'),
+                    });
+                    if (ops.length) {
+                      motionStore.commit('Auto-key object transform', ops);
+                      return;
+                    }
+                  }
+                }
                 motionStore.commit('Move scene object', [{ op: 'scene.node.update', nodeId, transform }]);
               }}
               onReady={handleCanvasReady}
@@ -427,13 +472,6 @@ export function MotionViewport() {
           >
             Show Grid
           </ContextMenuCheckboxItem>
-          {selection?.kind === 'node' && (
-            <ContextMenuItem onSelect={() => {
-              motionStore.setSelection({ kind: 'node', nodeId: selection.nodeId });
-            }}>
-              Focus Selected
-            </ContextMenuItem>
-          )}
           <ContextMenuSeparator />
           <ContextMenuSub>
             <ContextMenuSubTrigger>Add Node</ContextMenuSubTrigger>

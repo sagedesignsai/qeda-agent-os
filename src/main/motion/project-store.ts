@@ -346,7 +346,7 @@ export class MotionProjectStore {
       recursive: true,
       filter: (source) => {
         const relative = path.relative(sourcePath, source).split(path.sep);
-        return !relative.some((part) => part === 'project.lock' || part === 'project.autosave.json' || part === 'editor-state.json' || part === 'renders' || part === '.staging' || part === '.trash');
+        return !relative.some((part) => part === 'project.lock' || part === 'project.autosave.json' || part === 'editor-state.json' || part === 'renders' || part === '.staging' || part === '.trash' || part === 'backups');
       },
     });
     const createdAt = this.now().toISOString();

@@ -51,7 +51,7 @@ export function useMotionExport(): MotionExportState {
   const start = useCallback(async (options: MotionExportStartOptions) => {
     setError(null);
     try {
-      const target = await window.electron.ipc.invoke<{ path: string } | null>('motion:pick-export-path', {
+      const target = await window.electron.ipc.invoke<{ path: string; token: string } | null>('motion:pick-export-path', {
         projectName: options.document.meta.name,
         presetId: options.presetId,
       });
@@ -62,6 +62,7 @@ export function useMotionExport(): MotionExportState {
         presetId: options.presetId,
         range: options.range,
         outputPath: target.path,
+        pathToken: target.token,
       });
       setProgress({
         jobId: result.jobId,

@@ -72,6 +72,18 @@ const placementSchema = z.object({
   duration: z.number().positive().optional(),
 });
 
+const audioPlacementSchema = z.object({
+  id: z.string(),
+  assetId: z.string(),
+  start: z.number(),
+  trimIn: z.number(),
+  duration: z.number(),
+  gain: z.number(),
+  muted: z.boolean(),
+  fadeIn: z.number(),
+  fadeOut: z.number(),
+});
+
 const trackSchema = z.object({
   id: z.string().min(1),
   name: z.string(),
@@ -140,7 +152,7 @@ const sceneV4Schema = z.object({
     workArea: z.object({ enabled: z.boolean(), start: z.number().nonnegative(), end: z.number().nonnegative() }).optional(),
     playMode: z.enum(['once', 'loop', 'ping-pong']).optional(),
     tracks: z.array(trackSchema), clips: z.array(clipSchema),
-    audio: z.array(z.object({ id: z.string(), assetId: z.string(), start: z.number(), trimIn: z.number(), duration: z.number(), gain: z.number(), muted: z.boolean(), fadeIn: z.number(), fadeOut: z.number() })).optional(),
+    audio: z.array(audioPlacementSchema).optional(),
   }),
   cameraId: z.string().nullable(),
   background: z.discriminatedUnion('type', [
@@ -410,6 +422,7 @@ export const motionDocumentSchema = z.object({
     playMode: z.enum(['once', 'loop', 'ping-pong']).optional(),
     tracks: z.array(trackSchema),
     clips: z.array(clipSchema),
+    audio: z.array(audioPlacementSchema).optional(),
   }),
 });
 

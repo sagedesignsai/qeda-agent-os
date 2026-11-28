@@ -1,5 +1,9 @@
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
-import { validateMotionDocument } from '@/lib/motion/schema';
+import {
+  parseMotionDocument,
+  serializeMotionDocument,
+  validateMotionDocument,
+} from '@/lib/motion/schema';
 import type { MotionDocument } from '@/lib/motion/types';
 
 describe('validateMotionDocument', () => {
@@ -23,5 +27,29 @@ describe('validateMotionDocument', () => {
       { code: 'DOCUMENT_NAME_EMPTY', path: 'meta.name' },
       { code: 'OUTPUT_FPS_RANGE', path: 'meta.output.fps' },
     ]);
+  });
+
+  it('round-trips active-scene audio through save and parse', () => {
+    const doc = createStarterMotionDocument('2026-01-01T00:00:00.000Z');
+    const audio = {
+      id: 'aud_intro',
+      assetId: 'asset_intro',
+      start: 0,
+      trimIn: 0,
+      duration: 2,
+      gain: 1,
+      muted: false,
+      fadeIn: 0.1,
+      fadeOut: 0.2,
+    };
+    doc.timeline.audio = [audio];
+    doc.scenes[0].timeline.audio = [audio];
+
+    const parsed = parseMotionDocument(JSON.parse(serializeMotionDocument(doc)));
+    expect(parsed.timeline.audio).toEqual([audio]);
+    expect(parsed.scenes[0].timeline.audio).toEqual([audio]);
+
+    const savedAgain = parseMotionDocument(JSON.parse(serializeMotionDocument(parsed)));
+    expect(savedAgain.scenes[0].timeline.audio).toEqual([audio]);
   });
 });

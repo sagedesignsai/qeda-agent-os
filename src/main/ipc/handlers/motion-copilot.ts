@@ -25,8 +25,7 @@ import { renderProjectContext, resolveActiveProjectId } from '../../ai/project-c
 import { resolveModelChain } from '../../ai/provider.js';
 import { createMotionCopilotAgent } from '../../ai/motion-copilot-agent.js';
 import { PlanManager } from '../../ai/plan-manager.js';
-import { applyMotionOps, type MotionOpRequest } from '../../../lib/motion/ops.js';
-import { planMotionCommand, applyMotionCommand, type MotionApplyResult } from '../../../lib/motion/plan.js';
+import { planMotionCommand, applyMotionCommand, mintMotionApprovalToken, type MotionApplyResult } from '../../../lib/motion/plan.js';
 import { diffMotionDocuments } from '../../../lib/motion/diff.js';
 import type { AgentPlanEvent } from '../../../lib/agent-plan.js';
 import type { MotionDocument } from '../../../lib/motion/types.js';
@@ -66,7 +65,18 @@ export function registerMotionCopilotHandlers({
       const getDocument = () => currentDoc;
       const apply = (plan: ReturnType<typeof planMotionCommand>): MotionApplyResult => {
         try {
-          const next = applyMotionCommand(currentDoc, plan, { now: new Date().toISOString() });
+          // Every tool-built plan needs the editor-owned token; without it
+          // `applyMotionCommand` rejects even a safe op and all copilot edits
+          // silently become APPLY_ERROR no-ops.
+          const token = mintMotionApprovalToken(plan);
+          const next = applyMotionCommand(currentDoc, plan, {
+            now: new Date().toISOString(),
+            approvalToken: token,
+            // The editor receives the saved document and can undo the whole
+            // turn in one step; destructive tool calls still need to apply for
+            // scene operations (remove/reparent) to be usable.
+            confirmedDestructive: true,
+          });
           currentDoc = next.document;
           return next;
         } catch (err) {
@@ -150,12 +160,16 @@ export function registerMotionCopilotHandlers({
             // in the editor during the turn; the store's revision check makes
             // that a conflict rather than a silent clobber. The user's copy
             // wins and we tell the renderer to surface a drift notice.
+            let persisted = false;
+            let canApply = !context.projectId;
             if (context.projectId && currentDoc.revision !== context.document.revision) {
               try {
                 const store = getMotionProjectStore();
                 await store.saveProject(context.projectId, currentDoc, {
                   expectedRevision: context.document.revision,
                 });
+                persisted = true;
+                canApply = true;
               } catch (saveErr) {
                 if (
                   saveErr instanceof MotionProjectError &&
@@ -172,11 +186,26 @@ export function registerMotionCopilotHandlers({
                     });
                   }
                 } else {
-                  // Save failure is non-fatal for the chat turn; the renderer
-                  // will pick up the revision mismatch on next save.
+                  // The disk write failed, but the tool-built document is still
+                  // valid in memory. Hand it to the editor as unsaved so the
+                  // user's normal save path can retry instead of losing the turn.
+                  canApply = true;
                   console.error('Motion copilot save failed:', saveErr);
                 }
               }
+            }
+
+            const changed = currentDoc.revision !== context.document.revision;
+            if (changed && canApply && !mainWindow.isDestroyed()) {
+              // Push the document the tools built back into the editor. The
+              // renderer only applies it when its own revision still matches
+              // `baseRevision`, so a user edit made during the turn wins.
+              mainWindow.webContents.send('motion:document-changed', {
+                projectId: context.projectId,
+                document: currentDoc,
+                baseRevision: context.document.revision,
+                persisted,
+              });
             }
 
             mainWindow.webContents.send('motion-copilot:stream-done', {

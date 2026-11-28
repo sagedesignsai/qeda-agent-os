@@ -40,6 +40,7 @@ beforeEach(() => {
 
 describe('MotionInspector multi-selection', () => {
   it('shows mixed transforms and applies a transform edit to all selected nodes in one undo step', () => {
+    const beforeTitle = motionStore.getDocument().scene.nodes.find((node) => node.id === 'title')!.transform.position;
     render(<MotionInspector />);
     expect(screen.getByText('Mixed')).toBeInTheDocument();
     const positionX = screen.getByRole('spinbutton', { name: 'Position X' });
@@ -49,6 +50,8 @@ describe('MotionInspector multi-selection', () => {
     const nodes = motionStore.getDocument().scene.nodes;
     expect(nodes.find((node) => node.id === 'product')?.transform.position[0]).toBe(3.5);
     expect(nodes.find((node) => node.id === 'title')?.transform.position[0]).toBe(3.5);
+    expect(nodes.find((node) => node.id === 'title')?.transform.position[1]).toBe(beforeTitle[1]);
+    expect(nodes.find((node) => node.id === 'title')?.transform.position[2]).toBe(beforeTitle[2]);
     expect(motionStore.getSnapshot().canUndo).toBe(true);
     act(() => motionStore.undo());
     expect(motionStore.getDocument().scene.nodes.find((node) => node.id === 'product')?.transform.position[0]).not.toBe(3.5);

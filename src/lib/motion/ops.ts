@@ -627,6 +627,9 @@ registerMotionOp<'scene.node.add'>({
     if (params.parentId && !parent) {
       throw new MotionOpError(`Parent node "${params.parentId}" does not exist.`);
     }
+    if (parent?.locked) {
+      throw new MotionOpError(`Parent node "${parent.name}" is locked.`);
+    }
     const allowedParents = getMotionNodeType(params.type)?.allowedParents;
     if (parent && allowedParents && !allowedParents.includes(parent.type)) {
       throw new MotionOpError(`Node type "${params.type}" cannot be parented to "${parent.type}".`);
@@ -714,6 +717,12 @@ registerMotionOp<'scene.node.remove'>({
       throw new MotionOpError(`Node "${nodeId}" is locked.`);
     }
     const cascade = collectNodeCascade(doc, nodeId);
+    const lockedDescendant = doc.scene.nodes.find(
+      (node) => node.id !== nodeId && cascade.nodeIds.includes(node.id) && node.locked,
+    );
+    if (lockedDescendant) {
+      throw new MotionOpError(`Descendant node "${lockedDescendant.name}" is locked.`);
+    }
     const removed = new Set(cascade.nodeIds);
     const nodes = doc.scene.nodes.filter((node) => !removed.has(node.id));
     const timeline: MotionTimeline = {
@@ -759,6 +768,7 @@ registerMotionOp<'scene.node.reparent'>({
     const nodes = doc.scene.nodes;
     const parent = parentId ? nodes.find((candidate) => candidate.id === parentId) : null;
     if (parentId && !parent) throw new MotionOpError(`Parent node "${parentId}" does not exist.`);
+    if (parent?.locked) throw new MotionOpError(`Parent node "${parent.name}" is locked.`);
 
     // A descendant cannot become the parent; that would detach the subtree.
     const ancestors = new Set<string>();
@@ -1252,7 +1262,8 @@ registerMotionOp<'track.remove'>({
   risk: 'destructive',
   params: z.object({ trackId: z.string().min(1) }),
   reduce: (doc, { trackId }) => {
-    requireTrack(doc, trackId);
+    const track = requireTrack(doc, trackId);
+    if (track.locked) throw new MotionOpError(`Track "${track.name}" is locked.`);
     return withTimeline(doc, {
       tracks: doc.timeline.tracks.filter((track) => track.id !== trackId),
     });
@@ -1303,6 +1314,10 @@ registerMotionOp<'clip.remove'>({
   params: z.object({ clipId: z.string().min(1) }),
   reduce: (doc, { clipId }) => {
     requireClip(doc, clipId);
+    const lockedTrack = doc.timeline.tracks.find(
+      (track) => track.locked && track.placements.some((placement) => placement.clipId === clipId),
+    );
+    if (lockedTrack) throw new MotionOpError(`Track "${lockedTrack.name}" is locked.`);
     return withTimeline(doc, {
       clips: doc.timeline.clips.filter((clip) => clip.id !== clipId),
       tracks: doc.timeline.tracks.map((track) =>
@@ -1346,7 +1361,8 @@ registerMotionOp<'placement.add'>({
     start: z.number().min(0),
   }),
   reduce: (doc, { trackId, placementId, clipId, start }) => {
-    requireTrack(doc, trackId);
+    const track = requireTrack(doc, trackId);
+    if (track.locked) throw new MotionOpError(`Track "${track.name}" is locked.`);
     requireClip(doc, clipId);
     return mapTrack(doc, trackId, (track) => {
       if (track.placements.some((placement) => placement.id === placementId)) {
@@ -1372,6 +1388,7 @@ registerMotionOp<'placement.move'>({
   }),
   reduce: (doc, { trackId, placementId, start, toTrackId }) => {
     const track = requireTrack(doc, trackId);
+    if (track.locked) throw new MotionOpError(`Track "${track.name}" is locked.`);
     const placement = track.placements.find((candidate) => candidate.id === placementId);
     if (!placement) throw new MotionOpError(`Placement "${placementId}" is not on "${track.name}".`);
 
@@ -1460,6 +1477,7 @@ registerMotionOp<'placement.remove'>({
   params: z.object({ trackId: z.string().min(1), placementId: z.string().min(1) }),
   reduce: (doc, { trackId, placementId }) => {
     const track = requireTrack(doc, trackId);
+    if (track.locked) throw new MotionOpError(`Track "${track.name}" is locked.`);
     if (!track.placements.some((placement) => placement.id === placementId)) {
       throw new MotionOpError(`Placement "${placementId}" is not on "${track.name}".`);
     }
@@ -1565,10 +1583,20 @@ registerMotionOp<'keyframe.move'>({
     if (!keyframe) throw new MotionOpError(`Keyframe "${keyframeId}" does not exist.`);
     const clamped = Math.min(time, clip.duration);
     if (clamped === keyframe.time) return doc;
-    return mapChannel(doc, clipId, channelId, (current) => ({
-      ...current,
-      keyframes: insertKeyframeSorted(current.keyframes, { ...keyframe, time: clamped }),
-    }));
+    return mapChannel(doc, clipId, channelId, (current) => {
+      // Two keys at one instant are not a valid channel. Dropping a key onto
+      // another replaces it, matching the add-at-existing-time behaviour.
+      const collision = current.keyframes.find(
+        (candidate) => candidate.id !== keyframeId && Math.abs(candidate.time - clamped) < KEYFRAME_TIME_EPSILON,
+      );
+      const remaining = current.keyframes.filter(
+        (candidate) => candidate.id !== keyframeId && (!collision || candidate.id !== collision.id),
+      );
+      return {
+        ...current,
+        keyframes: insertKeyframeSorted(remaining, { ...keyframe, time: clamped }),
+      };
+    });
   },
 });
 
@@ -1610,13 +1638,19 @@ registerMotionOp<'keyframe.setEasing'>({
     keyframeId: z.string().min(1),
     easing: motionEasingSchema,
   }),
-  reduce: (doc, { clipId, channelId, keyframeId, easing }) =>
-    mapChannel(doc, clipId, channelId, (channel) => ({
+  reduce: (doc, { clipId, channelId, keyframeId, easing }) => {
+    const keyframe = requireChannel(requireClip(doc, clipId), channelId).keyframes.find(
+      (candidate) => candidate.id === keyframeId,
+    );
+    if (!keyframe) throw new MotionOpError(`Keyframe "${keyframeId}" does not exist.`);
+    if (JSON.stringify(keyframe.easing) === JSON.stringify(easing)) return doc;
+    return mapChannel(doc, clipId, channelId, (channel) => ({
       ...channel,
       keyframes: channel.keyframes.map((keyframe) =>
         keyframe.id === keyframeId ? { ...keyframe, easing } : keyframe,
       ),
-    })),
+    }));
+  },
 });
 
 registerMotionOp<'keyframe.remove'>({
@@ -1647,5 +1681,12 @@ registerMotionOp<'timeline.quantizeToFps'>({
     'Snap every keyframe to the frame grid. Keys that collapse onto one frame merge, later value wins.',
   risk: 'mutating',
   params: z.object({ fps: z.number().positive().optional() }),
-  reduce: (doc, { fps }) => quantizeDocumentToFps(doc, fps ?? doc.meta.output.fps),
+  reduce: (doc, { fps }) => {
+    const quantized = quantizeDocumentToFps(doc, fps ?? doc.meta.output.fps);
+    if (quantized === doc) return doc;
+    // `quantizeDocumentToFps` produces a new timeline alias. The active scene's
+    // timeline is canonical, so write the same clips there; otherwise
+    // `applyMotionOp`'s active-scene resync would discard the quantization.
+    return withTimeline(doc, { clips: quantized.timeline.clips });
+  },
 });

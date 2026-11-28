@@ -7,7 +7,7 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
-import { planMotionCommand, describeMotionEngine } from '../../lib/motion/engine-contract.js';
+import { planMotionCommand } from '../../lib/motion/engine-contract.js';
 import { expandMotionRecipe, listMotionRecipes } from '../../lib/motion/recipes';
 import type { MotionToolContext } from './motion';
 
@@ -27,19 +27,27 @@ export function createMotionRecipeTool(context: MotionToolContext) {
     execute: async ({ recipeId, productType, title, sceneId, reason }) => {
       try {
         const ops = expandMotionRecipe(recipeId, { productType, title });
-        // sceneId override: expandMotionRecipe doesn't take it; ops target active scene by default.
-        void sceneId;
-        void reason;
         const document = context.getDocument();
-        const plan = planMotionCommand(document, ops as never, { now: new Date().toISOString() });
+        if (sceneId && sceneId !== document.activeSceneId) {
+          return {
+            success: false,
+            kind: 'motion-recipe' as const,
+            error: 'Recipes operate on the active scene. Switch to the requested scene first.',
+          };
+        }
+        const plan = planMotionCommand(document, ops as never, {
+          now: new Date().toISOString(),
+          ...(reason ? { summary: reason } : {}),
+        });
         const applied = context.apply(plan);
+        const failure = applied.warnings.find((warning) => warning.code === 'APPLY_ERROR');
         return {
-          success: true,
+          success: !failure,
+          ...(failure ? { error: failure.message } : {}),
           kind: 'motion-recipe' as const,
           recipeId,
           operationCount: plan.ops.length,
           recipes: listMotionRecipes().map((r) => r.id),
-          manifest: describeMotionEngine(),
           ...applied,
         };
       } catch (error) {

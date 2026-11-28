@@ -29,6 +29,7 @@ export function useMotionProject(projectId?: string) {
   const savedDocument = useRef<MotionDocument | null>(null);
   const recoveryProjectId = useRef<string | null>(null);
   const forceBackupOnNextSave = useRef(false);
+  const saveInFlight = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -165,6 +166,12 @@ export function useMotionProject(projectId?: string) {
     const document = motionStore.getDocument();
     const forceBackup = forceBackupOnNextSave.current;
     if (document === savedDocument.current && !forceBackup) return true;
+    // Cmd+S can arrive while the debounced autosave is in flight. Both calls
+    // would send the same expectedRevision and the queued second save would
+    // report a false conflict, so let the in-flight write finish and reschedule
+    // from the post-save revision check instead.
+    if (saveInFlight.current) return false;
+    saveInFlight.current = true;
     setSaveStatus('saving');
     try {
       await window.electron.ipc.invoke<{ revision: number; savedAt: string; bytes: number }>('motion:save-project', {
@@ -181,6 +188,8 @@ export function useMotionProject(projectId?: string) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setSaveStatus('failed');
       return false;
+    } finally {
+      saveInFlight.current = false;
     }
   }, [project, readOnly, status]);
 
@@ -276,6 +285,31 @@ export function useMotionProject(projectId?: string) {
     return unsubscribe;
   }, [project]);
 
+  useEffect(() => {
+    const unsubscribe = window.electron.ipc.on('motion:document-changed', (value) => {
+      const payload = value as {
+        projectId?: string;
+        document?: MotionDocument;
+        baseRevision?: number;
+        persisted?: boolean;
+      } | undefined;
+      if (!project || !payload?.document || typeof payload.baseRevision !== 'number') return;
+      if ((payload.projectId ?? payload.document.meta.id) !== project.id) return;
+      // If the user edited while the copilot ran, keep their buffer. The next
+      // save will report the conflict and offer a copy.
+      if (!motionStore.applyExternalDocument(payload.document, payload.baseRevision)) return;
+      if (payload.persisted === false) {
+        setSaveStatus('unsaved');
+        return;
+      }
+      savedDocument.current = payload.document;
+      forceBackupOnNextSave.current = false;
+      setSaveStatus('saved');
+      setError(null);
+    });
+    return unsubscribe;
+  }, [project]);
+
   return {
     status, saveStatus, project, recovery, error, readOnly, warnings, backups,
     repairCopyId, inspectionCopyPath, respondToRecovery, saveNow, restoreBackup,
@@ -308,6 +342,16 @@ function isValidSelection(value: unknown, document: MotionDocument): value is Mo
   if (value === null) return true;
   if (!value || typeof value !== 'object') return false;
   const selection = value as Record<string, unknown>;
+  if (selection.kind === 'node') {
+    if (typeof selection.nodeId !== 'string') return false;
+    if (!document.scene.nodes.some((node) => node.id === selection.nodeId)) return false;
+    if (selection.selectedNodeIds !== undefined) {
+      if (!Array.isArray(selection.selectedNodeIds) || selection.selectedNodeIds.length === 0) return false;
+      if (!selection.selectedNodeIds.every((id) => typeof id === 'string' && document.scene.nodes.some((node) => node.id === id))) return false;
+      if (!selection.selectedNodeIds.includes(selection.nodeId)) return false;
+    }
+    return true;
+  }
   if (typeof selection.trackId !== 'string') return false;
   const track = document.timeline.tracks.find((item) => item.id === selection.trackId);
   if (!track) return false;

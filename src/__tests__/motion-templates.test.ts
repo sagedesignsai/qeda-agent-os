@@ -157,8 +157,8 @@ describe('Motion templates', () => {
       const doc = createMotionTemplate('obscura-camera-ident');
       const opacityOf = (id: string, t: number) =>
         evaluateMotionFrame(doc.scenes[1], t).nodes.find((node) => node.id === id)!.props.opacity as number;
-      expect(opacityOf('title', 0.3)).toBe(0);
-      expect(opacityOf('subtitle', 1)).toBe(0);
+      expect(opacityOf('title', 0.1)).toBe(0);
+      expect(opacityOf('subtitle', 0.5)).toBe(0);
       expect(opacityOf('title', 1.5)).toBe(1);
       expect(opacityOf('subtitle', 2)).toBe(1);
     });

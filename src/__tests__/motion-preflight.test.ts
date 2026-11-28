@@ -52,4 +52,31 @@ describe('preflightMotionExport', () => {
       { severity: 'warning', code: 'MOTION_TRANSPARENCY_COMPOSITED' },
     ]);
   });
+
+  it('blocks a sequence with more than two simultaneous shots', () => {
+    const document = createBlankMotionDocument({ duration: 6 });
+    const sceneA = document.scenes[0];
+    const sceneB = { ...sceneA, id: 'scene_b', name: 'Scene B' };
+    const sceneC = { ...sceneA, id: 'scene_c', name: 'Scene C' };
+    const issue = preflightMotionExport(
+      {
+        ...document,
+        scenes: [sceneA, sceneB, sceneC],
+        sequence: {
+          duration: 6,
+          items: [
+            { id: 'a', sceneId: sceneA.id, start: 0, duration: 6 },
+            { id: 'b', sceneId: sceneB.id, start: 0, duration: 6 },
+            { id: 'c', sceneId: sceneC.id, start: 0, duration: 6 },
+          ],
+        },
+      },
+      { range: { start: 0, end: 6, sequence: true } },
+    );
+    expect(issue).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ severity: 'blocking', code: 'MOTION_SEQUENCE_OVERLAP_LIMIT' }),
+      ]),
+    );
+  });
 });

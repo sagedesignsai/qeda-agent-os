@@ -5,7 +5,7 @@
  */
 
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { MotionViewport } from '@/components/motion/MotionViewport';
 import { motionStore } from '@/hooks/use-motion-store';
@@ -18,10 +18,20 @@ jest.mock('@/components/motion/scene/MotionSceneCanvas', () => ({
       id: string | null,
       modifiers?: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
     ) => void;
+    onTransformNode?: (id: string, transform: { position: [number, number, number]; rotation: [number, number, number]; scale: [number, number, number] }) => void;
   }) => (
     <div>
       <button onClick={() => props.onSelectNode?.('product')}>
         Select Product in viewport
+      </button>
+      <button
+        onClick={() => props.onTransformNode?.('product', {
+          position: [1, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+        })}
+      >
+        Move Product in viewport
       </button>
       <button
         onClick={() =>
@@ -70,6 +80,8 @@ beforeEach(() =>
   ),
 );
 
+beforeEach(() => motionStore.setAutoKeyEnabled(false));
+
 describe('Motion viewport selection', () => {
   it('supports additive and toggle selection and clears on an empty-space click', () => {
     render(<MotionViewport />);
@@ -97,6 +109,20 @@ describe('Motion viewport selection', () => {
       screen.getByRole('button', { name: 'Clear viewport selection' }),
     );
     expect(motionStore.getSnapshot().selection).toBeNull();
+  });
+
+  it('auto-keys a gizmo transform instead of overwriting the base pose', () => {
+    motionStore.setAutoKeyEnabled(true);
+    render(<MotionViewport />);
+    fireEvent.click(screen.getByRole('button', { name: 'Move Product in viewport' }));
+
+    const doc = motionStore.getDocument();
+    expect(doc.scene.nodes.find((node) => node.id === 'product')?.transform.position[0]).toBe(0);
+    const channel = doc.timeline.clips
+      .flatMap((clip) => clip.channels)
+      .find((item) => item.targetId === 'product' && item.property === 'position.x');
+    expect(channel?.keyframes.some((key) => key.time === 0 && key.value === 1)).toBe(true);
+    act(() => motionStore.setAutoKeyEnabled(false));
   });
 });
 

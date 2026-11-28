@@ -1,9 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
-import {
-  describeMotionEngine,
-  planMotionCommand,
-} from '../../lib/motion/engine-contract.js';
+import { planMotionCommand } from '../../lib/motion/engine-contract.js';
 import { applyMotionCommand, type MotionApplyResult } from '../../lib/motion/plan.js';
 import {
   buildEnvironmentPresetOps,
@@ -90,9 +87,12 @@ function resultEnvelope(
     now: context.now?.() ?? new Date().toISOString(),
   });
   const applied = context.apply(plan);
+  const failure = applied.warnings.find((warning) => warning.code === 'APPLY_ERROR');
 
   return {
     ...applied,
+    success: !failure,
+    ...(failure ? { error: failure.message } : {}),
     kind: 'motion-operation' as const,
     namespace,
     summary,
@@ -100,7 +100,6 @@ function resultEnvelope(
     requiresApproval: plan.requiresApproval,
     risk: plan.risk,
     diff: plan.diff,
-    manifest: describeMotionEngine(),
   };
 }
 
@@ -111,6 +110,19 @@ function errorResult(error: unknown, namespace: string) {
     namespace,
     error: error instanceof Error ? error.message : String(error),
   };
+}
+
+/**
+ * Most Motion ops are scene-scoped by the document's active scene, not by an
+ * op parameter. Silently editing the active scene when the caller named another
+ * one is worse than refusing, so every mutating tool checks this first.
+ */
+function requireActiveScene(context: MotionToolContext, sceneId?: string): string | null {
+  if (!sceneId) return null;
+  const activeSceneId = context.getDocument().activeSceneId;
+  return sceneId === activeSceneId
+    ? null
+    : `Scene "${sceneId}" is not active (active: "${activeSceneId}"). Switch scenes before editing it.`;
 }
 
 export function createMotionTools(context: MotionToolContext) {
@@ -143,6 +155,8 @@ export function createMotionTools(context: MotionToolContext) {
     ]),
     execute: async (input) => {
       try {
+        const sceneError = requireActiveScene(context, input.sceneId);
+        if (sceneError) return errorResult(new Error(sceneError), 'motion.scene');
         const operations: MotionOpRequest[] =
           input.action === 'addNode'
             ? [{ op: 'scene.node.add', ...input.node }]
@@ -179,6 +193,8 @@ export function createMotionTools(context: MotionToolContext) {
     }),
     execute: async (input) => {
       try {
+        const sceneError = requireActiveScene(context, input.sceneId);
+        if (sceneError) return errorResult(new Error(sceneError), 'motion.node');
         return resultEnvelope(context, 'motion.node', 'Node Builder: create node', [
           { op: 'scene.node.add', ...input.node },
         ]);
@@ -204,6 +220,8 @@ export function createMotionTools(context: MotionToolContext) {
     }),
     execute: async (input) => {
       try {
+        const sceneError = requireActiveScene(context, input.sceneId);
+        if (sceneError) return errorResult(new Error(sceneError), 'motion.procedural');
         return resultEnvelope(context, 'motion.procedural', 'Procedural Modeling: create generator', [
           {
             op: 'scene.node.add',
@@ -233,6 +251,8 @@ export function createMotionTools(context: MotionToolContext) {
     }),
     execute: async (input) => {
       try {
+        const sceneError = requireActiveScene(context, input.sceneId);
+        if (sceneError) return errorResult(new Error(sceneError), 'motion.scene');
         return resultEnvelope(context, 'motion.scene', 'Scene Director: add keyframe', [
           { op: 'keyframe.add', ...input.keyframe },
         ]);
@@ -279,11 +299,13 @@ export function createMotionTools(context: MotionToolContext) {
     execute: async (input) => {
       try {
         const doc = context.getDocument();
-        const sceneId = input.sceneId ?? doc.activeSceneId;
+        const sceneError = requireActiveScene(context, input.sceneId);
+        if (sceneError) return errorResult(new Error(sceneError), 'motion.environment');
+        const sceneId = doc.activeSceneId;
         const operations: MotionOpRequest[] = input.action === 'setBackground'
           ? [{ op: 'scene.setBackground', sceneId, background: input.background }]
           : buildEnvironmentPresetOps(
-              sceneId === doc.activeSceneId ? doc : { ...doc, activeSceneId: sceneId },
+              doc,
               input.presetId,
               () => createMotionId('scene'),
             );

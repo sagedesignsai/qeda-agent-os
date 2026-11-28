@@ -498,6 +498,7 @@ export interface IpcChannels {
   'motion:list-local-models': { req: void; res: MotionLocalModelEntry[] };
   'motion:import-local-model': { req: { projectId: string; modelId: string }; res: { items: MotionStagedAsset[]; errors: MotionImportError[] } };
   'motion:changed': void;
+  'motion:document-changed': { data: { projectId?: string; document: MotionDocument; baseRevision: number; persisted: boolean } };
 
   // ── Nova Trace (2D vector motion) ──────────────────────────────────────────
   'trace:list-projects': { req: { includeMissing?: boolean } | void; res: { projects: TraceProjectSummary[] } };
@@ -622,8 +623,8 @@ export interface IpcChannels {
   'trace:export-complete': { req: { jobId: string }; res: { outputPath: string } };
   'trace:export-failed': { req: { jobId: string; message: string }; res: void };
   // Export: the editor starts/cancels; the hidden render window reports chunks.
-  'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number; sequence?: boolean }; outputPath: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
-  'motion:pick-export-path': { req: { projectName: string; presetId: string }; res: { path: string } | null };
+  'motion:export-start': { req: { projectId: string; document: MotionDocument; presetId: string; range: { start: number; end: number; sequence?: boolean }; outputPath: string; pathToken: string }; res: { jobId: string; outputPath: string; frameCount: number; settings: import('../../lib/motion/export/presets').MotionExportSettings } };
+  'motion:pick-export-path': { req: { projectName: string; presetId: string }; res: { path: string; token: string } | null };
   'motion:reveal-export': { req: { path: string }; res: void };
   'motion:export-cancel': { req: { jobId: string }; res: void };
   'motion:export-progress': { data: import('../motion/render-jobs').MotionRenderProgress };

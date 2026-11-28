@@ -1,4 +1,5 @@
 import { createEmptyMotionDocument, createStarterMotionDocument } from '@/lib/motion/defaults';
+import { applyMotionOps } from '@/lib/motion/ops';
 import {
   countOffFrameKeyframes,
   keyframeIsOnFrame,
@@ -77,6 +78,30 @@ describe('frame quantization', () => {
     );
     expect(times).toEqual([...times].sort((a, b) => a - b));
     expect(times).toHaveLength(2);
+  });
+
+  it('persists quantization through the op registry', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const withOffFrame = applyMotionOps(doc, [
+      {
+        op: 'keyframe.add',
+        clipId: 'clip_camera_push',
+        channelId: 'chn_camera_z',
+        keyframeId: 'kf_off_frame',
+        time: 0.02,
+        value: 2,
+      },
+    ]);
+    expect(countOffFrameKeyframes(withOffFrame)).toBe(1);
+
+    const quantized = applyMotionOps(withOffFrame, [{ op: 'timeline.quantizeToFps' }]);
+    expect(countOffFrameKeyframes(quantized)).toBe(0);
+    expect(
+      quantized.timeline.clips
+        .find((clip) => clip.id === 'clip_camera_push')
+        ?.channels.find((channel) => channel.id === 'chn_camera_z')
+        ?.keyframes.find((key) => key.id === 'kf_off_frame')?.time,
+    ).toBeCloseTo(1 / 30, 9);
   });
 });
 

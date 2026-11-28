@@ -358,13 +358,24 @@ export function MotionInspector() {
     value: MotionVector3,
   ) => {
     if (!targetNode || targetNodes.length === 0) return;
+    const editableNodes = targetNodes.filter((node) => !node.locked);
+    if (editableNodes.length === 0) return;
     const storedValue =
       property === 'rotation'
         ? value.map((axis) => (axis * Math.PI) / 180) as MotionVector3
         : value;
+    // A control emits the whole vector, but a user action usually changes one
+    // axis. Only fan the changed axes out to the rest of the selection;
+    // otherwise editing X on two objects at different Y positions snaps both
+    // to the primary object's Y and Z.
+    const changedAxes = storedValue.map(
+      (axis, index) => Math.abs(axis - targetNode.transform[property][index]) > 1e-9,
+    );
+    if (!changedAxes.some(Boolean)) return;
     if (autoKeyEnabled) {
       const axes = ['x', 'y', 'z'] as const;
-      const changes = targetNodes.flatMap((node) => axes.flatMap((axis, index) => {
+      const changes = editableNodes.flatMap((node) => axes.flatMap((axis, index) => {
+        if (!changedAxes[index]) return [];
         const path = `${property}.${axis}`;
         return hasAnimatableProperty(node.type, path)
           ? [{ nodeId: node.id, property: path, value: storedValue[index] }]
@@ -382,18 +393,23 @@ export function MotionInspector() {
         return;
       }
     }
-    runCommit('Update object transform', targetNodes.map((node) => ({
+    runCommit('Update object transform', editableNodes.map((node) => {
+      const next = node.transform[property].map(
+        (axis, index) => (changedAxes[index] ? storedValue[index] : axis),
+      ) as MotionVector3;
+      return {
         op: 'scene.node.update',
         nodeId: node.id,
-        transform: { [property]: storedValue },
-      })));
+        transform: { [property]: next },
+      };
+    }));
   };
   const updateNodeProperty = (property: string, value: unknown) => {
     if (!targetNode) return;
     // Apply to every selected node whose type declares the property, so a
     // heterogeneous selection edits the same prop instead of a silent subset.
     const compatibleNodes = targetNodes.filter(
-      (node) => getMotionNodeType(node.type)?.propertyHints?.[property] !== undefined,
+      (node) => !node.locked && getMotionNodeType(node.type)?.propertyHints?.[property] !== undefined,
     );
     if (compatibleNodes.length === 0) return;
     if (autoKeyEnabled && typeof value === 'number') {

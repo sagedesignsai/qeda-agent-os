@@ -72,11 +72,13 @@ export function checkMotionReparent(
 ): MotionReparentCheck {
   const node = nodes.find((candidate) => candidate.id === nodeId);
   if (!node) return { allowed: false, reason: `Node "${nodeId}" does not exist.` };
+  if (node.locked) return { allowed: false, reason: `Node "${node.name}" is locked.` };
   if (!parentId) return { allowed: true };
   if (parentId === nodeId) return { allowed: false, reason: 'A node cannot be its own parent.' };
 
   const parent = nodes.find((candidate) => candidate.id === parentId);
   if (!parent) return { allowed: false, reason: `Parent "${parentId}" does not exist.` };
+  if (parent.locked) return { allowed: false, reason: `Parent "${parent.name}" is locked.` };
   if (isMotionNodeDescendant(nodes, parentId, nodeId)) {
     return { allowed: false, reason: 'A node cannot be moved into its own subtree.' };
   }

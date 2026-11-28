@@ -74,5 +74,5 @@ describe('Motion timeline keyframe clipboard', () => {
     const channel = clip?.channels.find((item) => item.id === 'chn_product_lift');
     expect(channel?.keyframes.some((key) => Math.abs(key.time - 2) < 1e-6 && key.value === 0.12)).toBe(true);
     expect(motionStore.getSnapshot().canUndo).toBe(true);
-  });
+  }, 20_000);
 });

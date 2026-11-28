@@ -96,8 +96,11 @@ function createDialogDocument(projectId?: string): MotionDocument {
 export interface ModelBuilderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Called when the user chooses to save the created model. */
-  onSave?: (document: MotionDocument) => void;
+  /**
+   * Called when the user chooses to save the created model. Return `false` to
+   * keep the dialog open (for example, the user declined to replace a project).
+   */
+  onSave?: (document: MotionDocument) => boolean | void;
   /** Real project the dialog was opened from, for GLB asset staging. */
   projectId?: string;
 }
@@ -182,8 +185,8 @@ export function ModelBuilderDialog({
   }, [onOpenChange]);
 
   const handleSave = useCallback(() => {
-    onSave?.(document);
-    onOpenChange(false);
+    const accepted = onSave?.(document);
+    if (accepted !== false) onOpenChange(false);
   }, [document, onSave, onOpenChange]);
 
   const emptyState = (

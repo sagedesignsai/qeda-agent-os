@@ -1,6 +1,6 @@
 import { createEmptyMotionDocument } from '../defaults';
-import { buildTemplate, type TemplateSpec, type MotionTemplate, type MotionTemplateCategory } from './spec';
-export type { MotionTemplate, MotionTemplateCategory } from './spec';
+import { buildTemplate, type TemplateSpec, type MotionTemplate, type MotionTemplateCategory } from './template-spec';
+export type { MotionTemplate, MotionTemplateCategory } from './template-spec';
 
 import { cinematicTemplates } from './cinematic';
 

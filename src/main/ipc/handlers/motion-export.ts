@@ -6,6 +6,7 @@
  * validated by `MotionRenderHost` before touching the output file.
  */
 
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { app, dialog, ipcMain, shell, type BrowserWindow } from 'electron';
 
@@ -30,11 +31,13 @@ type ExportStartRequest = {
   presetId: string;
   range: { start: number; end: number; sequence?: boolean };
   outputPath: string;
+  pathToken: string;
 };
 
 export function registerMotionExportHandlers({ mainWindow }: { mainWindow: BrowserWindow }): void {
   const jobs = new MotionRenderJobs(path.join(app.getPath('userData'), 'motion', 'render-jobs'));
   const assets = getMotionAssetStore();
+  const exportTargets = new Map<string, string>();
   const host = new MotionRenderHost({
     jobs,
     mainWindow: () => (mainWindow.isDestroyed() ? null : mainWindow),
@@ -59,10 +62,25 @@ export function registerMotionExportHandlers({ mainWindow }: { mainWindow: Brows
         ? [{ name: 'WebM video', extensions: ['webm'] }]
         : [{ name: 'MP4 video', extensions: ['mp4'] }],
     });
-    return result.canceled || !result.filePath ? null : { path: result.filePath };
+    if (result.canceled || !result.filePath) return null;
+    // The renderer may only start a job for a path the native dialog chose.
+    // Accepting a bare path would let a compromised page write a video to any
+    // location the app can reach.
+    const token = randomBytes(16).toString('hex');
+    // Bound the map: cancelled starts never consume their token.
+    if (exportTargets.size > 16) exportTargets.clear();
+    exportTargets.set(token, result.filePath);
+    return { path: result.filePath, token };
   });
 
-  ipcMain.handle('motion:export-start', async (_event, req: ExportStartRequest) => host.start(req));
+  ipcMain.handle('motion:export-start', async (_event, req: ExportStartRequest) => {
+    const target = exportTargets.get(req.pathToken);
+    if (!target || target !== req.outputPath) {
+      throw new Error('The export destination was not chosen by the save dialog.');
+    }
+    exportTargets.delete(req.pathToken);
+    return host.start(req);
+  });
 
   ipcMain.handle('motion:reveal-export', (_event, req: { path: string }) => {
     if (typeof req?.path === 'string' && path.isAbsolute(req.path)) shell.showItemInFolder(req.path);

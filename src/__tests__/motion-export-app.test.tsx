@@ -44,11 +44,40 @@ const job: MotionRenderJobPayload = {
 describe('MotionExportApp stage', () => {
   it('renders clean document-only frames without editor overlays', () => {
     render(<MotionExportApp job={job} />);
-    const canvas = screen.getByTestId('export-scene-canvas');
-    expect(canvas).toHaveAttribute('data-grid-visible', 'false');
-    expect(canvas).toHaveAttribute('data-editor-stage', 'false');
-    expect(canvas).toHaveAttribute('data-selected-node', '');
-    expect(canvas).toHaveAttribute('data-preserve-buffer', 'true');
-    expect(canvas).toHaveAttribute('data-view-mode', 'cinematic');
+    // A single-scene export mounts one canvas; the second slot is reserved for
+    // sequence transitions and would otherwise duplicate GPU memory and work.
+    const canvases = screen.getAllByTestId('export-scene-canvas');
+    expect(canvases).toHaveLength(1);
+    for (const canvas of canvases) {
+      expect(canvas).toHaveAttribute('data-grid-visible', 'false');
+      expect(canvas).toHaveAttribute('data-editor-stage', 'false');
+      expect(canvas).toHaveAttribute('data-selected-node', '');
+      expect(canvas).toHaveAttribute('data-preserve-buffer', 'true');
+      expect(canvas).toHaveAttribute('data-view-mode', 'cinematic');
+    }
+  });
+
+  it('mounts both canvases for a multi-shot sequence export', () => {
+    const document = createStarterMotionDocument('2026-01-01T00:00:00.000Z');
+    const secondScene = { ...document.scenes[0], id: 'scene_two', name: 'Scene 2' };
+    const sequenceJob: MotionRenderJobPayload = {
+      ...job,
+      document: {
+        ...document,
+        scenes: [...document.scenes, secondScene],
+        sequence: {
+          duration: 12,
+          items: [
+            { id: 'shot_1', sceneId: document.scenes[0].id, start: 0, duration: 6 },
+            { id: 'shot_2', sceneId: secondScene.id, start: 6, duration: 6 },
+          ],
+        },
+      },
+      range: { start: 0, end: 12, sequence: true },
+      frameCount: 360,
+    };
+
+    render(<MotionExportApp job={sequenceJob} />);
+    expect(screen.getAllByTestId('export-scene-canvas')).toHaveLength(2);
   });
 });

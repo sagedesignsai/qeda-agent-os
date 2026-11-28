@@ -56,6 +56,51 @@ describe('motion op registry', () => {
     expect(isKeyframesSorted(channel?.keyframes ?? [])).toBe(true);
   });
 
+  it('enforces locks on the entities a deletion would cascade through', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const lockedChild = applyMotionOp(doc, {
+      op: 'scene.node.update',
+      nodeId: 'screen_dashboard',
+      locked: true,
+    });
+    expect(() =>
+      applyMotionOp(lockedChild, { op: 'scene.node.remove', nodeId: 'product' }),
+    ).toThrow(/locked/i);
+
+    const lockedTrack = applyMotionOp(doc, {
+      op: 'track.update',
+      trackId: 'trk_product',
+      locked: true,
+    });
+    expect(() =>
+      applyMotionOp(lockedTrack, {
+        op: 'placement.remove',
+        trackId: 'trk_product',
+        placementId: 'plc_product',
+      }),
+    ).toThrow(/locked/i);
+    expect(() =>
+      applyMotionOp(lockedTrack, { op: 'track.remove', trackId: 'trk_product' }),
+    ).toThrow(/locked/i);
+  });
+
+  it('merges a dragged key onto an existing time instead of corrupting key order', () => {
+    const doc = createStarterMotionDocument(NOW);
+    const moved = applyMotionOp(doc, {
+      op: 'keyframe.move',
+      clipId: 'clip_product_spin',
+      channelId: 'chn_product_spin',
+      keyframeId: 'kf_product_spin_1',
+      time: 0,
+    });
+    const channel = findClip(moved, 'clip_product_spin')?.channels.find(
+      (candidate) => candidate.id === 'chn_product_spin',
+    );
+    expect(channel?.keyframes).toHaveLength(1);
+    expect(channel?.keyframes[0]).toMatchObject({ id: 'kf_product_spin_1', time: 0, value: Math.PI * 2 });
+    expect(isKeyframesSorted(channel?.keyframes ?? [])).toBe(true);
+  });
+
   it('replaces a key added at an existing time instead of stacking a duplicate', () => {
     const doc = createStarterMotionDocument(NOW);
     const channelBefore = findClip(doc, 'clip_product_spin')?.channels.find(

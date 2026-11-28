@@ -101,6 +101,7 @@ export function MotionScenePanel() {
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [selectionAnchor, setSelectionAnchor] = useState<string | null>(null);
   const [altPressed, setAltPressed] = useState(false);
+  const [renameNodeId, setRenameNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -253,6 +254,8 @@ export function MotionScenePanel() {
   };
 
   const deleteNode = (nodeId: string) => {
+    const node = doc.scene.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node || node.locked) return;
     motionStore.commit('Delete scene object', [{ op: 'scene.node.remove', nodeId }]);
   };
 
@@ -323,16 +326,6 @@ export function MotionScenePanel() {
           >
             <PlusIcon className="size-3" />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-5 text-muted-foreground/70 hover:text-foreground"
-            aria-label="AI suggestions"
-            title="AI suggestions"
-          >
-            <WandSparklesIcon className="size-3" />
-          </Button>
         </div>
       </div>
 
@@ -379,6 +372,8 @@ export function MotionScenePanel() {
                               animated={animatedNodeIds.has(row.node.id)}
                               missingAsset={missingAssetFor(row.node, motionAssets.missingIds)}
                               dropCheck={dropChecks.get(row.node.id)}
+                              renameRequestId={renameNodeId}
+                              onRenameStarted={() => setRenameNodeId(null)}
                               onSelectNode={selectNode}
                               onDuplicate={duplicateNode}
                               onToggleCollapsed={toggleCollapsed}
@@ -389,8 +384,9 @@ export function MotionScenePanel() {
                           <ContextMenuItem
                             onSelect={() => {
                               const node = doc.scene.nodes.find((n) => n.id === row.node.id);
-                              if (node)
-                                motionStore.setSelection({ kind: 'node', nodeId: node.id });
+                              if (!node) return;
+                              motionStore.setSelection({ kind: 'node', nodeId: node.id });
+                              setRenameNodeId(node.id);
                             }}
                           >
                             Rename
@@ -402,6 +398,7 @@ export function MotionScenePanel() {
                           </ContextMenuItem>
                           <ContextMenuItem
                             variant="destructive"
+                            disabled={row.node.locked}
                             onSelect={() => deleteNode(row.node.id)}
                           >
                             Delete
@@ -436,14 +433,6 @@ export function MotionScenePanel() {
                           >
                             Locked
                           </ContextMenuCheckboxItem>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            onSelect={() => {
-                              motionStore.setSelection({ kind: 'node', nodeId: row.node.id });
-                            }}
-                          >
-                            Focus in Viewport
-                          </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
                     </div>
@@ -691,6 +680,8 @@ function SceneNodeRow({
   animated,
   missingAsset,
   dropCheck,
+  renameRequestId,
+  onRenameStarted,
   onSelectNode,
   onDuplicate,
   onToggleCollapsed,
@@ -702,6 +693,8 @@ function SceneNodeRow({
   animated: boolean;
   missingAsset: boolean;
   dropCheck?: { allowed: boolean; reason: string };
+  renameRequestId?: string | null;
+  onRenameStarted?: () => void;
   onSelectNode: (nodeId: string, event: React.MouseEvent<HTMLButtonElement>) => void;
   onDuplicate: (nodeId: string) => void;
   onToggleCollapsed: (nodeId: string) => void;
@@ -709,6 +702,12 @@ function SceneNodeRow({
   const { node, depth, childIds } = row;
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(node.name);
+  useEffect(() => {
+    if (renameRequestId !== node.id) return;
+    setDraftName(node.name);
+    setRenaming(true);
+    onRenameStarted?.();
+  }, [node.id, node.name, onRenameStarted, renameRequestId]);
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `motion-drop-${node.id}`,
     data: { targetNodeId: node.id, parentId: node.parentId },
@@ -721,6 +720,27 @@ function SceneNodeRow({
   const Icon = nodeIcon(node);
 
   const onTreeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'F2') {
+      event.preventDefault();
+      event.stopPropagation();
+      setDraftName(node.name);
+      setRenaming(true);
+      return;
+    }
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!node.locked) {
+        motionStore.commit('Delete scene object', [{ op: 'scene.node.remove', nodeId: node.id }]);
+      }
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'd') {
+      event.preventDefault();
+      event.stopPropagation();
+      onDuplicate(node.id);
+      return;
+    }
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     event.preventDefault();
 

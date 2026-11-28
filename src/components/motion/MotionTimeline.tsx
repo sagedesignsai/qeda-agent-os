@@ -41,7 +41,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { createMotionId } from '@/lib/motion/ids';
@@ -103,6 +102,92 @@ function computeDopeSheetContentHeight(model: TimelineModel, collapsedGroups: Se
   return height;
 }
 
+type ClockReadout = {
+  getTime(): number;
+  subscribe(listener: () => void): () => void;
+};
+
+/** Frame counter updates from the clock without re-rendering the editor. */
+function FrameReadout({ clock, fps, duration }: { clock: ClockReadout; fps: number; duration: number }) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    const update = () => {
+      if (!ref.current) return;
+      const current = Math.round(clock.getTime() * fps);
+      const total = Math.round(duration * fps);
+      ref.current.textContent = `Frame ${current} / ${total}`;
+    };
+    update();
+    return clock.subscribe(update);
+  }, [clock, duration, fps]);
+  return <span ref={ref} className="tabular-nums" />;
+}
+
+/** Collapsed-timeline progress bar fed by the clock, not by React state. */
+function PlayheadProgress({ clock, duration }: { clock: ClockReadout; duration: number }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const update = () => {
+      if (!ref.current) return;
+      const fraction = duration > 0 ? clock.getTime() / duration : 0;
+      ref.current.style.width = `${Math.min(100, Math.max(0, fraction * 100))}%`;
+    };
+    update();
+    return clock.subscribe(update);
+  }, [clock, duration]);
+  return (
+    <div className="h-2 px-2 pb-1">
+      <div className="h-1 overflow-hidden rounded-full bg-primary/20">
+        <div ref={ref} className="h-full rounded-full bg-primary" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Destructive edits can originate from the scene panel while the timeline is
+ * collapsed. The approval prompt must be visible in both layouts, otherwise the
+ * store sits on a pending deletion with no way to confirm or cancel it.
+ */
+function PendingApprovalBar({
+  approval,
+  onApprove,
+  onCancel,
+}: {
+  approval: { label: string };
+  onApprove: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[11px]">
+      <span>
+        <strong className="font-medium">{approval.label}</strong> removes work and needs
+        approval before it is applied.
+      </span>
+      <div className="flex items-center gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          className="h-6 px-2 text-[11px]"
+          onClick={onApprove}
+        >
+          Approve
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[11px]"
+          onClick={onCancel}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function MotionTimeline({
   className,
   collapsed,
@@ -132,6 +217,7 @@ export function MotionTimeline({
   });
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [keyClipboard, setKeyClipboard] = useState<Array<{
+    targetId: string;
     property: string;
     offset: number;
     value: number;
@@ -197,6 +283,7 @@ export function MotionTimeline({
         if (!target) return;
         const found = findPlacement(doc, target.placementId);
         if (!found) return;
+        if (found.track.locked) return;
         const trimIn = found.placement.trimIn ?? 0;
         motionStore.commit('Move keyframe', [
           {
@@ -221,6 +308,7 @@ export function MotionTimeline({
           if (!target) continue;
           const found = findPlacement(doc, target.placementId);
           if (!found) continue;
+          if (found.track.locked) continue;
           const entityKey = `${target.clipId}::${target.channelId}::${target.keyframeId}`;
           if (opsByEntity.has(entityKey)) continue;
           opsByEntity.set(entityKey, {
@@ -336,11 +424,15 @@ export function MotionTimeline({
     const found = findPlacement(doc, placementId);
     const clip = doc.timeline.clips.find((candidate) => candidate.id === clipId);
     const channel = clip?.channels.find((candidate) => candidate.id === channelId);
-    if (!found || !clip || !channel) return;
+    if (!found || !clip || !channel || found.track.locked) return;
 
     const trimIn = found.placement.trimIn ?? 0;
     const visibleDuration = found.placement.duration ?? clip.duration - trimIn;
-    const localTime = Math.min(Math.max(trimIn, trimIn + time - found.placement.start), trimIn + visibleDuration);
+    // The playhead must be inside the visible placement. Clamping an outside
+    // playhead to the nearest edge silently authored a key the user did not
+    // position there.
+    if (time < found.placement.start || time >= found.placement.start + visibleDuration) return;
+    const localTime = trimIn + time - found.placement.start;
     if (channel.keyframes.some((keyframe) => Math.abs(keyframe.time - localTime) < 1e-3)) return;
 
     motionStore.commit('Add keyframe', [
@@ -369,7 +461,13 @@ export function MotionTimeline({
       const key = channel?.keyframes.find((candidate) => candidate.id === target.keyframeId);
       if (!placement || !clip || !channel || !key) return [];
       const sceneTime = placement.placement.start + key.time - (placement.placement.trimIn ?? 0);
-      return [{ property: channel.property, sceneTime, value: key.value, easing: { ...key.easing } }];
+      return [{
+        targetId: channel.targetId,
+        property: channel.property,
+        sceneTime,
+        value: key.value,
+        easing: { ...key.easing },
+      }];
     });
     if (copied.length === 0) return;
     const origin = Math.min(...copied.map((key) => key.sceneTime));
@@ -385,14 +483,16 @@ export function MotionTimeline({
     const clip = placementRef
       ? doc.timeline.clips.find((candidate) => candidate.id === placementRef.placement.clipId)
       : null;
-    if (!placementRef || !clip) return;
+    if (!placementRef || !clip || placementRef.track.locked) return;
     const playhead = motionStore.clock.getTime();
     const trimIn = placementRef.placement.trimIn ?? 0;
     const visibleEnd = placementRef.placement.start + (placementRef.placement.duration ?? clip.duration - trimIn);
     let skippedProperty = 0;
     let skippedRange = 0;
     const ops = keyClipboard.flatMap((copied) => {
-      const channel = clip.channels.find((candidate) => candidate.property === copied.property);
+      const channel = clip.channels.find(
+        (candidate) => candidate.targetId === copied.targetId && candidate.property === copied.property,
+      );
       if (!channel) {
         skippedProperty += 1;
         return [];
@@ -508,6 +608,8 @@ export function MotionTimeline({
       for (const keyId of keyIds) {
         const target = resolveKeyTarget(doc, keyId);
         if (!target) continue;
+        const found = findPlacement(doc, target.placementId);
+        if (found?.track.locked) continue;
         unique.set(`${target.clipId}::${target.channelId}::${target.keyframeId}`, {
           op: 'keyframe.remove',
           clipId: target.clipId,
@@ -517,16 +619,32 @@ export function MotionTimeline({
       }
       motionStore.commit('Delete keyframes', [...unique.values()]);
     } else if (selection?.kind === 'placement') {
+      const found = findPlacement(doc, selection.placementId);
+      if (found?.track.locked) return;
       motionStore.commit('Delete clip placement', [
         { op: 'placement.remove', trackId: selection.trackId, placementId: selection.placementId },
       ]);
     } else if (selection?.kind === 'track') {
+      const track = doc.timeline.tracks.find((candidate) => candidate.id === selection.trackId);
+      if (track?.locked) return;
       motionStore.commit('Delete track', [{ op: 'track.remove', trackId: selection.trackId }]);
+    } else if (selection?.kind === 'node') {
+      const nodeIds = (selection.selectedNodeIds ?? [selection.nodeId]).filter((nodeId) => {
+        const node = doc.scene.nodes.find((candidate) => candidate.id === nodeId);
+        return Boolean(node && !node.locked);
+      });
+      if (nodeIds.length === 0) return;
+      motionStore.commit('Delete scene objects', nodeIds.map((nodeId) => ({
+        op: 'scene.node.remove' as const,
+        nodeId,
+      })));
     }
   }, [doc, selection]);
 
   const splitSelection = useCallback(() => {
     if (selection?.kind !== 'placement') return;
+    const found = findPlacement(doc, selection.placementId);
+    if (!found || found.track.locked) return;
     motionStore.commit('Split clip placement', [{
       op: 'placement.split',
       trackId: selection.trackId,
@@ -534,13 +652,13 @@ export function MotionTimeline({
       newPlacementId: createMotionId('placement'),
       atTime: motionStore.clock.getTime(),
     }]);
-  }, [selection]);
+  }, [doc, selection]);
 
   const trimSelection = useCallback((edge: 'in' | 'out') => {
     if (selection?.kind !== 'placement') return;
     const found = findPlacement(doc, selection.placementId);
     const clip = found && doc.timeline.clips.find((item) => item.id === found.placement.clipId);
-    if (!found || !clip) return;
+    if (!found || !clip || found.track.locked) return;
     const playhead = motionStore.clock.getTime();
     const trimIn = found.placement.trimIn ?? 0;
     const duration = found.placement.duration ?? clip.duration - trimIn;
@@ -570,10 +688,14 @@ export function MotionTimeline({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
+      const targetElement = target && typeof target.closest === 'function' ? target : null;
       const editable = Boolean(
-        target &&
-          (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)),
+        targetElement &&
+          (targetElement.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(targetElement.tagName)),
       );
+      // A modal owns its own keyboard semantics. Without this guard Delete in
+      // the export dialog would remove the selected scene object behind it.
+      if (targetElement?.closest('[role="dialog"], [role="alertdialog"]')) return;
       if (!editable && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && selection?.kind === 'keyframe') {
         event.preventDefault();
         copyKeyframes();
@@ -584,19 +706,42 @@ export function MotionTimeline({
         pasteKeyframes();
         return;
       }
+      const commandKey = event.metaKey || event.ctrlKey;
+      if (!editable && (event.key === 'Delete' || event.key === 'Backspace') && selection) {
+        event.preventDefault();
+        deleteSelection();
+        return;
+      }
+      if (
+        !editable &&
+        commandKey &&
+        ((event.shiftKey && event.key.toLowerCase() === 's') ||
+          (!event.shiftKey && event.key.toLowerCase() === 'b')) &&
+        selection?.kind === 'placement'
+      ) {
+        event.preventDefault();
+        splitSelection();
+        return;
+      }
+      if (!editable && commandKey && selection?.kind === 'placement' && event.key === '[') {
+        event.preventDefault();
+        trimSelection('in');
+        return;
+      }
+      if (!editable && commandKey && selection?.kind === 'placement' && event.key === ']') {
+        event.preventDefault();
+        trimSelection('out');
+        return;
+      }
       const command = resolveTimelineShortcut(event, {
         editable,
       });
       if (!command) return;
+      // Motion owns global play/pause (Shift+Space included). Handling it here
+      // as well made one Space press toggle playback twice, net no-op.
+      if (command.type === 'toggle-play' || command.type === 'play-from-start') return;
       event.preventDefault();
       switch (command.type) {
-        case 'toggle-play':
-          motionStore.togglePlay();
-          break;
-        case 'play-from-start':
-          motionStore.seek(0);
-          motionStore.play();
-          break;
         case 'step':
           stepFrame(command.direction);
           break;
@@ -610,13 +755,7 @@ export function MotionTimeline({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [copyKeyframes, doc.timeline.duration, pasteKeyframes, selection, stepFrame]);
-
-  // Playhead position as a fraction for the progress bar
-  const currentTime = motionStore.clock.getTime();
-  const playheadProgress = doc.timeline.duration > 0 ? (currentTime / doc.timeline.duration) * 100 : 0;
-  const currentFrame = Math.round(currentTime * fps);
-  const totalFrames = Math.round(doc.timeline.duration * fps);
+  }, [copyKeyframes, deleteSelection, doc.timeline.duration, pasteKeyframes, selection, splitSelection, stepFrame, trimSelection]);
 
   // When collapsed, render only a slim transport bar so the panel can shrink to ~48px.
   if (collapsed) {
@@ -665,7 +804,14 @@ export function MotionTimeline({
             onZoomFit={zoomToFit}
           />
         </div>
-        <Progress value={playheadProgress} className="h-2 px-2 pb-1" />
+        <PlayheadProgress clock={motionStore.clock} duration={doc.timeline.duration} />
+        {pendingApproval && (
+          <PendingApprovalBar
+            approval={pendingApproval}
+            onApprove={() => motionStore.confirmPending()}
+            onCancel={() => motionStore.cancelPending()}
+          />
+        )}
       </div>
     );
   }
@@ -903,32 +1049,11 @@ export function MotionTimeline({
       </div>
 
       {pendingApproval && (
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-destructive/40 bg-destructive/10 px-3 py-1.5 text-[11px]">
-          <span>
-            <strong className="font-medium">{pendingApproval.label}</strong> removes work and needs
-            approval before it is applied.
-          </span>
-          <div className="flex items-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="destructive"
-              className="h-6 px-2 text-[11px]"
-              onClick={() => motionStore.confirmPending()}
-            >
-              Approve
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[11px]"
-              onClick={() => motionStore.cancelPending()}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
+        <PendingApprovalBar
+          approval={pendingApproval}
+          onApprove={() => motionStore.confirmPending()}
+          onCancel={() => motionStore.cancelPending()}
+        />
       )}
 
       {doc.scenes.length > 1 && sequence.items.length > 0 && (
@@ -1079,7 +1204,7 @@ export function MotionTimeline({
                 <>
                   <ContextMenuItem onSelect={splitSelection}>
                     Split at Playhead
-                    <ContextMenuShortcut>Ctrl+B</ContextMenuShortcut>
+                    <ContextMenuShortcut>Ctrl+Shift+S</ContextMenuShortcut>
                   </ContextMenuItem>
                   <ContextMenuItem onSelect={() => trimSelection('in')}>
                     Trim In
@@ -1181,7 +1306,7 @@ export function MotionTimeline({
           </span>
           <Separator orientation="vertical" className="h-3" />
           <span className="tabular-nums">
-            Frame {currentFrame} / {totalFrames}
+            <FrameReadout clock={motionStore.clock} fps={fps} duration={doc.timeline.duration} />
           </span>
           <Separator orientation="vertical" className="h-3" />
           <span>
@@ -1200,6 +1325,7 @@ export function MotionTimeline({
 
 function selectionLabel(selection: MotionSelection): string {
   if (!selection) return 'Nothing selected';
+  if (selection.kind === 'node') return 'Object selected';
   if (selection.kind === 'keyframe') return 'Keyframe selected';
   if (selection.kind === 'placement') return 'Clip selected';
   return 'Track selected';

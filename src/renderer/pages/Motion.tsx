@@ -27,24 +27,34 @@ export default function Motion() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
+      const targetElement = target && typeof target.closest === 'function' ? target : null;
+      if (targetElement?.closest('[role="dialog"], [role="alertdialog"]')) return;
       if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
+        targetElement &&
+        (targetElement.tagName === 'INPUT' ||
+          targetElement.tagName === 'TEXTAREA' ||
+          targetElement.tagName === 'SELECT' ||
+          targetElement.isContentEditable)
       ) {
         return;
       }
       const modifier = event.metaKey || event.ctrlKey;
 
-      if (modifier && event.code === 'KeyS') {
+      if (modifier && event.code === 'KeyS' && !event.shiftKey) {
         event.preventDefault();
         void motionProject.saveNow();
         return;
       }
       if (event.code === 'Space') {
         event.preventDefault();
-        motionStore.togglePlay();
+        // MotionTimeline no longer claims Space; this page owns the global
+        // transport key so one physical press cannot toggle twice.
+        if (event.shiftKey) {
+          motionStore.seek(0);
+          motionStore.play();
+        } else {
+          motionStore.togglePlay();
+        }
         return;
       }
       if (modifier && event.code === 'KeyZ') {

@@ -11,7 +11,7 @@
  */
 
 import { EASING_PRESETS } from '../easing';
-import { node, type TemplateSpec } from './spec';
+import { node, type TemplateSpec } from './template-spec';
 import { showcaseClip } from './shared';
 
 const SMOOTH = EASING_PRESETS.smooth.value;

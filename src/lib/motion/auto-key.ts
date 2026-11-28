@@ -39,10 +39,17 @@ export function createMotionAutoKeyOps(
   }
 
   const ops: MotionOpRequest[] = [];
+  const fps = Math.max(1, doc.meta.output.fps);
+  const frame = 1 / fps;
   for (const [nodeId, nodeChanges] of byNode) {
     const node = doc.scene.nodes.find((candidate) => candidate.id === nodeId);
     if (!node) continue;
-    let track = doc.timeline.tracks.find((candidate) => candidate.targetId === nodeId && !candidate.locked);
+    const targetTracks = doc.timeline.tracks.filter((candidate) => candidate.targetId === nodeId);
+    // A locked track must not silently spawn a parallel unlocked track for the
+    // same node: that would make two tracks animate one property and leave the
+    // winner dependent on document order.
+    if (targetTracks.length > 0 && targetTracks.every((candidate) => candidate.locked)) continue;
+    let track = targetTracks.find((candidate) => !candidate.locked);
     if (!track) {
       const trackId = ids.track();
       ops.push({ op: 'track.add', trackId, name: `${node.name} animation`, targetId: nodeId });
@@ -52,7 +59,9 @@ export function createMotionAutoKeyOps(
     let placement = track.placements.find((candidate) => {
       const clip = doc.timeline.clips.find((item) => item.id === candidate.clipId);
       const duration = candidate.duration ?? clip?.duration ?? 0;
-      return sceneTime >= candidate.start - 1e-8 && sceneTime <= candidate.start + duration + 1e-8;
+      // `activePlacement` uses a half-open window. Using `<= end` here would
+      // write a key exactly at the clip duration, which is never sampled.
+      return sceneTime >= candidate.start - 1e-8 && sceneTime < candidate.start + duration - 1e-8;
     });
     let clip = placement
       ? doc.timeline.clips.find((candidate) => candidate.id === placement?.clipId)
@@ -61,13 +70,24 @@ export function createMotionAutoKeyOps(
     if (!placement || !clip) {
       const clipId = ids.clip();
       const placementId = ids.placement();
-      const duration = Math.max(doc.timeline.duration, sceneTime, 1 / Math.max(1, doc.meta.output.fps));
+      // Start the new clip at the playhead, never at 0: a clip that starts at 0
+      // overlaps every existing placement on the track, and the resolver only
+      // samples one placement per track. The earlier animation would disappear
+      // and the winner would depend on random id ordering.
+      const start = Math.max(0, sceneTime);
+      const nextStart = track.placements
+        .filter((candidate) => candidate.start > start + 1e-8)
+        .reduce((earliest, candidate) => Math.min(earliest, candidate.start), Infinity);
+      const end = Number.isFinite(nextStart)
+        ? nextStart
+        : Math.max(doc.timeline.duration, start + frame);
+      const duration = Math.max(frame, end - start);
       ops.push(
         { op: 'clip.create', clipId, name: `${node.name} animation`, duration },
-        { op: 'placement.add', trackId: track.id, placementId, clipId, start: 0 },
+        { op: 'placement.add', trackId: track.id, placementId, clipId, start },
       );
       clip = { id: clipId, name: `${node.name} animation`, duration, channels: [] };
-      placement = { id: placementId, clipId, start: 0 };
+      placement = { id: placementId, clipId, start };
     }
 
     const localTime = (placement.trimIn ?? 0) + sceneTime - placement.start;

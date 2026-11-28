@@ -173,12 +173,14 @@ export function MotionAddNodeDialog({
   const [localModels, setLocalModels] = useState<MotionLocalModelEntry[]>([]);
   const [selectedLocalModel, setSelectedLocalModel] = useState('');
   const [isImportingLocal, setIsImportingLocal] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
 
   // Reset config when the type changes
   useEffect(() => {
     if (!selectedType) return;
     setNodeName(selectedType.label);
     setProps({ ...selectedType.defaultProps });
+    setAddError(null);
   }, [selectedType]);
 
   // Load the bundled local model library when adding a 3D model node.
@@ -229,15 +231,19 @@ export function MotionAddNodeDialog({
 
   const validParents = useMemo(() => {
     // A new node cannot create a cycle, so only `allowedParents` applies here.
+    // Locked parents are excluded because the op registry rejects edits inside
+    // them; offering them would make Insert Node fail after configuration.
     const allowed = selectedType?.allowedParents;
-    if (!allowed) return doc.scene.nodes;
-    return doc.scene.nodes.filter((node) => allowed.includes(node.type));
+    return doc.scene.nodes.filter(
+      (node) => !node.locked && (!allowed || allowed.includes(node.type)),
+    );
   }, [doc.scene.nodes, selectedType]);
 
   // ── Import and add ────────────────────────────────────────────────────────
 
   const handleImportAsset = useCallback(async () => {
     setIsImporting(true);
+    setAddError(null);
     try {
       const staged = await window.electron.ipc.invoke<{
         items: Array<{
@@ -249,6 +255,7 @@ export function MotionAddNodeDialog({
         errors: Array<{ name: string; code: string; message: string }>;
       }>('motion:pick-assets', { projectId });
 
+      if (staged.errors.length) setAddError(staged.errors[0].message);
       if (!staged.items.length) return;
 
       const item = staged.items[0];
@@ -260,6 +267,7 @@ export function MotionAddNodeDialog({
         items: [{ importId: item.importId, kind: item.kind }],
       });
 
+      if (committed.errors.length) setAddError(committed.errors[0].message);
       if (committed.assets.length) {
         // Apply asset.add to the doc immediately so it shows in the picker
         motionStore.commit('Import asset', [
@@ -268,6 +276,15 @@ export function MotionAddNodeDialog({
         // Pre-fill assetId in props so the add step uses this asset
         setProps((p) => ({ ...p, assetId: committed.assets[0].id }));
       }
+
+      const unused = staged.items.slice(1).map((entry) => entry.importId);
+      if (unused.length) {
+        await window.electron.ipc
+          .invoke<void>('motion:cancel-import', { projectId, importIds: unused })
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsImporting(false);
     }
@@ -276,13 +293,14 @@ export function MotionAddNodeDialog({
   const handleImportLocalModel = useCallback(async () => {
     if (!selectedLocalModel) return;
     setIsImportingLocal(true);
+    setAddError(null);
     try {
       const staged = await window.electron.ipc.invoke<{
         items: MotionStagedAsset[];
         errors: Array<{ name: string; code: string; message: string }>;
       }>('motion:import-local-model', { projectId, modelId: selectedLocalModel });
       if (staged.errors.length) {
-        // reuse importErrors? dialog has no local importErrors state; surface via console
+        setAddError(staged.errors[0].message);
         return;
       }
       if (!staged.items.length) return;
@@ -309,8 +327,8 @@ export function MotionAddNodeDialog({
           importIds: staged.items.map((item) => item.importId),
         })
         .catch(() => undefined);
-    } catch {
-      // ignore; user can retry
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : 'The model could not be imported.');
     } finally {
       setIsImportingLocal(false);
     }
@@ -318,12 +336,13 @@ export function MotionAddNodeDialog({
 
   const handleAdd = useCallback(() => {
     if (!selectedType) return;
+    setAddError(null);
 
     const nodeId = createMotionId('scene');
     const resolvedName = nodeName.trim() || selectedType.label;
     const resolvedParentId = parentId === 'root' ? null : parentId;
 
-    motionStore.commit(`Add ${resolvedName}`, [
+    const result = motionStore.commit(`Add ${resolvedName}`, [
       {
         op: 'scene.node.add',
         nodeId,
@@ -333,6 +352,10 @@ export function MotionAddNodeDialog({
         props,
       },
     ]);
+    if (result.status !== 'applied') {
+      setAddError(result.error?.message ?? 'The node could not be added.');
+      return;
+    }
 
     // Select the new node so the inspector opens it immediately
     motionStore.setSelection({ kind: 'node', nodeId });
@@ -343,7 +366,17 @@ export function MotionAddNodeDialog({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === 'Enter' && selectedType && !isImporting) handleAdd();
+      if (e.key === 'Enter' && selectedType && !isImporting) {
+        const target = e.target as HTMLElement | null;
+        const targetElement = target && typeof target.closest === 'function' ? target : null;
+        // Enter in the search box must not add the highlighted type; the
+        // search field is for finding, not confirming. Buttons/selects own
+        // their Enter key, so the global confirm only fires from neutral areas
+        // or the Name field.
+        if (targetElement?.closest('[data-add-node-search]')) return;
+        if (targetElement && ['BUTTON', 'SELECT'].includes(targetElement.tagName)) return;
+        handleAdd();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -375,6 +408,7 @@ export function MotionAddNodeDialog({
               <Input
                 autoFocus
                 placeholder="Search nodes…"
+                data-add-node-search
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="h-7 pl-7 text-xs"
@@ -601,6 +635,12 @@ export function MotionAddNodeDialog({
             )}
           </div>
         </div>
+
+        {addError && (
+          <p role="alert" className="shrink-0 border-t border-destructive/30 bg-destructive/10 px-4 py-2 text-[11px] text-destructive">
+            {addError}
+          </p>
+        )}
 
         <DialogFooter className="shrink-0 border-t border-border/60 px-4 py-2.5">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>

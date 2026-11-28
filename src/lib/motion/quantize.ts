@@ -52,9 +52,13 @@ export function quantizeClipToFps(clip: MotionClip, fps: number): MotionClip {
     // Keyed by integer frame, so float drift cannot produce two entries for the
     // same frame.
     const byFrame = new Map<number, MotionKeyframe>();
+    const maxFrame = Math.max(0, Math.floor(clip.duration * safeFps + 1e-9));
     for (const keyframe of channel.keyframes) {
       const clamped = Math.min(Math.max(0, keyframe.time), clip.duration);
-      const frame = Math.round(clamped * safeFps);
+      // Round first, then clamp to the last whole frame that is still inside
+      // the clip. Rounding a key near the end can otherwise land past the clip
+      // duration and make the document fail its own bounds check.
+      const frame = Math.min(maxFrame, Math.max(0, Math.round(clamped * safeFps)));
       byFrame.set(frame, keyframe);
     }
 

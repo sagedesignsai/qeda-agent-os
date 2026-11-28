@@ -43,7 +43,6 @@ import {
 import { motionStore, useMotionSnapshot } from '@/hooks/use-motion-store';
 import { useMotionExport } from '@/hooks/use-motion-export';
 import { useMotionCopilot } from '@/hooks/use-motion-copilot';
-import { useIpcEvent } from '@/hooks/use-ipc';
 import { createMotionId } from '@/lib/motion/ids';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 import { buildMotionSceneCreation } from '@/lib/motion/scene-create';
@@ -65,7 +64,7 @@ export function MotionEditor({
   canRedo,
   motionProject,
 }: MotionEditorProps) {
-  const { doc, selection } = useMotionSnapshot();
+  const { doc, selection, pendingApproval } = useMotionSnapshot();
   const [scenePanelCollapsed, setScenePanelCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [timelineCollapsed, setTimelineCollapsed] = useState(() => {
@@ -90,6 +89,17 @@ export function MotionEditor({
     id: 'motion-layout-horizontal-v1',
   });
   const verticalLayout = useDefaultLayout({ id: 'motion-layout-vertical-v2' });
+
+  // A destructive edit from the scene panel can arrive while the timeline is
+  // collapsed; the approval prompt lives there, so reveal it.
+  useEffect(() => {
+    if (!pendingApproval) return;
+    const panel = timelinePanelRef.current;
+    if (panel?.isCollapsed()) {
+      panel.expand();
+      setTimelineCollapsed(false);
+    }
+  }, [pendingApproval]);
 
   const toggleTimelineCollapse = useCallback(() => {
     const panel = timelinePanelRef.current;
@@ -551,16 +561,32 @@ export function MotionEditor({
         onOpenChange={setModelBuilderOpen}
         projectId={doc.meta.id}
         onSave={(built) => {
-          // Promote the ephemeral Model Builder document into the project.
-          // Blender GLBs were staged into this project's asset bundle at
-          // generation time (bundle-relative paths + content hashes), so
-          // the promoted document resolves via qeda-media and passes
-          // schema validation on save.
+          // The Model Builder document is blank except for the generated model.
+          // Replacing the open project with it would silently delete every
+          // existing scene, track and asset reference, so make the replacement
+          // explicit and keep the project's own name.
+          const currentProject = motionStore.getDocument();
+          const confirmed = window.confirm(
+            `Save this model by replacing the current project "${currentProject.meta.name}"? ` +
+              'The existing scenes and animation will be removed. Save a copy first if you want to keep them.',
+          );
+          if (!confirmed) return false;
           motionStore.loadDocument({
             ...built,
-            meta: { ...built.meta, id: doc.meta.id, name: built.meta.name },
+            // The Model Builder document starts near revision 0. Writing that
+            // over a mature project would move its revision backwards and can
+            // collide with existing backup filenames, so continue the project's
+            // revision sequence.
+            revision: currentProject.revision + 1,
+            meta: {
+              ...built.meta,
+              id: currentProject.meta.id,
+              name: currentProject.meta.name,
+              updatedAt: new Date().toISOString(),
+            },
           });
           void motionProject.saveNow();
+          return true;
         }}
       />
     </div>
@@ -591,11 +617,6 @@ function MotionCopilotContent({
   } = useMotionCopilot({
     projectId: doc.meta.id,
     document: doc,
-  });
-
-  // Refresh the editor when the copilot mutates the document
-  useIpcEvent('motion:changed', () => {
-    // motionStore will re-emit on the next render cycle
   });
 
   return (

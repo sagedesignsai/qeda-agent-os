@@ -22,7 +22,6 @@ import { randomBytes } from 'node:crypto';
 import { app } from 'electron';
 import type { MotionToolContext } from './motion';
 import { planMotionCommand } from '../../lib/motion/engine-contract.js';
-import { describeMotionEngine } from '../../lib/motion/engine-contract.js';
 import { getSettings } from '../ai/settings';
 import { runBlenderJob, runAuthoredBlenderJob, type BlenderReport } from '../blender/runner';
 import { getMotionAssetStore } from '../motion/service';
@@ -421,7 +420,6 @@ export function createBlenderTools(context: MotionToolContext) {
           // Renderer-addressable preview (qeda-media), for the tool card.
           previewUrl: blenderPreviewUrlForPath(job.previewPath),
           report: job.report,
-          manifest: describeMotionEngine(),
           ...placed.applied,
         };
       }
@@ -487,7 +485,6 @@ export function createBlenderTools(context: MotionToolContext) {
         bytes: job.bytes,
         previewPath: job.previewPath,
         previewUrl: blenderPreviewUrlForPath(job.previewPath),
-        manifest: describeMotionEngine(),
         ...placed.applied,
       };
     },
@@ -571,7 +568,6 @@ export function createBlenderTools(context: MotionToolContext) {
           assetId: placed.assetId,
           nodeId,
           bytes: fileStat.size,
-          manifest: describeMotionEngine(),
           ...placed.applied,
         };
       } catch (error) {
@@ -642,7 +638,6 @@ export function createBlenderTools(context: MotionToolContext) {
           duration: built.orbitDuration,
           radius,
           height,
-          manifest: describeMotionEngine(),
           ...applied,
         };
       } catch (error) {
@@ -787,7 +782,6 @@ print(f"SYNC_EXPORT_OK:{active_name}")
           assetId: placed.assetId,
           nodeId,
           bytes: fileStat.size,
-          manifest: describeMotionEngine(),
           ...placed.applied,
         };
       } catch (error) {

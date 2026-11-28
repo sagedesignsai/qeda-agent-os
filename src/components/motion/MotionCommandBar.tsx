@@ -27,6 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { motionStore } from '@/hooks/use-motion-store';
 import { listMotionNodeTypes } from '@/lib/motion/node-registry';
 import { MOTION_NODE_CATEGORIES } from '@/lib/motion/nodes/definition';
 
@@ -273,6 +274,7 @@ export function MotionCommandBar({
             <CommandGroup heading="History">
               <CommandItem
                 onSelect={() => {
+                  motionStore.undo();
                   setOpen(false);
                 }}
                 disabled={!canUndo}
@@ -281,6 +283,7 @@ export function MotionCommandBar({
               </CommandItem>
               <CommandItem
                 onSelect={() => {
+                  motionStore.redo();
                   setOpen(false);
                 }}
                 disabled={!canRedo}

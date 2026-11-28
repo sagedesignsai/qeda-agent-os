@@ -113,6 +113,24 @@ export function preflightMotionExport(
       previousEnd = Math.max(previousEnd, item.start + item.duration);
       previousItem = item;
     }
+
+    // The export compositor has two scene slots. Three simultaneous shots can
+    // only be approximated by dropping one, which is not a defensible render.
+    for (const item of sequence.items) {
+      const active = sequence.items.filter(
+        (candidate) => candidate.start <= item.start + 1e-9 && item.start < candidate.start + candidate.duration,
+      );
+      if (active.length > 2) {
+        add({
+          severity: 'blocking',
+          code: 'MOTION_SEQUENCE_OVERLAP_LIMIT',
+          message: `More than two shots overlap at ${item.start.toFixed(2)}s. The renderer can composite one transition pair at a time.`,
+          sceneId: item.sceneId,
+          action: 'Stagger the shots or remove one overlap.',
+        });
+        break;
+      }
+    }
   }
 
   for (const targetScene of scenesToValidate) {

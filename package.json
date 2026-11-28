@@ -274,6 +274,10 @@
         "to": "docs/systems"
       },
       {
+        "from": "docs/motion-2",
+        "to": "docs/motion-2"
+      },
+      {
         "from": "plugins/qeda-builder/dist",
         "to": "opencode-plugins/qeda-builder",
         "filter": [

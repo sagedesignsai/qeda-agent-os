@@ -1108,75 +1108,100 @@ function sketchfabModelToHit(model: SketchfabModel, kind: MotionRemoteAssetKind)
   };
 }
 
+/** Same ceiling as the staged-asset limit; prevents decompression bombs. */
+const MAX_EXTRACTED_BYTES = 1024 * 1024 * 1024;
+
 async function extractZip(zipPath: string, destDir: string): Promise<void> {
-  const { execFile } = await import('node:child_process');
-  // Try system unzip first
-  const hasUnzip = await new Promise<boolean>((resolve) => {
-    execFile('sh', ['-c', 'which unzip'], { timeout: 5000 }, (err) => resolve(!err));
-  });
-  if (hasUnzip) {
-    await new Promise<void>((resolve, reject) => {
-      execFile('unzip', ['-o', zipPath, '-d', destDir], { timeout: 60_000 }, (error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-    return;
-  }
-  // Fallback: use adm-zip if available
-  try {
-    const { default: AdmZip } = await import('adm-zip');
-    const zip = new AdmZip(zipPath);
-    zip.extractAllTo(destDir, true);
-    return;
-  } catch {
-    // Continue to manual extraction
-  }
-  // Last resort: use Node.js built-in decompression for simple ZIP files
-  const raw = await fs.readFile(zipPath);
-  await extractZipManual(raw, destDir);
+  // Extract in-process from the central directory. Shelling out to `unzip` or
+  // AdmZip makes the destination path a property of the archive (zip-slip);
+  // every entry here goes through `safeRelativePath` and is joined segment by
+  // segment under the staging directory.
+  await extractZipManual(await fs.readFile(zipPath), destDir);
 }
 
 async function extractZipManual(raw: Buffer, destDir: string): Promise<void> {
-  // Minimal ZIP central directory parser for common cases
+  const zlib = await import('node:zlib');
+  let totalUncompressed = 0;
   let offset = raw.length - 22;
+  let foundEnd = false;
+
   while (offset >= 0) {
-    if (raw.readUInt32LE(offset) === 0x06054b50) {
-      const centralDirOffset = raw.readUInt32LE(offset + 16);
-      const centralDirEntries = raw.readUInt16LE(offset + 10);
-      let pos = centralDirOffset;
-      for (let i = 0; i < centralDirEntries; i++) {
-        if (pos + 46 > raw.length) break;
-        if (raw.readUInt32LE(pos) !== 0x02014b50) break;
-        const compressionMethod = raw.readUInt16LE(pos + 10);
-        const compressedSize = raw.readUInt32LE(pos + 20);
-        const fileNameLength = raw.readUInt16LE(pos + 28);
-        const extraFieldLength = raw.readUInt16LE(pos + 30);
-        const fileCommentLength = raw.readUInt16LE(pos + 32);
-        const localHeaderOffset = raw.readUInt32LE(pos + 42);
-        pos += 46 + fileNameLength + extraFieldLength + fileCommentLength;
-        if (localHeaderOffset + 30 > raw.length) continue;
-        const localFileNameLength = raw.readUInt16LE(localHeaderOffset + 26);
-        const localExtraLength = raw.readUInt16LE(localHeaderOffset + 28);
-        const localDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
-        const fileName = raw.toString('utf8', localHeaderOffset + 30, localHeaderOffset + 30 + localFileNameLength);
-        if (fileName.includes('/')) continue; // skip directories
-        if (localDataOffset + compressedSize > raw.length) continue;
-        const relativePath = safeRelativePath(fileName);
-        if (!relativePath) continue;
-        const destPath = path.join(destDir, relativePath);
-        await fs.mkdir(path.dirname(destPath), { recursive: true });
-        if (compressionMethod === 0) {
-          await fs.writeFile(destPath, raw.subarray(localDataOffset, localDataOffset + compressedSize));
-        } else if (compressionMethod === 8) {
-          const zlib = await import('node:zlib');
-          const decompressed = zlib.unzipSync(raw.subarray(localDataOffset, localDataOffset + compressedSize));
-          await fs.writeFile(destPath, decompressed);
-        }
-      }
-      break;
+    if (raw.readUInt32LE(offset) !== 0x06054b50) {
+      offset -= 1;
+      continue;
     }
-    offset -= 1;
+    foundEnd = true;
+    const centralDirOffset = raw.readUInt32LE(offset + 16);
+    const centralDirEntries = raw.readUInt16LE(offset + 10);
+    let pos = centralDirOffset;
+
+    for (let i = 0; i < centralDirEntries; i += 1) {
+      if (pos + 46 > raw.length) {
+        throw new MotionRemoteAssetError('The model archive is truncated.', 'MOTION_REMOTE_CONTENT');
+      }
+      if (raw.readUInt32LE(pos) !== 0x02014b50) {
+        throw new MotionRemoteAssetError('The model archive has an invalid directory.', 'MOTION_REMOTE_CONTENT');
+      }
+      const compressionMethod = raw.readUInt16LE(pos + 10);
+      const compressedSize = raw.readUInt32LE(pos + 20);
+      const uncompressedSize = raw.readUInt32LE(pos + 24);
+      const fileNameLength = raw.readUInt16LE(pos + 28);
+      const extraFieldLength = raw.readUInt16LE(pos + 30);
+      const fileCommentLength = raw.readUInt16LE(pos + 32);
+      const localHeaderOffset = raw.readUInt32LE(pos + 42);
+      pos += 46 + fileNameLength + extraFieldLength + fileCommentLength;
+      if (localHeaderOffset + 30 > raw.length) {
+        throw new MotionRemoteAssetError('The model archive has an invalid entry.', 'MOTION_REMOTE_CONTENT');
+      }
+
+      const localFileNameLength = raw.readUInt16LE(localHeaderOffset + 26);
+      const localExtraLength = raw.readUInt16LE(localHeaderOffset + 28);
+      const localDataOffset = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
+      const fileName = raw.toString('utf8', localHeaderOffset + 30, localHeaderOffset + 30 + localFileNameLength);
+      if (localDataOffset + compressedSize > raw.length) {
+        throw new MotionRemoteAssetError('The model archive entry is truncated.', 'MOTION_REMOTE_CONTENT');
+      }
+
+      const isDirectory = /\/$/.test(fileName);
+      const relativePath = safeRelativePath(isDirectory ? fileName.replace(/\/+$/, '') : fileName);
+      if (!relativePath) {
+        throw new MotionRemoteAssetError(
+          `The model archive entry "${fileName}" escapes the import directory.`,
+          'MOTION_REMOTE_CONTENT',
+        );
+      }
+      const destPath = path.join(destDir, ...relativePath.split('/'));
+      if (isDirectory) {
+        await fs.mkdir(destPath, { recursive: true });
+        continue;
+      }
+
+      totalUncompressed += uncompressedSize;
+      if (totalUncompressed > MAX_EXTRACTED_BYTES) {
+        throw new MotionRemoteAssetError('The model archive expands beyond the import size limit.', 'MOTION_REMOTE_TOO_LARGE');
+      }
+      await fs.mkdir(path.dirname(destPath), { recursive: true });
+      if (compressionMethod === 0) {
+        await fs.writeFile(destPath, raw.subarray(localDataOffset, localDataOffset + compressedSize));
+      } else if (compressionMethod === 8) {
+        // ZIP method 8 stores raw DEFLATE, not a zlib/gzip wrapper.
+        const decompressed = zlib.inflateRawSync(
+          raw.subarray(localDataOffset, localDataOffset + compressedSize),
+          { maxOutputLength: MAX_EXTRACTED_BYTES },
+        );
+        await fs.writeFile(destPath, decompressed);
+      } else {
+        throw new MotionRemoteAssetError(
+          `The model archive uses unsupported compression (${compressionMethod}).`,
+          'MOTION_REMOTE_CONTENT',
+        );
+      }
+    }
+    break;
+  }
+
+  if (!foundEnd) {
+    throw new MotionRemoteAssetError('The model archive is not a valid ZIP file.', 'MOTION_REMOTE_CONTENT');
   }
 }
 

@@ -18,10 +18,15 @@ import { app } from 'electron';
 import { tool } from 'ai';
 import { z } from 'zod';
 import { discoverMotionCapability } from '../ai/motion-capability';
+import { describeMotionEngine } from '../../lib/motion/engine-contract';
 
 /** Read the copilot contract from the app bundle, falling back to the source tree. */
 async function readMotionContract(): Promise<string | null> {
   const candidates = [
+    // Packaged app: extraResources land beside app.asar, not inside it.
+    ...(typeof process.resourcesPath === 'string'
+      ? [path.join(process.resourcesPath, 'docs', 'motion-2', 'copilot-contract.md')]
+      : []),
     path.join(app.getAppPath(), 'docs', 'motion-2', 'copilot-contract.md'),
     path.join(process.cwd(), 'docs', 'motion-2', 'copilot-contract.md'),
   ];
@@ -49,7 +54,10 @@ export function createMotionCapabilityTool() {
     execute: async ({ query }) => {
       const capability = discoverMotionCapability(query);
       const contract = await readMotionContract();
-      return { ...capability, contract };
+      // This is the one tool that deliberately returns the full manifest. It is
+      // ~200 KB; returning it from every scene operation would consume the
+      // context budget before the agent did any work.
+      return { ...capability, manifest: describeMotionEngine(), contract };
     },
   });
 }

@@ -53,6 +53,18 @@ describe('motion hierarchy', () => {
     expect(checkMotionReparent(nodes, 'screen', null)).toEqual({ allowed: true });
   });
 
+  it('rejects locked nodes as drag sources and locked parents as targets', () => {
+    const lockedTitle = { ...title, locked: true };
+    expect(
+      checkMotionReparent([group, tablet, screen, lockedTitle], 'title', null),
+    ).toMatchObject({ allowed: false, reason: expect.stringMatching(/locked/) });
+
+    const lockedGroup = { ...group, locked: true };
+    expect(
+      checkMotionReparent([lockedGroup, tablet, screen, title], 'screen', 'grp'),
+    ).toMatchObject({ allowed: false, reason: expect.stringMatching(/locked/) });
+  });
+
   it('rejects self-parenting, cycles, and disallowed parent types', () => {
     expect(checkMotionReparent(nodes, 'grp', 'grp')).toMatchObject({ allowed: false });
     expect(checkMotionReparent(nodes, 'grp', 'screen')).toMatchObject({

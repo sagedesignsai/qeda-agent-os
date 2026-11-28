@@ -53,7 +53,13 @@ function buildMotionInstructions(
 - Clips: ${doc.timeline.clips.length} clip(s)`
     : '## Current Scene\nNo Motion document loaded.';
 
-  const engineInfo = describeMotionEngine();
+  const engine = describeMotionEngine();
+  const categories = [...new Set(engine.nodes.map((node) => node.category))].join(', ');
+  const engineInfo = [
+    `${engine.nodes.length} node types across ${categories}`,
+    `${engine.operations.length} operations`,
+    `${engine.recipes.length} recipes`,
+  ].join(' · ');
   const projectContext = activeProject
     ? `\n## Project Context\n${activeProject}\nUse this context to understand the project's purpose and create relevant scenes.`
     : '';
@@ -68,6 +74,11 @@ ${projectContext}
 
 ## Available Engine Capabilities
 ${engineInfo}
+
+The full node/op manifest is intentionally not in this prompt. Call
+\`getMotionCapability\` before building a new scene or a multi-node change; it
+returns the live manifest, grounded patterns, recipes and the binding copilot
+contract.
 
 ## Your Mission
 You help users create, edit, and animate 3D motion scenes conversationally. You don't just give advice — you directly modify the scene using your tools to add nodes, set keyframes, build animations, and generate procedural geometry.
@@ -110,8 +121,10 @@ You help users create, edit, and animate 3D motion scenes conversationally. You 
    - Senior-designer patterns as op batches: product-hero, stinger-3d, data-viz.
    - Prefer a recipe over hand-sequencing nodes when the brief matches one.
 
-8. **Verification** (lintMotionProject + renderMotionPreview tools):
-   - Call lintMotionProject after major changes; renderMotionPreview for visual check.
+8. **Verification** (lintMotionProject tool):
+   - Call lintMotionProject after major changes.
+   - renderMotionPreview is unavailable in this build and never renders the
+     document; do not claim visual verification from it.
    - Fix blocking issues before summarizing.
 
 ## Tone & Output
@@ -120,7 +133,12 @@ You help users create, edit, and animate 3D motion scenes conversationally. You 
 - Suggest next steps (e.g., "Would you like me to add keyframes to animate this?").
 - Avoid fluff; focus on making the scene look great.
 - **Completion contract:** never end a turn with a vague success. If the deliverable does not exist, state the exact blocker and what you need. If you could not check something (motion feel, timing rhythm, lighting taste, audio), say plainly that it was not checked.
-- **Render explicitness:** call \`renderMotionPreview\` to verify a change the user asked for or the plan requires — not to browse. Only export/render video when the user explicitly asks; it is the most expensive operation in the product.
+- **Render explicitness:** call \`lintMotionProject\` after changes. A visual
+  preview renderer is not available in this build: do not call
+  \`renderMotionPreview\` and claim the frame looked right. If the user asked for
+  something only visual inspection can confirm, say it was not visually checked.
+  Only export video when the user explicitly asks; it is the most expensive
+  operation in the product.
 - **User edits win:** the renderer sends a document snapshot per turn. If saving back reports a conflict, the user's editor copy was kept. Tell the user and ask them to re-run — never retry blindly.
 
 ## Planning Protocol

@@ -159,14 +159,14 @@ export class MotionStore {
       return { status: 'rejected', document: this.doc, error: error instanceof Error ? error : new Error(String(error)) };
     }
     if (next === this.doc) {
-      this.pendingApproval = null;
       this.emit();
       return { status: 'unchanged', document: this.doc };
     }
     this.past = [...this.past.slice(-(HISTORY_LIMIT - 1)), this.doc];
     this.future = [];
     this.doc = next;
-    this.pendingApproval = null;
+    // An unrelated edit must not silently dismiss a destructive batch the user
+    // has not approved yet. Only a new destructive request replaces it.
     this.clampPlayhead();
     this.emit();
     return { status: 'applied', document: this.doc };
@@ -218,6 +218,24 @@ export class MotionStore {
     this.clock.pause();
     this.clock.seek(0);
     this.emit();
+  }
+
+  /**
+   * Apply a document another process (the copilot) saved. The editor keeps its
+   * own copy when the revision has moved on: merging is not safe, and silently
+   * replacing a user's newer edits is worse than showing a conflict.
+   */
+  applyExternalDocument(doc: MotionDocument, baseRevision: number): boolean {
+    if (doc.meta.id !== this.doc.meta.id) return false;
+    if (this.doc.revision !== baseRevision) return false;
+    if (doc.revision <= this.doc.revision) return false;
+    this.past = [...this.past.slice(-(HISTORY_LIMIT - 1)), this.doc];
+    this.future = [];
+    this.doc = doc;
+    this.pendingApproval = null;
+    this.clampPlayhead();
+    this.emit();
+    return true;
   }
 
   dispose(): void {

@@ -61,6 +61,23 @@ describe('MotionAddNodeDialog', () => {
     expect(screen.queryByRole('option', { name: /Ambient light/ })).not.toBeInTheDocument();
   });
 
+  it('does not insert when Enter is pressed in the search field', () => {
+    render(
+      <MotionAddNodeDialog
+        onClose={onClose}
+        assets={[]}
+        projectId="prj_test1"
+      />,
+    );
+
+    const searchInput = screen.getByPlaceholderText('Search nodes…');
+    fireEvent.change(searchInput, { target: { value: 'phone' } });
+    fireEvent.keyDown(searchInput, { key: 'Enter' });
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(motionStore.getDocument().scene.nodes.some((node) => node.type === 'device.phone')).toBe(false);
+  });
+
   it('configures and inserts a new node into the document', () => {
     render(
       <MotionAddNodeDialog

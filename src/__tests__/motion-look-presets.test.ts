@@ -7,7 +7,7 @@
 
 import { createStarterMotionDocument } from '@/lib/motion/defaults';
 import type { MotionEntityKind } from '@/lib/motion/ids';
-import { isMotionLookNode, resolveLookStack } from '@/lib/motion/look';
+import { isMotionLookNode, motionLookRemovalRoots, resolveLookStack } from '@/lib/motion/look';
 import { expandLookPreset, listLookPresets } from '@/lib/motion/look-presets';
 import { applyMotionOps } from '@/lib/motion/ops';
 import { parseMotionDocument, serializeMotionDocument } from '@/lib/motion/schema';
@@ -19,7 +19,7 @@ function ids() {
 }
 
 function applyPreset(doc: MotionDocument, id: string) {
-  const existing = doc.scene.nodes.filter((node) => isMotionLookNode(node.type)).map((node) => node.id);
+  const existing = motionLookRemovalRoots(doc.scene.nodes).map((node) => node.id);
   return applyMotionOps(
     doc,
     expandLookPreset(id, { existingLookNodeIds: existing }, ids()),
@@ -42,13 +42,14 @@ describe('look presets', () => {
 
   it('turns the cinematic preset into an ordered, resolvable stack', () => {
     const doc = applyPreset(createStarterMotionDocument(), 'cinematic');
-    expect(doc.scene.nodes.filter((node) => isMotionLookNode(node.type))).toHaveLength(5);
+    expect(doc.scene.nodes.filter((node) => isMotionLookNode(node.type))).toHaveLength(6);
 
     const stack = resolveLookStack(
       doc.scenes.find((scene) => scene.id === doc.activeSceneId)!,
       0,
     );
     expect(stack.map((look) => look.kind)).toEqual([
+      'lens-distortion',
       'bloom',
       'grade',
       'vignette',
@@ -71,7 +72,7 @@ describe('look presets', () => {
     const doc = applyPreset(createStarterMotionDocument(), 'anamorphic');
     const parsed = parseMotionDocument(JSON.parse(serializeMotionDocument(doc)));
     expect(parsed.schemaVersion).toBe(5);
-    expect(parsed.scene.nodes.filter((node) => isMotionLookNode(node.type))).toHaveLength(5);
+    expect(parsed.scene.nodes.filter((node) => isMotionLookNode(node.type))).toHaveLength(6);
   });
 
   it('is deterministic when given deterministic ids', () => {

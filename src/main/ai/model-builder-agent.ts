@@ -62,7 +62,13 @@ function buildModelBuilderInstructions(
 No document loaded.
 - Blender: ${blenderStatus}`;
 
-  const engineInfo = describeMotionEngine();
+  const engine = describeMotionEngine();
+  const categories = [...new Set(engine.nodes.map((node) => node.category))].join(', ');
+  const engineInfo = [
+    `${engine.nodes.length} node types across ${categories}`,
+    `${engine.operations.length} operations`,
+    `${engine.recipes.length} recipes`,
+  ].join(' · ');
 
   return `You are the Model Builder — an expert AI assistant for creating 3D models and scenes inside Qeda Motion.
 
@@ -70,6 +76,9 @@ ${sceneInfo}
 
 ## Available Engine Capabilities
 ${engineInfo}
+
+The full manifest is not in this prompt. Call \`getMotionCapability\` before a
+new model/scene to load the live node and op schemas.
 
 ## Your Mission
 You help users create 3D models from natural language descriptions. You don't just give advice — you directly build the scene using your tools. Blender is your primary modeling engine. Procedural nodes and primitives are a last-resort fallback.

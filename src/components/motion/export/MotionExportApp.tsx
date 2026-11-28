@@ -48,6 +48,7 @@ export function MotionExportStageView({
     ? sequence.items[0]?.sceneId ?? job.document.activeSceneId
     : job.document.activeSceneId;
   const secondSceneId = job.document.scenes.find((scene) => scene.id !== firstSceneId)?.id ?? firstSceneId;
+  const needsSecondScene = Boolean(job.range.sequence && sequence.items.length > 1);
   const maxSceneDuration = Math.max(0, ...job.document.scenes.map((scene) => scene.timeline.duration));
   const clockA = useMemo(() => new PlaybackClock({ duration: () => maxSceneDuration }), [job, maxSceneDuration]);
   const clockB = useMemo(() => new PlaybackClock({ duration: () => maxSceneDuration }), [job, maxSceneDuration]);
@@ -62,7 +63,8 @@ export function MotionExportStageView({
 
   const onSceneCanvas = useCallback((slot: 0 | 1, sceneCanvas: HTMLCanvasElement) => {
     canvasesRef.current[slot] = sceneCanvas;
-    if (stageCreatedRef.current || !canvasesRef.current[0] || !canvasesRef.current[1]) return;
+    if (stageCreatedRef.current || !canvasesRef.current[0]) return;
+    if (needsSecondScene && !canvasesRef.current[1]) return;
     stageCreatedRef.current = true;
 
     const canvas = document.createElement('canvas');
@@ -154,7 +156,7 @@ export function MotionExportStageView({
         context.globalAlpha = 1;
       },
     });
-  }, [clockA, clockB, firstSceneId, job, onStage, sequence]);
+  }, [clockA, clockB, firstSceneId, job, needsSecondScene, onStage, sequence]);
 
   const onCanvasA = useCallback((canvas: HTMLCanvasElement) => onSceneCanvas(0, canvas), [onSceneCanvas]);
   const onCanvasB = useCallback((canvas: HTMLCanvasElement) => onSceneCanvas(1, canvas), [onSceneCanvas]);
@@ -167,9 +169,11 @@ export function MotionExportStageView({
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <MotionSceneCanvas doc={sceneDocs[0]} clock={clockA} viewMode="cinematic" stageColor={job.document.brand.colors.background || '#171a22'} gridVisible={false} zoom={1} showEditorStage={false} dpr={1} preserveDrawingBuffer onCanvasReady={onCanvasA} />
       </div>
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <MotionSceneCanvas doc={sceneDocs[1]} clock={clockB} viewMode="cinematic" stageColor={job.document.brand.colors.background || '#171a22'} gridVisible={false} zoom={1} showEditorStage={false} dpr={1} preserveDrawingBuffer onCanvasReady={onCanvasB} />
-      </div>
+      {needsSecondScene && (
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          <MotionSceneCanvas doc={sceneDocs[1]} clock={clockB} viewMode="cinematic" stageColor={job.document.brand.colors.background || '#171a22'} gridVisible={false} zoom={1} showEditorStage={false} dpr={1} preserveDrawingBuffer onCanvasReady={onCanvasB} />
+        </div>
+      )}
     </div>
   );
 }
